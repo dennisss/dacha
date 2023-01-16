@@ -37,7 +37,8 @@ impl std::fmt::Display for ServiceParseError {
 
 impl ServiceAddress {
     pub fn is_service_address(address: &str) -> bool {
-        address.ends_with(NAME_SUFFIX)
+        let host_end = address.rfind(':').unwrap_or(address.len());
+        address[..host_end].ends_with(NAME_SUFFIX)
     }
 
     pub fn parse(address: &str, current_zone: &str) -> Result<Self, ServiceParseError> {
@@ -184,9 +185,8 @@ mod tests {
 
     use super::*;
 
-    // TODO: Why is 'async' needed here.
-    #[test]
-    async fn parse_job_address_with_port() -> Result<()> {
+    #[testcase]
+    fn parse_job_address_with_port() -> Result<()> {
         let addr = ServiceAddress::parse(
             "_my_port.adder_server.user.job.local.cluster.internal",
             "testing",
@@ -212,8 +212,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    async fn parse_worker_address_with_port() -> Result<()> {
+    #[testcase]
+    fn parse_worker_address_with_port() -> Result<()> {
         let addr = ServiceAddress::parse(
             "a12345.adder_client.user.worker.local.cluster.internal",
             "testing",

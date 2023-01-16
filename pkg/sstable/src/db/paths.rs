@@ -82,7 +82,7 @@ impl FilePaths {
             LocalFileOpenOptions::new()
                 .write(true)
                 .create(true)
-                .create_synced(true),
+                .sync_on_flush(true),
         )?;
 
         // This should be atomic as the file name should pretty much always fit within

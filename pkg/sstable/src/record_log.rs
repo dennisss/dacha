@@ -532,7 +532,7 @@ impl RecordReader {
 
         Ok(Some(RecordWriter {
             path: self.path,
-            file,
+            file: Box::new(file),
             extent: append_offset,
         }))
     }
@@ -540,9 +540,12 @@ impl RecordReader {
 
 pub struct RecordWriter {
     path: LocalPathBuf,
-    file: LocalFile,
 
-    /// Number of bytes in the file right now.
+    /// NOTE: If this is a file, it should already be seeked to the end of the
+    /// file.
+    file: Box<dyn Writeable>,
+
+    /// Byte offset at which we will next write in the file.
     extent: u64,
 }
 
@@ -552,18 +555,20 @@ impl RecordWriter {
     pub async fn create_new<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
         let path = path.as_ref();
 
-        let file = LocalFile::open_with_options(
+        let mut file = LocalFile::open_with_options(
             path,
             LocalFileOpenOptions::new()
                 .write(true)
                 .create(true)
-                .create_synced(true)
+                .sync_on_flush(true)
                 .create_new(true),
         )?;
 
+        file.seek(0);
+
         Ok(Self {
             path: path.to_owned(),
-            file,
+            file: Box::new(file),
             extent: 0,
         })
     }
@@ -603,11 +608,8 @@ impl RecordWriter {
         let rem = BLOCK_SIZE - (self.extent % BLOCK_SIZE);
         if rem < FRAGMENT_HEADER_SIZE {
             self.extent += rem;
-            self.file.set_len(self.extent).await?; // TODO: explicitly file with
-                                                   // zeros instead.
+            self.file.write_all(common::zeros(rem as usize)).await?;
         }
-
-        self.file.seek(self.extent);
 
         let mut header = [0u8; FRAGMENT_HEADER_SIZE as usize];
 
@@ -666,7 +668,7 @@ impl RecordWriter {
     /// TODO: Eventually this may become more complex so we will need to be more
     /// complex testing of flushing at different points in the writer.
     pub async fn flush(&mut self) -> Result<()> {
-        self.file.sync_data().await?;
+        self.file.flush().await?;
         Ok(())
     }
 }

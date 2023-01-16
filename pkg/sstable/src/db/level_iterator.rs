@@ -8,7 +8,7 @@ use crate::table::comparator::KeyComparator;
 use crate::table::table::{DataBlockCache, SSTableIterator};
 use crate::EmbeddedDBOptions;
 
-/// NOTE: This is for level 1+.
+/// Iterator over all tables at a single sorted database level (level 1+).
 pub struct LevelIterator {
     version: Arc<Version>,
     options: Arc<EmbeddedDBOptions>,

@@ -176,6 +176,22 @@ impl SharedRng for GlobalRng {
     }
 }
 
+#[async_trait]
+impl<R: Rng + Send + ?Sized + 'static> SharedRng for Mutex<R> {
+    fn seed_size(&self) -> usize {
+        todo!()
+        // self.lock().await.seed_size()
+    }
+
+    async fn seed(&self, new_seed: &[u8]) {
+        self.lock().await.seed(new_seed)
+    }
+
+    async fn generate_bytes(&self, output: &mut [u8]) {
+        self.lock().await.generate_bytes(output)
+    }
+}
+
 /// Sample random number generator based on ChaCha20
 ///
 /// - During initialization and periodically afterwards, we (re-)generate the
@@ -260,7 +276,22 @@ pub trait SharedRngExt {
 }
 
 #[async_trait]
-impl<R: SharedRng> SharedRngExt for R {
+impl<R: SharedRng + ?Sized> SharedRngExt for Arc<R> {
+    async fn shuffle<T: Send + Sync>(&self, elements: &mut [T]) {
+        self.as_ref().shuffle(elements).await
+    }
+
+    async fn uniform<T: RngNumber>(&self) -> T {
+        self.as_ref().uniform().await
+    }
+
+    async fn between<T: RngNumber>(&self, min: T, max: T) -> T {
+        self.as_ref().between(min, max).await
+    }
+}
+
+#[async_trait]
+impl<R: SharedRng + ?Sized> SharedRngExt for R {
     async fn shuffle<T: Send + Sync>(&self, elements: &mut [T]) {
         for i in 0..elements.len() {
             let j = self.uniform::<usize>().await % elements.len();

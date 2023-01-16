@@ -1,4 +1,6 @@
-// TODO: Move to third_party
+mod certificate_verified;
+mod name_constraints;
+mod private_key;
 
 use std::collections::HashMap;
 use std::convert::{AsRef, TryFrom, TryInto};
@@ -24,10 +26,8 @@ use crate::pem::*;
 use crate::rsa::*;
 use crate::tls::extensions::ExtensionType::PskKeyExchangeModes;
 
-const SKIP_TRUSTED_VERIFICATION: bool = true;
-
-mod private_key;
-
+use certificate_verified::*;
+use name_constraints::*;
 pub use private_key::*;
 
 // TODO: For validating this, we also need to able to check max allowed
@@ -81,10 +81,6 @@ impl NameKey {
 
 // TODO: Parse CertificateList for CRLs
 
-// TODO: Validate that every certificate is valid only for a subset of the time
-// for which its parent is valid for (this will simplify chained validity
-// checking at the bottom end).
-
 // TODO: Must implement critical extensions and check that all extension
 // constraints are satisfied.
 
@@ -98,9 +94,10 @@ impl NameKey {
 pub struct CertificateRegistry {
     /// Map of a certificate's subject name to a list of all certificates issued
     /// to that subject.
+    ///
     /// TODO: Add the certificate's subjectUniqueID to the key and then use that
     /// for lookups as well
-    certs: HashMap<NameKey, Vec<Arc<Certificate>>>,
+    certs: HashMap<NameKey, Vec<Arc<CertificateVerified>>>,
 
     parent: Option<Arc<CertificateRegistry>>,
 }
@@ -128,6 +125,7 @@ impl CertificateRegistry {
         Ok(reg)
     }
 
+    /// Creates an empty registry.
     pub fn new() -> Self {
         Self {
             certs: HashMap::new(),
@@ -135,6 +133,10 @@ impl CertificateRegistry {
         }
     }
 
+    /// Creates a new mutable registry which inherits all certificates in the
+    /// current registry.
+    ///
+    /// This is meant to be cheaper than cloning the entire registry.
     pub fn child(self: &Arc<Self>) -> Self {
         Self {
             certs: HashMap::new(),
@@ -142,17 +144,19 @@ impl CertificateRegistry {
         }
     }
 
+    /// Finds the certificate that was used to sign 'cert'.
+    ///
     /// NOTE: This does not support looking up the parent of a self-signed cert.
-    pub fn lookup_parent(&self, cert: &Certificate) -> Result<Option<Arc<Certificate>>> {
+    fn lookup_parent(&self, cert: &Certificate) -> Result<Option<Arc<CertificateVerified>>> {
         if let Some(parent) = &self.parent {
             if let Some(v) = parent.lookup_parent(cert)? {
                 return Ok(Some(v));
             }
         }
 
-        if cert.self_issued()? {
+        if cert.self_signed() {
             return Err(err_msg(
-                "Trying to lookup parent of self-issued certificate",
+                "Trying to lookup parent of self-signed certificate",
             ));
         }
 
@@ -164,34 +168,8 @@ impl CertificateRegistry {
             }
         };
 
-        // NOTE: Typically either the key identifier is used or both of these
-        // fields is present (but never both at once)
-        // TODO: Verify this early. Every certificate must have a subject key
-        // and either be self-signed or have an authority key
-        let authority_key = match cert.authority_key_id()? {
-            Some(v) => v,
-            None => {
-                return Err(err_msg("No authority key"));
-            }
-        };
-
-        let authority_key_id: &[u8] = match &authority_key.keyIdentifier {
-            Some(v) => &v,
-            None => {
-                return Err(err_msg("Authority key missing id"));
-            }
-        };
-
-        if authority_key.authorityCertIssuer.is_some()
-            || authority_key.authorityCertSerialNumber.is_some()
-        {
-            return Err(err_msg(
-                "authorityCertIssuer|authorityCertSerialNumber not supported",
-            ));
-        }
-
         for c in certs {
-            if authority_key_id == c.subject_key_id() {
+            if cert.authority_key_id() == c.subject_key_id() {
                 return Ok(Some(c.clone()));
             }
         }
@@ -209,12 +187,10 @@ impl CertificateRegistry {
 
         for c2 in list.iter() {
             if cert.serial_number() == c2.serial_number() {
-                // return Err(err_msg("Cert already exists with same serial number"));
                 return true;
             }
 
             if cert.subject_key_id() == c2.subject_key_id() {
-                // return Err(err_msg("Cert already exists with same subject key id"));
                 return true;
             }
         }
@@ -236,7 +212,7 @@ impl CertificateRegistry {
     /// identical certificate already existed in the registry with the exact
     /// same contents.
     /// TODO: Implement allowing exact matches.
-    fn insert(&mut self, cert: Arc<Certificate>) -> Result<bool> {
+    fn insert(&mut self, cert: Arc<CertificateVerified>) -> Result<bool> {
         let c = cert.as_ref();
 
         if self.contains(c) {
@@ -260,44 +236,30 @@ impl CertificateRegistry {
         let mut remaining = certs.to_vec();
         while remaining.len() > 0 {
             let mut changed = false;
-            for c_ref in remaining.split_off(0) {
-                let c = c_ref.as_ref();
-                if c.self_issued()? {
+            for raw_cert in remaining.split_off(0) {
+                let verified_cert = if raw_cert.self_signed() {
                     if !trusted {
                         return Err(err_msg("Self-signed untrusted signature"));
                     }
 
-                    let good = SKIP_TRUSTED_VERIFICATION || c.verify_child_signature(&c, self)?;
-                    if !good {
-                        return Err(err_msg("Self-signed invalid"));
-                    }
+                    // TODO: Refactor out this circular dependency on the registry.
+                    CertificateVerified::verify_self_signed(raw_cert, self)?
                 } else {
-                    let parent_ref = match self.lookup_parent(c)? {
+                    let parent_cert = match self.lookup_parent(&raw_cert)? {
                         Some(c) => c,
                         None => {
-                            remaining.push(c_ref);
+                            // This means that we processed the child before the parent so we need
+                            // to retry once the parent was processed.
+                            remaining.push(raw_cert);
                             continue;
                         }
                     };
 
-                    let parent = parent_ref.as_ref();
-
-                    // TODO: Must verify the signature is aligned to 8 bits.
-                    let good = parent.verify_child_signature(&c, self)?;
-
-                    if !good {
-                        return Err(err_msg("Not a validate signature"));
-                    }
-
-                    if c.validity.not_before < parent.validity.not_before
-                        || c.validity.not_after > parent.validity.not_after
-                    {
-                        return Err(err_msg("Child cert valid longer than parent"));
-                    }
-                }
+                    parent_cert.verify_child(raw_cert, self)?
+                };
 
                 changed = true;
-                self.insert(c_ref)?;
+                self.insert(Arc::new(verified_cert))?;
             }
 
             if !changed {
@@ -326,14 +288,18 @@ pub struct Validity {
 
 #[derive(Debug)]
 pub struct Certificate {
-    pub validity: Validity,
+    validity: Validity,
 
     /// Reference to the DER encoded buffer from which the TBSCertificate inside
     /// of the root struct was parsed (in other words, this is the buffer that
     /// is signed).
-    pub plaintext: Bytes,
+    ///
+    /// (not meant to be BER or CER).
+    plaintext: Bytes,
 
     subject_key_id: Bytes,
+
+    authority_key_id: Bytes,
 
     extensions: CertificateExtensions,
 
@@ -345,7 +311,13 @@ pub struct Certificate {
 
 #[derive(Debug)]
 struct CertificateExtensions {
-    map: HashMap<ObjectIdentifier, Bytes>,
+    map: HashMap<ObjectIdentifier, CertificateExtensionEntry>,
+}
+
+#[derive(Debug)]
+struct CertificateExtensionEntry {
+    value: Bytes,
+    critical: bool,
 }
 
 impl CertificateExtensions {
@@ -361,14 +333,20 @@ impl CertificateExtensions {
                 return Err(err_msg("Extension with duplicate id"));
             }
 
-            map.insert(id, val);
+            map.insert(
+                id,
+                CertificateExtensionEntry {
+                    value: val,
+                    critical: e.critical,
+                },
+            );
         }
 
         Ok(Self { map })
     }
 
     fn get(&self, id: &ObjectIdentifier) -> Option<Bytes> {
-        self.map.get(id).cloned()
+        self.map.get(id).map(|v| &v.value).cloned()
     }
 
     fn get_as<T: DERReadable>(&self, id: &ObjectIdentifier) -> Result<Option<T>> {
@@ -402,6 +380,23 @@ impl Certificate {
             return Err(err_msg("Out of order validity range"));
         }
 
+        if raw.tbsCertificate.subjectUniqueID.is_some()
+            || raw.tbsCertificate.issuerUniqueID.is_some()
+        {
+            return Err(err_msg("Certificate contains deprecated unique id fields"));
+        }
+
+        // NOTE: Some non-conforming CAs use non-positive or zero serial numbers.
+        // Up to 20 octets (+ a sign bit)
+        if raw.tbsCertificate.serialNumber.value_bits() > (8 * 20 + 1)
+        // || !raw.tbsCertificate.serialNumber.is_positive()
+        // || raw.tbsCertificate.serialNumber.is_zero()
+        {
+            println!("{:?}", raw);
+
+            return Err(err_msg("Invalid certificate serial number."));
+        }
+
         let extensions = CertificateExtensions::from(
             raw.tbsCertificate
                 .extensions
@@ -410,7 +405,7 @@ impl Certificate {
                 .unwrap_or(&[]),
         )?;
 
-        // NOTE: This should always be non-critical.
+        // NOTE: This extension should always be non-critical.
         let subject_key_id = extensions
             .get_as::<PKIX1Implicit88::SubjectKeyIdentifier>(
                 &PKIX1Implicit88::ID_CE_SUBJECTKEYIDENTIFIER,
@@ -418,12 +413,55 @@ impl Certificate {
             .map(|k| k.to_bytes())
             .unwrap_or(Bytes::new());
 
+        // NOTE: This extension should always be non-critical.
+        let authority_key_id = match extensions.get_as::<PKIX1Implicit88::AuthorityKeyIdentifier>(
+            &PKIX1Implicit88::ID_CE_AUTHORITYKEYIDENTIFIER,
+        )? {
+            Some(id) => {
+                /*
+                if id.authorityCertIssuer.is_some() || id.authorityCertSerialNumber.is_some() {
+                    return Err(err_msg(
+                        "authorityCertIssuer|authorityCertSerialNumber not supported",
+                    ));
+                }
+                */
+
+                id.keyIdentifier.map(|v| v.to_bytes()).unwrap_or_default()
+            }
+            None => Bytes::new(),
+        };
+
+        let supported_extension_ids = [
+            PKIX1Implicit88::ID_CE_AUTHORITYKEYIDENTIFIER,
+            PKIX1Implicit88::ID_CE_SUBJECTKEYIDENTIFIER,
+            PKIX1Implicit88::ID_CE_SUBJECTALTNAME,
+            PKIX1Implicit88::ID_CE_KEYUSAGE,
+            PKIX1Implicit88::ID_CE_BASICCONSTRAINTS,
+            PKIX1Implicit88::ID_CE_NAMECONSTRAINTS,
+        ];
+
+        // Verify all extensions are supported by our code.
+        // TODO: Also pass in a set of user supported ids here.
+        for (id, value) in extensions.map.iter() {
+            if !value.critical {
+                continue;
+            }
+
+            if !supported_extension_ids.contains(id) {
+                return Err(format_err!(
+                    "Certificate contains unsupported critical extension with id: {:?}",
+                    id,
+                ));
+            }
+        }
+
         Ok(Self {
             validity,
             plaintext,
             extensions,
             raw,
             subject_key_id,
+            authority_key_id,
         })
     }
 
@@ -453,6 +491,10 @@ impl Certificate {
         Self::new(raw, r.slices[1].clone())
     }
 
+    pub fn validity(&self) -> &Validity {
+        &self.validity
+    }
+
     pub fn serial_number(&self) -> &BigInt {
         self.raw.tbsCertificate.serialNumber.as_ref()
     }
@@ -470,18 +512,12 @@ impl Certificate {
         self.subject_key_id.as_ref()
     }
 
-    pub fn authority_key_id(&self) -> Result<Option<PKIX1Implicit88::AuthorityKeyIdentifier>> {
-        self.extensions
-            .get_as(&PKIX1Implicit88::ID_CE_AUTHORITYKEYIDENTIFIER)
+    /// Authority Key Id (possibly empty if not present or self-signed).
+    pub fn authority_key_id(&self) -> &[u8] {
+        self.authority_key_id.as_ref()
     }
 
-    pub fn subject_key_id_extension(
-        &self,
-    ) -> Result<Option<PKIX1Implicit88::SubjectKeyIdentifier>> {
-        self.extensions
-            .get_as(&PKIX1Implicit88::ID_CE_SUBJECTKEYIDENTIFIER)
-    }
-
+    /// TODO: Validate that this has at least one name.
     pub fn subject_alt_name(&self) -> Result<Option<PKIX1Implicit88::SubjectAltName>> {
         self.extensions
             .get_as(&PKIX1Implicit88::ID_CE_SUBJECTALTNAME)
@@ -496,24 +532,37 @@ impl Certificate {
             .get_as(&PKIX1Implicit88::ID_CE_BASICCONSTRAINTS)
     }
 
-    /// Whether or not this certificate is signed/issued by itself.
-    /// Generally only root certificates should be self signed.
+    pub fn name_constraints(&self) -> Result<Option<PKIX1Implicit88::NameConstraints>> {
+        self.extensions
+            .get_as(&PKIX1Implicit88::ID_CE_NAMECONSTRAINTS)
+    }
+
+    /// Whether or not this certificate is issued by the same entity that made
+    /// the certificate.
+    ///
+    /// Does NOT verify certificate correctness
+    ///
+    /// NOTE: This is not the same as a self-signed certificate.
     ///
     /// NOTE: Does not verify if the signature is valid.
-    pub fn self_issued(&self) -> Result<bool> {
-        // TODO: An authority_key_id is not required when it is self-signed.
-        Ok(
-            der_eq(
-                &self.raw.tbsCertificate.issuer,
-                &self.raw.tbsCertificate.subject,
-            ), /* &&
-
-
-               // TODO: There are multiple fields in the authority_key_id which can
-               // be checked against (i.e. serial number).
-               der_eq(&self.authority_key_id()?.map(|k| k.keyIdentifier.unwrap()),
-                      &self.subject_key_id().map(|k| k.into())) */
+    pub fn self_issued(&self) -> bool {
+        // TODO: Need to normalize distinguished names per https://www.rfc-editor.org/rfc/rfc5280#section-7.1 whenever we do Issuer comparison.
+        der_eq(
+            &self.raw.tbsCertificate.issuer,
+            &self.raw.tbsCertificate.subject,
         )
+    }
+
+    /// Checks if this certificate is expected to sign itself
+    ///
+    /// Only root CA certificates should be self signed. This doesn't verify
+    /// that the signature is actually valid though.
+    pub fn self_signed(&self) -> bool {
+        if !self.self_issued() {
+            return false;
+        }
+
+        self.authority_key_id().is_empty() || self.authority_key_id() == self.subject_key_id()
     }
 
     /// NOTE: The return value is basically equivalent to
@@ -613,12 +662,39 @@ impl Certificate {
         ))
     }
 
-    /*
-        General algorithm:
-        - Add add 'trusted' certificates to registry
-        - Verify all of them (we assume that the initial batch is self consistent)
-        -
-    */
+    /// Checks if the current certificate can be used to sign/verify child
+    /// certificates.
+    pub fn can_sign_certificates(&self) -> Result<bool> {
+        if let Some(key_usage) = self.key_usage()? {
+            if !key_usage.keyCertSign().unwrap_or(false) {
+                return Ok(false);
+            }
+        }
+
+        if let Some(constraints) = self.basic_constraints()? {
+            if !constraints.cA {
+                return Ok(false);
+            }
+        } else if self.raw.tbsCertificate.version == PKIX1Explicit88::Version::v3 {
+            // RFC 5280 states that V3 certificates must have the basic
+            // constraints extension to be a CA.
+
+            // NOTE: This will return false for some root CAs which incorrectly
+            // omit basic constraints.
+            /*
+            return Ok(false);
+            */
+        }
+
+        // Fails for some trusted root CAs
+        /*
+        if self.subject_key_id().is_empty() {
+            return Ok(false);
+        }
+        */
+
+        Ok(true)
+    }
 
     // TODO: Have a DigitalSignatureAlgorithm trait (or SignatureAlgoritm) to
     // disambiguate it.
@@ -629,37 +705,34 @@ impl Certificate {
     /// Using the current certificate's public key, check that some external
     /// signature was produced with the private key corresponding to the current
     /// public key.
-    fn verify_child_signature(
+    ///
+    /// (no other validation is performed aside from checking the signature).
+    ///
+    /// We assume that the current certificate's signature has already been
+    /// verified against its parent and this certificate is allowed to sign
+    /// other certficiates.
+    pub(self) fn verify_child_signature(
         &self,
         child: &Certificate,
         reg: &CertificateRegistry,
     ) -> Result<bool> {
-        if let Some(key_usage) = self.key_usage()? {
-            if !key_usage.keyCertSign().unwrap_or(false) {
-                return Err(err_msg("KeyUsage: Can't use certificate to sign another"));
-            }
-        }
-        // TODO: Must also check path length (and that each child is a subset
-        // of the parent path length.
-        if let Some(constraints) = self.basic_constraints()? {
-            if !constraints.cA {
-                return Err(err_msg("basicConstraints not allowing CA usage"));
-            }
-        } else if self.raw.tbsCertificate.version == PKIX1Explicit88::Version::v3 {
-            // TODO: Sometimes in root certificates this doesn't apply?
-            //			return Err(err_msg("Missing basicConstraints on CA
-            // certificate"));
+        if !self.can_sign_certificates()? {
+            return Err(err_msg("Certificate can't be used for signing others"));
         }
 
         let plaintext = &child.plaintext;
         // TODO: Must verify that this is divisible by 8
         let sig = child.raw.signature.as_ref();
 
+        /*
         // TODO: Perform some type of sanity check like this once more writing
         // is implemented.
-        //		let der = self.raw.tbsCertificate.to_der();
-        //		eprintln!("{} {}", der.len(), plaintext.len());
-        //		assert_eq!(plaintext, &der[..]);
+        {
+            let der = self.raw.tbsCertificate.to_der();
+            eprintln!("{} {}", der.len(), plaintext.len());
+            assert_eq!(plaintext, &der[..]);
+        }
+        */
 
         let check_ecdsa = |hasher: &mut dyn Hasher| {
             let (group, point) = self.ec_public_key(reg)?;
@@ -667,7 +740,9 @@ impl Certificate {
         };
 
         let check_null_params = || -> Result<()> {
-            if !der_eq(&child.raw.signatureAlgorithm.parameters, &Null::new()) {
+            if child.raw.signatureAlgorithm.parameters.is_some()
+                && !der_eq(&child.raw.signatureAlgorithm.parameters, &Null::new())
+            {
                 return Err(err_msg("Expected null params for algorithm"));
             }
             Ok(())
@@ -743,6 +818,8 @@ impl Certificate {
 
     /// Checks whether or not this certificate can be used to authenticate the
     /// given dns name.
+    ///
+    /// NOTE: DNS names should not end in a '.'
     pub fn for_dns_name(&self, name: &str) -> Result<bool> {
         let name = name.to_ascii_lowercase();
         let name_parts = name.split('.').collect::<Vec<_>>();
@@ -809,7 +886,6 @@ impl<'a> DistinguishedName<'a> {
                     out += &format!("[unknown]: {:?}\n", &attr.typ);
                 }
             }
-            out.push_str("---\n");
         }
 
         Ok(out)
@@ -903,11 +979,21 @@ mod tests {
 
         // let san = cert.subject_alt_name().unwrap().unwrap();
 
-        //		println!("{:#?}", cert);
-        //		println!("Authority: {:?}", cert.authority_key_id().unwrap());
-        //		println!("Subject: {:?}", cert.subject_key_id());
-        //		println!("{}", cert.issuer().to_string().unwrap());
-        //		println!("{}", cert.subject().to_string().unwrap());
+        // println!("{:#?}", cert);
+        // println!("Authority: {:?}", cert.authority_key_id().unwrap());
+        // println!("Subject: {:?}", cert.subject_key_id());
+        // println!("{}", cert.issuer().to_string().unwrap());
+        // println!("{}", cert.subject().to_string().unwrap());
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn x509_pem_test() -> Result<()> {
+        let mut buf = file::read(project_path!("testdata/certificates/server.crt")).await?;
+
+        let certs = Certificate::from_pem(buf.into())?;
+        println!("{:#?}", certs);
 
         Ok(())
     }

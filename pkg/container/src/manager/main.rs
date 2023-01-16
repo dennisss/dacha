@@ -26,7 +26,7 @@ async fn main_with_port(port: u16) -> Result<()> {
 
     let mut bundle = TaskResultBundle::new();
 
-    let manager = Manager::new(client);
+    let manager = Manager::new(client, Arc::new(crypto::random::global_rng()));
 
     bundle.add("Manager::run()", manager.clone().run());
 

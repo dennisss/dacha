@@ -6,16 +6,6 @@
 
 use reflection::*;
 
-//pub struct ReflectField<'a> {
-//	pub tags: &'static [&'static str],
-//	pub value: ReflectValue<'a>
-//}
-//
-//pub enum ReflectValue<'a> {
-//	String(&'a mut String),
-//	U64(&'a mut u64)
-//}
-
 /// TableProperties contains a bunch of read-only properties of its associated
 /// table.
 ///

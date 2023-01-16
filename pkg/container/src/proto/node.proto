@@ -30,9 +30,16 @@ message NodeConfig {
     // TODO: Have the node runtime validate that we only receive workers with ports in this range. 
     PortRange allocatable_port_range = 6;
 
+    // Cluster zone in which this node is running.
     // When running in a managed cluster this field is required.
     string zone = 7;
 
+    // If non-empty, all containers are started using an 'init' process running the binary
+    // specified in init_process_args[0].
+    //
+    // The full list of arguments passed to the init process will be
+    // [init_process_args, "--", worker_args]. The expectation is that the init process will
+    // run the worker binary based on the given arguments.
     repeated string init_process_args = 10;
 }
 

@@ -11,7 +11,7 @@ use image::format::jpeg::JPEG;
 use image::format::qoi::{QOIDecoder, QOIEncoder};
 
 fn main() -> Result<()> {
-    let data = file::read(project_path!("testdata/nyhavn.qoi"))?;
+    let data = file::read(project_path!("testdata/image/nyhavn.qoi"))?;
 
     let mut image = QOIDecoder::new().decode(&data)?;
 
@@ -52,7 +52,7 @@ fn main() -> Result<()> {
 
     return Ok(());
 
-    let bmp = Bitmap::open(project_path!("testdata/valve.bmp"))?;
+    let bmp = Bitmap::open(project_path!("testdata/image/valve.bmp"))?;
 
     bmp.image.show()?;
 

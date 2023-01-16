@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use common::errors::*;
 use common::errors::*;
-use crypto::random::RngExt;
+use crypto::random::{SharedRng, SharedRngExt};
 use datastore::meta::client::MetastoreClient;
 use datastore::meta::client::MetastoreClientInterface;
 use datastore::meta::client::MetastoreTransaction;
@@ -62,6 +62,9 @@ Should notds support pulling blobs from our servers?
 
 */
 
+// TODO: Node ids should be randomly generated once and we should only attempt
+// to create a NodeMetadata once.
+
 regexp!(JOB_NAME_PATTERN => "^((?:[a-z](?:[a-z0-9\\-_]*[a-z0-9])?)\\.?)+$");
 
 /// The max length of a URL is 255 characters.
@@ -76,33 +79,54 @@ const JOB_NAME_MAX_LABEL_LENGTH: usize = 63;
 /// cluster to ensure that all have all workers assigned to healthy nodes.
 const JOB_RECONCILE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Maximum fraction of nodes which are allowed to be dead while we are evicting
+/// workers from dead nodes.
+///
+/// This is meant to be a small fraction of nodes in order to protect the
+/// cluster from having a small fraction of nodes suddenly assigned to perform
+/// all the work of the cluster because of network partitions providing access
+/// to the metastore.
+const NODE_MAX_DEAD_FRACTION_FOR_EVICTION: f32 = 0.3;
+
+/*
+TODO: We need to check that the node last_seen timeout is much longer than it takes for the metastore to fail over and for the node to retry.
+*/
+
 /// NOTE: Cloning a 'Manager' instance will reference the same internal object.
 #[derive(Clone)]
 pub struct Manager {
     meta_client: Arc<dyn MetastoreClientInterface>,
+    rng: Arc<dyn SharedRng>,
 }
 
 impl Manager {
-    pub fn new(meta_client: Arc<dyn MetastoreClientInterface>) -> Self {
-        Self { meta_client }
+    pub fn new(meta_client: Arc<dyn MetastoreClientInterface>, rng: Arc<dyn SharedRng>) -> Self {
+        Self { meta_client, rng }
     }
 
     /// Entrypoint of the background manager thread which periodically ensures
     /// that the cluster is in a good state.
     pub async fn run(self) -> Result<()> {
+        // TODO: Require holding a metastore lock to running this loop (mainly to avoid
+        // contention).
         loop {
-            let mut jobs = self
-                .meta_client
-                .cluster_table::<JobMetadata>()
-                .list()
-                .await?;
-            for job in jobs {
-                if let Err(e) = self.reconcile_job(job.spec().name()).await {
-                    eprintln!("Failed to reconcile job {}: {}", job.spec().name(), e);
-                }
-            }
-
+            self.run_once().await?;
             executor::sleep(JOB_RECONCILE_RETRY_INTERVAL).await;
+        }
+
+        Ok(())
+    }
+
+    async fn run_once(&self) -> Result<()> {
+        let mut jobs = self
+            .meta_client
+            .cluster_table::<JobMetadata>()
+            .list()
+            .await?;
+        for job in jobs {
+            if let Err(e) = self.reconcile_job(job.spec().name()).await {
+                eprintln!("Failed to reconcile job {}: {}", job.spec().name(), e);
+            }
         }
 
         Ok(())
@@ -161,6 +185,23 @@ impl Manager {
                     )
                     .into());
                 }
+
+                if port.typ() == PortType::UNKNOWN {
+                    return Err(rpc::Status::invalid_argument("No port type specified").into());
+                }
+
+                if port.typ() != PortType::TCP {
+                    return Err(rpc::Status::invalid_argument(
+                        "Only TCP ports are currently supported",
+                    )
+                    .into());
+                }
+
+                if port.protocol().is_empty() {
+                    return Err(
+                        rpc::Status::invalid_argument("No port protocol(s) specified").into(),
+                    );
+                }
             }
 
             // TODO: Require authentication to create system services.
@@ -181,6 +222,7 @@ impl Manager {
         // TODO: Make this optionally syncronous.
         // Currently this needs to be syncronous so that the bootstrapping command
         // works.
+        // maybe have a wait_for_
         self.reconcile_job(request.spec().name()).await?;
 
         // Trigger re-calculation of the workers.
@@ -258,7 +300,8 @@ impl Manager {
             .await?
             .ok_or_else(|| err_msg("Job doesn't exist"))?;
 
-        // TODO: This read operation will cause a lot of contention.
+        // TODO: This read operation will cause a lot of contention as nodes may be
+        // simultaneously updating their status.
         let mut nodes = nodes_table.list().await?;
         if nodes.is_empty() {
             // TODO: This may be problematic during initial bootstrapping of the cluster.
@@ -273,13 +316,22 @@ impl Manager {
 
         let mut existing_workers = workers_table.list_by_job(job_name).await?;
 
+        // TODO: Do not re-schedule drained workers if using distinct_nodes on the same
+        // node until it is done being cleaned up.
+        let mut drained_workers = existing_workers
+            .drain_filter(|worker| worker.drain())
+            .collect::<Vec<_>>();
+
         existing_workers.retain(|worker| !worker.drain());
 
-        // Indexes of all nodes which we will consider for running workers in this job.
+        // Indexes of all nodes (in the 'nodes' vector) which we will consider for
+        // running workers in this job.
         let mut remaining_nodes = vec![];
         for i in 0..nodes.len() {
             remaining_nodes.push(i);
         }
+
+        // TODO: Filter out any nodes which are not healthy.
 
         if job.spec().scheduling().specific_nodes_len() > 0 {
             remaining_nodes.retain(|i| {
@@ -298,6 +350,7 @@ impl Manager {
         }
 
         // TODO: Need to increment ref counts to blobs.
+        // ^ Yes.
 
         let mut update_incomplete = false;
 
@@ -305,13 +358,26 @@ impl Manager {
         // re-use.
         let mut old_workers = vec![];
 
+        /*
+        If a node dies, we don't know if it will ever come back.
+        - In general, nodes should continue working with as few dependencies as possible (until they die)
+        - Once not seem for more than 30 seconds, all workers on a node will be evicted and moved elsewhere
+            - If some services like disk servers depend on disks, then naturally it can't be evicted
+            - A network outage may cause a lot of nodes to suddenly become unavailable.
+
+        - Eventually need
+        */
+
+        // TODO: Any workers in a DONE state (or a RestartPolicy preventing from than
+        // one )
+
         // TODO: Implement each replica as a separate transaction.
         for i in 0..(job.spec().replicas() as usize) {
             // Attempt to select an existing worker that we want to re-use.
             let existing_worker = {
                 let mut picked_worker = None;
                 while let Some(worker) = existing_workers.pop() {
-                    // The existing worker must still be in our selected worker subset to be
+                    // The existing worker must still be in our selected node subset to be
                     // re-used.
                     if !remaining_nodes
                         .iter()
@@ -331,13 +397,6 @@ impl Manager {
 
             let assigned_node_index = {
                 if let Some(existing_worker) = &existing_worker {
-                    // TODO: Verify that the existing node is still healthy (and we don't need to
-                    // move the worker to another node).
-
-                    if existing_worker.revision() == job.worker_revision() {
-                        continue;
-                    }
-
                     *nodes_by_id
                         .get(&existing_worker.assigned_node())
                         .ok_or_else(|| err_msg("Failed to find assigned node"))?
@@ -349,8 +408,7 @@ impl Manager {
                         break;
                     }
 
-                    let selected_idx =
-                        crypto::random::clocked_rng().between::<usize>(0, remaining_nodes.len());
+                    let selected_idx = self.rng.between::<usize>(0, remaining_nodes.len()).await;
                     remaining_nodes[selected_idx]
                 }
             };
@@ -361,17 +419,26 @@ impl Manager {
                 remaining_nodes.retain(|idx| *idx != assigned_node_index);
             }
 
+            // Skip if the existing worker is already up to date.
+            if let Some(existing_worker) = &existing_worker {
+                if existing_worker.revision() == job.worker_revision() {
+                    continue;
+                }
+            }
+
             let assigned_node = &mut nodes[assigned_node_index];
 
             let mut new_worker = WorkerMetadata::default();
             new_worker.set_assigned_node(assigned_node.id());
 
-            let new_spec = self.create_allocated_worker_spec(
-                job.spec().name(),
-                &job.spec().worker(),
-                existing_worker.as_ref().map(|t| t.spec()),
-                assigned_node,
-            )?;
+            let new_spec = self
+                .create_allocated_worker_spec(
+                    job.spec().name(),
+                    &job.spec().worker(),
+                    existing_worker.as_ref().map(|t| t.spec()),
+                    assigned_node,
+                )
+                .await?;
             new_worker.set_spec(new_spec);
             new_worker.set_revision(job.worker_revision());
 
@@ -407,6 +474,10 @@ impl Manager {
                 }
             }
         }
+
+        // TODO: If all workers are in DONE state, then we could delete the entire Job
+        // (because we probably want some way for someone to later query the state of
+        // all past jobs).
 
         // TODO: We can't delete a worker or switch it to another node until we know
         // that the node to which it was originally assigned has stopped the
@@ -444,14 +515,60 @@ impl Manager {
 
         txn.commit().await?;
 
+        self.cleanup_drained(&drained_workers).await?;
+
         Ok(())
     }
+
+    /// Given a set of workers that are drained, this will remove the metadata
+    /// once the WorkerStateMetadata is marked as DONE (indicating that this
+    /// worker will never be started again by the node).
+    ///
+    /// NOTE: This doesn't need to use a transaction for reading the
+    /// WorkerMetadata because it will never transition away from a 'drained'
+    /// state.
+    ///
+    /// TODO: If some workers were cleaned up, we should use this as an
+    /// indication that we should try re-reconciling the job (in case this
+    /// allows us to schedule more stuff now).
+    async fn cleanup_drained(&self, drained_workers: &[WorkerMetadata]) -> Result<()> {
+        // NOTE: This transaction is mainly for batching the writes.
+        let mut txn = self.meta_client.new_transaction().await?;
+
+        for worker in drained_workers {
+            let state_meta = self
+                .meta_client
+                .cluster_table::<WorkerStateMetadata>()
+                .get(worker.spec().name())
+                .await?;
+
+            let state_meta = match state_meta {
+                Some(v) => v,
+                None => continue,
+            };
+
+            if state_meta.state() == WorkerStateMetadata_ReportedState::DONE
+                && state_meta.worker_revision() == worker.revision()
+            {
+                txn.cluster_table().delete(worker).await?;
+                txn.cluster_table().delete(&state_meta).await?;
+            }
+        }
+
+        txn.commit().await?;
+
+        Ok(())
+    }
+
+    // TODO: We' should avoid allocating the same ports very frequetly. we will also
+    // need to validate that clients don't accidentally contact the wrong server by
+    // checking the dns name requested (probably doable at the TLS level)
 
     /// Creates a worker
     ///
     /// TODO: This must mutate the allocated ports set so that we don't end up
     /// obtaining the same port for multiple separate ports.
-    fn create_allocated_worker_spec(
+    async fn create_allocated_worker_spec(
         &self,
         job_name: &str,
         job_worker_spec: &WorkerSpec,
@@ -468,7 +585,7 @@ impl Manager {
             // doesn't exist yet.
             let mut name = job_name.to_string();
             name.push('.');
-            name.push_str(&crate::manager::new_worker_id());
+            name.push_str(&crate::manager::new_worker_id(self.rng.as_ref()).await);
             name
         };
 
@@ -542,7 +659,8 @@ impl Manager {
             .cluster_table::<NodeMetadata>()
             .list()
             .await?;
-        crypto::random::clocked_rng().shuffle(&mut nodes);
+
+        self.rng.shuffle(&mut nodes).await;
 
         let txn = self.meta_client.new_transaction().await?;
         let blobs_table = txn.cluster_table::<BlobMetadata>();
@@ -631,4 +749,717 @@ impl ManagerService for Manager {
     ) -> Result<()> {
         self.allocate_blobs_impl(request, response).await
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use datastore::meta::TestMetastore;
+    use protobuf::text::ParseTextProto;
+
+    use super::*;
+
+    #[testcase]
+    async fn can_add_a_job() -> Result<()> {
+        let rng = Arc::new(crypto::random::ChaCha20RNG::new());
+        let meta = TestMetastore::create().await?;
+
+        let meta_client = meta.create_client().await?;
+
+        // TODO: Add a valid last_seen
+        let node1 = NodeMetadata::parse_text(
+            r#"
+            id: 1
+            state: ACTIVE
+            address: "10.100.0.101:10400"
+            allocatable_port_range {
+                start: 8000
+                end: 9000
+            }
+        "#,
+        )?;
+
+        meta_client
+            .cluster_table::<NodeMetadata>()
+            .put(&node1)
+            .await?;
+
+        let mut request = StartJobRequest::parse_text(
+            r#"
+            spec {
+                name: "adder"
+                replicas: 1
+                worker {
+                    args: ["/bin/sleep", "1000"]
+                }
+            }
+        "#,
+        )?;
+
+        let manager = Manager::new(
+            Arc::new(meta.create_client().await?),
+            Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
+        );
+        manager.start_job_impl(&request).await?;
+
+        let expected_workers = vec![WorkerMetadata::parse_text(
+            r#"
+            spec {
+                name: "adder.p4rvyfqvb147y"
+                args: [
+                    "/bin/sleep",
+                    "1000"
+                ]
+            }
+            assigned_node: 1
+            revision: 3
+        "#,
+        )?];
+
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        // Verify that doing more iterations doesn't change anything.
+        manager.run_once().await?;
+        manager.run_once().await?;
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        // Start it again (should be idempotent)
+        manager.start_job_impl(&request).await?;
+
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        // Make a change.
+        request.spec_mut().worker_mut().args_mut()[1] = "2000".into();
+        manager.start_job_impl(&request).await?;
+
+        // Will re-use the same name but with a newer revision.
+        let expected_workers = vec![WorkerMetadata::parse_text(
+            r#"
+            spec {
+                name: "adder.p4rvyfqvb147y"
+                args: [
+                    "/bin/sleep",
+                    "2000"
+                ]
+            }
+            assigned_node: 1
+            revision: 6
+        "#,
+        )?];
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn job_on_distinct_nodes() -> Result<()> {
+        let rng = Arc::new(crypto::random::ChaCha20RNG::new());
+        let meta = TestMetastore::create().await?;
+
+        let meta_client = meta.create_client().await?;
+
+        // TODO: Add a valid last_seen
+        let node1 = NodeMetadata::parse_text(
+            r#"
+            id: 1
+            state: ACTIVE
+            address: "10.100.0.101:10400"
+            allocatable_port_range {
+                start: 8000
+                end: 9000
+            }
+        "#,
+        )?;
+
+        let mut node2 = node1.clone();
+        node2.set_id(2u64);
+
+        meta_client
+            .cluster_table::<NodeMetadata>()
+            .put(&node1)
+            .await?;
+        meta_client
+            .cluster_table::<NodeMetadata>()
+            .put(&node2)
+            .await?;
+
+        let mut request = StartJobRequest::parse_text(
+            r#"
+            spec {
+                name: "daemon"
+                replicas: 3
+                worker { args: ["/bin/stuff"] }
+                scheduling {
+                    distinct_nodes: true
+                }
+            }
+            "#,
+        )?;
+
+        let manager = Manager::new(
+            Arc::new(meta.create_client().await?),
+            Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
+        );
+        manager.start_job_impl(&request).await?;
+
+        let expected_workers = vec![
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.nxzzqfbp3eayj"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 1
+                revision: 4
+                "#,
+            )?,
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.p4rvyfqvb147y"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 2
+                revision: 4
+                "#,
+            )?,
+        ];
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        let mut node3 = node1.clone();
+        node3.set_id(3u64);
+
+        let mut node4 = node1.clone();
+        node4.set_id(4u64);
+
+        meta_client
+            .cluster_table::<NodeMetadata>()
+            .put(&node3)
+            .await?;
+        meta_client
+            .cluster_table::<NodeMetadata>()
+            .put(&node4)
+            .await?;
+
+        manager.run_once().await?;
+
+        let expected_workers = vec![
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.mkz8jc57m5qge"
+                    args: [
+                        "/bin/stuff"
+                    ]
+                }
+                assigned_node: 4
+                revision: 4
+                "#,
+            )?,
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.nxzzqfbp3eayj"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 1
+                revision: 4
+                "#,
+            )?,
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.p4rvyfqvb147y"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 2
+                revision: 4
+                "#,
+            )?,
+        ];
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        request.spec_mut().set_replicas(2u32);
+        manager.start_job_impl(&request).await?;
+
+        // One of the workers will now get marked as drained.
+        let expected_workers = vec![
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.mkz8jc57m5qge"
+                    args: [
+                        "/bin/stuff"
+                    ]
+                }
+                assigned_node: 4
+                revision: 4
+                drain: true
+                "#,
+            )?,
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.nxzzqfbp3eayj"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 1
+                revision: 4
+                "#,
+            )?,
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.p4rvyfqvb147y"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 2
+                revision: 4
+                "#,
+            )?,
+        ];
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        assert_eq!(
+            meta_client
+                .cluster_table::<WorkerMetadata>()
+                .list_by_node(1u64)
+                .await?,
+            vec![WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.nxzzqfbp3eayj"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 1
+                revision: 4
+                "#,
+            )?,]
+        );
+
+        assert_eq!(
+            meta_client
+                .cluster_table::<WorkerMetadata>()
+                .list_by_node(2u64)
+                .await?,
+            vec![WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "daemon.p4rvyfqvb147y"
+                    args: ["/bin/stuff"]
+                }
+                assigned_node: 2
+                revision: 4
+                "#,
+            )?,]
+        );
+
+        assert_eq!(
+            meta_client
+                .cluster_table::<WorkerMetadata>()
+                .list_by_node(0u64)
+                .await?,
+            vec![]
+        );
+
+        assert_eq!(
+            meta_client
+                .cluster_table::<WorkerMetadata>()
+                .list_by_node(3u64)
+                .await?,
+            vec![]
+        );
+
+        assert_eq!(
+            meta_client
+                .cluster_table::<WorkerMetadata>()
+                .list_by_node(10u64)
+                .await?,
+            vec![]
+        );
+
+        // Drained entry should not be cleaned up if we did not verify DONE at the
+        // latest revision.
+
+        // Wrong revision and state
+        meta_client
+            .cluster_table()
+            .put(&WorkerStateMetadata::parse_text(
+                r#"
+            worker_name: "daemon.mkz8jc57m5qge"
+            state: READY
+            worker_revision: 1
+        "#,
+            )?)
+            .await?;
+
+        manager.run_once().await?;
+        manager.run_once().await?;
+
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        // Right state, wrong revision
+        meta_client
+            .cluster_table()
+            .put(&WorkerStateMetadata::parse_text(
+                r#"
+            worker_name: "daemon.mkz8jc57m5qge"
+            state: DONE
+            worker_revision: 1
+        "#,
+            )?)
+            .await?;
+
+        manager.run_once().await?;
+        manager.run_once().await?;
+
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        // Wrong state, right revision
+        meta_client
+            .cluster_table()
+            .put(&WorkerStateMetadata::parse_text(
+                r#"
+                worker_name: "daemon.mkz8jc57m5qge"
+                state: READY
+                worker_revision: 4
+                "#,
+            )?)
+            .await?;
+
+        manager.run_once().await?;
+        manager.run_once().await?;
+
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        // Can now be reclaimed
+        meta_client
+            .cluster_table()
+            .put(&WorkerStateMetadata::parse_text(
+                r#"
+                worker_name: "daemon.mkz8jc57m5qge"
+                state: DONE
+                worker_revision: 4
+                "#,
+            )?)
+            .await?;
+
+        manager.run_once().await?;
+        manager.run_once().await?;
+
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            vec![
+                WorkerMetadata::parse_text(
+                    r#"
+                    spec {
+                        name: "daemon.nxzzqfbp3eayj"
+                        args: ["/bin/stuff"]
+                    }
+                    assigned_node: 1
+                    revision: 4
+                    "#,
+                )?,
+                WorkerMetadata::parse_text(
+                    r#"
+                    spec {
+                        name: "daemon.p4rvyfqvb147y"
+                        args: ["/bin/stuff"]
+                    }
+                    assigned_node: 2
+                    revision: 4
+                    "#,
+                )?,
+            ]
+        );
+
+        assert_eq!(
+            meta_client
+                .cluster_table::<WorkerStateMetadata>()
+                .list()
+                .await?,
+            vec![]
+        );
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn uses_different_ports_on_a_node() -> Result<()> {
+        let rng = Arc::new(crypto::random::ChaCha20RNG::new());
+        let meta = TestMetastore::create().await?;
+
+        let meta_client = meta.create_client().await?;
+
+        // TODO: Add a valid last_seen
+        let node1 = NodeMetadata::parse_text(
+            r#"
+            id: 1
+            state: ACTIVE
+            address: "10.100.0.101:10400"
+            allocatable_port_range {
+                start: 8000
+                end: 9000
+            }
+        "#,
+        )?;
+
+        meta_client
+            .cluster_table::<NodeMetadata>()
+            .put(&node1)
+            .await?;
+
+        let mut request = StartJobRequest::parse_text(
+            r#"
+            spec {
+                name: "server1"
+                replicas: 2
+                worker {
+                    args: ["/bin/serve_a"]
+                    ports {
+                        name: "first_port"
+                        type: TCP
+                        protocol: HTTP
+                    }
+                    ports {
+                        name: "second_port"
+                        type: TCP
+                        protocol: HTTP
+                    }
+                }
+            }
+            "#,
+        )?;
+
+        let manager = Manager::new(
+            Arc::new(meta.create_client().await?),
+            Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
+        );
+        manager.start_job_impl(&request).await?;
+
+        let mut expected_workers = vec![
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "server1.nxzzqfbp3eayj"
+                    args: [
+                        "/bin/serve_a"
+                    ]
+                    ports: [
+                        {
+                            name: "first_port"
+                            number: 8002
+                            type: TCP
+                            protocol: HTTP
+                        },
+                        {
+                            name: "second_port"
+                            number: 8003
+                            type: TCP
+                            protocol: HTTP
+                        }
+                    ]
+                }
+                assigned_node: 1
+                revision: 3                
+                "#,
+            )?,
+            WorkerMetadata::parse_text(
+                r#"
+                spec {
+                    name: "server1.p4rvyfqvb147y"
+                    args: [
+                        "/bin/serve_a"
+                    ]
+                    ports: [
+                        {
+                            name: "first_port"
+                            number: 8000
+                            type: TCP
+                            protocol: HTTP
+                        },
+                        {
+                            name: "second_port"
+                            number: 8001
+                            type: TCP
+                            protocol: HTTP
+                        }
+                    ]
+                }
+                assigned_node: 1
+                revision: 3
+                "#,
+            )?,
+        ];
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers
+        );
+
+        // Create a second job.
+        let mut request = StartJobRequest::parse_text(
+            r#"
+            spec {
+                name: "server2"
+                replicas: 1
+                worker {
+                    args: ["/bin/serve_b"]
+                    ports {
+                        name: "third_port"
+                        type: TCP
+                        protocol: HTTP
+                    }
+                }
+            }
+            "#,
+        )?;
+        manager.start_job_impl(&request).await?;
+
+        // Uses another new port.
+        let mut expected_workers2 = expected_workers.clone();
+        expected_workers2.extend_from_slice(&[WorkerMetadata::parse_text(
+            r#"
+            spec {
+                name: "server2.mkz8jc57m5qge"
+                args: [
+                    "/bin/serve_b"
+                ]
+                ports: [
+                    {
+                        name: "third_port"
+                        number: 8004
+                        type: TCP
+                        protocol: HTTP
+                    }
+                ]
+            }
+            assigned_node: 1
+            revision: 5
+            "#,
+        )?]);
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers2
+        );
+
+        // Updating the job should re-use port numbers (associated with same port name).
+        request.spec_mut().set_replicas(2u32);
+        request.spec_mut().worker_mut().add_args("-v".into());
+
+        request.spec_mut().worker_mut().ports_mut().insert(
+            0,
+            WorkerSpec_Port::parse_text(r#" name: "first_port" type: TCP protocol: HTTP "#)?,
+        );
+
+        manager.start_job_impl(&request).await?;
+
+        let mut expected_workers2 = expected_workers.clone();
+        expected_workers2.extend_from_slice(&[
+            WorkerMetadata::parse_text(
+                r#"
+            spec {
+                name: "server2.f6q4ytddj054c"
+                args: [
+                    "/bin/serve_b",
+                    "-v"
+                ]
+                ports: [
+                    {
+                        name: "first_port"
+                        number: 8006
+                        type: TCP
+                        protocol: HTTP
+                    },
+                    {
+                        name: "third_port"
+                        number: 8007
+                        type: TCP
+                        protocol: HTTP
+                    }
+                ]
+            }
+            assigned_node: 1
+            revision: 7
+            "#,
+            )?,
+            WorkerMetadata::parse_text(
+                r#"
+            spec {
+                name: "server2.mkz8jc57m5qge"
+                args: [
+                    "/bin/serve_b",
+                    "-v"
+                ]
+                ports: [
+                    {
+                        name: "first_port"
+                        number: 8005
+                        type: TCP
+                        protocol: HTTP
+                    },
+                    {
+                        name: "third_port"
+                        number: 8004  # Same number as before
+                        type: TCP
+                        protocol: HTTP
+                    }
+                ]
+            }
+            assigned_node: 1
+            revision: 7
+            "#,
+            )?,
+        ]);
+
+        assert_eq!(
+            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            expected_workers2
+        );
+
+        Ok(())
+    }
+
+    // Creating 2 jobs with ports will allocate different port numbers on the
+    // same node. ^ also verify that updating these
+
+    // TODO: Eventually snapshot stable states in production and verify that new
+    // manager changes don't trigger diffs.
+
+    // Test that when a node dies, we can reschedule elsewhere.
+
+    /*
+    Other things to test:
+    - Test AllocateBlob
+    - Test scheduling.distinct_nodes
+    - Disallow providing 'spec.worker.name'
+    */
 }

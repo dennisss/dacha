@@ -19,6 +19,7 @@ pub use asn_compiler::tag::{Tag, TagClass};
 // https://osqa-ask.wireshark.org/questions/62528/server-certificate-packet-format
 // https://tools.ietf.org/html/rfc5280
 // https://mirage.io/blog/introducing-asn1
+// https://letsencrypt.org/docs/a-warm-welcome-to-asn1-and-der/
 
 // Reference encoder: https://github.com/etingof/pyasn1/blob/master/pyasn1/codec/ber/encoder.py#L20
 

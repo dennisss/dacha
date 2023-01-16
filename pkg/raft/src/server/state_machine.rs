@@ -74,8 +74,7 @@ pub trait StateMachine<R> {
 }
 
 pub struct StateMachineSnapshot {
-    /// Index of the last log entry in this snapshot (same value originally
-    /// given to the perform_snapshot that created this snapshot )
+    /// Index of the last log entry in this snapshot.
     pub last_applied: LogIndex,
 
     /// Number of bytes needed to store this snapshot.

@@ -8,14 +8,24 @@ package cluster;
 import "pkg/container/src/proto/worker.proto";
 
 message JobSpec {
+    // Name of the job. Individual worker names will use this as a prefix.
     string name = 1;
 
+    // Base template to use for creating replicas of this job.
+    // For each replica this will be transformed to give each replica a unique name, and unique
+    // copies of any non-shareable resources (like ports). 
     WorkerSpec worker = 2;
 
-    // How many workers should be brought up.
+    // How many workers should be brought up in a steady state.
+    // More or fewer workers may be available during an update.
     uint32 replicas = 3;
 
+    // Constraints on which nodes are allowed to run replicas of this job.
     JobSchedulingSpec scheduling = 4;
+
+    // Contraints and checks to use while updateing the job.
+    // Jobs are always updated as fast as possible while these restrictions are satified.
+    JobUpdateStrategySpec update_strategy = 5;
 }
 
 message JobSchedulingSpec {
@@ -26,4 +36,29 @@ message JobSchedulingSpec {
     // If there are more replicas than nodes, then excess replicas won't be scheduled until more
     // nodes are available.
     bool distinct_nodes = 2;
+}
+
+message JobUpdateStrategySpec {
+    // For the entire job, at least 'replicas - max_unavailable' workers must be in a stable
+    // non-updating state.
+    uint32 max_unavailable = 1;
+
+    // For the entire job, the maximum number of workers running in excess of 'replicas' during an
+    // update.
+    uint32 max_surge = 2;
+
+    // After an updated worker becomes healthy (based on liveness), the amount
+    // of time for which we will continue to watch the worker until we consider
+    // it to be fully updated (assuming it is still healthy be the end of this). 
+    uint32 watch_time_secs = 3;
+
+    // TODO: For databases we need to know which workers in in the same replication sub-groups
+    // We will query tasks to get a availability_group: [{ id: b"dfsdf" }]
+    // We need to know how large each group is to ensure we don't go below a single group's availability limit.
+    // - this gets more complicate with storage servers with many so it is useful to limit to a finite set with copysets.
+    // - May need to consult a central controller rather than 
+    // - Alternatively each worker can have a MayShutdown RPC (although this will be sensitive to timing)
+
+
+    // TODO: Need support for arbitrary health checks based on metrics.
 }

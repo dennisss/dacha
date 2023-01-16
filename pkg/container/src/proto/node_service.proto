@@ -47,7 +47,7 @@ message StartWorkerResponse {
 
 }
 
-message ReStartWorkerRequest {
+message RestartWorkerRequest {
 
 }
 

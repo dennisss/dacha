@@ -5,7 +5,9 @@
     trait_alias,
     exclusive_range_pattern,
     wrapping_int_impl,
-    asm
+    asm,
+    let_chains,
+    drain_filter
 )]
 #![no_std]
 

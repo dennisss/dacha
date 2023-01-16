@@ -171,15 +171,17 @@ impl Metastore {
                 _ => continue,
             };
 
+            let user_value = match entry.value {
+                Some(value) => value,
+                None => {
+                    // Deleted
+                    continue;
+                }
+            };
+
             let mut res = ReadResponse::default();
             res.entry_mut().set_key(&user_key[..]);
-
-            if let Some(value) = entry.value {
-                res.entry_mut().set_value(value.as_ref());
-            } else {
-                res.entry_mut().set_deleted(true);
-            }
-
+            res.entry_mut().set_value(user_value.as_ref());
             res.entry_mut().set_sequence(entry.sequence);
 
             response.send(res).await?;

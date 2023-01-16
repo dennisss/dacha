@@ -147,7 +147,7 @@ impl SSTableBuilder {
             LocalFileOpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .create_synced(true),
+                .sync_on_flush(true),
         )?;
 
         let filter_block_builder = if let Some(policy) = options.filter_policy.clone() {
@@ -363,7 +363,6 @@ impl SSTableBuilder {
         self.file.write_all(&footer).await?;
 
         self.file.flush().await?;
-        self.file.sync_data().await?;
 
         Ok(SSTableBuiltMetadata {
             file_size: self.file.metadata().await?.len(),

@@ -64,6 +64,22 @@ impl std::str::FromStr for Uri {
     }
 }
 
+impl TryFrom<&str> for Uri {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        value.parse()
+    }
+}
+
+impl TryFrom<&String> for Uri {
+    type Error = Error;
+
+    fn try_from(value: &String) -> Result<Self> {
+        value.parse()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Authority {
     pub user: Option<OpaqueString>,

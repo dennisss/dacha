@@ -50,7 +50,7 @@ Other complexities:
 pub struct EmbeddedDBStateMachine {
     db: EmbeddedDB,
 
-    /// Root data directory containing the individual snapshot sub-folders.
+    /// Root data directory containing the individual snapshot sub-directories.
     dir: LocalPathBuf,
     current: Mutex<(Current, BlobFile)>,
 

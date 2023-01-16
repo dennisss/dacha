@@ -865,6 +865,7 @@ mod tests {
             log_file: None,
             event_listener: Some(sender),
             stats: stats.clone(),
+            busy_loop: Mutex::new(None),
         };
 
         (
@@ -889,11 +890,10 @@ mod tests {
 
         let server_task = executor::spawn(async move { server.run().await.unwrap() });
 
-        // TODO: Simplify how many '?' operators are needed in this line.
         let channel = {
-            Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-                &format!("http://{}", server_addr.to_string()).parse()?,
-            )?)?)
+            Arc::new(rpc::Http2Channel::create(
+                format!("http://{}", server_addr.to_string()).as_str(),
+            )?)
         };
 
         let stub = AdderStub::new(channel);

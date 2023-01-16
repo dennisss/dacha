@@ -122,8 +122,7 @@ impl TryFrom<&str> for ClientOptions {
     type Error = Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let uri = value.parse()?;
-        Self::from_uri(&uri)
+        Uri::try_from(value)?.try_into()
     }
 }
 

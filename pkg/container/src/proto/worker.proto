@@ -31,7 +31,8 @@ message WorkerSpec {
             string persistent_name = 3;
 
             // Path to the build target for a bundle which should be built to derive the source for this volume.
-            // NOTE: This will only be present locally.
+            //
+            // NOTE: This will only be present locally and is converted to the 'bundle' when running the 'cluster' command.  
             string build_target = 4;
 
             // The volume will be a read-only snapshot of the contents of the blob with this id.
@@ -51,23 +52,38 @@ message WorkerSpec {
         // Equivalent to ALWAYS.
         UNKNOWN = 0;
 
-        // When we 
+        // If the worker exits on its own for whatever reason, we will not restart the worker until
+        // it is updated.
         NEVER = 1;
+
         ON_FAILURE = 2;
+
         ALWAYS = 3;
     }
     RestartPolicy restart_policy = 5;
 
+    // Entrypoints which other services can use for communicating with this worker.
+    //
     // Reading the port number at runtime will be possible through an environment variable
     // named 'PORT_{NAME}' where the port name is concerned to all uppercase and '-' is replaced
     // with '_'.
+    //
+    // TODO: Switch to serializing this whole proto in the environment variable
     message Port {
         string name = 1;
 
+        // What type of port this should be (e.g. TCP, UNIX, etc.)
+        PortType type = 2;
+
+        // Layered protocols supported by the server on this port.
+        // This is mainly used to dynamically configure clients so that incompatible changes can be
+        // made (e.g. switching from plaintext to TLS).
+        repeated PortProtocol protocol = 3;
+
         // INTERNAL ONLY
-        // The port number on the node to use. Set by the Cluster Manager when assigning the worker
-        // to a node.
-        uint32 number = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+        // The port number on the node to use if this is a TCP port.
+        // Set by the Cluster Manager when assigning the worker to a node.
+        uint32 number = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
     }
     repeated Port ports = 6;
 
@@ -85,23 +101,75 @@ message WorkerSpec {
 
     repeated string additional_groups = 8;
 
-    Probe readiness_probe = 11;
+    // Prober used to periodically check if a worker doesn't need to be killed and restarted. 
+    // (initially this is swapped out for the startup_probe)
+    Probe liveness_probe = 11;
+
+    // Probe used during worker startup to verify that it started ok and doesn't need to be restarted.
+    //
+    // If not set, will default to the liveness_probe.
+    Probe startup_probe = 12;
+
+    // Prober used to determine if a worker can accept requests on any of its ports.
+    //
+    // If not set, will default to the liveness probe.
+    Probe readiness_probe = 13;
+
+    Resources resources = 14;
 
     // TODO: Add labels?
 }
 
+message Resources {
+    // CPU request/limit
+    // Memory request/limit
+}
+
+// Specification for how to check the state of a worker.
+//
+// - Each prober will determine if a worker is in either a 'Success', 'Failure', or 'Unknown' state.
+// - 'Unknown' is only  
 message Probe {
+    // Number of seconds we will wait after the worker's main process is started until we start
+    // sending probing requests.
+    uint32 initial_delay_secs = 1;
+
     // Time in-between attempts to probe the worker.
-    uint32 interval_secs = 1;
+    uint32 interval_secs = 2;
 
+    // Maximum amount of time a single probing request will wait for the worker to respond.
+    uint32 attempt_timeout_secs = 3;
 
+    // Number of consecutive success probes needed to consider the worker healthy.
+    uint32 success_threshold = 4;
 
-    // Number of seconds 
-    // uint32 initial_delay_secs = 1;
+    // Number of consecutive failed probes needed to consider the worker unhealthy.
+    uint32 failure_threshold = 5;
+
+    // How probing should happen
+    // If no method is defined, the prober will always consider the worker to be healthy.
+    oneof method {
+        HttpProbe http = 6;
+    }
+}
+
+enum PortType {
+    UNKNOWN = 0;
+    TCP = 1;
+}
+
+enum PortProtocol {
+    UNKNOWN = 0;
+    HTTP = 1;
+    TLS = 2;
+    GRPC = 3;
 }
 
 message HttpProbe {
+    // Name of the port to query.
     string port_name = 1;
+    
+    // Uri path to use for probing.
     string path = 2;
 }
 

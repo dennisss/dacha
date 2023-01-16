@@ -1892,6 +1892,8 @@ name = "ptouch"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
+ "file",
  "graphics",
  "image",
  "usb",

@@ -69,17 +69,15 @@ impl ServiceResolver {
         address: &str,
         meta_client_factory: F,
     ) -> Result<Arc<dyn http::Resolver>> {
-        let authority: http::uri::Authority = address.try_into()?;
-
-        if let http::uri::Host::Name(name) = &authority.host {
-            if ServiceAddress::is_service_address(name) {
-                return Ok(Arc::new(
-                    // NOTE: We pass in the original 'address' so that it rejects addresses with
-                    // ports specified.
-                    Self::create(address, meta_client_factory.await?).await?,
-                ));
-            }
+        if ServiceAddress::is_service_address(address) {
+            return Ok(Arc::new(
+                Self::create(address, meta_client_factory.await?).await?,
+            ));
         }
+
+        // TODO: Re-use the http URI parsing logic here.
+
+        let authority: http::uri::Authority = address.try_into()?;
 
         let port = authority
             .port
@@ -212,6 +210,8 @@ impl ServiceResolver {
                     continue;
                 }
             }
+
+            // TODO: Can I dynamically determine whether to use TLS here?
 
             port = Some(port_spec.number());
         }

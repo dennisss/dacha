@@ -479,17 +479,17 @@ impl NodeInner {
         }
     }
 
-    async fn read_reported_worker_states(&self) -> Result<HashMap<String, WorkerStateMetadata>> {
+    /// Gets the current value of all the WorkerStateMetadata rows associated
+    /// with workers on this node.
+    async fn read_reported_worker_states(
+        &self,
+        workers: &[WorkerMetadata],
+    ) -> Result<HashMap<String, WorkerStateMetadata>> {
         let meta_client = self.shared.meta_client.get().await;
-
-        let intended_workers = meta_client
-            .cluster_table::<WorkerMetadata>()
-            .list_by_node(self.shared.id)
-            .await?;
 
         let mut out = HashMap::new();
 
-        for worker in intended_workers {
+        for worker in workers {
             let reported_state = meta_client
                 .cluster_table::<WorkerStateMetadata>()
                 .get(worker.spec().name())
@@ -519,7 +519,7 @@ impl NodeInner {
             .await?;
 
         // TODO: Cache this across multiple reconcile_workers() calls.
-        let reported_worker_states = self.read_reported_worker_states().await?;
+        let reported_worker_states = self.read_reported_worker_states(&intended_workers).await?;
 
         let existing_workers = self.list_workers_impl().await?;
 
@@ -541,7 +541,7 @@ impl NodeInner {
                             | WorkerStateProto::STOPPING
                             | WorkerStateProto::FORCE_STOPPING
                             | WorkerStateProto::RESTART_BACKOFF => {
-                                WorkerStateMetadata_ReportedState::UPDATING
+                                WorkerStateMetadata_ReportedState::NOT_READY
                             }
                             WorkerStateProto::RUNNING => WorkerStateMetadata_ReportedState::READY,
                             WorkerStateProto::DONE => WorkerStateMetadata_ReportedState::DONE,
@@ -590,7 +590,15 @@ impl NodeInner {
         // eventually cleaned up.
         for (_, worker) in existing_workers {
             if worker.state() == WorkerStateProto::DONE {
-                // TODO: Remove the worker from our self.shared.state.workers
+                // TODO: Eventually add a state before DONE for cleanup like deleting or backing
+                // up worker state before we lose track of it (this needs to persist across
+                // restarts for any local assets).
+                self.shared
+                    .state
+                    .lock()
+                    .await
+                    .workers
+                    .retain(|worker| worker.spec.name() != worker.spec.name());
             } else {
                 self.stop_worker(worker.spec().name(), false).await?;
             }
@@ -935,6 +943,10 @@ impl NodeInner {
             container_config.add_mounts(mount);
 
             container_config.process_mut().add_args("/init".into());
+            container_config
+                .process_mut()
+                .args_mut()
+                .extend_from_slice(&self.shared.config.init_process_args()[1..]);
             container_config.process_mut().add_args("--".into());
         }
 
@@ -1361,9 +1373,8 @@ impl NodeInner {
             .await?
             .ok_or_else(|| err_msg("No such node"))?;
 
-        let client = rpc::Http2Channel::create(http::ClientOptions::try_from(
-            format!("http://{}", remote_node_meta.address()).as_str(),
-        )?)?;
+        let client =
+            rpc::Http2Channel::create(format!("http://{}", remote_node_meta.address()).as_str())?;
 
         let stub = BlobStoreStub::new(Arc::new(client));
 

@@ -1,12 +1,13 @@
 pub mod main;
 mod manager;
 
+use crypto::random::SharedRng;
 // Mainly for use by the 'cluster' binary which uses this for bootstrapping.
 pub use manager::Manager;
 
-pub fn new_worker_id() -> String {
-    use crypto::random::RngExt;
+pub async fn new_worker_id(rng: &dyn SharedRng) -> String {
+    use crypto::random::SharedRngExt;
 
-    let id = crypto::random::clocked_rng().uniform::<u64>();
+    let id = rng.uniform::<u64>().await;
     radix::base32_encode_cl64(id)
 }

@@ -38,12 +38,20 @@ pub struct Http2ChannelOptions {
 impl TryFrom<http::ClientOptions> for Http2ChannelOptions {
     type Error = Error;
 
-    fn try_from(value: http::ClientOptions) -> Result<Self, Self::Error> {
+    fn try_from(value: http::ClientOptions) -> Result<Self> {
         Ok(Self {
             http: value,
             retrying: Some(RetryingOptions::default()),
             max_request_buffer_size: 16 * 1024, // 16KB
         })
+    }
+}
+
+impl TryFrom<&str> for Http2ChannelOptions {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        http::ClientOptions::try_from(value)?.try_into()
     }
 }
 

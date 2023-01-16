@@ -45,10 +45,10 @@ Restarting a node:
 message NodeMetadata {
     uint64 id = 1;
 
-    // Address at which this node can be contacted including the port on which the control RPC
-    // server is running.
+    // Address at which this node can be contacted including the protocol and port on which the 
+    // control RPC server is running.
     //
-    // e.g. "10.0.0.102:10400"
+    // e.g. "http://10.0.0.102:10400"
     string address = 2;
 
     enum State {
@@ -148,15 +148,22 @@ message WorkerStateMetadata {
     enum ReportedState {
         UNKNOWN = 0;
 
-        // The node is currently starting or stopping this worker. It can't be reliably queried.
+        // Implies that worker_revision is out of date (not actually stored in the metadata).
         UPDATING = 1;
+
+        // The node is currently starting or stopping this worker. It can't be reliably queried.
+        NOT_READY = 2;
 
         // This worker is running on the assigned node and has passed readiness checks.
         // This is the only state in which it is ok for users to send traffic to this worker.
-        READY = 2;
+        READY = 3;
 
         // The worker isn't running and won't be re-started unless a new worker revision is available.
-        DONE = 3;
+        DONE = 4;
+
+        // This is a virtual state which is not stored but indicates that the corresponding WorkerMetadata.drain field is set.
+        DRAINING = 5;
+
     }
     ReportedState state = 2;
 

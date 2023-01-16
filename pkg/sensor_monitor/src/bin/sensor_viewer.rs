@@ -24,9 +24,7 @@ use sensor_monitor::proto::data::*;
 use sensor_monitor::viewer::MetricViewer;
 
 async fn run() -> Result<()> {
-    let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-        &"http://127.0.0.1:8001".parse()?,
-    )?)?);
+    let channel = Arc::new(rpc::Http2Channel::create("http://127.0.0.1:8001")?);
 
     let stub = MetricStub::new(channel);
 

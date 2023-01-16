@@ -17,7 +17,7 @@ pub struct LocalFileOpenOptions {
     write: bool,
     create: bool,
     create_new: bool,
-    create_synced: bool,
+    sync_on_flush: bool,
     truncate: bool,
     append: bool,
 
@@ -34,7 +34,7 @@ impl LocalFileOpenOptions {
             write: false,
             create: false,
             create_new: false,
-            create_synced: false,
+            sync_on_flush: false,
             truncate: false,
             append: false,
             direct: false,
@@ -67,9 +67,12 @@ impl LocalFileOpenOptions {
         self
     }
 
-    /// If set to true, the creation of the file will be synced to disk.
-    pub fn create_synced(&mut self, value: bool) -> &mut Self {
-        self.create_synced = value;
+    /// Normally when flush() is called, it will unblock when all written data
+    /// has been transferred out of the current process. But if this is set to
+    /// true, it will also wait for the data to be durably written to disk (or
+    /// whatever the final destination is for the filesystem).
+    pub fn sync_on_flush(&mut self, value: bool) -> &mut Self {
+        self.sync_on_flush = value;
         self
     }
 
@@ -87,6 +90,7 @@ impl LocalFileOpenOptions {
 pub struct LocalFile {
     file: FileHandle,
     path: LocalPathBuf,
+    sync_on_flush: bool,
 }
 
 impl LocalFile {
@@ -142,7 +146,7 @@ impl LocalFile {
 
         // TODO: We should also use this approach with mkdirat when creating files.
         let fd = {
-            if let Some(dir_path) = path.parent() && options.create_synced {
+            if let Some(dir_path) = path.parent() && options.sync_on_flush {
                 let dir_cpath = CString::new(dir_path.as_str())?;
 
                 let dir_fd = sys::OpenFileDescriptor::new(
@@ -170,7 +174,7 @@ impl LocalFile {
                 // if our assumptions are correct).
                 //
                 // TODO: For this to be correct, we will also need to fsync while using mkdirat.
-                if options.create_synced {
+                if options.sync_on_flush {
                     unsafe { sys::fsync(dir_fd.as_raw_fd()) }?;
                 }
 
@@ -188,6 +192,7 @@ impl LocalFile {
         Ok(Self {
             file: FileHandle::new(fd, true),
             path: path.to_owned(),
+            sync_on_flush: options.sync_on_flush,
         })
     }
 
@@ -252,6 +257,7 @@ impl std::convert::From<std::fs::File> for LocalFile {
         LocalFile {
             file: FileHandle::new(OpenFileDescriptor::new(f.into_raw_fd()), true),
             path: LocalPathBuf::from("/nonexistent"),
+            sync_on_flush: false,
         }
     }
 }
@@ -270,6 +276,10 @@ impl Writeable for LocalFile {
     }
 
     async fn flush(&mut self) -> Result<()> {
+        if self.sync_on_flush {
+            self.sync_data().await?;
+        }
+
         Ok(())
     }
 }

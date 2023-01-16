@@ -110,9 +110,9 @@ struct ServerClient {
 
 impl ServerClient {
     async fn create(addr: &str) -> Result<Self> {
-        let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-            &format!("http://{}", addr).parse()?,
-        )?)?);
+        let channel = Arc::new(rpc::Http2Channel::create(
+            format!("http://{}", addr).as_str(),
+        )?);
 
         let mut reflection = ServerReflectionClient::create(channel.clone()).await?;
 

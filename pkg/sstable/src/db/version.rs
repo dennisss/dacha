@@ -48,8 +48,7 @@ pub struct VersionSet {
     /// immutable_table is flushed to disk.
     prev_log_number: Option<u64>,
 
-    /// Last sequence flushed to tables (excluding recent entries in the write
-    /// ahead log).
+    /// Last sequence flushed to tables (excluding recent entries in the WAL).
     last_sequence: u64,
 
     release_callback: FileReleasedCallback,
@@ -95,11 +94,13 @@ impl VersionSet {
     ///
     /// - 'writer' should refer to an empty log file.
     /// - This can later be restored using 'recover_existing'
-    pub async fn write_to_new(&self, writer: &mut RecordWriter) -> Result<()> {
+    pub async fn write_to_new(&self, exclude_logs: bool, writer: &mut RecordWriter) -> Result<()> {
         let mut edit = VersionEdit::default();
         edit.next_file_number = Some(self.next_file_number);
-        edit.log_number = self.log_number.clone();
-        edit.prev_log_number = self.prev_log_number.clone();
+        if !exclude_logs {
+            edit.log_number = self.log_number.clone();
+            edit.prev_log_number = self.prev_log_number.clone();
+        }
         edit.last_sequence = Some(self.last_sequence);
         edit.comparator = Some(self.options.table_options.comparator.name().to_string());
 

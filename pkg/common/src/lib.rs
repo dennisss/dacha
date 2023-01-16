@@ -271,6 +271,11 @@ impl<T: PartialOrd> InRange for T {
     }
 }
 
+pub fn zeros(count: usize) -> &'static [u8] {
+    static ZEROS: &'static [u8] = &[0u8; 64 * 1024];
+    &ZEROS[0..count]
+}
+
 #[macro_export]
 macro_rules! tup {
     (($a:ident, $b:ident) = $e:expr) => {{

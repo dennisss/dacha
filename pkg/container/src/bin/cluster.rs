@@ -29,6 +29,18 @@ Testing with a single node cluster:
     <try stopping and restarting the node. everything should still work>
 
 
+
+Testing with a single node non-cluster:
+    cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
+
+    cargo run --bin cluster -- start_worker pkg/rpc_test/config/adder_server.task --node_addr=127.0.0.1:10400
+
+    cargo run --bin adder_client -- add 1 2 --target=127.0.0.1:30001
+
+    cargo run --bin adder_client -- busy_loop 0.1 --target=127.0.0.1:30001
+
+    cargo run --bin cluster -- list workers --node_addr=127.0.0.1:10400
+
 */
 
 #[macro_use]
@@ -72,6 +84,7 @@ use container::meta::client::ClusterMetaClient;
 use container::{
     meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec,
     ListWorkersRequest, ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
+    WorkerStateMetadata_ReportedState,
 };
 use container::{
     BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, WorkerMetadata, WorkerSpec,
@@ -173,6 +186,7 @@ struct StartWorkerCommand {
     #[arg(positional)]
     worker_spec_path: String,
 
+    /// Should be of the 'http(s)://ip:port'
     node_addr: String,
 }
 
@@ -245,9 +259,7 @@ struct NodeStubs {
 }
 
 async fn connect_to_node(node_addr: &str) -> Result<NodeStubs> {
-    let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-        &format!("http://{}", node_addr).parse()?,
-    )?)?);
+    let channel = Arc::new(rpc::Http2Channel::create(node_addr)?);
 
     Ok(NodeStubs {
         service: ContainerNodeStub::new(channel.clone()),
@@ -370,7 +382,8 @@ async fn run_bootstrap_inner(
         .put(&zone_record)
         .await?;
 
-    let manager = Manager::new(meta_client.clone()).into_service();
+    let manager =
+        Manager::new(meta_client.clone(), Arc::new(crypto::random::global_rng())).into_service();
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
     let manager_stub = container::ManagerStub::new(manager_channel);
 
@@ -597,12 +610,17 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
                     node_state = format!("\t({:?})", node_worker.state());
                 }
 
-                println!(
-                    "{}\t{:?}{}",
-                    worker.spec().name(),
-                    worker_state.state(),
-                    node_state
-                );
+                let state = {
+                    if worker.drain() {
+                        WorkerStateMetadata_ReportedState::DRAINING
+                    } else if worker.revision() != worker_state.worker_revision() {
+                        WorkerStateMetadata_ReportedState::UPDATING
+                    } else {
+                        worker_state.state()
+                    }
+                };
+
+                println!("{}\t{:?}{}", worker.spec().name(), state, node_state);
             }
         }
         ObjectKind::Blob => {
@@ -711,15 +729,11 @@ async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
 }
 
 async fn connect_to_manager(meta_client: Arc<ClusterMetaClient>) -> Result<ManagerStub> {
-    let resolver = Arc::new(
-        container::ServiceResolver::create(
-            "manager.system.job.local.cluster.internal",
-            meta_client,
-        )
-        .await?,
-    );
-
-    let manager_channel = rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver))?;
+    let manager_channel = container::service::create_rpc_channel(
+        "manager.system.job.local.cluster.internal",
+        meta_client,
+    )
+    .await?;
 
     let manager_stub = ManagerStub::new(Arc::new(manager_channel));
 

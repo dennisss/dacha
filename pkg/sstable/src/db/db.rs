@@ -209,7 +209,7 @@ impl EmbeddedDB {
                     .read(true)
                     .write(true)
                     .create(options.create_if_missing)
-                    .create_synced(options.create_if_missing),
+                    .sync_on_flush(options.create_if_missing),
             )
             .map_err(|_| err_msg("Failed to open the lockfile"))?;
 
@@ -292,7 +292,7 @@ impl EmbeddedDB {
             }
         };
 
-        version_set.write_to_new(&mut manifest).await?;
+        version_set.write_to_new(false, &mut manifest).await?;
         manifest.flush().await?;
 
         let identity = Self::uuidv4().await;
@@ -301,13 +301,12 @@ impl EmbeddedDB {
                 dir.identity(),
                 LocalFileOpenOptions::new()
                     .create(true)
-                    .create_synced(true)
+                    .sync_on_flush(true)
                     .truncate(true)
                     .write(true),
             )?;
             id_file.write_all(identity.as_bytes()).await?;
             id_file.flush().await?;
-            id_file.sync_data().await?;
         }
 
         dir.set_current_manifest(manifest_num).await?;
@@ -846,7 +845,10 @@ impl EmbeddedDB {
 
                 let mut new_manifest = RecordWriter::create_new(new_manifest_path).await?;
 
-                state.version_set.write_to_new(&mut new_manifest).await?;
+                state
+                    .version_set
+                    .write_to_new(false, &mut new_manifest)
+                    .await?;
 
                 drop(state);
 

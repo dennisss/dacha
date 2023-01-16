@@ -26,9 +26,7 @@ async fn run() -> Result<()> {
     port.set_number(30010u32);
     worker_req.spec_mut().add_ports(port);
 
-    let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-        &"http://127.0.0.1:10400".parse()?,
-    )?)?);
+    let channel = Arc::new(rpc::Http2Channel::create(&"http://127.0.0.1:10400")?);
 
     let stub = container::ContainerNodeStub::new(channel);
 

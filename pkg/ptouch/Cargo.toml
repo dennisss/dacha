@@ -8,3 +8,5 @@ common = { path = "../common" }
 usb = { path = "../usb" }
 graphics = { path = "../graphics" }
 image = { path = "../image" }
+executor = { path = "../executor" }
+file = { path = "../file" }

@@ -64,9 +64,9 @@ impl MetastoreClient {
     /// This is mainly for use for testing where we only need to communicate
     /// with a single instance.
     pub(super) async fn create_direct(addr: SocketAddr) -> Result<Self> {
-        let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-            &format!("http://{}", addr.to_string()).parse()?,
-        )?)?);
+        let channel = Arc::new(rpc::Http2Channel::create(
+            format!("http://{}", addr.to_string()).as_str(),
+        )?);
 
         Self::create_impl(channel, None).await
     }
