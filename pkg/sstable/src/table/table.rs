@@ -10,6 +10,7 @@ use std::sync::Arc;
 use common::algorithms::SliceLike;
 use common::bytes::Bytes;
 use common::errors::*;
+use common::failure::ResultExt;
 use executor::channel::oneshot;
 use executor::sync::Mutex;
 use file::LocalFile;
@@ -73,7 +74,9 @@ struct SSTableFilter {
 
 impl SSTable {
     pub async fn open<P: AsRef<LocalPath>>(path: P, options: SSTableOpenOptions) -> Result<Self> {
-        Self::open_impl(path.as_ref(), options).await
+        Self::open_impl(path.as_ref(), options)
+            .await
+            .map_err(|e| format_err!("While opening SSTable: {:?}: {}", path.as_ref(), e))
     }
 
     async fn open_impl(path: &LocalPath, options: SSTableOpenOptions) -> Result<Self> {
@@ -113,15 +116,19 @@ impl SSTable {
                 let block = DataBlock::read(&mut file, &footer, &handle).await?;
                 props = Self::parse_properties(block.block())?;
                 println!("{:?}", props);
+                continue;
             } else if let Some(filter_name) = name.strip_prefix("filter.") {
                 if filter.is_some() {
                     return Err(err_msg("More than one filter in table"));
                 }
 
-                let policy = options
-                    .filter_registry
-                    .get(filter_name)
-                    .ok_or_else(|| format_err!("Unknown filter with name: {}", filter_name))?;
+                let policy = match options.filter_registry.get(filter_name) {
+                    Some(v) => v,
+                    None => {
+                        eprintln!("Unknown filter with name: {}", filter_name);
+                        continue;
+                    }
+                };
 
                 let block = FilterBlock::read(&mut file, &footer, &handle).await?;
 

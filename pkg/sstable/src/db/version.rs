@@ -128,7 +128,7 @@ impl VersionSet {
 
         let mut highest_file_number_seen = 0;
 
-        while let Some(edit) = VersionEdit::read(reader).await? {
+        while let Some(mut edit) = VersionEdit::read(reader).await? {
             // println!("EDIT: {:#?}", edit);
 
             // TODO: Verify that all fields are merged.
@@ -163,7 +163,8 @@ impl VersionSet {
                     ));
                 }
 
-                highest_file_number_seen = log_number;
+                // This is updated later down.
+                // highest_file_number_seen = log_number;
 
                 base_edit.log_number = Some(log_number);
             }
@@ -205,6 +206,8 @@ impl VersionSet {
                 }
             }
 
+            edit.new_files.sort_by_key(|f| f.number);
+
             for file in edit.new_files {
                 if file.number <= highest_file_number_seen {
                     return Err(err_msg("Already saw a file that a >= file number"));
@@ -218,10 +221,19 @@ impl VersionSet {
 
                 version.insert(file, None, release_callback.clone(), &options);
             }
+
+            // RocksDB may re-use the same number for logs and tables so for compatibility
+            // we only require increasing log numbers across different edits.
+            if let Some(log_num) = base_edit.log_number {
+                highest_file_number_seen = highest_file_number_seen.max(log_num);
+            }
         }
 
         // TODO: Check if leveldb can ever be in a state where this is not set but the
         // CURRENT file was written.
+        //
+        // TODO: Eventually we will also need to account for all extra WAL files in the
+        // directory that rocksdb hasn't marked in the manifest.
         let next_file_number = base_edit
             .next_file_number
             .ok_or_else(|| err_msg("Manifest missing a next_file_number"))?;

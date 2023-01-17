@@ -530,6 +530,8 @@ impl RecordReader {
         // the file contains corruption.
         file.set_len(append_offset).await?;
 
+        file.seek(append_offset);
+
         Ok(Some(RecordWriter {
             path: self.path,
             file: Box::new(file),

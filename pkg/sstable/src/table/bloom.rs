@@ -92,6 +92,8 @@ impl FilterPolicy for BloomFilterPolicy {
     }
 
     fn create(&self, keys: Vec<&[u8]>, out: &mut Vec<u8>) {
+        // TODO: In most cases, we will know the number of keys ahead of time so could
+        // probably implement this as an incremental operation.
         let mut nbits = keys.len() * self.bits_per_key;
         if nbits < 64 {
             nbits = 64;

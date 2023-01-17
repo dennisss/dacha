@@ -16,6 +16,9 @@ const BLOCK_HANDLE_MAX_SIZE: usize = 20;
 const LEGACY_FOOTER_SIZE: usize = 2 * BLOCK_HANDLE_MAX_SIZE + MAGIC_SIZE;
 const FOOTER_SIZE: usize = 2 * BLOCK_HANDLE_MAX_SIZE + 1 + 4 + MAGIC_SIZE;
 
+/// V2 introduces a new compression format we don't support.
+const MAX_SUPPORTED_FOOTER_VERSION: u32 = 1;
+
 // From https://github.com/facebook/rocksdb/blob/ca7ccbe2ea6be042f90f31eb75ad4dca032dbed1/table/format.cc#L163:
 // legacy footer format:
 //    metaindex handle (varint64 offset, varint64 size)
@@ -80,6 +83,10 @@ impl Footer {
                 return Err(err_msg(
                     "Not allowed to have old footer version with new format",
                 ));
+            }
+
+            if footer_version >= MAX_SUPPORTED_FOOTER_VERSION {
+                return Err(err_msg("SSTable footer version not supported"));
             }
 
             Ok(Self {

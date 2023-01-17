@@ -12,6 +12,9 @@ pub enum TableKey {
         user_key: Bytes,
         sub_key: UserDataSubKey,
     },
+
+    /// Singleton row which contains the date/time at which all the writes with
+    /// the same sequence number were written.
     TransactionTime,
 }
 

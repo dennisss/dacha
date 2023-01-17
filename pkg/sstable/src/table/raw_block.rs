@@ -1,10 +1,10 @@
 use common::errors::*;
+use common::io::Readable;
 use compression::transform::transform_to_vec;
 use compression::zlib::ZlibDecoder;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 use file::LocalFile;
-use common::io::Readable;
 
 use crate::table::block_handle::BlockHandle;
 use crate::table::footer::*;

@@ -518,16 +518,16 @@ mod tests {
 
         const VALUES: &[u64] = &[100000, std::u64::MAX];
 
-        for value in VALUES {
+        for value in (0..10_000).chain(VALUES.iter().cloned()) {
             let mut out = vec![];
-            serialize_varint(*value, &mut out);
+            serialize_varint(value, &mut out);
             let (val, rest) = parse_varint(&out).unwrap();
-            assert_eq!(val, *value);
+            assert_eq!(val, value);
             assert_eq!(rest.len(), 0);
         }
 
-        let mut overflow_data = [0xffu8; 10];
-        overflow_data[9] = 0x7f;
+        let mut overflow_data = [0xffu8; 11];
+        // overflow_data[9] = 0x7f;
 
         let res = parse_varint(&overflow_data);
         println!("{:x?}", res);

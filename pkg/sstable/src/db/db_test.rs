@@ -11,6 +11,8 @@ use crate::iterable::Iterable;
 use crate::table::CompressionType;
 use crate::{EmbeddedDB, EmbeddedDBOptions};
 
+use super::SnapshotIterator;
+
 struct TestDB {
     dir: TempDir,
     db: EmbeddedDB,
@@ -211,7 +213,7 @@ TODO: Tests to add:
 - DB: Read a consistent snapshot while writing new keys.
     ^ Yes, this would be a good test.
     ^ For example, reading some values which are going to be moved to various compacted files.
-
+- test reading from the immutable memtable.
 
 */
 
@@ -252,7 +254,7 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "IDENTITY",
             // Switched to new log and created a table.
             "000004.log",
-            "000005.ldb"
+            "000005.sst"
         ]
     ));
 
@@ -275,10 +277,10 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "LOCK",
             "MANIFEST-000002",
             "IDENTITY",
-            "000005.ldb",
+            "000005.sst",
             // Switched to new log and created a table.
             "000006.log",
-            "000007.ldb"
+            "000007.sst"
         ]
     ));
 
@@ -309,10 +311,10 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "LOCK",
             "MANIFEST-000002",
             "IDENTITY",
-            "000005.ldb",
-            "000007.ldb",
+            "000005.sst",
+            "000007.sst",
             "000008.log",
-            "000009.ldb",
+            "000009.sst",
         ]
     ));
 
@@ -338,14 +340,14 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "LOCK",
             "MANIFEST-000002",
             "IDENTITY",
-            "000005.ldb",
-            "000007.ldb", // Deleted
-            "000009.ldb", // Deleted
+            "000005.sst",
+            "000007.sst", // Deleted
+            "000009.sst", // Deleted
             "000010.log",
-            // "000011.ldb", // Initial flush of memtable to level 0
-            "000012.ldb", // Part 1/3 of compaction output
-            "000013.ldb", // Part 2/3 of compaction output
-            "000014.ldb", // Part 3/3 of compaction output
+            // "000011.sst", // Initial flush of memtable to level 0
+            "000012.sst", // Part 1/3 of compaction output
+            "000013.sst", // Part 2/3 of compaction output
+            "000014.sst", // Part 3/3 of compaction output
         ]
     ));
 
@@ -364,14 +366,14 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "LOCK",
             "MANIFEST-000002",
             "IDENTITY",
-            "000005.ldb",
-            "000007.ldb", // Deleted
-            "000009.ldb", // Deleted
+            "000005.sst",
+            "000007.sst", // Deleted
+            "000009.sst", // Deleted
             "000010.log",
-            // "000011.ldb", // Initial flush of memtable to level 0
-            "000012.ldb", // Part 1/3 of compaction output
-            "000013.ldb", // Part 2/3 of compaction output
-            "000014.ldb", // Part 3/3 of compaction output
+            // "000011.sst", // Initial flush of memtable to level 0
+            "000012.sst", // Part 1/3 of compaction output
+            "000013.sst", // Part 2/3 of compaction output
+            "000014.sst", // Part 3/3 of compaction output
         ]
     ));
 
@@ -387,14 +389,14 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "LOCK",
             "MANIFEST-000002",
             "IDENTITY",
-            "000005.ldb",
-            // "000007.ldb", // Deleted
-            // "000009.ldb", // Deleted
+            "000005.sst",
+            // "000007.sst", // Deleted
+            // "000009.sst", // Deleted
             "000010.log",
-            // "000011.ldb", // Initial flush of memtable to level 0
-            "000012.ldb", // Part 1/3 of compaction output
-            "000013.ldb", // Part 2/3 of compaction output
-            "000014.ldb", // Part 3/3 of compaction output
+            // "000011.sst", // Initial flush of memtable to level 0
+            "000012.sst", // Part 1/3 of compaction output
+            "000013.sst", // Part 2/3 of compaction output
+            "000014.sst", // Part 3/3 of compaction output
         ]
     ));
 
@@ -619,6 +621,43 @@ async fn embedded_db_leveldb_compatibility_prefixed_test() -> Result<()> {
 
     Ok(())
 }
+
+// TODO: We must support reading all log files in the DB directory (ignoring
+// log_number in the VersionSet) for this to pass.
+/*
+#[testcase]
+async fn embedded_db_rocksdb_compatibility_test() -> Result<()> {
+    async fn check_next(iter: &mut SnapshotIterator, key: &[u8], value: &[u8]) -> Result<()> {
+        let entry = iter.next().await?.unwrap();
+        println!("{:?}", entry.key);
+        assert_eq!(&entry.key[..], key);
+        assert_eq!(&entry.value.unwrap()[..], value);
+        Ok(())
+    }
+
+    let mut options = EmbeddedDBOptions::default();
+    options.read_only = true;
+
+    let db = EmbeddedDB::open(&project_path!("testdata/sstable/rocksdb"), options).await?;
+
+    println!("Opened!");
+
+    let snapshot = db.snapshot().await;
+    let mut iter = snapshot.iter().await?;
+
+    // TODO: Also test reverse seeking
+
+    iter.seek(b"1573403083724-123").await?;
+    check_next(&mut iter, b"1573403083724-123", b"time123").await?;
+    check_next(&mut iter, b"1573403083724-124", b"time124").await?;
+    check_next(&mut iter, b"1573403083724-125", b"time125").await?;
+    check_next(&mut iter, b"1573403083724-126", b"time126").await?;
+
+    // Test prefix seek.
+
+    Ok(())
+}
+*/
 
 // TODO: Test that if we swap memtables and start using a new log, we can
 // recover both memtables before level 0 table for the immutable log is written

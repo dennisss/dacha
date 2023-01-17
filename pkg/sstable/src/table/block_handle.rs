@@ -3,7 +3,10 @@ use protobuf::wire::{parse_varint, serialize_varint};
 
 #[derive(Debug)]
 pub struct BlockHandle {
+    /// Position of the block relative to the start of the file.
     pub offset: u64,
+
+    /// Size of this block in the file (compressed).
     pub size: u64,
 }
 
