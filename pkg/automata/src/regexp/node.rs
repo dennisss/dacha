@@ -125,7 +125,22 @@ impl RegExpNode {
                         }
                     }
                     Quantifier::Between(lower, upper) => {
-                        panic!("Not supported");
+                        let base = a.clone();
+
+                        let mut base_opt = base.clone();
+                        base_opt.join(FiniteStateMachine::zero());
+
+                        if *lower == 0 {
+                            a = FiniteStateMachine::zero();
+                        }
+
+                        for i in 1..*lower {
+                            a.join(base.clone());
+                        }
+
+                        for i in 0..(*upper - *lower) {
+                            a.then(base_opt.clone());
+                        }
                     }
                     Quantifier::NOrMore(n) => {
                         // Same as ZeroOrOne

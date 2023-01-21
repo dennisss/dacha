@@ -1,0 +1,13 @@
+[package]
+name = "markdown_test"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+json = { path = "../../json" }
+markdown = { path = ".." }
+macros = { path = "../../macros" }
+file = { path = "../../file" }
+executor = { path = "../../executor" }

@@ -126,7 +126,7 @@ impl<'a, P: Program + Copy> RegExpMatch<'a, P> {
         None
     }
 
-    pub fn group_str(&self, i: usize) -> Option<Result<&str>> {
+    pub fn group_str(&self, i: usize) -> Option<Result<&'a str>> {
         if let Some(input) = self.group(i) {
             // TODO: This is only possible if we use a UTF-8 compatible encoding.
             return Some(std::str::from_utf8(input).map_err(|e| Error::from(e)));

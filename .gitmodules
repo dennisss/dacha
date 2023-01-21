@@ -19,3 +19,6 @@
 [submodule "third_party/flexypin"]
 	path = third_party/flexypin
 	url = git@github.com:solderparty/flexypin.git
+[submodule "third_party/commonmark-spec"]
+	path = third_party/commonmark-spec
+	url = git@github.com:commonmark/commonmark-spec.git

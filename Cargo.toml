@@ -94,6 +94,8 @@ members = [
 	"pkg/tools",
 	"pkg/file",
 	"pkg/base/error",
+	"pkg/markdown",
+	"pkg/markdown/test",
 ]
 
 [profile.dev]

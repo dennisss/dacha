@@ -416,6 +416,11 @@ impl EmbeddedDB {
             };
 
             log = Some(log_reader.into_writer(true).await?.unwrap());
+            if options.read_only {
+                log = None;
+            } else {
+                log = Some(log_reader.into_writer(true).await?.unwrap());
+            }
         }
 
         // TODO: Exists may ignore errors such as permission errors.

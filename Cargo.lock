@@ -1357,6 +1357,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "markdown"
+version = "0.0.0"
+dependencies = [
+ "automata",
+ "common",
+ "parsing",
+ "regexp_macros",
+]
+
+[[package]]
+name = "markdown_test"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "json",
+ "macros",
+ "markdown",
+ "parsing",
+]
+
+[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

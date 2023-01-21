@@ -142,36 +142,10 @@ impl Compiler {
                 match quantifier {
                     Quantifier::ZeroOrOne => {
                         // a?
-                        let split_idx = self.program_counter();
-                        self.add_instruction(Instruction::Split(0, 0)); // Placeholder.
-
-                        self.compile_node(node)?;
-
-                        let a = split_idx + 1;
-                        let b = self.program_counter();
-
-                        self.output.program[split_idx as usize] = if *greedy {
-                            Instruction::Split(a, b)
-                        } else {
-                            Instruction::Split(b, a)
-                        };
+                        self.compile_optional_node(node, *greedy)?;
                     }
                     Quantifier::ZeroOrMore => {
-                        let split_idx = self.program_counter();
-                        self.add_instruction(Instruction::Split(0, 0)); // Placeholder.
-
-                        self.compile_node(node)?;
-
-                        self.add_instruction(Instruction::Jump(split_idx));
-
-                        let a = split_idx + 1;
-                        let b = self.program_counter();
-
-                        self.output.program[split_idx as usize] = if *greedy {
-                            Instruction::Split(a, b)
-                        } else {
-                            Instruction::Split(b, a)
-                        };
+                        self.compile_zero_or_more_node(node, *greedy)?;
                     }
                     Quantifier::OneOrMore => {
                         let start_idx = self.program_counter();
@@ -185,11 +159,27 @@ impl Compiler {
                             Instruction::Split(b, a)
                         });
                     }
-                    Quantifier::ExactlyN(num) => {
-                        // TODO: Instead implement support for counters in the state.
-                        for _ in 0..*num {
+                    &Quantifier::Between(lower, upper) => {
+                        for _ in 0..lower {
                             self.compile_node(node)?;
                         }
+
+                        for _ in 0..(upper - lower) {
+                            self.compile_optional_node(node, *greedy)?;
+                        }
+                    }
+                    &Quantifier::ExactlyN(num) => {
+                        // TODO: Instead implement support for counters in the state.
+                        for _ in 0..num {
+                            self.compile_node(node)?;
+                        }
+                    }
+                    &Quantifier::NOrMore(num) => {
+                        for _ in 0..num {
+                            self.compile_node(node)?;
+                        }
+
+                        self.compile_zero_or_more_node(node, *greedy)?;
                     }
                     _ => {
                         println!("Unsupported quantifier: {:?}", quantifier);
@@ -288,6 +278,44 @@ impl Compiler {
         End,
 
         */
+    }
+
+    fn compile_optional_node(&mut self, node: &RegExpNode, greedy: bool) -> Result<()> {
+        let split_idx = self.program_counter();
+        self.add_instruction(Instruction::Split(0, 0)); // Placeholder.
+
+        self.compile_node(node)?;
+
+        let a = split_idx + 1;
+        let b = self.program_counter();
+
+        self.output.program[split_idx as usize] = if greedy {
+            Instruction::Split(a, b)
+        } else {
+            Instruction::Split(b, a)
+        };
+
+        Ok(())
+    }
+
+    fn compile_zero_or_more_node(&mut self, node: &RegExpNode, greedy: bool) -> Result<()> {
+        let split_idx = self.program_counter();
+        self.add_instruction(Instruction::Split(0, 0)); // Placeholder.
+
+        self.compile_node(node)?;
+
+        self.add_instruction(Instruction::Jump(split_idx));
+
+        let a = split_idx + 1;
+        let b = self.program_counter();
+
+        self.output.program[split_idx as usize] = if greedy {
+            Instruction::Split(a, b)
+        } else {
+            Instruction::Split(b, a)
+        };
+
+        Ok(())
     }
 
     fn compile_alternation<T, F: Fn(&mut Compiler, &T) -> Result<()>>(

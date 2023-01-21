@@ -1000,8 +1000,6 @@ impl DirectClientRunner {
 
             let mut tls_client = crypto::tls::Client::new();
 
-            // TODO: Include a timeout in this as well (or make the connect_timeout cover
-            // this entire function).
             let tls_stream = tls_client.connect(reader, writer, client_options).await?;
 
             // TODO: Save handshake info so that the user can access it.
