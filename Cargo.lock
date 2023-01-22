@@ -50,7 +50,7 @@ checksum = "a4c527152e37cf757a3f78aae5a06fbeefdb07ccc535c980a3208ee3060dd544"
 
 [[package]]
 name = "asn"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "asn_compiler",
  "common",
@@ -60,7 +60,7 @@ dependencies = [
 
 [[package]]
 name = "asn_compiler"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "base_radix",
  "common",

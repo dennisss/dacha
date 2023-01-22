@@ -10,7 +10,7 @@ members = [
 	"pkg/net",
 	"pkg/reflection",
 	"pkg/asn",
-	"pkg/asn_compiler",
+	"pkg/asn/compiler",
 	"pkg/crypto",
 	"pkg/parsing",
 	"pkg/parsing_compiler",

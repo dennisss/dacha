@@ -1,10 +1,10 @@
 [package]
 name = "asn"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2018"
 
 [dependencies]
 math = { path = "../math" }
 common = { path = "../common" }
 parsing = { path = "../parsing" }
-asn_compiler = { path = "../asn_compiler" }
+asn_compiler = { path = "./compiler" }

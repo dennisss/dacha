@@ -11,4 +11,4 @@ math = { path = "../../pkg/math" }
 lazy_static = "1.4.0"
 
 [build-dependencies]
-asn_compiler = { path = "../../pkg/asn_compiler" }
+asn_compiler = { path = "../../pkg/asn/compiler" }
