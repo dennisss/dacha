@@ -62,6 +62,13 @@ impl Value {
             _ => None,
         }
     }
+
+    pub fn get_number(&self) -> Option<f64> {
+        match self {
+            Self::Number(v) => Some(*v),
+            _ => None,
+        }
+    }
 }
 
 impl std::ops::Index<usize> for Value {

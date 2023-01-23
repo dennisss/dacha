@@ -1,9 +1,9 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::args::{ArgFieldType, ArgType, ArgsType, RawArgValue, RawArgs};
-use crate::errors::*;
+use base_error::*;
 
+use crate::{ArgFieldType, ArgType, ArgsType, RawArgValue, RawArgs};
 pub struct CommaSeparated<T> {
     pub values: Vec<T>,
     hidden: (),

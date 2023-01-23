@@ -1,117 +1,49 @@
-The Repository
-==============
+# dacha
 
-This is a monorepo for housing many exciting projects and research implementations that I'm building. Individual subprojects are located in the `pkg/[name]` folders.
+This is a monorepo/ecosystem of software/hardware solutions built by [Dennis](https://github.com/dennisss). Code is written primarily in Rust. Check out the partial list of what's available below.
 
+## Components
 
-Next steps:
-- Fix the cluster_node_setup script to re-build the binary each time.
-- Improve the experience with running the builder.
-- Blinkstick node identification task.
-	- Given an RPC, can identify a node.
-	- Small CLI for identifying the node.
+### Systems
 
+- [Cluster Orchestration](./pkg/container/README.md) : Kubernetes/Borg like containerization and service mesh solution.
+- [Metadata Storage](./pkg/datastore/README.md) : Chubby/Etcd like key-value store.
+- [Builder](./pkg/builder/README.md) : A Bazel/Buck like dependency graph based builded system.
 
-Listing
--------
+### Libraries
 
-- `raft`: Implementation of Raft consensus and everything needed to make a replicated state machine from an existing non-replicated one
-
-- `haystack`: (Re-)Implementation of the Facebook Haystack distributed photo (or blob) store written in Rust
-
-- `μsvg`: Aggressive SVG minifier written in Node.js
-
-
-Building
---------
-
-Install Rust using `rustup install nightly-2019-01-23`
-
-READ ME: https://github.com/leandromoreira/digital_video_introduction
-
-- Rust based projects
-	- Require nightly to be installed
-	- Build most recently on `rustc 1.33.0-nightly (19f8958f8 2019-01-23)`
-		- Mainly requires for futures-await
+- [Executor](./pkg/executor/index.md): Runtime for executing async futures.
+- [CLI Arguments Parser](./pkg/base/args/index.md)
+- [Cryptography](./pkg/crypto/index.md): Suite of most common encryption/hashing/randomness
+  algorithms. Also includes support for TLS and X.509.
+- [HTTP](./pkg/http/index.md): HTTP 1/2 client/server implementation.
+- [RPC](./pkg/rpc/README.md): gRPC compatible remote procedure call framework.
+- [Math](./pkg/math/index.md): Linear algebra, optimization, geometric algorithms, big integers, etc.
+- [Compression](./pkg/compression/index.md)
+- [Linux Syscall Bindings](./pkg/sys/)
+- [USB Device/Host Driver](./pkg/usb/)
+- [JSON](./pkg/json/)
+- [Image Encoding/Decoding](./pkg/image/)
+- [Raft](./pkg/raft/README.md) : Implementation of Raft consensus and everything need to make a replicated state machine from an existing non-replicated one.
+- [Embedded DB](./pkg/sstable/index.md) : A LSM style single process database compatible with RocksDB/LevelDB.
+- [Graphics](./pkg/graphics/) : A UI and rendering framework.
 
 
-General long term implementation order:
-- See also https://github.com/antirez/disque
+### Compilers
 
-- See also the space of read-only databases:
-	- PalDB: https://engineering.linkedin.com/blog/2015/10/open-sourcing-paldb--a-lightweight-companion-for-storing-side-da
+- [Automata / Regular Expressions](./pkg/automata/index.md)
+- [Protobuf](./pkg/protobuf/index.md): Support for serialization/deserialization of Protocol Buffers either via code generation or dynamic reflection.
+- [ASN.1](./pkg/asn/index.md): Compiler for safe accessors and serialization/deserialization of ASN.1 messages.
+- [Markdown](./pkg/markdown/index.md)
+- [Skylark](./pkg/skylark/README.md): Python like evaluation.
 
-- Raft
-- Chubby (based on Raft for now)
-	- Mainly a future prerequisite to make it easier to implement everything else without 
+## Directory Structure
 
-- Dynamo (would be greatly simplified by having Chubby just for maintaining a device list)
-	- Dynamo uses a Gossip protocol (probably depends on something like UDP Broadcast/Multicast)
-	- But both of modes are hard to use in cloud environments
-		- In Kubernetes this would be equivalent to fetching the list of pods in a deployment or service
-		- Otherwise, trivially implementable given an ambient key-value store present based on a common key prefix, heartbeats, etc.
-			- This would then be extendable back to what we do right now in an adhoc way for the haystack via SQL 
-			
+Directories under this repository are used as follows:
 
-- S3/Cloud Storage style Object Storage
-	- Create a pending file record allocated to some number of servers
-	- Transfer over to a quorum of them
-	- Basically upload over to GFS
-	- GFS master deals with maintaining minimum consistency levels
-		- This would be for a single-datacenter configuration
-		- For multi-
-	- Mark the file as uploaded with 
-
-	- This is how Google Cloud Storage uses
-		- https://www.infoq.com/presentations/Google-Cloud-Storage
-
-https://cloud.google.com/files/storage_architecture_and_challenges.pdf
-	- BlobStore supposedly built on top of BigTable (I assume mainly just for performing deduplication based on file hashes)
-
-https://medium.com/@jerub/the-production-environment-at-google-8a1aaece3767
-	- Also makes reference to a Blobstore system 
-	- The general idea though is still that of atomic writes of a single file
-		- Basically write a huge file into GFS
-		- Ideally it should support good sequential read-back performance (so chunks largely appended together)
-
-
-- CosmosDB overview
-	- https://www.systutorials.com/3222/microsofts-cosmos-service/
-
-- GFS (depends on Chubby)
-- BigTable (depends on GFS + Chubby)
-- MegaStore (depends on GFS + Chubby + a 2 phase commit protocol functional)
-- Spanner
-	- Just up to the constraints of mapking a distributed key-value store
-	- BigTable + Linearizability
-
-
-
-See also MITs Chord DHT
-- https://github.com/sit/dht
-
-
-
-
-How would one build Colossus
-- Issues with GFS
-	- Single master
-	- Large files can get unwieldy for operations
-	- Some more info on it: http://www.pdsw.org/pdsw-discs17/slides/PDSW-DISCS-Google-Keynote.pdf
-- v2/Colossus
-	- Balances load across disks of different sizes
-		- Ideally keep equal parts hot data per disk to maximize usage of IOPS
-	- The key difference is that metadata is not sharded
-		- Basically run Colossus on BigTable on Colossus (or originally GFS)
-		- Root level metadata about tablet placement should fit in memory an can likely have much lower availability
-
-	- Then we have a more sophisticated notion of replication groups
-		- How to best do multi-region replication groups
-			- Using something like spanner, we can still maintain strong global consistency
-			- Obviously if we can't contact a quorum of other datacenters then we can't ever satisfy global replication
-		- A lesser task we can agree on
-			- Find some non-quorum of datacenters that we can agree on
-			- As long as the number is above some threshold, we can agree that something is written
-			- Main goal becomes ensuring consistency over the long term
-			- Obviously no longer strongly consistent without a quorum
+- `pkg/[name](/[subname])*` : First party Rust crates
+- `doc/` : General documentation not associated with any specific package
+- `testdata/` : Data for testing stuff under `pkg/`
+- `third_party/` : Code and data dependencies imported from external sources.
+    - As a general rule of thumb, we'd prefer to clone any dependencies into here rather than relying on package manager based vendoring.
 

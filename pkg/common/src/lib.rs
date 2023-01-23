@@ -52,10 +52,11 @@ pub extern crate nix;
 extern crate macros;
 
 #[cfg(feature = "std")]
+pub extern crate base_args as args;
+
+#[cfg(feature = "std")]
 pub mod algorithms;
 pub mod any;
-#[cfg(feature = "std")]
-pub mod args;
 #[cfg(feature = "std")]
 pub mod async_fn;
 pub mod attribute;

@@ -33,10 +33,10 @@ pub trait Object {
 /// A collection of owned objects of some types.
 ///
 /// Objects in a pool can be referenced via two reference types:
-/// - ObjectPoolRoot: Strong pointer to an object. Implies that the referenced
+/// - ObjectStron: Strong pointer to an object. Implies that the referenced
 ///   object and all objects it references can't be deleted while at least one
-///   ObjectPoolRoot struct referencing it is still alive.
-/// - Object: Weak pointer to an object. An object only referenced by Object
+///   ObjectStron struct referencing it is still alive.
+/// - ObjectWeak: Weak pointer to an object. An object only referenced by Object
 ///   structs will be garbage collected once all internal references to it from
 ///   strong pointers are removed.
 ///

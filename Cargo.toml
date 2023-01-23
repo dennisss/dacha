@@ -41,7 +41,7 @@ members = [
 	"pkg/xml",
 	"third_party/crates",
 	"pkg/parsing_test",
-	"pkg/regexp_macros",
+	"pkg/automata/regexp_macros",
 	"third_party/google",
 	"pkg/json",
 	"pkg/peripheral",
@@ -96,6 +96,7 @@ members = [
 	"pkg/base/error",
 	"pkg/markdown",
 	"pkg/markdown/test",
+	"pkg/base/args",
 ]
 
 [profile.dev]

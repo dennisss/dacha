@@ -735,7 +735,7 @@ async fn connect_to_manager(meta_client: Arc<ClusterMetaClient>) -> Result<Manag
     )
     .await?;
 
-    let manager_stub = ManagerStub::new(Arc::new(manager_channel));
+    let manager_stub = ManagerStub::new(manager_channel);
 
     Ok(manager_stub)
 }

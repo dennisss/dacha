@@ -19,9 +19,10 @@ chrono = { version = "0.4.19", optional = true }
 arrayref = "0.3.5"
 nix = { version = "0.21.0", optional = true }
 base_error = { path = "../base/error" }
+base_args = { path = "../base/args", optional = true }
 macros = { path = "../macros" }
 
 [features]
 default = ["std"]
 alloc = ["base_error/alloc"]
-std = ["alloc", "base_error/std", "libc", "base64", "async-trait", "failure", "futures", "futures-util", "bytes", "lazy_static", "async-std", "chrono", "nix"]
+std = ["alloc", "base_error/std", "libc", "base64", "async-trait", "failure", "futures", "futures-util", "bytes", "lazy_static", "async-std", "chrono", "nix", "base_args"]

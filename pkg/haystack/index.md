@@ -1,13 +1,10 @@
-Finding a needle in Haystack: Facebook’s photo storage
-======================================================
+# Finding a needle in Haystack: Facebook's photo storage
 
 This is an implementation of a distributed object/photo store as described by Facebook's paper named the same as the title above
 
 This is an implementation that tries to stay true to the original implementation as much as possible
 
-
-Setup
------
+## Setup
 
 0. Dependencies:
 	- `sudo apt install libpq-dev`
@@ -38,8 +35,7 @@ Setup
 	- TODO
 
 
-Usage
------
+## Usage
 
 Currently the easiest way to interact with the store is via the CLI client:
 
@@ -67,8 +63,8 @@ Currently the easiest way to interact with the store is via the CLI client:
 		- This will delete a photo along with ALL of its `alt_key` components
 
 
-TODOs
------
+## TODOs
+
 - Haystress
 - Better support for multi-machine networks and a CDN routing configuration
 - Sharding of caches/stores/pitch-forks per region
@@ -85,8 +81,8 @@ TODOs
 	- 
 
 
-Production Notes
-----------------
+## Production Notes
+
 - Both the store and cache machines should be shutdown gracefully using a SIGINT whenever possible
 - Attaching more space to a store currently requires restarting the store process running on that machine
 - For optimal performance, only start one store process per RAID/disk configuration / machine.
@@ -96,8 +92,7 @@ Production Notes
 
 TODO: Would be nice to just have a set of Kubernetes configs for this (or a helm package encapsulating all of it)
 
-Filesystem
-----------
+## Filesystem
 
 Facebook's filesystem choice is XFS:
 - RAID 6 array of 12 x 1TB SATA drives
@@ -121,8 +116,7 @@ Replicating this:
 - To replicate the preallocation optimization, we use the `fallocate` linux system call if available
 
 
-Design Invariants
------------------
+## Design Invariants
 
 - The cookie for all alt keys under a single photo key are the same
 	- This is consistent with how facebook does it and helps reduce the amount of storage needed in the directory
@@ -136,8 +130,8 @@ Design Invariants
 - Once a photo is marked as deleted, it can not be undeleted
 
 
-Other open source implementations
----------------------------------
+## Other open source implementations
+
 - https://github.com/chrislusf/seaweedfs
 - https://github.com/hackeryoung/haystack
 - https://github.com/Topface/backpack

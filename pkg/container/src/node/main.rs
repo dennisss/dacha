@@ -134,8 +134,7 @@ pub fn main() -> Result<()> {
     println!("Running as group: {}", group_entry.name);
 
     // Validate that all ids are consistent and there is no chance of escalating
-    // them later. NOTE: We don't run setgroups() so whatever supplementary
-    // groups we already have will be preserved.
+    // them later.
     nix::unistd::setresuid(uid.real, uid.real, uid.real)?;
     nix::unistd::setresgid(gid.real, gid.real, gid.real)?;
     let _ = nix::unistd::setfsuid(uid.real);
@@ -282,12 +281,27 @@ async fn run(
 
     setup_child.wait(FINISHED_BYTE)?;
 
-    if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
-        return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
-    }
+    unsafe {
+        sys::prctl(
+            sys::PR_SET_PDEATHSIG,
+            sys::Signal::SIGKILL.to_raw() as u64,
+            0,
+            0,
+            0,
+        )
+        .map_err(|e| format_err!("While setting PR_SET_PDEATHSIG: {}", e))?;
 
-    if unsafe { libc::prctl(libc::PR_SET_SECUREBITS, sys::SECBITS_LOCKED_DOWN) } != 0 {
-        return Err(err_msg("Failed to set PR_SET_SECUREBITS"));
+        sys::prctl(
+            sys::PR_SET_SECUREBITS,
+            sys::SECBITS_LOCKED_DOWN as u64,
+            0,
+            0,
+            0,
+        )
+        .map_err(|e| format_err!("While setting PR_SET_SECUREBITS: {}", e))?;
+
+        sys::prctl(sys::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+            .map_err(|e| format_err!("While setting PR_SET_NO_NEW_PRIVS: {}", e))?;
     }
 
     // Now that we are in a new PID namespace, we need to re-mount /proc so that all
@@ -306,6 +320,9 @@ async fn run(
     if !file::exists(LocalPath::new(config.data_dir())).await? {
         return Err(err_msg("Data directory doesn't exist"));
     }
+
+    // Drop all supplementary groups. We will only depend on ones in our gid_map.
+    nix::unistd::setgroups(&[])?;
 
     // Files in the data directory will be created without any group/world
     // permissions. Files which require a less restrictive should be modified on

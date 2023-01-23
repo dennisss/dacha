@@ -124,7 +124,8 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
             quote! {
                 impl ::common::args::ArgsType for #name {
                     fn parse_raw_args(raw_args: &mut ::common::args::RawArgs) -> ::common::errors::Result<#name> {
-                        let command_name = raw_args.next_positional_arg()?;
+                        let command_name = raw_args.next_positional_arg()
+                            .ok_or_else(|| ::common::errors::err_msg("Expected another positional argument"))?;
                         match command_name.as_str() {
                             #(#commands)*
                             _ => {
@@ -191,11 +192,13 @@ fn derive_fields_parser(
         }
 
         if positional {
-            // NOTE: We currently don't support optional positional arguments.
+            // NOTE: Positional arguments can only be None if hit the end of the arguments
+            // list (and all following positional arguments also are None).
             field_vars.push(quote! {
                 let #field_name = {
-                    let value = raw_args.next_positional_arg()?;
-                    <#field_type as ::common::args::ArgType>::parse_raw_arg(::common::args::RawArgValue::String(value))?
+                    let value = raw_args.next_positional_arg()
+                        .map(|s| ::common::args::RawArgValue::String(s));
+                    <#field_type as ::common::args::ArgType>::parse_optional_raw_arg(value)?
                 };
             });
         } else if let Some(default_value) = default_value {

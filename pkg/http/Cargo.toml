@@ -10,7 +10,7 @@ net = { path = "../net" }
 compression = { path = "../compression" }
 crypto = { path = "../crypto" }
 automata = { path = "../automata" }
-regexp_macros = { path = "../regexp_macros" }
+regexp_macros = { path = "../automata/regexp_macros" }
 failure = "0.1.8"
 sys = { path = "../sys" }
 executor = { path = "../executor" }

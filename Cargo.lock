@@ -257,6 +257,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
 
 [[package]]
+name = "base_args"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+]
+
+[[package]]
 name = "base_error"
 version = "0.0.0"
 dependencies = [
@@ -520,6 +527,7 @@ dependencies = [
  "async-std",
  "async-trait",
  "base64",
+ "base_args",
  "base_error",
  "bytes 0.5.0",
  "chrono",
@@ -2009,7 +2017,7 @@ checksum = "456c603be3e8d448b072f410900c09faf164fbce2d480456f50eea6e25f9c848"
 
 [[package]]
 name = "regexp_macros"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "automata",
  "proc-macro2 1.0.47",

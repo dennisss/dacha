@@ -1,4 +1,4 @@
-// See https://github.com/google/snappy/blob/master/format_description.txt
+//! See https://github.com/google/snappy/blob/master/format_description.txt
 
 // TODO: This code needs more error checking for the case of getting really
 // large inputs.

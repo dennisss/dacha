@@ -6,7 +6,7 @@ edition = "2018"
 [dependencies]
 macros = { path = "../macros" }
 automata = { path = "../automata" }
-regexp_macros = { path = "../regexp_macros" }
+regexp_macros = { path = "../automata/regexp_macros" }
 common = { path = "../common" }
 base_radix = { path = "../base/radix" }
 

@@ -30,6 +30,31 @@ async function compactDb(db) {
 
 (async () => {
 
+  /*
+  {
+    let db = levelup(rocksdb('./testdata/sstable/rocksdb'));
+    await db.open({ readOnly: true });
+    db.createReadStream()
+      .on('data', function (data) {
+        console.log(data.key.toString(), '=', data.value.toString())
+      })
+      .on('error', function (err) {
+        console.log('Oh my!', err)
+      })
+      .on('close', function () {
+        console.log('Stream closed')
+      })
+      .on('end', function () {
+        console.log('Stream ended')
+      })
+
+    let sleeper = new Promise((res, rej) => setTimeout(res, 2000));
+    await sleeper;
+
+    return;
+  }
+  */
+
   {
     var db = levelup(leveldown('./testdata/sstable/leveldb-empty'));
     await db.close();

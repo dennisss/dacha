@@ -9,7 +9,7 @@ http = { path = "../http" }
 rpc = { path = "../rpc" }
 automata = { path = "../automata" }
 parsing = { path = "../parsing" }
-regexp_macros = { path = "../regexp_macros" }
+regexp_macros = { path = "../automata/regexp_macros" }
 protobuf = { path = "../protobuf" }
 protobuf_json = { path = "../protobuf/json" }
 macros = { path = "../macros" }

@@ -1,0 +1,6 @@
+[package]
+name = "base_args"
+version = "0.0.0"
+
+[dependencies]
+base_error = { path = "../error" }

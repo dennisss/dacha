@@ -1,5 +1,5 @@
-// This module contains a VM implementation of regular expression matching.
-// This is largely based on the design of RE2 / https://swtch.com/~rsc/regexp/regexp2.html
+//! This module contains a VM implementation of regular expression matching.
+//! This is largely based on the design of RE2 / https://swtch.com/~rsc/regexp/regexp2.html
 
 // TODO: Eventually make this private.
 pub mod instruction;

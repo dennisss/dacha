@@ -1,17 +1,13 @@
-//! An implementation of CLI flags that is mostly compatible with Abseil.
-//!
-//! Usage:
-//! let my_bool = Arg::<bool>::required("enabled");
-//! let my_string = Arg::<string>::optional("path", "/dev/null");
-//! common::args::init(&[&my_bool, &my_string])?;
-//!
-//! my_bool.value()
+#![no_std]
+
+#[macro_use]
+extern crate alloc;
+extern crate base_error;
+extern crate std;
 
 pub mod list;
 
-#[cfg(feature = "alloc")]
 use alloc::string::String;
-#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use std::any::Any;
 use std::cell::Ref;
@@ -22,9 +18,8 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::string::ToString;
 
-use failure::ResultExt;
-
-use crate::errors::*;
+use base_error::failure::ResultExt;
+use base_error::*;
 
 /// Collection of uninterprated flags from the command line.
 pub struct RawArgs {
@@ -109,11 +104,11 @@ impl RawArgs {
         self.positional.is_empty() && self.named_args.is_empty() && self.escaped_args.is_empty()
     }
 
-    pub fn next_positional_arg(&mut self) -> Result<String> {
+    pub fn next_positional_arg(&mut self) -> Option<String> {
         if self.positional.is_empty() {
-            Err(err_msg("Expected additional positional argument"))
+            None
         } else {
-            Ok(self.positional.remove(0))
+            Some(self.positional.remove(0))
         }
     }
 
@@ -131,14 +126,16 @@ impl RawArgs {
     }
 }
 
-/// Trait implemented by a collection of multiple arguments.
+/// Trait implemented by a type which can be parsed from a collection of
+/// multiple arguments.
 pub trait ArgsType {
     fn parse_raw_args(raw_args: &mut RawArgs) -> Result<Self>
     where
         Self: Sized;
 }
 
-/// Trait implemented by a type which stores the value of a single argument.
+/// Trait implemented by a type which can be parsed from the value of a single
+/// argument.
 pub trait ArgType {
     fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self>
     where
@@ -156,6 +153,10 @@ pub trait ArgType {
 /// Trait implemented by a type which can be a named field in a struct
 /// containing arguments.
 pub trait ArgFieldType {
+    /// Attempts to parse the argument given the:
+    /// - field_name: Normally should be used as the flag name
+    /// - raw_args: Complete set of remaining arguments from which we can
+    ///   retrieve the value of this field.
     fn parse_raw_arg_field(field_name: &str, raw_args: &mut RawArgs) -> Result<Self>
     where
         Self: Sized;

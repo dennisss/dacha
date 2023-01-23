@@ -7,7 +7,7 @@ edition = "2018"
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 elf = { path = "../elf" }
-regexp_macros = { path = "../regexp_macros" }
+regexp_macros = { path = "../automata/regexp_macros" }
 automata = { path = "../automata" }
 failure = "0.1.8"
 
