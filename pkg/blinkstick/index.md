@@ -1,9 +1,14 @@
+# Blinkstick Driver
 
-// sudo cp pkg/blinkstick/83-blinkstick.rules /etc/udev/rules.d/
-// sudo udevadm control --reload-rules
+Library for interfacing with Blinkstick USB LEDs from a host.
 
+Using this requires configuring the USB udev rules in the [USB package](../usb/index.md).
 
+## USB Descriptor
 
+Below is a dump of a BlinkStick Nano USB descriptor:
+
+```
 Bus 007 Device 026: ID 20a0:41e5 Clay Logic 
 Device Descriptor:
   bLength                18
@@ -62,3 +67,4 @@ Device Descriptor:
         bInterval             100
 Device Status:     0x0000
   (Bus Powered)
+```

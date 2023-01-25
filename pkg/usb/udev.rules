@@ -1,7 +1,5 @@
 
 # TODO: Have a script for automatically checking if these are up to date before trying to open a usb device.
-# sudo cp pkg/usb/udev.rules /etc/udev/rules.d/80-dacha.rules
-# sudo udevadm control --reload-rules
 
 # BlinkStick Nano
 SUBSYSTEM=="usb", ATTRS{idVendor}=="20a0", ATTRS{idProduct}=="41e5", MODE="0660", GROUP="plugdev"

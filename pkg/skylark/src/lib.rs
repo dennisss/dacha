@@ -16,7 +16,6 @@ mod primitives;
 mod proto;
 mod scope;
 mod syntax;
-mod tokenizer;
 mod tuple;
 mod value;
 

@@ -99,6 +99,10 @@ pub use bindings::{
 
 pub use bindings::{ARCH_GET_FS, ARCH_SET_FS};
 
+pub use kernel::{
+    PR_CAP_AMBIENT, PR_GET_NO_NEW_PRIVS, PR_SET_NO_NEW_PRIVS, PR_SET_PDEATHSIG, PR_SET_SECUREBITS,
+};
+
 macro_rules! export_cast_bindings {
     ($t:ty, $($name:ident),*) => {
         $(
@@ -161,6 +165,10 @@ syscall!(eventfd2, bindings::SYS_eventfd2, count: c_uint, flags: c_uint => Resul
 
 // TODO: Retry EINTR
 syscall!(poll, bindings::SYS_poll, ufds: *mut bindings::pollfd, nfds: c_uint, timeout: c_int => Result<c_uint>);
+
+syscall!(
+    prctl, bindings::SYS_prctl, option: c_uint, arg2: c_ulong, arg3: c_ulong, arg4: c_ulong, arg5: c_ulong => Result<u64>
+);
 
 syscall!(
     arch_prctl_set, bindings::SYS_arch_prctl, code: c_int, addr: c_ulong => Result<()>

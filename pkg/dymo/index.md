@@ -1,6 +1,4 @@
 
-sudo cp pkg/dymo/82-dymo-pnp.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules
 
 ## Device Descriptor
 

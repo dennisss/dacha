@@ -18,8 +18,6 @@ extern crate common;
 #[macro_use]
 extern crate failure;
 #[cfg(all(feature = "std", target_os = "linux"))]
-extern crate libc;
-#[cfg(all(feature = "std", target_os = "linux"))]
 extern crate sys;
 #[cfg(all(feature = "std", target_os = "linux"))]
 #[macro_use]

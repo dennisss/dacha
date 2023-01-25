@@ -9,7 +9,8 @@ message NodeConfig {
     // Path to a directory into which we will store all container related data.
     string data_dir = 1;
 
-    // Path in which we can mount the main node process's cgroup V2 filesystem.
+    // Path to use for the node's cgroup v2 subtree. The node process and all container processes
+    // will live somewhere in this tree.
     string cgroup_dir = 11;
 
     // Port used for the main node management service.

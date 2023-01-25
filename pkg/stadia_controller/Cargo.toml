@@ -6,4 +6,5 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 usb = { path = "../usb" }
+executor = { path = "../executor" }
 uinput = "0.1.3"

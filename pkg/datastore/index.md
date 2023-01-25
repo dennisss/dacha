@@ -1,3 +1,5 @@
+# Datastore
+
 # Metastore
 
 This is a simple database with architecture similar in purpose to something like Chubby or Etcd, but doesn't intend on being a key-value store.
