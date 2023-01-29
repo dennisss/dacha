@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::Thread;
 
 use common::errors::*;
+use common::io::{IoError, IoErrorKind};
 use sys::{
     IoCompletionUring, IoSubmissionUring, IoUring, IoUringCompletion, IoUringOp, IoUringResult,
 };
@@ -29,7 +30,14 @@ pub(super) struct ExecutorIoUring {
 }
 
 struct ExecutorIoUringSubmissions {
+    /// Whether or not we are accepting new submissions. Previously submitted
+    /// operations may still be running.
+    running: bool,
+
     /// Maximum number of operations we will allow to be pending at a time.
+    ///
+    /// TODO: Implement this by pending operations in 'blocked_tasks' until we
+    /// have space in the queue.
     max_pending_operations: usize,
 
     /// Maximum number of non-cancel operations we are allowed to have pending
@@ -62,7 +70,9 @@ struct ExecutorIoUringSubmissions {
 /// Each of these instances corresponds to a single ExecutorOperation instance
 /// that's still alive in a task.
 struct ExecutorOperationState {
-    task_id: TaskId,
+    /// Id of the last task which polled the completion of this operation.
+    /// (this may change if an operation is moved across tasks).
+    task_id: Option<TaskId>,
 
     /// If true, the task that created this operation no longer needs it and it
     /// can be cleaned up when it completes.
@@ -79,6 +89,7 @@ impl ExecutorIoUring {
         let max_pending_operations = completion_ring.capacity();
 
         let submissions = Mutex::new(ExecutorIoUringSubmissions {
+            running: true,
             max_pending_operations,
             max_non_cancellation_operations: ((max_pending_operations as f32)
                 * (1. - CANCELATION_BUFFER_FRACTION))
@@ -126,12 +137,23 @@ impl ExecutorIoUring {
                 continue;
             }
 
-            tasks_to_wake.insert(op.task_id);
+            if let Some(id) = op.task_id.clone() {
+                tasks_to_wake.insert(id);
+            }
         }
 
         // TODO: If we have space, also allow blocked tasks to proceed.
 
         Ok(())
+    }
+
+    /// Returns true if all operations have completed and we won't get an more
+    /// operations in the future.
+    ///
+    /// This can be used to determine when to stop calling poll_events().
+    pub fn finished(&self) -> bool {
+        let submissions = self.submissions.lock().unwrap();
+        !submissions.running && submissions.operations.is_empty()
     }
 
     /// Triggers any callers to poll_events() to unblock shortly after this is
@@ -149,6 +171,13 @@ impl ExecutorIoUring {
         }
 
         Ok(())
+    }
+
+    pub fn shutdown(&self) {
+        self.submissions.lock().unwrap().running = false;
+
+        // Wake any pollers waiting for operations to appear/complete.
+        self.wake_poller().unwrap();
     }
 }
 
@@ -187,7 +216,7 @@ enum ExecutorOperationCancelMode {
     /// Cancel the operation and detach it from the task. The executor will
     /// clean it up later in the future.
     ///
-    /// (used for normal operations which don't reference any task data).
+    /// (used for normal operations which don't reference any task memory).
     CancelAndDetach,
 
     /// Cancel the operation and block the current task/thread until it has been
@@ -196,7 +225,7 @@ enum ExecutorOperationCancelMode {
     /// The operation MUST be marked as completed (or failed) by the kernel
     /// before we are allowed to proceed with running the task
     ///
-    /// (used for any operation that references data owned by the task).
+    /// (used for any operation that references memory owned by the task).
     CancelAndWait,
 }
 
@@ -297,7 +326,6 @@ impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
 
     fn poll_with_task(&mut self, task_entry: &TaskEntry) -> Result<ExecutorOperation<'a, 'b>> {
         let shared = task_entry.executor_shared.clone();
-        let task_id = task_entry.id;
 
         let mut submissions = shared.io_uring.submissions.lock().unwrap();
 
@@ -315,6 +343,17 @@ impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
             false
         };
 
+        // When the executor is shutting down, we want to avoid new unbounded I/O
+        // starting and we should only be scheduling cancellations to clean up existing
+        // I/O.
+        if !is_cancellation && !submissions.running {
+            return Err(IoError::new(
+                IoErrorKind::Cancelled,
+                "I/O submissions not allowed during shutdown",
+            )
+            .into());
+        }
+
         // NOTE: This also implicitly prohibits users from submitting cancelations as
         // they can't create detached ops.
         if is_cancellation && !self.initially_detached {
@@ -328,7 +367,7 @@ impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
         submissions.operations.insert(
             op_id,
             ExecutorOperationState {
-                task_id,
+                task_id: None,
                 detached: self.initially_detached,
                 result: None,
             },
@@ -373,8 +412,21 @@ impl<'a, 'b> Future for ExecutorOperationWaitFuture<'a, 'b> {
     type Output = Result<IoUringResult>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let task_entry = match retrieve_task_entry(context) {
+            Some(v) => v,
+            None => return Poll::Ready(Err(err_msg("Not running inside an executor"))),
+        };
+
         let this = unsafe { self.get_unchecked_mut() };
         let mut submissions = this.op.executor_shared.io_uring.submissions.lock().unwrap();
+
+        if !submissions.running {
+            return Poll::Ready(Err(IoError::new(
+                IoErrorKind::Cancelled,
+                "Executor shutting down",
+            )
+            .into()));
+        }
 
         let mut op = match submissions.operations.get_mut(&this.op.id) {
             Some(op) => op,
@@ -391,7 +443,10 @@ impl<'a, 'b> Future for ExecutorOperationWaitFuture<'a, 'b> {
 
                 Poll::Ready(Ok(res))
             }
-            None => Poll::Pending,
+            None => {
+                op.task_id = Some(task_entry.id);
+                Poll::Pending
+            }
         }
     }
 }
@@ -400,10 +455,27 @@ impl<'a, 'b> Future for ExecutorOperationWaitFuture<'a, 'b> {
 mod tests {
     use super::*;
 
+    /*
     #[test]
     fn cancellation_test() {
 
         // crate::run(async )
+    }
+    */
+
+    #[test]
+    fn submit_on_one_task_poll_on_another() -> Result<()> {
+        crate::run(async move {
+            let op = ExecutorOperation::submit(sys::IoUringOp::Timeout {
+                duration: std::time::Duration::from_millis(50),
+            })
+            .await?;
+
+            let task = crate::spawn(op.wait());
+
+            task.join().await?;
+            Ok(())
+        })?
     }
 }
 

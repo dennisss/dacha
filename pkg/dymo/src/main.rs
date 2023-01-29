@@ -3,6 +3,8 @@ extern crate common;
 extern crate dymo;
 extern crate graphics;
 extern crate image;
+#[macro_use]
+extern crate macros;
 
 use common::bits::BitVector;
 use common::errors::*;
@@ -39,7 +41,8 @@ Output: 8
 
 */
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let mut canvas = RasterCanvas::create(64, 320);
 
     let font = OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?;
@@ -117,8 +120,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

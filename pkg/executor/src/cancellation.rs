@@ -4,5 +4,7 @@ use alloc::boxed::Box;
 /// operation.
 #[async_trait]
 pub trait CancellationToken: 'static + Send + Sync {
-    async fn wait(&self);
+    fn is_cancelled(&self) -> bool;
+
+    async fn wait_for_cancellation(&self);
 }

@@ -233,7 +233,8 @@ struct Args {
     led_pin: Option<usize>,
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     println!("Starting rpi controller");
 
     let args = common::args::parse_args::<Args>()?;
@@ -291,8 +292,4 @@ async fn run() -> Result<()> {
     task_bundle.join().await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

@@ -3,6 +3,8 @@ extern crate common;
 extern crate sstable;
 #[macro_use]
 extern crate file;
+#[macro_use]
+extern crate macros;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -70,7 +72,8 @@ async fn test_table() -> Result<()> {
     Ok(())
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let mut options = EmbeddedDBOptions::default();
     options.read_only = true;
     options.disable_wal = true;
@@ -89,8 +92,4 @@ async fn run() -> Result<()> {
     // await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

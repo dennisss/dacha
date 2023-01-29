@@ -1127,7 +1127,8 @@ fn time_to_string(time: &SystemTime) -> String {
     common::chrono::DateTime::<common::chrono::Local>::from(*time).to_rfc2822()
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     match args.command {
         Command::Bootstrap(cmd) => run_bootstrap(cmd).await,
@@ -1138,8 +1139,4 @@ async fn run() -> Result<()> {
         Command::StartJob(cmd) => run_start_job(cmd).await,
         Command::Events(cmd) => run_events(cmd).await,
     }
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

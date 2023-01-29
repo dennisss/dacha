@@ -6,6 +6,8 @@ go run cmd/h2spec/h2spec.go --port 8888 --struct hpack/4.2
 
 extern crate common;
 extern crate http;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 use http::header::*;
@@ -44,12 +46,9 @@ async fn handle_request(mut req: http::Request) -> http::Response {
         .unwrap()
 }
 
-async fn run_server() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let handler = http::HttpFn(handle_request);
     let server = Server::new(handler, http::ServerOptions::default());
     server.run(8888).await
-}
-
-fn main() -> Result<()> {
-    executor::run(run_server())?
 }

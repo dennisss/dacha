@@ -142,7 +142,8 @@ fn download_file(addr: &str, path: &str, output_path: &str) -> Result<()> {
     run_scp(&format!("pi@{}:{}", addr, path), output_path)
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     println!(
@@ -308,8 +309,4 @@ async fn run() -> Result<()> {
     run_ssh(&args.addr, "sudo systemctl start cluster-node")?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

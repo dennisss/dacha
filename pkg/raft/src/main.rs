@@ -206,7 +206,8 @@ struct Args {
     bootstrap: bool,
 }
 
-async fn main_task() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     // TODO: For now, we will assume that bootstrapping is well known up front
@@ -270,8 +271,4 @@ async fn main_task() -> Result<()> {
         );
 
     tasks.join().await
-}
-
-fn main() -> Result<()> {
-    executor::run(main_task())?
 }

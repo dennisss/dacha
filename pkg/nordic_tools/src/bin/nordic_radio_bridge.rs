@@ -19,13 +19,15 @@ struct Args {
     usb: usb::DeviceSelector,
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     let bridge =
         nordic_tools::radio_bridge::RadioBridge::create(&args.state_object_name, &args.usb).await?;
 
     let mut task_bundle = executor::bundle::TaskResultBundle::new();
 
+    // TODO:
     let mut rpc_server = rpc::Http2Server::new();
     rpc_server.set_shutdown_token(executor::signals::new_shutdown_token());
     bridge.add_services(&mut rpc_server)?;
@@ -36,8 +38,4 @@ async fn run() -> Result<()> {
     task_bundle.join().await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

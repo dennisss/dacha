@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate common;
 extern crate usb;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 use usb::hid::{GlobalItemTag, LocalItemTag, Report, ReportVariant};
@@ -170,7 +172,8 @@ fn visit_report(report: &Report, indent: &str) {
     }
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let context = usb::Context::create()?;
 
     let dev = context.open_device(0x0764, 0x0501).await?;
@@ -271,8 +274,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

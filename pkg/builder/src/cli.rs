@@ -28,43 +28,41 @@ struct BuildCommand {
     config: Option<String>,
 }
 
-pub fn run() -> Result<()> {
-    executor::run(async {
-        let args = common::args::parse_args::<Args>()?;
-        match args.command {
-            ArgCommand::Build(build) => {
-                // TODO: Support the --config flag.
+pub async fn run() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+    match args.command {
+        ArgCommand::Build(build) => {
+            // TODO: Support the --config flag.
 
-                let mut builder = Builder::default()?;
+            let mut builder = Builder::default()?;
 
-                let result = builder
-                    .build_target_cwd(
-                        &build.label,
-                        build
-                            .config
-                            .as_ref()
-                            .map(|s| s.as_str())
-                            .unwrap_or(NATIVE_CONFIG_LABEL),
-                    )
-                    .await?;
-
-                create_or_update_symlink(
-                    format!("built-config/{}", result.config_hash),
-                    project_path!("built"),
+            let result = builder
+                .build_target_cwd(
+                    &build.label,
+                    build
+                        .config
+                        .as_ref()
+                        .map(|s| s.as_str())
+                        .unwrap_or(NATIVE_CONFIG_LABEL),
                 )
                 .await?;
 
-                let local_bin_dir = project_path!(LOCAL_BINARY_PATH);
-                for (src, file) in &result.outputs.output_files {
-                    if Path::new(src).starts_with(LOCAL_BINARY_PATH) {
-                        create_or_update_symlink(&file.location, project_dir().join(src)).await?;
-                    }
+            create_or_update_symlink(
+                format!("built-config/{}", result.config_hash),
+                project_path!("built"),
+            )
+            .await?;
+
+            let local_bin_dir = project_path!(LOCAL_BINARY_PATH);
+            for (src, file) in &result.outputs.output_files {
+                if Path::new(src).starts_with(LOCAL_BINARY_PATH) {
+                    create_or_update_symlink(&file.location, project_dir().join(src)).await?;
                 }
-
-                println!("BuildResult:\n{:#?}", result);
             }
-        }
 
-        Ok(())
-    })?
+            println!("BuildResult:\n{:#?}", result);
+        }
+    }
+
+    Ok(())
 }

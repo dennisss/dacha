@@ -358,6 +358,8 @@ impl Drop for BlobLease {
     fn drop(&mut self) {
         let shared = self.shared.clone();
         let blob_id = self.spec.id().to_string();
+
+        // NOTE: Must run uninterupted until completion.
         executor::spawn(async move {
             let mut state = shared.state.lock().await;
             let entry = state.blobs.get_mut(&blob_id).unwrap();

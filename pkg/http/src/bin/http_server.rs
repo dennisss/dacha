@@ -6,6 +6,8 @@ extern crate http;
 extern crate parsing;
 #[macro_use]
 extern crate file;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 use http::header::*;
@@ -51,7 +53,8 @@ impl http::ServerHandler for Service {
     }
 }
 
-async fn run_server() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     // let handler =
     // http::static_file_handler::StaticFileHandler::new(file::project_dir());
     // let handler = http::HttpFn(handle_request);
@@ -82,8 +85,4 @@ async fn run_server() -> Result<()> {
 
     let server = http::Server::new(handler, options);
     server.run(8000).await
-}
-
-fn main() -> Result<()> {
-    executor::run(run_server())?
 }

@@ -3,13 +3,16 @@ extern crate common;
 extern crate stream_deck;
 #[macro_use]
 extern crate file;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 
 // sudo cp pkg/stream_deck/81-elgato-stream-deck.rules /etc/udev/rules.d/
 // sudo udevadm control --reload-rules
 
-async fn read_controller() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let image = file::read(project_path!("pkg/stream_deck/sample_icon.jpg")).await?;
 
     // 0: 0x02
@@ -38,8 +41,4 @@ async fn read_controller() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(read_controller())?
 }

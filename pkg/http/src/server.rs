@@ -301,7 +301,9 @@ impl Server {
             let event = {
                 if let Some(shutdown_token) = &this.shutdown_token {
                     let shutdown_event =
-                        executor::future::map(shutdown_token.wait(), |_| Event::Shutdown);
+                        executor::future::map(shutdown_token.wait_for_cancellation(), |_| {
+                            Event::Shutdown
+                        });
 
                     executor::future::race(next_stream, shutdown_event).await
                 } else {

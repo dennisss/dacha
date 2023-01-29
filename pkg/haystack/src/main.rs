@@ -107,7 +107,8 @@ struct ClientReadUrlCommand {
     alt_key: NeedleAltKey,
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     // let matches = App::new("Haystack")
     // 	.about("Photo/object storage system")
 
@@ -170,8 +171,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

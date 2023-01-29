@@ -2,6 +2,8 @@
 
 #[macro_use]
 extern crate file;
+#[macro_use]
+extern crate macros;
 
 use std::sync::Arc;
 
@@ -10,7 +12,8 @@ use common::errors::*;
 use container::ContainerNodeStub;
 use protobuf::text::ParseTextProto;
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     //
 
     let mut worker_req = container::StartWorkerRequest::default();
@@ -82,8 +85,4 @@ async fn run() -> Result<()> {
     */
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

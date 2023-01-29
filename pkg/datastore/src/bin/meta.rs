@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate macros;
+
 use common::args::parse_args;
 use common::errors::*;
 use rpc_util::NamedPortArg;
@@ -23,7 +26,8 @@ async fn increment_counter(txn: &dyn MetastoreClientInterface) -> Result<()> {
     Ok(())
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let client = MetastoreClient::create(&[]).await?;
 
     {
@@ -52,9 +56,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    // let args = parse_args::<Args>()?;
-    executor::run(run())?
 }

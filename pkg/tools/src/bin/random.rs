@@ -8,7 +8,8 @@ extern crate base_radix;
 use common::errors::*;
 use crypto::random::SharedRng;
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let rng = crypto::random::global_rng();
 
     let mut buf = [0u8; 16];
@@ -19,8 +20,4 @@ async fn run() -> Result<()> {
     // crypto::random::println!("Hello");
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

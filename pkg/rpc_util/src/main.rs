@@ -253,14 +253,11 @@ async fn run_call(cmd: CallCommand) -> Result<()> {
     Ok(())
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let mut args = common::args::parse_args::<Args>()?;
     match args.command {
         Command::List(cmd) => run_ls(cmd).await,
         Command::Call(cmd) => run_call(cmd).await,
     }
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

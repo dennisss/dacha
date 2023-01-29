@@ -15,7 +15,8 @@ struct Args {
     usb: usb::DeviceSelector,
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let mut usb = USBRadio::find(&args.usb).await?;
@@ -33,8 +34,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

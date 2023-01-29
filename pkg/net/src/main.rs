@@ -1,5 +1,7 @@
 extern crate common;
 extern crate net;
+#[macro_use]
+extern crate macros;
 
 use std::string::ToString;
 use std::time::Duration;
@@ -39,7 +41,8 @@ async fn server() -> Result<()> {
     Ok(())
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let ip = net::netlink::local_ip()?;
     println!("My local ip: {:?}", ip.to_string());
 
@@ -89,8 +92,4 @@ async fn run() -> Result<()> {
     */
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

@@ -1,6 +1,10 @@
+#[macro_use]
+extern crate macros;
+
 use common::{errors::*, io::Readable};
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     println!("{:#?}", file::read_dir(".")?);
 
     println!("{:?}", file::readlink("built")?);
@@ -13,8 +17,4 @@ async fn run() -> Result<()> {
     println!("{:?}", std::str::from_utf8(&buf)?);
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

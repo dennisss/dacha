@@ -3,6 +3,8 @@ extern crate common;
 extern crate crypto;
 #[macro_use]
 extern crate file;
+#[macro_use]
+extern crate macros;
 
 use std::str::FromStr;
 
@@ -13,7 +15,8 @@ use crypto::hasher::Hasher;
 use http::ClientInterface;
 use parsing::ascii::AsciiString;
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let data = file::read(project_path!(
         "pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent"
     ))
@@ -75,8 +78,4 @@ async fn run() -> Result<()> {
     // println!("{:?}", info);
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

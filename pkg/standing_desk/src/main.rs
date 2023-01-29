@@ -15,7 +15,8 @@ struct Args {
 cargo run --bin standing_desk -- --device_name=uplift_desk --radio_bridge_addr=127.0.0.1:8000
 */
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let client = standing_desk::Client::create(&args.radio_bridge_addr, &args.device_name).await?;
@@ -33,8 +34,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

@@ -19,7 +19,8 @@ struct Args {
     set_config: Option<String>,
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let meta_client = container::meta::client::ClusterMetaClient::create_from_environment().await?;
@@ -38,8 +39,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

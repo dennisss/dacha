@@ -3,6 +3,8 @@ extern crate common;
 extern crate elf;
 extern crate parsing;
 extern crate usb;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 use crypto::hasher::Hasher;
@@ -233,7 +235,8 @@ impl Command {
     }
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let elf = elf::ELF::read(project_path!("target/thumbv6m-none-eabi/release/rp2040")).await?;
 
     let flash_start = 0x10000000;
@@ -389,8 +392,4 @@ async fn run() -> Result<()> {
     // client.write(0x2000002c, &random).await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

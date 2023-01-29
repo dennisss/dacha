@@ -2,6 +2,7 @@
 
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use std::sync::Mutex;
 use std::sync::Once;
 
@@ -23,6 +24,10 @@ struct ShutdownState {
     /// Receiving end of the shutdown notification channel. When receiving from
     /// this channel fails/unblocks, the program is shutting down.
     receiver: channel::Receiver<()>,
+
+    num_tokens: usize,
+
+    completion_waiters: Vec<channel::Sender<()>>,
 }
 
 fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
@@ -33,6 +38,8 @@ fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
             SHUTDOWN_STATE = Some(Mutex::new(ShutdownState {
                 sender: Some(sender),
                 receiver,
+                num_tokens: 0,
+                completion_waiters: vec![],
             }));
 
             spawn(signal_waiter());
@@ -50,8 +57,7 @@ async fn signal_waiter() {
 
     race(sigint_handler.recv(), sigterm_handler.recv()).await;
 
-    let mut shutdown_state = get_shutdown_state().lock().unwrap();
-    shutdown_state.sender.take();
+    trigger_shutdown();
 }
 
 #[async_trait]
@@ -72,18 +78,65 @@ struct ShutdownToken {
     receiver: channel::Receiver<()>,
 }
 
+impl Drop for ShutdownToken {
+    fn drop(&mut self) {
+        let mut shutdown_state = get_shutdown_state().lock().unwrap();
+        shutdown_state.num_tokens -= 1;
+        if shutdown_state.num_tokens == 0 {
+            // Close all the channels.
+            shutdown_state.completion_waiters.clear();
+        }
+    }
+}
+
 #[async_trait]
 impl CancellationToken for ShutdownToken {
-    async fn wait(&self) {
+    fn is_cancelled(&self) -> bool {
+        self.receiver.is_closed()
+    }
+
+    async fn wait_for_cancellation(&self) {
         let _ = self.receiver.recv().await;
     }
 }
 
+/// Gets a token which will can be used to wait for the program to enter a
+/// graceful shutdown mode. Once unblocked, the user should perform any needed
+/// clean up and stop running.
+///
+/// NOTE: There is one global shutdown state for the entire program.
 pub fn new_shutdown_token() -> Box<dyn CancellationToken> {
     let receiver = {
-        let shutdown_state = get_shutdown_state().lock().unwrap();
+        let mut shutdown_state = get_shutdown_state().lock().unwrap();
+        shutdown_state.num_tokens += 1;
         shutdown_state.receiver.clone()
     };
 
     Box::new(ShutdownToken { receiver })
+}
+
+/// Explicitly indicate that the application is shutting down. Once triggered,
+/// all shutdown tokens will unblock until the end of the program.
+pub fn trigger_shutdown() {
+    let mut shutdown_state = get_shutdown_state().lock().unwrap();
+    shutdown_state.sender.take();
+}
+
+/// Blocks until all shutdown tokens which have been handled out have been
+/// dropped.
+///
+/// NOTE: This assumes that shutdown is triggered by something else.
+pub async fn wait_for_shutdowns() {
+    let (sender, receiver) = channel::bounded(1);
+
+    {
+        let mut shutdown_state = get_shutdown_state().lock().unwrap();
+        if shutdown_state.num_tokens == 0 {
+            return;
+        }
+
+        shutdown_state.completion_waiters.push(sender);
+    }
+
+    let _ = receiver.recv().await;
 }

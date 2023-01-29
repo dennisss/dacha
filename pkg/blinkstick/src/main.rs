@@ -2,13 +2,16 @@
 extern crate common;
 extern crate blinkstick;
 extern crate math;
+#[macro_use]
+extern crate macros;
 
 use std::{f32::consts::PI, time::Duration};
 
 use blinkstick::*;
 use common::errors::*;
 
-async fn read_controller() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     println!("{}", -5.0 % 3.0);
     println!("{}", 5.0 % 3.0);
     println!("{}", 1.0 % 3.0);
@@ -45,8 +48,4 @@ async fn read_controller() -> Result<()> {
     blink.turn_off().await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(read_controller())?
 }

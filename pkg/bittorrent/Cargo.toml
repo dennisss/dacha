@@ -12,6 +12,7 @@ http = { path = "../http" }
 crypto = { path = "../crypto" }
 executor = { path = "../executor" }
 file = { path = "../file" }
+macros = { path = "../macros" }
 
 [features]
 default = ["std"]

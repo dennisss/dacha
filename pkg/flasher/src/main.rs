@@ -72,7 +72,8 @@ impl UF2Builder {
     }
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let elf = elf::ELF::read(&args.path).await?;
@@ -112,8 +113,4 @@ async fn run() -> Result<()> {
     host.download(&firmware_builder.data).await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

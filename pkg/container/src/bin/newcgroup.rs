@@ -29,7 +29,9 @@ struct Args {
     cgroup_dir: LocalPathBuf,
 }
 
-async fn run() -> Result<()> {
+// TODO: Just run a single threaded executor.
+#[executor_main]
+async fn main() -> Result<()> {
     let uids = sys::getresuid()?;
     let gids = sys::getresgid()?;
 
@@ -67,9 +69,4 @@ async fn run() -> Result<()> {
     file::write(dir.join("cgroup.procs"), args.pid.to_string()).await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    // TODO: Just run a single threaded executor.
-    executor::run(run())?
 }

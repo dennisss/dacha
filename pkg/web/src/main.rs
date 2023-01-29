@@ -3,12 +3,15 @@ extern crate http;
 extern crate rpc;
 extern crate rpc_test;
 extern crate web;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
 use rpc_test::proto::adder::AdderIntoService;
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let mut task_bundle = TaskResultBundle::new();
 
     task_bundle.add("WebServer", {
@@ -37,8 +40,4 @@ async fn run() -> Result<()> {
     task_bundle.join().await?;
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

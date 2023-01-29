@@ -327,7 +327,8 @@ async fn run_pipe_command(cmd: PipeCommand) -> Result<()> {
     */
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     match args.command {
@@ -337,8 +338,4 @@ async fn run() -> Result<()> {
         Command::Send(cmd) => run_send_command(cmd).await,
         Command::Pipe(cmd) => run_pipe_command(cmd).await,
     }
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

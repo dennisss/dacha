@@ -6,9 +6,9 @@ This is a monorepo/ecosystem of software/hardware solutions built by [Dennis](ht
 
 ### Systems
 
-- [Cluster Orchestration](./pkg/container/README.md) : Kubernetes/Borg like containerization and service mesh solution.
-- [Metadata Storage](./pkg/datastore/README.md) : Chubby/Etcd like key-value store.
-- [Builder](./pkg/builder/README.md) : A Bazel/Buck like dependency graph based builded system.
+- [Cluster Orchestration](./pkg/container/index.md) : Kubernetes/Borg like containerization and service mesh solution.
+- [Metadata Storage](./pkg/datastore/src/meta/index.md) : Chubby/Etcd like key-value store.
+- [Builder](./pkg/builder/index.md) : A Bazel/Buck like dependency graph based builded system.
 
 ### Libraries
 
@@ -17,11 +17,11 @@ This is a monorepo/ecosystem of software/hardware solutions built by [Dennis](ht
 - [Cryptography](./pkg/crypto/index.md): Suite of most common encryption/hashing/randomness
   algorithms. Also includes support for TLS and X.509.
 - [HTTP](./pkg/http/index.md): HTTP 1/2 client/server implementation.
-- [RPC](./pkg/rpc/README.md): gRPC compatible remote procedure call framework.
+- [RPC](./pkg/rpc/index.md): gRPC compatible remote procedure call framework.
 - [Math](./pkg/math/index.md): Linear algebra, optimization, geometric algorithms, big integers, etc.
 - [Compression](./pkg/compression/index.md)
 - [Linux Syscall Bindings](./pkg/sys/)
-- [USB Device/Host Driver](./pkg/usb/)
+- [USB Device/Host Driver](./pkg/usb/index.md)
 - [JSON](./pkg/json/)
 - [Image Encoding/Decoding](./pkg/image/)
 - [Raft](./pkg/raft/README.md) : Implementation of Raft consensus and everything need to make a replicated state machine from an existing non-replicated one.
@@ -35,7 +35,7 @@ This is a monorepo/ecosystem of software/hardware solutions built by [Dennis](ht
 - [Protobuf](./pkg/protobuf/index.md): Support for serialization/deserialization of Protocol Buffers either via code generation or dynamic reflection.
 - [ASN.1](./pkg/asn/index.md): Compiler for safe accessors and serialization/deserialization of ASN.1 messages.
 - [Markdown](./pkg/markdown/index.md)
-- [Skylark](./pkg/skylark/README.md): Python like evaluation.
+- [Skylark](./pkg/skylark/index.md): Python like evaluation.
 
 ## Directory Structure
 

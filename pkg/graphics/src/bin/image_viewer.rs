@@ -10,13 +10,10 @@ struct Args {
     path: String,
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     let image = image::Image::read(&args.path).await?;
     image.show().await?;
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

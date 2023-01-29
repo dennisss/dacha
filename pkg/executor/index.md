@@ -20,10 +20,11 @@ When running on Linux, this internally uses io_uring and is designed as follows:
 
 ### Usage
 
+The recommended way to use the executor is via the `#[executor_main]` macro which wraps a `main()` function:
+
 ```rust
-// Use run() in your main function to block on a root future.
-// run() will block until the root future is complete.
-executor::run(async move {
+#[executor_main]
+async fn main() {
     // Example of spawning concurrently executing futures.
     let join_handle = executor::spawn(async move {
         executor::sleep(Duration::from_secs(1)).await;
@@ -33,9 +34,41 @@ executor::run(async move {
     let result = join_handle.join().await;
 
     println!("{}", result); // Will print '123'
-})
-
+}
 ```
+
+The above `main()` function will exit shortly after the root future executed in it has finished.
+Additionally it will shortly wait for any cleanup tasks to finish running (see the
+[shutdown behavior](#shutdown)). Any other tasks still running will stop running with the
+termaination of the process.
+
+Note that during process termination, we never 'cancel' tasks. This could risk violating the
+expectations mentioned in the next section regarding critical sections.
+
+### Critical Sections
+
+There are times at which we need to execute some async operations with a guarantee that the operation will run til completion without cancellation (or the future getting dropped before returning a Poll::Ready). For example, if a Mutex lock is held across an async wait, it may not be guaranteed that all mutations to the locked data happen. To support this use-case, we guarantee that a task spawned with `executor::spawn()` where the returned `JoinHandle` is dropped will never be canceled. So if you do require creating a critical section, you'd need to explicitly spawn a new task and ignore its handle.
+
+### Multiple Tasks
+
+A common pattern with servers is to execute multiple different tasks which may fail all in parallel. To fascilitate this, we provide the `TaskResultBundle` type.
+
+TODO: Provide an example
+
+TODO: Document when a dependency should use provide a `run()` vs spawning its own background tasks internally (depends on error propagation).
+
+### Shutdown Behaviors {#shutdown}
+
+Some event loops (like those waiting for incoming TCP connections) don't have a clearly defined termination
+condition. To still facilitate gracefully stopping such programs, each loop should acquire a
+`CancellationToken` instance which allows it to check whether or not the program should continue
+running.
+
+The default token implementation can be retried by calling `executor::signals::new_shutdown_token()`
+and should be sufficient for most usecases. This token will shutdown the program when
+SIGINT/SIGTERM (e.g. Ctrl-C) signals are recieved.
+
+TODO: Implement scoped cancellation tokens (e.g. so that tasks can start cancellable sub-trees for things like unit tests).
 
 ## Cortex-M Executor
 

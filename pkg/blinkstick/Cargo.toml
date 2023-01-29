@@ -11,6 +11,7 @@ regexp_macros = { path = "../automata/regexp_macros" }
 math = { path = "../math" }
 executor = { path = "../executor" }
 file = { path = "../file" }
+macros = { path = "../macros" }
 
 [features]
 default = ["std"]

@@ -1,8 +1,11 @@
 extern crate builder;
 extern crate common;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 
-fn main() -> Result<()> {
-    builder::cli::run()
+#[executor_main]
+async fn main() -> Result<()> {
+    builder::cli::run().await
 }

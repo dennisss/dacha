@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate common;
 extern crate ptouch;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 use graphics::{
@@ -12,16 +14,32 @@ use graphics::{
 use image::{Color, Image};
 use ptouch::*;
 
-async fn run() -> Result<()> {
-    let text = "Hello";
-    let font_size = 100.0;
+/*
+1 inch = 25.4 mm
 
-    let font = OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?;
+1 inch = 180 pixels
+
+(180 pixels / 25.4 mm)
+
+*/
+
+#[executor_main]
+async fn main() -> Result<()> {
+    let text = "3B 1.2  2B 1.1  2B 1.2";
+
+    let font_size_mm = 7.;
+    let font_size = font_size_mm * (180. / 25.4);
+
+    // let font_size = 100.0;
+
+    // TODO: Determine this based on the connected tape.
+    let height = 128.0;
+
+    let font =
+        OpenTypeFont::read(file::project_path!("third_party/noto_sans/font_normal.ttf")).await?;
     let font_renderer = CanvasFontRenderer::new(font);
 
     let measurements = font_renderer.measure_text(text, font_size, None)?;
-
-    let height = 128.0;
 
     let mut canvas = RasterCanvas::create(height as usize, (measurements.width + 1.) as usize);
     let c = &mut canvas as &mut dyn Canvas;
@@ -32,6 +50,8 @@ async fn run() -> Result<()> {
         height,
         &Color::rgb(255, 255, 255),
     )?;
+
+    // c.clear_rect(0., 50., 5., font_size, &Color::hex(0))?;
 
     let font_style = FontStyle::from_size(font_size)
         .with_text_align(TextAlign::Left)
@@ -67,8 +87,4 @@ async fn run() -> Result<()> {
     // }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

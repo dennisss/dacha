@@ -8,12 +8,10 @@ extern crate alloc;
 use alloc::boxed::Box;
 use std::string::String;
 
-use common::async_std::fs;
-use common::async_std::net::TcpStream;
-use common::async_std::task;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::{Readable, Writeable};
+// use net::tcp::TcpStream;
 
 #[derive(Args)]
 struct Args {
@@ -42,9 +40,13 @@ struct ServerCommand {
     port: u16,
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
+    Ok(())
+
+    /*
     match args.command {
         Command::Client(cmd) => {
             let raw_stream = TcpStream::connect(&cmd.addr).await?;
@@ -79,9 +81,9 @@ async fn run() -> Result<()> {
         }
         Command::Server(cmd) => {
             let certificate_file =
-                fs::read(project_path!("testdata/certificates/server-ec.crt")).await?;
+                file::read(project_path!("testdata/certificates/server-ec.crt")).await?;
             let private_key_file =
-                fs::read(project_path!("testdata/certificates/server-ec.key")).await?;
+                file::read(project_path!("testdata/certificates/server-ec.key")).await?;
 
             let options = crypto::tls::options::ServerOptions::recommended(
                 certificate_file.into(),
@@ -90,8 +92,5 @@ async fn run() -> Result<()> {
             crypto::tls::server::Server::run(cmd.port, &options).await
         }
     }
-}
-
-fn main() -> Result<()> {
-    task::block_on(run())
+     */
 }

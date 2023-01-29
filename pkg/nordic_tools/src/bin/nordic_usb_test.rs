@@ -1,5 +1,7 @@
 extern crate common;
 extern crate usb;
+#[macro_use]
+extern crate macros;
 
 use std::fmt::Write;
 use std::thread::sleep;
@@ -9,7 +11,8 @@ use common::errors::*;
 use usb::descriptor_iter::DescriptorIter;
 use usb::DescriptorSet;
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let desc = nordic_proto::usb_descriptors::PROTOCOL_USB_DESCRIPTORS;
 
     let iter = DescriptorIter::new(desc.config_bytes(0).unwrap());
@@ -48,8 +51,4 @@ async fn run() -> Result<()> {
     println!("{:?}", common::bytes::Bytes::from(&data[0..n]));
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

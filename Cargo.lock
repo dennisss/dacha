@@ -334,6 +334,7 @@ dependencies = [
  "executor",
  "file",
  "http",
+ "macros",
  "parsing",
  "regexp_macros",
 ]
@@ -346,6 +347,7 @@ dependencies = [
  "common",
  "executor",
  "file",
+ "macros",
  "math",
  "regexp_macros",
  "usb",

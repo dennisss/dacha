@@ -14,9 +14,9 @@ struct Args {
     port: NamedPortArg,
 }
 
-pub fn main() -> Result<()> {
+pub async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
-    executor::run(main_with_port(args.port.value()))?
+    main_with_port(args.port.value()).await
 }
 
 async fn main_with_port(port: u16) -> Result<()> {

@@ -1,6 +1,7 @@
 extern crate uinput;
 extern crate usb;
-
+#[macro_use]
+extern crate macros;
 #[macro_use]
 extern crate common;
 
@@ -164,12 +165,10 @@ impl StadiaControllerState {
 const USB_CONFIG: u8 = 1;
 const USB_IFACE: u8 = 1;
 
-// sudo cp pkg/stadia_controller/80-stadia-controller.rules /etc/udev/rules.d/
-// sudo udevadm control --reload-rules
-
 // TODO: Support the mic input
 
-async fn read_controller() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let mut context = usb::Context::create()?;
 
     let mut device_handle = {
@@ -317,8 +316,4 @@ async fn read_controller() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(read_controller())?
 }

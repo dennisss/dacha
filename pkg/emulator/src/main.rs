@@ -1,5 +1,7 @@
 extern crate common;
 extern crate emulator;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 
@@ -9,8 +11,9 @@ macro_rules! sss {
     };
 }
 
-fn main() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     //	println!("{}", sss!(hello));
 
-    executor::run(emulator::gameboy::run())?
+    emulator::gameboy::run().await
 }

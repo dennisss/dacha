@@ -3,9 +3,12 @@
 
 extern crate common;
 extern crate container;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 
-fn main() -> Result<()> {
-    container::manager_main()
+#[executor_main]
+async fn main() -> Result<()> {
+    container::manager_main().await
 }

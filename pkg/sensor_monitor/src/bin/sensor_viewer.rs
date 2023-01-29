@@ -8,6 +8,8 @@ extern crate rpc;
 extern crate sensor_monitor;
 #[macro_use]
 extern crate file;
+#[macro_use]
+extern crate macros;
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -23,7 +25,8 @@ use sensor_monitor::proto::data::*;
 
 use sensor_monitor::viewer::MetricViewer;
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let channel = Arc::new(rpc::Http2Channel::create("http://127.0.0.1:8001")?);
 
     let stub = MetricStub::new(channel);
@@ -38,8 +41,4 @@ async fn run() -> Result<()> {
     });
 
     ui::render_element(root_el, 800, 1000).await
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

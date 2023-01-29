@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use core::time::Duration;
 use std::future::Future;
 
 use common::errors::*;
@@ -6,12 +7,31 @@ use common::errors::*;
 use crate::channel::oneshot;
 use crate::linux::executor::Executor;
 use crate::linux::join_handle::JoinHandle;
+use crate::ExecutorOptions;
 
 use super::thread_local::CurrentExecutorContext;
 
+const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(1000);
+
 pub fn run<F: Future>(future: F) -> Result<F::Output> {
-    let exec = Executor::create()?;
+    let exec = Executor::create(ExecutorOptions::default())?;
     exec.run(future)
+}
+
+pub fn run_main<F: Future>(future: F) -> Result<F::Output> {
+    run(async move {
+        let v = future.await;
+
+        crate::signals::trigger_shutdown();
+
+        crate::timeout(
+            GRACEFUL_SHUTDOWN_TIMEOUT,
+            crate::signals::wait_for_shutdowns(),
+        )
+        .await;
+
+        v
+    })
 }
 
 pub fn spawn<F: Future<Output = T> + Send + 'static, T: Send + 'static>(

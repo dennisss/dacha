@@ -36,7 +36,8 @@ struct Args {
     labels: CommaSeparated<String>,
 }
 
-fn main() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = parse_args::<Args>()?;
 
     let mut route_labels = vec![];
@@ -46,11 +47,12 @@ fn main() -> Result<()> {
         route_labels.push(l);
     }
 
-    executor::run(run(MetastoreConfig {
+    run(MetastoreConfig {
         dir: args.dir,
         init_port: args.init_port.value(),
         bootstrap: false,
         service_port: args.port.value(),
         route_labels,
-    }))?
+    })
+    .await
 }

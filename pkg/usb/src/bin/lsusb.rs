@@ -1,11 +1,14 @@
 extern crate common;
 extern crate usb;
+#[macro_use]
+extern crate macros;
 
 use std::fmt::Write;
 
 use common::errors::*;
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let ctx = usb::Context::create()?;
 
     let devices = ctx.enumerate_devices().await?;
@@ -44,8 +47,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

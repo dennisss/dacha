@@ -40,7 +40,8 @@ enum Command {
     },
 }
 
-async fn run_client() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     // TODO: Must verify that in HTTP if we get a Content-Length, but we don't
@@ -121,9 +122,4 @@ async fn run_client() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() {
-    let r = executor::run(run_client()).unwrap();
-    println!("{:?}", r);
 }

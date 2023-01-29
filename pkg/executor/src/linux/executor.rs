@@ -7,6 +7,7 @@ use core::task::{Context, Poll, RawWaker, Waker};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{spawn, JoinHandle};
+use std::time::Duration;
 
 use common::errors::*;
 use sys::{
@@ -15,6 +16,7 @@ use sys::{
 };
 
 use crate::linux::io_uring::*;
+use crate::linux::options::{ExecutorOptions, ExecutorRunMode};
 use crate::linux::task::{Task, TaskEntry, TaskState};
 use crate::linux::waker::create_waker;
 use crate::stack_pinned::stack_pinned;
@@ -27,35 +29,22 @@ pub type TaskId = u64;
 pub(super) type FileDescriptor = sys::c_int;
 
 pub struct Executor {
+    options: ExecutorOptions,
+
     shared: Arc<ExecutorShared>,
+
+    polling_thread: JoinHandle<()>,
 
     thread_pool: Vec<JoinHandle<()>>,
 }
 
-/*
-MVP: Call io_uring_enter() after every single entry is added.
-- Then we don't need to worry about the # of submissions but only the number of in-flight ones.
-- Later:
-    -
-- If we have hit the max in-flight operations, how do we wait for no longer being in this state:
-    - We need to have a set of tasks which want to be woken up for this.
-    - they can retry.
-- If an in-progress operation is active, we must wait for a cancellation before a task can complete.
-    - How to cancel something:
-        - Submit a cancelation (this is also an operation, so we limit to 95% of the overall queue size)
-
-
-Some challenges:
-- If we are using io_uring_enter to block on submissions of entries,
-
-*/
-
 /// Shared data associated with the executor.
 /// Instances are canonicaly Arc<Self> values.
 pub(super) struct ExecutorShared {
-    /// Whether or not the executor is running.
-    /// Initially this is true and is set to false when the main task completes.
-    running: AtomicBool,
+    /// Whether or not the executor is allowed any new root tasks to be added
+    /// (tasks not created by existing tasks). When false, all work will be
+    /// done when tasks.is_empty().
+    accepting_root_tasks: AtomicBool,
 
     /// Set of all actively running tasks.
     tasks: Mutex<HashMap<TaskId, Arc<TaskEntry>>>,
@@ -74,9 +63,9 @@ pub(super) struct ExecutorShared {
 }
 
 impl Executor {
-    pub fn create() -> Result<Self> {
+    pub fn create(options: ExecutorOptions) -> Result<Self> {
         let shared = Arc::new(ExecutorShared {
-            running: AtomicBool::new(true),
+            accepting_root_tasks: AtomicBool::new(true),
 
             tasks: Mutex::new(HashMap::new()),
             next_task_id: Mutex::new(1),
@@ -90,23 +79,27 @@ impl Executor {
         let mut thread_pool = vec![];
 
         // NOTE: The poller must be on a separate thread incase the main thread is
-        // running a future that needs to park itself for cancellation.
-        //
-        // TODO: Do something with the Result returned by this.
-        {
+        // running a future that needs to park itself for I/O operation cancellation.
+        let polling_thread = {
             let shared = shared.clone();
-            thread_pool.push(spawn(move || Self::polling_thread_fn(shared).unwrap()));
-        }
+            Self::spawn_thread(move || Self::polling_thread_fn(shared))
+        };
 
-        // TODO: Base on the number of CPU cores.
-        for i in 0..4 {
+        let num_threads = match options.thread_pool_size.clone() {
+            Some(v) => v,
+            None => sys::num_cpus()?,
+        };
+
+        for i in 0..num_threads {
             let shared = shared.clone();
-            thread_pool.push(spawn(move || Self::thread_fn(shared)));
+            thread_pool.push(Self::spawn_thread(move || Self::thread_fn(shared)));
         }
 
         Ok(Self {
+            options,
             shared,
             thread_pool,
+            polling_thread,
         })
     }
 
@@ -142,6 +135,8 @@ impl Executor {
             entry
         };
 
+        // No more root tasks will be added as we own the executor instance
+
         // Poll the main future.
         let output;
 
@@ -165,49 +160,77 @@ impl Executor {
                 }
             }
 
-            // The future should be dropped before we exit the executor context.
+            // The future should be dropped before we exit the task/executor contexts.
             drop(future);
+
+            // NOTE: Removing the task will ensure that the task list will eventually become
+            // empty so that worker threads can exit.
+            shared.tasks.lock().unwrap().remove(&task_entry.id);
         }
 
         drop(task_context);
         drop(executor_context);
 
-        // TODO: Need a grace period:
-        // - First wait some time for all the tasks to finish
-        // - Then actively stop polling futures.
-        // - Finally
+        Self::stop_accepting_root_tasks(&shared);
 
-        Self::shutdown(&shared);
+        if self.options.run_mode == ExecutorRunMode::StopAllTasks {
+            shared.io_uring.shutdown();
 
-        // TODO: If we stop the io_uring thread, then it is possible that any futures
-        // that still need to be dropped and cancelled will never finish.
-        for thread in self.thread_pool {
-            // TODO: We may want to cancel threads if they are stuck on some long running
-            // blocking computation.
-            thread.join().unwrap();
+            // All I/O operations should return a cancelled error on the next Poll because
+            // we shut down the io_uring.
+            let tasks = shared.tasks.lock().unwrap();
+            for task_entry in tasks.values() {
+                Self::wake_task_entry(&task_entry, false);
+            }
+        }
+
+        if self.options.run_mode == ExecutorRunMode::StopAllTasks
+            || self.options.run_mode == ExecutorRunMode::WaitForAllTasks
+        {
+            for thread in self.thread_pool {
+                thread.join().unwrap();
+            }
+
+            shared.io_uring.shutdown();
+
+            // NOTE: Even though all workers have been stopped, we may still have some
+            // pending cancellation operations.
+            self.polling_thread.join().unwrap();
         }
 
         Ok(output)
     }
 
-    fn shutdown(shared: &ExecutorShared) {
+    fn stop_accepting_root_tasks(shared: &ExecutorShared) {
         // TODO: Put inside of the mutex used for the pending queue.
-        shared.running.store(false, Ordering::SeqCst);
+        shared.accepting_root_tasks.store(false, Ordering::SeqCst);
 
-        // For all worker threads to notice that running == false.
+        // For all worker threads to notice that accepting_root_tasks == false.
         shared.pending_queue_condvar.notify_all();
+    }
 
-        // Force the event loop to wake up and stop as running == false.
-        shared.io_uring.wake_poller().unwrap();
+    fn spawn_thread<F: FnOnce() + Sync + Send + 'static>(f: F) -> JoinHandle<()> {
+        // Wrap all executor threads in an abort.
+        // This is so that if a single task panics, we notice this in the form of the
+        // whole process ending. Otherwise we may end up in a situation where we are
+        // blocked waiting for threads to finish.
+        spawn(|| {
+            let mut aborter = AbortOnDrop::new();
+            f();
+            aborter.stop_abort();
+        })
     }
 
     /// Runs until all tasks spawned in the executor have finished running.
     /// This is a blocking call and also runs the main polling logic.
-    fn polling_thread_fn(shared: Arc<ExecutorShared>) -> Result<()> {
+    fn polling_thread_fn(shared: Arc<ExecutorShared>) {
+        Self::polling_thread_inner(shared).unwrap();
+    }
+
+    fn polling_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
         let mut tasks_to_wake = HashSet::new();
 
-        // TODO: Also stop if any of the threads paniced.
-        while shared.running.load(Ordering::SeqCst) {
+        while !shared.io_uring.finished() {
             tasks_to_wake.clear();
             shared.io_uring.poll_events(&mut tasks_to_wake)?;
 
@@ -309,12 +332,18 @@ impl Executor {
         loop {
             let task_id;
             loop {
+                if !shared.accepting_root_tasks.load(Ordering::SeqCst)
+                    && shared.tasks.lock().unwrap().is_empty()
+                {
+                    // Stop running once we believe no other tasks will need to be executed in the
+                    // future.
+                    task_id = None;
+                    break;
+                }
+
                 let mut pending_queue = shared.pending_queue.lock().unwrap();
                 if let Some(next_task_id) = pending_queue.pop_front() {
                     task_id = Some(next_task_id);
-                    break;
-                } else if !shared.running.load(Ordering::SeqCst) {
-                    task_id = None;
                     break;
                 } else {
                     pending_queue = shared.pending_queue_condvar.wait(pending_queue).unwrap();
@@ -360,7 +389,12 @@ impl Executor {
 
             loop {
                 if cancelled {
+                    // Ensure that all operations are cleaned up before we remove the task entry
+                    // so that any operation completions don't complain about non-existent
+                    // tasks.
                     drop(future);
+
+                    shared.tasks.lock().unwrap().remove(&task_id);
                     break;
                 }
 
@@ -368,13 +402,8 @@ impl Executor {
 
                 match p {
                     Poll::Ready(()) => {
-                        // Ensure that all operations are cleaned up before we remove the task entry
-                        // so that any operation completions don't complain about non-existent
-                        // tasks.
-                        drop(future);
-
-                        shared.tasks.lock().unwrap().remove(&task_id);
-                        break;
+                        cancelled = true;
+                        continue;
                     }
                     Poll::Pending => {
                         let mut state = task_entry.state.lock().unwrap();
@@ -397,5 +426,36 @@ impl Executor {
                 }
             }
         }
+    }
+}
+
+struct AbortOnDrop {
+    should_abort: bool,
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        if self.should_abort {
+            std::process::abort();
+        }
+    }
+}
+
+impl AbortOnDrop {
+    pub fn new() -> Self {
+        Self { should_abort: true }
+    }
+
+    pub fn stop_abort(&mut self) {
+        self.should_abort = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn task_is_eventually_removed() {
+
+        //
     }
 }

@@ -391,6 +391,7 @@ impl App {
     }
 }
 
-fn main() -> Result<()> {
-    executor::run(App::run())?
+#[executor_main]
+async fn main() -> Result<()> {
+    App::run().await
 }

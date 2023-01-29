@@ -169,9 +169,9 @@ impl TransactionManager {
 
         let (sender, receiver) = channel::bounded(1);
 
-        // Write the final execution logic in a separate thread.
-        // For correctness we can't have that logic partially execute as we don't want
-        // locks
+        // Wrap the final execution logic in a separate thread.
+        // For correctness we can't have that logic partially execute to ensure that
+        // locks are released.
         executor::spawn(Self::execute_task(
             node,
             lock_holder,
@@ -442,13 +442,6 @@ impl TransactionManager {
         Ok(true)
     }
 }
-
-// Find first range before the start key.
-// - then start merging.
-
-// Here's the real question:
-// - Do I need to lock every key I write?
-// - Yes!
 
 /*
 General idea:

@@ -18,6 +18,7 @@ use syn::{Item, ItemImpl};
 
 mod args;
 mod error;
+mod executor_main;
 mod hex;
 mod param;
 mod race;
@@ -161,4 +162,9 @@ pub fn testcase(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn error(attr: TokenStream, item: TokenStream) -> TokenStream {
     error::error(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn executor_main(attr: TokenStream, item: TokenStream) -> TokenStream {
+    executor_main::run(attr, item)
 }

@@ -5,6 +5,8 @@ extern crate image;
 extern crate math;
 #[macro_use]
 extern crate file;
+#[macro_use]
+extern crate macros;
 
 use std::sync::Arc;
 
@@ -30,14 +32,15 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     // let f = run();
     // let f = graphics::font::open_font();
     let f = graphics::ui::examples::run();
     // let f = graphics::point_picker::run();
     // let f = graphics::opengl::run();
 
-    return executor::run(f)?;
+    f.await
 
     // executor::run(graphics::font::open_font())?
 

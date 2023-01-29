@@ -71,7 +71,8 @@ enum Args {
     PollState { username: String },
 }
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let client = AnonymousHueClient::create().await?;
@@ -95,8 +96,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

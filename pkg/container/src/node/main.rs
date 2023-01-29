@@ -258,7 +258,7 @@ fn run_root_process(
     config: &NodeConfig,
     setup_child: SetupSocketChild,
 ) -> sys::ExitCode {
-    let result = executor::run(run(context, config, setup_child)).unwrap();
+    let result = executor::run_main(run(context, config, setup_child)).unwrap();
     let code = match result {
         Ok(()) => 0,
         Err(e) => {

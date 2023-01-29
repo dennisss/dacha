@@ -28,7 +28,8 @@ struct Args {
 "port.poe", true
 */
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let mut uri = http::uri::Uri::from_str(args.addr.as_str())?;
@@ -79,8 +80,4 @@ async fn run() -> Result<()> {
     // println!("PUT INTERFACES RESULT: {:#?}", res);
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    executor::run(run())?
 }

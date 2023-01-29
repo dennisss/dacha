@@ -4,6 +4,8 @@
 extern crate common;
 extern crate http;
 extern crate parsing;
+#[macro_use]
+extern crate macros;
 
 use std::convert::TryFrom;
 
@@ -22,7 +24,8 @@ perf record ./target/release/http_client
 pprof -web target/release/http_client perf.data
 */
 
-async fn run_client() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
     {
@@ -99,8 +102,4 @@ async fn run_client() -> Result<()> {
     );
 
     return Ok(());
-}
-
-fn main() -> Result<()> {
-    executor::run(run_client())?
 }

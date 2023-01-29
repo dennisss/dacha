@@ -34,7 +34,8 @@ struct Args {
 }
 
 // TODO: Set server side request timeout.
-async fn run_server() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let adder = AdderImpl::create(args.request_log.as_ref().map(|s| s.as_str())).await?;
@@ -48,9 +49,4 @@ async fn run_server() -> Result<()> {
 
     println!("Starting on port {}", args.port.value());
     server.run(args.port.value()).await
-}
-
-fn main() {
-    let r = executor::run(run_server()).unwrap();
-    println!("{:?}", r);
 }

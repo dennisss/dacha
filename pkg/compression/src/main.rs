@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate macros;
 extern crate byteorder;
 extern crate compression;
 
@@ -18,7 +20,8 @@ use compression::zlib::*;
 // TODO: Maintain a histogram of characters in the block to determine when to
 // cut the block?
 
-async fn run() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let mut tar = compression::tar::Reader::open(
         "/home/dennis/workspace/dacha/built/pkg/home_hub/bundle.tar",
     )
@@ -50,61 +53,57 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
-    executor::run(run())?
+// let mut window = MatchingWindow::new();
+// let chars = b"Blah blah blah blah blah!";
 
-    // let mut window = MatchingWindow::new();
-    // let chars = b"Blah blah blah blah blah!";
+// let mut i = 0;
+// while i < chars.len() {
+// 	let mut n = 1;
+// 	if let Some(m) = window.find_match(&chars[i..]) {
+// 		println!("{:?}", m);
+// 		n = m.length;
+// 	} else {
+// 		println!("Literal: {}", chars[i] as char);
+// 	}
 
-    // let mut i = 0;
-    // while i < chars.len() {
-    // 	let mut n = 1;
-    // 	if let Some(m) = window.find_match(&chars[i..]) {
-    // 		println!("{:?}", m);
-    // 		n = m.length;
-    // 	} else {
-    // 		println!("Literal: {}", chars[i] as char);
-    // 	}
+// 	window.extend_from_slice(&chars[i..(i+n)]);
+// 	i += n;
+// }
 
-    // 	window.extend_from_slice(&chars[i..(i+n)]);
-    // 	i += n;
-    // }
+// assert_eq!(i, chars.len());
 
-    // assert_eq!(i, chars.len());
+/*
+    let header = Header {
+        compression_method: CompressionMethod::Deflate,
+        is_text: true,
+        mtime: 10,
+        extra_flags: 2, // < Max compression (slowest algorithm)
+        os: GZIP_UNIX_OS,
+        extra_field: None,
+        filename: Some("lorem_ipsum.txt".into()),
+        comment: None,
+        header_validated: false
+    };
 
-    /*
-        let header = Header {
-            compression_method: CompressionMethod::Deflate,
-            is_text: true,
-            mtime: 10,
-            extra_flags: 2, // < Max compression (slowest algorithm)
-            os: GZIP_UNIX_OS,
-            extra_field: None,
-            filename: Some("lorem_ipsum.txt".into()),
-            comment: None,
-            header_validated: false
-        };
-
-        let mut infile = File::open("testdata/lorem_ipsum.txt")?;
-        let mut indata = Vec::new();
-        infile.read_to_end(&mut indata)?;
+    let mut infile = File::open("testdata/lorem_ipsum.txt")?;
+    let mut indata = Vec::new();
+    infile.read_to_end(&mut indata)?;
 
 
-        let mut outfile = File::create("testdata/out/lorem_ipsum.txt.test.gz")?;
-        write_gzip(header, &indata, &mut outfile)?;
+    let mut outfile = File::create("testdata/out/lorem_ipsum.txt.test.gz")?;
+    write_gzip(header, &indata, &mut outfile)?;
 
-        return Ok(());
-    */
+    return Ok(());
+*/
 
-    // let data = std::fs::read("/home/dennis/Downloads/dmg_sound.zip")?;
-    // compression::zip::read_zip_file(&data)?;
+// let data = std::fs::read("/home/dennis/Downloads/dmg_sound.zip")?;
+// compression::zip::read_zip_file(&data)?;
 
-    /*
-    ///
-    let mut f = File::open("testdata/out/lorem_ipsum.txt.test.gz")?;
-    let gz = read_gzip(&mut f)?;
-    println!("{:?}", gz);
-    */
+/*
+///
+let mut f = File::open("testdata/out/lorem_ipsum.txt.test.gz")?;
+let gz = read_gzip(&mut f)?;
+println!("{:?}", gz);
+*/
 
-    // TODO: Assert that we now at the end of the file after reading.
-}
+// TODO: Assert that we now at the end of the file after reading.
