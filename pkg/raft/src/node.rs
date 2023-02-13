@@ -230,6 +230,7 @@ impl<R: 'static + Send> Node<R> {
                         }
                         res = background_error => {
                             res?;
+                            // Most likely the program is currently being shut down.
                             return Err(err_msg("Discovery thread exited early"));
                         }
                     }
@@ -344,7 +345,7 @@ impl<R: 'static + Send> Node<R> {
 
         let (started_sender, started_receiver) = channel::bounded(2);
         rpc_server.add_start_callback(move || {
-            // Wait up both threads.
+            // Wkae up both threads.
             for i in 0..2 {
                 let _ = started_sender.try_send(());
             }

@@ -1,8 +1,9 @@
-use crate::{bindings, c_int, Errno};
+use crate::bindings::{AT_FDCWD, AT_REMOVEDIR, AT_SYMLINK_NOFOLLOW};
+use crate::{bindings, c_int, c_uint, Errno};
 
 /// NOTE: Does not produce a null terminator.
 pub unsafe fn readlink(path: *const u8, buf: &mut [u8]) -> Result<usize, Errno> {
-    raw::readlink(path, buf.as_mut_ptr(), buf.len())
+    raw::readlinkat(AT_FDCWD, path, buf.as_mut_ptr(), buf.len())
 }
 
 define_transparent_enum!(LockOperation c_int {
@@ -20,21 +21,48 @@ pub unsafe fn flock(fd: c_int, operation: LockOperation, non_blocking: bool) -> 
     raw::flock(fd, op)
 }
 
-syscall!(unlink, bindings::SYS_unlink, path: *const u8 => Result<()>);
-syscall!(symlink, bindings::SYS_symlink, old: *const u8, new: *const u8 => Result<()>);
-syscall!(rmdir, bindings::SYS_rmdir, path: *const u8 => Result<()>);
+// AT_FDCWD
+
+// syscall!(rmdir, bindings::SYS_rmdir, path: *const u8 => Result<()>);
+
+pub unsafe fn rmdir(path: *const u8) -> Result<(), Errno> {
+    unlinkat(AT_FDCWD, path, AT_REMOVEDIR)
+}
+
+pub unsafe fn unlink(path: *const u8) -> Result<(), Errno> {
+    unlinkat(AT_FDCWD, path, 0)
+}
+
+syscall!(unlinkat, bindings::SYS_unlinkat, fd: c_int, path: *const u8, flags: c_uint => Result<()>);
+
+pub unsafe fn symlink(old: *const u8, new: *const u8) -> Result<(), Errno> {
+    symlinkat(old, AT_FDCWD, new)
+}
+
+syscall!(symlinkat, bindings::SYS_symlinkat, old: *const u8, newdfd: c_int, new: *const u8 => Result<()>);
+
+pub unsafe fn mkdir(path: *const u8, mode: bindings::mode_t) -> Result<(), Errno> {
+    mkdirat(AT_FDCWD, path, mode)
+}
 
 // TODO: Use umode_t
-syscall!(mkdir, bindings::SYS_mkdir, path: *const u8, mode: bindings::mode_t => Result<()>);
+syscall!(mkdirat, bindings::SYS_mkdirat, fd: c_int, path: *const u8, mode: bindings::mode_t => Result<()>);
 
-syscall!(stat, bindings::SYS_stat, path: *const u8, statbuf: *mut bindings::stat => Result<()>);
-syscall!(lstat, bindings::SYS_lstat, path: *const u8, statbuf: *mut bindings::stat => Result<()>);
+pub unsafe fn stat(path: *const u8, statbuf: *mut bindings::stat) -> Result<(), Errno> {
+    fstatat(AT_FDCWD, path, statbuf, 0)
+}
+
+pub unsafe fn lstat(path: *const u8, statbuf: *mut bindings::stat) -> Result<(), Errno> {
+    fstatat(AT_FDCWD, path, statbuf, AT_SYMLINK_NOFOLLOW)
+}
+
 syscall!(fstat, bindings::SYS_fstat, fd: c_int, statbuf: *mut bindings::stat => Result<()>);
+syscall!(fstatat, bindings::SYS_newfstatat, dirfd: c_int, path: *const u8, statbuf: *mut bindings::stat, flags: c_uint => Result<()>);
 
 mod raw {
     use super::*;
 
-    syscall!(readlink, bindings::SYS_readlink, path: *const u8, buf: *mut u8, bufsize: usize => Result<usize>);
+    syscall!(readlinkat, bindings::SYS_readlinkat, dirfd: c_int, path: *const u8, buf: *mut u8, bufsize: usize => Result<usize>);
 
     syscall!(flock, bindings::SYS_flock, fd: c_int, operation: c_int => Result<()>);
 }

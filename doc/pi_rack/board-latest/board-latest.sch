@@ -227,8 +227,6 @@ Wire Wire Line
 	10300 3400 10300 3650
 Wire Wire Line
 	10300 3200 10300 2950
-Text Notes 7350 1400 0    50   ~ 0
-TODO: Check ethernet wiring
 $Comp
 L Connector_Generic:Conn_01x04 J3
 U 1 1 638B2AD6

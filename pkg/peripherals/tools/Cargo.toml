@@ -1,0 +1,13 @@
+[package]
+name = "peripherals_tools"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+crypto = { path = "../../crypto" }
+executor = { path = "../../executor" }
+macros = { path = "../../macros" }
+peripherals = { path = ".." }
+peripherals_devices = { path = "../devices" }
+nix = "0.21.0"

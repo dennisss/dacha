@@ -8,7 +8,6 @@ macros = { path = "../macros" }
 automata = { path = "../automata", optional = true }
 regexp_macros = { path = "../automata/regexp_macros" }
 common = { path = "../common", default-features = false }
-libc = { version = "0.2.97", optional = true }
 nix = { version = "0.21.0", optional = true }
 failure = { version = "0.1.8", optional = true }
 sys = { path = "../sys", optional = true }
@@ -17,5 +16,5 @@ file = { path = "../file", optional = true }
 
 [features]
 default = ["std"]
-std = ["alloc", "nix", "libc", "common/std", "automata", "sys", "executor", "file"]
+std = ["alloc", "nix", "common/std", "automata", "sys", "executor", "file"]
 alloc = ["common/alloc", "failure"]

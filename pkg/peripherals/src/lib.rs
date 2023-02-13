@@ -19,6 +19,10 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate nix;
+
 pub mod raw {
     pub use peripherals_raw::*;
 }
@@ -26,6 +30,11 @@ pub mod raw {
 pub mod blob;
 pub mod eeprom;
 pub mod storage;
+
+#[cfg(feature = "std")]
+mod linux;
+#[cfg(feature = "std")]
+pub use linux::*;
 
 /*
 Could do something like:

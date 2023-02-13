@@ -15,6 +15,7 @@ failure = "0.1.8"
 sys = { path = "../sys" }
 executor = { path = "../executor" }
 file = { path = "../file" }
+macros = { path = "../macros" }
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }

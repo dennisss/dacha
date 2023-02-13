@@ -212,13 +212,13 @@ define_transparent_enum!(SocketOptionLevel c_int {
 // NOTE: Only applicable for SOL_SOCKET.
 define_transparent_enum!(SocketOption c_int {
     // Options for SOL_SOCKET
-    SO_BROADCAST = (bindings::SO_BROADCAST as c_int),
-    SO_REUSEADDR = (bindings::SO_REUSEADDR as c_int),
-    SO_REUSEPORT = (bindings::SO_REUSEPORT as c_int),
-    IP_ADD_MEMBERSHIP = (bindings::IP_ADD_MEMBERSHIP as c_int),
+    SO_BROADCAST = bindings::SO_BROADCAST as c_int,
+    SO_REUSEADDR = bindings::SO_REUSEADDR as c_int,
+    SO_REUSEPORT = bindings::SO_REUSEPORT as c_int,
+    IP_ADD_MEMBERSHIP = bindings::IP_ADD_MEMBERSHIP as c_int,
 
     // Options for IPPROTO_TCP
-    TCP_NODELAY = (bindings::TCP_NODELAY as c_int)
+    TCP_NODELAY = bindings::TCP_NODELAY as c_int
 });
 
 pub unsafe fn setsockopt(

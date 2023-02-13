@@ -44,9 +44,9 @@ pub extern crate lazy_static;
 #[cfg(feature = "std")]
 pub extern crate chrono;
 pub extern crate generic_array;
-pub extern crate typenum;
-
+#[cfg(feature = "std")]
 pub extern crate nix;
+pub extern crate typenum;
 
 #[macro_use]
 extern crate macros;

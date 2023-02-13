@@ -15,7 +15,6 @@ Supported features:
   - View the entire set of keys/values at a specific point in time.
 - Transactions
 - Advistory Locking
-  - 
 
 - Connection operations
     - `NewClient`: creates a new client connection

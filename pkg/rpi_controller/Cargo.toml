@@ -1,6 +1,6 @@
 [package]
 name = "rpi_controller"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2018"
 
 [dependencies]
@@ -8,6 +8,7 @@ common = { path = "../common" }
 protobuf = { path = "../protobuf" }
 protobuf_json = { path = "../protobuf/json" }
 macros = { path = "../macros" }
+executor = { path = "../executor" }
 rpi = { path = "../rpi" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }

@@ -1,6 +1,5 @@
 use common::errors::*;
-
-use crate::spi::{SPIDevice, SPI};
+use peripherals::spi::{SPIDevice, SPI};
 
 /*
 MX25L25645GMI

@@ -10,10 +10,7 @@ use std::thread::{spawn, JoinHandle};
 use std::time::Duration;
 
 use common::errors::*;
-use sys::{
-    Epoll, EpollEvent, EpollEvents, EpollOp, IoCompletionUring, IoSubmissionUring, IoUring,
-    IoUringOp, IoUringResult,
-};
+use sys::{IoCompletionUring, IoSubmissionUring, IoUring, IoUringOp, IoUringResult};
 
 use crate::linux::io_uring::*;
 use crate::linux::options::{ExecutorOptions, ExecutorRunMode};

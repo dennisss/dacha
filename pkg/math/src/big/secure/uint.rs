@@ -608,12 +608,18 @@ impl SecureBigUint {
     // TODO: Finish making this constant time and correct.
     #[cfg(not(all(target_arch = "x86_64", target_feature = "pclmulqdq")))]
     pub fn carryless_mul_to(&self, rhs: &Self, out: &mut Self) {
+        self.carryless_mul_to_generic(rhs, out)
+    }
+
+    fn carryless_mul_to_generic(&self, rhs: &Self, out: &mut Self) {
         assert!(out.bit_width() >= self.bit_width() + rhs.bit_width() - 1);
 
+        let mut lhs = self.clone();
+
         out.assign_zero();
-        for i in 0..b.value_bits() {
-            out.xor_assign_if(b.bit(i) == 1, &a);
-            a.shl();
+        for i in 0..rhs.value_bits() {
+            out.xor_assign_if(rhs.bit(i) == 1, &lhs);
+            lhs.shl();
         }
     }
 

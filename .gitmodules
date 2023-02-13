@@ -8,7 +8,7 @@
 	path = third_party/pi-gen
 	url = git@github.com:dennisss/pi-gen.git
 [submodule "third_party/libcamera"]
-	path = third_party/libcamera
+	path = third_party/libcamera/repo
 	url = https://git.libcamera.org/libcamera/libcamera.git
 [submodule "third_party/rp2040_stamp_footprints"]
 	path = third_party/rp2040_stamp_footprints

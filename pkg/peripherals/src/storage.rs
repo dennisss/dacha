@@ -5,7 +5,7 @@ use common::errors::*;
 use common::fixed::vec::FixedVec;
 use crypto::checksum::crc16::crc16_incremental_lut;
 use crypto::hasher::Hasher;
-use executor::mutex::Mutex;
+use executor::sync::Mutex;
 
 use crate::eeprom::EEPROM;
 

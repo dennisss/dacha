@@ -3,8 +3,6 @@
 #[macro_use]
 extern crate common;
 
-pub mod register;
-
 #[cfg(target_label = "nrf52840")]
 pub mod nrf52840 {
     #![allow(

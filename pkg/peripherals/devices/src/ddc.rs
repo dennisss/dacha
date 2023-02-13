@@ -9,8 +9,8 @@
 0b 1010 0001
 */
 
-use crate::i2c::I2CDevice;
 use common::errors::*;
+use peripherals::i2c::I2CDevice;
 
 fn compute_checksum(data: &[u8]) -> u8 {
     let mut sum = 0;

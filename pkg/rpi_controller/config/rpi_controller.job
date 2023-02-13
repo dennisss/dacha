@@ -9,7 +9,7 @@ scheduling {
     distinct_nodes: true
 }
 
-task {
+worker {
     cwd: "/volumes/dacha"
     args: [
         # TODO: Pre-validate that this file exists in the bundle

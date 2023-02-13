@@ -1,7 +1,6 @@
 use common::errors::*;
 use crypto::checksum::crc16::crc16_lut;
-
-use crate::spi::{SPIDevice, SPI};
+use peripherals::spi::{SPIDevice, SPI};
 
 /*
 

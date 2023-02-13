@@ -96,6 +96,11 @@ impl DiscoveryClient {
 
     /// Periodically calls seed()
     pub async fn run(self: Self) {
+        let token = executor::signals::new_shutdown_token();
+        executor::future::race(token.wait_for_cancellation(), self.run_impl()).await
+    }
+
+    async fn run_impl(self: Self) {
         loop {
             let res = self.seed().await;
             if let Err(e) = res {

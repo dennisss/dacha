@@ -11,7 +11,7 @@
 #include <linux/fs.h>
 #include <linux/poll.h>
 #include <linux/sched.h>
-#include <asm/prctl.h>
+// #include <asm/prctl.h>
 #include <pthread.h>
 #include <signal.h>
 #include <linux/tcp.h>

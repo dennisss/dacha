@@ -7,8 +7,8 @@ use std::sync::Arc;
 use common::errors::*;
 use common::io::IoError;
 use sys::{
-    c_int, close, open, read, EpollEvents, Errno, IoSlice, IoSliceMut, IoUringOp,
-    OpenFileDescriptor, RWFlags, O_CLOEXEC, O_NONBLOCK, O_RDONLY,
+    c_int, close, open, read, Errno, IoSlice, IoSliceMut, IoUringOp, OpenFileDescriptor, RWFlags,
+    O_CLOEXEC, O_NONBLOCK, O_RDONLY,
 };
 
 use crate::linux::executor::FileDescriptor;

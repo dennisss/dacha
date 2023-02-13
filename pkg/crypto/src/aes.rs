@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::arch::x86_64::*;
 
 use common::errors::*;
+#[cfg(target_arch = "x86_64")]
 use math::{from_m128i, to_m128i};
 
 use crate::aes_generic::*;

@@ -1,17 +1,17 @@
 use std::ffi::CStr;
 use std::fmt::Debug;
 
-use crate::bindings::new_utsname;
 use crate::errno::Errno;
+use crate::{bindings, kernel};
 
 pub struct UtsName {
-    raw: new_utsname,
+    raw: kernel::new_utsname,
 }
 
 impl UtsName {
     pub fn read() -> Result<Self, Errno> {
-        let mut raw = new_utsname::default();
-        unsafe { crate::uname(&mut raw) }?;
+        let mut raw = kernel::new_utsname::default();
+        unsafe { raw::uname(&mut raw) }?;
         Ok(Self { raw })
     }
 
@@ -39,11 +39,8 @@ impl UtsName {
         Self::get(&self.raw.domainname)
     }
 
-    fn get(data: &[i8]) -> &str {
-        CStr::from_bytes_until_nul(unsafe { core::mem::transmute::<&[i8], &[u8]>(data) })
-            .unwrap()
-            .to_str()
-            .unwrap()
+    fn get(data: &[u8]) -> &str {
+        CStr::from_bytes_until_nul(data).unwrap().to_str().unwrap()
     }
 }
 
@@ -72,4 +69,10 @@ mod tests {
         assert_eq!(name.domainname(), "(none)");
         println!("{:#?}", name);
     }
+}
+
+mod raw {
+    use super::*;
+
+    syscall!(uname, bindings::SYS_uname, name: *mut kernel::new_utsname => Result<()>);
 }

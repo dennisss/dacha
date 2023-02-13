@@ -119,55 +119,12 @@ fn main() -> Result<()> {
     */
 
     /*
-    let i2c = peripheral::i2c::I2CDevice::open("/dev/i2c-1")?;
-
-    let mut dev = SGP30::open(i2c);
-
-    let serial = dev.get_serial()?;
-    println!("SERIAL {:?}", serial);
-
-    dev.init_air_quality()?;
-
-    let mut i = 0;
-    loop {
-        let quality = dev.measure_air_quality()?;
-        println!("{:?}", quality);
-
-        if i % 10 == 0 {
-            let baseline = dev.get_baseline()?;
-            println!("Baseline: {:?}", baseline);
-        }
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        i += 1;
-    }
-    */
-
-    /*
     let mut spi = SPIDevice::open("/dev/spidev0.0")?;
     let mut flash = FlashChip::open(spi)?;
 
     let buf = flash.read_all()?;
 
     std::fs::write("/home/pi/flash_dump2", &buf)?;
-    */
-
-    /*
-    // On linux disconnecting gives the error:
-    // Error: Os { code: 121, kind: Uncategorized, message: "Remote I/O error" }
-
-    let i2c = peripheral::i2c::I2CDevice::open("/dev/i2c-12")?;
-
-    let mut clock = DS3231::open(i2c);
-
-    println!("Temp: {}", clock.read_temperature()?);
-    clock.write_time(&DS3231Time::from_atomic_seconds(0))?;
-    for i in 0..100 {
-        let time = clock.read_time()?;
-        println!("Time: {}", time.to_atomic_seconds());
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
     */
 
     // for i in 0..127 {

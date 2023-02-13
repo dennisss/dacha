@@ -57,8 +57,13 @@ impl DiscoveryMulticast {
     }
 
     pub async fn run(self) -> Result<()> {
-        // TODO: Support cancellation.
-        executor::future::race(self.run_client(), self.run_server()).await
+        let cancel_token = executor::signals::new_shutdown_token();
+
+        executor::future::race(
+            executor::future::map(cancel_token.wait_for_cancellation(), |_| Ok(())),
+            executor::future::race(self.run_client(), self.run_server()),
+        )
+        .await
     }
 
     /// Periodically broadcasts our local identity to all other peers.

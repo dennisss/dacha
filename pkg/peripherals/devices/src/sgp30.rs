@@ -2,8 +2,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use common::errors::*;
-
-use crate::i2c::I2CDevice;
+use peripherals::i2c::I2CDevice;
 
 const DEVICE_ADDRESS: u8 = 0x58;
 

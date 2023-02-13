@@ -1,0 +1,12 @@
+[package]
+name = "peripherals_devices"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+crypto = { path = "../../crypto" }
+executor = { path = "../../executor" }
+peripherals = { path = ".." }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }

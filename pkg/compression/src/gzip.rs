@@ -328,7 +328,7 @@ impl GzipDecoder {
 
                     break;
                 }
-                Done => {
+                GzipDecoderState::Done => {
                     return Err(err_msg("GzipDecoder already done"));
                 }
             }

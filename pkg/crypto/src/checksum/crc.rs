@@ -78,7 +78,7 @@ const CRC32C_TABLE: [u32; 256] = [
     0x79B737BA, 0x8BDCB4B9, 0x988C474D, 0x6AE7C44E, 0xBE2DA0A5, 0x4C4623A6, 0x5F16D052, 0xAD7D5351,
 ];
 
-// Bit representaion of the polynomials minut 2^32
+// Bit representaion of the polynomials minus 2^32
 const CRC32_POLYNOMIAL: u32 = 0x04C11DB7;
 const CRC32_POLYNOMIAL_REVERSED: u32 = 0xEDB88320;
 const CRC32C_POLYNOMIAL: u32 = 0x1edc6f41;

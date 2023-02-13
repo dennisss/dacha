@@ -149,16 +149,21 @@ sigreturn:
     "#
 );
 
+/*
+frame pointer is register x29
+*/
 #[cfg(target_arch = "aarch64")]
 core::arch::global_asm!(
     r#"
 .global syscall_raw
 syscall_raw:
-    push fp
+    str fp, [sp, #-16]! // 'push fp' (note that we must keep the stack 16-byte aligned)
     mov fp, sp
-    mov x8, x6 # system call number
+
+    mov x8, x6 // system call number
     svc #0
-    pop fp
+
+    ldr fp, [sp], #16 // 'pop fp'
     ret
     "#
 );

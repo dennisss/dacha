@@ -3,8 +3,7 @@ use std::time::Duration;
 
 use common::errors::*;
 use parsing::binary::{be_i8, le_i16, le_u16, le_u24};
-
-use crate::i2c::I2CDevice;
+use peripherals::i2c::I2CDevice;
 
 const DEVICE_ADDRESS: u8 = 0x77;
 const CALIBRATION_START_OFFSET: u8 = 0x31;

@@ -1,0 +1,13 @@
+[package]
+name = "peripherals_raw"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common", default-features = false }
+
+[build-dependencies]
+common = { path = "../../common" }
+automata = { path = "../../automata" }
+cmsis_svd = { path = "../../cmsis_svd" }
+file = { path = "../../file" }

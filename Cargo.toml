@@ -66,7 +66,9 @@ members = [
 	"pkg/ubiquiti",
 	"pkg/cmsis_svd",
 	"pkg/peripherals",
-	"pkg/peripherals_raw",
+	"pkg/peripherals/raw",
+	"pkg/peripherals/devices",
+	"pkg/peripherals/tools",
 	"pkg/nordic_tools",
 	"pkg/web",
 	"pkg/rpi_controller",
@@ -97,6 +99,8 @@ members = [
 	"pkg/markdown",
 	"pkg/markdown/test",
 	"pkg/base/args",
+	"pkg/datastore/deb",
+	"third_party/libcamera"
 ]
 
 [profile.dev]
