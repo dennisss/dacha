@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use common::{errors::*, futures::StreamExt};
 
@@ -146,8 +147,7 @@ impl Context {
                 }
             }
 
-            let poll_result =
-                unsafe { sys::poll(fds.as_mut_ptr(), fds.len() as sys::c_uint, 1000) };
+            let poll_result = sys::poll(&mut fds, Some(Duration::from_millis(1000)));
 
             let n = match poll_result {
                 Ok(0) => {

@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use crate::{c_uint, c_ulong, c_ushort};
+use crate::{c_char, c_uint, c_ulong, c_ushort};
 
 pub type sigset_t = u64;
 
@@ -178,3 +178,29 @@ pub const PR_SET_SECUREBITS: c_uint = 28;
 pub const PR_SET_NO_NEW_PRIVS: c_uint = 38;
 pub const PR_GET_NO_NEW_PRIVS: c_uint = 39;
 pub const PR_CAP_AMBIENT: c_uint = 47;
+
+// Mirroring 'include/uapi/linux/utsname.h'
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct new_utsname {
+    pub sysname: [u8; 65],
+    pub nodename: [u8; 65],
+    pub release: [u8; 65],
+    pub version: [u8; 65],
+    pub machine: [u8; 65],
+    pub domainname: [u8; 65],
+}
+
+impl Default for new_utsname {
+    fn default() -> Self {
+        Self {
+            sysname: [0; 65],
+            nodename: [0; 65],
+            release: [0; 65],
+            version: [0; 65],
+            machine: [0; 65],
+            domainname: [0; 65],
+        }
+    }
+}

@@ -1,6 +1,6 @@
 use core::ffi::CStr;
 
-use alloc::{string::String, vec::Vec};
+use alloc::{ffi::CString, string::String, vec::Vec};
 
 use common::errors::*;
 use executor::RemapErrno;

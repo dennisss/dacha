@@ -15,7 +15,7 @@ mod syscall;
 mod capabilities;
 mod clone;
 mod credentials;
-mod epoll;
+// mod epoll;
 mod errno;
 mod exit;
 mod file;
@@ -26,12 +26,13 @@ mod iov;
 mod kernel;
 mod mapped_memory;
 mod num_cpus;
+mod poll;
 mod proc;
 mod send;
 mod signal;
 mod socket;
 mod stat;
-pub mod thread;
+// pub mod thread;
 mod utils;
 pub mod utsname;
 mod virtual_memory;
@@ -49,7 +50,7 @@ pub use capabilities::*;
 pub use clone::*;
 pub use core::ffi::{c_size_t, c_ssize_t, c_uchar, c_void};
 pub use credentials::*;
-pub use epoll::*;
+// pub use epoll::*;
 pub use errno::*;
 pub use exit::*;
 pub use file::OpenFileDescriptor;
@@ -59,6 +60,7 @@ pub use io_uring::*;
 pub use iov::*;
 pub use mapped_memory::*;
 pub use num_cpus::*;
+pub use poll::*;
 pub use proc::*;
 pub use send::*;
 pub use signal::*;
@@ -97,7 +99,7 @@ pub use bindings::{
     CLONE_FILES, CLONE_FS, CLONE_IO, CLONE_SETTLS, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM,
 };
 
-pub use bindings::{ARCH_GET_FS, ARCH_SET_FS};
+// pub use bindings::{ARCH_GET_FS, ARCH_SET_FS};
 
 pub use kernel::{
     PR_CAP_AMBIENT, PR_GET_NO_NEW_PRIVS, PR_SET_NO_NEW_PRIVS, PR_SET_PDEATHSIG, PR_SET_SECUREBITS,
@@ -123,7 +125,13 @@ https://chromium.googlesource.com/chromiumos/docs/+/HEAD/constants/syscalls.md
 
 syscall!(read, bindings::SYS_read, fd: c_int, buf: *mut u8, count: c_size_t => Result<c_size_t>);
 syscall!(write, bindings::SYS_write, fd: c_int, buf: *const u8, count: c_size_t => Result<c_size_t>);
-syscall!(open, bindings::SYS_open, path: *const c_char, flags: c_uint, mode: umode_t => Result<c_int>);
+// syscall!(open, bindings::SYS_open, path: *const c_char, flags: c_uint, mode:
+// umode_t => Result<c_int>);
+
+pub unsafe fn open(path: *const c_char, flags: c_uint, mode: umode_t) -> Result<c_int, Errno> {
+    openat(bindings::AT_FDCWD, path, flags, mode)
+}
+
 syscall!(openat, bindings::SYS_openat, fd: c_int, filename: *const c_char, flags: c_uint, mode: umode_t => Result<c_int>);
 syscall!(close, bindings::SYS_close, fd: c_int => Result<()>);
 syscall!(lseek, bindings::SYS_lseek, fd: c_int, offset: off_t, whence: c_uint => Result<off_t>);
@@ -133,16 +141,30 @@ pub unsafe fn fork() -> Result<Option<pid_t>, Errno> {
     Ok(if pid != 0 { Some(pid) } else { None })
 }
 
-syscall!(uname, bindings::SYS_uname, name: *mut bindings::new_utsname => Result<()>);
-
 syscall!(fsync, bindings::SYS_fsync, fd: c_int => Result<()>);
 syscall!(fdatasync, bindings::SYS_fdatasync, fd: c_int => Result<()>);
 syscall!(ftruncate, bindings::SYS_ftruncate, fd: c_int, len: u64 => Result<()>);
 
 syscall!(fchmod, bindings::SYS_fchmod, fd: c_int, mode: bindings::mode_t => Result<()>);
-syscall!(chmod, bindings::SYS_chmod, path: *const u8, mode: bindings::mode_t => Result<()>);
+syscall!(fchmodat, bindings::SYS_fchmodat, dirfd: c_int, path: *const u8, mode: bindings::mode_t, flags: c_uint => Result<()>);
 
-syscall!(rename, bindings::SYS_rename, oldname: *const c_char, newname: *const c_char => Result<()>);
+pub unsafe fn chmod(path: *const u8, mode: bindings::mode_t) -> Result<(), Errno> {
+    fchmodat(bindings::AT_FDCWD, path, mode, 0)
+}
+
+// syscall!(chmod, bindings::SYS_chmod, path: *const u8, mode: bindings::mode_t
+// => Result<()>);
+
+pub unsafe fn rename(oldname: *const c_char, newname: *const c_char) -> Result<(), Errno> {
+    renameat2(bindings::AT_FDCWD, oldname, bindings::AT_FDCWD, newname, 0)
+}
+
+// TODO: Take advantage of the flags for performing atomic swaps or
+// replacements.
+syscall!(renameat2, bindings::SYS_renameat2,
+    olddirfd: c_int, oldname: *const c_char,
+    newdirfd: c_int, newname: *const c_char,
+    flags: c_uint => Result<()>);
 
 syscall!(ioctl, bindings::SYS_ioctl, fd: c_uint, cmd: c_uint, arg: c_ulong => Result<c_int>);
 
@@ -160,16 +182,14 @@ syscall!(gettid, bindings::SYS_gettid => Infallible<pid_t>);
 syscall!(getsid, bindings::SYS_getsid => Result<pid_t>);
 syscall!(setsid, bindings::SYS_setsid => Result<pid_t>);
 
-syscall!(eventfd, bindings::SYS_eventfd, count: c_uint => Result<c_int>);
+// syscall!(eventfd, bindings::SYS_eventfd, count: c_uint => Result<c_int>);
 syscall!(eventfd2, bindings::SYS_eventfd2, count: c_uint, flags: c_uint => Result<c_int>);
-
-// TODO: Retry EINTR
-syscall!(poll, bindings::SYS_poll, ufds: *mut bindings::pollfd, nfds: c_uint, timeout: c_int => Result<c_uint>);
 
 syscall!(
     prctl, bindings::SYS_prctl, option: c_uint, arg2: c_ulong, arg3: c_ulong, arg4: c_ulong, arg5: c_ulong => Result<u64>
 );
 
+/*
 syscall!(
     arch_prctl_set, bindings::SYS_arch_prctl, code: c_int, addr: c_ulong => Result<()>
 );
@@ -177,3 +197,4 @@ syscall!(
 syscall!(
     arch_prctl_get, bindings::SYS_arch_prctl, code: c_uint, addr: *mut c_ulong => Result<()>
 );
+*/
