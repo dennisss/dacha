@@ -56,7 +56,7 @@ pub fn getresgid() -> Result<ProcessIds<Gid>, Errno> {
 }
 
 pub unsafe fn chown(path: *const u8, uid: Uid, gid: Gid) -> Result<(), Errno> {
-    raw::chown(path, uid.0, gid.0)
+    raw::fchownat(bindings::AT_FDCWD, path, uid.0, gid.0, 0)
 }
 
 mod raw {
@@ -64,6 +64,5 @@ mod raw {
 
     syscall!(getresuid, bindings::SYS_getresuid, ruid: *mut uid_t, euid: *mut uid_t, suid: *mut uid_t => Result<()>);
     syscall!(getresgid, bindings::SYS_getresgid, rgid: *mut gid_t, egid: *mut gid_t, sgid: *mut gid_t => Result<()>);
-
-    syscall!(chown, bindings::SYS_chown, path: *const u8, uid: uid_t, gid: gid_t => Result<()>);
+    syscall!(fchownat, bindings::SYS_fchownat, dirfd: c_int, path: *const u8, uid: uid_t, gid: gid_t, flags: c_int => Result<()>);
 }

@@ -1,0 +1,23 @@
+[package]
+name = "deb"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+http = { path = "../../http" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+net = { path = "../../net" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+automata = { path = "../../automata" }
+base_radix = { path = "../../base/radix" }
+base_units = { path = "../../base/units" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

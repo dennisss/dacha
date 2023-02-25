@@ -20,6 +20,8 @@ pub struct LocalFileOpenOptions {
     sync_on_flush: bool,
     truncate: bool,
     append: bool,
+    sync: bool,
+    exclusive: bool,
 
     direct: bool,
 
@@ -38,6 +40,8 @@ impl LocalFileOpenOptions {
             truncate: false,
             append: false,
             direct: false,
+            sync: false,
+            exclusive: false,
             mode: 0o666,
         }
     }
@@ -64,6 +68,16 @@ impl LocalFileOpenOptions {
 
     pub fn create_new(&mut self, value: bool) -> &mut Self {
         self.create_new = value;
+        self
+    }
+
+    pub fn sync(&mut self, value: bool) -> &mut Self {
+        self.sync = value;
+        self
+    }
+
+    pub fn exclusive(&mut self, value: bool) -> &mut Self {
+        self.exclusive = value;
         self
     }
 
@@ -131,17 +145,28 @@ impl LocalFile {
         if options.create_new {
             flags |= sys::O_EXCL;
         }
-        if options.write || options.append {
+        if (options.write || options.append) && !options.read {
+            flags |= sys::O_WRONLY;
+        }
+        else if options.write || options.append {
             flags |= sys::O_RDWR;
         }
         if options.truncate {
             flags |= sys::O_TRUNC;
         }
         if options.append {
+            // TODO: Should we disallow seeking in these types of files.
             flags |= sys::O_APPEND;
         }
         if options.direct {
             flags |= sys::O_DIRECT;
+        }
+        if options.sync {
+            flags |= sys::O_SYNC;
+        }
+        if options.exclusive {
+            // NOTE: Only applicable if not using create_new
+            flags |= sys::O_EXCL;
         }
 
         // TODO: We should also use this approach with mkdirat when creating files.

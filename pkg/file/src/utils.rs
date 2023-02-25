@@ -73,6 +73,10 @@ pub fn recursively_list_dir(dir: &LocalPath, callback: &mut dyn FnMut(&LocalPath
 }
 
 pub async fn metadata(path: &LocalPath) -> Result<Metadata> {
+    metadata_sync(path)
+}
+
+pub fn metadata_sync(path: &LocalPath) -> Result<Metadata> {
     let path = CString::new(path.as_str())?;
     let mut stat = sys::bindings::stat::default();
     unsafe { sys::stat(path.as_ptr() as *const u8, &mut stat) }.remap_errno::<FileError>()?;
@@ -110,8 +114,12 @@ pub fn because_file_doesnt_exist(error: &Error) -> bool {
 /// TODO: Test that this can distinguish between a normal not_found and a
 /// permission error.
 pub async fn exists<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
+    exists_sync(path)
+}
+
+pub fn exists_sync<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
     // TODO: Use symlink_metadata?
-    match metadata(path.as_ref()).await {
+    match metadata_sync(path.as_ref()) {
         Ok(_) => Ok(true),
         Err(e) => {
             if because_file_doesnt_exist(&e) {
@@ -163,9 +171,24 @@ pub async fn write<P: AsRef<LocalPath>, V: AsRef<[u8]>>(path: P, value: V) -> Re
     let mut file = LocalFile::open_with_options(
         path,
         &LocalFileOpenOptions::new()
+            .read(false)
             .write(true)
             .create(true)
             .truncate(true),
+    )?;
+    file.write_all(value.as_ref()).await?;
+
+    Ok(())
+}
+
+pub async fn append<P: AsRef<LocalPath>, V: AsRef<[u8]>>(path: P, value: V) -> Result<()> {
+    let mut file = LocalFile::open_with_options(
+        path,
+        &LocalFileOpenOptions::new()
+            .read(false)
+            .write(true)
+            .create(true)
+            .append(true),
     )?;
     file.write_all(value.as_ref()).await?;
 

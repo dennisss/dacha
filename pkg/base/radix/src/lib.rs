@@ -1,3 +1,4 @@
+#![feature(const_for)]
 #![no_std]
 
 #[cfg(feature = "std")]
@@ -11,8 +12,10 @@ extern crate alloc;
 extern crate failure;
 
 mod base32;
+mod base64;
 
 pub use base32::*;
+pub use base64::*;
 
 use alloc::string::String;
 use alloc::vec::Vec;

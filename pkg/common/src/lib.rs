@@ -8,7 +8,9 @@
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
     const_maybe_uninit_uninit_array,
-    slice_take
+    slice_take,
+    allocator_api,
+    slice_ptr_get
 )]
 #![no_std]
 
@@ -56,6 +58,8 @@ pub extern crate base_args as args;
 
 #[cfg(feature = "std")]
 pub mod algorithms;
+#[cfg(feature = "alloc")]
+pub mod aligned;
 pub mod any;
 #[cfg(feature = "std")]
 pub mod async_fn;

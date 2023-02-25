@@ -48,6 +48,50 @@ Model		: Raspberry Pi 4 Model B Rev 1.1
 
 */
 
+/*
+$ cat /proc/cpuinfo
+processor	: 0
+BogoMIPS	: 38.40
+Features	: fp asimd evtstrm crc32 cpuid
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x0
+CPU part	: 0xd03
+CPU revision	: 4
+
+processor	: 1
+BogoMIPS	: 38.40
+Features	: fp asimd evtstrm crc32 cpuid
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x0
+CPU part	: 0xd03
+CPU revision	: 4
+
+processor	: 2
+BogoMIPS	: 38.40
+Features	: fp asimd evtstrm crc32 cpuid
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x0
+CPU part	: 0xd03
+CPU revision	: 4
+
+processor	: 3
+BogoMIPS	: 38.40
+Features	: fp asimd evtstrm crc32 cpuid
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x0
+CPU part	: 0xd03
+CPU revision	: 4
+
+Hardware	: BCM2835
+Revision	: 902120
+Serial		: 0000000011a057d1
+Model		: Raspberry Pi Zero 2 W Rev 1.0
+*/
+
 // TODO: Need to support multi-line expressions for this to work.
 regexp!(HARDWARE_VALUE_MATCHER => "^Hardware\\s*:\\s*(.*)$");
 

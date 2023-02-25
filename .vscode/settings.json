@@ -72,7 +72,8 @@
     "random": "cpp",
     "string": "cpp",
     "string_view": "cpp",
-    "variant": "cpp"
+    "variant": "cpp",
+    "module.h": "c"
   },
   "C_Cpp.clang_format_fallbackStyle": "Google"
 }

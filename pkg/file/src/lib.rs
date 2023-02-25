@@ -343,4 +343,25 @@ mod tests {
 
         Ok(())
     }
+
+    #[testcase]
+    async fn append_test() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        let path = temp_dir.path().join("a");
+
+        crate::append(&path, "abc").await?;
+        assert_eq!(crate::read_to_string(&path).await?, "abc");
+
+        crate::append(&path, "def").await?;
+        assert_eq!(crate::read_to_string(&path).await?, "abcdef");
+
+        crate::append(&path, "ghi").await?;
+        assert_eq!(crate::read_to_string(&path).await?, "abcdefghi");
+
+        crate::write(&path, "jello").await?;
+        assert_eq!(crate::read_to_string(&path).await?, "jello");
+
+        Ok(())
+    }
 }

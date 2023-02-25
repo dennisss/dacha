@@ -1,12 +1,14 @@
 use std::ffi::CStr;
 use std::fs::File;
-use std::os::unix::prelude::{FromRawFd, AsRawFd};
+use std::os::unix::prelude::{AsRawFd, FromRawFd};
 
 use common::errors::*;
+use file::LocalFileOpenOptions;
 use sys::MappedMemory;
 
-const MEM_FILE_PATH: &'static [u8] = b"/dev/mem\0";
-const GPIOMEM_FILE_PATH: &'static [u8] = b"/dev/gpiomem\0";
+const MEM_FILE_PATH: &'static str = "/dev/mem";
+const GPIOMEM_FILE_PATH: &'static str = "/dev/gpiomem";
+const PERIPHMEM_FILE_PATH: &'static str = "/dev/periphmem";
 
 pub const GPIO_PERIPHERAL_OFFSET: u32 = 0x00200000;
 pub const GPIO_PERIPHERAL_SIZE: usize = 244;
@@ -14,9 +16,18 @@ pub const GPIO_PERIPHERAL_SIZE: usize = 244;
 pub const PWM0_PERIPHERAL_OFFSET: u32 = 0x0020c000;
 pub const PWM1_PERIPHERAL_OFFSET: u32 = 0x0020c800;
 
+pub const PCM_PERIPHERAL_OFFSET: u32 = 0x00203000;
+
+pub const CLOCK_MANAGER_PERIPHERAL_OFFSET: u32 = 0x00101000;
+// Approximate size.
+pub const CLOCK_MANAGER_PERIPHERAL_SIZE: usize = 0x100;
+
 pub struct MemoryBlock {
     memory: MappedMemory,
 }
+
+unsafe impl Send for MemoryBlock {}
+unsafe impl Sync for MemoryBlock {}
 
 impl MemoryBlock {
     pub fn open(offset: u32, size: usize) -> Result<Self> {
@@ -24,23 +35,28 @@ impl MemoryBlock {
     }
 
     pub fn open_peripheral(relative_offset: u32, size: usize) -> Result<Self> {
-        let file = if relative_offset == GPIO_PERIPHERAL_OFFSET {
-            GPIOMEM_FILE_PATH
-        } else {
-            MEM_FILE_PATH
+        let file = {
+            if file::exists_sync(PERIPHMEM_FILE_PATH)? {
+                PERIPHMEM_FILE_PATH
+            } else if relative_offset == GPIO_PERIPHERAL_OFFSET {
+                GPIOMEM_FILE_PATH
+            } else {
+                MEM_FILE_PATH
+            }
         };
         let offset = Self::get_peripheral_address()? + relative_offset;
+        println!("Open {} @ {:x?}", file, offset);
         Self::open_impl(file, offset, size)
     }
 
-    fn open_impl(path: &'static [u8], offset: u32, size: usize) -> Result<Self> {
-        // Validate that the path ends in a nullptr.
-        let path = CStr::from_bytes_with_nul(path)?;
-
-        let file = unsafe {File::from_raw_fd(
-            sys::open(path.as_ptr(), sys::bindings::O_RDWR | sys::bindings::O_SYNC, 0)
-            .map_err(|_| err_msg("Failed to open memory device."))?)
-        };
+    fn open_impl(path: &str, offset: u32, size: usize) -> Result<Self> {
+        let file = file::LocalFile::open_with_options(
+            path,
+            LocalFileOpenOptions::new()
+                .read(true)
+                .write(true)
+                .sync(true),
+        )?;
 
         let memory = unsafe {
             MappedMemory::create(
@@ -104,7 +120,3 @@ impl MemoryBlock {
         Ok(addr)
     }
 }
-
-unsafe impl Send for MemoryBlock {}
-unsafe impl Sync for MemoryBlock {}
-

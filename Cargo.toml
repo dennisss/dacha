@@ -13,6 +13,7 @@ members = [
 	"pkg/asn/compiler",
 	"pkg/crypto",
 	"pkg/parsing",
+	"pkg/parsing/macros",
 	"pkg/parsing_compiler",
 	"pkg/compression",
 	"pkg/math",
@@ -46,6 +47,7 @@ members = [
 	"pkg/json",
 	"pkg/peripheral",
 	"pkg/rpi",
+	"pkg/rpi/imager",
 	"pkg/home_hub",
 	"pkg/usb",
 	"pkg/container",
@@ -99,8 +101,10 @@ members = [
 	"pkg/markdown",
 	"pkg/markdown/test",
 	"pkg/base/args",
-	"pkg/datastore/deb",
-	"third_party/libcamera"
+	"pkg/builder/deb",
+	"third_party/libcamera",
+	"pkg/base/units",
+	"pkg/crypto/pgp",
 ]
 
 [profile.dev]

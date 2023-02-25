@@ -104,6 +104,10 @@ enums {
         value: 0x0C
     }
     values {
+        name: "LinuxFilesystem"
+        value: 0x83
+    }
+    values {
         name: "GPTProtectiveMBR"
         value: 0xEE
     }

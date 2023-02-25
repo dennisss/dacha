@@ -286,6 +286,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "base_units"
+version = "0.0.0"
+
+[[package]]
 name = "bindgen"
 version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -693,6 +697,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto_pgp"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "macros",
+ "math",
+ "parsing",
+]
+
+[[package]]
 name = "ctor"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -784,7 +801,9 @@ dependencies = [
 name = "deb"
 version = "0.0.0"
 dependencies = [
+ "automata",
  "base_radix",
+ "base_units",
  "common",
  "crypto",
  "executor",
@@ -793,6 +812,7 @@ dependencies = [
  "macros",
  "net",
  "parsing",
+ "regexp_macros",
 ]
 
 [[package]]
@@ -1862,6 +1882,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "parsing_macros"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "parsing",
+ "proc-macro2 1.0.47",
+ "quote 1.0.6",
+ "syn 1.0.105",
+]
+
+[[package]]
 name = "parsing_test"
 version = "0.1.0"
 dependencies = [
@@ -2303,6 +2335,9 @@ dependencies = [
  "common",
  "executor",
  "file",
+ "macros",
+ "parsing",
+ "parsing_compiler",
  "sys",
 ]
 
@@ -2323,6 +2358,22 @@ dependencies = [
  "rpc_util",
  "rpi",
  "web",
+]
+
+[[package]]
+name = "rpi_imager"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "base_units",
+ "common",
+ "crypto",
+ "executor",
+ "file",
+ "macros",
+ "parsing",
+ "storage",
+ "sys",
 ]
 
 [[package]]

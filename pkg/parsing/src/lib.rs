@@ -51,6 +51,9 @@ pub mod binary;
 pub mod cstruct;
 pub mod iso;
 pub mod opaque;
+pub mod types;
+
+pub use types::*;
 
 //
 //pub trait CharIter {

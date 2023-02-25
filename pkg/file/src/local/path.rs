@@ -96,12 +96,27 @@ impl Debug for LocalPathBuf {
     }
 }
 
+// TODO: Make this into a separate type so the internal behavior isn't hidden?
 impl common::args::ArgType for LocalPathBuf {
     fn parse_raw_arg(raw_arg: common::args::RawArgValue) -> Result<Self> {
-        match raw_arg {
-            common::args::RawArgValue::Bool(_) => Err(err_msg("Expected string, got bool")),
-            common::args::RawArgValue::String(s) => Ok(LocalPathBuf::from(s)),
+        let mut s = match raw_arg {
+            common::args::RawArgValue::Bool(_) => return Err(err_msg("Expected string, got bool")),
+            common::args::RawArgValue::String(s) => s,
+        };
+
+        let mut path = if let Some(p) = s.strip_prefix("~") {
+            let p = p.trim_start_matches("/");
+            let home = std::env::var("HOME")?;
+            LocalPath::new(&home).join(p)
+        } else {
+            LocalPathBuf::from(s)
+        };
+
+        if !path.is_absolute() {
+            path = crate::current_dir()?.join(path);
         }
+
+        Ok(path.normalized())
     }
 }
 

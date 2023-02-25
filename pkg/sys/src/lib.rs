@@ -25,7 +25,6 @@ mod io_uring;
 mod iov;
 mod kernel;
 mod mapped_memory;
-mod num_cpus;
 mod poll;
 mod proc;
 mod send;
@@ -33,6 +32,7 @@ mod signal;
 mod socket;
 mod stat;
 // pub mod thread;
+mod mount;
 mod utils;
 pub mod utsname;
 mod virtual_memory;
@@ -59,7 +59,7 @@ pub use getdents::*;
 pub use io_uring::*;
 pub use iov::*;
 pub use mapped_memory::*;
-pub use num_cpus::*;
+pub use mount::*;
 pub use poll::*;
 pub use proc::*;
 pub use send::*;
@@ -89,6 +89,7 @@ pub const SEEK_SET: c_uint = 0;
 
 pub use bindings::{
     pollfd, O_APPEND, O_CLOEXEC, O_CREAT, O_EXCL, O_NONBLOCK, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC,
+    O_WRONLY,
 };
 
 pub const O_DIRECT: u32 = 0o00040000;

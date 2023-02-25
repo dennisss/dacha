@@ -1,0 +1,91 @@
+structs {
+    name: "ClockControl"
+    endian: BIG_ENDIAN
+    field {
+        name: "passwd"
+        type { primitive: U8 }
+    }
+    field {
+        name: "reserved1"
+        bit_width: 13
+        type { primitive: U16 }
+    }
+    field {
+        name: "mash"
+        bit_width: 2
+        type { named: "MASHControl" }
+    }
+    field {
+        name: "flip"
+        bit_width: 1
+        type { primitive: BOOL }
+    }
+    field {
+        name: "busy"
+        bit_width: 1
+        type { primitive: BOOL }
+    }
+    field {
+        name: "reserved2"
+        bit_width: 1
+        type { primitive: BOOL }
+    }
+    field {
+        name: "kill"
+        bit_width: 1
+        type { primitive: BOOL }
+    }
+    field {
+        name: "enable"
+        bit_width: 1
+        type { primitive: BOOL }
+    }
+    field {
+        name: "source"
+        bit_width: 4
+        type { named: "ClockSource" }
+    }
+}
+
+enums {
+    name: "MASHControl"
+    endian: LITTLE_ENDIAN
+    type { primitive: U8 }
+    values { name: "IntegerDivision" value: 0 }
+    values { name: "OneStage" value: 1 }
+    values { name: "TwoStage" value: 2 }
+    values { name: "ThreeStage" value: 3 }
+}
+
+enums {
+    name: "ClockSource"
+    endian: LITTLE_ENDIAN
+    type { primitive: U8 }
+    values { name: "GND" value: 0 }
+    values { name: "Oscillator" value: 1 }
+    values { name: "TestDebug0" value: 2 }
+    values { name: "TestDebug1" value: 3 }
+    values { name: "PLLA" value: 4 }
+    values { name: "PLLC" value: 5 }
+    values { name: "PLLD" value: 6 }
+    values { name: "HDMIAux" value: 7 }
+}
+
+structs {
+    name: "ClockDivisor"
+    endian: BIG_ENDIAN
+    field {
+        name: "passwd"
+        type { primitive: U8 }
+    }
+    field {
+        name: "divi"
+        bit_width: 12
+        type { primitive: U16 }
+    }
+    field {
+        name: "divf"
+        bit_width: 12
+        type { primitive: U16 }
+    }
+}

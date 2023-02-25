@@ -186,6 +186,30 @@ impl<'c> Compiler<'c> {
         })
     }
 
+    fn compile_type_default(&self, typ: &Type) -> Result<String> {
+        if let TypeTypeCase::Buffer(buf) = typ.type_case() {
+            let element_default = self.compile_type_default(buf.element_type())?;
+
+            return Ok(match buf.size_case() {
+                BufferTypeSizeCase::Unknown => todo!(),
+                BufferTypeSizeCase::FixedLength(len) => {
+                    let mut parts = vec![];
+                    for i in 0..*len {
+                        parts.push(element_default.as_str());
+                    }
+
+                    format!("[{}]", parts.join(","))
+                }
+                BufferTypeSizeCase::LengthFieldName(_) | BufferTypeSizeCase::EndTerminated(_) => {
+                    format!("vec![]")
+                }
+            });
+        }
+
+        let t = self.compile_type(typ)?;
+        Ok(format!("{}::default()", t))
+    }
+
     //
     fn cast_primitive_type(&self, typ: &Type) -> Result<(PrimitiveType, &str)> {
         Ok(match typ.type_case() {
@@ -802,6 +826,7 @@ impl<'c> Compiler<'c> {
         lines.add(format!("pub struct {} {{", desc.name()));
 
         // Adding struct member delarations.
+        let mut default_values = LineBuilder::new();
         for field in desc.field() {
             if derivated_fields.contains(field.name()) {
                 if let TypeTypeCase::Primitive(_) = field.typ().type_case() {
@@ -814,21 +839,35 @@ impl<'c> Compiler<'c> {
                 continue;
             }
 
+            let field_name = Self::nice_field_name(field.name());
+
             let mut typename = self.compile_type(field.typ())?;
             if !field.presence().is_empty() {
                 typename = format!("Option<{}>", typename);
+                default_values.add(format!("{}: None,\n", field_name));
+            } else {
+                default_values.add(format!(
+                    "{}: {},\n",
+                    field_name,
+                    self.compile_type_default(field.typ())?
+                ));
             }
 
             if !field.comment().is_empty() {
                 lines.add(format!("\t/// {}", field.comment()));
             }
-            lines.add(format!(
-                "\tpub {}: {},",
-                Self::nice_field_name(field.name()),
-                typename
-            ));
+            lines.add(format!("\tpub {}: {},", field_name, typename));
         }
 
+        lines.add("}");
+        lines.nl();
+
+        lines.add(format!("impl Default for {} {{", desc.name()));
+        lines.add("fn default() -> Self {");
+        lines.add("Self {");
+        lines.append(default_values);
+        lines.add("}");
+        lines.add("}");
         lines.add("}");
         lines.nl();
 
@@ -1094,6 +1133,11 @@ impl<'c> Compiler<'c> {
             lines.add(format!("\t{},", value.name()));
         }
         lines.add(format!("\tUnknown({})", raw_type));
+        lines.add("}");
+        lines.nl();
+
+        lines.add(format!("impl Default for {} {{", desc.name()));
+        lines.add("fn default() -> Self { Self::Unknown(0) }");
         lines.add("}");
         lines.nl();
 

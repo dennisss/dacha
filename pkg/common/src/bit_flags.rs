@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! define_bit_flags {
-    ($struct:ident $t:ty { $($name:ident = $value:expr),* }) => {
+    ($struct:ident $t:ty { $($name:ident = $value:expr),* $(,)? }) => {
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(transparent)]
         pub struct $struct {
