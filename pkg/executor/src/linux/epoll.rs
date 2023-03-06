@@ -1,159 +1,301 @@
-// old code for an epoll based executor.
-
 use core::future::Future;
+use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 use common::errors::*;
-use sys::{EpollEvent, EpollEvents};
+use common::io::{IoError, IoErrorKind};
+use sys::{Epoll, EpollEvent, EpollEvents, EpollOp, OpenFileDescriptor};
 
-use crate::linux::executor::{Executor, ExecutorShared, FileDescriptor};
+use crate::linux::executor::{Executor, ExecutorShared, FileDescriptor, TaskId};
+use crate::linux::thread_local::CurrentTaskContext;
+use crate::linux::waker::retrieve_task_entry;
 
-use super::waker::retrieve_task_entry;
-
-// Old epoll event loop.
-/*
-let mut events = [EpollEvent::default(); 8];
-
-// TODO: Break once everything is done.
-loop {
-    let nevents = shared.poller.wait(&mut events)?;
-
-    println!("poll {}", nevents);
-
-    let polled_descs = shared.polled_descriptors.lock().unwrap();
-
-    for event in &events[0..nevents] {
-        let task_id = *polled_descs.get(&event.fd()).unwrap();
-
-        shared.pending_queue.lock().unwrap().push_back(task_id);
-        shared.pending_queue_condvar.notify_one();
-    }
-}
-*/
-
-struct ExecutorEpoll {
+/// NOTE: Because we allow for polling to be requested on a different thread
+/// than the one that is running the epoll loop, we require that all events are
+/// event triggered.
+pub(super) struct ExecutorEpoll {
     poller: Epoll,
 
     /// Eventfd descriptor which is always polled for changes by the main
     /// thread.
+    polled_eventfd: OpenFileDescriptor,
+
+    state: Mutex<State>,
+}
+
+struct State {
+    running: bool,
+
+    /// Set of which file descriptors need to be polled.
+    polled_descriptors: HashMap<FileDescriptor, DescriptorState>,
+}
+
+struct DescriptorState {
+    /// Task which is waiting for changes to this descriptor.
+    task_id: Option<TaskId>,
+
+    /// Events which have raised by the kernel but not yet processed by the
+    /// waiting task.
     ///
-    /// TODO: Close this on drop.
-    polled_eventfd: FileDescriptor,
-
-    /// Set of which file descriptors need to be polled and which tasks are
-    /// requesting them.
-    polled_descriptors: Mutex<HashMap<FileDescriptor, TaskId>>,
-}
-// poller: Epoll::new()?,
-// polled_eventfd: unsafe { sys::eventfd2(0, sys::O_CLOEXEC | sys::O_NONBLOCK)
-// }?, polled_descriptors: Mutex::new(HashMap::new()),
-
-/// Registers that a file descriptor should be watched for some events to
-/// occur. When any of the events is triggered, the given task will be woken
-/// up.
-pub(super) fn register_file_descriptor(
-    shared: &Arc<ExecutorShared>,
-    task_id: TaskId,
-    fd: FileDescriptor,
+    /// EpollEvents::empty() implies there is nothing new to process.
     events: EpollEvents,
-) -> Result<()> {
-    let mut polled_descs = shared.polled_descriptors.lock().unwrap();
-    if polled_descs.contains_key(&fd) {
-        return Err(err_msg(
-            "Only allowed to have more than one waiter for a file descriptor.",
-        ));
+}
+
+impl ExecutorEpoll {
+    pub fn create() -> Result<Self> {
+        let polled_eventfd =
+            OpenFileDescriptor::new(unsafe { sys::eventfd2(0, sys::O_CLOEXEC | sys::O_NONBLOCK) }?);
+
+        let poller = Epoll::new()?;
+
+        let mut e = EpollEvent::default();
+        e.set_fd(*polled_eventfd);
+        e.set_events(EpollEvents::EPOLLIN);
+        poller.control(EpollOp::EPOLL_CTL_ADD, *polled_eventfd, &e)?;
+
+        Ok(Self {
+            poller,
+            polled_eventfd,
+            state: Mutex::new(State {
+                running: true,
+                polled_descriptors: HashMap::new(),
+            }),
+        })
     }
 
-    let mut event = EpollEvent::default();
-    event.set_fd(fd);
-    event.set_events(events);
-    shared.poller.control(EpollOp::EPOLL_CTL_ADD, fd, &event)?;
+    pub fn poll_events(&self, tasks_to_wake: &mut HashSet<TaskId>) -> Result<()> {
+        // TODO: Re-use this memory.
+        let mut events = [EpollEvent::default(); 8];
 
-    polled_descs.insert(fd, task_id);
+        let nevents = self.poller.wait(&mut events)?;
 
-    Ok(())
-}
+        let mut state = self.state.lock().unwrap();
 
-pub(super) fn unregister_file_descriptor(shared: &ExecutorShared, fd: FileDescriptor) {
-    let unused = EpollEvent::default(); // TODO: Can be a nullptr.
-    let _ = shared.poller.control(EpollOp::EPOLL_CTL_DEL, fd, &unused);
+        for event in &events[0..nevents] {
+            if event.fd() == *self.polled_eventfd {
+                continue;
+            }
 
-    // TODO: If CTL_DEL fails, should we keep this?
-    shared.polled_descriptors.lock().unwrap().remove(&fd);
-}
+            let desc_state = state
+                .polled_descriptors
+                .get_mut(&event.fd())
+                .ok_or_else(|| {
+                    format_err!(
+                        "Unregistered fd: {}, events: {:?}",
+                        event.fd(),
+                        event.events()
+                    )
+                })?;
 
-/// Tells the main run() thread which is polling all file descriptors to
-/// wake up (and re-generate the set of files to watch).
-///
-/// TODO: Deduplicate this code.
-fn notify_polling_thread(shared: &ExecutorShared) -> Result<()> {
-    // TODO: If this fails, should we remove the device from the list?
-    let event_num: u64 = 1;
-    let n = unsafe {
-        sys::write(
-            shared.polled_eventfd,
-            core::mem::transmute(&event_num),
-            core::mem::size_of::<u64>(),
-        )
-    };
-    if n != Ok(core::mem::size_of::<u64>()) {
-        return Err(err_msg("Failed to notify background thread"));
+            desc_state.events |= event.events();
+
+            if let Some(task_id) = desc_state.task_id.take() {
+                tasks_to_wake.insert(task_id);
+            }
+        }
+
+        Ok(())
     }
 
-    // TODO: Ignore EAGAIN errors. Mains that the counter overflowed (meaning that
-    // it already has a value set.)
+    pub fn shutdown(&self) {
+        {
+            let mut state = self.state.lock().unwrap();
+            state.running = false;
 
-    Ok(())
+            // TODO: Cancel/wakeup all pending tasks.
+        }
+
+        self.wake_poller().unwrap();
+    }
+
+    pub fn finished(&self) -> bool {
+        !self.state.lock().unwrap().running
+    }
+
+    fn wake_poller(&self) -> Result<()> {
+        let event_num: u64 = 1;
+        let n = unsafe {
+            sys::write(
+                *self.polled_eventfd,
+                core::mem::transmute(&event_num),
+                core::mem::size_of::<u64>(),
+            )
+        };
+        if n != Ok(core::mem::size_of::<u64>()) {
+            return Err(err_msg("Failed to notify background thread"));
+        }
+
+        // TODO: Ignore EAGAIN errors. Mains that the counter overflowed (meaning that
+        // it already has a value set.)
+
+        Ok(())
+    }
+
+    /// Registers that a file descriptor should be watched for some events to
+    /// occur. When any of the events is triggered, the given task will be woken
+    /// up.
+    fn register_file_descriptor(
+        shared: &Arc<ExecutorShared>,
+        fd: FileDescriptor,
+        events: EpollEvents,
+    ) -> Result<()> {
+        let this = &shared.epoll;
+        let mut state = this.state.lock().unwrap();
+
+        if !state.running {
+            return Err(IoError::new(IoErrorKind::Cancelled, "Polling is shutdown").into());
+        }
+
+        if state.polled_descriptors.contains_key(&fd) {
+            return Err(err_msg(
+                "Only allowed to have one waiter for a file descriptor.",
+            ));
+        }
+
+        let mut event = EpollEvent::default();
+        event.set_fd(fd);
+        event.set_events(events | EpollEvents::EPOLLET);
+        this.poller.control(EpollOp::EPOLL_CTL_ADD, fd, &event)?;
+
+        state.polled_descriptors.insert(
+            fd,
+            DescriptorState {
+                task_id: None,
+                events: EpollEvents::empty(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// NOTE: This assumes that there are no tasks left waiting for the file.
+    fn unregister_file_descriptor(&self, fd: FileDescriptor) {
+        let unused = EpollEvent::default(); // TODO: Can be a nullptr.
+        if let Err(e) = self.poller.control(EpollOp::EPOLL_CTL_DEL, fd, &unused) {
+            eprintln!("EPOLL_CTL_DEL failed: {}", e);
+        }
+
+        // TODO: If CTL_DEL fails, should we keep this?
+        self.state.lock().unwrap().polled_descriptors.remove(&fd);
+    }
 }
 
-///
-pub(super) struct PollingContext {
+pub struct ExecutorPollingContext<'a> {
     executor_shared: Arc<ExecutorShared>,
     fd: FileDescriptor,
+    fd_lifetime: PhantomData<&'a ()>,
 }
 
-impl PollingContext {
-    pub fn create(fd: FileDescriptor, events: EpollEvents) -> impl Future<Output = Result<Self>> {
-        CreatePollingContextFuture { fd, events }
-    }
-}
-
-impl Drop for PollingContext {
+impl<'a> Drop for ExecutorPollingContext<'a> {
     fn drop(&mut self) {
-        Executor::unregister_file_descriptor(&self.executor_shared, self.fd);
+        let current_task = CurrentTaskContext::current().unwrap();
+        current_task
+            .executor_shared
+            .epoll
+            .unregister_file_descriptor(self.fd);
     }
 }
 
-struct CreatePollingContextFuture {
+impl<'a> ExecutorPollingContext<'a> {
+    pub fn create(
+        file: &'a OpenFileDescriptor,
+        events: EpollEvents,
+    ) -> impl Future<Output = Result<ExecutorPollingContext<'a>>> {
+        CreateExecutorPollingContextFuture {
+            fd: **file,
+            fd_lifetime: PhantomData,
+            events,
+        }
+    }
+
+    /// NOTE: Only safe if the caller ensures that the file outlives the
+    /// context.
+    pub unsafe fn create_with_raw_fd(
+        fd: FileDescriptor,
+        events: EpollEvents,
+    ) -> impl Future<Output = Result<ExecutorPollingContext<'static>>> {
+        CreateExecutorPollingContextFuture {
+            fd,
+            fd_lifetime: PhantomData,
+            events,
+        }
+    }
+
+    /// NOTE: Requires mutability as we only support one waiting task at a time.
+    pub fn wait<'b>(&'b mut self) -> impl Future<Output = Result<EpollEvents>> + 'b {
+        ExecutorPollingContextWaitFuture { context: self }
+    }
+}
+
+struct CreateExecutorPollingContextFuture<'a> {
     fd: FileDescriptor,
+    fd_lifetime: PhantomData<&'a ()>,
     events: EpollEvents,
 }
 
-impl CreatePollingContextFuture {
-    fn poll_with_result(&self, context: &mut Context<'_>) -> Result<PollingContext> {
+impl<'a> CreateExecutorPollingContextFuture<'a> {
+    fn poll_with_result(&self, context: &mut Context<'_>) -> Result<ExecutorPollingContext<'a>> {
         let task_entry = retrieve_task_entry(context)
             .ok_or_else(|| err_msg("Not running inside an executor"))?;
 
-        Executor::register_file_descriptor(
-            &task_entry.executor_shared,
-            task_entry.id,
-            self.fd,
-            self.events,
-        )?;
+        ExecutorEpoll::register_file_descriptor(&task_entry.executor_shared, self.fd, self.events)?;
 
-        Ok(PollingContext {
+        Ok(ExecutorPollingContext {
             executor_shared: task_entry.executor_shared.clone(),
             fd: self.fd,
+            fd_lifetime: self.fd_lifetime,
         })
     }
 }
 
-impl Future for CreatePollingContextFuture {
-    type Output = Result<PollingContext>;
+impl<'a> Future for CreateExecutorPollingContextFuture<'a> {
+    type Output = Result<ExecutorPollingContext<'a>>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         Poll::Ready(self.poll_with_result(context))
+    }
+}
+
+// TODO: On drop, remove the task entry.
+struct ExecutorPollingContextWaitFuture<'a, 'b> {
+    context: &'a ExecutorPollingContext<'b>,
+}
+
+impl<'a, 'b> Future for ExecutorPollingContextWaitFuture<'a, 'b> {
+    type Output = Result<EpollEvents>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let task_entry = match retrieve_task_entry(cx) {
+            Some(v) => v,
+            None => return Poll::Ready(Err(err_msg("Not running inside an executor"))),
+        };
+
+        let fd = self.context.fd;
+
+        let mut state = self.context.executor_shared.epoll.state.lock().unwrap();
+
+        let state = match state.polled_descriptors.get_mut(&fd) {
+            Some(v) => v,
+            None => {
+                return Poll::Ready(Err(IoError::new(
+                    IoErrorKind::Cancelled,
+                    "Polling was cancelled",
+                )
+                .into()));
+            }
+        };
+
+        if state.events != EpollEvents::empty() {
+            let e = state.events;
+            state.events = EpollEvents::empty();
+            return Poll::Ready(Ok(e));
+        }
+
+        state.task_id = Some(task_entry.id);
+
+        Poll::Pending
     }
 }

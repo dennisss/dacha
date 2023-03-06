@@ -71,11 +71,7 @@ pub mod bits;
 pub mod borrowed;
 pub mod collections;
 pub mod concat_slice;
-#[cfg(feature = "std")]
-pub mod condvar;
 pub mod const_default;
-#[cfg(feature = "std")]
-pub mod eventually;
 #[cfg(feature = "std")]
 pub mod factory;
 pub mod fixed;

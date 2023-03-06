@@ -1401,14 +1401,15 @@ checksum = "db6d7e329c562c5dfab7a46a2afabc8b987ab9a4834c9d1ca04dc54c1546cef8"
 name = "libcamera"
 version = "0.0.0"
 dependencies = [
+ "base_error",
  "bindgen 0.63.0",
  "cxx",
  "cxx-build",
- "nix 0.26.2",
  "paste",
  "pkg-config",
  "serde",
  "serde_yaml",
+ "sys",
 ]
 
 [[package]]
@@ -1578,15 +1579,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memoffset"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1686,21 +1678,7 @@ dependencies = [
  "cc",
  "cfg-if 1.0.0",
  "libc",
- "memoffset 0.6.4",
-]
-
-[[package]]
-name = "nix"
-version = "0.26.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfdda3d196821d6af13126e40375cdf7da646a96114af134d5f417a9a1dc8e1a"
-dependencies = [
- "bitflags",
- "cfg-if 1.0.0",
- "libc",
- "memoffset 0.7.1",
- "pin-utils",
- "static_assertions",
+ "memoffset",
 ]
 
 [[package]]
@@ -2377,6 +2355,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpi_streamer"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "base_units",
+ "common",
+ "crypto",
+ "executor",
+ "file",
+ "image",
+ "libcamera",
+ "macros",
+ "parsing",
+ "storage",
+ "sys",
+ "v4l2",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2583,12 +2580,6 @@ dependencies = [
  "rpc",
  "rpc_util",
 ]
-
-[[package]]
-name = "static_assertions"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stdweb"
@@ -2920,6 +2911,19 @@ dependencies = [
  "quote 1.0.6",
  "syn 1.0.105",
  "uuid",
+]
+
+[[package]]
+name = "v4l2"
+version = "0.0.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "bindgen 0.63.0",
+ "executor",
+ "file",
+ "regexp_macros",
+ "sys",
 ]
 
 [[package]]

@@ -12,6 +12,7 @@ use std::time::Duration;
 use common::errors::*;
 use sys::{IoCompletionUring, IoSubmissionUring, IoUring, IoUringOp, IoUringResult};
 
+use crate::linux::epoll::*;
 use crate::linux::io_uring::*;
 use crate::linux::options::{ExecutorOptions, ExecutorRunMode};
 use crate::linux::task::{Task, TaskEntry, TaskState};
@@ -30,7 +31,8 @@ pub struct Executor {
 
     shared: Arc<ExecutorShared>,
 
-    polling_thread: JoinHandle<()>,
+    io_uring_thread: JoinHandle<()>,
+    epoll_thread: JoinHandle<()>,
 
     thread_pool: Vec<JoinHandle<()>>,
 }
@@ -52,6 +54,8 @@ pub(super) struct ExecutorShared {
     /// framework.
     pub(super) io_uring: ExecutorIoUring,
 
+    pub(super) epoll: ExecutorEpoll,
+
     /// List of tasks which need to be polled next.
     pending_queue: Mutex<VecDeque<TaskId>>,
 
@@ -68,6 +72,7 @@ impl Executor {
             next_task_id: Mutex::new(1),
 
             io_uring: ExecutorIoUring::create()?,
+            epoll: ExecutorEpoll::create()?,
 
             pending_queue: Mutex::new(VecDeque::new()),
             pending_queue_condvar: Condvar::new(),
@@ -77,9 +82,14 @@ impl Executor {
 
         // NOTE: The poller must be on a separate thread incase the main thread is
         // running a future that needs to park itself for I/O operation cancellation.
-        let polling_thread = {
+        let io_uring_thread = {
             let shared = shared.clone();
-            Self::spawn_thread(move || Self::polling_thread_fn(shared))
+            Self::spawn_thread(move || Self::io_uring_thread_fn(shared))
+        };
+
+        let epoll_thread = {
+            let shared = shared.clone();
+            Self::spawn_thread(move || Self::epoll_thread_fn(shared))
         };
 
         let num_threads = match options.thread_pool_size.clone() {
@@ -96,7 +106,8 @@ impl Executor {
             options,
             shared,
             thread_pool,
-            polling_thread,
+            io_uring_thread,
+            epoll_thread,
         })
     }
 
@@ -172,6 +183,7 @@ impl Executor {
 
         if self.options.run_mode == ExecutorRunMode::StopAllTasks {
             shared.io_uring.shutdown();
+            shared.epoll.shutdown();
 
             // All I/O operations should return a cancelled error on the next Poll because
             // we shut down the io_uring.
@@ -192,7 +204,9 @@ impl Executor {
 
             // NOTE: Even though all workers have been stopped, we may still have some
             // pending cancellation operations.
-            self.polling_thread.join().unwrap();
+            self.io_uring_thread.join().unwrap();
+
+            self.epoll_thread.join().unwrap();
         }
 
         Ok(output)
@@ -220,16 +234,41 @@ impl Executor {
 
     /// Runs until all tasks spawned in the executor have finished running.
     /// This is a blocking call and also runs the main polling logic.
-    fn polling_thread_fn(shared: Arc<ExecutorShared>) {
-        Self::polling_thread_inner(shared).unwrap();
+    fn io_uring_thread_fn(shared: Arc<ExecutorShared>) {
+        Self::io_uring_thread_inner(shared).unwrap();
     }
 
-    fn polling_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
+    fn io_uring_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
         let mut tasks_to_wake = HashSet::new();
 
         while !shared.io_uring.finished() {
             tasks_to_wake.clear();
             shared.io_uring.poll_events(&mut tasks_to_wake)?;
+
+            let tasks = shared.tasks.lock().unwrap();
+
+            for task_id in tasks_to_wake.drain() {
+                let task_entry = tasks
+                    .get(&task_id)
+                    .ok_or_else(|| err_msg("Task disappeared"))?;
+
+                Self::wake_task_entry(task_entry.as_ref(), false);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn epoll_thread_fn(shared: Arc<ExecutorShared>) {
+        Self::epoll_thread_inner(shared).unwrap();
+    }
+
+    fn epoll_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
+        let mut tasks_to_wake = HashSet::new();
+
+        while !shared.epoll.finished() {
+            tasks_to_wake.clear();
+            shared.epoll.poll_events(&mut tasks_to_wake)?;
 
             let tasks = shared.tasks.lock().unwrap();
 

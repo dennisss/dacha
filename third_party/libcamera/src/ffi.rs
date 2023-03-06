@@ -67,6 +67,11 @@ unsafe impl ExternType for bindings::Rectangle {
     type Kind = cxx::kind::Trivial;
 }
 
+unsafe impl ExternType for bindings::ColorSpace {
+    type Id = type_id!("libcamera::ColorSpace");
+    type Kind = cxx::kind::Trivial;
+}
+
 #[cxx::bridge]
 mod ffi {
     /// A mirror of libcamera::FrameBuffer::Plane
@@ -143,6 +148,7 @@ mod ffi {
         type SizeRange = crate::bindings::SizeRange;
         type ControlType = crate::bindings::ControlType;
         type Rectangle = crate::bindings::Rectangle;
+        type ColorSpace = crate::bindings::ColorSpace;
 
         //////////////////////////////////////
 
@@ -203,7 +209,9 @@ mod ffi {
 
         type Request;
 
+        /// NOTE: Only valid after a request has been completed.
         fn sequence(self: &Request) -> u32;
+
         fn cookie(self: &Request) -> u64;
 
         // May return a negative error.
@@ -270,6 +278,11 @@ mod ffi {
         fn stream(self: &StreamConfiguration) -> *mut Stream;
 
         fn formats(self: &StreamConfiguration) -> &StreamFormats;
+
+        fn stream_config_has_color_space(config: &StreamConfiguration) -> bool;
+        fn stream_config_color_space(config: &StreamConfiguration) -> ColorSpace;
+        fn stream_config_set_color_space(config: Pin<&mut StreamConfiguration>, value: ColorSpace);
+        fn stream_config_clear_color_space(config: Pin<&mut StreamConfiguration>);
 
         //////////////////////////////////////
 
@@ -405,6 +418,8 @@ mod ffi {
         //////////////////////////////////////
 
         type ControlList;
+
+        fn new_control_list() -> UniquePtr<ControlList>;
 
         fn contains(self: &ControlList, id: u32) -> bool;
 

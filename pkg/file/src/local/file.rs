@@ -25,6 +25,8 @@ pub struct LocalFileOpenOptions {
 
     direct: bool,
 
+    non_blocking: bool,
+
     /// Used when creating new files. Some bits may get masked out by 'umask'.
     mode: u32,
 }
@@ -42,6 +44,7 @@ impl LocalFileOpenOptions {
             direct: false,
             sync: false,
             exclusive: false,
+            non_blocking: false,
             mode: 0o666,
         }
     }
@@ -78,6 +81,11 @@ impl LocalFileOpenOptions {
 
     pub fn exclusive(&mut self, value: bool) -> &mut Self {
         self.exclusive = value;
+        self
+    }
+
+    pub fn non_blocking(&mut self, value: bool) -> &mut Self {
+        self.non_blocking = value;
         self
     }
 
@@ -147,8 +155,7 @@ impl LocalFile {
         }
         if (options.write || options.append) && !options.read {
             flags |= sys::O_WRONLY;
-        }
-        else if options.write || options.append {
+        } else if options.write || options.append {
             flags |= sys::O_RDWR;
         }
         if options.truncate {
@@ -167,6 +174,9 @@ impl LocalFile {
         if options.exclusive {
             // NOTE: Only applicable if not using create_new
             flags |= sys::O_EXCL;
+        }
+        if options.non_blocking {
+            flags |= sys::O_NONBLOCK;
         }
 
         // TODO: We should also use this approach with mkdirat when creating files.

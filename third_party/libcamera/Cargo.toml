@@ -5,8 +5,9 @@ edition = "2021"
 
 [dependencies]
 cxx = "1.0"
-nix = { version = "0.26.2", features = ["mman"] }
 paste = "1.0"
+sys = { path = "../../pkg/sys" }
+base_error = { path = "../../pkg/base/error" }
 
 [build-dependencies]
 cxx-build = "1.0"

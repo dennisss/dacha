@@ -1,0 +1,15 @@
+[package]
+name = "v4l2"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+sys = { path = "../../pkg/sys" }
+base_error = { path = "../../pkg/base/error" }
+file = { path = "../../pkg/file" }
+executor = { path = "../../pkg/executor" }
+
+[build-dependencies]
+bindgen = "0.63.0"
+automata = { path = "../../pkg/automata" }
+regexp_macros = { path = "../../pkg/automata/regexp_macros" }

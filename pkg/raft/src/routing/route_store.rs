@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use common::condvar::{Condvar, CondvarGuard};
+use executor::{Condvar, CondvarGuard};
 
 use crate::proto::consensus::*;
 use crate::proto::ident::*;

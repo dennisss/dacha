@@ -23,12 +23,14 @@ pub struct FrameBufferAllocator {
 }
 
 pub(crate) struct FrameBufferAllocatorInner {
+    state: Mutex<FrameBufferAllocatorState>,
+
     /// Ensure that the allocator outlives the camera (as it contains Stream
     /// references owned by the camera).
+    ///
+    /// MUST be the last field in this struct to be dropped last.
     #[allow(unused)]
     camera: Arc<Camera>,
-
-    state: Mutex<FrameBufferAllocatorState>,
 }
 
 struct FrameBufferAllocatorState {

@@ -2,7 +2,10 @@
 
 // mod polling;
 
+mod condvar;
+mod epoll;
 mod error;
+mod eventually;
 mod executor;
 mod file;
 mod io_uring;
@@ -16,7 +19,10 @@ mod waker;
 mod yielding;
 
 pub use self::executor::TaskId;
+pub use condvar::*;
+pub use epoll::ExecutorPollingContext;
 pub use error::*;
+pub use eventually::*;
 pub use file::FileHandle;
 pub use io_uring::ExecutorOperation;
 pub use join_handle::*;

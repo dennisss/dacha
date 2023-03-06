@@ -3,10 +3,10 @@ use std::collections::LinkedList;
 use std::sync::Arc;
 use std::time::Instant;
 
-use common::condvar::*;
 use common::errors::*;
 use common::futures::channel::oneshot;
 use executor::sync::Mutex;
+use executor::Condvar;
 
 use crate::atomic::*;
 use crate::consensus::module::*;

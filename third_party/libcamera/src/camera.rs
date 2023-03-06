@@ -22,21 +22,26 @@ use crate::stream::Stream;
 // TODO: On drop, do release/stop?
 
 pub struct Camera {
-    /// Used to ensure that the ffi::Camera outlives the ffi::CameraManager.
-    #[allow(unused)]
-    manager: Arc<CameraManager>,
-
     raw: SharedPtr<ffi::Camera>,
 
     state: Arc<Mutex<CameraState>>,
+
+    /// Used to ensure that the ffi::Camera outlives the ffi::CameraManager.
+    ///
+    /// MUST be the last field in this struct to be dropped last.
+    #[allow(unused)]
+    manager: Arc<CameraManager>,
 }
+
+unsafe impl Send for Camera {}
+unsafe impl Sync for Camera {}
 
 struct CameraState {
     /// When in the 'Running' state, this will store a map of requests which
     /// have been enqueued to run but are not yet complete.
     ///
-    /// The key is each request's sequence.
-    pending_requests: HashMap<u32, Arc<Mutex<RequestQueueEntry>>>,
+    /// The key is each request's pointer.
+    pending_requests: HashMap<u64, Arc<Mutex<RequestQueueEntry>>>,
 }
 
 pub(crate) struct RequestQueueEntry {
@@ -139,15 +144,16 @@ impl Camera {
                 .queueRequest(request.raw.as_mut().unwrap().get_unchecked_mut())
         })?;
 
-        let sequence = request.sequence();
-
         let entry = Arc::new(Mutex::new(RequestQueueEntry {
             done: false,
             waker: None,
         }));
 
-        assert!(!state.pending_requests.contains_key(&sequence));
-        state.pending_requests.insert(sequence, entry.clone());
+        let request_id =
+            unsafe { core::mem::transmute::<&ffi::Request, _>(request.raw.as_ref().unwrap()) };
+
+        assert!(!state.pending_requests.contains_key(&request_id));
+        state.pending_requests.insert(request_id, entry.clone());
 
         Ok(entry)
     }
@@ -243,8 +249,13 @@ impl ConfiguredCamera {
         self.camera.create_request(cookie)
     }
 
-    pub fn start(self) -> Result<RunningCamera> {
-        ok_if_zero(unsafe { self.camera.get_mut().start(core::ptr::null_mut()) })?;
+    pub fn start(self, control_list: Option<&ControlList>) -> Result<RunningCamera> {
+        let control_list = match control_list {
+            Some(v) => unsafe { core::mem::transmute(v) },
+            None => core::ptr::null(),
+        };
+
+        ok_if_zero(unsafe { self.camera.get_mut().start(control_list) })?;
         RunningCamera::create(self.camera)
     }
 }
@@ -257,6 +268,9 @@ pub struct RunningCamera {
     #[allow(unused)]
     request_complete_slot: UniquePtr<ffi::RequestCompleteSlot>,
 }
+
+unsafe impl Send for RunningCamera {}
+unsafe impl Sync for RunningCamera {}
 
 impl Deref for RunningCamera {
     type Target = Camera;
@@ -287,15 +301,20 @@ impl RunningCamera {
 
     fn handle_request_complete(state: &Arc<Mutex<CameraState>>, request: &ffi::Request) {
         let mut state = state.lock().unwrap();
-        let sequence = request.sequence();
 
-        let entry = state.pending_requests.remove(&sequence).unwrap();
+        let request_id = unsafe { core::mem::transmute::<&ffi::Request, _>(request) };
+
+        let entry = state.pending_requests.remove(&request_id).unwrap();
         let mut guard = entry.lock().unwrap();
 
         guard.done = true;
         if let Some(waker) = guard.waker.take() {
             waker.wake();
         }
+    }
+
+    pub fn create_request(&self, cookie: u64) -> NewRequest {
+        self.camera.create_request(cookie)
     }
 
     // TODO: Verify that when stopped, all requests get marked as cancelled.

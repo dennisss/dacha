@@ -6,12 +6,12 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 use std::time::Instant;
 
-use common::condvar::Condvar;
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
+use executor::Condvar;
 use net::backoff::*;
 use net::tcp::TcpStream;
 use parsing::ascii::AsciiString;

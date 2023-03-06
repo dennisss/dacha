@@ -20,7 +20,9 @@ fn main() -> Result<()> {
         println!("S: {:x}", stream.id())
     }
 
-    println!("{:#?}", camera.controls());
+    println!("Controls: {:#?}", camera.controls());
+
+    println!("Properties: {:#?}", camera.properties());
 
     let camera = camera.acquire()?;
     println!("Acquired!");
@@ -36,6 +38,10 @@ fn main() -> Result<()> {
     println!("Supported Formats:");
     for format in config.stream_config(0).formats().pixel_formats() {
         println!("- {:?}", format);
+
+        if format.to_string() == "YUV420" {
+            config.stream_config_mut(0).set_pixel_format(format);
+        }
     }
 
     println!("Size: {:?}", config.stream_config(0).size());
@@ -48,6 +54,8 @@ fn main() -> Result<()> {
 
     let camera = camera.configure(&mut config)?;
     println!("Configured!");
+
+    println!("Stride: {:?}", config.stream_config(0).stride());
 
     let mut frame_buffer_allocator = camera.new_frame_buffer_allocator();
 
@@ -76,7 +84,7 @@ fn main() -> Result<()> {
 
     println!("Request Controls: {:?}", request.controls_mut());
 
-    let camera = camera.start()?;
+    let camera = camera.start(None)?;
 
     let mut pending_request = request.enqueue()?;
 
@@ -110,12 +118,14 @@ fn main() -> Result<()> {
         libcamera::FrameStatus::FrameSuccess
     );
 
+    println!("Planes: {:?}", frame_buffer.planes());
+
     let used_memory = frame_buffer.used_memory().unwrap();
 
     println!("Timestamp: {}", frame_buffer.metadata().timestamp);
     println!("Size: {}", used_memory.len());
 
-    std::fs::write("image.jpeg", used_memory).unwrap();
+    std::fs::write("image.yuv420", used_memory).unwrap();
 
     println!("Written!");
 

@@ -1,5 +1,8 @@
-use crate::condvar::Condvar;
-use crate::errors::*;
+// TODO: Move out of the linux directory.
+
+use common::errors::*;
+
+use crate::Condvar;
 
 /// A value which is initially null, but will eventually be initially and
 /// available.

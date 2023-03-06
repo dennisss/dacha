@@ -1,6 +1,7 @@
 use std::pin::Pin;
 
 use crate::bindings::Size;
+use crate::color_space::ColorSpace;
 use crate::ffi;
 use crate::pixel_format::PixelFormat;
 use crate::stream::Stream;
@@ -55,6 +56,23 @@ impl StreamConfiguration {
 
     pub fn set_buffer_count(&mut self, value: u32) {
         ffi::stream_config_set_buffer_count(unsafe { Pin::new_unchecked(&mut self.config) }, value)
+    }
+
+    pub fn color_space(&self) -> Option<ColorSpace> {
+        if ffi::stream_config_has_color_space(&self.config) {
+            Some(ffi::stream_config_color_space(&self.config))
+        } else {
+            None
+        }
+    }
+
+    pub fn set_color_space(&mut self, value: Option<ColorSpace>) {
+        let config = unsafe { Pin::new_unchecked(&mut self.config) };
+
+        match value {
+            Some(value) => ffi::stream_config_set_color_space(config, value),
+            None => ffi::stream_config_clear_color_space(config),
+        }
     }
 
     pub fn formats(&self) -> &StreamFormats {

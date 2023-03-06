@@ -15,7 +15,7 @@ mod syscall;
 mod capabilities;
 mod clone;
 mod credentials;
-// mod epoll;
+mod epoll;
 mod errno;
 mod exit;
 mod file;
@@ -32,6 +32,7 @@ mod signal;
 mod socket;
 mod stat;
 // pub mod thread;
+mod ioctl;
 mod mount;
 mod utils;
 pub mod utsname;
@@ -50,13 +51,14 @@ pub use capabilities::*;
 pub use clone::*;
 pub use core::ffi::{c_size_t, c_ssize_t, c_uchar, c_void};
 pub use credentials::*;
-// pub use epoll::*;
+pub use epoll::*;
 pub use errno::*;
 pub use exit::*;
 pub use file::OpenFileDescriptor;
 pub use getcwd::*;
 pub use getdents::*;
 pub use io_uring::*;
+pub use ioctl::*;
 pub use iov::*;
 pub use mapped_memory::*;
 pub use mount::*;
@@ -166,8 +168,6 @@ syscall!(renameat2, bindings::SYS_renameat2,
     olddirfd: c_int, oldname: *const c_char,
     newdirfd: c_int, newname: *const c_char,
     flags: c_uint => Result<()>);
-
-syscall!(ioctl, bindings::SYS_ioctl, fd: c_uint, cmd: c_uint, arg: c_ulong => Result<c_int>);
 
 syscall!(perf_event_open, bindings::SYS_perf_event_open,
     attr: *const bindings::perf_event_attr, pid: pid_t, cpu: c_int, group_fd: c_int, flags: c_ulong => Result<c_int>);

@@ -1,3 +1,5 @@
+// TODO: Move this out of the jpeg module.
+
 // Based on T.871
 // TODO: This is highly parallelizable (ideally do in CPU cache when decoding
 // MCUs)

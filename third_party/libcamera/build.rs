@@ -36,9 +36,9 @@ struct EnumValue {
     description: String,
 }
 
-fn compile_controls(out_dir: &Path) {
+fn compile_controls(namespace: &str, in_path: &str, out_dir: &Path) {
     let control_ids: ControlIds = {
-        let yaml = std::fs::read_to_string("repo/src/libcamera/control_ids.yaml").unwrap();
+        let yaml = std::fs::read_to_string(in_path).unwrap();
         serde_yaml::from_str(&yaml).unwrap()
     };
 
@@ -55,6 +55,7 @@ fn compile_controls(out_dir: &Path) {
             "float" => ("f32", false),
             "Rectangle" => ("Rectangle", false),
             "Size" => ("Size", false),
+            "string" => ("String", false),
             _ => panic!("Unsupported control type: {}", control.typ),
         };
 
@@ -102,41 +103,65 @@ fn compile_controls(out_dir: &Path) {
             }
 
             if is_static_size {
-                control_type = format!("[{}]", control_type);
-            } else {
                 control_type = format!("[{}; {}]", control_type, size);
+            } else {
+                control_type = format!("[{}]", control_type);
             }
         }
 
-        let namespace = if control.draft { "draft" } else { "stable" };
+        let subnamespace = if control.draft { "::draft" } else { "" };
 
         out.push_str(&format!(
-            "control!(\n///{}\n{}, {}, {});\n\n",
+            "control!(\n/// {}\n{}, {}, {}{});\n\n",
             control.description.replace("\n", " "),
             control_name,
             control_type,
-            namespace
+            namespace,
+            subnamespace
         ));
     }
 
-    std::fs::write(out_dir.join("controls.rs"), out).unwrap();
+    std::fs::write(out_dir.join(format!("{}.rs", namespace)), out).unwrap();
 }
 
 fn main() {
+    /*
+    cd /opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu
+    ln -sf /opt/dacha/pi/rootfs/lib/aarch64-linux-gnu/libpthread.so.0 libpthread.so
+
+    cargo run --bin file --release -- copy /media/dennis/rootfs /opt/dacha/pi/rootfs --skip_permission_denied --symlink_root=/opt/dacha/pi/rootfs
+
+
+    PKG_CONFIG_PATH_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu/pkgconfig PKG_CONFIG_SYSROOT_DIR_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="--sysroot=/opt/dacha/pi/rootfs"  cargo build --target aarch64-unknown-linux-gnu --release --bin libcamera
+
+
+    scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/libcamera cluster-user@10.1.0.112:~
+
+    scp -i ~/.ssh/id_cluster cluster-user@10.1.0.112:~/image.rgb .
+
+    */
+
     let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     let lib = pkg_config::probe_library("libcamera").unwrap();
 
-    compile_controls(&out_path);
+    let include_paths = lib
+        .include_paths
+        .iter()
+        .map(|p| p.to_str().unwrap())
+        .collect::<Vec<_>>();
+
+    compile_controls("controls", "repo/src/libcamera/control_ids.yaml", &out_path);
+    compile_controls(
+        "properties",
+        "repo/src/libcamera/property_ids.yaml",
+        &out_path,
+    );
 
     let bindings = bindgen::Builder::default()
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .header("src/wrapper.h")
-        .clang_args(
-            lib.include_paths
-                .iter()
-                .map(|path| format!("-I{}", path.to_str().unwrap())),
-        )
+        .clang_args(include_paths.iter().map(|path| format!("-I{}", path)))
         .clang_args(["-x", "c++", "-std=c++2a"])
         .enable_cxx_namespaces()
         .newtype_enum(".*")
@@ -152,10 +177,12 @@ fn main() {
         .allowlist_type("libcamera.*ControlType")
         .allowlist_type("libcamera.*Rectangle")
         .allowlist_type("libcamera.*ControlValuePrimitive")
-        .allowlist_var("libcamera.*formats.*")
         .allowlist_var("libcamera.*controls.*")
+        .allowlist_var("libcamera.*properties.*")
+        .allowlist_var("libcamera.*ColorSpace.*")
         .opaque_type("libcamera.*Control.*")
         .no_debug("libcamera.*PixelFormat")
+        .no_debug("libcamera.*ColorSpace")
         .blocklist_function(".*")
         .generate()
         .expect("Unable to generate bindings");
@@ -166,7 +193,7 @@ fn main() {
 
     cxx_build::bridge("src/ffi.rs") // returns a cc::Build
         .file("src/ffi.cc")
-        .includes(lib.include_paths)
+        .includes(include_paths)
         .flag("-std=c++2a")
         .compile("libcamera-cxx");
 

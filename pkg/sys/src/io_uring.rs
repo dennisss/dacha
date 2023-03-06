@@ -174,10 +174,10 @@ impl IoSubmissionUring {
             } => {
                 entry.opcode = bindings::IORING_OP_READV as u8;
                 entry.fd = fd;
-                entry.off = offset;
-                entry.addr = unsafe { core::mem::transmute(buffers.as_ptr()) };
+                entry.set_off(offset);
+                entry.set_addr(unsafe { core::mem::transmute(buffers.as_ptr()) });
                 entry.len = buffers.len() as u32;
-                entry.__bindgen_anon_1.rw_flags = flags.to_raw();
+                entry.set_op_flags(flags.to_raw() as u32);
             }
             IoUringOp::WriteV {
                 fd,
@@ -187,10 +187,10 @@ impl IoSubmissionUring {
             } => {
                 entry.opcode = bindings::IORING_OP_WRITEV as u8;
                 entry.fd = fd;
-                entry.off = offset;
-                entry.addr = unsafe { core::mem::transmute(buffers.as_ptr()) };
+                entry.set_off(offset);
+                entry.set_addr(unsafe { core::mem::transmute(buffers.as_ptr()) });
                 entry.len = buffers.len() as u32;
-                entry.__bindgen_anon_1.rw_flags = flags.to_raw();
+                entry.set_op_flags(flags.to_raw() as u32);
             }
             IoUringOp::Accept {
                 fd,
@@ -201,17 +201,18 @@ impl IoSubmissionUring {
                 entry.fd = fd;
 
                 sockaddr.reset();
-                entry.addr = unsafe { core::mem::transmute(&sockaddr.addr) };
-                entry.off = unsafe { core::mem::transmute(&sockaddr.len) }; // addr2 field.
-                entry.__bindgen_anon_1.fsync_flags = flags.to_raw() as u32; // accept_flags field.
+                entry.set_addr(unsafe { core::mem::transmute(&sockaddr.addr) });
+                entry.set_off(unsafe { core::mem::transmute(&sockaddr.len) }); // addr2 field.
+                entry.set_op_flags(flags.to_raw() as u32); // accept_flags
+                                                           // field.
             }
             IoUringOp::Connect { fd, sockaddr } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_CONNECT as u8;
                 entry.fd = fd;
 
                 // TODO: Check that the kernel copies this during prepare.
-                entry.addr = unsafe { core::mem::transmute(sockaddr) };
-                entry.off = sockaddr.len().unwrap() as u64;
+                entry.set_addr(unsafe { core::mem::transmute(sockaddr) });
+                entry.set_off(sockaddr.len().unwrap() as u64);
             }
             IoUringOp::Timeout { duration } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_TIMEOUT as u8;
@@ -219,27 +220,28 @@ impl IoSubmissionUring {
                 // NOTE: The kernel copies the this data during op submission so we don't need
                 // to worry about keeping this alive from longer than this function.
                 let t = timespec.insert(kernel::timespec64::from(duration));
-                entry.addr = unsafe { core::mem::transmute(t) };
+                entry.set_addr(unsafe { core::mem::transmute(t) });
 
                 entry.len = 1; // Only 1 timespec is provided.
 
-                entry.__bindgen_anon_1.fsync_flags = 0; // timeout_flags field. Use a relative timeout.
-                entry.off = 0; // Only count timeouts. Ignore other completions.
+                entry.set_op_flags(0); // timeout_flags field. Use a relative timeout.
+                entry.set_off(0); // Only count timeouts. Ignore other
+                                  // completions.
             }
             IoUringOp::SendMessage { fd, header } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_SENDMSG as u8;
                 entry.fd = fd;
-                entry.addr = unsafe { core::mem::transmute(header) };
+                entry.set_addr(unsafe { core::mem::transmute(header) });
             }
             IoUringOp::ReceiveMessage { fd, header } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_RECVMSG as u8;
                 entry.fd = fd;
                 header.reset();
-                entry.addr = unsafe { core::mem::transmute(header) };
+                entry.set_addr(unsafe { core::mem::transmute(header) });
             }
             IoUringOp::Cancel { user_data } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_ASYNC_CANCEL as u8;
-                entry.addr = user_data;
+                entry.set_addr(user_data);
             }
         }
 
@@ -345,6 +347,40 @@ impl SubmissionQueue {
     fn entries(&mut self) -> *mut bindings::io_uring_sqe {
         self.entries.addr() as *mut bindings::io_uring_sqe
     }
+}
+
+impl bindings::io_uring_sqe {
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_off(&mut self, off: u64) {
+        self.off = off;
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    pub fn set_off(&mut self, off: u64) {
+        self.__bindgen_anon_1.off = off;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_addr(&mut self, addr: u64) {
+        self.addr = addr;
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    pub fn set_addr(&mut self, addr: u64) {
+        self.__bindgen_anon_2.addr = addr;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_op_flags(&mut self, flags: u32) {
+        self.__bindgen_anon_1.fsync_flags = flags;
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    pub fn set_op_flags(&mut self, flags: u32) {
+        self.__bindgen_anon_3.fsync_flags = flags;
+    }
+
+    // entry.__bindgen_anon_1.off
 }
 
 pub struct IoCompletionUring {

@@ -1,5 +1,5 @@
 mod coefficient;
-mod color;
+pub mod color;
 mod constants;
 mod dct;
 pub mod encoder;

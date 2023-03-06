@@ -2,23 +2,19 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use nix::sys::mman::*;
-
 use crate::errors::*;
 use crate::ffi;
 use crate::frame_buffer_allocator::FrameBufferAllocatorInner;
 use crate::stream::Stream;
 
 pub use ffi::{FrameBufferPlane, FrameMetadata, FramePlaneMetadata, FrameStatus};
+use sys::MappedMemory;
 
 /// Memory buffer created by the FrameBufferAllocator for storing stream frames.
 ///
 /// Exclusive access to a FrameBuffer instance is required to mutate the
 /// internal memory.
 pub struct FrameBuffer {
-    #[allow(unused)]
-    allocator: Arc<FrameBufferAllocatorInner>,
-
     /// Reference to the stream for which this frame buffer was created.
     ///
     /// This is owned by the camera. This is only safe to store as this should
@@ -29,7 +25,14 @@ pub struct FrameBuffer {
 
     planes: Vec<FrameBufferPlane>,
 
-    memory: Option<Vec<&'static [u8]>>,
+    memory: Option<Vec<MappedMemory>>,
+
+    /// Ensure that frame buffers outlive the allocator as the allocator owns
+    /// all the underlying memory.
+    ///
+    /// MUST be the last field in this struct to be dropped last.
+    #[allow(unused)]
+    allocator: Arc<FrameBufferAllocatorInner>,
 }
 
 unsafe impl Send for FrameBuffer {}
@@ -71,9 +74,15 @@ impl FrameBuffer {
     /// planes will be merged into one byte slice. So usually, the returned
     /// vector will contain only one element.
     ///
+    /// TODO: Return a FixedArray given this will rarely have >4 elements.
+    ///
     /// This will return None until the memory is mmap'ed using map_memory().
-    pub fn memory<'a>(&'a self) -> Option<&'a [&'a [u8]]> {
-        self.memory.as_ref().map(|v| &v[..])
+    pub fn memory<'a>(&'a self) -> Option<Vec<&'a [u8]>> {
+        self.memory.as_ref().map(|v| {
+            v.iter()
+                .map(|m| unsafe { core::slice::from_raw_parts(m.addr(), m.len()) })
+                .collect()
+        })
     }
 
     /// Attempts to retrieve all the occupied memory as one contigous memory
@@ -116,7 +125,7 @@ impl FrameBuffer {
         Ok(())
     }
 
-    fn map_all_memory(&self) -> Result<Vec<&'static [u8]>> {
+    fn map_all_memory(&self) -> Result<Vec<MappedMemory>> {
         let mut memory_buffers = vec![];
 
         let mut current_segment: Option<FrameBufferPlane> = None;
@@ -140,19 +149,16 @@ impl FrameBuffer {
         Ok(memory_buffers)
     }
 
-    unsafe fn mmap_plane(plane: FrameBufferPlane) -> Result<&'static [u8]> {
-        let mem = mmap(
-            None,
-            NonZeroUsize::new(plane.length as usize).unwrap(),
-            ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
-            MapFlags::MAP_SHARED,
+    unsafe fn mmap_plane(plane: FrameBufferPlane) -> Result<MappedMemory> {
+        let memory = sys::MappedMemory::create(
+            core::ptr::null_mut(),
+            plane.length as usize,
+            sys::bindings::PROT_READ | sys::bindings::PROT_WRITE,
+            sys::bindings::MAP_SHARED,
             plane.fd as i32,
-            plane.offset as nix::libc::off_t,
+            plane.offset as usize,
         )?;
 
-        Ok(core::slice::from_raw_parts(
-            core::mem::transmute(mem),
-            plane.length as usize,
-        ))
+        Ok(memory)
     }
 }

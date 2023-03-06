@@ -20,6 +20,7 @@ use math::matrix::{Vector2f, VectorStatic};
 use math::number::{Cast, Zero};
 
 mod binary;
+mod buffer;
 pub mod format;
 pub mod open;
 pub mod resize;

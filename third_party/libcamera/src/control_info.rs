@@ -13,6 +13,11 @@ impl ControlInfo {
 
 impl Debug for ControlInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", ffi::control_info_to_string(&self))
+        write!(
+            f,
+            "{} (default: {:?})",
+            ffi::control_info_to_string(&self),
+            self.def()
+        )
     }
 }

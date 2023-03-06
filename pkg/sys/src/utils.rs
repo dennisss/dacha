@@ -5,7 +5,7 @@ use crate::Errno;
 /// EINTR should always indicate that the program was interrupted by signal
 /// delivery during a syscall.
 #[inline(always)]
-pub(crate) fn retry_interruptions<T, F: Fn() -> Result<T, Errno>>(f: F) -> Result<T, Errno> {
+pub(crate) fn retry_interruptions<T, F: FnMut() -> Result<T, Errno>>(mut f: F) -> Result<T, Errno> {
     loop {
         match f() {
             Ok(v) => return Ok(v),

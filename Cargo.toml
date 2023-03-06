@@ -105,6 +105,8 @@ members = [
 	"third_party/libcamera",
 	"pkg/base/units",
 	"pkg/crypto/pgp",
+	"third_party/v4l2",
+	"pkg/rpi/streamer",
 ]
 
 [profile.dev]

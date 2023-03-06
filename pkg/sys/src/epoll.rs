@@ -1,6 +1,8 @@
 use crate::bindings::{EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLL_CTL_DEL, EPOLL_CTL_MOD, EPOLL_EVENTS};
 use crate::file::OpenFileDescriptor;
-use crate::{c_int, c_uint, close, Errno};
+use crate::utils::retry_interruptions;
+use crate::{bindings, kernel};
+use crate::{c_int, c_size_t, c_uint, close, Errno};
 
 pub struct Epoll {
     fd: OpenFileDescriptor,
@@ -18,14 +20,16 @@ impl Epoll {
     }
 
     pub fn wait(&self, events: &mut [EpollEvent]) -> Result<usize, Errno> {
-        let n = unsafe {
-            raw::epoll_wait(
+        let n = retry_interruptions(|| unsafe {
+            raw::epoll_pwait(
                 *self.fd,
                 events.as_mut_ptr() as *mut crate::bindings::epoll_event,
                 events.len() as i32,
                 -1,
+                core::ptr::null(),
+                0,
             )
-        }?;
+        })?;
         Ok(n as usize)
     }
 }
@@ -83,9 +87,18 @@ define_bit_flags!(EpollEvents u32 {
 mod raw {
     use super::*;
 
-    syscall!(epoll_create, crate::bindings::SYS_epoll_create, size: c_int => Result<c_int>);
     syscall!(epoll_create1, crate::bindings::SYS_epoll_create1, flags: c_uint => Result<c_int>);
-    syscall!(epoll_ctl, crate::bindings::SYS_epoll_ctl, epfd: c_int, op: c_int, fd: c_int, event: *const crate::bindings::epoll_event => Result<()>);
-    syscall!(epoll_wait, crate::bindings::SYS_epoll_wait,
-    epfd: c_int, events: *mut crate::bindings::epoll_event, max_events: c_int, timeout: c_int => Result<c_int>);
+
+    syscall!(epoll_ctl, bindings::SYS_epoll_ctl,
+        epfd: c_int, op: c_int, fd: c_int, event: *const bindings::epoll_event
+        => Result<()>);
+
+    syscall!(epoll_pwait, crate::bindings::SYS_epoll_pwait,
+        epfd: c_int,
+        events: *mut bindings::epoll_event,
+        max_events: c_int,
+        timeout: c_int,
+        sigmask: *const kernel::sigset_t,
+        sigsetsize: c_size_t
+        => Result<c_int>);
 }

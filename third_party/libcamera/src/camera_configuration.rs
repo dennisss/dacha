@@ -9,14 +9,19 @@ use crate::stream_configuration::StreamConfiguration;
 pub use crate::ffi::CameraConfigurationStatus;
 
 pub struct CameraConfiguration {
-    /// Used to ensure that the ffi::CameraConfiguration outlives and
-    /// ffi::Camera.
-    #[allow(unused)]
-    camera: Arc<Camera>,
-
     /// This is public to allow the Camera to configure itself.
     pub(crate) raw: UniquePtr<ffi::CameraConfiguration>,
+
+    /// Used to ensure that the ffi::CameraConfiguration outlives and
+    /// ffi::Camera.
+    ///
+    /// MUST be the last field in this struct to be dropped last.
+    #[allow(unused)]
+    camera: Arc<Camera>,
 }
+
+unsafe impl Send for CameraConfiguration {}
+unsafe impl Sync for CameraConfiguration {}
 
 impl CameraConfiguration {
     pub(crate) fn new(camera: Arc<Camera>, raw: UniquePtr<ffi::CameraConfiguration>) -> Self {

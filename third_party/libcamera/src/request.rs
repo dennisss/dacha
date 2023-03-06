@@ -23,15 +23,19 @@ use crate::stream::Stream;
 ///
 /// Will also get canclled by C++ if the camera is stopped.
 pub struct Request {
-    #[allow(unused)]
-    camera: Arc<Camera>,
-
     pub(crate) raw: UniquePtr<ffi::Request>,
 
     /// All the buffers associated with this request.
     /// Key is the stream id.
     buffers: HashMap<u64, FrameBuffer>,
+
+    /// MUST be the last field in this struct to be dropped last.
+    #[allow(unused)]
+    camera: Arc<Camera>,
 }
+
+unsafe impl Send for Request {}
+unsafe impl Sync for Request {}
 
 impl Request {
     pub(crate) fn new(camera: Arc<Camera>, raw: UniquePtr<ffi::Request>) -> Self {
@@ -68,18 +72,16 @@ impl Request {
         self.raw.cookie()
     }
 
-    pub fn sequence(&self) -> u32 {
-        self.raw.sequence()
-    }
-
     // TODO: Change to read only and only allow on a completed request.
-    pub fn metadata_mut<'a>(&'a mut self) -> &'a mut ControlList {
+    pub fn metadata<'a>(&'a self) -> &'a ControlList {
+        // Safe because on the C++ side, this is just a simple field accessor.
         unsafe {
-            self.raw
-                .as_mut()
-                .unwrap()
-                .metadata()
-                .get_unchecked_mut()
+            (Pin::new_unchecked(
+                &mut *(core::mem::transmute::<&ffi::Request, u64>(self.raw.as_ref().unwrap())
+                    as *mut ffi::Request),
+            )
+            .metadata()
+            .get_unchecked_mut() as &ffi::ControlList)
                 .into()
         }
     }
@@ -114,6 +116,8 @@ impl NewRequest {
     }
 
     /// Enqueue the request to be executed on the camera.
+    ///
+    /// NOTE: This may only be called when the camera is running.
     ///
     /// Ownership of memory associated with the request is transferred to
     /// libcamera internal threads.
@@ -215,5 +219,13 @@ impl CompletedRequest {
 
     pub fn buffer(&self, stream: &Stream) -> Option<&FrameBuffer> {
         self.request.buffers.get(&stream.id())
+    }
+
+    pub fn buffer_by_id(&self, stream_id: u64) -> Option<&FrameBuffer> {
+        self.request.buffers.get(&stream_id)
+    }
+
+    pub fn sequence(&self) -> u32 {
+        self.request.raw.sequence()
     }
 }

@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use common::condvar::*;
 use common::errors::*;
 use common::futures::channel::oneshot;
 use common::futures::FutureExt;
@@ -14,6 +13,7 @@ use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
+use executor::Condvar;
 use protobuf::Message;
 
 use crate::atomic::BlobFile;

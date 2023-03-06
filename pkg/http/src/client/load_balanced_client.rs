@@ -4,13 +4,13 @@ use std::net::SocketAddr;
 use std::slice::SliceIndex;
 use std::sync::{Arc, Weak};
 
-use common::condvar::Condvar;
 use common::errors::*;
 use common::vec_hash_set::VecHashSet;
 use crypto::random::RngExt;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
+use executor::Condvar;
 use net::backoff::*;
 
 use crate::client::client_interface::*;

@@ -1,7 +1,9 @@
-use crate::format::jpeg::constants::*;
 use core::f32::consts::PI;
-use math::matrix::*;
 use std::ops::{Index, IndexMut};
+
+use math::matrix::*;
+
+use crate::format::jpeg::constants::*;
 
 /*
 TODO: Read the 'Practical Fast 1-D DCT Algorithms with 11 Multiplications' paper
@@ -56,6 +58,7 @@ fn matmul(a: &Matrix8f, b: &Matrix8f, c: &mut Matrix8f) {
 */
 
 // c = a * b
+#[cfg(not(target_arch = "x86_64"))]
 fn matmul(a: &Matrix8f, b: &Matrix8f, c: &mut Matrix8f) {
     for i in 0..8 {
         for j in 0..8 {
@@ -90,14 +93,17 @@ lazy_static! {
     };
 }
 
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+#[cfg(target_arch = "x86_64")]
 fn to_m256(v: &[f32; 8]) -> __m256 {
     unsafe { _mm256_loadu_ps(v.as_ptr()) }
 }
 
 /// Computes c_mat = a_mat * b_mat
-fn matmul_sse(a_mat: &Matrix8f, b_mat: &Matrix8f, c_mat: &mut Matrix8f) {
+#[cfg(target_arch = "x86_64")]
+fn matmul(a_mat: &Matrix8f, b_mat: &Matrix8f, c_mat: &mut Matrix8f) {
     let a = unsafe {
         std::mem::transmute::<_, &[[f32; BLOCK_DIM]; BLOCK_DIM]>(array_ref![a_mat.as_ref(), 0, 64])
     };
@@ -142,7 +148,7 @@ pub fn forward_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE])
 
     // = M * X * M'
     let dct_mat = &*DCT2_MAT_8X8;
-    matmul_sse(dct_mat, &temp1, &mut temp2);
+    matmul(dct_mat, &temp1, &mut temp2);
 
     temp1 = &temp2 * dct_mat.as_transpose();
 
@@ -163,7 +169,7 @@ pub fn inverse_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE])
     // = M' * X * M
     let dct_mat = &*DCT2_MAT_8X8;
     let mut temp2 = dct_mat.as_transpose() * &temp1;
-    matmul_sse(&temp2, dct_mat, &mut temp1);
+    matmul(&temp2, dct_mat, &mut temp1);
 
     for (i, v) in temp1.as_ref().iter().enumerate() {
         output[i] = v.round() as i16;

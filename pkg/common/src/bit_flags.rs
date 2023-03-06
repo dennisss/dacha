@@ -51,6 +51,12 @@ macro_rules! define_bit_flags {
             }
         }
 
+        impl ::core::ops::BitOrAssign for $struct {
+            fn bitor_assign(&mut self, rhs: Self) {
+                *self = *self | rhs;
+            }
+        }
+
         impl ::core::fmt::Debug for $struct {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 use ::core::fmt::write;

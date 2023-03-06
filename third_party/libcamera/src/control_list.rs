@@ -1,16 +1,37 @@
+use core::ops::{Deref, DerefMut};
 use std::fmt::Debug;
 use std::pin::Pin;
+
+use cxx::UniquePtr;
 
 use crate::control::Control;
 use crate::control_id::ControlId;
 use crate::control_value::{AssignToControlValue, ControlValue, FromControlValue};
 use crate::ffi;
 
-/*
-Note:
-- Valid ControlLists should always have a valid idMap and infoMap
+pub struct ControlListOwned {
+    ptr: UniquePtr<ffi::ControlList>,
+}
 
-*/
+impl Deref for ControlListOwned {
+    type Target = ControlList;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            core::mem::transmute::<&ffi::ControlList, &ControlList>(self.ptr.as_ref().unwrap())
+        }
+    }
+}
+
+impl DerefMut for ControlListOwned {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            core::mem::transmute::<Pin<&mut ffi::ControlList>, &mut ControlList>(
+                self.ptr.as_mut().unwrap(),
+            )
+        }
+    }
+}
 
 #[repr(transparent)]
 pub struct ControlList {
@@ -18,6 +39,12 @@ pub struct ControlList {
 }
 
 impl ControlList {
+    pub fn new() -> ControlListOwned {
+        ControlListOwned {
+            ptr: unsafe { ffi::new_control_list() },
+        }
+    }
+
     /// May return None if the control is missing from the list or there is a
     /// type mismatch.
     pub fn get<'a, T: FromControlValue<'a>>(&'a self, control: Control<T>) -> Option<T::Target> {

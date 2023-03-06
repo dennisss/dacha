@@ -130,6 +130,20 @@ inline void stream_config_set_buffer_count(StreamConfiguration &config,
   config.bufferCount = value;
 }
 
+inline bool stream_config_has_color_space(const StreamConfiguration &config) {
+  return config.colorSpace.has_value();
+}
+inline ColorSpace stream_config_color_space(const StreamConfiguration &config) {
+  return config.colorSpace.value();
+}
+inline void stream_config_set_color_space(StreamConfiguration &config,
+                                          ColorSpace value) {
+  config.colorSpace = value;
+}
+inline void stream_config_clear_color_space(StreamConfiguration &config) {
+  config.colorSpace.reset();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // PixelFormat
 ////////////////////////////////////////////////////////////////////////////////
@@ -176,6 +190,10 @@ rust::String control_value_to_string(const ControlValue &value);
 ////////////////////////////////////////////////////////////////////////////////
 // ControlList
 ////////////////////////////////////////////////////////////////////////////////
+
+inline std::unique_ptr<ControlList> new_control_list() {
+  return std::make_unique<ControlList>(controls::controls);
+}
 
 rust::Vec<::ControlListEntry> control_list_entries(const ControlList &list);
 

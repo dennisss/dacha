@@ -7,12 +7,12 @@ use std::time::{Duration, SystemTime};
 
 use builder::proto::bundle::BundleSpec;
 use common::errors::*;
-use common::eventually::Eventually;
 use crypto::random::RngExt;
 use datastore::meta::client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
+use executor::Eventually;
 use file::{LocalPath, LocalPathBuf};
 use net::backoff::*;
 use nix::unistd::chown;
