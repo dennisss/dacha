@@ -115,6 +115,9 @@ pub mod errors {
     pub use base_error::*;
 }
 
+mod eventually;
+pub use eventually::*;
+
 pub trait FlipSign<T> {
     /// Transmutes an signed/unsigned integer into it's opposite unsigned/signed
     /// integer while maintaining bitwise equivalence even though the integer

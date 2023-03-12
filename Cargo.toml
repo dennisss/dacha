@@ -14,7 +14,7 @@ members = [
 	"pkg/crypto",
 	"pkg/parsing",
 	"pkg/parsing/macros",
-	"pkg/parsing_compiler",
+	"pkg/parsing/compiler",
 	"pkg/compression",
 	"pkg/math",
 	"pkg/protobuf/core",

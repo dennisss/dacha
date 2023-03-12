@@ -17,14 +17,6 @@ pub fn build() -> Result<()> {
 
     let mut input_paths: Vec<LocalPathBuf> = vec![];
 
-    let runtime_package = {
-        if input_dir.file_name().unwrap() == "parsing" {
-            "crate"
-        } else {
-            "parsing"
-        }
-    };
-
     file::recursively_list_dir(&input_dir.join("src"), &mut |path: &LocalPath| {
         if path.extension().unwrap_or_default() != "binproto" {
             return;
@@ -39,7 +31,7 @@ pub fn build() -> Result<()> {
 
         let input_src = std::fs::read_to_string(input_path)?;
 
-        let mut lib = crate::proto::dsl::BinaryDescriptorLibrary::default();
+        let mut lib = crate::proto::BinaryDescriptorLibrary::default();
         if let Err(e) = protobuf::text::parse_text_proto(&input_src, &mut lib) {
             return Err(format_err!("Failed to parse {:?}: {:?}", relative_path, e));
         }
@@ -49,7 +41,7 @@ pub fn build() -> Result<()> {
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
-        let output = Compiler::compile(&lib, runtime_package)?;
+        let output = Compiler::compile(&lib)?;
         std::fs::write(output_path, output)?;
     }
 

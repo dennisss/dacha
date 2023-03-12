@@ -27,7 +27,7 @@ enum TextToken {
     String(Vec<u8>),
     Identifier(String),
     // TODO: Support up to u64::MAX
-    Integer(isize),
+    Integer(i64),
     Float(f64),
 }
 
@@ -76,7 +76,7 @@ impl TextToken {
 
         c.next(alt!(
             map(float_lit, |v| Self::Float((sign as f64) * v)),
-            map(int_lit, |v| Self::Integer(sign * (v as isize)))
+            map(int_lit, |v| Self::Integer(sign * (v as i64)))
         ))
     }));
 }
@@ -97,7 +97,7 @@ macro_rules! token_atom {
 token_atom!(symbol, Symbol, char);
 token_atom!(string, String, Vec<u8>);
 token_atom!(ident, Identifier, String);
-token_atom!(integer, Integer, isize);
+token_atom!(integer, Integer, i64);
 token_atom!(float, Float, f64);
 
 // TODO: Dedup with syntax.rs
@@ -266,7 +266,7 @@ impl TextFieldName {
 #[derive(Debug)]
 enum TextValue {
     Bool(bool),
-    Integer(isize),
+    Integer(i64),
     Float(f64),
 
     // TODO: Verify if things like null bytes can appear in protobuf 'string'

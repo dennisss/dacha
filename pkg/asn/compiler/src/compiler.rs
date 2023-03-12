@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use common::bytes::Bytes;
 use common::errors::*;
 use common::line_builder::*;
-use file::{LocalPathBuf};
+use file::LocalPathBuf;
 use parsing::*;
 
 use crate::syntax::*;

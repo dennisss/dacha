@@ -9,7 +9,7 @@ use protobuf_descriptor as pb;
 #[derive(Clone, Debug)]
 pub enum Constant {
     Identifier(String),
-    Integer(isize),
+    Integer(i64),
     Float(f64),
     String(Vec<u8>),
     Bool(bool),

@@ -1855,6 +1855,7 @@ dependencies = [
  "common",
  "file",
  "macros",
+ "parsing",
  "protobuf",
  "protobuf_compiler",
 ]
@@ -2080,6 +2081,7 @@ name = "protobuf"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
  "file",
  "google",
  "json",

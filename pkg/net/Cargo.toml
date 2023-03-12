@@ -17,4 +17,4 @@ libc = "0.2"
 nix = "0.21.0"
 
 [build-dependencies]
-parsing_compiler = { path = "../parsing_compiler" }
+parsing_compiler = { path = "../parsing/compiler" }

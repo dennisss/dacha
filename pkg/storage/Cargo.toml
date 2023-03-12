@@ -19,7 +19,7 @@ file = { path = "../file" }
 executor = { path = "../executor" }
 
 [build-dependencies]
-parsing_compiler = { path = "../parsing_compiler" }
+parsing_compiler = { path = "../parsing/compiler" }
 protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]

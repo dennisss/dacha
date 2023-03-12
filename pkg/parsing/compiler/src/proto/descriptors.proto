@@ -4,13 +4,13 @@ syntax = "proto3";
 
 message BinaryDescriptorLibrary {
     repeated Struct structs = 1;
-    repeated Enum enums = 2;
+    repeated EnumTypeProto enums = 2;
 }
 
-message Enum {
+message EnumTypeProto {
     string name = 1;
     // NOTE: Must resolve to an integer type
-    Type type = 2;
+    TypeProto type = 2;
 
     Endian endian = 4;
 
@@ -31,18 +31,18 @@ enum Endian {
 
 message Argument {
     string name = 1;
-    Type type = 2;
+    TypeProto type = 2;
 }
 
 message Struct {
     string name = 1;
     Endian endian = 2;
-    repeated Field field = 3;
+    repeated FieldProto field = 3;
 
     repeated Argument argument = 4;
 }
 
-enum PrimitiveType {
+enum PrimitiveTypeProto {
     UNKNOWN = 0;
     U8 = 1;
     I8 = 2;
@@ -55,14 +55,13 @@ enum PrimitiveType {
     FLOAT = 9;
     DOUBLE = 10;
     BOOL = 11;
-    // TODO: Also have a boolean type.
 
     // TODO: Also include variable length integer types?
 }
 
-message BufferType {
+message BufferTypeProto {
     // TODO: I guess we could also have a buffer of buffers
-    Type element_type = 1;
+    TypeProto element_type = 1;
     oneof size {
         uint64 fixed_length = 2;
 
@@ -77,12 +76,12 @@ message BufferType {
     }
 }
 
-message Type {
+message TypeProto {
     oneof type {
-        PrimitiveType primitive = 1;
+        PrimitiveTypeProto primitive = 1;
 
         // TODO: Possibly recursive?
-        BufferType buffer = 2;
+        BufferTypeProto buffer = 2;
 
         // Should be the name of the struct
         string named = 3;
@@ -90,16 +89,15 @@ message Type {
 }
 
 message Value {
-    oneof value {
-        int64 i = 1;
-        bool b = 2;
-    }
+    repeated int64 int64_value = 1;
+    repeated bool bool_value = 2;
+    bytes bytes_value = 3;
 }
 
-message Field {
+message FieldProto {
     string name = 1;
 
-    Type type = 2;
+    TypeProto type = 2;
 
     string comment = 3;
 
@@ -110,11 +108,10 @@ message Field {
     // present which sum up with this field to an even number of bytes with width.
     uint64 bit_width = 4;
 
-    // TODO: Implement this.
     // If set, then this field will always have this value in serialized form.
     // We will not generate accessors for the value, but we will ensure this value
     // is used when serializing the struct and we will validate when parsing, that this is present.
-    // Value constant_value = 5;
+    Value constant_value = 5;
 
     // TODO: Implement this.
     // If true, this field is a placeholder. It's only meant to advance forward the cursor in the

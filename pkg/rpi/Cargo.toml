@@ -12,4 +12,4 @@ parsing = { path = "../parsing" }
 macros = { path = "../macros" }
 
 [build-dependencies]
-parsing_compiler = { path = "../parsing_compiler" }
+parsing_compiler = { path = "../parsing/compiler" }

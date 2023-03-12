@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::proto::dsl::Field;
+use crate::struct_type::Field;
 
 /// A formula for computing the size (usually in bytes) of some span of fields.
 /// Usually this will store a constant size, but it may reference the values of
@@ -132,7 +132,7 @@ impl SizeExpression {
     /// expression.
     ///
     /// TODO: Must check for overflows in the compiled expression.
-    pub fn compile(&self, scope: &HashMap<&str, &Field>) -> String {
+    pub fn compile(&self, scope: &HashMap<&str, Field>) -> String {
         match self {
             Self::Constant(v) => (*v).to_string(),
             Self::FieldLength(path) => {
@@ -140,7 +140,13 @@ impl SizeExpression {
 
                 // TODO: Fix this so that is supports flags.
                 // TODO: Implement this for inner fields as well.
-                if !scope.get(path[0].as_str()).unwrap().presence().is_empty() {
+                if !scope
+                    .get(path[0].as_str())
+                    .unwrap()
+                    .proto
+                    .presence()
+                    .is_empty()
+                {
                     expr.push_str(".unwrap_or(0)");
                 }
 

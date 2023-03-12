@@ -32,7 +32,7 @@ macro_rules! token_atom {
 // representation
 token_atom!(ident, Identifier, String);
 token_atom!(float_lit, Float, f64);
-token_atom!(int_lit, Integer, usize);
+token_atom!(int_lit, Integer, u64);
 token_atom!(symbol, Symbol, char);
 token_atom!(str_lit, String, Vec<u8>);
 
@@ -133,7 +133,7 @@ parser!(bool_lit<&str, bool> => seq!(c => {
 // emptyStatement = ";"
 parser!(empty_statement<&str, char> => is(symbol, ';'));
 
-fn sign(input: &str) -> ParseResult<isize, &str> {
+fn sign(input: &str) -> ParseResult<i64, &str> {
     let (c, rest) = symbol(input)?;
     match c {
         '+' => Ok((1, rest)),
@@ -143,14 +143,14 @@ fn sign(input: &str) -> ParseResult<isize, &str> {
 }
 
 // TODO: Can be combined with floatValue
-parser!(int_value<&str, isize> => seq!(c => {
-    let sign: isize = c.next(sign).unwrap_or(1);
+parser!(int_value<&str, i64> => seq!(c => {
+    let sign: i64 = c.next(sign).unwrap_or(1);
     let f = c.next(int_lit)?;
-    Ok(sign * (f as isize))
+    Ok(sign * (f as i64))
 }));
 
 parser!(float_value<&str, f64> => seq!(c => {
-    let sign: isize = c.next(sign).unwrap_or(1);
+    let sign: i64 = c.next(sign).unwrap_or(1);
     let f = c.next(float_lit)?;
     Ok((sign as f64) * f)
 }));
@@ -443,7 +443,7 @@ parser!(range<&str, Range> => seq!(c => {
     let upper_parser = seq!(c => {
         c.next(is(ident, "to"))?;
         let v = c.next(int_lit)
-            .or_else(|_| c.next(is(ident, "max")).map(|_| std::usize::MAX))?;
+            .or_else(|_| c.next(is(ident, "max")).map(|_| std::u64::MAX))?;
         Ok(v)
     });
 

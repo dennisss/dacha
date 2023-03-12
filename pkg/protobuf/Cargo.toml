@@ -13,6 +13,7 @@ macros = { path = "../macros" }
 json = { path = "../json", optional = true }
 protobuf_compiler = { path = "./compiler", optional = true }
 file = { path = "../file", optional = true }
+executor = { path = "../executor", optional = true }
 
 [build-dependencies]
 protobuf_compiler = { path = "./compiler" }
@@ -20,4 +21,4 @@ protobuf_compiler = { path = "./compiler" }
 [features]
 default = ["std"]
 alloc = ["common/alloc", "protobuf_core/alloc"]
-std = ["alloc", "common/std", "parsing", "protobuf_core/std", "protobuf_descriptor", "json", "protobuf_compiler", "google", "file"]
+std = ["alloc", "common/std", "parsing", "protobuf_core/std", "protobuf_descriptor", "json", "protobuf_compiler", "google", "file", "executor"]

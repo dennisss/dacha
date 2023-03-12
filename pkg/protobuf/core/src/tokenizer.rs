@@ -24,7 +24,7 @@ pub enum Token {
     Whitespace,
     Comment,
     Identifier(String),
-    Integer(usize),
+    Integer(u64),
     Float(f64),
     String(Vec<u8>),
     Symbol(char),
@@ -92,32 +92,39 @@ parser!(pub ident<&str, String> => {
 
 // NOTE: Only public to be used in the textproto format.
 // intLit = decimalLit | octalLit | hexLit
-parser!(pub int_lit<&str, usize> => alt!(
+parser!(pub int_lit<&str, u64> => alt!(
     // NOTE: decimal_lit must be after hex_lit as overlaps with decimal_lit.
-    hex_lit, octal_lit, decimal_lit
+    hex_lit, octal_lit, binary_lit, decimal_lit
 ));
 
 // decimalLit = ( "1" … "9" ) { decimalDigit }
-parser!(decimal_lit<&str, usize> => seq!(c => {
+parser!(decimal_lit<&str, u64> => seq!(c => {
     c.next(peek(like(|c| c != '0')))?;
     let digits = c.next(take_while1(|v| decimal_digit(v)))?;
 
-    Ok(usize::from_str_radix(digits, 10).unwrap())
+    Ok(u64::from_str_radix(digits, 10).unwrap())
 }));
 
 // octalLit   = "0" { octalDigit }
-parser!(octal_lit<&str, usize> => seq!(c => {
+parser!(octal_lit<&str, u64> => seq!(c => {
     c.next(tag("0"))?;
     let digits = c.next(take_while(|v| octal_digit(v as char)))?;
-    Ok(usize::from_str_radix(digits, 8).unwrap_or(0))
+    Ok(u64::from_str_radix(digits, 8).unwrap_or(0))
 }));
 
 // hexLit     = "0" ( "x" | "X" ) hexDigit { hexDigit }
-parser!(hex_lit<&str, usize> => seq!(c => {
+parser!(hex_lit<&str, u64> => seq!(c => {
     c.next(tag("0"))?;
     c.next(one_of("xX"))?;
     let digits = c.next(take_while1(|v| hex_digit(v)))?;
-    Ok(usize::from_str_radix(digits, 16).unwrap())
+    Ok(u64::from_str_radix(digits, 16).unwrap())
+}));
+
+// NOTE: Not standard in the protobuf spec
+parser!(binary_lit<&str, u64> => seq!(c => {
+    c.next(tag("0b"))?;
+    let digits = c.next(take_while1(|v| v == '0' || v == '1'))?;
+    Ok(u64::from_str_radix(digits, 2).unwrap())
 }));
 
 // TODO: Is this allowed to start with a '0' character?
