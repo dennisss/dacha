@@ -5,6 +5,10 @@ use crate::table::filter_policy::FilterPolicyRegistry;
 use crate::table::table::DataBlockCache;
 use crate::table::table_builder::SSTableBuilderOptions;
 
+// TODO: Should support prefix_extractor:
+// https://github.com/facebook/rocksdb/blob/9502856edd77260bf8a12a66f2a232078ddb2d60/include/rocksdb/options.h#L275
+// - Will make Bloom filtering more efficient.
+
 /// Options to use for opening a new or existing EmbeddedDB instance.
 ///
 /// This is meant to be mostly compatible with RocksDB:

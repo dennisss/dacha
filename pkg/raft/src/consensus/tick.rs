@@ -142,6 +142,9 @@ pub enum ConsensusMessageBody {
     ///
     /// On a snapshot has been installed, the user should call
     /// ConsensusModule::snapshot_installed()
+    ///
+    /// TODO: While a snapshot is going out, we should avoid discarding stuff
+    /// from the log (at least from the on-disk one as we need to )
     InstallSnapshot {
         to_id: ServerId,
     },

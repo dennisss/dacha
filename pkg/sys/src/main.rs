@@ -12,9 +12,9 @@ extern crate parsing;
 use common::array_ref;
 use common::errors::*;
 use parsing::binary::*;
-use sys::RWFlags;
 use sys::VirtualMemoryMap;
 use sys::{bindings::*, Errno};
+use sys::{RWFlags, UmountFlags};
 
 #[thread_local]
 static mut VAL: usize = 0xAABCDDEEFF;
@@ -274,7 +274,47 @@ fn test_clone_args() -> Result<()> {
     }
 }
 
+/*
+cross build --bin sys --target aarch64-unknown-linux-gnu --release
+scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/sys pi@10.1.0.114:~/sys
+
+ssh -i ~/.ssh/id_cluster pi@10.1.0.114
+*/
+
+/*
+/sys/block/[block_name]
+    /size : Size in 512 byte blocks
+    /removable : 0 or 1
+
+*/
+
+fn test_general() -> Result<()> {
+    println!("Hello world!");
+
+    println!("Pid: {}", unsafe { sys::getpid() });
+    println!("Current Exe: {}", sys::current_exe()?);
+    println!("Num CPUs: {}", sys::num_cpus()?);
+
+    Ok(())
+}
+
+fn test_mounts() -> Result<()> {
+    let mounts = sys::mounts()?;
+
+    println!("{:#?}", mounts);
+
+    // sys::umount("/media/dennis/boot", UmountFlags::empty())?;
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
+    test_mounts()?;
+    return Ok(());
+
+    test_general()?;
+    return Ok(());
+
     // test_clone_args()?;
 
     test_waitpid()?;
@@ -312,7 +352,7 @@ fn main() -> Result<()> {
 
     println!("==");
 
-    let thread_factory = sys::thread::ThreadFactory::create()?;
+    // let thread_factory = sys::thread::ThreadFactory::create()?;
 
     // println!("{}", );
 

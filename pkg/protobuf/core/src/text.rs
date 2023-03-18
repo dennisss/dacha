@@ -12,7 +12,7 @@ use common::errors::*;
 use parsing::*;
 
 use crate::reflection::{MessageReflection, Reflection, ReflectionMut};
-use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
+use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit, whitespace};
 use crate::Message;
 
 //
@@ -33,7 +33,7 @@ enum TextToken {
 
 impl TextToken {
     parser!(parse<&str, TextToken> => alt!(
-        map(Self::whitespace, |_| Self::Whitespace),
+        map(whitespace, |_| Self::Whitespace),
         map(Self::comment, |_| Self::Comment),
         map(Self::symbol, |v| Self::Symbol(v)),
         map(Self::string, |v| Self::String(v)),
@@ -52,7 +52,8 @@ impl TextToken {
         c.next(Self::parse)
     }));
 
-    parser!(whitespace<&str, &str> => slice(many1(one_of(" \t\r\n"))));
+    // parser!(whitespace<&str, &str> => slice(many1(one_of(" \t\r\n"))));
+
     parser!(comment<&str, &str> => seq!(c => {
         c.next(tag("#"))?;
         let end_marker = tag("\n");
@@ -101,7 +102,7 @@ token_atom!(integer, Integer, i64);
 token_atom!(float, Float, f64);
 
 // TODO: Dedup with syntax.rs
-parser!(full_ident<&str, String> => seq!(c => {
+parser!(pub full_ident<&str, String> => seq!(c => {
     let mut id = c.next(ident)?;
 
     while let Ok(_) = c.next(is(symbol, '.')) {
@@ -461,7 +462,7 @@ fn parse_text_syntax(text: &str) -> Result<TextMessage> {
         let v = c.next(TextMessage::parse)?;
         // Can not end with any other meaningful tokens.
         c.next(many(alt!(
-            map(TextToken::whitespace, |_| ()),
+            map(whitespace, |_| ()),
             map(TextToken::comment, |_| ())
         )))?;
         Ok(v)

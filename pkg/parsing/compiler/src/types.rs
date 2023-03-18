@@ -18,9 +18,10 @@ use crate::struct_type::Field;
 /// resolving/construction, they may panic if being accessed on a resolved type
 /// which hasn't been initialized yet.
 pub trait Type {
-    fn compile_declaration(&self, out: &mut LineBuilder) -> Result<()>;
+    fn compile_declaration(&self, out: &mut LineBuilder) -> Result<()> {
+        Ok(())
+    }
 
-    /// TODO: Rename to type_expression()
     fn type_expression(&self) -> Result<String>;
 
     fn default_value_expression(&self) -> Result<String> {
@@ -47,7 +48,11 @@ pub trait Type {
     }
 
     /// TODO: Pass in 'after_bytes' to this and use it.
-    fn serialize_bytes_expression(&self, value: &str) -> Result<String>;
+    fn serialize_bytes_expression(
+        &self,
+        value: &str,
+        context: &TypeParserContext,
+    ) -> Result<String>;
 
     fn serialize_bits_expression(
         &self,
@@ -79,8 +84,18 @@ impl<'a, T: Type + 'a> TypePointer<'a> for T {
 }
 
 pub struct TypeParserContext<'a, 'b> {
+    /// Expression evaluating to the number of bytes that should follow the
+    /// contents of the input buffer after the field is parsed (if it is
+    /// well known at this point).
+    ///
+    /// This is used to determine where the end is for an end terminated field.
     pub after_bytes: Option<String>,
+
+    // TODO: Remove this and only use the arguments.
     pub scope: &'a HashMap<&'b str, Field<'b>>,
+
+    // TODO: Need to validate that the types fed in are compatible with the types
+    pub arguments: &'a HashMap<&'b str, String>,
 }
 
 pub enum TypeSerializeValue<'a> {

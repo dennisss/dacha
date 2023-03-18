@@ -16,10 +16,10 @@ The main tokenization challenge with this is:
 ///
 /// NOTE: An identifier is not allowed to be any of these words.
 const KEYWORDS: &'static [&'static str] = &[
-    "False", "await", "else", "import", "pass", "None", "break", "except", "in", "raise", "True",
-    "class", "finally", "is", "return", "and", "continue", "for", "lambda", "try", "as", "def",
-    "from", "nonlocal", "while", "assert", "del", "global", "not", "with", "async", "elif", "if",
-    "or", "yield",
+    "await", "else", "import", "pass", "break", "except", "in", "raise", "class", "finally", "is",
+    "return", "and", "continue", "for", "lambda", "try", "as", "def", "from", "nonlocal", "while",
+    "assert", "del", "global", "not", "with", "async", "elif", "if", "or", "yield", "False",
+    "True", "None",
 ];
 
 // TODO: Always consume any inline white space that is following a non-white
@@ -95,7 +95,7 @@ parser!(any_whitespace<&str, ()> => {
 });
 
 #[derive(Clone)]
-struct ParsingContext {
+pub struct ParsingContext {
     /// Amount of indentation prefixing the current suite of statements. A suite
     /// should only continue parsing lines if lines have an indentation >= this
     /// amount.
@@ -106,6 +106,19 @@ struct ParsingContext {
     in_parens: bool,
 
     operator_priority: usize,
+}
+
+impl Default for ParsingContext {
+    fn default() -> Self {
+        Self {
+            indent: InlineWhitespace {
+                num_tabs: 0,
+                num_spaces: 0,
+            },
+            in_parens: false,
+            operator_priority: DEFAULT_OP_PRIORITY,
+        }
+    }
 }
 
 impl ParsingContext {
@@ -138,14 +151,7 @@ impl File {
     pub fn parse(mut input: &str) -> Result<Self> {
         let mut statements = vec![];
 
-        let context = ParsingContext {
-            indent: InlineWhitespace {
-                num_tabs: 0,
-                num_spaces: 0,
-            },
-            in_parens: false,
-            operator_priority: DEFAULT_OP_PRIORITY,
-        };
+        let context = ParsingContext::default();
 
         while !input.is_empty() {
             if parse_next!(input, opt(empty_line)).is_some() {
@@ -453,7 +459,7 @@ fn small_statement<'a>(
             } else {
                 Ok(Statement::Expression(expr))
             }
-        }) // TODO: Load
+        }) // TODO: Implement 'load' statements.
     )(input)
 }
 
@@ -918,7 +924,7 @@ impl Expression {
     /// Grammar rule:
     ///   Expression = Test {',' Test} .
     ///   # NOTE: trailing comma permitted only when within [...] or (...).
-    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+    pub fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
         let mut tests = vec![];
         let mut has_trailing_comma = false;
 
@@ -959,6 +965,11 @@ pub enum Operand {
     Dict(Vec<(Test, Test)>),
     // TODO: Dictcomprehension
     Tuple(Expression),
+
+    // These are defined in the syntax as they are most special than built in values (they can't
+    // be overriden/shadowed)
+    None,
+    Bool(bool),
 }
 
 impl Operand {
@@ -987,6 +998,9 @@ impl Operand {
             map(identifier, |v| Self::Identifier(v)),
             map(float_lit, |v| Self::Float(v)),
             map(int_lit, |v| Self::Int(v as i64)),
+            map(keyword("None"), |_| Self::None),
+            map(keyword("True"), |_| Self::Bool(true)),
+            map(keyword("False"), |_| Self::Bool(false)),
             seq!(c => {
                 let vals = c.next(strLit)?;
 

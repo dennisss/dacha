@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use common::errors::*;
 use common::line_builder::*;
 
+use crate::expression::evaluate_expression;
 use crate::proto::*;
 use crate::size::*;
 use crate::types::*;
@@ -72,7 +73,15 @@ impl<'a> StructType<'a> {
                 }
             }
 
-            derivated_fields.extend(&used_names);
+            if field_proto.has_constant_value() {
+                derivated_fields.insert(field_proto.name());
+            }
+
+            // NOTE: If a buffer has a presence field, then we can't derive the length field
+            // if the case that the field is not present.
+            if field_proto.presence().is_empty() {
+                derivated_fields.extend(&used_names);
+            }
         }
 
         Ok(Self {
@@ -240,8 +249,15 @@ impl<'a> Type for StructType<'a> {
                 if let TypeProtoTypeCase::Primitive(_) = field.typ().type_case() {
                     // All is good.
                 } else {
+                    // TODO: Must skip fields which are in derived_fields
+                    // because they have constant values.
+                    /*
                     // TODO: We should be more specific. Only allow unsigned integer types?
-                    return Err(err_msg("Expected length fields to have scaler types"));
+                    return Err(format_err!(
+                        "Expected length fields to have scaler types: {}",
+                        field.name()
+                    ));
+                    */
                 }
 
                 continue;
@@ -302,17 +318,30 @@ impl<'a> Type for StructType<'a> {
         for field in self.proto.field() {
             if let TypeProtoTypeCase::Buffer(buf) = field.typ().type_case() {
                 if let BufferTypeProtoSizeCase::LengthFieldName(name) = buf.size_case() {
-                    // TODO: Challenge here is that we must ensure that the size fits within the
-                    // limits of the type (no overflows when serializing).
-                    let size_type = self.fields[name.as_str()].typ.get().type_expression()?;
-                    lines.add(format!(
-                        "\tpub fn {}(&self) -> {} {{ self.{}.len() as {} }}",
-                        name,
-                        size_type,
-                        Self::nice_field_name(field.name()),
-                        size_type
-                    ));
+                    if field.presence().is_empty() {
+                        // TODO: Challenge here is that we must ensure that the size fits within the
+                        // limits of the type (no overflows when serializing).
+                        let size_type = self.fields[name.as_str()].typ.get().type_expression()?;
+                        lines.add(format!(
+                            "\tpub fn {}(&self) -> {} {{ self.{}.len() as {} }}",
+                            name,
+                            size_type,
+                            Self::nice_field_name(field.name()),
+                            size_type
+                        ));
+                    }
                 }
+            }
+
+            if field.has_constant_value() {
+                let field_typ = self.fields[field.name()].typ.get();
+
+                lines.add(format!(
+                    "\tpub fn {}(&self) -> {} {{ {} }}",
+                    Self::nice_field_name(field.name()),
+                    field_typ.type_expression()?,
+                    field_typ.value_expression(field.constant_value())?
+                ));
             }
         }
 
@@ -348,7 +377,15 @@ impl<'a> Type for StructType<'a> {
         {
             let mut bit_offset = 0;
 
+            // Map from field/argument names to the variable storing its value.
+            let mut scope = HashMap::new();
+            for arg in self.proto.argument() {
+                scope.insert(arg.name(), arg.name().to_string());
+            }
+
             for field in self.proto.field() {
+                let field_typ = self.fields[field.name()].typ.get();
+
                 let mut bit_slice = None;
                 if field.bit_width() > 0 {
                     if let Some(span_width) = bit_field_spans.get(field.name()).cloned() {
@@ -377,21 +414,25 @@ impl<'a> Type for StructType<'a> {
                 // - Then if true, parse as normal, otherwise, don't and eval to None.
 
                 let mut expr = {
+                    let mut args = HashMap::new();
+                    for arg in field.argument() {
+                        args.insert(
+                            arg.name(),
+                            format!("&{}", evaluate_expression(arg.value(), &scope)?),
+                        );
+                    }
+
                     let ctx = TypeParserContext {
                         after_bytes,
+                        // TODO: Reference &scope here
                         scope: &self.fields,
+                        arguments: &args,
                     };
 
                     if let Some((bit_offset, bit_width)) = bit_slice {
-                        self.fields[field.name()]
-                            .typ
-                            .get()
-                            .parse_bits_expression(bit_offset, bit_width)?
+                        field_typ.parse_bits_expression(bit_offset, bit_width)?
                     } else {
-                        self.fields[field.name()]
-                            .typ
-                            .get()
-                            .parse_bytes_expression(&ctx)?
+                        field_typ.parse_bytes_expression(&ctx)?
                     }
                 };
                 if !field.presence().is_empty() {
@@ -406,16 +447,30 @@ impl<'a> Type for StructType<'a> {
                             None
                         }}
                     }}"#,
-                        field.presence(),
+                        evaluate_expression(field.presence(), &scope)?,
                         expr
                     );
                 }
 
-                lines.add(format!(
-                    "\t\tlet {}_value = {};",
-                    Self::nice_field_name(field.name()),
-                    expr
-                ));
+                let var_name = format!("{}_value", Self::nice_field_name(field.name()));
+                lines.add(format!("\t\tlet {} = {};", var_name, expr));
+
+                scope.insert(field.name(), var_name);
+
+                if field.has_constant_value() {
+                    lines.add(format!(
+                        r#"
+                    {{
+                        let expected_value = {};
+                        if expected_value != {}_value {{
+                            return Err(err_msg("Wrong constant value"));
+                        }}
+                    }}
+                    "#,
+                        field_typ.value_expression(field.constant_value())?,
+                        Self::nice_field_name(field.name())
+                    ));
+                }
             }
             lines.nl();
 
@@ -461,6 +516,12 @@ impl<'a> Type for StructType<'a> {
 
             let mut bit_offset = 0;
 
+            // Map from field/argument names to the variable storing its value.
+            let mut scope = HashMap::new();
+            for arg in self.proto.argument() {
+                scope.insert(arg.name(), arg.name().to_string());
+            }
+
             for field in self.proto.field() {
                 let mut bit_slice = None;
                 if field.bit_width() > 0 {
@@ -488,7 +549,28 @@ impl<'a> Type for StructType<'a> {
                     }
                 };
 
-                let get_parser = |value_expr: &str| {
+                scope.insert(field.name(), value_expr.clone());
+
+                let mut args = HashMap::new();
+                for arg in field.argument() {
+                    args.insert(
+                        arg.name(),
+                        format!("&{}", evaluate_expression(arg.value(), &scope)?),
+                    );
+                }
+                if field.typ().buffer().has_length_field_name() {
+                    let name = field.typ().buffer().length_field_name();
+                    args.insert(name, scope.get(name).unwrap().clone());
+                }
+
+                let ctx = TypeParserContext {
+                    after_bytes: None,
+                    // TODO: Reference &scope here
+                    scope: &self.fields,
+                    arguments: &args,
+                };
+
+                let get_serializer = |value_expr: &str| {
                     if let Some((bit_offset, bit_width)) = bit_slice {
                         self.fields[field.name()]
                             .typ
@@ -498,7 +580,7 @@ impl<'a> Type for StructType<'a> {
                         self.fields[field.name()]
                             .typ
                             .get()
-                            .serialize_bytes_expression(value_expr)
+                            .serialize_bytes_expression(value_expr, &ctx)
                     }
                 };
 
@@ -520,12 +602,12 @@ impl<'a> Type for StructType<'a> {
                                 {}
                             }}
                         }}"#,
-                            field.presence(),
+                            evaluate_expression(field.presence(), &scope)?,
                             value_expr,
-                            get_parser("v")?
+                            get_serializer("v")?
                         )
                     } else {
-                        get_parser(&value_expr)?
+                        get_serializer(&value_expr)?
                     }
                 };
 
@@ -548,11 +630,37 @@ impl<'a> Type for StructType<'a> {
     }
 
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
-        Ok(format!("parse_next!(input, {}::parse)", self.proto.name()))
+        let mut args = String::new();
+        for arg in self.proto.argument() {
+            let val = context
+                .arguments
+                .get(arg.name())
+                .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
+            args = format!(", {}", val);
+        }
+
+        Ok(format!(
+            "parse_next!(input, |i| {}::parse(i{}))",
+            self.proto.name(),
+            args
+        ))
     }
 
-    fn serialize_bytes_expression(&self, value: &str) -> Result<String> {
-        Ok(format!("{}.serialize(out)?;", value))
+    fn serialize_bytes_expression(
+        &self,
+        value: &str,
+        context: &TypeParserContext,
+    ) -> Result<String> {
+        let mut args = String::new();
+        for arg in self.proto.argument() {
+            let val = context
+                .arguments
+                .get(arg.name())
+                .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
+            args = format!(", {}", val);
+        }
+
+        Ok(format!("{}.serialize(out{})?;", value, args))
     }
 
     fn sizeof(&self, field_name: &str) -> Result<Option<SizeExpression>> {

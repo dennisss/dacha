@@ -41,12 +41,15 @@ impl<'a> Type for EnumType<'a> {
             }
             lines.add(format!("\t{},", value.name()));
         }
-        lines.add(format!("\tUnknown({})", raw_type));
+        if !self.proto.exhaustive() {
+            lines.add(format!("\tUnknown({})", raw_type));
+        }
         lines.add("}");
         lines.nl();
 
         lines.add(format!("impl Default for {} {{", self.proto.name()));
-        lines.add("fn default() -> Self { Self::Unknown(0) }");
+        let first_case = self.proto.values()[0].name();
+        lines.add(format!("fn default() -> Self {{ Self::{} }}", first_case));
         lines.add("}");
         lines.nl();
 
@@ -59,21 +62,22 @@ impl<'a> Type for EnumType<'a> {
                     .get()
                     .parse_bytes_expression(&TypeParserContext {
                         after_bytes: None,
-                        scope: &HashMap::new()
+                        scope: &HashMap::new(),
+                        arguments: &HashMap::new()
                     })?
             ));
-            lines.add(format!("\tlet inst = Self::from_{}(value);", raw_type));
+            lines.add(format!("\tlet inst = Self::from_{}(value)?;", raw_type));
 
             lines.add("\tOk((inst, input))");
             lines.add("}");
             lines.nl();
 
             lines.add(format!(
-                "pub fn from_{}(value: {}) -> Self {{",
+                "pub fn from_{}(value: {}) -> Result<Self> {{",
                 raw_type, raw_type
             ));
 
-            lines.add("\tmatch value {");
+            lines.add("\tOk(match value {");
             for value in self.proto.values() {
                 lines.add(format!(
                     "\t\t{} => {}::{},",
@@ -82,14 +86,29 @@ impl<'a> Type for EnumType<'a> {
                     value.name()
                 ));
             }
-            lines.add(format!("\t\tv @ _ => {}::Unknown(v)", self.proto.name()));
-            lines.add("\t}");
+            if self.proto.exhaustive() {
+                lines.add(format!(
+                    r#"\t\tv @ _ => return Err(format_err!("Unknown value of {}: {{}}", v))"#,
+                    self.proto.name()
+                ));
+            } else {
+                lines.add(format!("\t\tv @ _ => {}::Unknown(v)", self.proto.name()));
+            }
+
+            lines.add("\t})");
             lines.add("}");
             lines.nl();
 
             lines.add("pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {");
             lines.add(format!("\tlet value = self.to_{}();", raw_type));
-            lines.add(self.inner_typ.get().serialize_bytes_expression("value")?);
+            lines.add(self.inner_typ.get().serialize_bytes_expression(
+                "value",
+                &TypeParserContext {
+                    after_bytes: None,
+                    scope: &HashMap::new(),
+                    arguments: &HashMap::new(),
+                },
+            )?);
             lines.add("\tOk(())");
             lines.add("}");
             lines.nl();
@@ -168,14 +187,18 @@ impl<'a> Type for EnumType<'a> {
 
         // TODO: Must check the enum is compatible with the minimally sized int type
         Ok(format!(
-            "{}::from_{}({})",
+            "{}::from_{}({})?",
             self.proto.name(),
             raw_type,
             inner_value
         ))
     }
 
-    fn serialize_bytes_expression(&self, value: &str) -> Result<String> {
+    fn serialize_bytes_expression(
+        &self,
+        value: &str,
+        context: &TypeParserContext,
+    ) -> Result<String> {
         Ok(format!("{}.serialize(out)?;", value))
     }
 

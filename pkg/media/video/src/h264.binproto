@@ -1,0 +1,48 @@
+structs {
+    name: "NALUnitHeader"
+    endian: BIG_ENDIAN
+    field {
+        name: "forbidden_zero_bit"
+        type { primitive: U8 }
+        bit_width: 1
+        constant_value { int64_value: 0 }
+    }
+    # Usually has a value of 1.
+    # A non-zero value indicates that we must decode this NAL to reconstruct images
+    field {
+        name: "nal_ref_idc"
+        type { primitive: U8 }
+        bit_width: 2
+    }
+    field {
+        name: "nal_unit_type"
+        type { named: "NALUnitType" }
+        bit_width: 5
+    }
+}
+
+enums {
+    name: "NALUnitType"
+    endian: BIG_ENDIAN
+    type { primitive: U8 }
+    values {
+        name: "NonIDRPicture"
+        value: 1
+        comment: "Coded slice of a non-IDR picture"
+    }
+    values {
+        name: "IDRPicture"
+        value: 5
+        comment: "Coded slice of an IDR picture"
+    }
+    values {
+        name: "SPS"
+        value: 7
+        comment: "Sequence parameter set (SPS)"
+    }
+    values {
+        name: "PPS",
+        value: 8
+        comment: "Picture parameter set (PPS)"
+    }
+}

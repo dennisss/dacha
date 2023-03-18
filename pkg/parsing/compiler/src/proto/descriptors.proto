@@ -5,6 +5,7 @@ syntax = "proto3";
 message BinaryDescriptorLibrary {
     repeated Struct structs = 1;
     repeated EnumTypeProto enums = 2;
+    repeated UnionTypeProto unions = 3;
 }
 
 message EnumTypeProto {
@@ -15,6 +16,10 @@ message EnumTypeProto {
     Endian endian = 4;
 
     repeated EnumValue values = 3;
+
+    // If true, then we will only allow parsing the values specified in 'values'.
+    // You should set this on fields like a 'version' which if not supported 
+    bool exhaustive = 5;
 }
 
 message EnumValue {
@@ -72,7 +77,9 @@ message BufferTypeProto {
         // If this field is followed by additional 
         bool end_terminated = 4;
 
-        // Null terminated?
+        // Byte pattern which must appear for this buffer to end. This pattern is considered to be part of the buffer.
+        // e.g. this can be used to indicate a null terminated buffer.
+        bytes end_marker = 5;
     }
 }
 
@@ -85,7 +92,23 @@ message TypeProto {
 
         // Should be the name of the struct
         string named = 3;
+
+        StringTypeProto string = 4;
     }
+
+    TypeProto codec = 5;
+}
+
+message StringTypeProto {
+    //
+    BufferTypeProto buffer = 1;
+
+    StringCharset charset = 2;
+}
+
+enum StringCharset {
+    UNKNOWN = 0;
+    UTF8 = 1;
 }
 
 message Value {
@@ -108,6 +131,10 @@ message FieldProto {
     // present which sum up with this field to an even number of bytes with width.
     uint64 bit_width = 4;
 
+    // TODO: Add support validating that a field has one of multiple allowed values
+    // (needed for MP4 box version validation)
+    // Probably simplest to use a switch/match/enum case with a 
+ 
     // If set, then this field will always have this value in serialized form.
     // We will not generate accessors for the value, but we will ensure this value
     // is used when serializing the struct and we will validate when parsing, that this is present.
@@ -124,4 +151,40 @@ message FieldProto {
     // NOTE: When a struct field with this field set is used as the length of a buffer, it will be
     // interpreted as having a value of 0  
     string presence = 7;
+
+    // Arguments that are fed to the inner type while parsing/serializing.
+    // TODO: Ensure that all types actually validate that these are used if given. 
+    repeated FieldArgument argument = 9;
+}
+
+message FieldArgument {
+    string name = 1; 
+    string value = 2;
+}
+
+message UnionTypeProto {
+    string name = 1;
+
+    repeated Argument argument = 2;
+
+    string switch_value = 3;
+
+    repeated UnionTypeCaseProto case = 4;
+
+    TypeProto default_case = 5;
+
+    // If set, then we will error out if we don't match one of the values in 'switch_value'
+    bool exhaustive = 6;
+}
+
+message UnionTypeCaseProto {
+    string name = 1;
+
+    TypeProto type = 2;
+
+    string comment = 3;
+
+    string case_value = 4;
+
+    repeated FieldArgument argument = 5;
 }

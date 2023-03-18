@@ -47,10 +47,6 @@ impl PrimitiveType {
 }
 
 impl Type for PrimitiveType {
-    fn compile_declaration(&self, out: &mut LineBuilder) -> Result<()> {
-        Ok(())
-    }
-
     fn type_expression(&self) -> Result<String> {
         Ok(self.typename()?.to_string())
     }
@@ -111,7 +107,11 @@ impl Type for PrimitiveType {
         Ok(lines.to_string())
     }
 
-    fn serialize_bytes_expression(&self, value: &str) -> Result<String> {
+    fn serialize_bytes_expression(
+        &self,
+        value: &str,
+        context: &TypeParserContext,
+    ) -> Result<String> {
         Ok(format!(
             "out.extend_from_slice(&{}.to_{}_bytes());",
             value,

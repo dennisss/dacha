@@ -52,6 +52,14 @@ pub trait Value: 'static + AsAny {
     fn call_len(&self, frame: &mut ValueCallFrame) -> Result<usize> {
         Err(err_msg("Value has no length"))
     }
+
+    fn call_add(
+        &self,
+        other: &dyn Value,
+        frame: &mut ValueCallFrame,
+    ) -> Result<ObjectStrong<dyn Value>> {
+        Err(err_msg("Value has no length"))
+    }
 }
 
 impl Object for dyn Value {
@@ -64,6 +72,7 @@ impl Object for dyn Value {
     }
 }
 
+/// Helper macro to define common methods for types that implement 'Value'.
 #[macro_export]
 macro_rules! value_attributes {
     ($first:ident | $($rest:ident)|*) => {

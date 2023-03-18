@@ -28,6 +28,8 @@ impl Universe {
 
         let mut inst = Self { pool, scope };
 
+        inst.bind("NotImplemented", NotImplementedValue::new())?;
+
         inst.bind_function("len", |ctx| {
             let mut args = FunctionArgumentIterator::create(&ctx.args, ctx.frame)?;
             let obj = args.required_positional_arg("s")?;
@@ -204,6 +206,8 @@ impl Environment {
                         Operand::Int(v) => context.pool().insert(IntValue::new(*v))?,
                         Operand::Float(v) => context.pool().insert(FloatValue::new(*v))?,
                         Operand::String(v) => context.pool().insert(StringValue::new(v.clone()))?,
+                        Operand::Bool(v) => context.pool().insert(BoolValue::new(*v))?,
+                        Operand::None => context.pool().insert(NoneValue::new())?,
                         Operand::List(v) => self.evaluate_expression(v, true, context)?,
                         Operand::Dict(entries) => {
                             // NOTE: We create the object first to ensure that the inner values

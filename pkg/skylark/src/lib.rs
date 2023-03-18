@@ -15,7 +15,7 @@ mod object;
 mod primitives;
 mod proto;
 mod scope;
-mod syntax;
+pub mod syntax;
 mod tuple;
 mod value;
 

@@ -65,3 +65,19 @@ structs {
         type { named: "BitHigh32" }
     }
 }
+
+structs {
+    name: "ConstantFirstByte"
+    endian: BIG_ENDIAN
+    field {
+        name: "first"
+        type { primitive: U8 }
+        constant_value {
+            int64_value: 12
+        }
+    }
+    field {
+        name: "second"
+        type { primitive: U8 }
+    }
+}

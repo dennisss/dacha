@@ -372,6 +372,11 @@ impl EmbeddedDB {
         // can only be tolerated if the log_number is not present (otherwise we should
         // truncate it to fix it).
         let mut immutable_table = None;
+
+        // TODO: In newer newer RocksDB formats, prev_log_number is no longer used (to
+        // some extent log_number is also not up to date all the time). Instead it
+        // depends on reading out all WALs available in the directory in DBImpl::Recover
+        // during startup.
         if let Some(num) = version_set.prev_log_number() {
             if options.disable_wal {
                 return Err(err_msg(
@@ -399,6 +404,9 @@ impl EmbeddedDB {
             log = None;
             mutable_table = Arc::new(MemTable::new(options.table_options.comparator.clone()));
         } else {
+            // TODO: If there are any log files with a higher log number that are non-empty,
+            // we should be erroring out.
+
             let log_path = dir.log(
                 version_set
                     .log_number()
@@ -415,7 +423,6 @@ impl EmbeddedDB {
                 Arc::new(table)
             };
 
-            log = Some(log_reader.into_writer(true).await?.unwrap());
             if options.read_only {
                 log = None;
             } else {
@@ -563,7 +570,8 @@ impl EmbeddedDB {
 
         let mut made_progress = true;
 
-        loop {
+        let cancellation_token = executor::signals::new_shutdown_token();
+        while !cancellation_token.is_cancelled() {
             // Wait for something interesting interesting to happen.
             if made_progress {
                 // Whenever we make any progress in the previous iteration, we
@@ -885,6 +893,8 @@ impl EmbeddedDB {
             made_progress = false;
         }
 
+        Ok(())
+
         /*
         Things to do:
 
@@ -922,6 +932,7 @@ impl EmbeddedDB {
             number: u64,
         }
 
+        // TODO: Ideally we would measure how much data is uncompacted and the
         let compaction_waterline = shared.compaction_waterline.load(Ordering::SeqCst);
 
         let mut current_table = None;

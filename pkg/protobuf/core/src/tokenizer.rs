@@ -34,8 +34,8 @@ impl Token {
     parser!(pub parse<&str, Self> => alt!(
         whitespace, comment,
         map(ident, |s| Self::Identifier(s)),
-        map(int_lit, |i| Self::Integer(i)),
         map(float_lit, |f| Self::Float(f)),
+        map(int_lit, |i| Self::Integer(i)),
         map(strLit, |s| Self::String(s)),
         symbol
     ));
@@ -94,7 +94,7 @@ parser!(pub ident<&str, String> => {
 // intLit = decimalLit | octalLit | hexLit
 parser!(pub int_lit<&str, u64> => alt!(
     // NOTE: decimal_lit must be after hex_lit as overlaps with decimal_lit.
-    hex_lit, octal_lit, binary_lit, decimal_lit
+    hex_lit, octal_lit, binary_lit, decimal_lit, map(tag("0"), |_| 0)
 ));
 
 // decimalLit = ( "1" … "9" ) { decimalDigit }
@@ -108,7 +108,7 @@ parser!(decimal_lit<&str, u64> => seq!(c => {
 // octalLit   = "0" { octalDigit }
 parser!(octal_lit<&str, u64> => seq!(c => {
     c.next(tag("0"))?;
-    let digits = c.next(take_while(|v| octal_digit(v as char)))?;
+    let digits = c.next(take_while1(|v| octal_digit(v as char)))?;
     Ok(u64::from_str_radix(digits, 8).unwrap_or(0))
 }));
 
@@ -258,7 +258,7 @@ parser!(quote<&str, char> => map(one_of("\"'"), |v| v as char));
 // Below here, none of these are in the online spec but are implemented by
 // the standard protobuf tokenizer.
 
-parser!(whitespace<&str, Token> => map(
+parser!(pub whitespace<&str, Token> => map(
     take_while1(|c: char| c.is_whitespace()),
     |_| Token::Whitespace
 ));

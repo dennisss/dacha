@@ -94,5 +94,20 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn compiler_constant_value() -> Result<()> {
+        let (v, rest) = ConstantFirstByte::parse(&[12, 5])?;
+        assert_eq!(v.first(), 12);
+        assert_eq!(v.second, 5);
+
+        let mut out = vec![];
+        v.serialize(&mut out);
+        assert_eq!(out, &[12, 5]);
+
+        assert!(ConstantFirstByte::parse(&[13, 5]).is_err());
+
+        Ok(())
+    }
+
     // TODO: Test having more regular fields before or after the bit fields.
 }

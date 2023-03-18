@@ -40,7 +40,8 @@ impl<'a> Type for BufferType<'a> {
                 format!("[{}; {}]", element_type, len)
             }
             BufferTypeProtoSizeCase::LengthFieldName(_)
-            | BufferTypeProtoSizeCase::EndTerminated(_) => {
+            | BufferTypeProtoSizeCase::EndTerminated(_)
+            | BufferTypeProtoSizeCase::EndMarker(_) => {
                 format!("Vec<{}>", element_type)
             }
             BufferTypeProtoSizeCase::Unknown => {
@@ -63,10 +64,28 @@ impl<'a> Type for BufferType<'a> {
                 format!("[{}]", parts.join(","))
             }
             BufferTypeProtoSizeCase::LengthFieldName(_)
-            | BufferTypeProtoSizeCase::EndTerminated(_) => {
+            | BufferTypeProtoSizeCase::EndTerminated(_)
+            | BufferTypeProtoSizeCase::EndMarker(_) => {
                 format!("vec![]")
             }
         })
+    }
+
+    fn value_expression(&self, value: &Value) -> Result<String> {
+        if value.int64_value().len() > 0 {
+            // TODO: This is only valid for fixed length fields.
+            return Ok(format!(
+                "[{}]",
+                value
+                    .int64_value()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+
+        Err(err_msg("Unsupported value type"))
     }
 
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
@@ -80,7 +99,6 @@ impl<'a> Type for BufferType<'a> {
         // parser a mutable reference to improve efficiency?
 
         let element_parser = self.element_type.get().parse_bytes_expression(context)?;
-        // self.compile_parse_type(&buf.element_type(), endian, None, None, scope)?;
 
         let mut lines = LineBuilder::new();
         lines.add("{");
@@ -179,6 +197,40 @@ impl<'a> Type for BufferType<'a> {
 
                 lines.add("\tbuf");
             }
+            BufferTypeProtoSizeCase::EndMarker(marker) => {
+                lines.add("{");
+                lines.add("\tlet mut buf = vec![];");
+
+                lines.add(format!(
+                    "const MARKER: &'static [u8] = &{:?};",
+                    marker.as_ref()
+                ));
+                lines.add(r#"
+                    let mut input = parse_next!(input, |i| ::parsing::search::parse_pattern_terminated_bytes(i, MARKER));
+                "#);
+
+                // TODO: We may be able to reserve memory if we know the size of each element.
+
+                // TODO: Deduplicate this.
+                if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
+                    self.proto.element_type().type_case()
+                {
+                    lines.add("\tbuf.extend_from_slice(input);");
+                } else {
+                    lines.add(format!(
+                        r#"{{
+                            while !input.is_empty() {{
+                                buf.push({});
+                            }}
+                        }}"#,
+                        element_parser
+                    ));
+                }
+
+                lines.add("\tbuf");
+
+                lines.add("}");
+            }
             BufferTypeProtoSizeCase::Unknown => {
                 panic!();
             }
@@ -191,21 +243,69 @@ impl<'a> Type for BufferType<'a> {
         Ok(lines.to_string())
     }
 
-    fn serialize_bytes_expression(&self, value: &str) -> Result<String> {
+    fn serialize_bytes_expression(
+        &self,
+        value: &str,
+        context: &TypeParserContext,
+    ) -> Result<String> {
+        let mut lines = LineBuilder::new();
+
+        lines.add("{");
+
+        if let BufferTypeProtoSizeCase::LengthFieldName(field) = self.proto.size_case() {
+            let len_value = context
+                .arguments
+                .get(field.as_str())
+                .ok_or_else(|| err_msg("Length field not fed as argument"))?;
+
+            lines.add(format!(
+                r#"
+                if {} as usize != ({}).len() {{
+                    return Err(err_msg("Data length does not match length field"));
+                }}
+            "#,
+                len_value, value
+            ));
+        }
+
+        lines.add("let start_i = out.len();");
+
         // Optimized case for [u8]
         if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
             self.proto.element_type().type_case()
         {
-            return Ok(format!("out.extend_from_slice(&{});", value));
+            lines.add(format!("out.extend_from_slice(&{});", value));
+        } else {
+            lines.add(format!("for item in {}.iter() {{", value));
+            lines.add(format!(
+                "\t{}",
+                self.element_type
+                    .get()
+                    .serialize_bytes_expression("item", context)?
+            ));
+            lines.add("}");
         }
 
-        let mut lines = LineBuilder::new();
-        lines.add(format!("for item in &{} {{", value));
-        lines.add(format!(
-            "\t{}",
-            self.element_type.get().serialize_bytes_expression("item")?
-        ));
+        if let BufferTypeProtoSizeCase::EndMarker(marker) = self.proto.size_case() {
+            lines.add("let end_i = out.len();");
+
+            lines.add(format!(
+                "const MARKER: &'static [u8] = &{:?};",
+                marker.as_ref()
+            ));
+            lines.add("out.extend_from_slice(MARKER);");
+
+            lines.add(
+                r#"
+            if ::parsing::search::find_byte_pattern(&out[start_i..], MARKER) != Some(end_i)  {
+                return Err(err_msg("Data contains end marker"));
+            }
+            "#,
+            );
+        }
+
         lines.add("}");
+
         Ok(lines.to_string())
     }
 
@@ -227,7 +327,7 @@ impl<'a> Type for BufferType<'a> {
             BufferTypeProtoSizeCase::LengthFieldName(name) => {
                 SizeExpression::FieldLength(vec![name.to_string()])
             }
-            BufferTypeProtoSizeCase::EndTerminated(_) => {
+            BufferTypeProtoSizeCase::EndTerminated(_) | BufferTypeProtoSizeCase::EndMarker(_) => {
                 return Ok(None);
             }
             BufferTypeProtoSizeCase::Unknown => {

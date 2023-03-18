@@ -1,0 +1,19 @@
+[package]
+name = "rpi_streamer"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+sys = { path = "../../sys" }
+file = { path = "../../file" }
+executor = { path = "../../executor" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+storage = { path = "../../storage" }
+crypto = { path = "../../crypto" }
+base_units = { path = "../../base/units" }
+base_radix = { path = "../../base/radix" }
+image = { path = "../../image" }
+v4l2 = { path = "../../../third_party/v4l2" }
+libcamera = { path = "../../../third_party/libcamera" }

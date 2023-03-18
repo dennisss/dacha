@@ -69,6 +69,40 @@ impl Value for NoneValue {
     }
 }
 
+pub struct NotImplementedValue {
+    hidden: (),
+}
+
+impl NotImplementedValue {
+    pub fn new() -> Self {
+        Self { hidden: () }
+    }
+}
+
+impl Value for NotImplementedValue {
+    value_attributes!(Immutable | NoChildren | ReprAsStr);
+
+    fn call_bool(&self) -> bool {
+        false
+    }
+
+    fn call_repr(&self, frame: &mut ValueCallFrame) -> Result<String> {
+        Ok("NotImplemented".to_string())
+    }
+
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool> {
+        Ok(other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map(|v| true)
+            .unwrap_or(false))
+    }
+
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
+        Ok(())
+    }
+}
+
 pub struct BoolValue {
     value: bool,
 }

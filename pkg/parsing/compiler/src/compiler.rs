@@ -8,6 +8,7 @@ use crate::enum_type::EnumType;
 use crate::primitive::PrimitiveType;
 use crate::proto::*;
 use crate::size::SizeExpression;
+use crate::string::StringType;
 use crate::struct_type::StructType;
 use crate::types::*;
 
@@ -71,6 +72,12 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
 
                 Ok(TypeReference::new(Rc::downgrade(&typ)))
             }
+            TypeProtoTypeCase::String(s) => {
+                let typ = Rc::new(StringType::create(s, self, context)?) as Rc<dyn TypePointer>;
+                self.anonymous_types.push(typ.clone());
+                Ok(TypeReference::new(Rc::downgrade(&typ)))
+            }
+
             TypeProtoTypeCase::Unknown => Err(err_msg("Unspecified type")),
         }
     }

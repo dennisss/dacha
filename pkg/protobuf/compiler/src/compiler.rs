@@ -955,7 +955,7 @@ impl Compiler<'_> {
 
         // NOTE: We
 
-        let oneof_option = !(is_primitive && self.proto.syntax == Syntax::Proto3);
+        let oneof_option = true; // !(is_primitive && self.proto.syntax == Syntax::Proto3);
 
         // TODO: Messages should always have options?
         let use_option =

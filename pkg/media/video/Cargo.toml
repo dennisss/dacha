@@ -1,0 +1,17 @@
+[package]
+name = "video"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+compression = { path = "../../compression" }
+math = { path = "../../math" }
+macros = { path = "../../macros" }
+reflection = { path = "../../reflection" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+
+[build-dependencies]
+parsing_compiler = { path = "../../parsing/compiler" }

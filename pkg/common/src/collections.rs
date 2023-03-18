@@ -14,6 +14,7 @@ pub struct FixedString<A> {
 }
 
 impl<A: AsRef<[u8]> + AsMut<[u8]>> FixedString<A> {
+    /// Creates a new empty string using the given buffer.
     pub const fn new(data: A) -> Self {
         Self { data, length: 0 }
     }
@@ -27,6 +28,10 @@ impl<A: AsRef<[u8]> + AsMut<[u8]>> FixedString<A> {
         let remaining = &mut self.data.as_mut()[self.length..];
         remaining[0..s.len()].copy_from_slice(s.as_bytes());
         self.length += s.len();
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.as_ref()
     }
 }
 

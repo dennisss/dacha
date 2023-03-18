@@ -107,6 +107,7 @@ members = [
 	"pkg/crypto/pgp",
 	"third_party/v4l2",
 	"pkg/rpi/streamer",
+	"pkg/media/video",
 ]
 
 [profile.dev]

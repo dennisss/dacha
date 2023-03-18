@@ -10,10 +10,11 @@ mod buffer;
 mod build;
 mod compiler;
 mod enum_type;
-mod language;
+mod expression;
 mod primitive;
 mod proto;
 mod size;
+mod string;
 mod struct_type;
 mod types;
 
