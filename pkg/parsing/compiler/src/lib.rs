@@ -17,5 +17,6 @@ mod size;
 mod string;
 mod struct_type;
 mod types;
+mod union_type;
 
 pub use build::build;

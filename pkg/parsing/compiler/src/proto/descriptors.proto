@@ -100,7 +100,7 @@ message TypeProto {
 }
 
 message StringTypeProto {
-    //
+    // Underlying buffer type which contains the string's data.
     BufferTypeProto buffer = 1;
 
     StringCharset charset = 2;
@@ -140,6 +140,11 @@ message FieldProto {
     // is used when serializing the struct and we will validate when parsing, that this is present.
     Value constant_value = 5;
 
+    // Python-like expression defining how to produce the value of this field based on other
+    // fields/arguments/constants.
+    // TODO: Consolidate with 'constant_value'
+    string derived_value = 6;
+
     // TODO: Implement this.
     // If true, this field is a placeholder. It's only meant to advance forward the cursor in the
     // serialized form, but it's value won't be settable or readable.
@@ -165,16 +170,13 @@ message FieldArgument {
 message UnionTypeProto {
     string name = 1;
 
+    Endian endian = 5;
+
     repeated Argument argument = 2;
 
     string switch_value = 3;
 
     repeated UnionTypeCaseProto case = 4;
-
-    TypeProto default_case = 5;
-
-    // If set, then we will error out if we don't match one of the values in 'switch_value'
-    bool exhaustive = 6;
 }
 
 message UnionTypeCaseProto {
@@ -184,7 +186,12 @@ message UnionTypeCaseProto {
 
     string comment = 3;
 
+    // The value which the 'switch_value' expression must equal to in order to select this case.
     string case_value = 4;
+
+    // If true, then this is the default case that should be matched if none other is matched.
+    // In this case case_value is ignored. If is_default is set, then this must be the last case in the list.
+    bool is_default = 6;
 
     repeated FieldArgument argument = 5;
 }

@@ -62,8 +62,11 @@ fn evaluate_primary_expr(e: &PrimaryExpression, scope: &HashMap<&str, String>) -
         Operand::Int(v) => {
             format!("{}", *v)
         }
+        Operand::String(v) => {
+            format!("{:?}", v.as_str())
+        }
         op => {
-            panic!("Unsupported operant: {:?}", op)
+            panic!("Unsupported operand: {:?}", op)
         }
     };
 

@@ -11,6 +11,7 @@ use crate::size::SizeExpression;
 use crate::string::StringType;
 use crate::struct_type::StructType;
 use crate::types::*;
+use crate::union_type::UnionType;
 
 /// Compiles a BinaryDescriptorLibrary proto into Rust code that can be used to
 /// interface with the listed binary types.
@@ -110,6 +111,7 @@ impl Compiler {
             .iter()
             .map(|s| s.name())
             .chain(lib.enums().iter().map(|e| e.name()))
+            .chain(lib.unions().iter().map(|u| u.name()))
             .collect::<Vec<_>>();
 
         for name in names.iter().cloned() {
@@ -127,6 +129,11 @@ impl Compiler {
         for e in lib.enums() {
             let v = Box::new(EnumType::create(e, &mut index)?);
             index.named_types[e.name()].set(v);
+        }
+
+        for u in lib.unions() {
+            let v = Box::new(UnionType::create(u, &mut index)?);
+            index.named_types[u.name()].set(v);
         }
 
         for name in names.iter().cloned() {

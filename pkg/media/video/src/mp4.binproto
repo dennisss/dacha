@@ -1,17 +1,18 @@
 
+# aligned(8) class Box (unsigned int(32) boxtype,
+#     optional unsigned int(8)[16] extended_type) {
+#     unsigned int(32) size;
+#     unsigned int(32) type = boxtype;
+#     if (size==1) {
+#         unsigned int(64) largesize;
+#     } else if (size==0) {
+#         // box extends to end of file
+#     }
+#     if (boxtype=='uuid') {
+#         unsigned int(8)[16] usertype = extended_type;
+#     }
+# }
 
-structs {
-    name: "BoxHeader"
-    endian: BIG_ENDIAN
-    field {
-        name: "length"
-        type { primitive: U32 }
-    }
-    field {
-        name: "typ"
-        type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
-    }
-}
 
 # structs {
 #     name: "Box"
@@ -35,19 +36,112 @@ structs {
 #     }
 # }
 
+structs {
+    name: "BoxHeader"
+    endian: BIG_ENDIAN
+    field {
+        name: "length"
+        type { primitive: U32 }
+    }
+    field {
+        name: "typ"
+        type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
+    }
+}
+
+
+
 unions {
     name: "BoxData"
+    endian: BIG_ENDIAN
     switch_value: "typ"
     argument {
         name: "typ"
-        type { primitive: U32 }
+        type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
     }
     case {
-        name: "FileType",
-        type { named: "FileTypeBox" }
+        name: "FileTypeBox",
         case_value: '"ftyp"'
+        type { named: "FileTypeBox" }
+    }
+    case {
+        name: "MovieHeaderBox",
+        case_value: '"mvhd"'
+        type { named: "MovieHeaderBox" }
+    }
+    case {
+        name: "TrackHeaderBox",
+        case_value: '"tkhd"'
+        type { named: "TrackHeaderBox" }
+    }
+    case {
+        name: "MediaHeaderBox",
+        case_value: '"mdhd"'
+        type { named: "MediaHeaderBox" }
+    }
+    case {
+        name: "HandlerBox",
+        case_value: '"hdlr"'
+        type { named: "HandlerBox" }
+    }
+    case {
+        name: "VideoMediaHeaderBox",
+        case_value: '"vmhd"'
+        type { named: "VideoMediaHeaderBox" }
+    }
+    case {
+        name: "TimeToSampleBox",
+        case_value: '"stts"'
+        type { named: "TimeToSampleBox" }
+    }
+    case {
+        name: "SyncSampleBox",
+        case_value: '"stss"'
+        type { named: "SyncSampleBox" }
+    }
+    case {
+        name: "EditListBox",
+        case_value: '"elst"'
+        type { named: "EditListBox" }
+    }
+    case {
+        name: "DataEntryUrlBox",
+        case_value: '"url "'
+        type { named: "DataEntryUrlBox" }
+    }
+    case {
+        name: "ChunkOffsetBox",
+        case_value: '"stco"'
+        type { named: "ChunkOffsetBox" }
+    }
+    case {
+        name: "SampleToChunkBox",
+        case_value: '"stsc"'
+        type { named: "SampleToChunkBox" }
+    }
+    case {
+        name: "SampleSizeBox",
+        case_value: '"stsz"'
+        type { named: "SampleSizeBox" }
+    }
+    case {
+        name: "AVCDecoderConfigurationRecord",
+        case_value: '"avcC"'
+        type { named: "AVCDecoderConfigurationRecord" }
+    }
+
+    case {
+        name: "Unknown"
+        is_default: true
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                end_terminated: true
+            }
+        }
     }
 }
+
 
 # aligned(8) class FullBox(unsigned int(32) boxtype, unsigned int(8) v, bit(24) f)
 #    extends Box(boxtype) {

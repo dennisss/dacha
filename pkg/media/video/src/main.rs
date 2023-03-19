@@ -125,57 +125,13 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
         // TODO: When serializing these, we should align each box to 8 byte offsets.
 
         match box_header.typ.as_str() {
-            "ftyp" => {
-                let (box_body, rest) = FileTypeBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
             "free" => {
                 println!("{}FREE", inner_indent);
             }
             "moov" | "trak" | "mdia" | "minf" | "stbl" | "edts" | "dinf" | "udta" => {
                 print_boxes(box_contents, &inner_indent)?;
             }
-            "mvhd" => {
-                let (box_body, rest) = MovieHeaderBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "tkhd" => {
-                let (box_body, rest) = TrackHeaderBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "mdhd" => {
-                let (box_body, rest) = MediaHeaderBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "hdlr" => {
-                let (box_body, rest) = HandlerBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "vmhd" => {
-                let (box_body, rest) = VideoMediaHeaderBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "stts" => {
-                let (box_body, rest) = TimeToSampleBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "stss" => {
-                let (box_body, rest) = SyncSampleBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "elst" => {
-                let (box_body, rest) = EditListBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
+
             "dref" => {
                 let (box_body, rest) = DataReferenceBox::parse(&box_contents)?;
                 assert!(rest.is_empty());
@@ -184,26 +140,7 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
                 // TODO: Verify number of boxes against box_body.entry_count.
                 print_boxes(&box_body.boxes, &inner_indent)?;
             }
-            "url " => {
-                let (box_body, rest) = DataEntryUrlBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "stco" => {
-                let (box_body, rest) = ChunkOffsetBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "stsc" => {
-                let (box_body, rest) = SampleToChunkBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
-            "stsz" => {
-                let (box_body, rest) = SampleSizeBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-            }
+
             "stsd" => {
                 let (box_body, rest) = SampleDescriptionBox::parse(&box_contents)?;
                 assert!(rest.is_empty());
@@ -218,16 +155,8 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
                 println!("{}{:?}", inner_indent, box_body);
 
                 print_boxes(rest, &inner_indent)?;
-
-                // VisualSampleEntry
             }
-            "avcC" => {
-                let (box_body, rest) = AVCDecoderConfigurationRecord::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
 
-                //
-            }
             "mdat" => {
                 // NOTE: THe format will change depending on the coded.
 
@@ -241,7 +170,10 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
                 }
             }
             _ => {
-                println!("{}[unknown]", inner_indent);
+                let (data, rest) = BoxData::parse(&box_contents, &box_header.typ)?;
+                assert!(rest.is_empty());
+
+                println!("{}{:?}", inner_indent, data);
             }
         }
 
