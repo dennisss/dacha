@@ -5,7 +5,7 @@ structs {
         name: "forbidden_zero_bit"
         type { primitive: U8 }
         bit_width: 1
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     # Usually has a value of 1.
     # A non-zero value indicates that we must decode this NAL to reconstruct images

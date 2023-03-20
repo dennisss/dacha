@@ -4,9 +4,9 @@ use common::errors::*;
 use common::line_builder::*;
 
 use crate::buffer::BufferType;
-use crate::expression::evaluate_expression;
+use crate::expression::Expression;
+use crate::expression::Symbol;
 use crate::proto::*;
-use crate::size::SizeExpression;
 use crate::types::*;
 
 pub struct UnionType<'a> {
@@ -70,26 +70,36 @@ impl<'a> Type for UnionType<'a> {
 
             function_arg_names.push_str(&format!(", {}", arg.name()));
 
-            scope.insert(arg.name(), arg.name().to_string());
+            scope.insert(
+                arg.name(),
+                Symbol {
+                    typ: arg_ty.clone(),
+                    value: Some(arg.name().to_string()),
+                    size_of: None,
+                },
+            );
         }
 
         let mut enum_cases = LineBuilder::new();
         let mut parse_cases = LineBuilder::new();
         let mut serialize_cases = LineBuilder::new();
+        let mut default_impl = String::new();
 
         for case in self.proto.case() {
             let case_type = self.case_types.get(case.name()).unwrap().get();
 
             let mut arguments = HashMap::new();
             for arg in case.argument() {
-                arguments.insert(arg.name(), evaluate_expression(arg.value(), &scope)?);
+                arguments.insert(
+                    arg.name(),
+                    Expression::parse(arg.value())?.evaluate(&scope)?.unwrap(),
+                );
             }
 
             let context = TypeParserContext {
                 // TODO: REplace this with explcitly refining the 'input' buffer during parsing (so
                 // that it is properly inherited for structs inside of strucrs)
                 after_bytes: Some("0".to_string()),
-                scope: &HashMap::new(),
                 arguments: &arguments,
             };
 
@@ -107,7 +117,9 @@ impl<'a> Type for UnionType<'a> {
                 if case.is_default() {
                     "_".to_string()
                 } else {
-                    evaluate_expression(case.case_value(), &scope)?
+                    Expression::parse(case.case_value())?
+                        .evaluate(&scope)?
+                        .unwrap()
                 }
             };
 
@@ -132,8 +144,23 @@ impl<'a> Type for UnionType<'a> {
                 }}"#,
                 match_value,
                 case.name(),
-                case_type.serialize_bytes_expression("v", &context)?
+                case_type.serialize_bytes_expression("v", "out", &context)?
             ));
+
+            if case.is_default() {
+                default_impl = format!(
+                    r#"
+                    impl Default for {name} {{
+                        fn default() -> Self {{
+                            Self::{case_name}({case_default})
+                        }}
+                    }}
+                "#,
+                    name = self.proto.name(),
+                    case_name = case.name(),
+                    case_default = case_type.default_value_expression()?
+                );
+            }
         }
 
         if !self.has_default {
@@ -146,14 +173,18 @@ impl<'a> Type for UnionType<'a> {
             );
         }
 
-        let switch_value = evaluate_expression(self.proto.switch_value(), &scope)?;
+        let switch_value = Expression::parse(self.proto.switch_value())?
+            .evaluate(&scope)?
+            .unwrap();
 
         out.add(format!(
             r#"
-            #[derive(Debug, Clone)]
+            #[derive(Debug, PartialEq, Clone)]
             pub enum {name} {{
                 {enum_cases}
             }}
+
+            {default_impl}
 
             impl {name} {{
                 pub fn parse<'a>(mut input: &'a [u8]{function_args}) -> Result<(Self, &'a [u8])> {{
@@ -181,6 +212,7 @@ impl<'a> Type for UnionType<'a> {
             serialize_cases = serialize_cases.to_string(),
             function_args = function_args,
             switch_value = switch_value,
+            default_impl = default_impl
         ));
 
         Ok(())
@@ -198,7 +230,7 @@ impl<'a> Type for UnionType<'a> {
                 .arguments
                 .get(arg.name())
                 .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
-            args = format!(", {}", val);
+            args = format!(", &{}", val);
         }
 
         Ok(format!(
@@ -212,6 +244,7 @@ impl<'a> Type for UnionType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
+        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         let mut args = String::new();
@@ -220,13 +253,13 @@ impl<'a> Type for UnionType<'a> {
                 .arguments
                 .get(arg.name())
                 .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
-            args = format!(", {}", val);
+            args = format!(", &{}", val);
         }
 
-        Ok(format!("{}.serialize(out{})?;", value, args))
+        Ok(format!("{}.serialize({}{})?;", value, output_buffer, args))
     }
 
-    fn sizeof(&self, field_name: &str) -> Result<Option<SizeExpression>> {
+    fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {
         // TODO: It will only have a well defined size if all the cases (and the default
         // case) have the same size.
         Ok(None)

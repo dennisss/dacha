@@ -11,6 +11,7 @@ mod build;
 mod compiler;
 mod enum_type;
 mod expression;
+mod layered;
 mod primitive;
 mod proto;
 mod size;

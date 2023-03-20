@@ -80,6 +80,10 @@ message BufferTypeProto {
         // Byte pattern which must appear for this buffer to end. This pattern is considered to be part of the buffer.
         // e.g. this can be used to indicate a null terminated buffer.
         bytes end_marker = 5;
+
+        // Python-like expression defining the number of elements in this buffer.
+        // Any symbols referenced in this are implicitly declared as 'arguments'
+        // string length = 6;
     }
 }
 
@@ -94,9 +98,9 @@ message TypeProto {
         string named = 3;
 
         StringTypeProto string = 4;
-    }
 
-    TypeProto codec = 5;
+        LayeredTypeProto layered = 5;
+    }
 }
 
 message StringTypeProto {
@@ -109,6 +113,11 @@ message StringTypeProto {
 enum StringCharset {
     UNKNOWN = 0;
     UTF8 = 1;
+}
+
+message LayeredTypeProto {
+    TypeProto inner = 1;
+    TypeProto outer = 2;
 }
 
 message Value {
@@ -131,19 +140,9 @@ message FieldProto {
     // present which sum up with this field to an even number of bytes with width.
     uint64 bit_width = 4;
 
-    // TODO: Add support validating that a field has one of multiple allowed values
-    // (needed for MP4 box version validation)
-    // Probably simplest to use a switch/match/enum case with a 
- 
-    // If set, then this field will always have this value in serialized form.
-    // We will not generate accessors for the value, but we will ensure this value
-    // is used when serializing the struct and we will validate when parsing, that this is present.
-    Value constant_value = 5;
-
     // Python-like expression defining how to produce the value of this field based on other
     // fields/arguments/constants.
-    // TODO: Consolidate with 'constant_value'
-    string derived_value = 6;
+    string value = 5;
 
     // TODO: Implement this.
     // If true, this field is a placeholder. It's only meant to advance forward the cursor in the

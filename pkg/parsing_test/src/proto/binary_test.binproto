@@ -72,9 +72,7 @@ structs {
     field {
         name: "first"
         type { primitive: U8 }
-        constant_value {
-            int64_value: 12
-        }
+        value: "12"
     }
     field {
         name: "second"

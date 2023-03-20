@@ -8,6 +8,8 @@ use common::errors::*;
 use common::line_builder::LineBuilder;
 use common::EventuallyCell;
 
+use crate::expression::Expression;
+use crate::expression::*;
 use crate::proto::*;
 use crate::size::*;
 use crate::struct_type::Field;
@@ -51,6 +53,7 @@ pub trait Type {
     fn serialize_bytes_expression(
         &self,
         value: &str,
+        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String>;
 
@@ -63,6 +66,11 @@ pub trait Type {
         Err(err_msg("Can't serialize type to bits"))
     }
 
+    /*
+    There are 2 possible expressions here:
+    1. The parsing size (figure out how many bytes it occupies before we even parsed it)
+    2. Size requires to serialize it.
+    */
     /// If statically known, then will get the length of the given type in
     /// bytes.
     ///
@@ -70,7 +78,7 @@ pub trait Type {
     /// using This is used primarily
     ///
     /// TODO: Will need to know the name
-    fn sizeof(&self, field_name: &str) -> Result<Option<SizeExpression>>;
+    fn size_of(&self, field_name: &str) -> Result<Option<Expression>>;
 }
 
 pub trait TypePointer<'a> {
@@ -91,9 +99,10 @@ pub struct TypeParserContext<'a, 'b> {
     /// This is used to determine where the end is for an end terminated field.
     pub after_bytes: Option<String>,
 
-    // TODO: Remove this and only use the arguments.
-    pub scope: &'a HashMap<&'b str, Field<'b>>,
+    // // TODO: Remove this and only use the arguments.
+    // pub scope: &'a HashMap<&'b str, Field<'b>>,
 
+    // TODO: The argument values should only be raw values and not references to values.
     // TODO: Need to validate that the types fed in are compatible with the types
     pub arguments: &'a HashMap<&'b str, String>,
 }
@@ -115,6 +124,7 @@ pub struct TypeResolverContext {
     pub endian: Endian,
 }
 
+#[derive(Clone)]
 pub struct TypeReference<'a> {
     inner: Weak<dyn TypePointer<'a> + 'a>,
 }

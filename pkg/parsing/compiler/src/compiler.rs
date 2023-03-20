@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::buffer::BufferType;
 use crate::enum_type::EnumType;
+use crate::layered::LayeredType;
 use crate::primitive::PrimitiveType;
 use crate::proto::*;
 use crate::size::SizeExpression;
@@ -42,6 +43,21 @@ impl<'a> CompilerTypeIndex<'a> {
             named_types: HashMap::new(),
         }
     }
+
+    fn wrap_type<'b, T: Type + 'b>(typ: T) -> (Rc<dyn TypePointer<'b> + 'b>, TypeReference<'b>) {
+        let typ = Rc::new(typ) as Rc<dyn TypePointer>;
+
+        let ptr = typ.clone();
+        let refernce = TypeReference::new(Rc::downgrade(&typ));
+        (ptr, refernce)
+    }
+
+    fn add_anonymous_type<T: Type + 'a>(&mut self, typ: T) -> TypeReference<'a> {
+        let (ptr, reference) = Self::wrap_type(typ);
+
+        self.anonymous_types.push(ptr);
+        reference
+    }
 }
 
 impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
@@ -50,19 +66,15 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
         proto: &'a TypeProto,
         context: &TypeResolverContext,
     ) -> Result<TypeReference<'a>> {
-        match proto.type_case() {
+        Ok(match proto.type_case() {
             TypeProtoTypeCase::Primitive(p) => {
                 // TODO: Use cached copies when using the same type.
 
-                let typ = Rc::new(PrimitiveType::create(p.clone(), context.endian))
-                    as Rc<dyn TypePointer>;
-                self.anonymous_types.push(typ.clone());
-                Ok(TypeReference::new(Rc::downgrade(&typ)))
+                self.add_anonymous_type(PrimitiveType::create(p.clone(), context.endian))
             }
             TypeProtoTypeCase::Buffer(buf) => {
-                let typ = Rc::new(BufferType::create(buf, self, context)?) as Rc<dyn TypePointer>;
-                self.anonymous_types.push(typ.clone());
-                Ok(TypeReference::new(Rc::downgrade(&typ)))
+                let typ = BufferType::create(buf, self, context)?;
+                self.add_anonymous_type(typ)
             }
             TypeProtoTypeCase::Named(name) => {
                 let typ = self
@@ -71,16 +83,19 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
                     .ok_or_else(|| format_err!("Unknown type named: {}", name))?
                     .clone() as Rc<dyn TypePointer>;
 
-                Ok(TypeReference::new(Rc::downgrade(&typ)))
+                TypeReference::new(Rc::downgrade(&typ))
             }
             TypeProtoTypeCase::String(s) => {
-                let typ = Rc::new(StringType::create(s, self, context)?) as Rc<dyn TypePointer>;
-                self.anonymous_types.push(typ.clone());
-                Ok(TypeReference::new(Rc::downgrade(&typ)))
+                let typ = StringType::create(s, self, context)?;
+                self.add_anonymous_type(typ)
+            }
+            TypeProtoTypeCase::Layered(p) => {
+                let typ = LayeredType::create(p, self, context)?;
+                self.add_anonymous_type(typ)
             }
 
-            TypeProtoTypeCase::Unknown => Err(err_msg("Unspecified type")),
-        }
+            TypeProtoTypeCase::Unknown => return Err(err_msg("Unspecified type")),
+        })
     }
 }
 
@@ -96,7 +111,9 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
 */
 
 impl Compiler {
-    pub fn compile(lib: &BinaryDescriptorLibrary) -> Result<String> {
+    pub fn compile(mut lib: BinaryDescriptorLibrary) -> Result<String> {
+        Self::rewrite_length_field_values(&mut lib);
+
         let mut lines = LineBuilder::new();
         lines.add("use ::alloc::vec::Vec;");
         lines.nl();
@@ -143,5 +160,45 @@ impl Compiler {
         }
 
         Ok(lines.to_string())
+    }
+
+    fn rewrite_length_field_values(lib: &mut BinaryDescriptorLibrary) {
+        for s in lib.structs_mut() {
+            Self::rewrite_length_field_values_in_struct(s);
+        }
+    }
+
+    fn rewrite_length_field_values_in_struct(proto: &mut Struct) {
+        let mut new_values = HashMap::new();
+
+        for field in proto.field_mut() {
+            if let TypeProtoTypeCase::Buffer(buf) = field.typ().type_case() {
+                if let BufferTypeProtoSizeCase::LengthFieldName(name) = buf.size_case() {
+                    let name = name.clone();
+
+                    // If the buffer's presence isn't a subset of the length field's presence, then we can't always derive the value of the length field. 
+                    // TODO: Actually check for proper subsets.
+                    if field.presence().is_empty() {
+                        new_values.insert(name.clone(), format!("{}.len()", field.name()));
+                    }
+
+
+                    let mut arg = FieldArgument::default();
+                    arg.set_name(&name);
+                    arg.set_value(&name);
+                    field.add_argument(arg);
+                }
+            }
+        }
+
+        for field in proto.field_mut() {
+            if !field.value().is_empty() {
+                continue;
+            }
+
+            if let Some(value) = new_values.get(field.name()) {
+                field.set_value(value);
+            }
+        }
     }
 }

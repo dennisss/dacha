@@ -1,8 +1,9 @@
 use common::errors::*;
 use common::line_builder::*;
 
+use crate::expression::Expression;
+use crate::expression::*;
 use crate::proto::*;
-use crate::size::SizeExpression;
 use crate::types::*;
 
 pub struct BufferType<'a> {
@@ -139,23 +140,25 @@ impl<'a> Type for BufferType<'a> {
                 // TODO: Have a better way of handling this.
                 // Maybe require that both fields have matching presence expressions?
                 let len_expr = {
-                    let field = context.scope.get(name.as_str()).unwrap();
-                    if !field.proto.presence().is_empty() {
-                        format!("{}_value.unwrap_or(0) as usize", name)
-                    } else {
-                        format!("{}_value as usize", name)
-                    }
+                    context.arguments.get(name.as_str()).unwrap()
+
+                    // let field = context.scope.get(name.as_str()).unwrap();
+                    // if !field.proto.presence().is_empty() {
+                    //     format!("{}_value.unwrap_or(0) as usize", name)
+                    // } else {
+                    //     format!("{}_value as usize", name)
+                    // }
                 };
 
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
                     self.proto.element_type().type_case()
                 {
                     lines.add(format!(
-                        "\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact({})));",
+                        "\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact({} as usize)));",
                         len_expr
                     ));
                 } else {
-                    lines.add(format!("\tbuf.reserve({});", len_expr));
+                    lines.add(format!("\tbuf.reserve({} as usize);", len_expr));
                     lines.add(format!("\tfor _ in 0..{}_value {{", name));
                     lines.add(format!("\t\tbuf.push({});", element_parser));
                     lines.add("\t}");
@@ -246,11 +249,15 @@ impl<'a> Type for BufferType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
+        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         let mut lines = LineBuilder::new();
 
         lines.add("{");
+
+        // TODO: If the length is not know ahead of time, serialize an empty length
+        // field and later fix it.
 
         if let BufferTypeProtoSizeCase::LengthFieldName(field) = self.proto.size_case() {
             let len_value = context
@@ -281,7 +288,7 @@ impl<'a> Type for BufferType<'a> {
                 "\t{}",
                 self.element_type
                     .get()
-                    .serialize_bytes_expression("item", context)?
+                    .serialize_bytes_expression("item", output_buffer, context)?
             ));
             lines.add("}");
         }
@@ -311,10 +318,10 @@ impl<'a> Type for BufferType<'a> {
 
     // TODO: This will have a well defined length if we can reference a field
     // (unfortunately this is harder for nested fields).
-    fn sizeof(&self, field_name: &str) -> Result<Option<crate::size::SizeExpression>> {
+    fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {
         // TODO: What if the element size is dynamic (e.g. each buffer has another
         // buffer inside of it with a length field)
-        let element_size = match self.element_type.get().sizeof("")? {
+        let element_size = match self.element_type.get().size_of("")? {
             Some(v) => v,
             None => {
                 return Ok(None);
@@ -323,10 +330,11 @@ impl<'a> Type for BufferType<'a> {
         .scoped(field_name);
 
         let len = match self.proto.size_case() {
-            BufferTypeProtoSizeCase::FixedLength(len) => SizeExpression::Constant(*len as usize),
-            BufferTypeProtoSizeCase::LengthFieldName(name) => {
-                SizeExpression::FieldLength(vec![name.to_string()])
-            }
+            BufferTypeProtoSizeCase::FixedLength(len) => Expression::Integer(*len as i64),
+            BufferTypeProtoSizeCase::LengthFieldName(name) => Expression::Field(FieldExpression {
+                field_path: vec![name.to_string()],
+                attribute: Attribute::ValueOf,
+            }),
             BufferTypeProtoSizeCase::EndTerminated(_) | BufferTypeProtoSizeCase::EndMarker(_) => {
                 return Ok(None);
             }

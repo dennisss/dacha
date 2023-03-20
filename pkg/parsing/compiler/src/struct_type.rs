@@ -1,9 +1,11 @@
+use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 
 use common::errors::*;
 use common::line_builder::*;
 
-use crate::expression::evaluate_expression;
+use crate::expression::Expression;
+use crate::expression::*;
 use crate::proto::*;
 use crate::size::*;
 use crate::types::*;
@@ -16,6 +18,7 @@ pub struct StructType<'a> {
     /// NOTE: Don't iterate over this as it doesn't have a well defined order.
     fields: HashMap<&'a str, Field<'a>>,
 
+    // TODO: REmove this.
     derivated_fields: HashSet<&'a str>,
 }
 
@@ -73,9 +76,9 @@ impl<'a> StructType<'a> {
                 }
             }
 
-            if field_proto.has_constant_value() {
-                derivated_fields.insert(field_proto.name());
-            }
+            // if field_proto.has_constant_value() {
+            //     derivated_fields.insert(field_proto.name());
+            // }
 
             // NOTE: If a buffer has a presence field, then we can't derive the length field
             // if the case that the field is not present.
@@ -92,6 +95,7 @@ impl<'a> StructType<'a> {
         })
     }
 
+    // TODO: Remove me.
     fn referenced_field_names(typ: &'a TypeProto) -> HashSet<&'a str> {
         let mut out = HashSet::new();
 
@@ -179,15 +183,17 @@ impl<'a> Type for StructType<'a> {
             }
         }
 
+        // Number of bytes that follow each field in this struct.
         // Option<field_name, num_bytes>
         let mut end_terminated_marker = None;
         {
-            let mut end_size = SizeExpression::Constant(0);
+            let mut end_size = Expression::Integer(0);
             let mut end_bits = 0;
             let mut well_defined = true;
 
             // Set of all fields available before the current one being parsed.
-            // aka this is all fields which can be referenced
+            // aka this is all fields which can be referenced while parsing the next field
+            // (assuming we parse from first to last field)
             let mut previous_fields = HashSet::new();
             for field in self.proto.field().iter() {
                 previous_fields.insert(field.name());
@@ -208,15 +214,18 @@ impl<'a> Type for StructType<'a> {
                                 "end_terminated buffer doesn't have a well defined number of bytes following it."));
                         }
 
-                        let combined_size =
-                            end_size.clone().add(SizeExpression::Constant(end_bits / 8));
+                        let combined_size = end_size
+                            .clone()
+                            .add(Expression::Integer((end_bits / 8) as i64));
 
+                        /*
                         if !combined_size
                             .referenced_field_names()
                             .is_subset(&previous_fields)
                         {
                             return Err(err_msg("Evaluating the size of an end_terminated field with look aheads is not supported"));
                         }
+                        */
 
                         end_terminated_marker = Some((field.name(), combined_size));
                         well_defined = false;
@@ -229,7 +238,7 @@ impl<'a> Type for StructType<'a> {
                 if field.bit_width() > 0 {
                     end_bits += field.bit_width() as usize;
                 } else if let Some(byte_size) =
-                    self.fields[field.name()].typ.get().sizeof(field.name())?
+                    self.fields[field.name()].typ.get().size_of(field.name())?
                 {
                     end_size = end_size.add(byte_size);
                 } else {
@@ -238,28 +247,32 @@ impl<'a> Type for StructType<'a> {
             }
         }
 
-        // TODO: Consider using packed memory?
-        lines.add("#[derive(Debug, PartialEq, Clone)]");
-        lines.add(format!("pub struct {} {{", self.proto.name()));
+        let mut function_args = String::new();
+        let mut function_arg_names = String::new();
+        for (arg, arg_ty) in self.proto.argument().iter().zip(self.arguments.iter()) {
+            // TODO: Conditionally take by reference depending on whether or not the type is
+            // copyable.
+            function_args.push_str(&format!(
+                ", {}: &{}",
+                arg.name(),
+                arg_ty.get().type_expression()?
+            ));
+
+            function_arg_names.push_str(&format!(", {}", arg.name()));
+        }
+
+        ///////////////////////
+        /// End of prep work
+        ///////////////////////
+        let mut struct_lines = LineBuilder::new();
+        let mut parser_lines = LineBuilder::new();
+        let mut parser_field_values = LineBuilder::new();
+        let mut default_values = LineBuilder::new();
 
         // Adding struct member delarations.
-        let mut default_values = LineBuilder::new();
         for field in self.proto.field() {
-            if self.derivated_fields.contains(field.name()) {
-                if let TypeProtoTypeCase::Primitive(_) = field.typ().type_case() {
-                    // All is good.
-                } else {
-                    // TODO: Must skip fields which are in derived_fields
-                    // because they have constant values.
-                    /*
-                    // TODO: We should be more specific. Only allow unsigned integer types?
-                    return Err(format_err!(
-                        "Expected length fields to have scaler types: {}",
-                        field.name()
-                    ));
-                    */
-                }
-
+            // Fields with constant/derived values don't need to be stored.
+            if !field.value().is_empty() {
                 continue;
             }
 
@@ -279,37 +292,458 @@ impl<'a> Type for StructType<'a> {
             }
 
             if !field.comment().is_empty() {
-                lines.add(format!("\t/// {}", field.comment()));
+                struct_lines.add(format!("\t/// {}", field.comment()));
             }
-            lines.add(format!("\tpub {}: {},", field_name, typename));
+            struct_lines.add(format!("\tpub {}: {},", field_name, typename));
         }
 
-        lines.add("}");
-        lines.nl();
+        // Write the parser
+        {
+            // Map from field/argument names to the variable storing its value.
+            let mut scope = HashMap::new();
+            {
+                for (arg, arg_type) in self.proto.argument().iter().zip(self.arguments.iter()) {
+                    scope.insert(
+                        arg.name(),
+                        Symbol {
+                            typ: arg_type.clone(),
+                            value: Some(arg.name().to_string()),
+                            size_of: None,
+                        },
+                    );
+                }
 
-        lines.add(format!("impl Default for {} {{", self.proto.name()));
-        lines.add("fn default() -> Self {");
-        lines.add("Self {");
-        lines.append(default_values);
-        lines.add("}");
-        lines.add("}");
-        lines.add("}");
-        lines.nl();
+                for (field_name, field) in &self.fields {
+                    scope.insert(
+                        field_name,
+                        Symbol {
+                            typ: field.typ.clone(),
+                            value: None,
+                            size_of: None, // TODO: If a constant, we can evaluate this now.
+                        },
+                    );
+                }
+            }
 
-        lines.add(format!("impl {} {{", self.proto.name()));
+            let mut bit_offset = 0;
 
-        // Consider adding a size_of
-        let struct_size = self.sizeof("")?;
+            let mut pending_value_check = VecDeque::new();
 
-        // TODO: Verify that there are no fields named 'size_of'
-        if let Some(fixed_size) = struct_size.clone().and_then(|s| s.to_constant()) {
-            lines.add(format!(
-                "\tpub const fn size_of() -> usize {{ {} }}",
-                fixed_size
-            ));
-            lines.nl();
+            // Parse each field in the order of their appearance.
+            for field in self.proto.field() {
+                let field_typ = self.fields[field.name()].typ.get();
+
+                let mut bit_slice = None;
+                if field.bit_width() > 0 {
+                    if let Some(span_width) = bit_field_spans.get(field.name()).cloned() {
+                        // This is the first field in the bit slice, so we'll parse the full slice.
+                        // TODO: We need to validate this this many bits actually exist in the
+                        // input.
+                        bit_offset = 0;
+                        parser_lines.add(format!("let bit_input = &input[0..{}];", span_width / 8));
+                        parser_lines.add("input = &input[bit_input.len()..];");
+                    }
+
+                    bit_slice = Some((bit_offset, (field.bit_width() as usize)));
+                    bit_offset += field.bit_width() as usize;
+                }
+
+                let after_bytes = end_terminated_marker.clone().and_then(|(name, bytes)| {
+                    if name == field.name() {
+                        Some(bytes.evaluate(&scope).unwrap().unwrap())
+                    } else {
+                        None
+                    }
+                });
+
+                // Need to implement  'presence'
+                // - Evaluate the value of the field.
+                // - Then if true, parse as normal, otherwise, don't and eval to None.
+
+                let mut expr = {
+                    let mut args = HashMap::new();
+                    for arg in field.argument() {
+                        args.insert(
+                            arg.name(),
+                            Expression::parse(arg.value())?
+                                .evaluate(&scope)?
+                                .ok_or_else(|| {
+                                    format_err!(
+                                        "While parsing field: {}, unable to evaluate: {}",
+                                        field.name(),
+                                        arg.value()
+                                    )
+                                })?,
+                        );
+                    }
+
+                    let ctx = TypeParserContext {
+                        after_bytes,
+                        arguments: &args,
+                    };
+
+                    if let Some((bit_offset, bit_width)) = bit_slice {
+                        field_typ.parse_bits_expression(bit_offset, bit_width)?
+                    } else {
+                        field_typ.parse_bytes_expression(&ctx)?
+                    }
+                };
+                if !field.presence().is_empty() {
+                    // TODO: Parse the presence field to validate that it actually is a valid field
+                    // reference rather than just arbitrary code.
+                    expr = format!(
+                        r#"{{
+                        let present = {};
+                        if present {{
+                            Some({})
+                        }} else {{
+                            None
+                        }}
+                        }}"#,
+                        Expression::parse(field.presence())?
+                            .evaluate(&scope)?
+                            .unwrap(),
+                        expr
+                    );
+                }
+
+                let var_name = format!("{}_value", Self::nice_field_name(field.name()));
+                parser_lines.add(format!(
+                    "
+                    let {name}_before_len = input.len();
+                    let {var_name} = {expr};
+                    let {name}_after_len = input.len();
+                    let {name}_size_of = {name}_before_len - {name}_after_len;
+                    
+                ",
+                    name = field.name(),
+                    var_name = var_name,
+                    expr = expr
+                ));
+
+                // The value has now been parsed so we can reference it in expressions
+                scope.get_mut(field.name()).unwrap().value = Some(var_name.clone());
+                scope.get_mut(field.name()).unwrap().size_of =
+                    Some(format!("{name}_size_of", name = field.name()));
+
+                if !field.value().is_empty() {
+                    pending_value_check.push_back(field.name());
+                }
+
+                // Validate the value of each field as soon as we have parsed enough information
+                // to do so.
+                while !pending_value_check.is_empty() {
+                    let field_name = pending_value_check[0];
+                    let field = &self.fields[field_name];
+
+                    let value = match Expression::parse(field.proto.value())?.evaluate(&scope)? {
+                        Some(v) => v,
+                        None => break,
+                    };
+
+                    parser_lines.add(format!(
+                        r#"
+                        {{
+                            let expected_value = {} as {};
+                            if expected_value != {}_value {{
+                                return Err(err_msg("Wrong constant value"));
+                            }}
+                        }}
+                        "#,
+                        value,
+                        field.typ.get().type_expression()?,
+                        Self::nice_field_name(field_name)
+                    ));
+
+                    pending_value_check.pop_front();
+                }
+
+                if field.value().is_empty() {
+                    parser_field_values.add(format!(
+                        "\t\t\t{}: {},",
+                        Self::nice_field_name(field.name()),
+                        var_name
+                    ));
+                }
+            }
+
+            if !pending_value_check.is_empty() {
+                return Err(format_err!(
+                    "Unable to evaluate value for fields: {:?}",
+                    pending_value_check
+                ));
+            }
         }
 
+        let mut field_accessors = LineBuilder::new();
+        let mut serialize_lines = LineBuilder::new();
+        let mut serialize_segment_ctor = LineBuilder::new();
+        let mut serialize_segment_append = LineBuilder::new();
+
+        // Write the serializer
+        {
+            // Map from field/argument names to the variable storing its value.
+            let mut scope = HashMap::new();
+            {
+                for (arg, arg_type) in self.proto.argument().iter().zip(self.arguments.iter()) {
+                    scope.insert(
+                        arg.name(),
+                        Symbol {
+                            typ: arg_type.clone(),
+                            value: Some(arg.name().to_string()),
+                            size_of: None,
+                        },
+                    );
+                }
+
+                // Initialize scope with all plain fields.
+                for (field_name, field) in &self.fields {
+                    let value = if field.proto.value().is_empty() {
+                        Some(format!("self.{}", Self::nice_field_name(field_name)))
+                    } else {
+                        None
+                    };
+
+                    scope.insert(
+                        field_name,
+                        Symbol {
+                            typ: field.typ.clone(),
+                            value,
+                            size_of: None, // TODO: If a constant, we can evaluate this now.
+                        },
+                    );
+                }
+
+                // Add field accessors for derived fields.
+                // We need to run this multiple times as derived fields may reference each
+                // other.
+                let mut made_progress = true;
+                while made_progress {
+                    made_progress = false;
+
+                    for (field_name, field) in &self.fields {
+                        if scope[field_name].value.is_some() {
+                            continue;
+                        }
+
+                        let expr = match Expression::parse(field.proto.value())?.evaluate(&scope)? {
+                            Some(v) => v,
+                            None => continue,
+                        };
+
+                        made_progress = true;
+
+                        let field_typ = self.fields[field_name].typ.get();
+
+                        field_accessors.add(format!(
+                            "\tpub fn {method}(&self) -> {ty} {{ {expr} as {ty} }}",
+                            method = Self::nice_field_name(field_name),
+                            ty = field_typ.type_expression()?,
+                            expr = expr,
+                            // field_typ.value_expression(field.constant_value())?
+                        ));
+
+                        scope.get_mut(field_name).unwrap().value =
+                            Some(format!("self.{}()", Self::nice_field_name(field_name)));
+                    }
+                }
+            }
+
+            //
+            // let mut skipped_fields = vec![];
+
+            let mut bit_offset = 0;
+
+            for field in self.proto.field() {
+                let value_expr = scope[field.name()]
+                    .value
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .ok_or_else(|| {
+                        format_err!("No value for field: {}: {}", field.name(), field.value())
+                    })
+                    .unwrap();
+
+                let mut bit_slice = None;
+                if field.bit_width() > 0 {
+                    if let Some(span_width) = bit_field_spans.get(field.name()).cloned() {
+                        // This is the first field in the bit slice, so we'll allocate some
+                        // space for the entire slice and
+                        // then we'll use it.
+                        bit_offset = 0;
+
+                        serialize_lines.add("let bit_output = {");
+                        serialize_lines.add("let start = out.len();");
+                        serialize_lines.add(format!("out.resize(start + {}, 0);", span_width / 8));
+                        serialize_lines
+                            .add(format!("&mut out[start..(start + {})]", span_width / 8));
+                        serialize_lines.add("};");
+                    }
+
+                    bit_slice = Some((bit_offset, (field.bit_width() as usize)));
+                    bit_offset += field.bit_width() as usize;
+                }
+
+                let mut args = HashMap::new();
+                for arg in field.argument() {
+                    args.insert(
+                        arg.name(),
+                        // TODO: May need to defer evluation of the field due to this.
+                        Expression::parse(arg.value())?.evaluate(&scope)?.unwrap()
+
+                        // format!("&{}", evaluate_expression(arg.value(), &scope)?),
+                    );
+                }
+
+                let ctx = TypeParserContext {
+                    after_bytes: None,
+                    // TODO: Reference &scope here
+                    // scope: &self.fields,
+                    arguments: &args,
+                };
+
+                let get_serializer = |value_expr: &str| {
+                    if let Some((bit_offset, bit_width)) = bit_slice {
+                        self.fields[field.name()]
+                            .typ
+                            .get()
+                            .serialize_bits_expression(value_expr, bit_offset, bit_width)
+                    } else {
+                        self.fields[field.name()]
+                            .typ
+                            .get()
+                            .serialize_bytes_expression(value_expr, "out", &ctx)
+                    }
+                };
+
+                let line = {
+                    // TODO: 'presence' fields should be considered to be derived so we can
+                    // skip adding it to the struct (but we can keep the runtime check which
+                    // will hopefully compile away).
+                    if !field.presence().is_empty() && !self.derivated_fields.contains(field.name())
+                    {
+                        format!(
+                            r#"{{
+                            let present = {};
+                            let value = &{};
+                            if value.is_some() != present {{
+                                return Err(err_msg("Mismatch between"));
+                            }}
+
+                            if let Some(v) = value {{
+                                {}
+                            }}
+                            }}"#,
+                            Expression::parse(field.presence())?
+                                .evaluate(&scope)?
+                                .unwrap(),
+                            // evaluate_expression(field.presence(), &scope)?,
+                            value_expr,
+                            get_serializer("v")?
+                        )
+                    } else {
+                        get_serializer(&value_expr)?
+                    }
+                };
+
+                serialize_lines.add(format!("\t\t{}", line));
+            }
+
+            // Start doing serialization stuff.
+        }
+
+        {
+            // Consider adding a size_of
+            let struct_size = self.size_of("")?;
+
+            // TODO: Verify that there are no fields named 'size_of'
+            if let Some(fixed_size) = struct_size.clone().and_then(|s| s.to_constant()) {
+                field_accessors.add(format!(
+                    "\tpub const fn size_of() -> usize {{ {} }}",
+                    fixed_size
+                ));
+                field_accessors.nl();
+            }
+
+            if let Some(1) = struct_size.and_then(|s| s.to_constant()) {
+                // TODO: Optimize this further?
+                field_accessors.add(format!(
+                    r#"
+                    pub fn to_u8(&self{}) -> Result<u8> {{
+                        let mut data = vec![];
+                        data.reserve_exact(1);
+                        self.serialize(&mut data{})?;
+                        assert_eq!(data.len(), 1);
+                        Ok(data[0])
+                    }}
+                "#,
+                    function_args, function_arg_names
+                ));
+            }
+        }
+
+        // TODO: Consider in some cases using repr(C).
+        lines.add(format!(
+            r#"
+            #[derive(Debug, PartialEq, Clone)]
+            pub struct {name} {{
+                {struct_lines}
+            }}
+
+            impl {name} {{
+                pub fn parse_complete(input: &[u8]{function_args}) -> Result<Self> {{
+                    let (v, _) = ::parsing::complete(move |i| Self::parse(i{function_arg_names}))(input)?;
+                    Ok(v)
+                }} 
+
+                pub fn parse<'a>(mut input: &'a [u8]{function_args}) -> Result<(Self, &'a [u8])> {{
+                    {parser_lines}
+
+                    Ok((Self {{
+                        {parser_field_values}
+                    }}, input))
+                }}
+
+                pub fn serialize(&self, out: &mut Vec<u8>{function_args}) -> Result<()> {{
+                    {serialize_segment_ctor}
+
+                    {serialize_lines}
+
+                    {serialize_segment_append}
+
+                    Ok(())
+                }}
+
+                {field_accessors}
+            }}
+
+            impl Default for {name} {{
+                fn default() -> Self {{
+                    Self {{
+                        {default_values}
+                    }}
+                }}
+            }}
+
+            "#,
+            name = self.proto.name(),
+            function_args = function_args,
+            function_arg_names = function_arg_names,
+            struct_lines = struct_lines.to_string(),
+            parser_lines = parser_lines.to_string(),
+            parser_field_values = parser_field_values.to_string(),
+            default_values = default_values.to_string(),
+            serialize_lines = serialize_lines.to_string(),
+            field_accessors = field_accessors.to_string(),
+            serialize_segment_ctor = serialize_segment_ctor.to_string(),
+            serialize_segment_append = serialize_segment_append.to_string()
+        ));
+
+        return Ok(());
+
+        ///////////////////////////////////////////////
+
+        /*
         // Add accessors for derived fields,
         //
         // TODO: If a length field is referenced multiple times, then we need to verify
@@ -333,292 +767,40 @@ impl<'a> Type for StructType<'a> {
                 }
             }
 
-            if field.has_constant_value() {
-                let field_typ = self.fields[field.name()].typ.get();
-
-                lines.add(format!(
-                    "\tpub fn {}(&self) -> {} {{ {} }}",
-                    Self::nice_field_name(field.name()),
-                    field_typ.type_expression()?,
-                    field_typ.value_expression(field.constant_value())?
-                ));
-            }
+            if field.has_constant_value() {}
         }
+        */
 
-        let mut function_args = String::new();
-        let mut function_arg_names = String::new();
-        for (arg, arg_ty) in self.proto.argument().iter().zip(self.arguments.iter()) {
-            // TODO: Conditionally take by reference depending on whether or not the type is
-            // copyable.
-            function_args.push_str(&format!(
-                ", {}: &{}",
-                arg.name(),
-                arg_ty.get().type_expression()?
-            ));
+        // Check each field
 
-            function_arg_names.push_str(&format!(", {}", arg.name()));
-        }
+        // List of (field_name, segment_index)
+        // let mut serialization_order = vec![];
+        // let mut current_segment = 0;
 
-        lines.add(format!(
-            r#"
-            pub fn parse_complete(input: &[u8]{}) -> Result<Self> {{
-                let (v, _) = ::parsing::complete(move |i| Self::parse(i{}))(input)?;
-                Ok(v)
-            }} 
-        "#,
-            function_args, function_arg_names
-        ));
+        // for field in self.fields.len() {
 
-        // Also need to support parsing from Bytes to have fewer copies.
-        lines.add(format!(
-            "\tpub fn parse<'a>(mut input: &'a [u8]{}) -> Result<(Self, &'a [u8])> {{",
-            function_args
-        ));
-        {
-            let mut bit_offset = 0;
+        //     // If the field only depends on previous fields, all is well (the
+        //     // value)
+        // }
 
-            // Map from field/argument names to the variable storing its value.
-            let mut scope = HashMap::new();
-            for arg in self.proto.argument() {
-                scope.insert(arg.name(), arg.name().to_string());
-            }
+        /*
+        During serialization:
+        - Can reference any instance variables
+        - Serialization may need to be done out of order
+            - Dependencies are defined based on the field values.
+        - But must still be chained together at the end.
 
-            for field in self.proto.field() {
-                let field_typ = self.fields[field.name()].typ.get();
+        - Maintain list of 'n' output segments (for now each is a Vec<u8>)
 
-                let mut bit_slice = None;
-                if field.bit_width() > 0 {
-                    if let Some(span_width) = bit_field_spans.get(field.name()).cloned() {
-                        // This is the first field in the bit slice, so we'll parse the full slice.
-                        // TODO: We need to validate this this many bits actually exist in the
-                        // input.
-                        bit_offset = 0;
-                        lines.add(format!("let bit_input = &input[0..{}];", span_width / 8));
-                        lines.add("input = &input[bit_input.len()..];");
-                    }
+        - Serialize all fields
 
-                    bit_slice = Some((bit_offset, (field.bit_width() as usize)));
-                    bit_offset += field.bit_width() as usize;
-                }
+        - At the end, append all segments to the first segment
 
-                let after_bytes = end_terminated_marker.clone().and_then(|(name, bytes)| {
-                    if name == field.name() {
-                        Some(bytes.compile(&self.fields))
-                    } else {
-                        None
-                    }
-                });
+        - During parsing, it is similar, but different
 
-                // Need to implement  'presence'
-                // - Evaluate the value of the field.
-                // - Then if true, parse as normal, otherwise, don't and eval to None.
+        -
 
-                let mut expr = {
-                    let mut args = HashMap::new();
-                    for arg in field.argument() {
-                        args.insert(
-                            arg.name(),
-                            format!("&{}", evaluate_expression(arg.value(), &scope)?),
-                        );
-                    }
-
-                    let ctx = TypeParserContext {
-                        after_bytes,
-                        // TODO: Reference &scope here
-                        scope: &self.fields,
-                        arguments: &args,
-                    };
-
-                    if let Some((bit_offset, bit_width)) = bit_slice {
-                        field_typ.parse_bits_expression(bit_offset, bit_width)?
-                    } else {
-                        field_typ.parse_bytes_expression(&ctx)?
-                    }
-                };
-                if !field.presence().is_empty() {
-                    // TODO: Parse the presence field to validate that it actually is a valid field
-                    // reference rather than just arbitrary code.
-                    expr = format!(
-                        r#"{{
-                        let present = {};
-                        if present {{
-                            Some({})
-                        }} else {{
-                            None
-                        }}
-                    }}"#,
-                        evaluate_expression(field.presence(), &scope)?,
-                        expr
-                    );
-                }
-
-                let var_name = format!("{}_value", Self::nice_field_name(field.name()));
-                lines.add(format!("\t\tlet {} = {};", var_name, expr));
-
-                scope.insert(field.name(), var_name);
-
-                if field.has_constant_value() {
-                    lines.add(format!(
-                        r#"
-                    {{
-                        let expected_value = {};
-                        if expected_value != {}_value {{
-                            return Err(err_msg("Wrong constant value"));
-                        }}
-                    }}
-                    "#,
-                        field_typ.value_expression(field.constant_value())?,
-                        Self::nice_field_name(field.name())
-                    ));
-                }
-            }
-            lines.nl();
-
-            lines.add(format!("\t\tOk(({} {{", self.proto.name()));
-            for field in self.proto.field() {
-                if self.derivated_fields.contains(field.name()) {
-                    continue;
-                }
-
-                lines.add(format!(
-                    "\t\t\t{}: {}_value,",
-                    Self::nice_field_name(field.name()),
-                    Self::nice_field_name(field.name())
-                ));
-            }
-            lines.add("\t\t}, input))");
-        }
-        lines.add("\t}");
-        lines.nl();
-
-        if let Some(1) = struct_size.and_then(|s| s.to_constant()) {
-            // TODO: Optimize this further?
-            lines.add(format!(
-                r#"
-                pub fn to_u8(&self{}) -> Result<u8> {{
-                    let mut data = vec![];
-                    data.reserve_exact(1);
-                    self.serialize(&mut data{})?;
-                    assert_eq!(data.len(), 1);
-                    Ok(data[0])
-                }}
-            "#,
-                function_args, function_arg_names
-            ));
-        }
-
-        lines.add(format!(
-            "\tpub fn serialize(&self, out: &mut Vec<u8>{}) -> Result<()> {{",
-            function_args
-        ));
-        {
-            // TODO: Need to support lots of exotic derived fields.
-
-            let mut bit_offset = 0;
-
-            // Map from field/argument names to the variable storing its value.
-            let mut scope = HashMap::new();
-            for arg in self.proto.argument() {
-                scope.insert(arg.name(), arg.name().to_string());
-            }
-
-            for field in self.proto.field() {
-                let mut bit_slice = None;
-                if field.bit_width() > 0 {
-                    if let Some(span_width) = bit_field_spans.get(field.name()).cloned() {
-                        // This is the first field in the bit slice, so we'll allocate some space
-                        // for the entire slice and then we'll use it.
-                        bit_offset = 0;
-
-                        lines.add("let bit_output = {");
-                        lines.add("let start = out.len();");
-                        lines.add(format!("out.resize(start + {}, 0);", span_width / 8));
-                        lines.add(format!("&mut out[start..(start + {})]", span_width / 8));
-                        lines.add("};");
-                    }
-
-                    bit_slice = Some((bit_offset, (field.bit_width() as usize)));
-                    bit_offset += field.bit_width() as usize;
-                }
-
-                let value_expr = {
-                    if self.derivated_fields.contains(field.name()) {
-                        format!("self.{}()", Self::nice_field_name(field.name()))
-                    } else {
-                        format!("self.{}", Self::nice_field_name(field.name()))
-                    }
-                };
-
-                scope.insert(field.name(), value_expr.clone());
-
-                let mut args = HashMap::new();
-                for arg in field.argument() {
-                    args.insert(
-                        arg.name(),
-                        format!("&{}", evaluate_expression(arg.value(), &scope)?),
-                    );
-                }
-                if field.typ().buffer().has_length_field_name() {
-                    let name = field.typ().buffer().length_field_name();
-                    args.insert(name, scope.get(name).unwrap().clone());
-                }
-
-                let ctx = TypeParserContext {
-                    after_bytes: None,
-                    // TODO: Reference &scope here
-                    scope: &self.fields,
-                    arguments: &args,
-                };
-
-                let get_serializer = |value_expr: &str| {
-                    if let Some((bit_offset, bit_width)) = bit_slice {
-                        self.fields[field.name()]
-                            .typ
-                            .get()
-                            .serialize_bits_expression(value_expr, bit_offset, bit_width)
-                    } else {
-                        self.fields[field.name()]
-                            .typ
-                            .get()
-                            .serialize_bytes_expression(value_expr, &ctx)
-                    }
-                };
-
-                let line = {
-                    // TODO: 'presence' fields should be considered to be derived so we can
-                    // skip adding it to the struct (but we can keep the runtime check which will
-                    // hopefully compile away).
-                    if !field.presence().is_empty() && !self.derivated_fields.contains(field.name())
-                    {
-                        format!(
-                            r#"{{
-                            let present = {};
-                            let value = &{};
-                            if value.is_some() != present {{
-                                return Err(err_msg("Mismatch between"));
-                            }}
-
-                            if let Some(v) = value {{
-                                {}
-                            }}
-                        }}"#,
-                            evaluate_expression(field.presence(), &scope)?,
-                            value_expr,
-                            get_serializer("v")?
-                        )
-                    } else {
-                        get_serializer(&value_expr)?
-                    }
-                };
-
-                lines.add(format!("\t\t{}", line));
-            }
-
-            lines.add("\t\tOk(())");
-        }
-        lines.add("\t}");
-
-        lines.add("}");
+        */
 
         // Now we need a parse and serialize routine.
 
@@ -636,7 +818,7 @@ impl<'a> Type for StructType<'a> {
                 .arguments
                 .get(arg.name())
                 .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
-            args = format!(", {}", val);
+            args = format!(", &{}", val);
         }
 
         Ok(format!(
@@ -649,6 +831,7 @@ impl<'a> Type for StructType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
+        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         let mut args = String::new();
@@ -657,16 +840,16 @@ impl<'a> Type for StructType<'a> {
                 .arguments
                 .get(arg.name())
                 .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
-            args = format!(", {}", val);
+            args = format!(", &{}", val);
         }
 
-        Ok(format!("{}.serialize(out{})?;", value, args))
+        Ok(format!("{}.serialize({}{})?;", value, output_buffer, args))
     }
 
-    fn sizeof(&self, field_name: &str) -> Result<Option<SizeExpression>> {
+    fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {
         // TODO: Ideally we should cache these.
 
-        let mut total_size = SizeExpression::Constant(0);
+        let mut total_size = Expression::Integer(0);
         let mut bits = 0;
 
         for (_, field) in &self.fields {
@@ -674,7 +857,8 @@ impl<'a> Type for StructType<'a> {
                 bits += field.proto.bit_width() as usize;
             } else {
                 let field_size = {
-                    if let Some(v) = field.typ.get().sizeof(field.proto.name())? {
+                    // TODO: Handle re-writing of argument names based on the original values.
+                    if let Some(v) = field.typ.get().size_of(field.proto.name())? {
                         v
                     } else {
                         return Ok(None);
@@ -686,7 +870,7 @@ impl<'a> Type for StructType<'a> {
             }
         }
 
-        total_size = total_size.add(SizeExpression::Constant(bits / 8));
+        total_size = total_size.add(Expression::Integer((bits / 8) as i64));
 
         Ok(Some(total_size))
     }

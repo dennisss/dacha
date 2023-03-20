@@ -49,8 +49,6 @@ structs {
     }
 }
 
-
-
 unions {
     name: "BoxData"
     endian: BIG_ENDIAN
@@ -251,7 +249,7 @@ structs {
     field {
         name: "reserved1"
         type { primitive: U16 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "reserved2"
@@ -261,7 +259,7 @@ structs {
                 fixed_length: 2
             }
         }
-        constant_value { int64_value: [0, 0] }
+        value: "[0, 0]"
     }
     field {
         name: "matrix"
@@ -280,7 +278,7 @@ structs {
                 fixed_length: 6
             }
         }
-        constant_value { int64_value: [0, 0, 0, 0, 0, 0] }
+        value: "[0, 0, 0, 0, 0, 0]"
     }
     field {
         name: "next_track_id"
@@ -386,7 +384,7 @@ structs {
                 fixed_length: 2
             }
         }
-        constant_value { int64_value: [0, 0] }
+        value: "[0, 0]"
     }
     field {
         name: "layer"
@@ -403,7 +401,7 @@ structs {
     field {
         name: "reserved1"
         type { primitive: U16 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "matrix"
@@ -442,7 +440,7 @@ structs {
     field {
         name: "reserved"
         type { primitive: U32 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "duration"
@@ -468,7 +466,7 @@ structs {
     field {
         name: "reserved"
         type { primitive: U32 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "duration"
@@ -518,7 +516,7 @@ structs {
         name: "pad"
         type { primitive: U8 }
         bit_width: 1
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "language"
@@ -528,7 +526,7 @@ structs {
     field {
         name: "pre_defined"
         type { primitive: U16 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
 }
 
@@ -553,7 +551,7 @@ structs {
     field {
         name: "pre_defined"
         type { primitive: U32 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "handler_type"
@@ -567,7 +565,7 @@ structs {
                 fixed_length: 3
             }
         }
-        constant_value { int64_value: [0, 0, 0] }
+        value: "[0, 0, 0]"
     }
     field {
         name: "name"
@@ -600,7 +598,7 @@ structs {
     field {
         name: "graphicsmode"
         type { primitive: U16 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "opcolor"
@@ -610,7 +608,7 @@ structs {
                 fixed_length: 3
             }
         }
-        constant_value { int64_value: [0, 0, 0] }
+        value: "[0, 0, 0]"
     }
 }
 
@@ -1084,7 +1082,7 @@ structs {
                 fixed_length: 6
             }
         }
-        constant_value { int64_value: [0, 0, 0, 0, 0, 0] }
+        value: "[0, 0, 0, 0, 0, 0]"
     }
     field {
         name: "data_reference_index"
@@ -1102,12 +1100,12 @@ structs {
     field {
         name: "pre_defined"
         type { primitive: U16 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "reserved"
         type { primitive: U16 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "pre_defined2"
@@ -1117,7 +1115,7 @@ structs {
                 fixed_length: 3
             }
         }
-        constant_value { int64_value: [0, 0, 0] }
+        value: "[0, 0, 0]"
     }
     field {
         name: "width"
@@ -1138,7 +1136,7 @@ structs {
     field {
         name: "reserved2"
         type { primitive: U32 }
-        constant_value { int64_value: 0 }
+        value: "0"
     }
     field {
         name: "frame_count"
@@ -1163,7 +1161,7 @@ structs {
     field {
         name: "pre_defined3"
         type { primitive: U16 }
-        constant_value { int64_value: 0xFFFF }
+        value: "0xFFFF"
     }
 }
 
@@ -1237,7 +1235,7 @@ structs {
         name: "reserved"
         type { primitive: U8 }
         bit_width: 6
-        constant_value { int64_value: 0b111111 }
+        value: "0b111111"
     }
     field {
         name: "length_size_minus_one"
@@ -1248,7 +1246,7 @@ structs {
         name: "reserved2"
         type { primitive: U8 }
         bit_width: 3
-        constant_value { int64_value: 0b111 }
+        value: "0b111"
     }
     field {
         name: "num_sequence_parameter_sets"

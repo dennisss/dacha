@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use common::errors::*;
 use common::line_builder::*;
 
+use crate::expression::Expression;
+use crate::expression::*;
 use crate::proto::*;
-use crate::size::*;
 use crate::types::*;
 
 pub struct EnumType<'a> {
@@ -62,7 +63,6 @@ impl<'a> Type for EnumType<'a> {
                     .get()
                     .parse_bytes_expression(&TypeParserContext {
                         after_bytes: None,
-                        scope: &HashMap::new(),
                         arguments: &HashMap::new()
                     })?
             ));
@@ -103,9 +103,9 @@ impl<'a> Type for EnumType<'a> {
             lines.add(format!("\tlet value = self.to_{}();", raw_type));
             lines.add(self.inner_typ.get().serialize_bytes_expression(
                 "value",
+                "out",
                 &TypeParserContext {
                     after_bytes: None,
-                    scope: &HashMap::new(),
                     arguments: &HashMap::new(),
                 },
             )?);
@@ -197,9 +197,10 @@ impl<'a> Type for EnumType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
+        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
-        Ok(format!("{}.serialize(out)?;", value))
+        Ok(format!("{}.serialize({})?;", value, output_buffer))
     }
 
     fn serialize_bits_expression(
@@ -218,7 +219,7 @@ impl<'a> Type for EnumType<'a> {
         )
     }
 
-    fn sizeof(&self, field_name: &str) -> Result<Option<SizeExpression>> {
-        self.inner_typ.get().sizeof(field_name)
+    fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {
+        self.inner_typ.get().size_of(field_name)
     }
 }

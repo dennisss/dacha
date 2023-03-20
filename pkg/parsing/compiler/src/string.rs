@@ -2,8 +2,9 @@ use common::errors::*;
 use common::line_builder::*;
 
 use crate::buffer::BufferType;
+use crate::expression::Expression;
+use crate::expression::*;
 use crate::proto::*;
-use crate::size::SizeExpression;
 use crate::types::*;
 
 pub struct StringType<'a> {
@@ -80,13 +81,17 @@ impl<'a> Type for StringType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
+        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
-        self.buffer_type
-            .serialize_bytes_expression(&format!("{}.as_ref()", value), context)
+        self.buffer_type.serialize_bytes_expression(
+            &format!("{}.as_ref()", value),
+            output_buffer,
+            context,
+        )
     }
 
-    fn sizeof(&self, field_name: &str) -> Result<Option<SizeExpression>> {
-        self.buffer_type.sizeof(field_name)
+    fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {
+        self.buffer_type.size_of(field_name)
     }
 }

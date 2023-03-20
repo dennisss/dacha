@@ -1,6 +1,7 @@
 use common::errors::*;
 use common::line_builder::*;
 
+use crate::expression::Expression;
 use crate::proto::*;
 use crate::size::SizeExpression;
 use crate::types::*;
@@ -110,10 +111,12 @@ impl Type for PrimitiveType {
     fn serialize_bytes_expression(
         &self,
         value: &str,
+        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         Ok(format!(
-            "out.extend_from_slice(&{}.to_{}_bytes());",
+            "{}.extend_from_slice(&{}.to_{}_bytes());",
+            output_buffer,
             value,
             self.endian_str()?
         ))
@@ -170,7 +173,7 @@ impl Type for PrimitiveType {
         Ok(lines.to_string())
     }
 
-    fn sizeof(&self, field_name: &str) -> Result<Option<SizeExpression>> {
+    fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {
         let n = match self.proto {
             PrimitiveTypeProto::UNKNOWN => {
                 return Err(err_msg("No primitive type specified"));
@@ -188,7 +191,7 @@ impl Type for PrimitiveType {
             PrimitiveTypeProto::BOOL => 1, // TODO: Check this?
         };
 
-        Ok(Some(SizeExpression::Constant(n)))
+        Ok(Some(Expression::Integer(n)))
     }
 }
 

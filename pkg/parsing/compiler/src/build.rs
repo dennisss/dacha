@@ -41,7 +41,7 @@ pub fn build() -> Result<()> {
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
-        let output = Compiler::compile(&lib)?;
+        let output = Compiler::compile(lib)?;
         std::fs::write(output_path, output)?;
     }
 
