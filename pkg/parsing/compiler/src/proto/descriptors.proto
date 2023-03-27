@@ -83,7 +83,7 @@ message BufferTypeProto {
 
         // Python-like expression defining the number of elements in this buffer.
         // Any symbols referenced in this are implicitly declared as 'arguments'
-        // string length = 6;
+        string length = 6;
     }
 }
 
@@ -98,8 +98,6 @@ message TypeProto {
         string named = 3;
 
         StringTypeProto string = 4;
-
-        LayeredTypeProto layered = 5;
     }
 }
 
@@ -159,6 +157,9 @@ message FieldProto {
     // Arguments that are fed to the inner type while parsing/serializing.
     // TODO: Ensure that all types actually validate that these are used if given. 
     repeated FieldArgument argument = 9;
+
+    // Name of another field which contains a byte array which should be used to parse this field.
+    string stream = 10;
 }
 
 message FieldArgument {

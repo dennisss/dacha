@@ -62,6 +62,7 @@ impl<'a> Type for EnumType<'a> {
                 self.inner_typ
                     .get()
                     .parse_bytes_expression(&TypeParserContext {
+                        stream: "input".to_string(),
                         after_bytes: None,
                         arguments: &HashMap::new()
                     })?
@@ -103,8 +104,8 @@ impl<'a> Type for EnumType<'a> {
             lines.add(format!("\tlet value = self.to_{}();", raw_type));
             lines.add(self.inner_typ.get().serialize_bytes_expression(
                 "value",
-                "out",
                 &TypeParserContext {
+                    stream: "out".to_string(),
                     after_bytes: None,
                     arguments: &HashMap::new(),
                 },
@@ -197,10 +198,9 @@ impl<'a> Type for EnumType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
-        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
-        Ok(format!("{}.serialize({})?;", value, output_buffer))
+        Ok(format!("{}.serialize({})?;", value, context.stream))
     }
 
     fn serialize_bits_expression(

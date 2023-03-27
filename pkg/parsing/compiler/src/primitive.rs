@@ -3,7 +3,6 @@ use common::line_builder::*;
 
 use crate::expression::Expression;
 use crate::proto::*;
-use crate::size::SizeExpression;
 use crate::types::*;
 
 /// TODO: Include the bit width in the type description directly?
@@ -62,7 +61,8 @@ impl Type for PrimitiveType {
 
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
         Ok(format!(
-            "parse_next!(input, ::parsing::binary::{}_{})",
+            "parse_next!({}, ::parsing::binary::{}_{})",
+            context.stream,
             self.endian_str()?,
             self.typename()?
         ))
@@ -111,12 +111,11 @@ impl Type for PrimitiveType {
     fn serialize_bytes_expression(
         &self,
         value: &str,
-        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         Ok(format!(
             "{}.extend_from_slice(&{}.to_{}_bytes());",
-            output_buffer,
+            context.stream,
             value,
             self.endian_str()?
         ))

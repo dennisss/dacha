@@ -81,14 +81,10 @@ impl<'a> Type for StringType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
-        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
-        self.buffer_type.serialize_bytes_expression(
-            &format!("{}.as_ref()", value),
-            output_buffer,
-            context,
-        )
+        self.buffer_type
+            .serialize_bytes_expression(&format!("{}.as_ref()", value), context)
     }
 
     fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {

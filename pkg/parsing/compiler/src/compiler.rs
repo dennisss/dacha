@@ -5,10 +5,8 @@ use std::rc::Rc;
 
 use crate::buffer::BufferType;
 use crate::enum_type::EnumType;
-use crate::layered::LayeredType;
 use crate::primitive::PrimitiveType;
 use crate::proto::*;
-use crate::size::SizeExpression;
 use crate::string::StringType;
 use crate::struct_type::StructType;
 use crate::types::*;
@@ -89,11 +87,6 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
                 let typ = StringType::create(s, self, context)?;
                 self.add_anonymous_type(typ)
             }
-            TypeProtoTypeCase::Layered(p) => {
-                let typ = LayeredType::create(p, self, context)?;
-                self.add_anonymous_type(typ)
-            }
-
             TypeProtoTypeCase::Unknown => return Err(err_msg("Unspecified type")),
         })
     }
@@ -172,16 +165,18 @@ impl Compiler {
         let mut new_values = HashMap::new();
 
         for field in proto.field_mut() {
-            if let TypeProtoTypeCase::Buffer(buf) = field.typ().type_case() {
+            if let TypeProtoTypeCase::Buffer(buf) = field.typ_mut().type_case_mut() {
                 if let BufferTypeProtoSizeCase::LengthFieldName(name) = buf.size_case() {
                     let name = name.clone();
 
-                    // If the buffer's presence isn't a subset of the length field's presence, then we can't always derive the value of the length field. 
+                    buf.set_length(name.clone());
+
+                    // If the buffer's presence isn't a subset of the length field's presence, then
+                    // we can't always derive the value of the length field.
                     // TODO: Actually check for proper subsets.
                     if field.presence().is_empty() {
                         new_values.insert(name.clone(), format!("{}.len()", field.name()));
                     }
-
 
                     let mut arg = FieldArgument::default();
                     arg.set_name(&name);

@@ -7,7 +7,6 @@ use common::line_builder::*;
 use crate::expression::Expression;
 use crate::expression::*;
 use crate::proto::*;
-use crate::size::*;
 use crate::types::*;
 
 pub struct StructType<'a> {
@@ -18,8 +17,9 @@ pub struct StructType<'a> {
     /// NOTE: Don't iterate over this as it doesn't have a well defined order.
     fields: HashMap<&'a str, Field<'a>>,
 
-    // TODO: REmove this.
-    derivated_fields: HashSet<&'a str>,
+    /// Map from the field name of a string to the list of fields which are
+    /// parsed from that stream.
+    stream_components: HashMap<&'a str, Vec<&'a str>>,
 }
 
 pub struct Field<'a> {
@@ -49,6 +49,8 @@ impl<'a> StructType<'a> {
         // directly defined as a struct field.
         let mut derivated_fields: HashSet<&str> = HashSet::new();
 
+        let mut stream_components: HashMap<&str, Vec<&str>> = HashMap::new();
+
         for field_proto in proto.field() {
             let field = Field {
                 proto: field_proto,
@@ -64,26 +66,12 @@ impl<'a> StructType<'a> {
                 return Err(format_err!("Duplicate field named: {}", field_proto.name()));
             }
 
-            let used_names = Self::referenced_field_names(field_proto.typ());
-
-            for name in &used_names {
-                if !field_index.contains_key(name) {
-                    // TODO: If a length field is used in multiple different fields, then we need to
-                    // do validation at serialization time that sizes are correct.
-                    // TODO: Eventually support reading fields from the back of a struct in some
-                    // cases.
-                    return Err(format_err!("Field referenced before parsed: {}", name));
-                }
-            }
-
-            // if field_proto.has_constant_value() {
-            //     derivated_fields.insert(field_proto.name());
-            // }
-
-            // NOTE: If a buffer has a presence field, then we can't derive the length field
-            // if the case that the field is not present.
-            if field_proto.presence().is_empty() {
-                derivated_fields.extend(&used_names);
+            // TODO: Verify only used once and that the stream field exists.
+            if !field_proto.stream().is_empty() {
+                stream_components
+                    .entry(field_proto.stream())
+                    .or_default()
+                    .push(field_proto.name());
             }
         }
 
@@ -91,30 +79,8 @@ impl<'a> StructType<'a> {
             proto,
             arguments,
             fields: field_index,
-            derivated_fields,
+            stream_components,
         })
-    }
-
-    // TODO: Remove me.
-    fn referenced_field_names(typ: &'a TypeProto) -> HashSet<&'a str> {
-        let mut out = HashSet::new();
-
-        fn recurse<'a>(t: &'a TypeProto, out: &mut HashSet<&'a str>) {
-            if let TypeProtoTypeCase::Buffer(buf) = t.type_case() {
-                if let BufferTypeProtoSizeCase::LengthFieldName(name) = buf.size_case() {
-                    if let Some((field, _)) = name.as_str().split_once('.') {
-                        out.insert(field);
-                    } else {
-                        out.insert(&name);
-                    }
-                }
-
-                recurse(buf.element_type(), out);
-            }
-        }
-
-        recurse(typ, &mut out);
-        out
     }
 
     fn nice_field_name(name: &str) -> &str {
@@ -123,6 +89,63 @@ impl<'a> StructType<'a> {
         } else {
             name
         }
+    }
+
+    fn serialize_stream_value(
+        &self,
+        stream_field: &FieldProto,
+        scope: &mut HashMap<&str, Symbol>,
+        serialize_lines: &mut LineBuilder,
+    ) -> Result<bool> {
+        if !stream_field.value().is_empty() {
+            return Err(err_msg("Stream should not value a normal value"));
+        }
+
+        let mut stream_buffer_lines = LineBuilder::new();
+        stream_buffer_lines.add(format!("let mut {}_stream = vec![];", stream_field.name()));
+
+        stream_buffer_lines.add("{");
+        for component_name in self.stream_components[stream_field.name()].iter().cloned() {
+            let field = &self.fields[component_name];
+
+            let value_expr = match scope.get(component_name).and_then(|v| v.value.as_ref()) {
+                Some(v) => v,
+                None => return Ok(false),
+            };
+
+            let mut args = HashMap::new();
+            for arg in field.proto.argument() {
+                args.insert(
+                    arg.name(),
+                    match Expression::parse(arg.value())?.evaluate(&scope)? {
+                        Some(v) => v,
+                        None => return Ok(false),
+                    },
+                );
+            }
+
+            let ctx = TypeParserContext {
+                stream: format!("(&mut {}_stream)", stream_field.name()),
+                after_bytes: None,
+                arguments: &args,
+            };
+
+            stream_buffer_lines.add(
+                field
+                    .typ
+                    .get()
+                    .serialize_bytes_expression(value_expr, &ctx)?,
+            );
+        }
+        stream_buffer_lines.add("}");
+
+        // TODO: Assert that stream fields don't have regular values.
+        scope.get_mut(stream_field.name()).unwrap().value =
+            Some(format!("{}_stream", stream_field.name()));
+
+        serialize_lines.append(stream_buffer_lines);
+
+        Ok(true)
     }
 
     // TODO: Can't have multiple end_terminated fields (where the first is in a
@@ -141,6 +164,10 @@ impl<'a> Type for StructType<'a> {
         {
             let mut num_bits: Option<(&str, usize)> = None;
             for field in self.proto.field() {
+                if !field.stream().is_empty() && field.bit_width() > 0 {
+                    return Err(err_msg("Field in a stream can't have a bit_width"));
+                }
+
                 if field.bit_width() > 0 {
                     num_bits = Some(num_bits.map_or(
                         (field.name(), field.bit_width() as usize),
@@ -265,14 +292,17 @@ impl<'a> Type for StructType<'a> {
         /// End of prep work
         ///////////////////////
         let mut struct_lines = LineBuilder::new();
-        let mut parser_lines = LineBuilder::new();
-        let mut parser_field_values = LineBuilder::new();
         let mut default_values = LineBuilder::new();
 
         // Adding struct member delarations.
         for field in self.proto.field() {
             // Fields with constant/derived values don't need to be stored.
             if !field.value().is_empty() {
+                continue;
+            }
+
+            // Don't need to store streams as they will be derived from other fields.
+            if self.stream_components.contains_key(&field.name()) {
                 continue;
             }
 
@@ -296,6 +326,9 @@ impl<'a> Type for StructType<'a> {
             }
             struct_lines.add(format!("\tpub {}: {},", field_name, typename));
         }
+
+        let mut parser_lines = LineBuilder::new();
+        let mut parser_field_values = LineBuilder::new();
 
         // Write the parser
         {
@@ -377,7 +410,16 @@ impl<'a> Type for StructType<'a> {
                         );
                     }
 
+                    let stream = {
+                        if field.stream().is_empty() {
+                            "input".to_string()
+                        } else {
+                            format!("{}_remaining", field.stream())
+                        }
+                    };
+
                     let ctx = TypeParserContext {
+                        stream,
                         after_bytes,
                         arguments: &args,
                     };
@@ -421,6 +463,29 @@ impl<'a> Type for StructType<'a> {
                     expr = expr
                 ));
 
+                if self.stream_components.contains_key(&field.name()) {
+                    parser_lines.add(format!(
+                        "let mut {}_remaining: &[u8] = &{}[..];",
+                        field.name(),
+                        var_name
+                    ));
+                }
+
+                // When parsing the last field in a stream, verify that all bytes in the stream
+                // have been consumed.
+                if !field.stream().is_empty()
+                    && *self.stream_components[field.stream()].last().unwrap() == field.name()
+                {
+                    parser_lines.add(format!(
+                        r#"
+                        if !{}_remaining.is_empty() {{
+                            return Err(err_msg("Extra bytes at end of stream"));
+                        }}
+                        "#,
+                        field.stream(),
+                    ));
+                }
+
                 // The value has now been parsed so we can reference it in expressions
                 scope.get_mut(field.name()).unwrap().value = Some(var_name.clone());
                 scope.get_mut(field.name()).unwrap().size_of =
@@ -446,7 +511,7 @@ impl<'a> Type for StructType<'a> {
                         {{
                             let expected_value = {} as {};
                             if expected_value != {}_value {{
-                                return Err(err_msg("Wrong constant value"));
+                                return Err(err_msg("Wrong field value"));
                             }}
                         }}
                         "#,
@@ -458,7 +523,7 @@ impl<'a> Type for StructType<'a> {
                     pending_value_check.pop_front();
                 }
 
-                if field.value().is_empty() {
+                if field.value().is_empty() && !self.stream_components.contains_key(field.name()) {
                     parser_field_values.add(format!(
                         "\t\t\t{}: {},",
                         Self::nice_field_name(field.name()),
@@ -477,14 +542,13 @@ impl<'a> Type for StructType<'a> {
 
         let mut field_accessors = LineBuilder::new();
         let mut serialize_lines = LineBuilder::new();
-        let mut serialize_segment_ctor = LineBuilder::new();
-        let mut serialize_segment_append = LineBuilder::new();
 
         // Write the serializer
         {
             // Map from field/argument names to the variable storing its value.
             let mut scope = HashMap::new();
             {
+                // Add all arguments.
                 for (arg, arg_type) in self.proto.argument().iter().zip(self.arguments.iter()) {
                     scope.insert(
                         arg.name(),
@@ -496,9 +560,13 @@ impl<'a> Type for StructType<'a> {
                     );
                 }
 
-                // Initialize scope with all plain fields.
+                // Initialize scope with all plain fields (those that have their values simply
+                // stored as fields in the struct).
                 for (field_name, field) in &self.fields {
-                    let value = if field.proto.value().is_empty() {
+                    let has_stored_value = field.proto.value().is_empty()
+                        && !self.stream_components.contains_key(field_name);
+
+                    let value = if has_stored_value {
                         Some(format!("self.{}", Self::nice_field_name(field_name)))
                     } else {
                         None
@@ -517,12 +585,23 @@ impl<'a> Type for StructType<'a> {
                 // Add field accessors for derived fields.
                 // We need to run this multiple times as derived fields may reference each
                 // other.
+                // This would also be a good place to derive stream values.
                 let mut made_progress = true;
                 while made_progress {
                     made_progress = false;
 
                     for (field_name, field) in &self.fields {
                         if scope[field_name].value.is_some() {
+                            continue;
+                        }
+
+                        if self.stream_components.contains_key(field_name) {
+                            made_progress |= self.serialize_stream_value(
+                                &field.proto,
+                                &mut scope,
+                                &mut serialize_lines,
+                            )?;
+
                             continue;
                         }
 
@@ -535,6 +614,15 @@ impl<'a> Type for StructType<'a> {
 
                         let field_typ = self.fields[field_name].typ.get();
 
+                        scope.get_mut(field_name).unwrap().value = Some(format!(
+                            "({expr} as {ty})",
+                            ty = field_typ.type_expression()?,
+                            expr = expr,
+                        ));
+
+                        // TODO: Add field accessors only if we can cheaply
+                        // calculate it (doesn't depend on any stream values).
+                        /*
                         field_accessors.add(format!(
                             "\tpub fn {method}(&self) -> {ty} {{ {expr} as {ty} }}",
                             method = Self::nice_field_name(field_name),
@@ -545,24 +633,28 @@ impl<'a> Type for StructType<'a> {
 
                         scope.get_mut(field_name).unwrap().value =
                             Some(format!("self.{}()", Self::nice_field_name(field_name)));
+                        */
                     }
                 }
             }
 
-            //
-            // let mut skipped_fields = vec![];
+            // At this point, we should have a value for all fields.
 
             let mut bit_offset = 0;
 
             for field in self.proto.field() {
+                // Skip fields in streams which we have handled earlier.
+                if !field.stream().is_empty() {
+                    continue;
+                }
+
+                // Update it in case it changed.
                 let value_expr = scope[field.name()]
                     .value
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .ok_or_else(|| {
-                        format_err!("No value for field: {}: {}", field.name(), field.value())
-                    })
-                    .unwrap();
+                    .clone()
+                    .ok_or_else(|| format_err!("Missing value for '{}'", field.name()))?;
+
+                let output_buffer = "out".to_string();
 
                 let mut bit_slice = None;
                 if field.bit_width() > 0 {
@@ -572,12 +664,17 @@ impl<'a> Type for StructType<'a> {
                         // then we'll use it.
                         bit_offset = 0;
 
-                        serialize_lines.add("let bit_output = {");
-                        serialize_lines.add("let start = out.len();");
-                        serialize_lines.add(format!("out.resize(start + {}, 0);", span_width / 8));
-                        serialize_lines
-                            .add(format!("&mut out[start..(start + {})]", span_width / 8));
-                        serialize_lines.add("};");
+                        serialize_lines.add(format!(
+                            r#"
+                            let bit_output = {{
+                                let start = {output_buffer}.len();
+                                {output_buffer}.resize(start + {idx}, 0);
+                                &mut {output_buffer}[start..(start + {idx})]
+                            }};
+                            "#,
+                            output_buffer = output_buffer,
+                            idx = span_width / 8
+                        ));
                     }
 
                     bit_slice = Some((bit_offset, (field.bit_width() as usize)));
@@ -589,16 +686,21 @@ impl<'a> Type for StructType<'a> {
                     args.insert(
                         arg.name(),
                         // TODO: May need to defer evluation of the field due to this.
-                        Expression::parse(arg.value())?.evaluate(&scope)?.unwrap()
-
-                        // format!("&{}", evaluate_expression(arg.value(), &scope)?),
+                        Expression::parse(arg.value())?
+                            .evaluate(&scope)?
+                            .ok_or_else(|| {
+                                format_err!(
+                                    "Failed to evaluate arg {}: {}",
+                                    arg.name(),
+                                    arg.value()
+                                )
+                            })?,
                     );
                 }
 
                 let ctx = TypeParserContext {
+                    stream: output_buffer.clone(),
                     after_bytes: None,
-                    // TODO: Reference &scope here
-                    // scope: &self.fields,
                     arguments: &args,
                 };
 
@@ -612,7 +714,7 @@ impl<'a> Type for StructType<'a> {
                         self.fields[field.name()]
                             .typ
                             .get()
-                            .serialize_bytes_expression(value_expr, "out", &ctx)
+                            .serialize_bytes_expression(value_expr, &ctx)
                     }
                 };
 
@@ -620,8 +722,9 @@ impl<'a> Type for StructType<'a> {
                     // TODO: 'presence' fields should be considered to be derived so we can
                     // skip adding it to the struct (but we can keep the runtime check which
                     // will hopefully compile away).
-                    if !field.presence().is_empty() && !self.derivated_fields.contains(field.name())
-                    {
+                    // TODO: Have a more robust/consistent way of telling if the value is stored as
+                    // an Option<>.
+                    if !field.presence().is_empty() && field.value().is_empty() {
                         format!(
                             r#"{{
                             let present = {};
@@ -637,7 +740,6 @@ impl<'a> Type for StructType<'a> {
                             Expression::parse(field.presence())?
                                 .evaluate(&scope)?
                                 .unwrap(),
-                            // evaluate_expression(field.presence(), &scope)?,
                             value_expr,
                             get_serializer("v")?
                         )
@@ -648,8 +750,6 @@ impl<'a> Type for StructType<'a> {
 
                 serialize_lines.add(format!("\t\t{}", line));
             }
-
-            // Start doing serialization stuff.
         }
 
         {
@@ -705,11 +805,7 @@ impl<'a> Type for StructType<'a> {
                 }}
 
                 pub fn serialize(&self, out: &mut Vec<u8>{function_args}) -> Result<()> {{
-                    {serialize_segment_ctor}
-
                     {serialize_lines}
-
-                    {serialize_segment_append}
 
                     Ok(())
                 }}
@@ -735,74 +831,7 @@ impl<'a> Type for StructType<'a> {
             default_values = default_values.to_string(),
             serialize_lines = serialize_lines.to_string(),
             field_accessors = field_accessors.to_string(),
-            serialize_segment_ctor = serialize_segment_ctor.to_string(),
-            serialize_segment_append = serialize_segment_append.to_string()
         ));
-
-        return Ok(());
-
-        ///////////////////////////////////////////////
-
-        /*
-        // Add accessors for derived fields,
-        //
-        // TODO: If a length field is referenced multiple times, then we need to verify
-        // that all vectors have consistent length. TODO: Also if the size is
-        // used as an inner dimension of a buffer, then we can't determin
-        for field in self.proto.field() {
-            if let TypeProtoTypeCase::Buffer(buf) = field.typ().type_case() {
-                if let BufferTypeProtoSizeCase::LengthFieldName(name) = buf.size_case() {
-                    if field.presence().is_empty() {
-                        // TODO: Challenge here is that we must ensure that the size fits within the
-                        // limits of the type (no overflows when serializing).
-                        let size_type = self.fields[name.as_str()].typ.get().type_expression()?;
-                        lines.add(format!(
-                            "\tpub fn {}(&self) -> {} {{ self.{}.len() as {} }}",
-                            name,
-                            size_type,
-                            Self::nice_field_name(field.name()),
-                            size_type
-                        ));
-                    }
-                }
-            }
-
-            if field.has_constant_value() {}
-        }
-        */
-
-        // Check each field
-
-        // List of (field_name, segment_index)
-        // let mut serialization_order = vec![];
-        // let mut current_segment = 0;
-
-        // for field in self.fields.len() {
-
-        //     // If the field only depends on previous fields, all is well (the
-        //     // value)
-        // }
-
-        /*
-        During serialization:
-        - Can reference any instance variables
-        - Serialization may need to be done out of order
-            - Dependencies are defined based on the field values.
-        - But must still be chained together at the end.
-
-        - Maintain list of 'n' output segments (for now each is a Vec<u8>)
-
-        - Serialize all fields
-
-        - At the end, append all segments to the first segment
-
-        - During parsing, it is similar, but different
-
-        -
-
-        */
-
-        // Now we need a parse and serialize routine.
 
         Ok(())
     }
@@ -814,10 +843,13 @@ impl<'a> Type for StructType<'a> {
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
         let mut args = String::new();
         for arg in self.proto.argument() {
-            let val = context
-                .arguments
-                .get(arg.name())
-                .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
+            let val = context.arguments.get(arg.name()).ok_or_else(|| {
+                format_err!(
+                    "Argument '{}' not provided to '{}'",
+                    arg.name(),
+                    self.proto.name()
+                )
+            })?;
             args = format!(", &{}", val);
         }
 
@@ -831,19 +863,21 @@ impl<'a> Type for StructType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
-        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         let mut args = String::new();
         for arg in self.proto.argument() {
-            let val = context
-                .arguments
-                .get(arg.name())
-                .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
+            let val = context.arguments.get(arg.name()).ok_or_else(|| {
+                format_err!(
+                    "Argument '{}' not provided to '{}'",
+                    arg.name(),
+                    self.proto.name()
+                )
+            })?;
             args = format!(", &{}", val);
         }
 
-        Ok(format!("{}.serialize({}{})?;", value, output_buffer, args))
+        Ok(format!("{}.serialize({}{})?;", value, context.stream, args))
     }
 
     fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {

@@ -22,11 +22,6 @@ I'd like to try and evaluate an expression
 
 */
 
-/*
-Easiest to
-
-*/
-
 pub struct Symbol<'a> {
     pub typ: TypeReference<'a>,
 

@@ -25,71 +25,12 @@ in clause 2). Comments in the code fragments in this specification indicate info
 BigEndian
 
 
-aligned(8) class Box (unsigned int(32) boxtype,
-    optional unsigned int(8)[16] extended_type) {
-    unsigned int(32) size;
-    unsigned int(32) type = boxtype;
-    if (size==1) {
-        unsigned int(64) largesize;
-    } else if (size==0) {
-        // box extends to end of file
-    }
-    if (boxtype=='uuid') {
-        unsigned int(8)[16] usertype = extended_type;
-    }
-}
 
 
 
 
-// Container: File
-// Mandatory: Yes
-// Quantity: Exactly one
-aligned(8) class MovieBox extends Box(‘moov’){
-}
 
 
-# Container: Movie Box ('moov')
-# Mandatory: Yes
-# Quantity: One or more
-aligned(8) class TrackBox extends Box('trak') {
-}
-
-
-# Container: Track Box (‘trak’)
-# Mandatory: Yes
-# Quantity: Exactly one
-aligned(8) class MediaBox extends Box(‘mdia’) {
-}
-
-
-# Container: Media Box (‘mdia’)
-# Mandatory: Yes
-# Quantity: Exactly one
-aligned(8) class MediaInformationBox extends Box(‘minf’) {
-}
-
-
-# Container: Sample Table Box (‘stbl’)
-# Mandatory: Yes
-# Quantity: Exactly one
-aligned(8) class SampleTableBox extends Box(‘stbl’) {
-}
-
-# Container: Track Box (‘trak’)
-# Mandatory: No
-# Quantity: Zero or one
-aligned(8) class EditBox extends Box(‘edts’) {
-}
-
-# Container: Media Information Box (‘minf’) or Meta Box (‘meta’)
-# Mandatory: Yes (required within ‘minf’ box) and No (optional within ‘meta’ box)
-# Quantity: Exactly one
-aligned(8) class DataInformationBox extends Box(‘dinf’) {
-}
-
-aligned(8) class UserDataBox extends Box(‘udta’) {
-}
 */
 
 /*
@@ -111,53 +52,20 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
 
     let inner_indent = format!("{}  ", indent);
 
-    while i < data.len() {
-        let (box_header, rest) = BoxHeader::parse(&data[i..])?;
-        let box_contents = &data[(i + BoxHeader::size_of())..(i + box_header.length as usize)];
+    let mut remaining = data;
+    while !remaining.is_empty() {
+        let (inst, rest) = Box::parse(remaining)?;
+        remaining = rest;
 
-        println!(
-            "{}{} : {}",
-            indent,
-            box_header.typ.as_str(),
-            box_header.length,
-        );
-
-        // TODO: When serializing these, we should align each box to 8 byte offsets.
-
-        match box_header.typ.as_str() {
-            "free" => {
-                println!("{}FREE", inner_indent);
-            }
-            "moov" | "trak" | "mdia" | "minf" | "stbl" | "edts" | "dinf" | "udta" => {
-                print_boxes(box_contents, &inner_indent)?;
-            }
-
-            "dref" => {
-                let (box_body, rest) = DataReferenceBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-
-                // TODO: Verify number of boxes against box_body.entry_count.
-                print_boxes(&box_body.boxes, &inner_indent)?;
-            }
-
-            "stsd" => {
-                let (box_body, rest) = SampleDescriptionBox::parse(&box_contents)?;
-                assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-
-                // TODO: Verify number of boxes against box_body.entry_count.
-                print_boxes(&box_body.entry_data, &inner_indent)?;
-            }
-            "avc1" => {
-                let (box_body, rest) = VisualSampleEntry::parse(&box_contents)?;
-                // assert!(rest.is_empty());
-                println!("{}{:?}", inner_indent, box_body);
-
-                print_boxes(rest, &inner_indent)?;
-            }
-
+        match inst.typ.as_str() {
             "mdat" => {
+                continue;
+
+                let box_contents = match &inst.value {
+                    BoxData::Unknown(v) => &v[..],
+                    _ => panic!(),
+                };
+
                 // NOTE: THe format will change depending on the coded.
 
                 let mut input = &box_contents[..];
@@ -170,14 +78,9 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
                 }
             }
             _ => {
-                let (data, rest) = BoxData::parse(&box_contents, &box_header.typ)?;
-                assert!(rest.is_empty());
-
-                println!("{}{:?}", inner_indent, data);
+                println!("{:#?}", inst);
             }
         }
-
-        i += box_header.length as usize;
     }
 
     Ok(())
@@ -185,6 +88,8 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
 
 #[executor_main]
 async fn main() -> Result<()> {
+    let b = BoxData::default();
+
     {
         let data = file::read("image.h264").await?;
 

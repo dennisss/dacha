@@ -14,27 +14,47 @@
 # }
 
 
-# structs {
-#     name: "Box"
-#     endian: BIG_ENDIAN
-#     field {
-#         name: "header"
-#         type { named: "BoxHeader" }
-#     }
-#     field {
-#         name: "data"
-#         type {
-#             buffer {
-#                 element_type { primitive: U8 }
-#                 length_field_name: "header.length"
-                
-#                 # end_terminated: true
-#             }
+structs {
+    name: "Box"
+    endian: BIG_ENDIAN
 
-#             codec { named: "BoxData" }
-#         }
-#     }
-# }
+    # TODO: May need padding depending on the absolute position in the file to align to 8.
+
+    # TODO: Deduplicate these with BoxHeader
+    field {
+        name: "length"
+        type { primitive: U32 }
+        # TODO: Switch to something more robust like data.len()
+        value: "data.len() + 8"
+    }
+    field {
+        name: "typ"
+        type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
+    }
+    field {
+        name: "data"
+        argument {
+            name: "length"
+            value: "length"
+        }
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                # TODO: Change to 'length - data.relative_offset()'
+                length: "length - 8"
+            }
+        }
+    }
+    field {
+        name: "value"
+        stream: "data"
+        type { named: "BoxData" }
+        argument {
+            name: "typ"
+            value: "typ"
+        }
+    }
+}
 
 structs {
     name: "BoxHeader"
@@ -127,7 +147,61 @@ unions {
         case_value: '"avcC"'
         type { named: "AVCDecoderConfigurationRecord" }
     }
-
+    case {
+        name: "AVC1",
+        case_value: '"avc1"'
+        type { named: "VisualSampleEntry" }
+    }
+    case {
+        name: "MovieBox",
+        case_value: '"moov"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "TrackBox",
+        case_value: '"trak"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "MediaBox",
+        case_value: '"mdia"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "MediaInformationBox",
+        case_value: '"minf"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "SampleTableBox",
+        case_value: '"stbl"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "EditBox",
+        case_value: '"edts"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "DataInformationBox",
+        case_value: '"dinf"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "UserDataBox",
+        case_value: '"udta"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "SampleDescriptionBox",
+        case_value: '"stsd"'
+        type { named: "SampleDescriptionBox" }
+    }
+    case {
+        name: "DataReferenceBox",
+        case_value: '"dref"'
+        type { named: "DataReferenceBox" }
+    }
     case {
         name: "Unknown"
         is_default: true
@@ -188,6 +262,68 @@ structs {
         type {
             buffer {
                 element_type { primitive: U32 }
+                end_terminated: true
+            }
+        }
+    }
+}
+
+
+# Container: File
+# Mandatory: Yes
+# Quantity: Exactly one
+# aligned(8) class MovieBox extends Box(‘moov’){
+# }
+
+
+# Container: Movie Box ('moov')
+# Mandatory: Yes
+# Quantity: One or more
+# aligned(8) class TrackBox extends Box('trak') {
+# }
+
+
+# Container: Track Box (‘trak’)
+# Mandatory: Yes
+# Quantity: Exactly one
+# aligned(8) class MediaBox extends Box(‘mdia’) {
+# }
+
+# Container: Media Box (‘mdia’)
+# Mandatory: Yes
+# Quantity: Exactly one
+# aligned(8) class MediaInformationBox extends Box(‘minf’) {
+# }
+
+# Container: Sample Table Box (‘stbl’)
+# Mandatory: Yes
+# Quantity: Exactly one
+# aligned(8) class SampleTableBox extends Box(‘stbl’) {
+# }
+
+# Container: Track Box (‘trak’)
+# Mandatory: No
+# Quantity: Zero or one
+# aligned(8) class EditBox extends Box(‘edts’) {
+# }
+
+# Container: Media Information Box (‘minf’) or Meta Box (‘meta’)
+# Mandatory: Yes (required within ‘minf’ box) and No (optional within ‘meta’ box)
+# Quantity: Exactly one
+# aligned(8) class DataInformationBox extends Box(‘dinf’) {
+# }
+
+# aligned(8) class UserDataBox extends Box(‘udta’) {
+# }
+
+structs {
+    name: "ContainerBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "children"
+        type {
+            buffer {
+                element_type { named: "Box" }
                 end_terminated: true
             }
         }
@@ -845,8 +981,13 @@ structs {
     }
 
     field {
-        name: "boxes"
-        type { buffer { element_type { primitive: U8 } end_terminated: true } }
+        name: "children"
+        type {
+            buffer {
+                element_type { named: "Box" }
+                length_field_name: "entry_count"
+            }
+        }
     }
 }
 
@@ -1066,8 +1207,13 @@ structs {
         type { primitive: U32 }
     }
     field {
-        name: "entry_data"
-        type { buffer { element_type { primitive: U8 } end_terminated: true } }
+        name: "children"
+        type {
+            buffer {
+                element_type { named: "Box" }
+                length_field_name: "entry_count"
+            }
+        }
     }
 }
 
@@ -1162,6 +1308,16 @@ structs {
         name: "pre_defined3"
         type { primitive: U16 }
         value: "0xFFFF"
+    }
+
+    field {
+        name: "children"
+        type {
+            buffer {
+                element_type { named: "Box" }
+                end_terminated: true
+            }
+        }
     }
 }
 

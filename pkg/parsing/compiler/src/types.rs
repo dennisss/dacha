@@ -11,7 +11,6 @@ use common::EventuallyCell;
 use crate::expression::Expression;
 use crate::expression::*;
 use crate::proto::*;
-use crate::size::*;
 use crate::struct_type::Field;
 
 /// A type description which can be
@@ -53,7 +52,6 @@ pub trait Type {
     fn serialize_bytes_expression(
         &self,
         value: &str,
-        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String>;
 
@@ -92,6 +90,10 @@ impl<'a, T: Type + 'a> TypePointer<'a> for T {
 }
 
 pub struct TypeParserContext<'a, 'b> {
+    /// When parsing, this is an '&[u8]' value.
+    /// When serializing, this is an '&mut Vec<u8>' value.
+    pub stream: String,
+
     /// Expression evaluating to the number of bytes that should follow the
     /// contents of the input buffer after the field is parsed (if it is
     /// well known at this point).

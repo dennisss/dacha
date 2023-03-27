@@ -96,7 +96,18 @@ impl<'a> Type for UnionType<'a> {
                 );
             }
 
-            let context = TypeParserContext {
+            let parse_context = TypeParserContext {
+                stream: "input".to_string(),
+
+                // TODO: REplace this with explcitly refining the 'input' buffer during parsing (so
+                // that it is properly inherited for structs inside of strucrs)
+                after_bytes: Some("0".to_string()),
+                arguments: &arguments,
+            };
+
+            let serialize_context = TypeParserContext {
+                stream: "out".to_string(),
+
                 // TODO: REplace this with explcitly refining the 'input' buffer during parsing (so
                 // that it is properly inherited for structs inside of strucrs)
                 after_bytes: Some("0".to_string()),
@@ -129,7 +140,7 @@ impl<'a> Type for UnionType<'a> {
                     (Self::{}(v), input)
                 }}"#,
                 match_value,
-                case_type.parse_bytes_expression(&context)?,
+                case_type.parse_bytes_expression(&parse_context)?,
                 case.name()
             ));
 
@@ -144,7 +155,7 @@ impl<'a> Type for UnionType<'a> {
                 }}"#,
                 match_value,
                 case.name(),
-                case_type.serialize_bytes_expression("v", "out", &context)?
+                case_type.serialize_bytes_expression("v", &serialize_context)?
             ));
 
             if case.is_default() {
@@ -226,15 +237,19 @@ impl<'a> Type for UnionType<'a> {
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
         let mut args = String::new();
         for arg in self.proto.argument() {
-            let val = context
-                .arguments
-                .get(arg.name())
-                .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
+            let val = context.arguments.get(arg.name()).ok_or_else(|| {
+                format_err!(
+                    "Argument '{}' not provided to '{}'",
+                    arg.name(),
+                    self.proto.name()
+                )
+            })?;
             args = format!(", &{}", val);
         }
 
         Ok(format!(
-            "parse_next!(input, |i| {}::parse(i{}))",
+            "parse_next!({}, |i| {}::parse(i{}))",
+            context.stream,
             self.proto.name(),
             args
         ))
@@ -244,19 +259,21 @@ impl<'a> Type for UnionType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
-        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         let mut args = String::new();
         for arg in self.proto.argument() {
-            let val = context
-                .arguments
-                .get(arg.name())
-                .ok_or_else(|| format_err!("Argument not provided: {}", arg.name()))?;
+            let val = context.arguments.get(arg.name()).ok_or_else(|| {
+                format_err!(
+                    "Argument '{}' not provided to '{}'",
+                    arg.name(),
+                    self.proto.name()
+                )
+            })?;
             args = format!(", &{}", val);
         }
 
-        Ok(format!("{}.serialize({}{})?;", value, output_buffer, args))
+        Ok(format!("{}.serialize({}{})?;", value, context.stream, args))
     }
 
     fn size_of(&self, field_name: &str) -> Result<Option<Expression>> {

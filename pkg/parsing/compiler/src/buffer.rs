@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use common::errors::*;
 use common::line_builder::*;
 
@@ -41,6 +43,7 @@ impl<'a> Type for BufferType<'a> {
                 format!("[{}; {}]", element_type, len)
             }
             BufferTypeProtoSizeCase::LengthFieldName(_)
+            | BufferTypeProtoSizeCase::Length(_) // TODO: Might be a constant expression.
             | BufferTypeProtoSizeCase::EndTerminated(_)
             | BufferTypeProtoSizeCase::EndMarker(_) => {
                 format!("Vec<{}>", element_type)
@@ -65,6 +68,7 @@ impl<'a> Type for BufferType<'a> {
                 format!("[{}]", parts.join(","))
             }
             BufferTypeProtoSizeCase::LengthFieldName(_)
+            | BufferTypeProtoSizeCase::Length(_) // TODO: The expression might be a constant
             | BufferTypeProtoSizeCase::EndTerminated(_)
             | BufferTypeProtoSizeCase::EndMarker(_) => {
                 format!("vec![]")
@@ -99,8 +103,6 @@ impl<'a> Type for BufferType<'a> {
         // or push to that. In some cases, we may want to give the inner
         // parser a mutable reference to improve efficiency?
 
-        let element_parser = self.element_type.get().parse_bytes_expression(context)?;
-
         let mut lines = LineBuilder::new();
         lines.add("{");
 
@@ -110,62 +112,81 @@ impl<'a> Type for BufferType<'a> {
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
                     self.proto.element_type().type_case()
                 {
-                    lines.add(format!(
-                        "\tlet mut buf = [{}::default(); {}];",
-                        self.element_type.get().type_expression()?,
-                        len
-                    ));
-
                     // TODO: Ensure that we always take exact a slice (and not Bytes as that
                     // is an expensive copy)!
-                    lines.add("\t{ let n = buf.len(); buf.copy_from_slice(parse_next!(input, ::parsing::take_exact(n))); }");
-                    lines.add("\tbuf");
-                } else {
                     lines.add(format!(
-                                "\tlet mut buf: [core::mem::MaybeUninit<{}>; {}] = core::mem::MaybeUninit::uninit_array();",
-                                self.element_type.get().type_expression()?,
-                                len
-                            ));
+                        r#"
+                        let mut buf = [{element_ty}::default(); {len}];
+                        let n = buf.len();
+                        buf.copy_from_slice(parse_next!({input}, ::parsing::take_exact(n)));
+                        buf
+                        "#,
+                        input = context.stream,
+                        element_ty = self.element_type.get().type_expression()?,
+                        len = len
+                    ));
+                } else {
+                    let element_parser = self.element_type.get().parse_bytes_expression(context)?;
 
-                    lines.add("\tfor i in 0..buf.len() {");
-                    lines.add(format!("\t\tbuf[i].write({});", element_parser));
-                    lines.add("\t}");
+                    // TODO: Need to generally verify that no arguments use this name either.
+                    // It would be easier if we wrap the logic in a function.
+                    assert!(context.stream != "buf");
 
-                    lines.add("\tunsafe {  core::mem::MaybeUninit::array_assume_init(buf) }");
+                    lines.add(format!(
+                        r#"
+                        let mut buf: [core::mem::MaybeUninit<{element_ty}>; {len}] = core::mem::MaybeUninit::uninit_array();
+
+                        for i in 0..buf.len() {{
+                            buf[i].write({element_parser});
+                        }}
+
+                        unsafe {{ core::mem::MaybeUninit::array_assume_init(buf) }}
+                        "#,
+                        element_ty = self.element_type.get().type_expression()?,
+                        len = len,
+                        element_parser = element_parser
+                    ));
                 }
             }
-            BufferTypeProtoSizeCase::LengthFieldName(name) => {
-                lines.add("\tlet mut buf = vec![];");
+            BufferTypeProtoSizeCase::Length(expr) => {
+                let mut scope = HashMap::new();
+                for (arg_name, arg_expr) in context.arguments {
+                    scope.insert(
+                        *arg_name,
+                        Symbol {
+                            typ: self.element_type.clone(), // TODO: Configure to the correct type.
+                            value: Some(arg_expr.clone()),
+                            size_of: None,
+                        },
+                    );
+                }
 
-                // TODO: Have a better way of handling this.
-                // Maybe require that both fields have matching presence expressions?
-                let len_expr = {
-                    context.arguments.get(name.as_str()).unwrap()
+                let len_expr = Expression::parse(expr)?.evaluate(&scope)?.unwrap();
 
-                    // let field = context.scope.get(name.as_str()).unwrap();
-                    // if !field.proto.presence().is_empty() {
-                    //     format!("{}_value.unwrap_or(0) as usize", name)
-                    // } else {
-                    //     format!("{}_value as usize", name)
-                    // }
-                };
+                lines.add("let mut buf = vec![];");
+                assert!(context.stream != "buf");
 
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
                     self.proto.element_type().type_case()
                 {
                     lines.add(format!(
-                        "\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact({} as usize)));",
+                        "\tbuf.extend_from_slice(parse_next!({}, ::parsing::take_exact({} as usize)));",
+                        context.stream,
                         len_expr
                     ));
                 } else {
+                    let element_parser = self.element_type.get().parse_bytes_expression(context)?;
+
                     lines.add(format!("\tbuf.reserve({} as usize);", len_expr));
-                    lines.add(format!("\tfor _ in 0..{}_value {{", name));
+                    lines.add(format!("\tfor _ in 0..({} as usize) {{", len_expr));
                     lines.add(format!("\t\tbuf.push({});", element_parser));
                     lines.add("\t}");
                 }
 
                 lines.add("\tbuf");
             }
+
+            BufferTypeProtoSizeCase::LengthFieldName(name) => todo!(), // Deprecated
             BufferTypeProtoSizeCase::EndTerminated(_) => {
                 let after_count = context
                     .after_bytes
@@ -177,40 +198,54 @@ impl<'a> Type for BufferType<'a> {
                 // TODO: Fix the remaining_bytes value used.
                 lines.add(format!(
                     r#"
-                            let length = input.len().checked_sub({})
-                                .ok_or_else(|| ::parsing::incomplete_error(0))?;"#,
-                    after_count
+                    let length = {}.len().checked_sub({})
+                        .ok_or_else(|| ::parsing::incomplete_error(0))?;"#,
+                    context.stream, after_count
                 ));
 
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
                     self.proto.element_type().type_case()
                 {
-                    lines.add("\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact(length)));");
-                } else {
                     lines.add(format!(
-                        r#"{{
-                                let mut input = parse_next!(input, ::parsing::take_exact(length));
-                                while !input.is_empty() {{
-                                    buf.push({});
-                                }}
-                            }}"#,
-                        element_parser
+                        "buf.extend_from_slice(parse_next!({input}, ::parsing::take_exact(length)));",
+                        input = context.stream
+                    ));
+                } else {
+                    // Here we need to change the internal parser.
+
+                    let element_parser =
+                        self.element_type
+                            .get()
+                            .parse_bytes_expression(&TypeParserContext {
+                                stream: "input".to_string(),
+                                after_bytes: None,
+                                arguments: &context.arguments,
+                            })?;
+
+                    lines.add(format!(
+                        r#"
+                        let mut input = parse_next!({input}, ::parsing::take_exact(length));
+                        while !input.is_empty() {{
+                            buf.push({element_parser});
+                        }}
+                        "#,
+                        input = context.stream,
+                        element_parser = element_parser
                     ));
                 }
 
                 lines.add("\tbuf");
             }
             BufferTypeProtoSizeCase::EndMarker(marker) => {
-                lines.add("{");
                 lines.add("\tlet mut buf = vec![];");
 
                 lines.add(format!(
                     "const MARKER: &'static [u8] = &{:?};",
                     marker.as_ref()
                 ));
-                lines.add(r#"
-                    let mut input = parse_next!(input, |i| ::parsing::search::parse_pattern_terminated_bytes(i, MARKER));
-                "#);
+                lines.add(format!(r#"
+                    let mut input = parse_next!({input}, |i| ::parsing::search::parse_pattern_terminated_bytes(i, MARKER));
+                "#, input = context.stream));
 
                 // TODO: We may be able to reserve memory if we know the size of each element.
 
@@ -220,6 +255,15 @@ impl<'a> Type for BufferType<'a> {
                 {
                     lines.add("\tbuf.extend_from_slice(input);");
                 } else {
+                    let element_parser =
+                        self.element_type
+                            .get()
+                            .parse_bytes_expression(&TypeParserContext {
+                                stream: "input".to_string(),
+                                after_bytes: None,
+                                arguments: &context.arguments,
+                            })?;
+
                     lines.add(format!(
                         r#"{{
                             while !input.is_empty() {{
@@ -231,8 +275,6 @@ impl<'a> Type for BufferType<'a> {
                 }
 
                 lines.add("\tbuf");
-
-                lines.add("}");
             }
             BufferTypeProtoSizeCase::Unknown => {
                 panic!();
@@ -249,21 +291,27 @@ impl<'a> Type for BufferType<'a> {
     fn serialize_bytes_expression(
         &self,
         value: &str,
-        output_buffer: &str,
         context: &TypeParserContext,
     ) -> Result<String> {
         let mut lines = LineBuilder::new();
 
         lines.add("{");
 
-        // TODO: If the length is not know ahead of time, serialize an empty length
-        // field and later fix it.
+        // TODO: Also implement the 'Length' case like this.
+        if let BufferTypeProtoSizeCase::Length(expr) = self.proto.size_case() {
+            let mut scope = HashMap::new();
+            for (arg_name, arg_expr) in context.arguments {
+                scope.insert(
+                    *arg_name,
+                    Symbol {
+                        typ: self.element_type.clone(), // TODO: Configure to the correct type.
+                        value: Some(arg_expr.clone()),
+                        size_of: None,
+                    },
+                );
+            }
 
-        if let BufferTypeProtoSizeCase::LengthFieldName(field) = self.proto.size_case() {
-            let len_value = context
-                .arguments
-                .get(field.as_str())
-                .ok_or_else(|| err_msg("Length field not fed as argument"))?;
+            let len_value = Expression::parse(expr)?.evaluate(&scope)?.unwrap();
 
             lines.add(format!(
                 r#"
@@ -275,7 +323,7 @@ impl<'a> Type for BufferType<'a> {
             ));
         }
 
-        lines.add("let start_i = out.len();");
+        lines.add(format!("let start_i = {}.len();", context.stream));
 
         // Optimized case for [u8]
         if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
@@ -288,27 +336,25 @@ impl<'a> Type for BufferType<'a> {
                 "\t{}",
                 self.element_type
                     .get()
-                    .serialize_bytes_expression("item", output_buffer, context)?
+                    .serialize_bytes_expression("item", context)?
             ));
             lines.add("}");
         }
 
         if let BufferTypeProtoSizeCase::EndMarker(marker) = self.proto.size_case() {
-            lines.add("let end_i = out.len();");
-
             lines.add(format!(
-                "const MARKER: &'static [u8] = &{:?};",
-                marker.as_ref()
-            ));
-            lines.add("out.extend_from_slice(MARKER);");
-
-            lines.add(
                 r#"
-            if ::parsing::search::find_byte_pattern(&out[start_i..], MARKER) != Some(end_i)  {
-                return Err(err_msg("Data contains end marker"));
-            }
-            "#,
-            );
+                let end_i = {output_buffer}.len();
+                const MARKER: &'static [u8] = &{marker:?};
+                {output_buffer}.extend_from_slice(MARKER);
+
+                if ::parsing::search::find_byte_pattern(&{output_buffer}[start_i..], MARKER) != Some(end_i)  {{
+                    return Err(err_msg("Data contains end marker"));
+                }}
+                "#,
+                output_buffer = context.stream,
+                marker = marker.as_ref(),
+            ));
         }
 
         lines.add("}");
@@ -331,10 +377,8 @@ impl<'a> Type for BufferType<'a> {
 
         let len = match self.proto.size_case() {
             BufferTypeProtoSizeCase::FixedLength(len) => Expression::Integer(*len as i64),
-            BufferTypeProtoSizeCase::LengthFieldName(name) => Expression::Field(FieldExpression {
-                field_path: vec![name.to_string()],
-                attribute: Attribute::ValueOf,
-            }),
+            BufferTypeProtoSizeCase::Length(expr) => Expression::parse(expr)?,
+            BufferTypeProtoSizeCase::LengthFieldName(name) => panic!(), // Deprecated
             BufferTypeProtoSizeCase::EndTerminated(_) | BufferTypeProtoSizeCase::EndMarker(_) => {
                 return Ok(None);
             }

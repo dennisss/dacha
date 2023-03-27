@@ -1,3 +1,5 @@
+use std::io::Write;
+
 // use crate::syntax::parse_proto;
 use common::errors::*;
 use file::{LocalPath, LocalPathBuf};
@@ -42,7 +44,19 @@ pub fn build() -> Result<()> {
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
         let output = Compiler::compile(lib)?;
-        std::fs::write(output_path, output)?;
+        std::fs::write(&output_path, output)?;
+
+        {
+            // TODO: This doesn't work with 'cross'
+            let res = std::process::Command::new("rustfmt")
+                .arg(output_path.as_str())
+                .output()?;
+            if !res.status.success() {
+                std::io::stdout().write_all(&res.stdout).unwrap();
+                std::io::stderr().write_all(&res.stderr).unwrap();
+                return Err(err_msg("rustfmt failed"));
+            }
+        }
     }
 
     Ok(())
