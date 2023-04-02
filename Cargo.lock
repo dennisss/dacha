@@ -504,9 +504,9 @@ dependencies = [
 
 [[package]]
 name = "cmake"
-version = "0.1.44"
+version = "0.1.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e56268c17a6248366d66d4a47a3381369d068cce8409bb1716ed77ea32163bb"
+checksum = "a31c789563b815f77f4250caee12365734369f942439b7defd71e18a48197130"
 dependencies = [
  "cc",
 ]
@@ -718,12 +718,6 @@ dependencies = [
  "quote 1.0.6",
  "syn 1.0.105",
 ]
-
-[[package]]
-name = "cty"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b365fabc795046672053e29c954733ec3b05e4be654ab130fe8f1f94d7051f35"
 
 [[package]]
 name = "custom_derive"
@@ -1105,9 +1099,9 @@ dependencies = [
 
 [[package]]
 name = "glfw"
-version = "0.44.0"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "103c29fa9d30c5371187895a10948d4f54b4111450328b4e439133d88243c5e3"
+checksum = "919ebc7bdbf60a529689a5e58f80d9dcde27e3d2ab4f2f7ce711ec439fe789c5"
 dependencies = [
  "bitflags",
  "glfw-sys",
@@ -1118,9 +1112,9 @@ dependencies = [
 
 [[package]]
 name = "glfw-sys"
-version = "3.3.2"
+version = "4.0.0+3.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b567b13b593ec58ea912b2658ee6230ffe20a069fa5b771800acc69bb3a157e"
+checksum = "5abed6d39a50226676aab893d6b4ad154da7e93fcdfed90d7696758a1b477ed1"
 dependencies = [
  "cmake",
 ]
@@ -1164,7 +1158,6 @@ dependencies = [
  "gl",
  "glfw",
  "image",
- "libc",
  "macros",
  "math",
  "parsing",
@@ -2198,12 +2191,9 @@ dependencies = [
 
 [[package]]
 name = "raw-window-handle"
-version = "0.4.3"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b800beb9b6e7d2df1fe337c9e3d04e3af22a124460fb4c30fcc22c9117cefb41"
-dependencies = [
- "cty",
-]
+checksum = "f2ff9a1f06a88b01621b7ae906ef0211290d1c8a168a15542486a8f61c0833b9"
 
 [[package]]
 name = "redox_syscall"
@@ -2367,6 +2357,7 @@ dependencies = [
  "crypto",
  "executor",
  "file",
+ "graphics",
  "image",
  "libcamera",
  "macros",
@@ -2374,6 +2365,7 @@ dependencies = [
  "storage",
  "sys",
  "v4l2",
+ "video",
 ]
 
 [[package]]

@@ -164,7 +164,7 @@ impl IoSubmissionUring {
             }
 
             IoUringOp::Noop => {
-                entry.opcode = bindings::IORING_OP_NOP as u8;
+                entry.opcode = kernel::io_uring_op::IORING_OP_NOP as u8;
             }
             IoUringOp::ReadV {
                 fd,
@@ -172,7 +172,7 @@ impl IoSubmissionUring {
                 buffers,
                 flags,
             } => {
-                entry.opcode = bindings::IORING_OP_READV as u8;
+                entry.opcode = kernel::io_uring_op::IORING_OP_READV as u8;
                 entry.fd = fd;
                 entry.set_off(offset);
                 entry.set_addr(unsafe { core::mem::transmute(buffers.as_ptr()) });
@@ -185,7 +185,7 @@ impl IoSubmissionUring {
                 buffers,
                 flags,
             } => {
-                entry.opcode = bindings::IORING_OP_WRITEV as u8;
+                entry.opcode = kernel::io_uring_op::IORING_OP_WRITEV as u8;
                 entry.fd = fd;
                 entry.set_off(offset);
                 entry.set_addr(unsafe { core::mem::transmute(buffers.as_ptr()) });

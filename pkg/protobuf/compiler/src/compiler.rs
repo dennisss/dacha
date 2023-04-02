@@ -1457,10 +1457,13 @@ impl Compiler<'_> {
                 MessageItem::OneOf(oneof) => {
                     let oneof_typename = self.oneof_typename(oneof, &inner_path);
                     lines.add(format!(
-                        "\tpub fn {}_case(&self) -> &{} {{ &self.{} }}",
-                        oneof.name,
-                        oneof_typename,
-                        Self::field_name_inner(&oneof.name)
+                        "
+                        pub fn {name}_case(&self) -> &{ty} {{ &self.{field} }}
+                        pub fn {name}_case_mut(&mut self) -> &mut {ty} {{ &mut self.{field} }}
+                        ",
+                        name = oneof.name,
+                        ty = oneof_typename,
+                        field = Self::field_name_inner(&oneof.name)
                     ));
 
                     for field in &oneof.fields {

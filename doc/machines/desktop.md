@@ -36,3 +36,18 @@ Follow this for how to get docker working as non-root:
 
 Installing Bazel
 - https://docs.bazel.build/versions/4.2.1/install-ubuntu.html#install-on-ubuntu
+
+
+Desktop USB muxing
+- Current
+    - First monitor USB mux
+        - Connect mouse + keyboard
+        - Connect bottom hub
+        - Connect top hub
+    - Next to Bottom
+- Future
+    - Pluggable Hub
+        - Monitor Hub
+        - Bottom Hub
+        - Top Hub
+        - Keyboard

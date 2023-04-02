@@ -1,4 +1,4 @@
-#![feature(maybe_uninit_array_assume_init, maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_array_assume_init, maybe_uninit_uninit_array, let_chains)]
 
 extern crate alloc;
 

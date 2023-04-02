@@ -109,62 +109,15 @@ cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
 
 In this section, we will describe the complete canonical process for setting up a Raspberry Pi as a cluster node.
 
-Note: Only using a 32-bit Pi OS is supported right now.
+**Step 1**: Flash image.
 
-**Custom Image Features**
+Follow the instructions [here](../rpi/index.md) to flash our custom image to all the SDcards you want to use in the cluster.
 
-We will be using a custom built Raspbian Lite image which has the following major deviations from the standard distribution:
+**Step 2**: Initialize the Pi:
 
-- Packages/users needed for running a cluster node are pre-installed.
-- Has UDev rules to allowlist all GPIO/I2C/SPI/USB/video devices for use by the the `cluster-node` user.
-- Disables unneeded features like HDMI output / Audio.
-- On boot, disables WiFi if Ethernet is available.
-
-**Step 1**: Create an ssh key that will be used to access all node machines.
-
-- `ssh-keygen -t ed25519` and save to `~/.ssh/id_cluster`
-
-**Step 2**: Configure the node image.
-
-Create a file at `third_party/pi-gen/config` with a config of the following form (by sure to populate the marked fields):
+Run the following with the Raspberry Pi powered on and connected to the network:
 
 ```
-IMG_NAME='Daspbian'
-ENABLE_SSH=1
-PUBKEY_SSH_FIRST_USER='<PASTE FROM ~/.ssh/id_cluster.pub>'
-PUBKEY_ONLY_SSH=1
-TARGET_HOSTNAME=cluster-node
-DEPLOY_ZIP=0
-TIMEZONE_DEFAULT=America/Los_Angeles
-LOCALE_DEFAULT=en_US.UTF-8
-WPA_ESSID=<NETWORK_NAME>
-WPA_PASSWORD=<PASSWORD>
-WPA_COUNTRY=US
-``` 
-
-Best practices:
-- It is recommended to configure separate WiFi and Ethernet images where the Ethernet image would have the `WPA_*` variables above commented out.
-  - This ensures that wired Pis have exactly one ip and no traffic accidentally goes other wifi.
-
-**Step 3**: Build the image:
-
-Run the following commands to generate the Raspberry Pi SD Card image using the aforementioned config:
-
-```
-cd third_party/pi-gen
-./build-docker.sh
-```
-
-**Step 4**: Flash the image located in `third_party/pi-gen/deploy/YYYY-MM-DD-Daspbian-lite.img` to all Pi SDCards.
-
-**Step 5**: Power on a Raspberry Pi with the above SDCard
-
-**Step 6**: Initialize the Pi:
-
-Run the following
-
-```
-cross build --target=armv7-unknown-linux-gnueabihf --bin cluster_node --release
 cargo run --bin cluster_node_setup -- --addr=[RASPBERRY_PI_IP_ADDRESS]
 ```
 

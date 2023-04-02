@@ -1,5 +1,5 @@
 use gl::types::{GLenum, GLint, GLsizei, GLuint};
-use image::Image;
+use image::{Colorspace, Image};
 
 use crate::opengl::window::*;
 
@@ -31,8 +31,6 @@ impl Texture {
 
         let mut object = 0;
 
-        // TODO: Check the colorspace.
-
         unsafe {
             gl::GenTextures(1, &mut object);
             gl::BindTexture(gl::TEXTURE_2D, object);
@@ -54,14 +52,20 @@ impl Texture {
             // opengl.
             gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
+            let format = match image.colorspace {
+                Colorspace::RGB => gl::RGB,
+                Colorspace::RGBA => gl::RGBA,
+                _ => todo!(),
+            };
+
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGB as GLint,
+                format as GLint,
                 image.width() as GLsizei,
                 image.height() as GLsizei,
                 0,
-                gl::RGB,
+                format,
                 gl::UNSIGNED_BYTE,
                 core::mem::transmute(image.array.data.as_ptr()),
             );

@@ -19,7 +19,7 @@ pub struct Application {
 impl Application {
     pub fn new() -> Self {
         let mut glfw_inst = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
-        glfw_inst.window_hint(glfw::WindowHint::ContextVersion(3, 2));
+        glfw_inst.window_hint(glfw::WindowHint::ContextVersion(4, 3)); // Minimum for compute shaders.
         glfw_inst.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
         glfw_inst.window_hint(glfw::WindowHint::OpenGlProfile(
             glfw::OpenGlProfileHint::Core,

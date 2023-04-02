@@ -113,17 +113,6 @@ enum StringCharset {
     UTF8 = 1;
 }
 
-message LayeredTypeProto {
-    TypeProto inner = 1;
-    TypeProto outer = 2;
-}
-
-message Value {
-    repeated int64 int64_value = 1;
-    repeated bool bool_value = 2;
-    bytes bytes_value = 3;
-}
-
 message FieldProto {
     string name = 1;
 
@@ -190,7 +179,8 @@ message UnionTypeCaseProto {
     string case_value = 4;
 
     // If true, then this is the default case that should be matched if none other is matched.
-    // In this case case_value is ignored. If is_default is set, then this must be the last case in the list.
+    // May only be true for the last case in the case list.
+    // If true, case_value is ignored for parsing but will be used to derive the case_value() when inspecting the union.
     bool is_default = 6;
 
     repeated FieldArgument argument = 5;

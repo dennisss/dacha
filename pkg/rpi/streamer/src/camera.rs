@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,9 +16,8 @@ pub struct CameraModule {
     /// TODO: Make private.
     pub config: libcamera::CameraConfiguration,
 
-    new_requests: Vec<libcamera::NewRequest>,
-    pending_requests: channel::Receiver<libcamera::PendingRequest>,
-    pending_request_returner: channel::Sender<libcamera::PendingRequest>,
+    new_request_sender: channel::Sender<libcamera::NewRequest>,
+    new_request_receiver: channel::Receiver<libcamera::NewRequest>,
 }
 
 impl CameraModule {
@@ -155,29 +154,39 @@ impl CameraModule {
 
         let (sender, receiver) = channel::unbounded();
 
+        for request in requests {
+            sender.try_send(request).unwrap();
+        }
+
         Ok(Self {
             camera: camera.start(Some(&controls))?,
             config,
-            new_requests: requests,
-            pending_requests: receiver,
-            pending_request_returner: sender,
+            new_request_sender: sender,
+            new_request_receiver: receiver,
         })
     }
 
-    /// NOTE: We require exclusive access
-    pub async fn wait_for_frame(&mut self) -> Result<CameraModuleRequest> {
-        // If this is the first frame we are waiting for, enqueue all the allocated
-        // request objects to run.
-        while let Some(request) = self.new_requests.pop() {
-            self.pending_request_returner
-                .send(request.enqueue()?)
-                .await?;
-        }
+    /// Requests that another frame be captured. This frame will be triggered
+    /// after all previously requested frames are done. May block if we hit the
+    /// max queue length.
+    pub async fn request_frame(&mut self) -> Result<CameraModuleRequest> {
+        let new_request = self.new_request_receiver.recv().await?;
+        let pending_request = new_request.enqueue()?;
+        Ok(CameraModuleRequest {
+            pending_request,
+            returner: self.new_request_sender.clone(),
+        })
+    }
+}
 
-        // Note: we assume that requests finish in the order they are enqueued.
-        let pending_request = self.pending_requests.recv().await?;
+pub struct CameraModuleRequest {
+    pending_request: libcamera::PendingRequest,
+    returner: channel::Sender<libcamera::NewRequest>,
+}
 
-        let completed_request = pending_request.await;
+impl CameraModuleRequest {
+    pub async fn wait(self) -> Result<CameraModuleFrame> {
+        let completed_request = self.pending_request.await;
         if completed_request.status() != libcamera::RequestStatus::RequestComplete {
             return Err(format_err!(
                 "Request not successfully completed: {} , {:?}",
@@ -195,29 +204,38 @@ impl CameraModule {
         );
         */
 
-        Ok(CameraModuleRequest {
-            returner: self.pending_request_returner.clone(),
-            request: completed_request,
+        Ok(CameraModuleFrame {
+            request: Some(completed_request),
+            returner: self.returner,
         })
     }
 }
 
-pub struct CameraModuleRequest {
-    returner: channel::Sender<libcamera::PendingRequest>,
-    request: libcamera::CompletedRequest,
+pub struct CameraModuleFrame {
+    /// NOTE: Always Some(_) before being dropped.
+    request: Option<libcamera::CompletedRequest>,
+
+    returner: channel::Sender<libcamera::NewRequest>,
 }
 
-impl Deref for CameraModuleRequest {
+impl Deref for CameraModuleFrame {
     type Target = libcamera::CompletedRequest;
 
     fn deref(&self) -> &Self::Target {
-        &self.request
+        self.request.as_ref().unwrap()
     }
 }
 
-impl CameraModuleRequest {
-    pub async fn reclaim(self) -> Result<()> {
-        self.returner.send(self.request.reuse().enqueue()?).await?;
-        Ok(())
+impl DerefMut for CameraModuleFrame {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.request.as_mut().unwrap()
+    }
+}
+
+impl Drop for CameraModuleFrame {
+    fn drop(&mut self) {
+        // Return the frame buffer to the camera.
+        // Ignore receiver errors as the CameraModule may have been dropped.
+        let _ = self.returner.try_send(self.request.take().unwrap().reuse());
     }
 }

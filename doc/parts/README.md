@@ -1,0 +1,1 @@
+MA730 part files downlaoded from https://www.monolithicpower.com/en/ma730.html

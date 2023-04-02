@@ -76,23 +76,6 @@ impl<'a> Type for BufferType<'a> {
         })
     }
 
-    fn value_expression(&self, value: &Value) -> Result<String> {
-        if value.int64_value().len() > 0 {
-            // TODO: This is only valid for fixed length fields.
-            return Ok(format!(
-                "[{}]",
-                value
-                    .int64_value()
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-
-        Err(err_msg("Unsupported value type"))
-    }
-
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
         // TODO: Other important cases:
         // - Sometimes want to support zero-copy access
@@ -348,7 +331,7 @@ impl<'a> Type for BufferType<'a> {
                 const MARKER: &'static [u8] = &{marker:?};
                 {output_buffer}.extend_from_slice(MARKER);
 
-                if ::parsing::search::find_byte_pattern(&{output_buffer}[start_i..], MARKER) != Some(end_i)  {{
+                if ::parsing::search::find_byte_pattern(&{output_buffer}[start_i..], MARKER) != Some(end_i - start_i)  {{
                     return Err(err_msg("Data contains end marker"));
                 }}
                 "#,

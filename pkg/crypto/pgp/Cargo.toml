@@ -1,0 +1,21 @@
+[package]
+name = "crypto_pgp"
+version = "0.0.0"
+edition = "2018"
+
+[lib]
+doctest = false
+
+[dependencies]
+macros = { path = "../../macros" }
+math = { path = "../../math" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+base_radix = { path = "../../base/radix" }
+
+[features]
+default = ["std", "alloc"]
+alloc = []
+std = []

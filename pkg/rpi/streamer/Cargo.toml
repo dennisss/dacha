@@ -15,5 +15,7 @@ crypto = { path = "../../crypto" }
 base_units = { path = "../../base/units" }
 base_radix = { path = "../../base/radix" }
 image = { path = "../../image" }
+graphics = { path = "../../graphics" }
+video = { path = "../../media/video" }
 v4l2 = { path = "../../../third_party/v4l2" }
 libcamera = { path = "../../../third_party/libcamera" }

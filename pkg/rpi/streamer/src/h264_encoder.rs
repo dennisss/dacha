@@ -1,29 +1,25 @@
+use std::sync::Arc;
+
 use common::errors::*;
 use executor::channel::queue::ConcurrentQueue;
 
-use crate::camera::CameraModuleRequest;
+use crate::camera::CameraModuleFrame;
 
 /// TODO: Move to another file.
 pub struct CameraFrameData {
-    // TODO: Make this stuff
-    pub request: CameraModuleRequest,
+    // TODO: Make this stuff private
+    pub frame: Arc<CameraModuleFrame>,
     pub stream_id: u64,
-}
-
-impl CameraFrameData {
-    pub async fn reclaim(self) -> Result<()> {
-        self.request.reclaim().await
-    }
 }
 
 impl v4l2::DMABufferData for CameraFrameData {
     fn as_raw_fd(&self) -> i32 {
-        let buf = self.request.buffer_by_id(self.stream_id).unwrap();
+        let buf = self.frame.buffer_by_id(self.stream_id).unwrap();
         buf.planes()[0].fd as i32
     }
 
     fn bytes_used(&self) -> usize {
-        let buf = self.request.buffer_by_id(self.stream_id).unwrap();
+        let buf = self.frame.buffer_by_id(self.stream_id).unwrap();
 
         let mut total = 0;
         for plane in buf.metadata().planes {
@@ -34,7 +30,7 @@ impl v4l2::DMABufferData for CameraFrameData {
     }
 
     fn length(&self) -> usize {
-        let buf = self.request.buffer_by_id(self.stream_id).unwrap();
+        let buf = self.frame.buffer_by_id(self.stream_id).unwrap();
 
         let mut total = 0;
         for plane in buf.planes() {
@@ -59,11 +55,14 @@ pub struct H264Encoder {
     output_stream: v4l2::Stream<v4l2::DMABuffer<CameraFrameData>>,
     output_buffers: ConcurrentQueue<v4l2::DMABuffer<CameraFrameData>>,
 
+    /// Stream on which the hardware encoder returns encoded H264 data.
+    /// Buffers are kept enqueued on this stream while the user isn't reading
+    /// from them.
     capture_stream: v4l2::Stream<v4l2::MMAPBuffer>,
-    // capture_buffers: ConcurrentQueue<v4l2::MMAPBuffer>,
 }
 
 impl H264Encoder {
+    /// Creates and starts up an H264 encoder.
     pub async fn create(options: H264EncoderOptions) -> Result<Self> {
         let mut dev = v4l2::Device::open("/dev/video11")?;
 
@@ -147,7 +146,6 @@ impl H264Encoder {
             output_stream,
             output_buffers: output_buffers.into(),
             capture_stream,
-            // capture_buffers: capture_buffers.into(),
         })
     }
 
@@ -155,10 +153,6 @@ impl H264Encoder {
         let mut output_buffer = self.output_buffers.pop_front().await;
         output_buffer.set_data(data);
         self.output_stream.enqueue_buffer(output_buffer).await?;
-
-        // let capture_buffer = self.capture_buffers.pop_front().await;
-        // self.capture_stream.enqueue_buffer(capture_buffer).await?;
-
         Ok(())
     }
 
@@ -173,35 +167,8 @@ impl H264Encoder {
         self.capture_stream.dequeue_buffer().await
     }
 
-    /*
-    pub async fn encode_data(
-        &mut self,
-        data: CameraFrameData,
-    ) -> Result<(v4l2::MMAPBuffer, CameraFrameData)> {
-        let mut output_buffer = match self.output_buffers.pop() {
-            Some(v) => v,
-            None => self.output_stream.dequeue_buffer().await?,
-        };
-
-        // TODO: Maybe return any old data in the request.
-
-        output_buffer.set_data(data);
-        self.output_stream.enqueue_buffer(output_buffer).await?;
-
-        // Waiting fot the output
-        let capture_buf = self.capture_stream.dequeue_buffer().await?;
-
-        let mut output_buffer = self.output_stream.dequeue_buffer().await?;
-        let data = output_buffer.take_data().unwrap();
-        self.output_buffers.push(output_buffer);
-
-        Ok((capture_buf, data))
-    }
-    */
-
     pub async fn return_buffer(&self, buffer: v4l2::MMAPBuffer) -> Result<()> {
         self.capture_stream.enqueue_buffer(buffer).await?;
-        // self.capture_buffers.push_back(buffer).await;
         Ok(())
     }
 }

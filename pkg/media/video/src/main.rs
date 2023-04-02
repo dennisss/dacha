@@ -25,27 +25,7 @@ in clause 2). Comments in the code fragments in this specification indicate info
 BigEndian
 
 
-
-
-
-
-
-
 */
-
-/*
-First we parse a
-
-
-
-Buffer  {}
-
-a string is a null terminated UTF-8 string.
-
-Decode as a string (requires having an underlying buffer)
-    - May also want to know the size (e.g. if we should make it )
-
- */
 
 fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
     let mut i = 0;
@@ -55,12 +35,15 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
     let mut remaining = data;
     while !remaining.is_empty() {
         let (inst, rest) = Box::parse(remaining)?;
+        let raw = &remaining[..(remaining.len() - rest.len())];
         remaining = rest;
+
+        let mut serialized = vec![];
+        inst.serialize(&mut serialized)?;
+        assert_eq!(&serialized[..], raw);
 
         match inst.typ.as_str() {
             "mdat" => {
-                continue;
-
                 let box_contents = match &inst.value {
                     BoxData::Unknown(v) => &v[..],
                     _ => panic!(),
@@ -88,10 +71,17 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let b = BoxData::default();
-
     {
         let data = file::read("image.h264").await?;
+
+        // TODO: Read the width/height from the H264 SPS.
+        let mut builder = MP4Builder::new(1296, 972, 30)?;
+        builder.append(&data)?;
+        let mp4_data = builder.finish()?;
+
+        file::write("generated.mp4", mp4_data).await?;
+
+        return Ok(());
 
         let mut iter = H264BitStreamIterator::new(&data);
 

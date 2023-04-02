@@ -46,10 +46,6 @@ impl<'a> Type for StringType<'a> {
         }
     }
 
-    fn value_expression(&self, value: &Value) -> Result<String> {
-        Err(err_msg("Values not supported"))
-    }
-
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
         let mut lines = LineBuilder::new();
         lines.add("{");

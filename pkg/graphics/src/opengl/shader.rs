@@ -143,16 +143,30 @@ impl Shader {
     // TODO: Clean up on Drop (also if only part of it succeeds, we should clean
     // up just that part).
     pub fn load(vertex_src: &str, fragment_str: &str, window: &mut Window) -> Result<Self> {
+        Self::load_program(
+            &[
+                (gl::VERTEX_SHADER, vertex_src),
+                (gl::FRAGMENT_SHADER, fragment_str),
+            ],
+            window,
+        )
+    }
+
+    pub fn load_compute(src: &str, window: &mut Window) -> Result<Self> {
+        Self::load_program(&[(gl::COMPUTE_SHADER, src)], window)
+    }
+
+    fn load_program(parts: &[(GLenum, &str)], window: &mut Window) -> Result<Self> {
         let mut context = window.context();
         context.make_current();
 
         unsafe {
-            let vertex_shader = gl_create_shader(gl::VERTEX_SHADER, vertex_src)?;
-            let fragment_shader = gl_create_shader(gl::FRAGMENT_SHADER, fragment_str)?;
-
             let program = gl::CreateProgram();
-            gl::AttachShader(program, vertex_shader);
-            gl::AttachShader(program, fragment_shader);
+
+            for (typ, src) in parts.iter().cloned() {
+                let shader = gl_create_shader(typ, src)?;
+                gl::AttachShader(program, shader);
+            }
 
             //			gl::BindFragDataLocation(program, 0,
             // std::ffi::CString::new("fragColor").unwrap().as_ptr());
@@ -362,10 +376,7 @@ fn gl_create_shader(typ: GLenum, src: &str) -> Result<GLuint> {
 fn gl_get_attrib(program: GLuint, name: &[u8]) -> Option<GLuint> {
     assert!(name.len() > 0 && *name.last().unwrap() == 0);
     let attr = unsafe {
-        gl::GetAttribLocation(
-            program,
-            core::mem::transmute::<*const u8, *const i8>(name.as_ptr()),
-        )
+        gl::GetAttribLocation(program, core::mem::transmute::<*const u8, _>(name.as_ptr()))
     };
 
     if attr < 0 {

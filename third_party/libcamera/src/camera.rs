@@ -36,13 +36,32 @@ pub struct Camera {
 unsafe impl Send for Camera {}
 unsafe impl Sync for Camera {}
 
+impl Drop for Camera {
+    fn drop(&mut self) {
+        if let Err(e) = ok_if_zero(unsafe { self.get_mut().stop() }) {
+            if e != sys::Errno::EACCES {
+                // If not started, we can't stop it.
+                eprintln!("Failed to stop the camera: {}", e);
+            }
+        }
+    }
+}
+
 struct CameraState {
     /// When in the 'Running' state, this will store a map of requests which
     /// have been enqueued to run but are not yet complete.
     ///
     /// The key is each request's pointer.
     pending_requests: HashMap<u64, Arc<Mutex<RequestQueueEntry>>>,
+
+    /// While the camera is running, we keep a listener connected to the
+    /// requestCompleted signal.
+    #[allow(unused)]
+    request_complete_slot: Option<UniquePtr<ffi::RequestCompleteSlot>>,
 }
+
+unsafe impl Send for ffi::RequestCompleteSlot {}
+unsafe impl Sync for ffi::RequestCompleteSlot {}
 
 pub(crate) struct RequestQueueEntry {
     /// If true, the request was either cancelled or completed.
@@ -61,6 +80,7 @@ impl Camera {
             raw,
             state: Arc::new(Mutex::new(CameraState {
                 pending_requests: HashMap::new(),
+                request_complete_slot: None,
             })),
         }
     }
@@ -156,6 +176,20 @@ impl Camera {
         state.pending_requests.insert(request_id, entry.clone());
 
         Ok(entry)
+    }
+
+    fn handle_request_complete(state: &Arc<Mutex<CameraState>>, request: &ffi::Request) {
+        let mut state = state.lock().unwrap();
+
+        let request_id = unsafe { core::mem::transmute::<&ffi::Request, _>(request) };
+
+        let entry = state.pending_requests.remove(&request_id).unwrap();
+        let mut guard = entry.lock().unwrap();
+
+        guard.done = true;
+        if let Some(waker) = guard.waker.take() {
+            waker.wake();
+        }
     }
 }
 
@@ -256,21 +290,27 @@ impl ConfiguredCamera {
         };
 
         ok_if_zero(unsafe { self.camera.get_mut().start(control_list) })?;
+
+        let state = self.camera.state.clone();
+
+        self.camera.state.lock().unwrap().request_complete_slot =
+            Some(ffi::camera_connect_request_completed(
+                self.camera.get_mut(),
+                |ctx, req| {
+                    (ctx.handler)(req);
+                },
+                Box::new(ffi::RequestCompleteContext {
+                    handler: Box::new(move |req| Camera::handle_request_complete(&state, req)),
+                }),
+            ));
+
         RunningCamera::create(self.camera)
     }
 }
 
 pub struct RunningCamera {
     camera: Arc<Camera>,
-
-    /// While the camera is running, we keep a listener connected to the
-    /// requestCompleted signal.
-    #[allow(unused)]
-    request_complete_slot: UniquePtr<ffi::RequestCompleteSlot>,
 }
-
-unsafe impl Send for RunningCamera {}
-unsafe impl Sync for RunningCamera {}
 
 impl Deref for RunningCamera {
     type Target = Camera;
@@ -282,35 +322,7 @@ impl Deref for RunningCamera {
 
 impl RunningCamera {
     fn create(camera: Arc<Camera>) -> Result<Self> {
-        let state = camera.state.clone();
-        let request_complete_slot = ffi::camera_connect_request_completed(
-            camera.get_mut(),
-            |ctx, req| {
-                (ctx.handler)(req);
-            },
-            Box::new(ffi::RequestCompleteContext {
-                handler: Box::new(move |req| Self::handle_request_complete(&state, req)),
-            }),
-        );
-
-        Ok(RunningCamera {
-            camera,
-            request_complete_slot,
-        })
-    }
-
-    fn handle_request_complete(state: &Arc<Mutex<CameraState>>, request: &ffi::Request) {
-        let mut state = state.lock().unwrap();
-
-        let request_id = unsafe { core::mem::transmute::<&ffi::Request, _>(request) };
-
-        let entry = state.pending_requests.remove(&request_id).unwrap();
-        let mut guard = entry.lock().unwrap();
-
-        guard.done = true;
-        if let Some(waker) = guard.waker.take() {
-            waker.wake();
-        }
+        Ok(Self { camera })
     }
 
     pub fn create_request(&self, cookie: u64) -> NewRequest {

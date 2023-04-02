@@ -51,14 +51,6 @@ impl Type for PrimitiveType {
         Ok(self.typename()?.to_string())
     }
 
-    fn value_expression(&self, value: &Value) -> Result<String> {
-        if value.int64_value().len() != 1 {
-            return Err(err_msg("Unsupported value"));
-        }
-
-        Ok(format!("{}", value.int64_value()[0]))
-    }
-
     fn parse_bytes_expression(&self, context: &TypeParserContext) -> Result<String> {
         Ok(format!(
             "parse_next!({}, ::parsing::binary::{}_{})",

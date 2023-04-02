@@ -69,50 +69,88 @@ impl<'a> H264BitStreamIterator<'a> {
         }
     }
 
-    pub fn next(&mut self) -> Option<&'a [u8]> {
-        if self.remaining.is_empty() {
+    pub fn peek<'b>(&'b mut self) -> Option<H264BitStreamIteratorPeek<'a, 'b>> {
+        let mut remaining = self.remaining;
+        let mut first = self.first;
+
+        if remaining.is_empty() {
             return None;
         }
 
         let mut last_byte = 0xff;
 
         let mut i = 0;
-        while i < self.remaining.len() {
-            if i + 3 > self.remaining.len() {
+        while i < remaining.len() {
+            if i + 3 > remaining.len() {
                 break;
             }
 
-            if &self.remaining[i..(i + 3)] == &[0, 0, 1] {
+            if &remaining[i..(i + 3)] == &[0, 0, 1] {
                 // Currently we will only support 4 byte start code sequences.
                 assert_eq!(last_byte, 0);
 
-                let data = &self.remaining[0..(i - 1)];
+                let data = &remaining[0..(i - 1)];
 
                 // Skip start code
-                self.remaining = &self.remaining[(i + 3)..];
+                remaining = &remaining[(i + 3)..];
 
                 // We expect the start of the stream to have a start code.
                 // So in this case, keep trying to find another start code.
-                if self.first {
+                if first {
                     assert!(data.is_empty());
-                    self.first = false;
+                    first = false;
                     i = 0;
                     last_byte = 0xff;
                     continue;
                 }
 
-                return Some(data);
+                return Some(H264BitStreamIteratorPeek {
+                    iter: self,
+                    data,
+                    remaining,
+                });
             }
 
-            last_byte = self.remaining[i];
+            last_byte = remaining[i];
             i += 1;
         }
 
-        assert!(!self.first);
+        assert!(!first);
 
         // Saw no start code, so return all the remaining data.
-        let rest = self.remaining;
-        self.remaining = &[];
-        Some(rest)
+        Some(H264BitStreamIteratorPeek {
+            iter: self,
+            data: remaining,
+            remaining: &[],
+        })
+    }
+
+    pub fn next(&mut self) -> Option<&'a [u8]> {
+        self.peek().map(|v| {
+            let d = v.data();
+            v.advance();
+            d
+        })
+    }
+
+    pub fn remaining(self) -> &'a [u8] {
+        self.remaining
+    }
+}
+
+pub struct H264BitStreamIteratorPeek<'a, 'b> {
+    iter: &'b mut H264BitStreamIterator<'a>,
+    data: &'a [u8],
+    remaining: &'a [u8],
+}
+
+impl<'a, 'b> H264BitStreamIteratorPeek<'a, 'b> {
+    pub fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn advance(mut self) {
+        self.iter.remaining = self.remaining;
+        self.iter.first = false;
     }
 }

@@ -181,6 +181,8 @@ mod ffi {
 
         unsafe fn start(self: Pin<&mut Camera>, control_list: *const ControlList) -> i32;
 
+        fn stop(self: Pin<&mut Camera>) -> i32;
+
         unsafe fn configure(self: Pin<&mut Camera>, config: *mut CameraConfiguration) -> i32;
 
         /// Thread safe

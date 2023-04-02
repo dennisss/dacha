@@ -10,9 +10,8 @@ image = { path = "../image" }
 reflection = { path = "../reflection" }
 macros = { path = "../macros" }
 parsing = { path = "../parsing" }
-libc = "0.2"
 typenum = "1.10.0"
-glfw = "0.44.0"
+glfw = "0.51.0"
 gl = "0.14.0"
 executor = { path = "../executor" }
 file = { path = "../file" }

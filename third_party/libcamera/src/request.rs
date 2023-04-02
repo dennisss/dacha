@@ -225,6 +225,10 @@ impl CompletedRequest {
         self.request.buffers.get(&stream_id)
     }
 
+    pub fn buffer_by_id_mut(&mut self, stream_id: u64) -> Option<&mut FrameBuffer> {
+        self.request.buffers.get_mut(&stream_id)
+    }
+
     pub fn sequence(&self) -> u32 {
         self.request.raw.sequence()
     }

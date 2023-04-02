@@ -29,12 +29,6 @@ pub trait Type {
         Ok(format!("{}::default()", self.type_expression()?))
     }
 
-    /// Constructs a Rust expression which evaluates to representation of
-    /// 'value' as this type.
-    fn value_expression(&self, value: &Value) -> Result<String> {
-        Err(err_msg("Values not supported"))
-    }
-
     /// Generates a string of code which evaluates to a parsed value of the type
     /// specified from an ambient buffer variable named 'input'. After the
     /// parsing is done, the code should also advance the 'input' buffer to
@@ -107,11 +101,6 @@ pub struct TypeParserContext<'a, 'b> {
     // TODO: The argument values should only be raw values and not references to values.
     // TODO: Need to validate that the types fed in are compatible with the types
     pub arguments: &'a HashMap<&'b str, String>,
-}
-
-pub enum TypeSerializeValue<'a> {
-    Constant(&'a Value),
-    Expression(&'a str),
 }
 
 pub trait TypeResolver<'a> {

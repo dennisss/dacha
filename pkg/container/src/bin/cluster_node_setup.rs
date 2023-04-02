@@ -7,17 +7,12 @@
 // -
 
 /*
-
-cross build --target=armv7-unknown-linux-gnueabihf --bin cluster_node --release
-
 /opt/dacha/bundle/...
 /opt/dacha/data/cluster/...
 
 Safety mesaures needed:
 - Must have a well defined local system time before the node can start running.
 - Need automatic detection on each RPC of clock syncronization
-
-Detecting
 
 */
 
@@ -158,6 +153,8 @@ async fn main() -> Result<()> {
     // NOTE: If the service doesn't exist yet, we'll ignore the error.
     run_ssh(&args.addr, "sudo systemctl stop cluster-node | true")?;
 
+    // TODO: Randomize this here just incase the machine-id wasn't regenerated since
+    // imaging the target machine.
     let machine_id = {
         let hex = run_ssh(&args.addr, "cat /etc/machine-id")?;
         let data = base_radix::hex_decode(hex.trim())?;

@@ -27,6 +27,7 @@ structs {
         # TODO: Switch to something more robust like data.len()
         value: "data.len() + 8"
     }
+    # TODO: Infer the value of this from the 'value.case_value' field
     field {
         name: "typ"
         type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
@@ -214,6 +215,14 @@ unions {
     }
 }
 
+structs {
+    name: "UnknownBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "typ"
+        type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
+    }
+}
 
 # aligned(8) class FullBox(unsigned int(32) boxtype, unsigned int(8) v, bit(24) f)
 #    extends Box(boxtype) {
@@ -251,7 +260,7 @@ structs {
     endian: BIG_ENDIAN
     field {
         name: "major_brand"
-        type { primitive: U32 }
+        type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
     }
     field {
         name: "minor_version"
@@ -261,7 +270,7 @@ structs {
         name: "compatible_brands"
         type {
             buffer {
-                element_type { primitive: U32 }
+                element_type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
                 end_terminated: true
             }
         }
@@ -691,7 +700,7 @@ structs {
     }
     field {
         name: "handler_type"
-        type { primitive: U32 }
+        type { string { buffer { element_type { primitive: U8 } fixed_length: 4 } charset: UTF8 } }
     }
     field {
         name: "reserved"
@@ -705,12 +714,7 @@ structs {
     }
     field {
         name: "name"
-        type {
-            buffer {
-                element_type { primitive: U8 }
-                end_terminated: true
-            }
-        }
+        type { string { buffer { element_type { primitive: U8 } end_marker: "\x00" } charset: UTF8 } }
     }
 }
 
@@ -946,7 +950,7 @@ structs {
 
     field {
         name: "location"
-        type { string { buffer { element_type { primitive: U8 } end_marker: "\\0" } charset: UTF8 } }
+        type { string { buffer { element_type { primitive: U8 } end_marker: "\x00" } charset: UTF8 } }
         # When self-contained flag is set, no location is present.
         presence: "full_box_header.flags & 1 == 0"
     }

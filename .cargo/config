@@ -28,5 +28,10 @@ rustflags=[
     #"-Clink-arg=-Wl,--no-rosegment",
     "-Cforce-frame-pointers=yes",
 
+    # For Raspberry Pi compilation
+    "-Clink-arg=-Wl,-rpath-link,/opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu",
+    "-Clink-arg=--sysroot=/opt/dacha/pi/rootfs",
+
     "-Awarnings"
+
 ]
