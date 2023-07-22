@@ -75,5 +75,6 @@
     "variant": "cpp",
     "module.h": "c"
   },
-  "C_Cpp.clang_format_fallbackStyle": "Google"
+  "C_Cpp.clang_format_fallbackStyle": "Google",
+  "rust-analyzer.showUnlinkedFileNotification": false
 }

@@ -1551,6 +1551,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "math_compute"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "compression",
+ "executor",
+ "file",
+ "macros",
+ "math",
+ "parsing",
+]
+
+[[package]]
 name = "maybe-uninit"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

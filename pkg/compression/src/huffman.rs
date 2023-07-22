@@ -15,7 +15,7 @@ enum HuffmanNode {
 }
 
 /// Binary tree container with values only at the leaf nodes.
-/// Attempts to insert a code as nother code's prefix will fail.
+/// Attempts to insert a code as another code's prefix will fail.
 ///
 /// NOTE: It is valid to insert a symbol multiple times with different codes.
 /// NOTE: It also does not guarantee that every path leads to a root.

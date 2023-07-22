@@ -49,11 +49,11 @@ pub trait CwiseMaxAssign<Rhs> {
 
 // OpAssign        : First trait to implement for MatrixBase.
 // op_assign       : Function in OpAssign to implement
-// op_assign_inner : Function with signature f(self: &mut T, other: &T) used to
+// op_assign_inner : Function with signature 'f(self: &mut T, other: T)' used to
 //                   implement op_assign on each element.
 // Op              : Second trait to implement for MatrixBase.
 // op
-// op_inner        : Function with signature f(self: T, other: &T)
+// op_inner        : Function with signature 'f(self: T, other: T) -> T'
 // ElType
 macro_rules! cwise_binary_op {
     ($OpAssign:ident, $op_assign:ident, $op_assign_inner:expr,

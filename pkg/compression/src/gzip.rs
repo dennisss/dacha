@@ -146,6 +146,7 @@ impl Header {
     }
 }
 
+#[derive(Debug)]
 struct Trailer {
     body_checksum: u32,
     uncompressed_size: u32,

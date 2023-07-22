@@ -13,7 +13,7 @@ use crate::reflection::*;
 
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct MapField<K: Clone + PartialEq + Hash + Eq, V: Clone> {
-    pub inner: Option<HashMap<K, V>>,
+    inner: Option<HashMap<K, V>>,
 }
 
 impl<K: Clone + PartialEq + Hash + Eq, V: Clone> ConstDefault for MapField<K, V> {

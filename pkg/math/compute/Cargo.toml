@@ -1,0 +1,13 @@
+[package]
+name = "math_compute"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../../common" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+macros = { path = "../../macros" }
+parsing = { path = "../../parsing" }
+compression = { path = "../../compression" }
+math = { path = "../" }

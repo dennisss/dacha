@@ -968,7 +968,7 @@ impl Compiler<'_> {
                 pub fn {name}(&self) -> &{pkg}::SetField<{typ}> {{
                     &self.{name}
                 }}
-            ",
+                ",
                 name = name,
                 typ = typ,
                 pkg = self.options.runtime_package
@@ -1216,6 +1216,27 @@ impl Compiler<'_> {
         lines.to_string()
     }
 
+    fn compile_map_field_accessors(&self, field: &MapField, path: TypePath) -> String {
+        let key_type = self.compile_field_type(&field.key_type, path, &field.options);
+        let value_type = self.compile_field_type(&field.value_type, path, &field.options);
+
+        format!(
+            r#"
+            pub fn {name}(&self) -> &{pkg}::MapField<{key_type}, {value_type}> {{
+                &self.{name}
+            }}
+            
+            pub fn {name}_mut(&mut self) -> &{pkg}::MapField<{key_type}, {value_type}> {{
+                &mut self.{name}
+            }}
+            "#,
+            name = field.name, // TODO: Use a nice name.
+            key_type = key_type,
+            value_type = value_type,
+            pkg = self.options.runtime_package
+        )
+    }
+
     fn compile_message(&mut self, msg: &MessageDescriptor, path: TypePath) -> Result<String> {
         /*
         Supporting oneof:
@@ -1426,7 +1447,9 @@ impl Compiler<'_> {
                     MessageItem::Field(field) => {
                         field_num_names.push((field.name.clone(), field.num));
                     }
-                    // TODO: Add map field accessors.
+                    MessageItem::MapField(field) => {
+                        field_num_names.push((field.name.clone(), field.num));
+                    }
                     _ => {}
                 }
             }
@@ -1475,7 +1498,9 @@ impl Compiler<'_> {
                 MessageItem::Field(field) => {
                     lines.add(self.compile_field_accessors(field, &inner_path, None));
                 }
-                // TODO: Add map field accessors.
+                MessageItem::MapField(field) => {
+                    lines.add(self.compile_map_field_accessors(field, &inner_path));
+                }
                 _ => {}
             }
         }
@@ -1539,6 +1564,7 @@ impl Compiler<'_> {
         lines.add("\t\t\tlet f = f?;");
         lines.add("\t\t\tmatch f.field_number {");
 
+        // TODO: Must also iterate over maps and oneofs.
         for field in msg.fields() {
             let name = self.field_name(field);
             let is_repeated = field.label == Label::Repeated;
@@ -1572,7 +1598,7 @@ impl Compiler<'_> {
                     for v in {typeclass}Codec::parse_repeated(&f) {{
                         self.{name}.insert(v?);
                     }}
-                ",
+                    ",
                     name = name,
                     typeclass = typeclass
                 );
@@ -1582,7 +1608,7 @@ impl Compiler<'_> {
                     for v in {typeclass}Codec::parse_repeated(&f) {{
                         self.{name}.push(v?);
                     }}
-                ",
+                    ",
                     name = name,
                     typeclass = typeclass
                 );

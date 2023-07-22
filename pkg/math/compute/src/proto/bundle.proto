@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package math_compute;
+
+message TensorBundleEntry {
+    DataType dtype = 1;
+    repeated uint32 shape = 2;
+
+    // 
+    uint32 shard_index = 3;
+
+    uint64 shard_offset = 4;
+
+    string checksum = 5;
+}
+

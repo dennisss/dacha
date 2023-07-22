@@ -126,10 +126,6 @@ fn compile_controls(namespace: &str, in_path: &str, out_dir: &Path) {
 
 fn main() {
     /*
-    cd /opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu
-    ln -sf /opt/dacha/pi/rootfs/lib/aarch64-linux-gnu/libpthread.so.0 libpthread.so
-
-    cargo run --bin file --release -- copy /media/dennis/rootfs /opt/dacha/pi/rootfs --skip_permission_denied --symlink_root=/opt/dacha/pi/rootfs
 
 
     PKG_CONFIG_PATH_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu/pkgconfig PKG_CONFIG_SYSROOT_DIR_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="--sysroot=/opt/dacha/pi/rootfs"  cargo build --target aarch64-unknown-linux-gnu --release --bin libcamera

@@ -18,6 +18,7 @@ pub mod buffer_queue;
 pub mod deflate;
 pub mod gzip;
 pub mod huffman;
+pub mod readable;
 mod slice_reader;
 pub mod snappy;
 pub mod tar;

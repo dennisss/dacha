@@ -17,7 +17,7 @@ worker {
         "--rpc_port=rpc",
         "--web_port=web",
         "--fan_pwm_pin=18",
-        "--led_pin=27"
+        # "--led_pin=27"
         # "--fan_inverted"
     ]
 

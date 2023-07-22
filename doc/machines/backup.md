@@ -28,3 +28,4 @@ Later:
 sudo zpool export tank
 ```
 
+TODO: Need to support preventing Linux sleep while drives are active.

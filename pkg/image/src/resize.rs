@@ -7,7 +7,7 @@ use crate::{Colorspace, Image};
 impl Image<u8> {
     /// Performs a bilinear resize.
     pub fn resize(&self, height: usize, width: usize) -> Self {
-        let mut data = Array::new(&[height, width, self.channels()]);
+        let mut data = Array::zeros(&[height, width, self.channels()]);
 
         let x_scale = (self.width() as f32) / (width as f32);
         let y_scale = (self.height() as f32) / (height as f32);

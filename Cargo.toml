@@ -17,6 +17,7 @@ members = [
 	"pkg/parsing/compiler",
 	"pkg/compression",
 	"pkg/math",
+	"pkg/math/compute",
 	"pkg/protobuf/core",
 	"third_party/protobuf_descriptor",
 	"pkg/protobuf/compiler",
@@ -36,7 +37,7 @@ members = [
 	"pkg/haystack",
 	"pkg/emulator",
 	"pkg/bittorrent",
-	# "pkg/symbolic"
+	# "pkg/math/symbolic"
 	"pkg/siglent",
 	"third_party/openssl",
 	"pkg/xml",

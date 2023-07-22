@@ -57,3 +57,6 @@ Instead prefer to split up the imports. e.g. like the following:
 use protobuf::text::ParseTextProto;
 use protobuf::StaticMessage;
 ```
+
+
+TODO: Naming things Config vs Options

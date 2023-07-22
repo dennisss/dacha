@@ -369,7 +369,7 @@ impl Inflater {
                     lens.push(c);
                 }
                 16 => {
-                    let n = 3 + (strm.read_bits(2)?.unwrap());
+                    let n = 3 + (strm.read_bits_exact(2)?);
                     // TODO: Avoid the unwrap here.
                     let l = *lens.last().unwrap();
                     for i in 0..n {
@@ -377,14 +377,14 @@ impl Inflater {
                     }
                 }
                 17 => {
-                    let n = 3 + (strm.read_bits(3)?.unwrap());
+                    let n = 3 + (strm.read_bits_exact(3)?);
                     // assert!(n <= 10);
                     for _ in 0..n {
                         lens.push(0);
                     }
                 }
                 18 => {
-                    let n = 11 + (strm.read_bits(7)?.unwrap());
+                    let n = 11 + (strm.read_bits_exact(7)?);
                     // assert!(n <= 138);
                     for i in 0..n {
                         lens.push(0);
