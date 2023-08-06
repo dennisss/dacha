@@ -25,6 +25,12 @@ message RustBinaryAttrs {
     bool no_default_features = 7;
     repeated string cfg = 8;
     string rustflags = 9;
+    repeated EnvironmentVariable env = 10;
+}
+
+message EnvironmentVariable {
+    string key = 1;
+    string value = 2;
 }
 
 enum RustCompiler {

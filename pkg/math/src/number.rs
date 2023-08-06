@@ -156,3 +156,23 @@ macro_rules! impl_float_type {
 
 impl_float_type!(f32);
 impl_float_type!(f64);
+
+impl Zero for bool {
+    fn is_zero(&self) -> bool {
+        *self == false
+    }
+
+    fn zero() -> Self {
+        false
+    }
+}
+
+impl One for bool {
+    fn is_one(&self) -> bool {
+        *self == true
+    }
+
+    fn one() -> Self {
+        true
+    }
+}

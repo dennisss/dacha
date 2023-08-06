@@ -98,6 +98,10 @@ impl BuildTarget for RustBinary {
         }
         cmd.env("RUSTFLAGS", rust_flags);
 
+        for var in self.attrs.env() {
+            cmd.env(var.key(), var.value());
+        }
+
         // TODO: Assert this is always
         if !self.attrs.target().is_empty() {
             cmd.arg("--target").arg(self.attrs.target());
