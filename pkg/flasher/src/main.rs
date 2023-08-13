@@ -5,6 +5,7 @@ extern crate uf2;
 extern crate usb;
 #[macro_use]
 extern crate macros;
+extern crate file;
 
 use common::errors::*;
 use uf2::*;
@@ -76,7 +77,8 @@ impl UF2Builder {
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
-    let elf = elf::ELF::read(&args.path).await?;
+    let data = file::read(&args.path).await?;
+    let elf = elf::ELF::parse(data)?;
 
     let mut firmware_builder = UF2Builder::new();
 

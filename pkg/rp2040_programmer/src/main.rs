@@ -1,10 +1,13 @@
 #[macro_use]
 extern crate common;
 extern crate elf;
+extern crate executor;
 extern crate parsing;
 extern crate usb;
 #[macro_use]
 extern crate macros;
+#[macro_use]
+extern crate file;
 
 use common::errors::*;
 use crypto::hasher::Hasher;
@@ -237,7 +240,8 @@ impl Command {
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let elf = elf::ELF::read(project_path!("target/thumbv6m-none-eabi/release/rp2040")).await?;
+    let data = file::read(project_path!("target/thumbv6m-none-eabi/release/rp2040")).await?;
+    let elf = elf::ELF::parse(data)?;
 
     let flash_start = 0x10000000;
     let mut flash_end = flash_start;
@@ -248,7 +252,7 @@ async fn main() -> Result<()> {
     // bin")).await?; flash_contents.extend_from_slice(&boot2);
     // flash_end += boot2.len();
 
-    for program_header in &elf.program_headers {
+    for (i, program_header) in elf.program_headers.iter().enumerate() {
         if program_header.typ != 1 {
             // PT_LOAD
             continue;
@@ -272,8 +276,7 @@ async fn main() -> Result<()> {
             program_header.vaddr, program_header.file_size
         );
 
-        let data = &elf.file[(program_header.offset as usize)
-            ..(program_header.offset as usize + program_header.file_size as usize)];
+        let data = elf.program_data(i);
 
         println!("{:x?}", data);
 

@@ -320,7 +320,7 @@ Dealing with corruption:
 - To mark a disk as good, we must verify by checking other disks with replicas of the same chunks that this disk contains the latest value of each chunk.
 
 
-#### Volume Filesystem
+#### Local Volume Files
 
 There is an internal file namespace (separate from the global `Blobstore` file path namespace) which is local to each `Volume` that is used to store metadata about that `Volume`.
 
@@ -336,12 +336,12 @@ This volume-level filesystem is mainly for internal usage as it is not replicate
     - TODO: In server startup, we need to reconcile this file across different volumes (make sure they all have a consistent view of volumes are in a pool).
 - `/chunks/...`
     - EmbeddedDB containing mapping from chunk ids to the block extents they represent on this disk.
-- `/namespace/[name]/...`
+- `/namespaces/[name]/...`
     - EmbeddedDB containing file metadata which is replicated on a single `Machine Pool`.
       - This is a map from file path to file proto (containing chunk ids).
     - Note that is strictly for defining a new file namespace. Files within the namespace may have their data stored on any local pool.
 
-The namespace table directories (`/namespace/[name]/...`) will be automatically mirrored across all the disks in a single pool:
+The namespace table directories (`/namespaces/[name]/...`) will be automatically mirrored across all the disks in a single pool:
 
 - The directories are treated as if they had the following replication settings
   - Plain mirroring across all N disks in the pool.
@@ -377,7 +377,7 @@ TODO: Must mark which chunks are used locally (so shouldn't be controllable by e
 For the purposes of being able to cross reference other namespaces in the same disk worker, each disk worker also exposes a virtual blob namespace which allows referencing the internal namespaces:
 
 - `blob://localhost/volumes/[volume-uuid]/`
-- `blob://localhost/namespace/[namespace-name]/`
+- `blob://localhost/namespaces/[namespace-name]/`
 
 Note that each disk worker will acquire a Cluster Node unique named TCP port so `localhost` without an explicit port specified is guaranteed to point to a well defined disk worker instance.
 

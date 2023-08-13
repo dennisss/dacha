@@ -63,7 +63,10 @@ impl MemoryMap {
                     TODO: When area.path == "[vdso]", we can read the ELF from memory to get the build id.
                     */
 
-                    let object = ELF::read(&area.path).await?;
+                    // NOTE: This mainly needs to support reading local files.
+                    let data = file::read(&area.path).await?;
+
+                    let object = ELF::parse(data)?;
                     let symbols = object.function_symbols()?;
                     symbols_per_file.insert(&area.path, symbols);
                     if let Some(id) = object.build_id()? {

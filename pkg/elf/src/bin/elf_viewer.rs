@@ -1,15 +1,17 @@
 #[macro_use]
 extern crate common;
-extern crate parsing;
 extern crate elf;
+extern crate parsing;
+#[macro_use]
+extern crate macros;
 
-use common::async_std::task;
 use common::errors::*;
 
-async fn run() -> Result<()> {
-    let elf =
-        elf::ELF::read("/home/dennis/workspace/dacha/target/release/sys")
-            .await?;
+#[executor_main]
+async fn main() -> Result<()> {
+    let elf = elf::ELF::read("target/debug/sys").await?;
+
+    println!("Build ID: {:x?}", elf.build_id()?);
 
     elf.print()?;
 
@@ -23,11 +25,7 @@ async fn run() -> Result<()> {
         total_size += program_header.file_size;
     }
 
-    println!("Total Size: {}", total_size);
+    println!("Total Loaded Size: {}", total_size);
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    task::block_on(run())
 }

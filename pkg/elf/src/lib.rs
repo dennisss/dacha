@@ -17,8 +17,6 @@ pub mod demangle;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::CStr;
 
-use common::async_std::fs;
-use common::async_std::path::Path;
 use common::bytes::Bytes;
 use common::errors::*;
 
@@ -37,8 +35,14 @@ pub const SHT_NOTE: u32 = 7;
 pub const ELF_NOTE_GNU: &'static [u8] = b"GNU\0";
 pub const NT_GNU_BUILD_ID: u32 = 3;
 
-pub struct ELF {
-    pub file: Vec<u8>,
+/// In-memory representation of an ELF executable/library file.
+/// This requires that all headers and all accessed sections are present in
+/// memory.
+///
+/// TODO: Check that all file offsets are in bounds rather than assuming that
+/// all offsets are valid (and potentially panicing)
+pub struct ELF<T> {
+    file: T,
 
     pub header: FileHeader,
 
@@ -47,24 +51,31 @@ pub struct ELF {
     pub section_headers: Vec<SectionHeader>,
 }
 
-impl ELF {
-    pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::read_impl(path.as_ref()).await
+impl<T: AsRef<[u8]>> ELF<T> {
+    pub fn parse(file: T) -> Result<Self> {
+        Self::parse_some(file, true, true)
     }
 
-    async fn read_impl(path: &Path) -> Result<Self> {
-        let file = fs::read(path).await?;
-        let header = FileHeader::parse(&file)?.0;
+    pub fn parse_some(
+        file: T,
+        parse_program_headers: bool,
+        parse_section_headers: bool,
+    ) -> Result<Self> {
+        let file_data = file.as_ref();
+
+        let header = FileHeader::parse(file_data)?.0;
 
         let mut program_headers = vec![];
-        {
+        if parse_program_headers {
             for i in 0..(header.program_header_entry_count as u64) {
                 let start =
                     header.program_header_offset + i * (header.program_header_entry_size as u64);
                 let end = start + header.program_header_entry_size as u64;
 
-                let (h, rest) =
-                    ProgramHeader::parse(&file[(start as usize)..(end as usize)], &header.ident)?;
+                let (h, rest) = ProgramHeader::parse(
+                    &file_data[(start as usize)..(end as usize)],
+                    &header.ident,
+                )?;
                 if rest.len() != 0 {
                     return Err(err_msg("Didn't parse entire program header"));
                 }
@@ -74,14 +85,16 @@ impl ELF {
         }
 
         let mut section_headers = vec![];
-        {
+        if parse_section_headers {
             for i in 0..(header.section_header_entry_count as u64) {
                 let start =
                     header.section_header_offset + i * (header.section_header_entry_size as u64);
                 let end = start + header.section_header_entry_size as u64;
 
-                let (h, rest) =
-                    SectionHeader::parse(&file[(start as usize)..(end as usize)], &header.ident)?;
+                let (h, rest) = SectionHeader::parse(
+                    &file_data[(start as usize)..(end as usize)],
+                    &header.ident,
+                )?;
                 if rest.len() != 0 {
                     return Err(err_msg("Didn't parse entire section header"));
                 }
@@ -91,7 +104,7 @@ impl ELF {
                     // 0.
 
                     // let strings = Bytes::from(
-                    //     &file[(h.offset as usize)..(h.offset as usize +
+                    //     &file_data[(h.offset as usize)..(h.offset as usize +
                     // h.size as usize)], );
                     // println!("{:?}", strings);
                 }
@@ -99,9 +112,6 @@ impl ELF {
                 section_headers.push(h);
             }
         }
-
-        // println!("{:#x?}", program_headers);
-        // println!("{:#x?}", section_headers);
 
         Ok(Self {
             file,
@@ -111,9 +121,15 @@ impl ELF {
         })
     }
 
-    fn section_data(&self, index: usize) -> &[u8] {
+    pub fn section_data(&self, index: usize) -> &[u8] {
         let s = &self.section_headers[index];
-        &self.file[(s.offset as usize)..(s.offset as usize + s.size as usize)]
+        &self.file.as_ref()[(s.offset as usize)..(s.offset as usize + s.size as usize)]
+    }
+
+    pub fn program_data(&self, index: usize) -> &[u8] {
+        let program_header = &self.program_headers[index];
+        &self.file.as_ref()[(program_header.offset as usize)
+            ..(program_header.offset as usize + program_header.file_size as usize)]
     }
 
     // TODO: Consider other options for generating this:
@@ -165,22 +181,23 @@ impl ELF {
     }
 
     pub fn print(&self) -> Result<()> {
-        let shstrtab = StringTable {
-            data: self.section_data(self.header.section_names_entry_index as usize),
-        };
-
         // TODO: Change the address zero padding length based on whether we are dealing
         // with a 32-bit or 64-bit architecture.
 
         for p in self.program_headers.iter() {
             println!(
-                "{:08x} - {:08x} [-> {:08x}]: {:?} {:?}",
-                p.paddr,
-                p.paddr + p.mem_size,
+                "[File: {:08x} - {:08x}] [Virt: {:08x} - {:08x}]: {:?} {:?}",
+                p.offset,
+                p.offset + p.file_size,
                 p.vaddr,
+                p.vaddr + p.mem_size,
                 ProgramHeaderType::from_value(p.typ),
                 p.flags
             );
+        }
+
+        if self.section_headers.is_empty() {
+            return Ok(());
         }
 
         println!("");
@@ -214,6 +231,10 @@ impl ELF {
         }
 
         println!("Sections:");
+
+        let shstrtab = StringTable {
+            data: self.section_data(self.header.section_names_entry_index as usize),
+        };
 
         for (i, section) in self.section_headers.iter().enumerate() {
             let name = shstrtab.get(section.name_offset as usize)?;
