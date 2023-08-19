@@ -9,5 +9,5 @@ common = { path = "../../common", default-features = false }
 [build-dependencies]
 common = { path = "../../common" }
 automata = { path = "../../automata" }
-cmsis_svd = { path = "../../cmsis_svd" }
+cmsis_svd = { path = "../cmsis_svd" }
 file = { path = "../../file" }

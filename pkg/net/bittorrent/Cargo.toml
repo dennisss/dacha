@@ -1,0 +1,20 @@
+[package]
+name = "bittorrent"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+http = { path = "../../http" }
+crypto = { path = "../../crypto" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+macros = { path = "../../macros" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

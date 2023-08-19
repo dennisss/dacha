@@ -8,8 +8,8 @@ common = { path = "../common" }
 macros = { path = "../macros" }
 peripheral = { path = "../peripheral" }
 rpi = { path = "../rpi" }
-stream_deck = { path = "../stream_deck" }
-hue = { path = "../hue" }
+stream_deck = { path = "../peripherals/devices/stream_deck" }
+hue = { path = "../peripherals/devices/hue" }
 protobuf = { path = "../protobuf" }
 container = { path = "../container" }
 

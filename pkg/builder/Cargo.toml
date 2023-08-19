@@ -10,7 +10,7 @@ protobuf = { path = "../protobuf" }
 compression = { path = "../compression" }
 crypto = { path = "../crypto" }
 sys = { path = "../sys" }
-skylark = { path = "../skylark" }
+skylark = { path = "./skylark" }
 google = { path = "../../third_party/google" }
 file = { path = "../file" }
 executor = { path = "../executor" }

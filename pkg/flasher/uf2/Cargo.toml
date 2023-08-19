@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-common = { path = "../common", default-features = false }
-crypto = { path = "../crypto", default-features = false }
+common = { path = "../../common", default-features = false }
+crypto = { path = "../../crypto", default-features = false }
 
 [features]
 default = ["std", "alloc"]

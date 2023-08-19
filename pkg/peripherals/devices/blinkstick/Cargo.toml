@@ -1,0 +1,19 @@
+[package]
+name = "blinkstick"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../../common" }
+usb = { path = "../../../usb" }
+automata = { path = "../../../automata" }
+regexp_macros = { path = "../../../automata/regexp_macros" }
+math = { path = "../../../math" }
+executor = { path = "../../../executor" }
+file = { path = "../../../file" }
+macros = { path = "../../../macros" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

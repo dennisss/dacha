@@ -1,0 +1,10 @@
+[package]
+name = "skylark"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+protobuf = { path = "../../protobuf" }
+crypto = { path = "../../crypto" }
