@@ -14,7 +14,7 @@ rpc = { path = "../rpc" }
 http = { path = "../http" }
 rpc_util = { path = "../rpc_util" }
 web = { path = "../web" }
-json = { path = "../json" }
+json = { path = "../format/json" }
 google = { path = "../../third_party/google" }
 
 [build-dependencies]

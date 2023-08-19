@@ -8,7 +8,7 @@ common = { path = "../common" }
 http = { path = "../http" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
-json = { path = "../json" }
+json = { path = "../format/json" }
 reflection = { path = "../reflection" }
 parsing = { path = "../parsing" }
 executor = { path = "../executor" }

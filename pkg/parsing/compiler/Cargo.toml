@@ -9,7 +9,7 @@ protobuf = { path = "../../protobuf" }
 macros = { path = "../../macros" }
 file = { path = "../../file" }
 parsing = { path = "../../parsing" }
-skylark = { path = "../../skylark" }
+skylark = { path = "../../builder/skylark" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../protobuf/compiler" }

@@ -10,7 +10,7 @@ protobuf_core = { path = "./core", default-features = false }
 protobuf_descriptor = { path = "../../third_party/protobuf_descriptor", optional = true }
 google = { path = "../../third_party/google", optional = true }
 macros = { path = "../macros" }
-json = { path = "../json", optional = true }
+json = { path = "../format/json", optional = true }
 protobuf_compiler = { path = "./compiler", optional = true }
 file = { path = "../file", optional = true }
 executor = { path = "../executor", optional = true }

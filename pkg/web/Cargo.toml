@@ -14,7 +14,7 @@ protobuf = { path = "../protobuf" }
 protobuf_json = { path = "../protobuf/json" }
 macros = { path = "../macros" }
 rpc_test = { path = "../rpc_test" }
-json = { path = "../json" }
+json = { path = "../format/json" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 

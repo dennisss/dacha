@@ -1,0 +1,11 @@
+[package]
+name = "json"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+reflection = { path = "../../reflection" }

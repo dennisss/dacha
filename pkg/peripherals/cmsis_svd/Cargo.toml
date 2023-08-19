@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-automata = { path = "../automata" }
-regexp_macros = { path = "../automata/regexp_macros" }
-common = { path = "../common" }
-parsing = { path = "../parsing" }
-xml = { path = "../xml" }
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+xml = { path = "../../format/xml" }

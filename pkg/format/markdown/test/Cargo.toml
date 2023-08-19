@@ -1,14 +1,13 @@
 [package]
-name = "hue"
+name = "markdown_test"
 version = "0.0.0"
 edition = "2018"
 
 [dependencies]
 common = { path = "../../../common" }
-http = { path = "../../../http" }
-json = { path = "../../../format/json" }
-net = { path = "../../../net" }
 parsing = { path = "../../../parsing" }
+json = { path = "../../../format/json" }
+markdown = { path = ".." }
 macros = { path = "../../../macros" }
-reflection = { path = "../../../reflection" }
+file = { path = "../../../file" }
 executor = { path = "../../../executor" }
