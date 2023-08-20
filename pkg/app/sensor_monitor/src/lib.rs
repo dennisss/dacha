@@ -266,7 +266,7 @@ pub async fn run() -> Result<()> {
             pages: vec![web::WebPageOptions {
                 title: "Sensor Monitor".into(),
                 path: "/".into(),
-                script_path: "built/pkg/sensor_monitor/web.js".into(),
+                script_path: "built/pkg/app/sensor_monitor/web.js".into(),
                 vars: None,
             }],
         });

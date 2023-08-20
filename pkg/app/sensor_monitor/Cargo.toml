@@ -1,0 +1,30 @@
+[package]
+name = "sensor_monitor"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+peripheral = { path = "../../peripheral" }
+http = { path = "../../http" }
+parsing = { path = "../../parsing" }
+sstable = { path = "../../sstable" }
+crypto = { path = "../../crypto" }
+web = { path = "../../web" }
+rpc = { path = "../../rpc" }
+datastore = { path = "../../datastore" }
+protobuf = { path = "../../protobuf" }
+macros = { path = "../../macros" }
+graphics = { path = "../../graphics" }
+image = { path = "../../image" }
+math = { path = "../../math" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../protobuf/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

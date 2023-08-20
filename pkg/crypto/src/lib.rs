@@ -222,8 +222,6 @@ pub mod sha512;
 mod sha_test;
 pub mod sip;
 #[cfg(feature = "std")]
-pub mod test;
-#[cfg(feature = "std")]
 pub mod tls;
 pub mod utils;
 #[cfg(feature = "std")]
