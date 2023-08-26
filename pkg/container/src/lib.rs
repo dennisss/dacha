@@ -12,7 +12,6 @@ extern crate protobuf;
 #[macro_use]
 extern crate macros;
 extern crate compression;
-extern crate google;
 extern crate rpc;
 extern crate sstable;
 #[macro_use]
@@ -29,22 +28,13 @@ pub mod init;
 pub mod manager;
 pub mod meta;
 pub mod node;
-mod proto;
+use container_proto::cluster as proto;
 mod runtime;
 pub mod service;
 mod setup_socket;
 
 pub use manager::main::main as manager_main;
 pub use node::main::main as node_main;
-pub use proto::blob::*;
-pub use proto::config::*;
-pub use proto::job::*;
-pub use proto::log::*;
-pub use proto::manager::*;
-pub use proto::meta::*;
-pub use proto::node::*;
-pub use proto::node_service::*;
-pub use proto::worker::*;
-pub use proto::worker_event::*;
+pub use proto::*;
 pub use runtime::ContainerRuntime;
 pub use service::resolver::ServiceResolver;

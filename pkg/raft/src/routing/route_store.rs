@@ -5,10 +5,7 @@ use std::time::SystemTime;
 
 use executor::{Condvar, CondvarGuard};
 
-use crate::proto::consensus::*;
-use crate::proto::ident::*;
-use crate::proto::routing::*;
-use crate::proto::server_metadata::GroupId;
+use crate::proto::*;
 
 /// Amount of time after which we will consider a route to be stale and no
 /// longer useable. (measured at the time at which the original server accounced

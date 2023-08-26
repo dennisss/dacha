@@ -12,7 +12,7 @@ rpc_util = { path = "../rpc_util" }
 protobuf = { path = "../protobuf" }
 sstable = { path = "../sstable" }
 macros = { path = "../macros" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 libc = "0.2"
 nix = "0.21.0"
 failure = "0.1.8"
@@ -20,9 +20,7 @@ executor = { path = "../executor" }
 file = { path = "../file" }
 net = { path = "../net" }
 base_radix = { path = "../base/radix" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf/compiler" }
+raft_proto = { path = "./proto" }
 
 [features]
 default = ["std"]

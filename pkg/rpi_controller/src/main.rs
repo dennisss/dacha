@@ -48,7 +48,7 @@ use std::time::Duration;
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
 use executor::sync::Mutex;
-use google::proto::empty::Empty;
+use protobuf_builtins::google::protobuf::Empty;
 use rpc_util::NamedPortArg;
 use rpi::gpio::*;
 use rpi::pwm::SysPWM;

@@ -1,0 +1,48 @@
+
+syntax = "proto3";
+
+package db.meta;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+/*
+Need to ensure the there's enough for 
+
+
+I would like to store all the data in the 
+
+I do need per-key metadata so it will be a little more complicated than just saying that 
+
+*/
+
+service Lock {
+    // Called by a client periodically to let the lock service know that it is still alive and that
+    // any held locks should be preserved.
+    rpc KeepAlive (google.protobuf.Empty) returns (KeepAliveResponse);
+
+    rpc Acquire (AcquireRequest) returns (Lease);
+
+    rpc Release (ReleaseRequest) returns (google.protobuf.Empty);
+}
+
+message Lease {
+    bytes key = 1;
+    google.protobuf.Timestamp expiration_time = 2;
+}
+
+message KeepAliveResponse {
+    // List of key locks which are still active.
+    repeated Lease leases = 1; 
+}
+
+message AcquireRequest {
+    bytes key = 1;
+    bool exclusive = 2;
+    google.protobuf.Duration duration = 3;
+}
+
+message ReleaseRequest {
+    bytes key = 1;
+}

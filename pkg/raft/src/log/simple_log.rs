@@ -9,9 +9,7 @@ use crate::atomic::*;
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::log::memory_log::*;
-use crate::proto::consensus::*;
-use crate::proto::ident::*;
-use crate::proto::log::SimpleLogValue;
+use crate::proto::*;
 
 /// A simple log implementation backed be a single file that is rewritten
 /// completely every time a flush is needed and otherwise stores all entries in

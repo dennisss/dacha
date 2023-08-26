@@ -5,9 +5,9 @@ use common::bytes::Bytes;
 use common::errors::*;
 use executor::channel;
 use executor::sync::Mutex;
-use raft::proto::consensus::LogEntryData;
+use raft::proto::LogEntryData;
 use raft::ReadIndex;
-use raft::{proto::consensus::LogPosition, proto::ident::Term, LogIndex, PendingExecutionResult};
+use raft::{proto::LogPosition, proto::Term, LogIndex, PendingExecutionResult};
 use sstable::db::{Snapshot, SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
 
@@ -15,7 +15,7 @@ use crate::meta::key_ranges::KeyRanges;
 use crate::meta::key_utils::*;
 use crate::meta::state_machine::EmbeddedDBStateMachine;
 use crate::meta::table_key::*;
-use crate::proto::key_value::*;
+use crate::proto::*;
 
 const MAX_KEYS_PER_TRANSACTION: usize = 100;
 

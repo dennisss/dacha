@@ -11,9 +11,7 @@ use crate::consensus::state::*;
 use crate::consensus::tick::*;
 use crate::log::log::*;
 use crate::log::log_metadata::*;
-use crate::proto::consensus::*;
-use crate::proto::consensus_state::*;
-use crate::proto::ident::*;
+use crate::proto::*;
 
 // TODO: Suppose the leader is waiting on an earlier truncation that is
 // preventing the pending_conflict from resolving. Should we allow it to still

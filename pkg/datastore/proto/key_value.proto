@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package db.meta;
+
+import "google/protobuf/empty.proto";
+
+// TODO: Need client affinity to ensure that one client is always talking to the same server.
+
+// TODO: Add an option in the HTTP client library to support request affinity with a single server
+
+service KeyValueStore {
+    // Retrieves a reference to a consistent point in time snapshot of the whole store.
+    rpc Snapshot (SnapshotRequest) returns (SnapshotResponse);
+
+    // Reads one or more key-value entries from storage.
+    rpc Read (ReadRequest) returns (stream ReadResponse);
+
+    // Executes one or more write operations atomically (setting or deleting key-value pairs).
+    //
+    // Errors:
+    // - FAILED_PRECONDITION: There was a conflicting write to the same keys as this write so the
+    //   request needs to be retried possibly at a higher read index.
+    rpc Execute (ExecuteRequest) returns (ExecuteResponse);
+
+    // Monitors a key prefix for changes returning all changes that occured since the server
+    // received this request.
+    //
+    // NOTE: A client should wait for the initial response head metadata to know that the server
+    // received the request.
+    //
+    // Each returned WatchResponse proto will represent a whole number of transactions (a
+    // transaction will not be split across multiple WatchResponse responses), but for each
+    // transaction, only changes matching the key criteria in the WatchRequest will be returned.
+    rpc Watch (WatchRequest) returns (stream WatchResponse);
+}
+
+message SnapshotRequest {
+    oneof type {
+        bool latest = 1;
+    }
+
+    bool optimistic = 2;
+}
+
+message SnapshotResponse {
+    uint64 read_index = 1;
+}
+
+message ReadRequest {
+    KeyRange keys = 1;
+
+    // If not specified, we will perform a linearizable read of the latest value.
+    uint64 read_index = 2;
+}
+
+message KeyRange {
+    bytes start_key = 1;
+    bytes end_key = 2;
+}
+
+message ReadResponse {
+    // Key-value pairs retrieved by executing the query in the ReadRequest.
+    // Values that were deleted will be excluded.
+    KeyValueEntry entry = 1;
+}
+
+message KeyValueEntry {
+    bytes key = 1;
+
+    bytes value = 2;
+
+    // When returned by the Watch() method, this is true to indicate that this key was deleted.
+    bool deleted = 3;
+
+    // Read only sequence number associated with the current value of this key.
+    // This monotonically increases whenever the key is modified but is NOT guranteed to be sequential.
+    uint64 sequence = 4;
+
+    // TODO: Also include metadata about the key.
+}
+
+message ExecuteRequest {
+    Transaction transaction = 1;
+}
+
+message Transaction {
+    // TODO: Support checking the state of a lock lease in a transaction.
+
+    // Index at which reads from this transaction where performed.
+    uint64 read_index = 1;
+
+    // Set of key ranges which must have not changed since read_index for this transaction to be
+    // executed.
+    repeated KeyRange reads = 2;
+
+    // New mutations to perform on the databse.
+    repeated Operation writes = 3;
+}
+
+message Operation {
+    bytes key = 1;
+ 
+    oneof type {
+        bytes put = 2;
+        bool delete = 3;
+    }
+}
+
+message ExecuteResponse {
+    // Minimum database log index at which the effects of this write operation are visible. 
+    uint64 read_index = 1;
+}
+
+message TransactionError {
+    TransactionErrorCode code = 1;
+}
+
+enum TransactionErrorCode {
+    UNKNOWN = 0;
+    
+}
+
+
+
+message WatchRequest {
+    bytes key_prefix = 1;
+}
+
+message WatchResponse {
+    repeated KeyValueEntry entries = 1;
+}

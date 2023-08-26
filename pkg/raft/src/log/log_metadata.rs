@@ -2,8 +2,7 @@ use std::collections::VecDeque;
 
 use common::algorithms::upper_bound_by;
 
-use crate::proto::consensus::LogPosition;
-use crate::proto::ident::LogIndex;
+use crate::proto::{LogIndex, LogPosition};
 
 /// Partial view of the full LogEntry log which only tracks the metadata
 /// associated with entries in the log (index, term, sequence).

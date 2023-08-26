@@ -6,13 +6,11 @@ edition = "2018"
 [dependencies]
 common = { path = "../../common" }
 protobuf = { path = "../../protobuf" }
+parsing_compiler_proto = { path = "./proto" }
 macros = { path = "../../macros" }
 file = { path = "../../file" }
 parsing = { path = "../../parsing" }
 skylark = { path = "../../builder/skylark" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../../protobuf/compiler" }
 
 [features]
 default = ["std"]

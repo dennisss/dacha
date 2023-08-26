@@ -10,6 +10,7 @@ protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }
+executor = { path = "../executor" }
 grpc_proto = { path = "../../third_party/grpc_proto" }
 
 [features]

@@ -14,5 +14,5 @@ protobuf_compiler = { path = "../../pkg/protobuf/compiler" }
 
 [features]
 default = ["std"]
-std = ["alloc"]
-alloc = []
+std = ["alloc", "common/std", "protobuf/std"]
+alloc = ["common/alloc", "protobuf/alloc"]

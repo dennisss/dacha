@@ -384,17 +384,28 @@ name = "builder"
 version = "0.1.0"
 dependencies = [
  "base_radix",
+ "builder_proto",
  "common",
  "compression",
  "crypto",
  "executor",
  "file",
- "google",
  "macros",
  "protobuf",
- "protobuf_compiler",
+ "protobuf_builtins",
  "skylark",
  "sys",
+]
+
+[[package]]
+name = "builder_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
 ]
 
 [[package]]
@@ -599,19 +610,19 @@ dependencies = [
  "builder",
  "common",
  "compression",
+ "container_proto",
  "crypto",
  "datastore",
  "executor",
  "failure",
  "file",
- "google",
  "http",
  "libc",
  "macros",
  "net",
  "nix 0.21.0",
  "protobuf",
- "protobuf_compiler",
+ "protobuf_builtins",
  "raft",
  "regexp_macros",
  "rpc",
@@ -619,6 +630,20 @@ dependencies = [
  "sstable",
  "sys",
  "usb",
+]
+
+[[package]]
+name = "container_proto"
+version = "0.0.0"
+dependencies = [
+ "builder_proto",
+ "common",
+ "googleapis_proto",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "rpc",
 ]
 
 [[package]]
@@ -691,7 +716,6 @@ dependencies = [
  "math",
  "openssl",
  "parsing",
- "perf",
  "pkix",
  "typenum",
 ]
@@ -707,6 +731,18 @@ dependencies = [
  "macros",
  "math",
  "parsing",
+]
+
+[[package]]
+name = "crypto_test"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "crypto",
+ "executor",
+ "file",
+ "macros",
+ "perf",
 ]
 
 [[package]]
@@ -776,21 +812,33 @@ dependencies = [
  "base_radix",
  "common",
  "crypto",
+ "datastore_proto",
  "executor",
  "file",
- "google",
  "http",
  "macros",
  "net",
  "parsing",
  "protobuf",
- "protobuf_compiler",
+ "protobuf_builtins",
  "raft",
  "rpc",
  "rpc_util",
  "sstable",
 ]
 
+[[package]]
+name = "datastore_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "raft_proto",
+ "rpc",
+]
 [[package]]
 name = "deb"
 version = "0.0.0"
@@ -1139,13 +1187,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "google"
-version = "0.1.0"
+
+name = "googleapis_proto"
+version = "0.0.0"
 dependencies = [
  "common",
+ "file",
  "macros",
+ "protobuf",
+ "protobuf_builtins",
  "protobuf_compiler",
- "protobuf_core",
 ]
 
 [[package]]
@@ -1745,11 +1796,11 @@ dependencies = [
  "container",
  "crypto",
  "executor",
- "google",
  "http",
  "macros",
  "nordic_proto",
  "protobuf",
+ "protobuf_builtins",
  "protobuf_compiler",
  "rpc",
  "rpc_util",
@@ -1862,9 +1913,19 @@ dependencies = [
  "file",
  "macros",
  "parsing",
+ "parsing_compiler_proto",
+ "protobuf",
+ "skylark",
+]
+
+[[package]]
+name = "parsing_compiler_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
  "protobuf",
  "protobuf_compiler",
- "skylark",
 ]
 
 [[package]]
@@ -1914,9 +1975,10 @@ dependencies = [
  "common",
  "elf",
  "executor",
- "google",
+ "file",
  "parsing",
  "protobuf",
+ "protobuf_builtins",
  "sys",
 ]
 
@@ -1929,10 +1991,10 @@ dependencies = [
  "elf",
  "executor",
  "file",
- "google",
  "parsing",
  "perf",
  "protobuf",
+ "protobuf_builtins",
  "sys",
 ]
 
@@ -2090,10 +2152,10 @@ dependencies = [
  "common",
  "executor",
  "file",
- "google",
  "json",
  "macros",
  "parsing",
+ "protobuf_builtins",
  "protobuf_compiler",
  "protobuf_core",
  "protobuf_descriptor",
@@ -2109,14 +2171,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "protobuf_builtins"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "file",
+ "macros",
+ "protobuf_compiler",
+ "protobuf_core",
+]
+
+[[package]]
 name = "protobuf_compiler"
 version = "0.1.0"
 dependencies = [
+ "automata",
+ "base_radix",
  "common",
+ "crypto",
  "file",
  "parsing",
  "protobuf_core",
  "protobuf_descriptor",
+ "regexp_macros",
 ]
 
 [[package]]
@@ -2144,6 +2221,16 @@ version = "0.1.0"
 dependencies = [
  "common",
  "json",
+ "macros",
+ "protobuf",
+ "protobuf_json_proto",
+]
+
+[[package]]
+name = "protobuf_json_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
  "macros",
  "protobuf",
  "protobuf_compiler",
@@ -2189,17 +2276,29 @@ dependencies = [
  "executor",
  "failure",
  "file",
- "google",
  "http",
  "libc",
  "macros",
  "net",
  "nix 0.21.0",
  "protobuf",
- "protobuf_compiler",
+ "protobuf_builtins",
+ "raft_proto",
  "rpc",
  "rpc_util",
  "sstable",
+]
+
+[[package]]
+name = "raft_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "rpc",
 ]
 
 [[package]]
@@ -2260,6 +2359,9 @@ dependencies = [
  "common",
  "crypto",
  "elf",
+ "executor",
+ "file",
+ "macros",
  "parsing",
  "usb",
 ]
@@ -2273,12 +2375,13 @@ dependencies = [
  "compression",
  "executor",
  "failure",
- "google",
+ "googleapis_proto",
  "http",
  "macros",
  "net",
  "parsing",
  "protobuf",
+ "protobuf_builtins",
  "protobuf_json",
  "regexp_macros",
 ]
@@ -2305,6 +2408,7 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "executor",
  "grpc_proto",
  "http",
  "macros",
@@ -2331,11 +2435,11 @@ version = "0.0.0"
 dependencies = [
  "common",
  "executor",
- "google",
  "http",
  "json",
  "macros",
  "protobuf",
+ "protobuf_builtins",
  "protobuf_compiler",
  "protobuf_json",
  "rpc",
@@ -2585,6 +2689,7 @@ dependencies = [
  "macros",
  "nordic_tools",
  "protobuf",
+ "protobuf_builtins",
  "rpc",
  "rpc_util",
 ]
@@ -2609,6 +2714,7 @@ dependencies = [
  "parsing",
  "parsing_compiler",
  "protobuf",
+ "protobuf_builtins",
  "protobuf_compiler",
  "reflection",
  "sstable",
@@ -3073,7 +3179,6 @@ dependencies = [
  "macros",
  "parsing",
  "protobuf",
- "protobuf_compiler",
  "protobuf_json",
  "regexp_macros",
  "rpc",

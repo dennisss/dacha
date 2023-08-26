@@ -23,14 +23,12 @@ rpc = { path = "../rpc" }
 rpc_util = { path = "../rpc_util" }
 net = { path = "../net" }
 raft = { path = "../raft" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 failure = "0.1.8"
 executor = { path = "../executor" }
 file = { path = "../file" }
 sys = { path = "../sys" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf/compiler" }
+container_proto = { path = "./proto" }
 
 [features]
 default = ["std"]

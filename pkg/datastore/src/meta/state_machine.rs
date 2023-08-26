@@ -10,8 +10,7 @@ use sstable::iterable::Iterable;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::meta::watchers::*;
-use crate::proto::key_value::{KeyValueEntry, WatchResponse};
-use crate::proto::meta::*;
+use crate::proto::*;
 
 /*
 Compaction strategy:

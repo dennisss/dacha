@@ -6,9 +6,7 @@ use crypto::sip::SipHasher;
 use protobuf::Message;
 
 use crate::label::Label;
-use crate::proto::bundle::*;
-use crate::proto::config::*;
-use crate::proto::rule::*;
+use crate::proto::*;
 
 #[derive(Clone)]
 pub struct BuildConfigTarget {
@@ -27,6 +25,7 @@ impl BuildConfigTarget {
         rust_binary.set_compiler(RustCompiler::CARGO);
 
         // TODO: Instead reference //pkg/builder/config:X
+        // ^ Yes, this is missing some stuff as is.
 
         let target = match (config.platform().architecture(), config.platform().os()) {
             (Architecture::AMD64, Os::LINUX) => "x86_64-unknown-linux-gnu",
@@ -38,7 +37,7 @@ impl BuildConfigTarget {
         rust_binary.set_target(target);
 
         config.add_rule_defaults({
-            let mut any = google::proto::any::Any::default();
+            let mut any = protobuf_builtins::google::protobuf::Any::default();
             any.pack_from(&rust_binary)?;
             any
         });

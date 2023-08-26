@@ -44,6 +44,7 @@ Directories under this repository are used as follows:
 - `pkg/[name](/[subname])*` : First party Rust crates
 - `doc/` : General documentation not associated with any specific package
 - `testdata/` : Data for testing stuff under `pkg/`
-- `third_party/` : Code and data dependencies imported from external sources.
+- `third_party/` : Code and data dependencies imported from external sources (not written originally in this repository).
+    - Code that interfaces with external services/devices may still exist in `pkg/`
     - As a general rule of thumb, we'd prefer to clone any dependencies into here rather than relying on package manager based vendoring.
 

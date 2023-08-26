@@ -28,9 +28,9 @@ extern crate json;
 // #[cfg(feature = "std")]
 // extern crate protobuf_compiler;
 #[cfg(feature = "std")]
-extern crate protobuf_descriptor;
+extern crate protobuf_builtins;
 #[cfg(feature = "std")]
-extern crate google;
+extern crate protobuf_descriptor;
 
 #[cfg(feature = "std")]
 mod descriptor_pool;

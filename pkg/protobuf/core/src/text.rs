@@ -177,12 +177,29 @@ impl TextMessageFile {
 
 /// Represents the text format of a
 // TextMessage = TextField*
-#[derive(Debug)]
-struct TextMessage {
+#[derive(Debug, Clone)]
+pub struct TextMessage {
     fields: Vec<TextField>,
 }
 
 impl TextMessage {
+    parser!(pub parse_value<&str, Self> => {
+        alt!(
+            seq!(c => {
+                c.next(is(symbol, '{'))?;
+                let val = c.next(Self::parse)?;
+                c.next(is(symbol, '}'))?;
+                Ok(val)
+            }),
+            seq!(c => {
+                c.next(is(symbol, '<'))?;
+                let val = c.next(Self::parse)?;
+                c.next(is(symbol, '>'))?;
+                Ok(val)
+            })
+        )
+    });
+
     parser!(parse<&str, Self> => {
         // TODO: Each field may be optionally followed by a ','
         map(delimited(TextField::parse, opt(is(symbol, ','))), |fields| Self { fields })
@@ -224,7 +241,7 @@ impl TextMessage {
 }
 
 // TextField = TextFieldName :?
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TextField {
     name: TextFieldName,
     value: TextValue,
@@ -246,7 +263,7 @@ impl TextField {
     }));
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum TextFieldName {
     Regular(String),
     Extension(String),
@@ -264,7 +281,7 @@ impl TextFieldName {
     ));
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum TextValue {
     Bool(bool),
     Integer(i64),
@@ -297,18 +314,7 @@ impl TextValue {
                 Self::Identifier(v)
             }
         }),
-        seq!(c => {
-            c.next(is(symbol, '{'))?;
-            let val = c.next(TextMessage::parse)?;
-            c.next(is(symbol, '}'))?;
-            Ok(Self::Message(val))
-        }),
-        seq!(c => {
-            c.next(is(symbol, '<'))?;
-            let val = c.next(TextMessage::parse)?;
-            c.next(is(symbol, '>'))?;
-            Ok(Self::Message(val))
-        }),
+        map(TextMessage::parse_value, |v| Self::Message(v)),
         seq!(c => {
             c.next(is(symbol, '['))?;
             let values = c.next(delimited(Self::parse, is(symbol, ',')))?;

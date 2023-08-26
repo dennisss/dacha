@@ -13,7 +13,7 @@ use file::dir_lock::DirLock;
 use file::LocalPathBuf;
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
-use raft::proto::routing::RouteLabel;
+use raft::proto::RouteLabel;
 use raft::PendingExecutionResult;
 use raft::StateMachine;
 use rpc_util::AddReflection;
@@ -24,10 +24,7 @@ use crate::meta::constants::*;
 use crate::meta::state_machine::*;
 use crate::meta::table_key::TableKey;
 use crate::meta::transaction::*;
-use crate::proto::client::*;
-use crate::proto::key_value::*;
-use crate::proto::meta::UserDataSubKey;
-use crate::proto::server::*;
+use crate::proto::*;
 
 /*
 
@@ -276,7 +273,7 @@ impl Metastore {
     }
 
     async fn config_change(&self, request: &ConfigChangeRequest) -> Result<()> {
-        let mut entry = raft::proto::consensus::LogEntryData::default();
+        let mut entry = raft::proto::LogEntryData::default();
         match request.change_case() {
             ConfigChangeRequestChangeCase::RemoveServer(id) => {
                 entry.config_mut().set_RemoveServer(id.clone());
@@ -303,7 +300,7 @@ impl Metastore {
 impl ClientManagementService for Metastore {
     async fn NewClient(
         &self,
-        request: rpc::ServerRequest<google::proto::empty::Empty>,
+        request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         response: &mut rpc::ServerResponse<NewClientResponse>,
     ) -> Result<()> {
         response.value.set_client_id(self.new_unique_id().await?);
@@ -316,15 +313,15 @@ impl ServerManagementService for Metastore {
     async fn ConfigChange(
         &self,
         request: rpc::ServerRequest<ConfigChangeRequest>,
-        resposne: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        resposne: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         self.config_change(&request.value).await
     }
 
     async fn CurrentStatus(
         &self,
-        req: rpc::ServerRequest<google::proto::empty::Empty>,
-        res: &mut rpc::ServerResponse<raft::proto::consensus::Status>,
+        req: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
+        res: &mut rpc::ServerResponse<raft::proto::Status>,
     ) -> Result<()> {
         res.value = self.shared.node.server().current_status().await;
         Ok(())

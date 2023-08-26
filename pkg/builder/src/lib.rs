@@ -16,7 +16,7 @@ mod context;
 mod label;
 mod package;
 mod platform;
-pub mod proto;
+pub use builder_proto::builder as proto;
 pub mod rule;
 mod rules;
 pub mod target;

@@ -13,7 +13,7 @@ use file::LocalPath;
 use protobuf::{Message, StaticMessage};
 use sstable::record_log::{RecordReader, RecordWriter};
 
-use crate::proto::log::*;
+use crate::proto::*;
 
 const MAX_LINE_SIZE: usize = 1024 * 8;
 
@@ -48,6 +48,9 @@ pub struct FileLogWriterOptions {
     pub flush_on_timeout: Duration,
 }
 
+/// Writer for appending to a file based process output log.
+///
+/// The log is internally an ordered list of LogEntry proto records.
 pub struct FileLogWriter {
     log: Mutex<RecordWriter>,
 }
@@ -60,6 +63,9 @@ impl FileLogWriter {
         })
     }
 
+    /// Reads all the contents of 'file' and writes it to the log.
+    ///
+    /// - 'stream': Tag to use when creating log entries read from the file.
     pub async fn write_stream(&self, file: LocalFile, stream: LogStream) -> Result<()> {
         FileLogStreamWriter {
             log: &self.log,
@@ -78,6 +84,8 @@ struct FileLogStreamWriter<'a> {
 impl<'a> FileLogStreamWriter<'a> {
     /*
     Want to support not waiting for lines to be flushed.
+    - Need to explicitly flus once done
+
     Also want to support waiting for at least N bytes
     */
 
@@ -162,25 +170,16 @@ mod tests {
 
     #[testcase]
     async fn test_read_in() -> Result<()> {
-        // /opt/dacha/container/run/e82883425bad091305a70b02bc59d69d/log
-
-        let mut reader =
-            FileLogReader::open("/opt/dacha/container/run/e82883425bad091305a70b02bc59d69d/log")
-                .await?;
-
-        while let Some(record) = reader.read().await? {}
-
-        return Ok(());
-
         let mut data = vec![];
         data.resize(60000, 0);
         crypto::random::global_rng().generate_bytes(&mut data).await;
 
-        let mut writer = RecordWriter::open(&Path::new("/tmp/log")).await?;
+        // TODO: Must improve the RecordWriter.
+        let mut writer = RecordWriter::create_new(&LocalPath::new("/tmp/log")).await?;
         writer.append(&data).await?;
         drop(writer);
 
-        let mut reader = RecordReader::open(&Path::new("/tmp/log")).await?;
+        let mut reader = RecordReader::open(&LocalPath::new("/tmp/log")).await?;
 
         let data_read = reader.read().await?;
         assert_eq!(data_read, Some(data));

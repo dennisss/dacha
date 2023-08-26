@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use common::errors::*;
 
-use crate::proto::routing::*;
+use crate::proto::*;
 use crate::routing::route_store::*;
 
 /// Most basic mode of discover service based on an initial list of server

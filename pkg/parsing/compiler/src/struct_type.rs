@@ -307,7 +307,11 @@ impl<'a> Type for StructType<'a> {
             }
 
             let field_name = Self::nice_field_name(field.name());
-            let field_ty = &self.fields[field_name].typ;
+            let field_ty = &self
+                .fields
+                .get(field.name())
+                .ok_or_else(|| format_err!("Unknown field: {}", field.name()))?
+                .typ;
 
             let mut typename = field_ty.get().type_expression()?;
             if !field.presence().is_empty() {
@@ -342,6 +346,7 @@ impl<'a> Type for StructType<'a> {
                             typ: arg_type.clone(),
                             value: Some(arg.name().to_string()),
                             size_of: None,
+                            is_option: false,
                         },
                     );
                 }
@@ -353,6 +358,7 @@ impl<'a> Type for StructType<'a> {
                             typ: field.typ.clone(),
                             value: None,
                             size_of: None, // TODO: If a constant, we can evaluate this now.
+                            is_option: !field.proto.presence().is_empty(),
                         },
                     );
                 }
@@ -510,14 +516,20 @@ impl<'a> Type for StructType<'a> {
                         r#"
                         {{
                             let expected_value = {} as {};
-                            if expected_value != {}_value {{
+                            if expected_value != {}_value{} {{
                                 return Err(err_msg("Wrong field value"));
                             }}
                         }}
                         "#,
                         value,
                         field.typ.get().type_expression()?,
-                        Self::nice_field_name(field_name)
+                        Self::nice_field_name(field_name),
+                        // TODO: Have a better solution than this.
+                        if field.proto.presence().is_empty() {
+                            ""
+                        } else {
+                            ".unwrap_or(0)"
+                        }
                     ));
 
                     pending_value_check.pop_front();
@@ -556,6 +568,7 @@ impl<'a> Type for StructType<'a> {
                             typ: arg_type.clone(),
                             value: Some(arg.name().to_string()),
                             size_of: None,
+                            is_option: false,
                         },
                     );
                 }
@@ -578,6 +591,7 @@ impl<'a> Type for StructType<'a> {
                             typ: field.typ.clone(),
                             value,
                             size_of: None, // TODO: If a constant, we can evaluate this now.
+                            is_option: !field.proto.presence().is_empty(),
                         },
                     );
                 }

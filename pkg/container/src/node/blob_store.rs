@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use builder::proto::bundle::{BlobFormat, BlobSpec};
+use builder::proto::{BlobFormat, BlobSpec};
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use crypto::hasher::Hasher;
@@ -14,7 +14,7 @@ use file::{LocalFile, LocalFileOpenOptions, LocalPathBuf};
 use sstable::EmbeddedDB;
 
 use crate::node::workers_table::*;
-use crate::proto::blob::*;
+use crate::proto::*;
 
 // A blob id is an 'algorithm:lowercase_hex_digest'
 // e.g. 'sha256:012345789ab...'
@@ -222,7 +222,7 @@ impl BlobStore {
     async fn upload_impl<'a>(
         &self,
         mut request: rpc::ServerStreamRequest<BlobData>,
-        response: &mut rpc::ServerResponse<'a, google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<'a, protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         let first_part = request.recv().await?.ok_or_else(|| {
             rpc::Status::invalid_argument("Expected at least one request message")
@@ -471,7 +471,7 @@ impl BlobWriter {
 impl BlobStoreService for BlobStore {
     async fn List(
         &self,
-        request: rpc::ServerRequest<google::proto::empty::Empty>,
+        request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         response: &mut rpc::ServerResponse<BlobListResponse>,
     ) -> Result<()> {
         let state = self.shared.state.lock().await;
@@ -489,7 +489,7 @@ impl BlobStoreService for BlobStore {
     async fn Upload(
         &self,
         mut request: rpc::ServerStreamRequest<BlobData>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         self.upload_impl(request, response).await
     }
@@ -505,7 +505,7 @@ impl BlobStoreService for BlobStore {
     async fn Delete(
         &self,
         request: rpc::ServerRequest<BlobDeleteRequest>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         self.delete_impl(request.blob_id()).await
     }

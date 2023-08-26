@@ -9,6 +9,7 @@ macros = { path = "../../pkg/macros" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../pkg/protobuf/compiler" }
+file = { path = "../../pkg/file" }
 
 [features]
 default = ["std"]

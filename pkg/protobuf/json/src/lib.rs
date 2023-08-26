@@ -8,7 +8,6 @@ extern crate protobuf;
 extern crate macros;
 
 mod parser;
-mod proto;
 mod serializer;
 
 pub use parser::*;
@@ -17,8 +16,8 @@ pub use serializer::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::proto::test::TestMessage;
     use common::errors::*;
+    use protobuf_json_proto::TestMessage;
 
     #[test]
     fn json_ser_deser_test() -> Result<()> {

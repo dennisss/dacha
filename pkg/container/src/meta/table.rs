@@ -6,7 +6,7 @@ use datastore::key_encoding::KeyEncoder;
 use datastore::meta::client::{MetastoreClient, MetastoreClientInterface};
 use protobuf::{Enum, Message, StaticMessage};
 
-use crate::proto::meta::*;
+use crate::proto::*;
 
 /// Table interface on top of the cluster's metastore.
 ///

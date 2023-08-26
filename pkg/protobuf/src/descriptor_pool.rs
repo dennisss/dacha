@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::{collections::HashMap, sync::Arc};
 
 use common::errors::*;
-use google::proto::any::Any;
+use protobuf_builtins::google::protobuf::Any;
 use protobuf_compiler::spec::Syntax;
 use protobuf_core::reflection::Reflect;
 use protobuf_core::reflection::ReflectionMut;

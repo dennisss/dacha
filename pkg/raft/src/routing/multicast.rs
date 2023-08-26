@@ -10,7 +10,7 @@ use nix::sys::socket::sockopt::{ReuseAddr, ReusePort};
 use nix::sys::socket::{AddressFamily, InetAddr, SockAddr, SockFlag, SockProtocol, SockType};
 use protobuf::{Message, StaticMessage};
 
-use crate::proto::routing::Announcement;
+use crate::proto::Announcement;
 use crate::routing::route_store::*;
 
 /// Time in between attempts to send the current server's routing information to
@@ -134,7 +134,7 @@ impl DiscoveryMulticast {
 
 #[cfg(test)]
 mod tests {
-    use crate::proto::{ident::ServerId, routing::Route, server_metadata::GroupId};
+    use crate::proto::{GroupId, Route, ServerId};
 
     use super::*;
 

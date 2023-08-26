@@ -13,11 +13,7 @@ use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
 
 use crate::meta::GetClusterMetaTable;
-use crate::proto::blob::*;
-use crate::proto::job::*;
-use crate::proto::manager::*;
-use crate::proto::meta::*;
-use crate::proto::worker::*;
+use crate::proto::*;
 
 /*
 When a manager test starts up, it will

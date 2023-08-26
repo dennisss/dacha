@@ -209,7 +209,7 @@ impl RadioBridgeInner {
 impl RadioBridgeService for RadioBridgeInner {
     async fn ListDevices(
         &self,
-        request: rpc::ServerRequest<google::proto::empty::Empty>,
+        request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         response: &mut rpc::ServerResponse<RadioBridgeListDevicesResponse>,
     ) -> Result<()> {
         let state = self.shared.state.lock().await;
@@ -290,7 +290,7 @@ impl RadioBridgeService for RadioBridgeInner {
     async fn RemoveDevice(
         &self,
         request: rpc::ServerRequest<RadioBridgeRemoveDeviceRequest>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         let mut state = self.shared.state.lock().await;
 
@@ -334,7 +334,7 @@ impl RadioBridgeService for RadioBridgeInner {
     async fn Send(
         &self,
         request: rpc::ServerRequest<RadioBridgePacket>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         let mut state = self.shared.state.lock().await;
         if self

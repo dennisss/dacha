@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use builder::proto::bundle::BundleSpec;
+use builder::proto::BundleSpec;
 use common::errors::*;
 use crypto::random::RngExt;
 use datastore::meta::client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
@@ -28,14 +28,7 @@ use crate::node::resources::*;
 use crate::node::shadow::*;
 use crate::node::worker::*;
 use crate::node::workers_table;
-use crate::proto::blob::*;
-use crate::proto::config::*;
-use crate::proto::log::*;
-use crate::proto::meta::*;
-use crate::proto::node::*;
-use crate::proto::node_service::*;
-use crate::proto::worker::*;
-use crate::proto::worker_event::*;
+use crate::proto::*;
 use crate::runtime::ContainerRuntime;
 
 #[derive(Clone)]
@@ -579,9 +572,12 @@ impl NodeInner {
                 req.set_revision(worker.revision());
                 self.start_worker(&req).await?;
             } else {
+                // Worker is being drained, so fully stop it.
+
                 // TODO: Consider having a delay between a worker being marked as
                 // drained and it being stopped (so that clients have time to
                 // notice that it is stopping).
+                // ^ Although this is why we gracefully stop things.
 
                 self.stop_worker(worker.spec().name(), false).await?;
             }
@@ -1648,7 +1644,7 @@ impl NodeInner {
 impl ContainerNodeService for NodeInner {
     async fn Identity(
         &self,
-        request: rpc::ServerRequest<google::proto::empty::Empty>,
+        request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         response: &mut rpc::ServerResponse<NodeMetadata>,
     ) -> Result<()> {
         response.value.set_id(self.shared.id);
@@ -1669,7 +1665,7 @@ impl ContainerNodeService for NodeInner {
     async fn ReplicateBlob(
         &self,
         request: rpc::ServerRequest<ReplicateBlobRequest>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         // Start the replication
         {
@@ -1693,6 +1689,7 @@ impl ContainerNodeService for NodeInner {
 
     // TODO: When the Node closes, we should kill all workers that it has
 
+    // TODO: On the client side, we should make this retrable via seeking.
     async fn GetLogs(
         &self,
         request: rpc::ServerRequest<LogRequest>,
@@ -1781,7 +1778,7 @@ impl ContainerNodeService for NodeInner {
     async fn WriteInput(
         &self,
         mut request: rpc::ServerStreamRequest<WriteInputRequest>,
-        _response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        _response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         loop {
             let input = match request.recv().await? {

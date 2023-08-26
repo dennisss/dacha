@@ -1,0 +1,18 @@
+[package]
+name = "googleapis_proto"
+version = "0.0.0"
+
+[dependencies]
+common = { path = "../../pkg/common" }
+protobuf = { path = "../../pkg/protobuf" }
+macros = { path = "../../pkg/macros" }
+protobuf_builtins = { path = "../protobuf_builtins" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../pkg/protobuf/compiler" }
+file = { path = "../../pkg/file" }
+
+[features]
+default = ["std"]
+std = ["alloc", "common/std", "protobuf/std"]
+alloc = ["common/alloc", "protobuf/alloc"]

@@ -1,6 +1,7 @@
 // This file contains structs which define the syntax tree of a .proto file
 // describing a set of messages/services.
 
+use protobuf_core::text::TextMessage;
 use protobuf_core::{EnumValue, FieldNumber};
 #[cfg(feature = "descriptors")]
 use protobuf_descriptor as pb;
@@ -13,6 +14,7 @@ pub enum Constant {
     Float(f64),
     String(Vec<u8>),
     Bool(bool),
+    Message(TextMessage),
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -412,6 +414,9 @@ impl Service {
                 ServiceItem::RPC(rpc) => {
                     proto.add_method(rpc.to_proto());
                 }
+                ServiceItem::Option(_) => {
+                    //
+                }
                 _ => todo!(),
             }
         }
@@ -494,6 +499,8 @@ impl Proto {
         });
 
         proto.set_package(&self.package);
+
+        // TODO: Ensure that these are relative to the root of the file
         // for import in &self.imports {
         //     proto.add_dependency(v)
         // }

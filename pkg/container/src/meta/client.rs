@@ -3,12 +3,12 @@ use core::ops::{Deref, DerefMut};
 use common::errors::*;
 use datastore::meta::client::MetastoreClient;
 use datastore::meta::client::MetastoreClientInterface;
-use google::proto::any::Any;
-use raft::proto::routing::RouteLabel;
+use protobuf_builtins::google::protobuf::Any;
+use raft::proto::RouteLabel;
 
 use crate::meta::constants::ZONE_ENV_VAR;
 use crate::meta::{ClusterMetaTable, GetClusterMetaTable};
-use crate::proto::meta::ObjectMetadata;
+use crate::proto::ObjectMetadata;
 
 ///
 pub struct ClusterMetaClient {
@@ -102,7 +102,7 @@ impl MetastoreClientInterface for ClusterMetaClient {
         &self,
         start_key: &[u8],
         end_key: &[u8],
-    ) -> Result<Vec<datastore::proto::key_value::KeyValueEntry>> {
+    ) -> Result<Vec<datastore::proto::KeyValueEntry>> {
         self.inner.get_range(start_key, end_key).await
     }
 

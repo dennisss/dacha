@@ -3,10 +3,7 @@ use net::backoff::*;
 
 use crate::node::blob_store::*;
 use crate::node::resources::*;
-use crate::proto::blob::*;
-use crate::proto::config::*;
-use crate::proto::node_service::*;
-use crate::proto::worker::*;
+use crate::proto::*;
 
 pub(super) struct Worker {
     /// Spec that was used to start this worker.

@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::proto::meta::*;
+use crate::proto::*;
 
 pub struct NodeMetadataView {
     allocated_ports: HashSet<u32>,

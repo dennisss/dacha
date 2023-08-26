@@ -1,7 +1,6 @@
 use common::errors::*;
 
-use crate::proto::config::BuildConfig;
-use crate::proto::rule::*;
+use crate::proto::*;
 use crate::rule::*;
 use crate::target::*;
 

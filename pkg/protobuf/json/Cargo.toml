@@ -8,9 +8,7 @@ common = { path = "../../common" }
 protobuf = { path = ".." }
 macros = { path = "../../macros" }
 json = { path = "../../format/json" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../compiler" }
+protobuf_json_proto = { path = "./proto" }
 
 [features]
 default = ["std"]

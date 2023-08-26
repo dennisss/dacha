@@ -1,6 +1,6 @@
 use crypto::random::SharedRng;
 
-use crate::proto::routing::RouteLabel;
+use crate::proto::RouteLabel;
 
 /// Generate a unique set of route labels that are uniquely to be in use by
 /// anothe consensus instance.

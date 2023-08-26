@@ -3,7 +3,7 @@ use common::errors::*;
 use protobuf::{Enum, EnumValue};
 
 use crate::key_encoding::KeyEncoder;
-use crate::proto::meta::*;
+use crate::proto::*;
 
 /// Parsed representation of the key stored in the metastore's underlying
 /// storage.

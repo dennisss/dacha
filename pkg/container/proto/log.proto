@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package cluster;
+
+import "google/protobuf/timestamp.proto";
+
+enum LogStream {
+    UNKNOWN = 0;
+    STDOUT = 1;
+    STDERR = 2;
+}
+
+message LogEntry {
+    bytes value = 1;
+    
+    google.protobuf.Timestamp timestamp = 2;
+    
+    LogStream stream = 3;
+
+    // If true, then this is the final entry for this stream.
+    bool end_stream = 5;
+
+    // The byte offset of the end of this log entry proto in the log file.
+    // NOTE: This is not stored in the log file and is only sent after reading from the log file.
+    //
+    // Used for being able to seek after this entry later on.
+    uint64 end_offset = 4;
+}

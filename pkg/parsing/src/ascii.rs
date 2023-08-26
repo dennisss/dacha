@@ -8,6 +8,11 @@ pub struct AsciiString {
 }
 
 impl AsciiString {
+    pub fn new(s: &str) -> Self {
+        let data = s.as_bytes().into();
+        Self { data }
+    }
+
     pub fn from<T: Into<Bytes>>(data: T) -> Result<Self> {
         let data = data.into();
         for v in data.iter().cloned() {

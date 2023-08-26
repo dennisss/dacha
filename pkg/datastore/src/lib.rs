@@ -6,7 +6,6 @@ extern crate common;
 extern crate http;
 #[macro_use]
 extern crate macros;
-extern crate google;
 extern crate net;
 extern crate protobuf;
 extern crate raft;
@@ -18,4 +17,4 @@ extern crate parsing;
 
 pub mod key_encoding;
 pub mod meta;
-pub mod proto;
+pub use datastore_proto::db::meta as proto;

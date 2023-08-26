@@ -3,10 +3,10 @@ use crypto::random::{SharedRng, SharedRngExt};
 use executor::child_task::ChildTask;
 use file::temp::TempDir;
 use protobuf::text::ParseTextProto;
-use raft::proto::routing::RouteLabel;
+use raft::proto::RouteLabel;
 
 use super::client::{MetastoreClient, MetastoreClientInterface};
-use crate::proto::key_value::KeyValueEntry;
+use crate::proto::KeyValueEntry;
 
 /// In-process single node metastore instance for testing.
 pub struct TestMetastore {

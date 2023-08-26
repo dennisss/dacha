@@ -3,8 +3,7 @@ use std::process::{Command, Stdio};
 
 use common::errors::*;
 
-use crate::proto::config::BuildConfig;
-use crate::proto::rule::*;
+use crate::proto::*;
 use crate::rule::BuildRule;
 use crate::target::*;
 use crate::utils::*;

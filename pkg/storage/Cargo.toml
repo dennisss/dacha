@@ -17,7 +17,8 @@ uuid_macros = { path = "../uuid/macros" }
 sstable = { path = "../sstable" }
 file = { path = "../file" }
 executor = { path = "../executor" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
+
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing/compiler" }

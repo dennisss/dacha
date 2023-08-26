@@ -5,8 +5,7 @@ use common::errors::*;
 use file::LocalPath;
 
 use crate::label::Label;
-use crate::proto::config::BuildConfig;
-use crate::proto::rule::*;
+use crate::proto::*;
 use crate::rule::*;
 use crate::target::*;
 

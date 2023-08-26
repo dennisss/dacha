@@ -1,0 +1,17 @@
+[package]
+name = "crypto_test"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+crypto = { path = ".." }
+macros = { path = "../../macros" }
+common = { path = "../../common" }
+perf = { path = "../../perf" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "executor/alloc"]
+std = []

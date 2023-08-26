@@ -4,12 +4,11 @@ use std::sync::{Arc, Mutex};
 use common::errors::*;
 use common::factory::Factory;
 use common::failure::ResultExt;
-use google::proto::any::Any;
 use protobuf::{Message, MessageReflection, StaticMessage};
+use protobuf_builtins::google::protobuf::Any;
 
 use crate::package::*;
-use crate::proto::config::*;
-use crate::proto::rule::*;
+use crate::proto::*;
 use crate::target::BuildTarget;
 
 pub trait BuildRule {

@@ -13,7 +13,6 @@ extern crate regexp_macros;
 extern crate automata;
 #[macro_use]
 extern crate failure;
-extern crate google;
 extern crate protobuf_json;
 
 mod buffer_queue;

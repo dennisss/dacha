@@ -9,13 +9,11 @@ use common::errors::*;
 use executor::child_task::ChildTask;
 use executor::sync::{Mutex, MutexGuard};
 use net::ip::SocketAddr;
-use raft::proto::routing::RouteLabel;
+use raft::proto::RouteLabel;
 use sstable::table::KeyComparator;
 
 use crate::meta::key_utils::*;
-use crate::proto::client::*;
-use crate::proto::key_value::*;
-use crate::proto::server::*;
+use crate::proto::*;
 
 /// Maximum number of times metastore transactions should be retried if
 pub const MAX_TRANSACTION_RETRIES: usize = 5;
@@ -41,6 +39,17 @@ impl MetastoreClient {
     pub async fn create(labels: &[RouteLabel]) -> Result<Self> {
         let route_store = raft::RouteStore::new(labels);
 
+        /// TODO: With this approach, it may take us up to 2 seconds (the
+        /// broadcast interval) to find a server.
+        ///
+        /// For a normal container on a machine, we want to have a name
+        /// resolution cache.
+        /// - A single worker per machine 'system.name_service' service
+        ///     - Acts as an RPC based DNS service (handles both cluster and out
+        ///       of cluster requests).
+        ///     - This means that we can sustain an outage to the metastore so
+        ///       long as all needed services are cached.
+        /// - If running in a unit test, the facttory
         let discovery = raft::DiscoveryMulticast::create(route_store.clone()).await?;
 
         let background_thread = ChildTask::spawn(async move {
@@ -78,7 +87,7 @@ impl MetastoreClient {
         let client_id = {
             let stub = ClientManagementStub::new(channel.clone());
 
-            let req = google::proto::empty::Empty::default();
+            let req = protobuf_builtins::google::protobuf::Empty::default();
             let mut ctx = rpc::ClientRequestContext::default();
             ctx.wait_for_ready = true;
             let res = stub.NewClient(&ctx, &req).await;
@@ -243,15 +252,15 @@ impl MetastoreClient {
         Ok(WatchStream { response })
     }
 
-    pub async fn current_status(&self) -> Result<raft::proto::consensus::Status> {
+    pub async fn current_status(&self) -> Result<raft::proto::Status> {
         let stub = ServerManagementStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
 
-        let request = google::proto::empty::Empty::default();
+        let request = protobuf_builtins::google::protobuf::Empty::default();
         stub.CurrentStatus(&request_context, &request).await.result
     }
 
-    pub async fn remove_server(&self, id: raft::proto::ident::ServerId) -> Result<()> {
+    pub async fn remove_server(&self, id: raft::proto::ServerId) -> Result<()> {
         let stub = ServerManagementStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
 

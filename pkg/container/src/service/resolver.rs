@@ -12,7 +12,7 @@ use net::ip::SocketAddr;
 
 use crate::meta::client::ClusterMetaClient;
 use crate::meta::GetClusterMetaTable;
-use crate::proto::meta::*;
+use crate::proto::*;
 use crate::service::address::*;
 
 /// Resolves the addresses of cluster services to useable ip/port numbers.

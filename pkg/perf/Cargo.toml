@@ -11,7 +11,7 @@ sys = { path = "../sys" }
 elf = { path = "../elf" }
 executor = { path = "../executor" }
 file = { path = "../file" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 base_radix = { path = "../base/radix" }
 
 [features]

@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package raft;
+
+import "pkg/raft/proto/ident.proto";
+import "pkg/raft/proto/server_metadata.proto";
+import "google/protobuf/timestamp.proto";
+
+// Record describing how a specific server in a Raft group can be reached for requests.
+message Route {
+    // REQUIRED
+    GroupId group_id = 1;
+
+    // REQUIRED
+    ServerId server_id = 2;
+
+    // Ip address and port at which this server can be contacted.
+    // e.g. "127.0.0.1:8000"
+    // TODO: Store in binary format.
+    //
+    // REQUIRED
+    string addr = 3;
+
+    // Last time this server was announced by the server that owns it (the one located at 'addr').
+    // If a server doesn't announce the path to itself for a while, other servers may consider it
+    // to be dead and discard its route.
+    //
+    // REQUIRED
+    google.protobuf.Timestamp last_seen = 4;
+
+    // Last time this route was retrieved or was observed in an incoming
+    // request
+    //
+    // REQUIRED
+    google.protobuf.Timestamp last_used = 5;
+
+    // Application specific labels that describe the server pointed to by this route.
+    // These can be used as selectors for finding specific servers in a network.
+    //
+    // NOTE: Regardless of the labels associated with a route, all distinct servers in a network
+    // MUST have unique (group_id, server_id) pairs.
+    repeated RouteLabel labels = 6;
+}
+
+message RouteLabel {
+    string value = 1;
+
+    // By default, if a label is present on a route, then the client MUST explicitly select it in order to use a route.
+    // If this is true, then the client doesn't need to understand this label to use this route.
+    bool optional = 2;
+}
+
+// Thin-serializable state of the server
+// Other details like the group_id and from_id are separately managed
+message Announcement {
+    // Emitted as a routes vector
+    // Merged with the rest of our data
+    repeated Route routes = 1;
+}
+
+service Discovery {
+    rpc Announce (Announcement) returns (Announcement);
+}

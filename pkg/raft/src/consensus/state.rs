@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use crate::proto::ident::*;
+use crate::proto::*;
 
 /// Ephemeral in-memory state associated with a server.
 #[derive(Clone, Debug)]

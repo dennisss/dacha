@@ -14,14 +14,12 @@ raft = { path = "../raft" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 net = { path = "../net" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 executor = { path = "../executor" }
 file = { path = "../file" }
 crypto = { path = "../crypto" }
 base_radix = { path = "../base/radix" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf/compiler" }
+datastore_proto = { path = "./proto" }
 
 [features]
 default = ["std"]

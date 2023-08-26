@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package raft;
+
+import "pkg/raft/proto/consensus.proto";
+
+// Used by the SimpleLog to implement a single file log. 
+message SimpleLogValue {
+	// Position immediately before before the first entry in entries.
+	// This position has already been committed and applied to the state machine.
+	LogPosition prev = 1;
+
+	repeated LogEntry entries = 2;
+}
+
+// Represents a new change added to the end of the SegmentedLog.
+//
+// Each record log file will consist of many entries of this format.
+// The first record in each file will contain only the 'prev' field. Later fields will use the
+// 'entry' field to append log entries or signal truncations.  
+message SegmentedLogRecord {
+    // Position of the last discarded log entry.
+    // This is only present in the first LogRecord of each log file. 
+    LogPosition prev = 1;
+
+    // Next log entry in the log.
+    LogEntry entry = 2;
+}

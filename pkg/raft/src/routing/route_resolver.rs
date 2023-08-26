@@ -7,8 +7,7 @@ use executor::sync::Mutex;
 use http::uri::Authority;
 use net::ip::SocketAddr;
 
-use crate::proto::ident::*;
-use crate::proto::server_metadata::GroupId;
+use crate::proto::*;
 use crate::routing::route_store::RouteStore;
 
 pub struct RouteResolver {

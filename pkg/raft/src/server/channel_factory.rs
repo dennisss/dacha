@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 
-use crate::proto::ident::ServerId;
+use crate::proto::ServerId;
 
 /// A factory for creating RPC channels to specific servers in a
 /// single raft group.

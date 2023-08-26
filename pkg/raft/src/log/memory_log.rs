@@ -6,8 +6,7 @@ use executor::sync::Mutex;
 
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
-use crate::proto::consensus::*;
-use crate::proto::ident::*;
+use crate::proto::*;
 
 pub struct MemoryLog {
     state: Mutex<State>,

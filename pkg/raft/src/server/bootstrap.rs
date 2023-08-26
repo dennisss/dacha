@@ -5,9 +5,7 @@ use crypto::random::RngExt;
 
 use crate::log::log::Log;
 use crate::log::log_metadata::LogSequence;
-use crate::proto::consensus::*;
-use crate::proto::ident::ServerId;
-use crate::proto::server_metadata::GroupId;
+use crate::proto::*;
 use crate::server::channel_factory::*;
 use crate::server::server_identity::ServerIdentity;
 

@@ -1,7 +1,7 @@
 use common::errors::*;
 use sys::utsname::*;
 
-use crate::proto::bundle::*;
+use crate::proto::*;
 
 pub fn current_platform() -> Result<Platform> {
     let mut platform = Platform::default();

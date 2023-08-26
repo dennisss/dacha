@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package rpi.controller;
 
-import "third_party/google/src/proto/empty.proto";
+import "google/protobuf/empty.proto";
 
 message FanControlState {
     // Current speed of the fan from 0 to 1.

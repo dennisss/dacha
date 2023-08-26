@@ -22,7 +22,7 @@ pub struct Status {
     /// NOTE: Will always be encoded over the wire as UTF-8
     message: String,
 
-    details: Vec<google::proto::any::Any>,
+    details: Vec<protobuf_builtins::google::protobuf::Any>,
 }
 
 macro_rules! status_ctor {
@@ -91,7 +91,7 @@ impl Status {
                 common::base64::STANDARD_NO_PAD,
             )?;
 
-            let proto = google::proto::rpc::Status::parse(&decoded_value)?;
+            let proto = googleapis_proto::google::rpc::Status::parse(&decoded_value)?;
             for detail in proto.details() {
                 details.push(detail.clone());
             }
@@ -148,7 +148,7 @@ impl Status {
         }
 
         if !self.details.is_empty() {
-            let mut proto = google::proto::rpc::Status::default();
+            let mut proto = googleapis_proto::google::rpc::Status::default();
             for detail in &self.details {
                 proto.add_details(detail.clone());
             }
@@ -176,14 +176,14 @@ impl Status {
     }
 
     pub fn with_detail<M: protobuf::StaticMessage>(mut self, value: &M) -> Result<Self> {
-        let mut any = google::proto::any::Any::default();
+        let mut any = protobuf_builtins::google::protobuf::Any::default();
         any.pack_from(value)?;
         self.details.push(any);
         Ok(self)
     }
 
-    pub fn to_proto(&self) -> google::proto::rpc::Status {
-        let mut out = google::proto::rpc::Status::default();
+    pub fn to_proto(&self) -> googleapis_proto::google::rpc::Status {
+        let mut out = googleapis_proto::google::rpc::Status::default();
         out.set_code(self.code().to_value() as i32);
         out.set_message(self.message());
         for any in &self.details {

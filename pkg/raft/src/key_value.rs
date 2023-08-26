@@ -7,8 +7,7 @@ use common::errors::*;
 use executor::sync::Mutex;
 use protobuf::{Message, StaticMessage};
 use raft::atomic::*;
-use raft::proto::ident::LogIndex;
-use raft::proto::key_value::*;
+use raft::proto::*;
 use raft::server::state_machine::*;
 
 pub struct KeyValueReturn {

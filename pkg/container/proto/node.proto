@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package cluster;
+
+import "pkg/container/proto/config.proto";
+
+// Config parameters used to start up a single Node instance.
+message NodeConfig {
+    // Path to a directory into which we will store all container related data.
+    string data_dir = 1;
+
+    // Path to use for the node's cgroup v2 subtree. The node process and all container processes
+    // will live somewhere in this tree.
+    string cgroup_dir = 11;
+
+    // Port used for the main node management service.
+    int32 service_port = 2;
+
+    // Base template used to construct worker containers.
+    ContainerConfig container_template = 3;
+    
+    // Maximum amount of time in seconds after a container is terminated with a signal before we
+    // forcefully kill it.
+    uint32 graceful_shutdown_timeout_secs = 4;
+
+    // If true and this is the first time the node is running, we will initialize the id of this
+    // node with the first 16 characters of /etc/machine-id
+    bool bootstrap_id_from_machine_id = 5;
+
+    // Range of network ports which may be used by workers running on this node.
+    // TODO: Have the node runtime validate that we only receive workers with ports in this range. 
+    PortRange allocatable_port_range = 6;
+
+    // Cluster zone in which this node is running.
+    // When running in a managed cluster this field is required.
+    string zone = 7;
+
+    // If non-empty, all containers are started using an 'init' process running the binary
+    // specified in init_process_args[0].
+    //
+    // The full list of arguments passed to the init process will be
+    // [init_process_args, "--", worker_args]. The expectation is that the init process will
+    // run the worker binary based on the given arguments.
+    repeated string init_process_args = 10;
+}
+
+// Represents all port numbers in the range [start, end).
+message PortRange {
+    uint32 start = 1;
+    uint32 end = 2;
+}

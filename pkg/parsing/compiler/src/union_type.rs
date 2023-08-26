@@ -76,6 +76,7 @@ impl<'a> Type for UnionType<'a> {
                     typ: arg_ty.clone(),
                     value: Some(arg.name().to_string()),
                     size_of: None,
+                    is_option: false,
                 },
             );
         }

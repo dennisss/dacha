@@ -22,7 +22,7 @@ use file::LocalPathBuf;
 use rpc_util::NamedPortArg;
 
 use datastore::meta::store::{run, MetastoreConfig};
-use raft::proto::routing::RouteLabel;
+use raft::proto::RouteLabel;
 
 #[derive(Args)]
 struct Args {

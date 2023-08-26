@@ -38,12 +38,13 @@ pub fn build() -> Result<()> {
             return Err(format_err!("Failed to parse {:?}: {:?}", relative_path, e));
         }
 
-        let mut output_path = output_dir.join(relative_path);
+        let mut output_path = output_dir.join(&relative_path);
         output_path.set_extension("rs");
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
-        let output = Compiler::compile(lib)?;
+        let output = Compiler::compile(lib)
+            .map_err(|e| format_err!("While compiling {:?}: {}", relative_path, e))?;
         std::fs::write(&output_path, output)?;
 
         {

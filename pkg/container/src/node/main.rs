@@ -16,8 +16,7 @@ use rpc_util::AddReflection;
 use crate::init::{MainProcess, MainProcessOptions};
 use crate::node::node::{Node, NodeContext};
 use crate::node::shadow::*;
-use crate::proto::node::NodeConfig;
-use crate::proto::node_service::ContainerNodeIntoService;
+use crate::proto::{ContainerNodeIntoService, NodeConfig};
 use crate::runtime::fd::FileReference;
 use crate::setup_socket::{SetupSocket, SetupSocketChild, SetupSocketParent};
 

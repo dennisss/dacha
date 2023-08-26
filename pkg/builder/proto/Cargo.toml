@@ -1,0 +1,20 @@
+[package]
+name = "builder_proto"
+version = "0.0.0"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+common = { path = "../../common" }
+protobuf = { path = "../../protobuf" }
+macros = { path = "../../macros" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../protobuf/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc", "common/std", "protobuf/std"]
+alloc = ["common/alloc", "protobuf/alloc"]

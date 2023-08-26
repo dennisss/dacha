@@ -14,7 +14,7 @@ nordic_proto = { path = "../nordic_proto" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }
 rpc_util = { path = "../rpc_util" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 executor = { path = "../executor" }
 
 [build-dependencies]
@@ -22,5 +22,5 @@ protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "nordic_proto/alloc", "rpc/alloc", "google/alloc"]
-std = ["common/std", "crypto/std", "protobuf/std", "usb/std", "nordic_proto/std", "rpc/std", "google/std"]
+alloc = ["common/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "nordic_proto/alloc", "rpc/alloc", "protobuf_builtins/alloc"]
+std = ["common/std", "crypto/std", "protobuf/std", "usb/std", "nordic_proto/std", "rpc/std", "protobuf_builtins/std"]

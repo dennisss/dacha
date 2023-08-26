@@ -6,8 +6,7 @@ use executor::sync::Mutex;
 
 use crate::consensus::module::NotLeaderError;
 use crate::node::Node;
-use crate::proto::consensus::NotLeaderErrorProto;
-use crate::proto::ident::Term;
+use crate::proto::{NotLeaderErrorProto, Term};
 use crate::server::channel_factory::ChannelFactory;
 
 const PROXY_KEY: &'static str = "raft-proxy";

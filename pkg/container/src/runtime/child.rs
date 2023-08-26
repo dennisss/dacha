@@ -31,7 +31,7 @@ use nix::unistd::Gid;
 use nix::unistd::Uid;
 use nix::unistd::{dup2, Pid};
 
-use crate::proto::config::*;
+use crate::proto::*;
 use crate::runtime::fd::*;
 
 use super::constants::FINISHED_SETUP_BYTE;
@@ -69,6 +69,9 @@ pub fn run_child_process(
 }
 
 // TODO: Ensure no propagation of outer environment variables to here.
+
+// TODO: Use 'nosuid' for as many mounts as possible to reduce the chance of
+// privilege escalation.
 
 // TODO: Rename the FileMapping to the StdioMapping as we currently only support
 // using it for that purpose.

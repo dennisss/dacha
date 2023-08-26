@@ -5,7 +5,7 @@ use common::errors::*;
 use executor::channel;
 use executor::sync::Mutex;
 
-use crate::proto::key_value::WatchResponse;
+use crate::proto::WatchResponse;
 
 pub struct Watchers {
     state: Arc<Mutex<WatchersState>>,

@@ -17,8 +17,7 @@ use executor::JoinHandle;
 use file::{LocalFile, LocalPath, LocalPathBuf};
 use sys::{WaitOptions, WaitStatus};
 
-use crate::proto::config::*;
-use crate::proto::log::*;
+use crate::proto::*;
 use crate::runtime::child::*;
 use crate::runtime::fd::*;
 use crate::runtime::logging::*;
@@ -399,7 +398,6 @@ impl ContainerRuntime {
         // TODO: implement the waiter strategy and create a new uid_map and gid_map and
         // disallow adding groups.
 
-        // TODO: CLONE_INTO_CGROUP
         // TODO: Can memory (e.g. keys from the parent progress be read after the fork
         // and do we need security against this?).
         //
@@ -491,6 +489,9 @@ impl ContainerRuntime {
         // TIOCSWINSZ
 
         // TODO: Setup console size (default 80 x 24)
+
+        // TODO: Open the log file here so that it is open before the caller tries to
+        // open the log.
 
         {
             let waiter_task = executor::spawn(self.clone().container_waiter(ContainerWaiter {

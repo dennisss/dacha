@@ -11,13 +11,11 @@ compression = { path = "../compression" }
 crypto = { path = "../crypto" }
 sys = { path = "../sys" }
 skylark = { path = "./skylark" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 base_radix = { path = "../base/radix" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf/compiler" }
+builder_proto = { path = "./proto" }
 
 [features]
 default = ["std"]

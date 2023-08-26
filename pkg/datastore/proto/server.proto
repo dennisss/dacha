@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package db.meta;
+
+import "pkg/raft/proto/consensus.proto";
+import "google/protobuf/empty.proto";
+import "pkg/raft/proto/ident.proto";
+
+service ServerManagement {
+    rpc CurrentStatus (google.protobuf.Empty) returns (raft.Status);
+
+    rpc ConfigChange (ConfigChangeRequest) returns (google.protobuf.Empty);
+}
+
+message ConfigChangeRequest {
+    oneof change {
+        raft.ServerId remove_server = 1;
+    }
+}

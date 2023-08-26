@@ -1,7 +1,7 @@
 //! This file contains utilities for reading/writing from the node local
 //! database used by a node to remember what has done in the past.
 
-use builder::proto::bundle::BlobSpec;
+use builder::proto::BlobSpec;
 use common::errors::*;
 use datastore::key_encoding::KeyEncoder;
 use protobuf::{Message, StaticMessage};
@@ -9,8 +9,7 @@ use sstable::db::WriteBatch;
 use sstable::iterable::Iterable;
 use sstable::EmbeddedDB;
 
-use crate::proto::meta::WorkerMetadata;
-use crate::proto::worker_event::WorkerEvent;
+use crate::proto::{WorkerEvent, WorkerMetadata};
 
 const WORKERS_TABLE_ID: u64 = 11;
 const NODE_ID_TABLE_ID: u64 = 12;

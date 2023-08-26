@@ -26,9 +26,7 @@ use file::dir_lock::DirLock;
 use file::LocalPathBuf;
 use protobuf::Message;
 use raft::node::*;
-use raft::proto::consensus::LogEntryData;
-use raft::proto::ident::LogIndex;
-use raft::proto::key_value::*;
+use raft::proto::*;
 use raft::server::server::{Server, ServerInitialState};
 
 use key_value::*;

@@ -1,10 +1,13 @@
 #![allow(dead_code, non_snake_case)]
 
-#[cfg(feature = "alloc")]
-pub mod test {
-    include!(concat!(env!("OUT_DIR"), "/src/proto/test.rs"));
-}
+//
+include!(concat!(env!("OUT_DIR"), "/proto_lib.rs"));
 
-pub mod no_alloc {
-    include!(concat!(env!("OUT_DIR"), "/src/proto/no_alloc.rs"));
-}
+// #[cfg(feature = "alloc")]
+// pub mod test {
+//     include!(concat!(env!("OUT_DIR"), "/src/proto/test.rs"));
+// }
+
+// pub mod no_alloc {
+//     include!(concat!(env!("OUT_DIR"), "/src/proto/no_alloc.rs"));
+// }

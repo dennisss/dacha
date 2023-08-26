@@ -15,11 +15,7 @@ use rpc_util::AddReflection;
 
 use crate::atomic::*;
 use crate::log::segmented_log::SegmentedLog;
-use crate::proto::consensus::*;
-use crate::proto::ident::*;
-use crate::proto::init::*;
-use crate::proto::routing::*;
-use crate::proto::server_metadata::*;
+use crate::proto::*;
 use crate::routing::discovery_client::DiscoveryClient;
 use crate::routing::discovery_server::DiscoveryServer;
 use crate::routing::route_channel::*;
@@ -201,7 +197,7 @@ impl<R: 'static + Send> Node<R> {
             config_builder.purge().await?;
 
             // Every single server starts with totally empty versions of everything
-            let meta = crate::proto::consensus_state::Metadata::default();
+            let meta = crate::proto::Metadata::default();
             let config_snapshot = ServerConfigurationSnapshot::default();
 
             // Get a group id (or None to imply that we should bootstrap a new group).

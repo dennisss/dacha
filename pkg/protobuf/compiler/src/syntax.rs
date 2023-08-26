@@ -12,6 +12,7 @@ use std::string::String;
 
 use common::errors::*;
 use parsing::*;
+use protobuf_core::text::TextMessage;
 use protobuf_core::tokenizer::{capital_letter, decimal_digit, letter, Token};
 use protobuf_core::FieldNumber;
 
@@ -173,7 +174,8 @@ parser!(constant<&str, Constant> => seq!(c => {
         str_const,
         map(full_ident, |s| Constant::Identifier(s)),
         map(int_value, |i| Constant::Integer(i)),
-        map(float_value, |f| Constant::Float(f))
+        map(float_value, |f| Constant::Float(f)),
+        map(TextMessage::parse_value, |v| Constant::Message(v))
     ))
 }));
 
@@ -769,4 +771,63 @@ mod tests {
         let parsed = parse_proto(input).unwrap();
         println!("{:?}", parsed);
     }
+
+    #[test]
+    fn parse_options_in_service() {
+        let input = r#"
+        syntax = "proto3";
+
+        service ActionsSdk {
+            option (google.api.default_host) = "actions.googleapis.com";
+          
+            // Updates the project draft based on the model.
+            rpc WriteDraft(stream WriteDraftRequest) returns (Draft) {
+              option (google.api.http) = {
+                post: "/v2/{parent=projects/*}/draft:write"
+                body: "*"
+              };
+            }
+        }
+          
+        "#;
+
+        let parsed = parse_proto(input).unwrap();
+        println!("{:?}", parsed);
+    }
+
+    #[test]
+    fn parse_multi_line_option() {
+        let input = r#"
+        syntax = "proto3";
+
+        package google.analytics.admin.v1alpha;
+        
+        service AnalyticsAdminService {
+          option (google.api.default_host) = "analyticsadmin.googleapis.com";
+          option (google.api.oauth_scopes) =
+              "https://www.googleapis.com/auth/analytics.edit,"
+              "https://www.googleapis.com/auth/analytics.manage.users,"
+              "https://www.googleapis.com/auth/analytics.manage.users.readonly,"
+              "https://www.googleapis.com/auth/analytics.readonly";
+        
+          // Lookup for a single Account.
+          rpc GetAccount(GetAccountRequest) returns (Account) {
+            option (google.api.http) = {
+              get: "/v1alpha/{name=accounts/*}"
+            };
+            option (google.api.method_signature) = "name";
+          }
+        }
+        "#;
+
+        let parsed = parse_proto(input).unwrap();
+        println!("{:?}", parsed);
+    }
+
+    /*
+
+
+
+
+    */
 }

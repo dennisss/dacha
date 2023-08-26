@@ -4,8 +4,7 @@ use file::LocalPath;
 use protobuf::{text::*, Message};
 use protobuf::{DescriptorPool, DynamicMessage};
 
-use crate::proto::config::BuildConfig;
-use crate::proto::rule::*;
+use crate::proto::*;
 use crate::rule::*;
 use crate::target::*;
 

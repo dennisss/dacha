@@ -9,7 +9,7 @@ macros = { path = "../macros" }
 peripheral = { path = "../peripheral" }
 rpi = { path = "../rpi" }
 stream_deck = { path = "../peripherals/devices/stream_deck" }
-hue = { path = "../peripherals/devices/hue" }
+hue = { path = "../api/hue" }
 protobuf = { path = "../protobuf" }
 container = { path = "../container" }
 

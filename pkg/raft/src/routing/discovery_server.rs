@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use common::errors::*;
 
-use crate::proto::routing::*;
+use crate::proto::*;
 use crate::routing::route_store::*;
 
 pub struct DiscoveryServer {

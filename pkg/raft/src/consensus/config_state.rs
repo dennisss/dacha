@@ -1,6 +1,4 @@
-use crate::proto::consensus::*;
-use crate::proto::consensus_state::*;
-use crate::proto::ident::*;
+use crate::proto::*;
 
 #[derive(Clone)]
 pub struct ConfigurationPending {

@@ -60,7 +60,7 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 use std::{collections::HashSet, sync::Arc};
 
-use builder::proto::bundle::{BlobFormat, BundleSpec};
+use builder::proto::{BlobFormat, BundleSpec};
 use common::errors::*;
 use common::failure::ResultExt;
 use common::io::{Readable, Writeable};
@@ -278,7 +278,10 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
 
     let node_meta = node
         .service
-        .Identity(&request_context, &google::proto::empty::Empty::default())
+        .Identity(
+            &request_context,
+            &protobuf_builtins::google::protobuf::Empty::default(),
+        )
         .await
         .result?;
     let node_id = node_meta.id();
@@ -318,7 +321,7 @@ async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
     let local_metastore_dir = file::temp::TempDir::create()?;
 
     // TODO: Debuplicate with the job creation code.
-    let mut route_label = raft::proto::routing::RouteLabel::default();
+    let mut route_label = raft::proto::RouteLabel::default();
     route_label.set_value(format!(
         "{}={}",
         container::meta::constants::ZONE_ENV_VAR,
@@ -520,7 +523,10 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
 
         let identity = node
             .service
-            .Identity(&request_context, &google::proto::empty::Empty::default())
+            .Identity(
+                &request_context,
+                &protobuf_builtins::google::protobuf::Empty::default(),
+            )
             .await
             .result?;
 
@@ -540,7 +546,10 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
         println!("Blobs:");
         let blobs = node
             .blobs
-            .List(&request_context, &google::proto::empty::Empty::default())
+            .List(
+                &request_context,
+                &protobuf_builtins::google::protobuf::Empty::default(),
+            )
             .await
             .result?;
         for blob in blobs.blob() {
@@ -834,7 +843,10 @@ async fn start_worker_impl(
     {
         let res = node
             .blobs
-            .List(request_context, &google::proto::empty::Empty::default())
+            .List(
+                request_context,
+                &protobuf_builtins::google::protobuf::Empty::default(),
+            )
             .await
             .result?;
         for blob in res.blob() {

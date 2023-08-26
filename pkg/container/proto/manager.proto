@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package cluster;
+
+import "pkg/container/proto/job.proto";
+import "pkg/container/proto/blob.proto";
+import "pkg/builder/proto/bundle.proto";
+
+service Manager {
+    rpc StartJob (StartJobRequest) returns (StartJobResponse);
+
+    // TODO: For job updates need:
+    // - Way to monitor existing updates
+    // - Support force update, pause a rollout, or rollback.
+
+    rpc AllocateBlobs (AllocateBlobsRequest) returns (AllocateBlobsResponse);
+}
+
+message StartJobRequest {
+    JobSpec spec = 1;
+}
+
+message StartJobResponse {
+
+}
+
+message AllocateBlobsRequest {
+    // Metadata for the blobs which the client wants to upload to the cluster.
+    repeated builder.BlobSpec blob_specs = 1;
+}
+
+message AllocateBlobsResponse {
+    // Nodes to which the client should upload the blobs to.
+    //
+    // TODO: For each of these, include authorization tokens that can let the node know that the
+    // manager allowed the upload.
+    repeated BlobAssignment new_assignments = 1; 
+}
+
+message BlobAssignment {
+    string blob_id = 1;
+
+    uint64 node_id = 2;
+}

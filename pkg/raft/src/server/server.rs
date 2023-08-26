@@ -13,9 +13,7 @@ use crate::consensus::module::*;
 use crate::consensus::tick::*;
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
-use crate::proto::consensus::*;
-use crate::proto::ident::*;
-use crate::proto::server_metadata::*;
+use crate::proto::*;
 use crate::server::channel_factory::*;
 use crate::server::server_identity::ServerIdentity;
 use crate::server::server_shared::*;
@@ -304,6 +302,7 @@ impl<R: Send + 'static> Server<R> {
         Ok(Server { shared })
     }
 
+    // TODO: Propagate a shutdown token.
     // NOTE: If we also give it a state machine, we can do that for people too
     pub async fn run(self) -> Result<()> {
         self.shared.run().await
@@ -540,7 +539,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn TimeoutNow(
         &self,
         req: rpc::ServerRequest<TimeoutNow>,
-        res: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        res: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         self.shared
             .identity
@@ -561,10 +560,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         res: &mut rpc::ServerStreamResponse<InstallSnapshotResponse>,
     ) -> Result<()> {
         // TODO: Ideally only one snapshot should ever be getting installed at a time.
+        // ^ If we receive a second request, pick the latest leader.
 
         // Basically interface with the state machine.
         // But, also periodically send back the term.
         // If we observe a term
+
+        /*
+        TODO: Consider having a separate 'DataTransfer' RPC Service for generic chunked transfers that we'd initialize with an async callback.
+        */
 
         Ok(())
     }
@@ -637,7 +641,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
     async fn CurrentStatus(
         &self,
-        req: rpc::ServerRequest<google::proto::empty::Empty>,
+        req: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         res: &mut rpc::ServerResponse<Status>,
     ) -> Result<()> {
         res.value = self.current_status().await;
