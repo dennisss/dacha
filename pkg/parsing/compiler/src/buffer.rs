@@ -48,7 +48,7 @@ impl<'a> Type for BufferType<'a> {
             | BufferTypeProtoSizeCase::EndMarker(_) => {
                 format!("Vec<{}>", element_type)
             }
-            BufferTypeProtoSizeCase::Unknown => {
+            BufferTypeProtoSizeCase::NOT_SET => {
                 return Err(err_msg("Unspecified buffer size"));
             }
         })
@@ -58,7 +58,7 @@ impl<'a> Type for BufferType<'a> {
         let element_default = self.element_type.get().default_value_expression()?;
 
         Ok(match self.proto.size_case() {
-            BufferTypeProtoSizeCase::Unknown => todo!(),
+            BufferTypeProtoSizeCase::NOT_SET => todo!(),
             BufferTypeProtoSizeCase::FixedLength(len) => {
                 let mut parts = vec![];
                 for i in 0..*len {
@@ -140,10 +140,12 @@ impl<'a> Type for BufferType<'a> {
                             typ: self.element_type.clone(), // TODO: Configure to the correct type.
                             value: Some(arg_expr.clone()),
                             size_of: None,
+                            is_option: false,
                         },
                     );
                 }
 
+                // The default value of this needs to be 0 if the length field isn't present.
                 let len_expr = Expression::parse(expr)?.evaluate(&scope)?.unwrap();
 
                 lines.add("let mut buf = vec![];");
@@ -181,7 +183,7 @@ impl<'a> Type for BufferType<'a> {
                 // TODO: Fix the remaining_bytes value used.
                 lines.add(format!(
                     r#"
-                    let length = {}.len().checked_sub({})
+                    let length = {}.len().checked_sub({} as usize)
                         .ok_or_else(|| ::parsing::incomplete_error(0))?;"#,
                     context.stream, after_count
                 ));
@@ -259,7 +261,7 @@ impl<'a> Type for BufferType<'a> {
 
                 lines.add("\tbuf");
             }
-            BufferTypeProtoSizeCase::Unknown => {
+            BufferTypeProtoSizeCase::NOT_SET => {
                 panic!();
             }
         }
@@ -290,10 +292,13 @@ impl<'a> Type for BufferType<'a> {
                         typ: self.element_type.clone(), // TODO: Configure to the correct type.
                         value: Some(arg_expr.clone()),
                         size_of: None,
+                        is_option: false,
                     },
                 );
             }
 
+            /*
+            // TODO: This is meaningless if the length field is derived from the array
             let len_value = Expression::parse(expr)?.evaluate(&scope)?.unwrap();
 
             lines.add(format!(
@@ -304,6 +309,7 @@ impl<'a> Type for BufferType<'a> {
             "#,
                 len_value, value
             ));
+            */
         }
 
         lines.add(format!("let start_i = {}.len();", context.stream));
@@ -365,7 +371,7 @@ impl<'a> Type for BufferType<'a> {
             BufferTypeProtoSizeCase::EndTerminated(_) | BufferTypeProtoSizeCase::EndMarker(_) => {
                 return Ok(None);
             }
-            BufferTypeProtoSizeCase::Unknown => {
+            BufferTypeProtoSizeCase::NOT_SET => {
                 return Err(err_msg("Unspecified buffer size"));
             }
         };

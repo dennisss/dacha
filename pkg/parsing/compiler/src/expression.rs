@@ -30,6 +30,9 @@ pub struct Symbol<'a> {
 
     /// Rust expression that
     pub size_of: Option<String>,
+
+    /// If true, the type is wrapped in an Option<>
+    pub is_option: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -268,6 +271,11 @@ impl Expression {
                             None => return Ok(None),
                         };
 
+                        if symbol.is_option {
+                            expr.push_str(".unwrap_or(0)");
+                        }
+
+                        // symbol.typ.field
                         for field in &v.field_path[1..] {
                             expr.push_str(&format!(".{}", field));
                         }

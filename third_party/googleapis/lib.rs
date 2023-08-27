@@ -7,6 +7,7 @@ extern crate std;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[macro_use]
 extern crate common;
 extern crate protobuf;
 #[macro_use]

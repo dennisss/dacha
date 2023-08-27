@@ -19,6 +19,7 @@ mod buffer_queue;
 mod channel;
 mod client_types;
 mod constants;
+mod credentials;
 mod http2_channel;
 mod local_channel;
 mod media_type;
@@ -34,6 +35,7 @@ mod status;
 
 pub use channel::Channel;
 pub use client_types::*;
+pub use credentials::ChannelCredentialsProvider;
 pub use http2_channel::{Http2Channel, Http2ChannelOptions};
 pub use local_channel::LocalChannel;
 pub use metadata::Metadata;

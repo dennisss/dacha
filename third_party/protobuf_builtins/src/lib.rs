@@ -1,4 +1,3 @@
-//
 #![no_std]
 
 #[cfg(feature = "std")]
@@ -15,6 +14,7 @@ extern crate macros;
 
 include!(concat!(env!("OUT_DIR"), "/proto_lib.rs"));
 
+use common::errors::*;
 use google::protobuf::Timestamp;
 
 impl std::convert::From<std::time::SystemTime> for Timestamp {

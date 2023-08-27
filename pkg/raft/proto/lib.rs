@@ -58,7 +58,7 @@ impl Configuration {
                 self.learners_mut().remove(s);
                 self.members_mut().remove(s);
             }
-            ConfigChangeTypeCase::Unknown => {
+            ConfigChangeTypeCase::NOT_SET => {
                 // TODO: Return an error.
             }
         };

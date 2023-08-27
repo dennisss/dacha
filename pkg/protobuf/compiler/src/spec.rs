@@ -227,7 +227,7 @@ impl Enum {
         proto.set_name(&self.name);
         for item in &self.body {
             match item {
-                EnumBodyItem::Option(_) => todo!(),
+                EnumBodyItem::Option(_) => {} // TODO
                 EnumBodyItem::Field(field) => {
                     let mut v = pb::EnumValueDescriptorProto::default();
                     v.set_name(&field.name);
@@ -513,7 +513,7 @@ impl Proto {
                 TopLevelDef::Enum(e) => {
                     proto.add_enum_type(e.to_proto());
                 }
-                TopLevelDef::Extend(_) => todo!(),
+                TopLevelDef::Extend(_) => {} // TODO
                 TopLevelDef::Service(s) => {
                     proto.add_service(s.to_proto());
                 }

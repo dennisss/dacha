@@ -1074,7 +1074,7 @@ impl NodeInner {
                     )
                     .into());
                 }
-                WorkerSpec_VolumeSourceCase::Unknown => {
+                WorkerSpec_VolumeSourceCase::NOT_SET => {
                     return Err(
                         rpc::Status::invalid_argument("No source configured for volume").into(),
                     );
@@ -1143,7 +1143,7 @@ impl NodeInner {
                     mount.add_options("bind".into());
                     container_config.add_mounts(mount);
                 }
-                DeviceSourceSourceCase::Unknown => {
+                DeviceSourceSourceCase::NOT_SET => {
                     return Err(
                         rpc::Status::invalid_argument("No source configured for device").into(),
                     );

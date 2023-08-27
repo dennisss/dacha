@@ -28,6 +28,15 @@ impl Value {
         }
     }
 
+    pub fn set_field(&mut self, name: &str, value: Value) {
+        match self {
+            Self::Object(v) => {
+                v.insert(name.to_string(), value);
+            }
+            _ => panic!(),
+        }
+    }
+
     pub fn get_element(&self, idx: usize) -> Option<&Value> {
         match self {
             Self::Array(v) => v.get(idx),

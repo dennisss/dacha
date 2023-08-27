@@ -87,7 +87,7 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
                 let typ = StringType::create(s, self, context)?;
                 self.add_anonymous_type(typ)
             }
-            TypeProtoTypeCase::Unknown => return Err(err_msg("Unspecified type")),
+            TypeProtoTypeCase::NOT_SET => return Err(err_msg("Unspecified type")),
         })
     }
 }

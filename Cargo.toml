@@ -12,6 +12,7 @@ members = [
 	"pkg/asn",
 	"pkg/asn/compiler",
 	"pkg/crypto",
+	"pkg/crypto/jwt",
 	"pkg/parsing",
 	"pkg/parsing/macros",
 	"pkg/parsing/compiler",
@@ -138,6 +139,18 @@ opt-level = 3
 debug = false
 
 [profile.dev.package.math]
+opt-level = 3
+debug = false
+
+[profile.dev.package.protobuf_compiler]
+opt-level = 3
+debug = false
+
+[profile.dev.package.protobuf_core]
+opt-level = 3
+debug = false
+
+[profile.dev.package.protobuf_descriptor]
 opt-level = 3
 debug = false
 

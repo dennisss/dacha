@@ -15,7 +15,7 @@ http = { path = "../http" }
 rpc_util = { path = "../rpc_util" }
 web = { path = "../web" }
 json = { path = "../format/json" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf/compiler" }

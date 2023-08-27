@@ -740,7 +740,7 @@ impl ConsensusModule {
                             .followers
                             .insert(*id, ConsensusFollowerProgress::new(last_log_index));
                     }
-                    ConfigChangeTypeCase::Unknown => {
+                    ConfigChangeTypeCase::NOT_SET => {
                         return Err(ProposeError::RejectedConfigChange);
                     }
                 };

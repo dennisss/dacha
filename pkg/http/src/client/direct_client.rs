@@ -361,6 +361,14 @@ impl ClientInterface for DirectClient {
             }
         }
 
+        // TODO: Find a better location for this?
+        if request.head.accepts_trailers {
+            request.head.headers.raw_headers.push(Header {
+                name: AsciiString::new(TE),
+                value: "trailers".into(),
+            })
+        }
+
         let mut state = self.shared.processing_state.lock().await;
 
         if !state.running

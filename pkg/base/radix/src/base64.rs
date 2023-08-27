@@ -3,25 +3,50 @@ use alloc::vec::Vec;
 
 use crate::{DecodeRadixError, DecodeRadixErrorKind};
 
-const STANDARD_ALPHABET: &'static [u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+struct Base64Options {
+    pub alphabet: [u8; 64],
+    pub inverse_alphabet: [u8; 256],
+    pub padding: Option<char>,
+}
 
-const STANDARD_ALPHABET_INVERSE: [u8; 256] = {
-    let mut v = [255u8; 256];
+impl Base64Options {
+    const fn new(alphabet: [u8; 64], padding: Option<char>) -> Self {
+        let mut v = [255u8; 256];
 
-    let mut i = 0;
-    while i < STANDARD_ALPHABET.len() {
-        v[STANDARD_ALPHABET[i] as usize] = i as u8;
-        i += 1
+        let mut i = 0;
+        while i < alphabet.len() {
+            v[alphabet[i] as usize] = i as u8;
+            i += 1
+        }
+
+        Self {
+            alphabet,
+            inverse_alphabet: v,
+            padding,
+        }
     }
+}
 
-    v
-};
+const STANDARD_ALPHABET: Base64Options = Base64Options::new(
+    *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+    Some('='),
+);
 
-const PADDING: char = '=';
+const URLSAFE_ALPHABET: Base64Options = Base64Options::new(
+    *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
+    None,
+);
 
 /// Every 3 bytes is expanded into 4 characters.
 pub fn base64_encode(data: &[u8]) -> String {
+    base64_encode_with(data, &STANDARD_ALPHABET)
+}
+
+pub fn base64url_encode(data: &[u8]) -> String {
+    base64_encode_with(data, &URLSAFE_ALPHABET)
+}
+
+fn base64_encode_with(data: &[u8], options: &Base64Options) -> String {
     let mut out = String::new();
     out.reserve_exact(base64_encoded_len(data.len()));
 
@@ -41,13 +66,15 @@ pub fn base64_encode(data: &[u8]) -> String {
             let shift = 24 - (i + 1) * 6;
             let group6 = ((group24 >> shift) & 0b111111) as usize;
 
-            let c = STANDARD_ALPHABET[group6];
+            let c = options.alphabet[group6];
 
             out.push(c as char);
         }
 
-        for _ in n..4 {
-            out.push(PADDING);
+        if let Some(p) = options.padding.clone() {
+            for _ in n..4 {
+                out.push(p);
+            }
         }
     }
 
@@ -67,6 +94,14 @@ pub fn base64_encoded_len(data_len: usize) -> usize {
 }
 
 pub fn base64_decode(data: &str) -> Result<Vec<u8>, DecodeRadixError> {
+    base64_decode_with(data, &STANDARD_ALPHABET)
+}
+
+pub fn base64url_decode(data: &str) -> Result<Vec<u8>, DecodeRadixError> {
+    base64_decode_with(data, &URLSAFE_ALPHABET)
+}
+
+fn base64_decode_with(data: &str, options: &Base64Options) -> Result<Vec<u8>, DecodeRadixError> {
     if data.len() % 4 != 0 {
         return Err(DecodeRadixError {
             input_position: data.len(),
@@ -80,7 +115,7 @@ pub fn base64_decode(data: &str) -> Result<Vec<u8>, DecodeRadixError> {
         let mut paddings = 0;
         for i in 0..chunk.len() {
             let group6 = {
-                if chunk[i] == PADDING as u8 {
+                if Some(chunk[i]) == options.padding.map(|p| p as u8) {
                     paddings += 1;
                     0
                 } else if paddings > 0 {
@@ -89,11 +124,11 @@ pub fn base64_decode(data: &str) -> Result<Vec<u8>, DecodeRadixError> {
                         kind: DecodeRadixErrorKind::UnsupportedDigit,
                     });
                 } else {
-                    STANDARD_ALPHABET_INVERSE[chunk[i] as usize]
+                    options.inverse_alphabet[chunk[i] as usize]
                 }
             };
 
-            if (group6 as usize) >= STANDARD_ALPHABET.len() {
+            if (group6 as usize) >= options.alphabet.len() {
                 return Err(DecodeRadixError {
                     input_position: 4 * chunk_i + i,
                     kind: DecodeRadixErrorKind::UnsupportedDigit,

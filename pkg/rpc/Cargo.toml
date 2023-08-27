@@ -14,7 +14,6 @@ protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 failure = "0.1.8"
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
-googleapis_proto = { path = "../../third_party/googleapis" }
 protobuf_json = { path = "../protobuf/json" }
 executor = { path = "../executor" }
 net = { path = "../net" }

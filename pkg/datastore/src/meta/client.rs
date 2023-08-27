@@ -391,7 +391,7 @@ impl<'a> MetastoreTransaction<'a> {
                 OperationTypeCase::Delete(_) => {
                     return Ok(None);
                 }
-                OperationTypeCase::Unknown => {}
+                OperationTypeCase::NOT_SET => {}
             }
         }
 
@@ -414,7 +414,7 @@ impl<'a> MetastoreTransaction<'a> {
                     OperationTypeCase::Put(value) => {
                         entry.set_value(value.as_ref());
                     }
-                    OperationTypeCase::Delete(_) | OperationTypeCase::Unknown => {
+                    OperationTypeCase::Delete(_) | OperationTypeCase::NOT_SET => {
                         entry.set_deleted(true);
                     }
                 }

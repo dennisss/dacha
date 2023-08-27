@@ -62,7 +62,7 @@ impl TextToken {
         Ok(inner)
     }));
     parser!(symbol<&str, char> => one_of(SYMBOLS));
-    parser!(string<&str, Vec<u8>> => strLit);
+    parser!(string<&str, Vec<u8>> => multiline_str_lit);
 
     // TODO: Use the 'full_ident' token type from the protobuf spec?
     // TODO: Should not allow two sequential dots?
@@ -100,6 +100,23 @@ token_atom!(string, String, Vec<u8>);
 token_atom!(ident, Identifier, String);
 token_atom!(integer, Integer, i64);
 token_atom!(float, Float, f64);
+
+parser!(pub multiline_str_lit<&str, Vec<u8>> => seq!(c => {
+    let mut out = c.next(strLit)?;
+
+    while let Some(extra_line) = c.next(opt(extra_strlit))? {
+        out.extend_from_slice(&extra_line);
+    }
+
+    Ok(out)
+}));
+
+parser!(extra_strlit<&str, Vec<u8>> => seq!(c => {
+    c.next(take_while(|c: char| c.is_whitespace() && c != '\n'))?;
+    c.next(tag("\n"))?;
+    c.next(take_while(|c: char| c.is_whitespace() && c != '\n'))?;
+    c.next(strLit)
+}));
 
 // TODO: Dedup with syntax.rs
 parser!(pub full_ident<&str, String> => seq!(c => {
@@ -177,7 +194,7 @@ impl TextMessageFile {
 
 /// Represents the text format of a
 // TextMessage = TextField*
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TextMessage {
     fields: Vec<TextField>,
 }
@@ -241,7 +258,7 @@ impl TextMessage {
 }
 
 // TextField = TextFieldName :?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct TextField {
     name: TextFieldName,
     value: TextValue,
@@ -263,7 +280,7 @@ impl TextField {
     }));
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum TextFieldName {
     Regular(String),
     Extension(String),
@@ -281,7 +298,7 @@ impl TextFieldName {
     ));
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum TextValue {
     Bool(bool),
     Integer(i64),
@@ -734,6 +751,26 @@ mod tests {
         "#;
 
         parse_text_syntax(data).unwrap();
+    }
+
+    #[test]
+    fn multi_line_string() {
+        let data = r#"
+        text:
+            "hello"
+            " world"
+            "!" 
+        "#;
+
+        assert_eq!(
+            parse_text_syntax(data).unwrap(),
+            TextMessage {
+                fields: vec![TextField {
+                    name: TextFieldName::Regular("text".to_string()),
+                    value: TextValue::String(b"hello world!".to_vec())
+                }]
+            }
+        );
     }
 }
 

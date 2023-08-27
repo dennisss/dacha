@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use common::args::parse_args;
 use common::errors::*;
-use grpc_proto::reflection::*;
+use grpc_proto::grpc::reflection::v1alpha::*;
 use protobuf::{DescriptorPool, Message};
 use rpc::Channel;
 
@@ -41,12 +41,18 @@ enum Command {
 struct ListCommand {
     #[arg(positional)]
     addr: String,
+
+    #[arg(default = false)]
+    insecure: bool,
 }
 
 #[derive(Args)]
 struct CallCommand {
     #[arg(positional)]
     addr: String,
+
+    #[arg(default = false)]
+    insecure: bool,
 
     #[arg(positional)]
     method_name: String,
@@ -109,9 +115,10 @@ struct ServerClient {
 }
 
 impl ServerClient {
-    async fn create(addr: &str) -> Result<Self> {
+    async fn create(addr: &str, insecure: bool) -> Result<Self> {
+        // TODO: Default to a secure channel.
         let channel = Arc::new(rpc::Http2Channel::create(
-            format!("http://{}", addr).as_str(),
+            format!("http{}://{}", if insecure { "" } else { "s" }, addr).as_str(),
         )?);
 
         let mut reflection = ServerReflectionClient::create(channel.clone()).await?;
@@ -156,7 +163,7 @@ impl ServerClient {
 }
 
 async fn run_ls(cmd: ListCommand) -> Result<()> {
-    let mut client = ServerClient::create(&cmd.addr).await?;
+    let mut client = ServerClient::create(&cmd.addr, cmd.insecure).await?;
 
     for name in &client.services {
         println!("{}", name);
@@ -166,7 +173,7 @@ async fn run_ls(cmd: ListCommand) -> Result<()> {
 }
 
 async fn run_call(cmd: CallCommand) -> Result<()> {
-    let mut client = ServerClient::create(&cmd.addr).await?;
+    let mut client = ServerClient::create(&cmd.addr, cmd.insecure).await?;
 
     let method_parts = cmd.method_name.split('.').collect::<Vec<_>>();
     let service_suffix = method_parts[0..(method_parts.len() - 1)].join(".");

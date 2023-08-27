@@ -278,7 +278,7 @@ impl Metastore {
             ConfigChangeRequestChangeCase::RemoveServer(id) => {
                 entry.config_mut().set_RemoveServer(id.clone());
             }
-            ConfigChangeRequestChangeCase::Unknown => {
+            ConfigChangeRequestChangeCase::NOT_SET => {
                 return Err(rpc::Status::invalid_argument("Invalid config change").into());
             }
         }

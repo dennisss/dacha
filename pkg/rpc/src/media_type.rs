@@ -54,13 +54,11 @@ impl RPCMediaType {
 
         let suffix = match media_type.suffix {
             Some(v) => v,
-            None => {
-                return None;
-            }
+            None => "".into(),
         };
 
         let serialization = match suffix.as_str() {
-            GRPC_MEDIA_PROTO_SUFFIX => RPCMediaSerialization::Proto,
+            GRPC_MEDIA_PROTO_SUFFIX | "" => RPCMediaSerialization::Proto,
             GRPC_MEDIA_JSON_SUFFIX => RPCMediaSerialization::JSON,
             _ => {
                 return None;
@@ -80,10 +78,12 @@ impl RPCMediaType {
                 RPCMediaProtocol::Default => GRPC_MEDIA_SUBTYPE.to_string(),
                 RPCMediaProtocol::Web => GRPC_WEB_MEDIA_SUBTYPE.to_string(),
             },
-            suffix: Some(match self.serialization {
-                RPCMediaSerialization::Proto => GRPC_MEDIA_PROTO_SUFFIX.to_string(),
-                RPCMediaSerialization::JSON => GRPC_MEDIA_JSON_SUFFIX.to_string(),
-            }),
+            suffix: match self.serialization {
+                // NOTE: Even though the spec says to use "application/grpc+proto", many servers are
+                // excepting an exact match to "application/grpc".
+                RPCMediaSerialization::Proto => None, // GRPC_MEDIA_PROTO_SUFFIX.to_string(),
+                RPCMediaSerialization::JSON => Some(GRPC_MEDIA_JSON_SUFFIX.to_string()),
+            },
             params: vec![],
         }
         .to_string()

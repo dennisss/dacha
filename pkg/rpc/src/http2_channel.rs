@@ -19,6 +19,8 @@ use net::backoff::ExponentialBackoff;
 
 use crate::channel::Channel;
 use crate::client_types::*;
+use crate::constants::{GRPC_ACCEPT_ENCODING, GRPC_ENCODING};
+use crate::credentials::ChannelCredentialsProvider;
 use crate::media_type::*;
 use crate::message::MessageReader;
 use crate::message_request_body::MessageRequestBody;
@@ -29,6 +31,8 @@ use crate::RetryingOptions;
 
 pub struct Http2ChannelOptions {
     pub http: http::ClientOptions,
+
+    pub credentials: Option<Box<dyn ChannelCredentialsProvider>>,
 
     pub retrying: Option<RetryingOptions>,
 
@@ -43,6 +47,7 @@ impl TryFrom<http::ClientOptions> for Http2ChannelOptions {
             http: value,
             retrying: Some(RetryingOptions::default()),
             max_request_buffer_size: 16 * 1024, // 16KB
+            credentials: None,
         })
     }
 }
@@ -52,6 +57,22 @@ impl TryFrom<&str> for Http2ChannelOptions {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         http::ClientOptions::try_from(value)?.try_into()
+    }
+}
+
+pub trait TryIntoHttp2ChannelOptions {
+    fn try_into_value(self) -> Result<Http2ChannelOptions>;
+}
+
+impl TryIntoResult<Http2ChannelOptions> for &str {
+    fn try_into_result(self) -> Result<Http2ChannelOptions> {
+        self.try_into()
+    }
+}
+
+impl TryIntoResult<Http2ChannelOptions> for http::ClientOptions {
+    fn try_into_result(self) -> Result<Http2ChannelOptions> {
+        self.try_into()
     }
 }
 
@@ -65,6 +86,8 @@ There are three cases to retry:
 
 3. unary-unary
     - buffer_full_response request context hint.
+
+TODO: Implement full unary response retrying (e.g. before we get back the full response)
 */
 
 /*
@@ -78,8 +101,8 @@ pub struct Http2Channel {
 }
 
 impl Http2Channel {
-    pub fn create<O: TryInto<Http2ChannelOptions, Error = Error>>(options: O) -> Result<Self> {
-        let options = options.try_into()?;
+    pub fn create<O: TryIntoResult<Http2ChannelOptions>>(options: O) -> Result<Self> {
+        let options = options.try_into_result()?;
         let client = Arc::new(http::Client::create(
             options.http.clone().set_force_http2(true),
         )?);
@@ -103,12 +126,24 @@ impl Http2Channel {
             request_receiver,
         ));
 
+        // TODO: Apply this later as authorization metadata may need to be refreshed
+        // between retries?
+        let mut request_context = request_context.clone();
+        if let Some(creds) = self.options.credentials.as_ref() {
+            if let Err(e) = creds
+                .attach_request_credentials(service_name, method_name, &mut request_context)
+                .await
+            {
+                return ClientStreamingResponse::from_error(e);
+            }
+        }
+
         let request_sender = Http2RequestSender {
             client: self.client.clone(),
             options: self.options.clone(),
             // TODO: Add the full package path.
             path: format!("/{}/{}", service_name, method_name),
-            request_context: request_context.clone(),
+            request_context,
             request_buffer: buffer,
         };
 
@@ -325,6 +360,9 @@ impl Http2RequestSender {
                 }
                 .to_string(),
             )
+            .header(GRPC_ENCODING, "identity")
+            .header(GRPC_ACCEPT_ENCODING, "identity")
+            .accept_trailers(true)
             .body(body)
             .build()
             .map_err(|e| {

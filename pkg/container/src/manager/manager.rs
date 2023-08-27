@@ -623,7 +623,7 @@ impl Manager {
 
         for volume in spec.volumes_mut() {
             match volume.source_case() {
-                WorkerSpec_VolumeSourceCase::Unknown => {}
+                WorkerSpec_VolumeSourceCase::NOT_SET => {}
                 WorkerSpec_VolumeSourceCase::Bundle(_) => {}
                 WorkerSpec_VolumeSourceCase::PersistentName(name) => {
                     // Persistent volumes should be specific to individual workers.

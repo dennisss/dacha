@@ -5,12 +5,14 @@ use common::errors::*;
 #[derive(PartialEq, Clone, Eq, Hash)]
 pub struct AsciiString {
     pub data: Bytes,
+    hidden: (),
 }
 
 impl AsciiString {
+    // TODO: Get rid of this as it is unsafe.
     pub fn new(s: &str) -> Self {
         let data = s.as_bytes().into();
-        Self { data }
+        Self { data, hidden: () }
     }
 
     pub fn from<T: Into<Bytes>>(data: T) -> Result<Self> {
@@ -21,12 +23,12 @@ impl AsciiString {
             }
         }
 
-        Ok(Self { data })
+        Ok(Self { data, hidden: () })
     }
 
     // TODO: Rename from_bytes_unchecked
     pub unsafe fn from_ascii_unchecked(data: Bytes) -> AsciiString {
-        AsciiString { data }
+        Self { data, hidden: () }
     }
     pub fn eq_ignore_case(&self, other: &[u8]) -> bool {
         self.data.eq_ignore_ascii_case(other)
@@ -41,6 +43,22 @@ impl AsciiString {
 
     pub fn to_bytes(&self) -> Bytes {
         self.data.clone()
+    }
+}
+
+pub trait ToAsciiString {
+    fn to_ascii_string(self) -> Result<AsciiString>;
+}
+
+impl ToAsciiString for &str {
+    fn to_ascii_string(self) -> Result<AsciiString> {
+        AsciiString::from(Bytes::from(self))
+    }
+}
+
+impl ToAsciiString for AsciiString {
+    fn to_ascii_string(self) -> Result<AsciiString> {
+        Ok(self)
     }
 }
 

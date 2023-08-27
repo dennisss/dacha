@@ -54,7 +54,6 @@ use crate::media_type::RPCMediaType;
 use crate::message::*;
 use crate::message_request_body::MessageRequestBuffer;
 use crate::metadata::*;
-use crate::status::*;
 
 /// Used by an RPC client to specify how a single RPC should be sent and what
 /// metadata should be sent along with the RPC.
@@ -118,7 +117,7 @@ impl ClientStreamingRequest<()> {
         }
     }
 
-    pub fn into<T: protobuf::StaticMessage>(self) -> ClientStreamingRequest<T> {
+    pub fn into<T: protobuf::Message>(self) -> ClientStreamingRequest<T> {
         ClientStreamingRequest {
             sender: self.sender,
             phantom_t: PhantomData,
@@ -164,7 +163,7 @@ impl<T> ClientStreamingRequest<T> {
     }
 }
 
-impl<T: protobuf::StaticMessage> ClientStreamingRequest<T> {
+impl<T: protobuf::Message> ClientStreamingRequest<T> {
     /// Returns whether or not the message was sent. If not, then the connection
     /// was broken and the client should check the finish() method on the
     /// other end.

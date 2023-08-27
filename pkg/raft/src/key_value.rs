@@ -133,7 +133,7 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
                     success: old.is_some(),
                 })
             }
-            KeyValueOperationTypeCase::Unknown => Err(err_msg("Unknown key-value operation")),
+            KeyValueOperationTypeCase::NOT_SET => Err(err_msg("Unknown key-value operation")),
         }
     }
 

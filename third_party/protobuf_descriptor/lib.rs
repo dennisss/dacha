@@ -12,5 +12,7 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
-pub mod descriptor;
-pub use descriptor::*;
+pub mod google;
+
+// TODO: Get rid of this to align with the normal protobuf package format.
+pub use google::protobuf::*;

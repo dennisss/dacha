@@ -291,7 +291,7 @@ impl TransactionManager {
                 OperationTypeCase::Delete(_) => {
                     write.delete(op.key());
                 }
-                OperationTypeCase::Unknown => {
+                OperationTypeCase::NOT_SET => {
                     return Err(rpc::Status::invalid_argument("Invalid operation").into());
                 }
             }

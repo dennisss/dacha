@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::iter::Iterator;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use parsing::ascii::AsciiString;
+use parsing::ascii::{AsciiString, ToAsciiString};
 
 // Comma separation pattern used for splitting received metadata values.
 regexp!(COMMA_SEPARATOR => "(?: \t)*,(?: \t)");
@@ -99,13 +100,13 @@ impl Metadata {
         self.raw_data.entry(name).or_insert_with(|| vec![])
     }
 
-    pub fn add_text(&mut self, name: &str, value: &str) -> Result<()> {
+    pub fn add_text<T: ToAsciiString>(&mut self, name: &str, value: T) -> Result<()> {
         if name.ends_with("-bin") {
             return Err(err_msg("Text metadata must not end with -bin"));
         }
 
         let name = AsciiString::from(name)?;
-        self.get_values_mut(name).push(AsciiString::from(value)?);
+        self.get_values_mut(name).push(value.to_ascii_string()?);
         Ok(())
     }
 

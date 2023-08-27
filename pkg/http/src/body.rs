@@ -47,10 +47,6 @@ pub trait Body: Readable {
     async fn trailers(&mut self) -> Result<Option<Headers>>; // { Ok(None) }
 }
 
-/*
-    In the response, If I have a
-*/
-
 #[async_trait]
 impl<T: 'static + AsRef<[u8]> + Send + Unpin> Body for Cursor<T> {
     fn len(&self) -> Option<usize> {
@@ -279,7 +275,7 @@ impl Body for TransformBody {
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {
-        self.body.trailers().await
+        self.body.inner_reader_mut().trailers().await
     }
 }
 

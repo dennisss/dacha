@@ -13,4 +13,4 @@ rpc = { path = "../rpc" }
 http = { path = "../http" }
 nordic_tools = { path = "../nordic_tools" }
 rpc_util = { path = "../rpc_util" }
-google = { path = "../../third_party/google" }
+protobuf_builtins = { path = "../../third_party/protobuf_builtins" }

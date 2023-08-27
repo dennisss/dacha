@@ -288,6 +288,7 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
 
     // TODO: Check for duplicate "TE" headers
     // TODO: Also parse this header based on its defined syntax.
+    let mut accepts_trailers = false;
     for header in &regular_headers.raw_headers {
         if header.name.as_ref() == "te" {
             if header.value.as_bytes() != b"trailers" {
@@ -295,6 +296,8 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
                     "Only \"trailers\" may be present in TE header",
                 ));
             }
+
+            accepts_trailers = true;
         }
     }
 
@@ -316,6 +319,7 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
         },
         version: HTTP_V2_0,
         headers: regular_headers,
+        accepts_trailers,
     })
 }
 

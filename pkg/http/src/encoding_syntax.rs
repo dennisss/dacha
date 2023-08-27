@@ -37,6 +37,23 @@ pub fn parse_transfer_encoding(headers: &Headers) -> Result<Vec<TransferCoding>>
     Ok(out)
 }
 
+/*
+TODO: Must accept stuff like
+
+TE: deflate
+TE:
+TE: trailers, deflate;q=0.5
+*/
+pub fn parse_te_for_trailers(headers: &Headers) -> Result<bool> {
+    for h in headers.find(TRANSFER_ENCODING) {
+        if h.value.to_ascii_str()?.contains("trailers") {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 // RFC 7230: Section 4
 //
 // `transfer-coding = "chunked" / "compress"

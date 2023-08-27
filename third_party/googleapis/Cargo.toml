@@ -1,12 +1,18 @@
 [package]
 name = "googleapis_proto"
 version = "0.0.0"
+edition = "2018"
+
+[lib]
+path = "lib.rs"
 
 [dependencies]
 common = { path = "../../pkg/common" }
 protobuf = { path = "../../pkg/protobuf" }
 macros = { path = "../../pkg/macros" }
 protobuf_builtins = { path = "../protobuf_builtins" }
+protobuf_descriptor = { path = "../protobuf_descriptor" }
+rpc = { path = "../../pkg/rpc" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../pkg/protobuf/compiler" }

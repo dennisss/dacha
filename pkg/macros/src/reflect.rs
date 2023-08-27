@@ -199,6 +199,21 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
     let mut parse_fields = vec![];
     let mut serialize_fields = vec![];
 
+    let struct_options = get_options(PARSE_ATTR_NAME, &input.attrs);
+
+    let mut allow_unknown = false;
+    for (key, value) in struct_options {
+        if key.is_ident("allow_unknown") {
+            let v = value.unwrap();
+            match &v {
+                Lit::Bool(v) => {
+                    allow_unknown = v.value;
+                }
+                _ => panic!("Bad allow_unknown format"),
+            };
+        }
+    }
+
     match &input.data {
         Data::Struct(s) => {
             for (i, field) in s.fields.iter().enumerate() {
@@ -262,7 +277,9 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
                     match key.as_ref() {
                         #(#parse_branch,)*
                         _ => {
-                            return Err(format_err!("Unknown field: {}", key.as_ref()));
+                            if !#allow_unknown {
+                                return Err(format_err!("Unknown field: {}", key.as_ref()));
+                            }
                         }
                     }
                 }

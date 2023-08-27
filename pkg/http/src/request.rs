@@ -32,6 +32,7 @@ pub struct RequestHead {
     pub uri: Uri,
     pub version: Version,
     pub headers: Headers,
+    pub accepts_trailers: bool,
 }
 
 impl RequestHead {
@@ -55,6 +56,7 @@ pub struct RequestBuilder {
     uri: Option<Uri>,
     headers: Vec<Header>,
     body: Option<Box<dyn Body>>,
+    accepts_trailers: bool,
 
     // First error that occured in the building process
     error: Option<Error>,
@@ -68,6 +70,7 @@ impl RequestBuilder {
             headers: vec![],
             error: None,
             body: None,
+            accepts_trailers: false,
         }
     }
 
@@ -154,6 +157,11 @@ impl RequestBuilder {
         self
     }
 
+    pub fn accept_trailers(mut self, accepts: bool) -> Self {
+        self.accepts_trailers = accepts;
+        self
+    }
+
     /// Constructs the request from the previously provided value.
     ///
     /// NOTE: Even if this succeeds, then the request may still be invalid and
@@ -181,6 +189,7 @@ impl RequestBuilder {
                 uri,
                 version: HTTP_V1_1,
                 headers,
+                accepts_trailers: self.accepts_trailers,
             },
             body,
         })

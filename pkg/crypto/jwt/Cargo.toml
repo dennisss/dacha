@@ -1,0 +1,11 @@
+[package]
+name = "crypto_jwt"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+crypto = { path = ".." }
+base_radix = { path = "../../base/radix" }
+macros = { path = "../../macros" }
+json = { path = "../../format/json" }

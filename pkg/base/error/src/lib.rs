@@ -26,3 +26,13 @@ pub use error_new::*;
 mod helpers;
 #[cfg(feature = "std")]
 pub use helpers::*;
+
+pub trait TryIntoResult<T> {
+    fn try_into_result(self) -> Result<T>;
+}
+
+impl<T> TryIntoResult<T> for T {
+    fn try_into_result(self) -> Result<T> {
+        Ok(self)
+    }
+}

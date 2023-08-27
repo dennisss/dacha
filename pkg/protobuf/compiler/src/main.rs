@@ -12,9 +12,8 @@ followed by
 
 fn main() -> Result<()> {
     let dir = file::project_path!("third_party/protobuf_descriptor");
-    let mut options = protobuf_compiler::CompilerOptions::default();
+    let mut options = protobuf_compiler::project_default_options();
     options.runtime_package = "protobuf_core".into();
-    // options.paths.push("dir");
     options.should_format = true;
 
     protobuf_compiler::build_custom(&dir, &dir, options)

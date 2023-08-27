@@ -1,5 +1,5 @@
 use common::errors::*;
-use grpc_proto::reflection::*;
+use grpc_proto::grpc::reflection::v1alpha::*;
 
 pub trait AddReflection {
     /// Adds reflection capabilities to an RPC server.

@@ -9,6 +9,7 @@ extern crate regexp_macros;
 
 mod build;
 mod compiler;
+mod escape;
 pub mod spec;
 pub mod syntax;
 

@@ -161,17 +161,19 @@ parser!(float_value<&str, f64> => seq!(c => {
 // constant = fullIdent | ( [ "-" | "+" ] intLit ) | ( [ "-" | "+" ] floatLit )
 // |                 strLit | boolLit
 parser!(constant<&str, Constant> => seq!(c => {
-    let str_const = |input| {
-        str_lit(input).map(|(s, rest)| (Constant::String(s), rest))
-    };
-
     let bool_const = |input| {
         bool_lit(input).map(|(b, rest)| (Constant::Bool(b), rest))
     };
 
     c.next(alt!(
         bool_const,
-        str_const,
+        seq!(c => {
+            // It's undocumented but accepted by the standard compiler to allow multi-line constants similar to those in text protos.
+            // TODO: Just parse a TextValue here?
+            c.next(Token::parse_padding)?;
+            let v = c.next(protobuf_core::text::multiline_str_lit)?;
+            Ok(Constant::String(v))
+        }),
         map(full_ident, |s| Constant::Identifier(s)),
         map(int_value, |i| Constant::Integer(i)),
         map(float_value, |f| Constant::Float(f)),

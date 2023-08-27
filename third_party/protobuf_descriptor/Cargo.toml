@@ -2,6 +2,9 @@
 name = "protobuf_descriptor"
 version = "0.1.0"
 
+[lib]
+path = "lib.rs"
+
 [dependencies]
 common = { path = "../../pkg/common", default-features = false }
 protobuf_core = { path = "../../pkg/protobuf/core", default-features = false }
