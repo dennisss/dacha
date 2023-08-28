@@ -578,11 +578,14 @@ impl Server {
                 }
             };
 
+            let accepts_trailers = crate::encoding_syntax::parse_te_for_trailers(&headers)?;
+
             let mut request_head = RequestHead {
                 method,
                 uri: request_line.target.into_uri(),
                 version: request_line.version,
                 headers,
+                accepts_trailers,
             };
 
             // TODO:

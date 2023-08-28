@@ -30,7 +30,7 @@ pub static FILE_DESCRIPTOR_0F2934D003718DD8: protobuf_core::StaticFileDescriptor
             };
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct FileDescriptorSet {
-    file: Vec<FileDescriptorProto>,
+    file: Vec<MessagePtr<FileDescriptorProto>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -48,21 +48,28 @@ impl FileDescriptorSet {
         &VALUE
     }
 
-    pub fn file(&self) -> &[FileDescriptorProto] {
+    pub fn file(&self) -> &[MessagePtr<FileDescriptorProto>] {
         &self.file
     }
 
-    pub fn file_mut(&mut self) -> &mut Vec<FileDescriptorProto> {
+    pub fn file_mut(&mut self) -> &mut Vec<MessagePtr<FileDescriptorProto>> {
         &mut self.file
     }
 
     pub fn file_len(&self) -> usize {
         self.file.len()
     }
-    pub fn add_file(&mut self, v: FileDescriptorProto) -> &mut FileDescriptorProto {
-        self.file.push(v);
+
+    pub fn add_file(&mut self, v: FileDescriptorProto) -> &mut MessagePtr<FileDescriptorProto> {
+        self.file.push(MessagePtr::new(v));
         self.file.last_mut().unwrap()
     }
+
+    pub fn new_file(&mut self) -> &mut MessagePtr<FileDescriptorProto> {
+        self.file.push(<MessagePtr<FileDescriptorProto>>::default());
+        self.file.last_mut().unwrap()
+    }
+
     pub fn clear_file(&mut self) {
         self.file.clear();
     }
@@ -96,13 +103,18 @@ impl protobuf_core::Message for FileDescriptorSet {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
                 1 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.file.push(v?);
+                        self.file.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -118,6 +130,10 @@ impl protobuf_core::Message for FileDescriptorSet {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for FileDescriptorSet {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
             name: protobuf_core::StringPtr::Static("file"),
@@ -157,10 +173,10 @@ pub struct FileDescriptorProto {
     dependency: Vec<String>,
     public_dependency: Vec<i32>,
     weak_dependency: Vec<i32>,
-    message_type: Vec<DescriptorProto>,
-    enum_type: Vec<EnumDescriptorProto>,
-    service: Vec<ServiceDescriptorProto>,
-    extension: Vec<FieldDescriptorProto>,
+    message_type: Vec<MessagePtr<DescriptorProto>>,
+    enum_type: Vec<MessagePtr<EnumDescriptorProto>>,
+    service: Vec<MessagePtr<ServiceDescriptorProto>>,
+    extension: Vec<MessagePtr<FieldDescriptorProto>>,
     options: Option<MessagePtr<FileOptions>>,
     source_code_info: Option<MessagePtr<SourceCodeInfo>>,
     syntax: Option<String>,
@@ -239,10 +255,17 @@ impl FileDescriptorProto {
     pub fn dependency_len(&self) -> usize {
         self.dependency.len()
     }
+
     pub fn add_dependency(&mut self, v: String) -> &mut String {
         self.dependency.push(v);
         self.dependency.last_mut().unwrap()
     }
+
+    pub fn new_dependency(&mut self) -> &mut String {
+        self.dependency.push(<String>::default());
+        self.dependency.last_mut().unwrap()
+    }
+
     pub fn clear_dependency(&mut self) {
         self.dependency.clear();
     }
@@ -258,10 +281,17 @@ impl FileDescriptorProto {
     pub fn public_dependency_len(&self) -> usize {
         self.public_dependency.len()
     }
+
     pub fn add_public_dependency(&mut self, v: i32) -> &mut i32 {
         self.public_dependency.push(v);
         self.public_dependency.last_mut().unwrap()
     }
+
+    pub fn new_public_dependency(&mut self) -> &mut i32 {
+        self.public_dependency.push(<i32>::default());
+        self.public_dependency.last_mut().unwrap()
+    }
+
     pub fn clear_public_dependency(&mut self) {
         self.public_dependency.clear();
     }
@@ -277,86 +307,134 @@ impl FileDescriptorProto {
     pub fn weak_dependency_len(&self) -> usize {
         self.weak_dependency.len()
     }
+
     pub fn add_weak_dependency(&mut self, v: i32) -> &mut i32 {
         self.weak_dependency.push(v);
         self.weak_dependency.last_mut().unwrap()
     }
+
+    pub fn new_weak_dependency(&mut self) -> &mut i32 {
+        self.weak_dependency.push(<i32>::default());
+        self.weak_dependency.last_mut().unwrap()
+    }
+
     pub fn clear_weak_dependency(&mut self) {
         self.weak_dependency.clear();
     }
 
-    pub fn message_type(&self) -> &[DescriptorProto] {
+    pub fn message_type(&self) -> &[MessagePtr<DescriptorProto>] {
         &self.message_type
     }
 
-    pub fn message_type_mut(&mut self) -> &mut Vec<DescriptorProto> {
+    pub fn message_type_mut(&mut self) -> &mut Vec<MessagePtr<DescriptorProto>> {
         &mut self.message_type
     }
 
     pub fn message_type_len(&self) -> usize {
         self.message_type.len()
     }
-    pub fn add_message_type(&mut self, v: DescriptorProto) -> &mut DescriptorProto {
-        self.message_type.push(v);
+
+    pub fn add_message_type(&mut self, v: DescriptorProto) -> &mut MessagePtr<DescriptorProto> {
+        self.message_type.push(MessagePtr::new(v));
         self.message_type.last_mut().unwrap()
     }
+
+    pub fn new_message_type(&mut self) -> &mut MessagePtr<DescriptorProto> {
+        self.message_type
+            .push(<MessagePtr<DescriptorProto>>::default());
+        self.message_type.last_mut().unwrap()
+    }
+
     pub fn clear_message_type(&mut self) {
         self.message_type.clear();
     }
 
-    pub fn enum_type(&self) -> &[EnumDescriptorProto] {
+    pub fn enum_type(&self) -> &[MessagePtr<EnumDescriptorProto>] {
         &self.enum_type
     }
 
-    pub fn enum_type_mut(&mut self) -> &mut Vec<EnumDescriptorProto> {
+    pub fn enum_type_mut(&mut self) -> &mut Vec<MessagePtr<EnumDescriptorProto>> {
         &mut self.enum_type
     }
 
     pub fn enum_type_len(&self) -> usize {
         self.enum_type.len()
     }
-    pub fn add_enum_type(&mut self, v: EnumDescriptorProto) -> &mut EnumDescriptorProto {
-        self.enum_type.push(v);
+
+    pub fn add_enum_type(
+        &mut self,
+        v: EnumDescriptorProto,
+    ) -> &mut MessagePtr<EnumDescriptorProto> {
+        self.enum_type.push(MessagePtr::new(v));
         self.enum_type.last_mut().unwrap()
     }
+
+    pub fn new_enum_type(&mut self) -> &mut MessagePtr<EnumDescriptorProto> {
+        self.enum_type
+            .push(<MessagePtr<EnumDescriptorProto>>::default());
+        self.enum_type.last_mut().unwrap()
+    }
+
     pub fn clear_enum_type(&mut self) {
         self.enum_type.clear();
     }
 
-    pub fn service(&self) -> &[ServiceDescriptorProto] {
+    pub fn service(&self) -> &[MessagePtr<ServiceDescriptorProto>] {
         &self.service
     }
 
-    pub fn service_mut(&mut self) -> &mut Vec<ServiceDescriptorProto> {
+    pub fn service_mut(&mut self) -> &mut Vec<MessagePtr<ServiceDescriptorProto>> {
         &mut self.service
     }
 
     pub fn service_len(&self) -> usize {
         self.service.len()
     }
-    pub fn add_service(&mut self, v: ServiceDescriptorProto) -> &mut ServiceDescriptorProto {
-        self.service.push(v);
+
+    pub fn add_service(
+        &mut self,
+        v: ServiceDescriptorProto,
+    ) -> &mut MessagePtr<ServiceDescriptorProto> {
+        self.service.push(MessagePtr::new(v));
         self.service.last_mut().unwrap()
     }
+
+    pub fn new_service(&mut self) -> &mut MessagePtr<ServiceDescriptorProto> {
+        self.service
+            .push(<MessagePtr<ServiceDescriptorProto>>::default());
+        self.service.last_mut().unwrap()
+    }
+
     pub fn clear_service(&mut self) {
         self.service.clear();
     }
 
-    pub fn extension(&self) -> &[FieldDescriptorProto] {
+    pub fn extension(&self) -> &[MessagePtr<FieldDescriptorProto>] {
         &self.extension
     }
 
-    pub fn extension_mut(&mut self) -> &mut Vec<FieldDescriptorProto> {
+    pub fn extension_mut(&mut self) -> &mut Vec<MessagePtr<FieldDescriptorProto>> {
         &mut self.extension
     }
 
     pub fn extension_len(&self) -> usize {
         self.extension.len()
     }
-    pub fn add_extension(&mut self, v: FieldDescriptorProto) -> &mut FieldDescriptorProto {
-        self.extension.push(v);
+
+    pub fn add_extension(
+        &mut self,
+        v: FieldDescriptorProto,
+    ) -> &mut MessagePtr<FieldDescriptorProto> {
+        self.extension.push(MessagePtr::new(v));
         self.extension.last_mut().unwrap()
     }
+
+    pub fn new_extension(&mut self) -> &mut MessagePtr<FieldDescriptorProto> {
+        self.extension
+            .push(<MessagePtr<FieldDescriptorProto>>::default());
+        self.extension.last_mut().unwrap()
+    }
+
     pub fn clear_extension(&mut self) {
         self.extension.clear();
     }
@@ -468,6 +546,11 @@ impl protobuf_core::Message for FileDescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -491,22 +574,22 @@ impl protobuf_core::Message for FileDescriptorProto {
                 }
                 4 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.message_type.push(v?);
+                        self.message_type.push(MessagePtr::new(v?));
                     }
                 }
                 5 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.enum_type.push(v?);
+                        self.enum_type.push(MessagePtr::new(v?));
                     }
                 }
                 6 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.service.push(v?);
+                        self.service.push(MessagePtr::new(v?));
                     }
                 }
                 7 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.extension.push(v?);
+                        self.extension.push(MessagePtr::new(v?));
                     }
                 }
                 8 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
@@ -550,6 +633,10 @@ impl protobuf_core::Message for FileDescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for FileDescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -777,6 +864,11 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -805,6 +897,10 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for DescriptorProto_ExtensionRange {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -937,6 +1033,11 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -961,6 +1062,10 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for DescriptorProto_ReservedRange {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -1004,14 +1109,14 @@ impl protobuf_core::MessageReflection for DescriptorProto_ReservedRange {
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct DescriptorProto {
     name: Option<String>,
-    field: Vec<FieldDescriptorProto>,
-    extension: Vec<FieldDescriptorProto>,
-    nested_type: Vec<DescriptorProto>,
-    enum_type: Vec<EnumDescriptorProto>,
-    extension_range: Vec<DescriptorProto_ExtensionRange>,
-    oneof_decl: Vec<OneofDescriptorProto>,
+    field: Vec<MessagePtr<FieldDescriptorProto>>,
+    extension: Vec<MessagePtr<FieldDescriptorProto>>,
+    nested_type: Vec<MessagePtr<DescriptorProto>>,
+    enum_type: Vec<MessagePtr<EnumDescriptorProto>>,
+    extension_range: Vec<MessagePtr<DescriptorProto_ExtensionRange>>,
+    oneof_decl: Vec<MessagePtr<OneofDescriptorProto>>,
     options: Option<MessagePtr<MessageOptions>>,
-    reserved_range: Vec<DescriptorProto_ReservedRange>,
+    reserved_range: Vec<MessagePtr<DescriptorProto_ReservedRange>>,
     reserved_name: Vec<String>,
 }
 
@@ -1056,119 +1161,176 @@ impl DescriptorProto {
         self.name = None;
     }
 
-    pub fn field(&self) -> &[FieldDescriptorProto] {
+    pub fn field(&self) -> &[MessagePtr<FieldDescriptorProto>] {
         &self.field
     }
 
-    pub fn field_mut(&mut self) -> &mut Vec<FieldDescriptorProto> {
+    pub fn field_mut(&mut self) -> &mut Vec<MessagePtr<FieldDescriptorProto>> {
         &mut self.field
     }
 
     pub fn field_len(&self) -> usize {
         self.field.len()
     }
-    pub fn add_field(&mut self, v: FieldDescriptorProto) -> &mut FieldDescriptorProto {
-        self.field.push(v);
+
+    pub fn add_field(&mut self, v: FieldDescriptorProto) -> &mut MessagePtr<FieldDescriptorProto> {
+        self.field.push(MessagePtr::new(v));
         self.field.last_mut().unwrap()
     }
+
+    pub fn new_field(&mut self) -> &mut MessagePtr<FieldDescriptorProto> {
+        self.field
+            .push(<MessagePtr<FieldDescriptorProto>>::default());
+        self.field.last_mut().unwrap()
+    }
+
     pub fn clear_field(&mut self) {
         self.field.clear();
     }
 
-    pub fn extension(&self) -> &[FieldDescriptorProto] {
+    pub fn extension(&self) -> &[MessagePtr<FieldDescriptorProto>] {
         &self.extension
     }
 
-    pub fn extension_mut(&mut self) -> &mut Vec<FieldDescriptorProto> {
+    pub fn extension_mut(&mut self) -> &mut Vec<MessagePtr<FieldDescriptorProto>> {
         &mut self.extension
     }
 
     pub fn extension_len(&self) -> usize {
         self.extension.len()
     }
-    pub fn add_extension(&mut self, v: FieldDescriptorProto) -> &mut FieldDescriptorProto {
-        self.extension.push(v);
+
+    pub fn add_extension(
+        &mut self,
+        v: FieldDescriptorProto,
+    ) -> &mut MessagePtr<FieldDescriptorProto> {
+        self.extension.push(MessagePtr::new(v));
         self.extension.last_mut().unwrap()
     }
+
+    pub fn new_extension(&mut self) -> &mut MessagePtr<FieldDescriptorProto> {
+        self.extension
+            .push(<MessagePtr<FieldDescriptorProto>>::default());
+        self.extension.last_mut().unwrap()
+    }
+
     pub fn clear_extension(&mut self) {
         self.extension.clear();
     }
 
-    pub fn nested_type(&self) -> &[DescriptorProto] {
+    pub fn nested_type(&self) -> &[MessagePtr<DescriptorProto>] {
         &self.nested_type
     }
 
-    pub fn nested_type_mut(&mut self) -> &mut Vec<DescriptorProto> {
+    pub fn nested_type_mut(&mut self) -> &mut Vec<MessagePtr<DescriptorProto>> {
         &mut self.nested_type
     }
 
     pub fn nested_type_len(&self) -> usize {
         self.nested_type.len()
     }
-    pub fn add_nested_type(&mut self, v: DescriptorProto) -> &mut DescriptorProto {
-        self.nested_type.push(v);
+
+    pub fn add_nested_type(&mut self, v: DescriptorProto) -> &mut MessagePtr<DescriptorProto> {
+        self.nested_type.push(MessagePtr::new(v));
         self.nested_type.last_mut().unwrap()
     }
+
+    pub fn new_nested_type(&mut self) -> &mut MessagePtr<DescriptorProto> {
+        self.nested_type
+            .push(<MessagePtr<DescriptorProto>>::default());
+        self.nested_type.last_mut().unwrap()
+    }
+
     pub fn clear_nested_type(&mut self) {
         self.nested_type.clear();
     }
 
-    pub fn enum_type(&self) -> &[EnumDescriptorProto] {
+    pub fn enum_type(&self) -> &[MessagePtr<EnumDescriptorProto>] {
         &self.enum_type
     }
 
-    pub fn enum_type_mut(&mut self) -> &mut Vec<EnumDescriptorProto> {
+    pub fn enum_type_mut(&mut self) -> &mut Vec<MessagePtr<EnumDescriptorProto>> {
         &mut self.enum_type
     }
 
     pub fn enum_type_len(&self) -> usize {
         self.enum_type.len()
     }
-    pub fn add_enum_type(&mut self, v: EnumDescriptorProto) -> &mut EnumDescriptorProto {
-        self.enum_type.push(v);
+
+    pub fn add_enum_type(
+        &mut self,
+        v: EnumDescriptorProto,
+    ) -> &mut MessagePtr<EnumDescriptorProto> {
+        self.enum_type.push(MessagePtr::new(v));
         self.enum_type.last_mut().unwrap()
     }
+
+    pub fn new_enum_type(&mut self) -> &mut MessagePtr<EnumDescriptorProto> {
+        self.enum_type
+            .push(<MessagePtr<EnumDescriptorProto>>::default());
+        self.enum_type.last_mut().unwrap()
+    }
+
     pub fn clear_enum_type(&mut self) {
         self.enum_type.clear();
     }
 
-    pub fn extension_range(&self) -> &[DescriptorProto_ExtensionRange] {
+    pub fn extension_range(&self) -> &[MessagePtr<DescriptorProto_ExtensionRange>] {
         &self.extension_range
     }
 
-    pub fn extension_range_mut(&mut self) -> &mut Vec<DescriptorProto_ExtensionRange> {
+    pub fn extension_range_mut(&mut self) -> &mut Vec<MessagePtr<DescriptorProto_ExtensionRange>> {
         &mut self.extension_range
     }
 
     pub fn extension_range_len(&self) -> usize {
         self.extension_range.len()
     }
+
     pub fn add_extension_range(
         &mut self,
         v: DescriptorProto_ExtensionRange,
-    ) -> &mut DescriptorProto_ExtensionRange {
-        self.extension_range.push(v);
+    ) -> &mut MessagePtr<DescriptorProto_ExtensionRange> {
+        self.extension_range.push(MessagePtr::new(v));
         self.extension_range.last_mut().unwrap()
     }
+
+    pub fn new_extension_range(&mut self) -> &mut MessagePtr<DescriptorProto_ExtensionRange> {
+        self.extension_range
+            .push(<MessagePtr<DescriptorProto_ExtensionRange>>::default());
+        self.extension_range.last_mut().unwrap()
+    }
+
     pub fn clear_extension_range(&mut self) {
         self.extension_range.clear();
     }
 
-    pub fn oneof_decl(&self) -> &[OneofDescriptorProto] {
+    pub fn oneof_decl(&self) -> &[MessagePtr<OneofDescriptorProto>] {
         &self.oneof_decl
     }
 
-    pub fn oneof_decl_mut(&mut self) -> &mut Vec<OneofDescriptorProto> {
+    pub fn oneof_decl_mut(&mut self) -> &mut Vec<MessagePtr<OneofDescriptorProto>> {
         &mut self.oneof_decl
     }
 
     pub fn oneof_decl_len(&self) -> usize {
         self.oneof_decl.len()
     }
-    pub fn add_oneof_decl(&mut self, v: OneofDescriptorProto) -> &mut OneofDescriptorProto {
-        self.oneof_decl.push(v);
+
+    pub fn add_oneof_decl(
+        &mut self,
+        v: OneofDescriptorProto,
+    ) -> &mut MessagePtr<OneofDescriptorProto> {
+        self.oneof_decl.push(MessagePtr::new(v));
         self.oneof_decl.last_mut().unwrap()
     }
+
+    pub fn new_oneof_decl(&mut self) -> &mut MessagePtr<OneofDescriptorProto> {
+        self.oneof_decl
+            .push(<MessagePtr<OneofDescriptorProto>>::default());
+        self.oneof_decl.last_mut().unwrap()
+    }
+
     pub fn clear_oneof_decl(&mut self) {
         self.oneof_decl.clear();
     }
@@ -1195,24 +1357,32 @@ impl DescriptorProto {
         self.options = None;
     }
 
-    pub fn reserved_range(&self) -> &[DescriptorProto_ReservedRange] {
+    pub fn reserved_range(&self) -> &[MessagePtr<DescriptorProto_ReservedRange>] {
         &self.reserved_range
     }
 
-    pub fn reserved_range_mut(&mut self) -> &mut Vec<DescriptorProto_ReservedRange> {
+    pub fn reserved_range_mut(&mut self) -> &mut Vec<MessagePtr<DescriptorProto_ReservedRange>> {
         &mut self.reserved_range
     }
 
     pub fn reserved_range_len(&self) -> usize {
         self.reserved_range.len()
     }
+
     pub fn add_reserved_range(
         &mut self,
         v: DescriptorProto_ReservedRange,
-    ) -> &mut DescriptorProto_ReservedRange {
-        self.reserved_range.push(v);
+    ) -> &mut MessagePtr<DescriptorProto_ReservedRange> {
+        self.reserved_range.push(MessagePtr::new(v));
         self.reserved_range.last_mut().unwrap()
     }
+
+    pub fn new_reserved_range(&mut self) -> &mut MessagePtr<DescriptorProto_ReservedRange> {
+        self.reserved_range
+            .push(<MessagePtr<DescriptorProto_ReservedRange>>::default());
+        self.reserved_range.last_mut().unwrap()
+    }
+
     pub fn clear_reserved_range(&mut self) {
         self.reserved_range.clear();
     }
@@ -1228,10 +1398,17 @@ impl DescriptorProto {
     pub fn reserved_name_len(&self) -> usize {
         self.reserved_name.len()
     }
+
     pub fn add_reserved_name(&mut self, v: String) -> &mut String {
         self.reserved_name.push(v);
         self.reserved_name.last_mut().unwrap()
     }
+
+    pub fn new_reserved_name(&mut self) -> &mut String {
+        self.reserved_name.push(<String>::default());
+        self.reserved_name.last_mut().unwrap()
+    }
+
     pub fn clear_reserved_name(&mut self) {
         self.reserved_name.clear();
     }
@@ -1265,6 +1442,11 @@ impl protobuf_core::Message for DescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -1272,38 +1454,38 @@ impl protobuf_core::Message for DescriptorProto {
                 1 => self.name = Some(StringCodec::parse(&f)?),
                 2 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.field.push(v?);
+                        self.field.push(MessagePtr::new(v?));
                     }
                 }
                 6 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.extension.push(v?);
+                        self.extension.push(MessagePtr::new(v?));
                     }
                 }
                 3 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.nested_type.push(v?);
+                        self.nested_type.push(MessagePtr::new(v?));
                     }
                 }
                 4 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.enum_type.push(v?);
+                        self.enum_type.push(MessagePtr::new(v?));
                     }
                 }
                 5 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.extension_range.push(v?);
+                        self.extension_range.push(MessagePtr::new(v?));
                     }
                 }
                 8 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.oneof_decl.push(v?);
+                        self.oneof_decl.push(MessagePtr::new(v?));
                     }
                 }
                 7 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 9 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.reserved_range.push(v?);
+                        self.reserved_range.push(MessagePtr::new(v?));
                     }
                 }
                 10 => {
@@ -1337,6 +1519,10 @@ impl protobuf_core::Message for DescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for DescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -1453,7 +1639,7 @@ impl ::core::fmt::Debug for ExtensionRangeOptions_Declaration {
 impl ExtensionRangeOptions_Declaration {
     pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const FULL_NAME_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const TYPE_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const TYP_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const RESERVED_FIELD_NUM: protobuf_core::FieldNumber = 5;
     pub const REPEATED_FIELD_NUM: protobuf_core::FieldNumber = 6;
 
@@ -1577,6 +1763,11 @@ impl protobuf_core::Message for ExtensionRangeOptions_Declaration {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -1613,6 +1804,10 @@ impl protobuf_core::Message for ExtensionRangeOptions_Declaration {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for ExtensionRangeOptions_Declaration {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -1680,6 +1875,8 @@ pub enum ExtensionRangeOptions_VerificationState {
     UNVERIFIED = 1,
 }
 
+impl ExtensionRangeOptions_VerificationState {}
+
 impl core::default::Default for ExtensionRangeOptions_VerificationState {
     fn default() -> Self {
         Self::DECLARATION
@@ -1691,6 +1888,11 @@ impl common::const_default::ConstDefault for ExtensionRangeOptions_VerificationS
 }
 
 impl protobuf_core::Enum for ExtensionRangeOptions_VerificationState {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => ExtensionRangeOptions_VerificationState::DECLARATION,
@@ -1742,8 +1944,8 @@ impl protobuf_core::reflection::Reflect for ExtensionRangeOptions_VerificationSt
 }
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct ExtensionRangeOptions {
-    uninterpreted_option: Vec<UninterpretedOption>,
-    declaration: Vec<ExtensionRangeOptions_Declaration>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    declaration: Vec<MessagePtr<ExtensionRangeOptions_Declaration>>,
     features: Option<MessagePtr<FeatureSet>>,
     verification: Option<ExtensionRangeOptions_VerificationState>,
 }
@@ -1766,43 +1968,62 @@ impl ExtensionRangeOptions {
         &VALUE
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
 
-    pub fn declaration(&self) -> &[ExtensionRangeOptions_Declaration] {
+    pub fn declaration(&self) -> &[MessagePtr<ExtensionRangeOptions_Declaration>] {
         &self.declaration
     }
 
-    pub fn declaration_mut(&mut self) -> &mut Vec<ExtensionRangeOptions_Declaration> {
+    pub fn declaration_mut(&mut self) -> &mut Vec<MessagePtr<ExtensionRangeOptions_Declaration>> {
         &mut self.declaration
     }
 
     pub fn declaration_len(&self) -> usize {
         self.declaration.len()
     }
+
     pub fn add_declaration(
         &mut self,
         v: ExtensionRangeOptions_Declaration,
-    ) -> &mut ExtensionRangeOptions_Declaration {
-        self.declaration.push(v);
+    ) -> &mut MessagePtr<ExtensionRangeOptions_Declaration> {
+        self.declaration.push(MessagePtr::new(v));
         self.declaration.last_mut().unwrap()
     }
+
+    pub fn new_declaration(&mut self) -> &mut MessagePtr<ExtensionRangeOptions_Declaration> {
+        self.declaration
+            .push(<MessagePtr<ExtensionRangeOptions_Declaration>>::default());
+        self.declaration.last_mut().unwrap()
+    }
+
     pub fn clear_declaration(&mut self) {
         self.declaration.clear();
     }
@@ -1880,18 +2101,23 @@ impl protobuf_core::Message for ExtensionRangeOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 2 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.declaration.push(v?);
+                        self.declaration.push(MessagePtr::new(v?));
                     }
                 }
                 50 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
@@ -1916,6 +2142,10 @@ impl protobuf_core::Message for ExtensionRangeOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for ExtensionRangeOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -1993,6 +2223,8 @@ pub enum FieldDescriptorProto_Type {
     TYPE_SINT64 = 18,
 }
 
+impl FieldDescriptorProto_Type {}
+
 impl core::default::Default for FieldDescriptorProto_Type {
     fn default() -> Self {
         Self::TYPE_DOUBLE
@@ -2004,6 +2236,11 @@ impl common::const_default::ConstDefault for FieldDescriptorProto_Type {
 }
 
 impl protobuf_core::Enum for FieldDescriptorProto_Type {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             1 => FieldDescriptorProto_Type::TYPE_DOUBLE,
@@ -2108,6 +2345,8 @@ pub enum FieldDescriptorProto_Label {
     LABEL_REPEATED = 3,
 }
 
+impl FieldDescriptorProto_Label {}
+
 impl core::default::Default for FieldDescriptorProto_Label {
     fn default() -> Self {
         Self::LABEL_OPTIONAL
@@ -2119,6 +2358,11 @@ impl common::const_default::ConstDefault for FieldDescriptorProto_Label {
 }
 
 impl protobuf_core::Enum for FieldDescriptorProto_Label {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             1 => FieldDescriptorProto_Label::LABEL_OPTIONAL,
@@ -2197,7 +2441,7 @@ impl FieldDescriptorProto {
     pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const LABEL_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const TYPE_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const TYP_FIELD_NUM: protobuf_core::FieldNumber = 5;
     pub const TYPE_NAME_FIELD_NUM: protobuf_core::FieldNumber = 6;
     pub const EXTENDEE_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const DEFAULT_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 7;
@@ -2439,6 +2683,11 @@ impl protobuf_core::Message for FieldDescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -2499,6 +2748,10 @@ impl protobuf_core::Message for FieldDescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for FieldDescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -2693,6 +2946,11 @@ impl protobuf_core::Message for OneofDescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -2717,6 +2975,10 @@ impl protobuf_core::Message for OneofDescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for OneofDescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -2844,6 +3106,11 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -2868,6 +3135,10 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for EnumDescriptorProto_EnumReservedRange {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -2911,9 +3182,9 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto_EnumReservedRange 
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct EnumDescriptorProto {
     name: Option<String>,
-    value: Vec<EnumValueDescriptorProto>,
+    value: Vec<MessagePtr<EnumValueDescriptorProto>>,
     options: Option<MessagePtr<EnumOptions>>,
-    reserved_range: Vec<EnumDescriptorProto_EnumReservedRange>,
+    reserved_range: Vec<MessagePtr<EnumDescriptorProto_EnumReservedRange>>,
     reserved_name: Vec<String>,
 }
 
@@ -2953,21 +3224,32 @@ impl EnumDescriptorProto {
         self.name = None;
     }
 
-    pub fn value(&self) -> &[EnumValueDescriptorProto] {
+    pub fn value(&self) -> &[MessagePtr<EnumValueDescriptorProto>] {
         &self.value
     }
 
-    pub fn value_mut(&mut self) -> &mut Vec<EnumValueDescriptorProto> {
+    pub fn value_mut(&mut self) -> &mut Vec<MessagePtr<EnumValueDescriptorProto>> {
         &mut self.value
     }
 
     pub fn value_len(&self) -> usize {
         self.value.len()
     }
-    pub fn add_value(&mut self, v: EnumValueDescriptorProto) -> &mut EnumValueDescriptorProto {
-        self.value.push(v);
+
+    pub fn add_value(
+        &mut self,
+        v: EnumValueDescriptorProto,
+    ) -> &mut MessagePtr<EnumValueDescriptorProto> {
+        self.value.push(MessagePtr::new(v));
         self.value.last_mut().unwrap()
     }
+
+    pub fn new_value(&mut self) -> &mut MessagePtr<EnumValueDescriptorProto> {
+        self.value
+            .push(<MessagePtr<EnumValueDescriptorProto>>::default());
+        self.value.last_mut().unwrap()
+    }
+
     pub fn clear_value(&mut self) {
         self.value.clear();
     }
@@ -2994,24 +3276,34 @@ impl EnumDescriptorProto {
         self.options = None;
     }
 
-    pub fn reserved_range(&self) -> &[EnumDescriptorProto_EnumReservedRange] {
+    pub fn reserved_range(&self) -> &[MessagePtr<EnumDescriptorProto_EnumReservedRange>] {
         &self.reserved_range
     }
 
-    pub fn reserved_range_mut(&mut self) -> &mut Vec<EnumDescriptorProto_EnumReservedRange> {
+    pub fn reserved_range_mut(
+        &mut self,
+    ) -> &mut Vec<MessagePtr<EnumDescriptorProto_EnumReservedRange>> {
         &mut self.reserved_range
     }
 
     pub fn reserved_range_len(&self) -> usize {
         self.reserved_range.len()
     }
+
     pub fn add_reserved_range(
         &mut self,
         v: EnumDescriptorProto_EnumReservedRange,
-    ) -> &mut EnumDescriptorProto_EnumReservedRange {
-        self.reserved_range.push(v);
+    ) -> &mut MessagePtr<EnumDescriptorProto_EnumReservedRange> {
+        self.reserved_range.push(MessagePtr::new(v));
         self.reserved_range.last_mut().unwrap()
     }
+
+    pub fn new_reserved_range(&mut self) -> &mut MessagePtr<EnumDescriptorProto_EnumReservedRange> {
+        self.reserved_range
+            .push(<MessagePtr<EnumDescriptorProto_EnumReservedRange>>::default());
+        self.reserved_range.last_mut().unwrap()
+    }
+
     pub fn clear_reserved_range(&mut self) {
         self.reserved_range.clear();
     }
@@ -3027,10 +3319,17 @@ impl EnumDescriptorProto {
     pub fn reserved_name_len(&self) -> usize {
         self.reserved_name.len()
     }
+
     pub fn add_reserved_name(&mut self, v: String) -> &mut String {
         self.reserved_name.push(v);
         self.reserved_name.last_mut().unwrap()
     }
+
+    pub fn new_reserved_name(&mut self) -> &mut String {
+        self.reserved_name.push(<String>::default());
+        self.reserved_name.last_mut().unwrap()
+    }
+
     pub fn clear_reserved_name(&mut self) {
         self.reserved_name.clear();
     }
@@ -3064,6 +3363,11 @@ impl protobuf_core::Message for EnumDescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -3071,13 +3375,13 @@ impl protobuf_core::Message for EnumDescriptorProto {
                 1 => self.name = Some(StringCodec::parse(&f)?),
                 2 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.value.push(v?);
+                        self.value.push(MessagePtr::new(v?));
                     }
                 }
                 3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 4 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.reserved_range.push(v?);
+                        self.reserved_range.push(MessagePtr::new(v?));
                     }
                 }
                 5 => {
@@ -3106,6 +3410,10 @@ impl protobuf_core::Message for EnumDescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for EnumDescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -3277,6 +3585,11 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -3305,6 +3618,10 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for EnumValueDescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -3356,7 +3673,7 @@ impl protobuf_core::MessageReflection for EnumValueDescriptorProto {
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct ServiceDescriptorProto {
     name: Option<String>,
-    method: Vec<MethodDescriptorProto>,
+    method: Vec<MessagePtr<MethodDescriptorProto>>,
     options: Option<MessagePtr<ServiceOptions>>,
 }
 
@@ -3394,21 +3711,32 @@ impl ServiceDescriptorProto {
         self.name = None;
     }
 
-    pub fn method(&self) -> &[MethodDescriptorProto] {
+    pub fn method(&self) -> &[MessagePtr<MethodDescriptorProto>] {
         &self.method
     }
 
-    pub fn method_mut(&mut self) -> &mut Vec<MethodDescriptorProto> {
+    pub fn method_mut(&mut self) -> &mut Vec<MessagePtr<MethodDescriptorProto>> {
         &mut self.method
     }
 
     pub fn method_len(&self) -> usize {
         self.method.len()
     }
-    pub fn add_method(&mut self, v: MethodDescriptorProto) -> &mut MethodDescriptorProto {
-        self.method.push(v);
+
+    pub fn add_method(
+        &mut self,
+        v: MethodDescriptorProto,
+    ) -> &mut MessagePtr<MethodDescriptorProto> {
+        self.method.push(MessagePtr::new(v));
         self.method.last_mut().unwrap()
     }
+
+    pub fn new_method(&mut self) -> &mut MessagePtr<MethodDescriptorProto> {
+        self.method
+            .push(<MessagePtr<MethodDescriptorProto>>::default());
+        self.method.last_mut().unwrap()
+    }
+
     pub fn clear_method(&mut self) {
         self.method.clear();
     }
@@ -3464,6 +3792,11 @@ impl protobuf_core::Message for ServiceDescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -3471,7 +3804,7 @@ impl protobuf_core::Message for ServiceDescriptorProto {
                 1 => self.name = Some(StringCodec::parse(&f)?),
                 2 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.method.push(v?);
+                        self.method.push(MessagePtr::new(v?));
                     }
                 }
                 3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
@@ -3494,6 +3827,10 @@ impl protobuf_core::Message for ServiceDescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for ServiceDescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -3710,6 +4047,11 @@ impl protobuf_core::Message for MethodDescriptorProto {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -3750,6 +4092,10 @@ impl protobuf_core::Message for MethodDescriptorProto {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for MethodDescriptorProto {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -3826,6 +4172,8 @@ pub enum FileOptions_OptimizeMode {
     LITE_RUNTIME = 3,
 }
 
+impl FileOptions_OptimizeMode {}
+
 impl core::default::Default for FileOptions_OptimizeMode {
     fn default() -> Self {
         Self::SPEED
@@ -3837,6 +4185,11 @@ impl common::const_default::ConstDefault for FileOptions_OptimizeMode {
 }
 
 impl protobuf_core::Enum for FileOptions_OptimizeMode {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             1 => FileOptions_OptimizeMode::SPEED,
@@ -3912,7 +4265,7 @@ pub struct FileOptions {
     php_metadata_namespace: Option<String>,
     ruby_package: Option<String>,
     features: Option<MessagePtr<FeatureSet>>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -4346,21 +4699,32 @@ impl FileOptions {
         self.features = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -4394,6 +4758,11 @@ impl protobuf_core::Message for FileOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -4421,7 +4790,7 @@ impl protobuf_core::Message for FileOptions {
                 50 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -4500,6 +4869,10 @@ impl protobuf_core::Message for FileOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for FileOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -4691,7 +5064,7 @@ pub struct MessageOptions {
     map_entry: Option<bool>,
     deprecated_legacy_json_field_conflicts: Option<bool>,
     features: Option<MessagePtr<FeatureSet>>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -4829,21 +5202,32 @@ impl MessageOptions {
         self.features = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -4877,6 +5261,11 @@ impl protobuf_core::Message for MessageOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -4889,7 +5278,7 @@ impl protobuf_core::Message for MessageOptions {
                 12 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -4923,6 +5312,10 @@ impl protobuf_core::Message for MessageOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for MessageOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -5012,6 +5405,8 @@ pub enum FieldOptions_CType {
     STRING_PIECE = 2,
 }
 
+impl FieldOptions_CType {}
+
 impl core::default::Default for FieldOptions_CType {
     fn default() -> Self {
         Self::STRING
@@ -5023,6 +5418,11 @@ impl common::const_default::ConstDefault for FieldOptions_CType {
 }
 
 impl protobuf_core::Enum for FieldOptions_CType {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FieldOptions_CType::STRING,
@@ -5082,6 +5482,8 @@ pub enum FieldOptions_JSType {
     JS_NUMBER = 2,
 }
 
+impl FieldOptions_JSType {}
+
 impl core::default::Default for FieldOptions_JSType {
     fn default() -> Self {
         Self::JS_NORMAL
@@ -5093,6 +5495,11 @@ impl common::const_default::ConstDefault for FieldOptions_JSType {
 }
 
 impl protobuf_core::Enum for FieldOptions_JSType {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FieldOptions_JSType::JS_NORMAL,
@@ -5152,6 +5559,8 @@ pub enum FieldOptions_OptionRetention {
     RETENTION_SOURCE = 2,
 }
 
+impl FieldOptions_OptionRetention {}
+
 impl core::default::Default for FieldOptions_OptionRetention {
     fn default() -> Self {
         Self::RETENTION_UNKNOWN
@@ -5163,6 +5572,11 @@ impl common::const_default::ConstDefault for FieldOptions_OptionRetention {
 }
 
 impl protobuf_core::Enum for FieldOptions_OptionRetention {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FieldOptions_OptionRetention::RETENTION_UNKNOWN,
@@ -5229,6 +5643,8 @@ pub enum FieldOptions_OptionTargetType {
     TARGET_TYPE_METHOD = 9,
 }
 
+impl FieldOptions_OptionTargetType {}
+
 impl core::default::Default for FieldOptions_OptionTargetType {
     fn default() -> Self {
         Self::TARGET_TYPE_UNKNOWN
@@ -5240,6 +5656,11 @@ impl common::const_default::ConstDefault for FieldOptions_OptionTargetType {
 }
 
 impl protobuf_core::Enum for FieldOptions_OptionTargetType {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FieldOptions_OptionTargetType::TARGET_TYPE_UNKNOWN,
@@ -5398,6 +5819,11 @@ impl protobuf_core::Message for FieldOptions_EditionDefault {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -5422,6 +5848,10 @@ impl protobuf_core::Message for FieldOptions_EditionDefault {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for FieldOptions_EditionDefault {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -5474,9 +5904,9 @@ pub struct FieldOptions {
     debug_redact: Option<bool>,
     retention: Option<FieldOptions_OptionRetention>,
     targets: Vec<FieldOptions_OptionTargetType>,
-    edition_defaults: Vec<FieldOptions_EditionDefault>,
+    edition_defaults: Vec<MessagePtr<FieldOptions_EditionDefault>>,
     features: Option<MessagePtr<FeatureSet>>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -5674,6 +6104,7 @@ impl FieldOptions {
     pub fn targets_len(&self) -> usize {
         self.targets.len()
     }
+
     pub fn add_targets(
         &mut self,
         v: FieldOptions_OptionTargetType,
@@ -5681,28 +6112,43 @@ impl FieldOptions {
         self.targets.push(v);
         self.targets.last_mut().unwrap()
     }
+
+    pub fn new_targets(&mut self) -> &mut FieldOptions_OptionTargetType {
+        self.targets
+            .push(<FieldOptions_OptionTargetType>::default());
+        self.targets.last_mut().unwrap()
+    }
+
     pub fn clear_targets(&mut self) {
         self.targets.clear();
     }
 
-    pub fn edition_defaults(&self) -> &[FieldOptions_EditionDefault] {
+    pub fn edition_defaults(&self) -> &[MessagePtr<FieldOptions_EditionDefault>] {
         &self.edition_defaults
     }
 
-    pub fn edition_defaults_mut(&mut self) -> &mut Vec<FieldOptions_EditionDefault> {
+    pub fn edition_defaults_mut(&mut self) -> &mut Vec<MessagePtr<FieldOptions_EditionDefault>> {
         &mut self.edition_defaults
     }
 
     pub fn edition_defaults_len(&self) -> usize {
         self.edition_defaults.len()
     }
+
     pub fn add_edition_defaults(
         &mut self,
         v: FieldOptions_EditionDefault,
-    ) -> &mut FieldOptions_EditionDefault {
-        self.edition_defaults.push(v);
+    ) -> &mut MessagePtr<FieldOptions_EditionDefault> {
+        self.edition_defaults.push(MessagePtr::new(v));
         self.edition_defaults.last_mut().unwrap()
     }
+
+    pub fn new_edition_defaults(&mut self) -> &mut MessagePtr<FieldOptions_EditionDefault> {
+        self.edition_defaults
+            .push(<MessagePtr<FieldOptions_EditionDefault>>::default());
+        self.edition_defaults.last_mut().unwrap()
+    }
+
     pub fn clear_edition_defaults(&mut self) {
         self.edition_defaults.clear();
     }
@@ -5729,21 +6175,32 @@ impl FieldOptions {
         self.features = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -5777,6 +6234,11 @@ impl protobuf_core::Message for FieldOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -5797,13 +6259,13 @@ impl protobuf_core::Message for FieldOptions {
                 }
                 20 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.edition_defaults.push(v?);
+                        self.edition_defaults.push(MessagePtr::new(v?));
                     }
                 }
                 21 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -5851,6 +6313,10 @@ impl protobuf_core::Message for FieldOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for FieldOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -5972,7 +6438,7 @@ impl protobuf_core::MessageReflection for FieldOptions {
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct OneofOptions {
     features: Option<MessagePtr<FeatureSet>>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -6013,21 +6479,32 @@ impl OneofOptions {
         self.features = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -6061,6 +6538,11 @@ impl protobuf_core::Message for OneofOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -6068,7 +6550,7 @@ impl protobuf_core::Message for OneofOptions {
                 1 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -6087,6 +6569,10 @@ impl protobuf_core::Message for OneofOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for OneofOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -6134,7 +6620,7 @@ pub struct EnumOptions {
     deprecated: Option<bool>,
     deprecated_legacy_json_field_conflicts: Option<bool>,
     features: Option<MessagePtr<FeatureSet>>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -6234,21 +6720,32 @@ impl EnumOptions {
         self.features = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -6282,6 +6779,11 @@ impl protobuf_core::Message for EnumOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -6292,7 +6794,7 @@ impl protobuf_core::Message for EnumOptions {
                 7 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -6320,6 +6822,10 @@ impl protobuf_core::Message for EnumOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for EnumOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -6391,7 +6897,7 @@ pub struct EnumValueOptions {
     deprecated: Option<bool>,
     features: Option<MessagePtr<FeatureSet>>,
     debug_redact: Option<bool>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -6468,21 +6974,32 @@ impl EnumValueOptions {
         self.debug_redact = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -6516,6 +7033,11 @@ impl protobuf_core::Message for EnumValueOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -6525,7 +7047,7 @@ impl protobuf_core::Message for EnumValueOptions {
                 3 => self.debug_redact = Some(BoolCodec::parse(&f)?),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -6550,6 +7072,10 @@ impl protobuf_core::Message for EnumValueOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for EnumValueOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -6609,7 +7135,7 @@ impl protobuf_core::MessageReflection for EnumValueOptions {
 pub struct ServiceOptions {
     features: Option<MessagePtr<FeatureSet>>,
     deprecated: Option<bool>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -6668,21 +7194,32 @@ impl ServiceOptions {
         self.deprecated = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -6716,6 +7253,11 @@ impl protobuf_core::Message for ServiceOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -6724,7 +7266,7 @@ impl protobuf_core::Message for ServiceOptions {
                 33 => self.deprecated = Some(BoolCodec::parse(&f)?),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -6746,6 +7288,10 @@ impl protobuf_core::Message for ServiceOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for ServiceOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -6801,6 +7347,8 @@ pub enum MethodOptions_IdempotencyLevel {
     IDEMPOTENT = 2,
 }
 
+impl MethodOptions_IdempotencyLevel {}
+
 impl core::default::Default for MethodOptions_IdempotencyLevel {
     fn default() -> Self {
         Self::IDEMPOTENCY_UNKNOWN
@@ -6812,6 +7360,11 @@ impl common::const_default::ConstDefault for MethodOptions_IdempotencyLevel {
 }
 
 impl protobuf_core::Enum for MethodOptions_IdempotencyLevel {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => MethodOptions_IdempotencyLevel::IDEMPOTENCY_UNKNOWN,
@@ -6869,7 +7422,7 @@ pub struct MethodOptions {
     deprecated: Option<bool>,
     idempotency_level: Option<MethodOptions_IdempotencyLevel>,
     features: Option<MessagePtr<FeatureSet>>,
-    uninterpreted_option: Vec<UninterpretedOption>,
+    uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -6951,21 +7504,32 @@ impl MethodOptions {
         self.features = None;
     }
 
-    pub fn uninterpreted_option(&self) -> &[UninterpretedOption] {
+    pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption>> {
         &mut self.uninterpreted_option
     }
 
     pub fn uninterpreted_option_len(&self) -> usize {
         self.uninterpreted_option.len()
     }
-    pub fn add_uninterpreted_option(&mut self, v: UninterpretedOption) -> &mut UninterpretedOption {
-        self.uninterpreted_option.push(v);
+
+    pub fn add_uninterpreted_option(
+        &mut self,
+        v: UninterpretedOption,
+    ) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option.push(MessagePtr::new(v));
         self.uninterpreted_option.last_mut().unwrap()
     }
+
+    pub fn new_uninterpreted_option(&mut self) -> &mut MessagePtr<UninterpretedOption> {
+        self.uninterpreted_option
+            .push(<MessagePtr<UninterpretedOption>>::default());
+        self.uninterpreted_option.last_mut().unwrap()
+    }
+
     pub fn clear_uninterpreted_option(&mut self) {
         self.uninterpreted_option.clear();
     }
@@ -6999,6 +7563,11 @@ impl protobuf_core::Message for MethodOptions {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -7008,7 +7577,7 @@ impl protobuf_core::Message for MethodOptions {
                 35 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 999 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.uninterpreted_option.push(v?);
+                        self.uninterpreted_option.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -7033,6 +7602,10 @@ impl protobuf_core::Message for MethodOptions {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for MethodOptions {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -7173,6 +7746,11 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -7201,6 +7779,10 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for UninterpretedOption_NamePart {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -7243,7 +7825,7 @@ impl protobuf_core::MessageReflection for UninterpretedOption_NamePart {
 }
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct UninterpretedOption {
-    name: Vec<UninterpretedOption_NamePart>,
+    name: Vec<MessagePtr<UninterpretedOption_NamePart>>,
     identifier_value: Option<String>,
     positive_int_value: Option<u64>,
     negative_int_value: Option<i64>,
@@ -7273,24 +7855,32 @@ impl UninterpretedOption {
         &VALUE
     }
 
-    pub fn name(&self) -> &[UninterpretedOption_NamePart] {
+    pub fn name(&self) -> &[MessagePtr<UninterpretedOption_NamePart>] {
         &self.name
     }
 
-    pub fn name_mut(&mut self) -> &mut Vec<UninterpretedOption_NamePart> {
+    pub fn name_mut(&mut self) -> &mut Vec<MessagePtr<UninterpretedOption_NamePart>> {
         &mut self.name
     }
 
     pub fn name_len(&self) -> usize {
         self.name.len()
     }
+
     pub fn add_name(
         &mut self,
         v: UninterpretedOption_NamePart,
-    ) -> &mut UninterpretedOption_NamePart {
-        self.name.push(v);
+    ) -> &mut MessagePtr<UninterpretedOption_NamePart> {
+        self.name.push(MessagePtr::new(v));
         self.name.last_mut().unwrap()
     }
+
+    pub fn new_name(&mut self) -> &mut MessagePtr<UninterpretedOption_NamePart> {
+        self.name
+            .push(<MessagePtr<UninterpretedOption_NamePart>>::default());
+        self.name.last_mut().unwrap()
+    }
+
     pub fn clear_name(&mut self) {
         self.name.clear();
     }
@@ -7440,13 +8030,18 @@ impl protobuf_core::Message for UninterpretedOption {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
                 2 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.name.push(v?);
+                        self.name.push(MessagePtr::new(v?));
                     }
                 }
                 3 => self.identifier_value = Some(StringCodec::parse(&f)?),
@@ -7486,6 +8081,10 @@ impl protobuf_core::Message for UninterpretedOption {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for UninterpretedOption {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -7570,6 +8169,8 @@ pub enum FeatureSet_FieldPresence {
     LEGACY_REQUIRED = 3,
 }
 
+impl FeatureSet_FieldPresence {}
+
 impl core::default::Default for FeatureSet_FieldPresence {
     fn default() -> Self {
         Self::FIELD_PRESENCE_UNKNOWN
@@ -7581,6 +8182,11 @@ impl common::const_default::ConstDefault for FeatureSet_FieldPresence {
 }
 
 impl protobuf_core::Enum for FeatureSet_FieldPresence {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FeatureSet_FieldPresence::FIELD_PRESENCE_UNKNOWN,
@@ -7643,6 +8249,8 @@ pub enum FeatureSet_EnumType {
     CLOSED = 2,
 }
 
+impl FeatureSet_EnumType {}
+
 impl core::default::Default for FeatureSet_EnumType {
     fn default() -> Self {
         Self::ENUM_TYPE_UNKNOWN
@@ -7654,6 +8262,11 @@ impl common::const_default::ConstDefault for FeatureSet_EnumType {
 }
 
 impl protobuf_core::Enum for FeatureSet_EnumType {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FeatureSet_EnumType::ENUM_TYPE_UNKNOWN,
@@ -7713,6 +8326,8 @@ pub enum FeatureSet_RepeatedFieldEncoding {
     EXPANDED = 2,
 }
 
+impl FeatureSet_RepeatedFieldEncoding {}
+
 impl core::default::Default for FeatureSet_RepeatedFieldEncoding {
     fn default() -> Self {
         Self::REPEATED_FIELD_ENCODING_UNKNOWN
@@ -7724,6 +8339,11 @@ impl common::const_default::ConstDefault for FeatureSet_RepeatedFieldEncoding {
 }
 
 impl protobuf_core::Enum for FeatureSet_RepeatedFieldEncoding {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FeatureSet_RepeatedFieldEncoding::REPEATED_FIELD_ENCODING_UNKNOWN,
@@ -7783,6 +8403,8 @@ pub enum FeatureSet_MessageEncoding {
     DELIMITED = 2,
 }
 
+impl FeatureSet_MessageEncoding {}
+
 impl core::default::Default for FeatureSet_MessageEncoding {
     fn default() -> Self {
         Self::MESSAGE_ENCODING_UNKNOWN
@@ -7794,6 +8416,11 @@ impl common::const_default::ConstDefault for FeatureSet_MessageEncoding {
 }
 
 impl protobuf_core::Enum for FeatureSet_MessageEncoding {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FeatureSet_MessageEncoding::MESSAGE_ENCODING_UNKNOWN,
@@ -7853,6 +8480,8 @@ pub enum FeatureSet_JsonFormat {
     LEGACY_BEST_EFFORT = 2,
 }
 
+impl FeatureSet_JsonFormat {}
+
 impl core::default::Default for FeatureSet_JsonFormat {
     fn default() -> Self {
         Self::JSON_FORMAT_UNKNOWN
@@ -7864,6 +8493,11 @@ impl common::const_default::ConstDefault for FeatureSet_JsonFormat {
 }
 
 impl protobuf_core::Enum for FeatureSet_JsonFormat {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FeatureSet_JsonFormat::JSON_FORMAT_UNKNOWN,
@@ -8071,6 +8705,11 @@ impl protobuf_core::Message for FeatureSet {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -8107,6 +8746,10 @@ impl protobuf_core::Message for FeatureSet {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for FeatureSet {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -8208,10 +8851,17 @@ impl SourceCodeInfo_Location {
     pub fn path_len(&self) -> usize {
         self.path.len()
     }
+
     pub fn add_path(&mut self, v: i32) -> &mut i32 {
         self.path.push(v);
         self.path.last_mut().unwrap()
     }
+
+    pub fn new_path(&mut self) -> &mut i32 {
+        self.path.push(<i32>::default());
+        self.path.last_mut().unwrap()
+    }
+
     pub fn clear_path(&mut self) {
         self.path.clear();
     }
@@ -8227,10 +8877,17 @@ impl SourceCodeInfo_Location {
     pub fn span_len(&self) -> usize {
         self.span.len()
     }
+
     pub fn add_span(&mut self, v: i32) -> &mut i32 {
         self.span.push(v);
         self.span.last_mut().unwrap()
     }
+
+    pub fn new_span(&mut self) -> &mut i32 {
+        self.span.push(<i32>::default());
+        self.span.last_mut().unwrap()
+    }
+
     pub fn clear_span(&mut self) {
         self.span.clear();
     }
@@ -8288,10 +8945,17 @@ impl SourceCodeInfo_Location {
     pub fn leading_detached_comments_len(&self) -> usize {
         self.leading_detached_comments.len()
     }
+
     pub fn add_leading_detached_comments(&mut self, v: String) -> &mut String {
         self.leading_detached_comments.push(v);
         self.leading_detached_comments.last_mut().unwrap()
     }
+
+    pub fn new_leading_detached_comments(&mut self) -> &mut String {
+        self.leading_detached_comments.push(<String>::default());
+        self.leading_detached_comments.last_mut().unwrap()
+    }
+
     pub fn clear_leading_detached_comments(&mut self) {
         self.leading_detached_comments.clear();
     }
@@ -8323,6 +8987,11 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
     {
         use protobuf_core::ReflectMergeFrom;
         self.reflect_merge_from(other)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -8367,6 +9036,10 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -8430,7 +9103,7 @@ impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
 }
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct SourceCodeInfo {
-    location: Vec<SourceCodeInfo_Location>,
+    location: Vec<MessagePtr<SourceCodeInfo_Location>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -8448,21 +9121,32 @@ impl SourceCodeInfo {
         &VALUE
     }
 
-    pub fn location(&self) -> &[SourceCodeInfo_Location] {
+    pub fn location(&self) -> &[MessagePtr<SourceCodeInfo_Location>] {
         &self.location
     }
 
-    pub fn location_mut(&mut self) -> &mut Vec<SourceCodeInfo_Location> {
+    pub fn location_mut(&mut self) -> &mut Vec<MessagePtr<SourceCodeInfo_Location>> {
         &mut self.location
     }
 
     pub fn location_len(&self) -> usize {
         self.location.len()
     }
-    pub fn add_location(&mut self, v: SourceCodeInfo_Location) -> &mut SourceCodeInfo_Location {
-        self.location.push(v);
+
+    pub fn add_location(
+        &mut self,
+        v: SourceCodeInfo_Location,
+    ) -> &mut MessagePtr<SourceCodeInfo_Location> {
+        self.location.push(MessagePtr::new(v));
         self.location.last_mut().unwrap()
     }
+
+    pub fn new_location(&mut self) -> &mut MessagePtr<SourceCodeInfo_Location> {
+        self.location
+            .push(<MessagePtr<SourceCodeInfo_Location>>::default());
+        self.location.last_mut().unwrap()
+    }
+
     pub fn clear_location(&mut self) {
         self.location.clear();
     }
@@ -8496,13 +9180,18 @@ impl protobuf_core::Message for SourceCodeInfo {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
                 1 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.location.push(v?);
+                        self.location.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -8518,6 +9207,10 @@ impl protobuf_core::Message for SourceCodeInfo {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for SourceCodeInfo {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
             name: protobuf_core::StringPtr::Static("location"),
@@ -8557,6 +9250,8 @@ pub enum GeneratedCodeInfo_Annotation_Semantic {
     ALIAS = 2,
 }
 
+impl GeneratedCodeInfo_Annotation_Semantic {}
+
 impl core::default::Default for GeneratedCodeInfo_Annotation_Semantic {
     fn default() -> Self {
         Self::NONE
@@ -8568,6 +9263,11 @@ impl common::const_default::ConstDefault for GeneratedCodeInfo_Annotation_Semant
 }
 
 impl protobuf_core::Enum for GeneratedCodeInfo_Annotation_Semantic {
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Enum) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => GeneratedCodeInfo_Annotation_Semantic::NONE,
@@ -8659,10 +9359,17 @@ impl GeneratedCodeInfo_Annotation {
     pub fn path_len(&self) -> usize {
         self.path.len()
     }
+
     pub fn add_path(&mut self, v: i32) -> &mut i32 {
         self.path.push(v);
         self.path.last_mut().unwrap()
     }
+
+    pub fn new_path(&mut self) -> &mut i32 {
+        self.path.push(<i32>::default());
+        self.path.last_mut().unwrap()
+    }
+
     pub fn clear_path(&mut self) {
         self.path.clear();
     }
@@ -8768,6 +9475,11 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
@@ -8806,6 +9518,10 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
@@ -8869,7 +9585,7 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
 }
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct GeneratedCodeInfo {
-    annotation: Vec<GeneratedCodeInfo_Annotation>,
+    annotation: Vec<MessagePtr<GeneratedCodeInfo_Annotation>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -8887,24 +9603,32 @@ impl GeneratedCodeInfo {
         &VALUE
     }
 
-    pub fn annotation(&self) -> &[GeneratedCodeInfo_Annotation] {
+    pub fn annotation(&self) -> &[MessagePtr<GeneratedCodeInfo_Annotation>] {
         &self.annotation
     }
 
-    pub fn annotation_mut(&mut self) -> &mut Vec<GeneratedCodeInfo_Annotation> {
+    pub fn annotation_mut(&mut self) -> &mut Vec<MessagePtr<GeneratedCodeInfo_Annotation>> {
         &mut self.annotation
     }
 
     pub fn annotation_len(&self) -> usize {
         self.annotation.len()
     }
+
     pub fn add_annotation(
         &mut self,
         v: GeneratedCodeInfo_Annotation,
-    ) -> &mut GeneratedCodeInfo_Annotation {
-        self.annotation.push(v);
+    ) -> &mut MessagePtr<GeneratedCodeInfo_Annotation> {
+        self.annotation.push(MessagePtr::new(v));
         self.annotation.last_mut().unwrap()
     }
+
+    pub fn new_annotation(&mut self) -> &mut MessagePtr<GeneratedCodeInfo_Annotation> {
+        self.annotation
+            .push(<MessagePtr<GeneratedCodeInfo_Annotation>>::default());
+        self.annotation.last_mut().unwrap()
+    }
+
     pub fn clear_annotation(&mut self) {
         self.annotation.clear();
     }
@@ -8938,13 +9662,18 @@ impl protobuf_core::Message for GeneratedCodeInfo {
         self.reflect_merge_from(other)
     }
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn (protobuf_core::Message) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
                 1 => {
                     for v in MessageCodec::parse_repeated(&f) {
-                        self.annotation.push(v?);
+                        self.annotation.push(MessagePtr::new(v?));
                     }
                 }
                 _ => {}
@@ -8960,6 +9689,10 @@ impl protobuf_core::Message for GeneratedCodeInfo {
 
 #[cfg(feature = "alloc")]
 impl protobuf_core::MessageReflection for GeneratedCodeInfo {
+    fn box_clone2(&self) -> Box<dyn (protobuf_core::MessageReflection) + 'static> {
+        Box::new(self.clone())
+    }
+
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
             name: protobuf_core::StringPtr::Static("annotation"),

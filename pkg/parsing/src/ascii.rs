@@ -56,6 +56,12 @@ impl ToAsciiString for &str {
     }
 }
 
+impl ToAsciiString for &String {
+    fn to_ascii_string(self) -> Result<AsciiString> {
+        AsciiString::from(Bytes::from(self.as_str()))
+    }
+}
+
 impl ToAsciiString for AsciiString {
     fn to_ascii_string(self) -> Result<AsciiString> {
         Ok(self)

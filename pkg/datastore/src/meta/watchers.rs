@@ -66,7 +66,7 @@ impl Watchers {
             let mut filtered_response = WatchResponse::default();
             for entry in change.entries() {
                 if entry.key().starts_with(watcher.key_prefix.as_ref()) {
-                    filtered_response.add_entries(entry.clone());
+                    filtered_response.add_entries(entry.as_ref().clone());
                 }
             }
 

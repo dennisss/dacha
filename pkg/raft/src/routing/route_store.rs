@@ -183,7 +183,7 @@ impl<'a> RouteStoreGuard<'a> {
             if should_insert && SystemTime::from(new_route.last_seen()) >= time_horizon {
                 self.state.routes.insert(
                     (new_route.group_id(), new_route.server_id()),
-                    new_route.clone(),
+                    new_route.as_ref().clone(),
                 );
 
                 changed = true;

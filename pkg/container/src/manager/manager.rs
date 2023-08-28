@@ -666,7 +666,7 @@ impl Manager {
 
             let mut blob = blobs_table.get(spec.id()).await?.unwrap_or_else(|| {
                 let mut b = BlobMetadata::default();
-                b.set_spec(spec.clone());
+                b.set_spec(spec.as_ref().clone());
                 b
             });
 

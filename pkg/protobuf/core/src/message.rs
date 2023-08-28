@@ -39,7 +39,7 @@ pub trait StaticMessage: StaticMessageTraits {
 
 // NOTE: Construct an empty proto by calling MessageType::default()
 // Clone + std::fmt::Debug + std::default::Default + MessageReflection
-pub trait Message: 'static {
+pub trait Message: Send + Sync + 'static {
     fn type_url(&self) -> &str;
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()>;
@@ -77,6 +77,9 @@ pub trait Message: 'static {
     }
     */
 
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn Message>;
+
     // fn unknown_fields() -> &[UnknownField];
 }
 
@@ -96,7 +99,7 @@ impl core::fmt::Display for MessageSerializeError {
 /// A pointer to a Message. Used in message fields to support storing possibly
 /// recursive type usages.
 #[derive(Default, Clone, Debug, PartialEq)]
-pub struct MessagePtr<T> {
+pub struct MessagePtr<T: ?Sized> {
     #[cfg(feature = "alloc")]
     value: Box<T>,
     #[cfg(not(feature = "alloc"))]
@@ -114,33 +117,40 @@ impl<T> MessagePtr<T> {
     }
 }
 
-impl<T> core::ops::Deref for MessagePtr<T> {
+impl<T: ?Sized> MessagePtr<T> {
+    #[cfg(feature = "alloc")]
+    pub fn new_boxed(value: Box<T>) -> Self {
+        Self { value }
+    }
+}
+
+impl<T: ?Sized> core::ops::Deref for MessagePtr<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.value
     }
 }
 
-impl<T> core::ops::DerefMut for MessagePtr<T> {
+impl<T: ?Sized> core::ops::DerefMut for MessagePtr<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
 }
 
-impl<T> core::convert::AsRef<T> for MessagePtr<T> {
+impl<T: ?Sized> core::convert::AsRef<T> for MessagePtr<T> {
     fn as_ref(&self) -> &T {
         &self.value
     }
 }
 
-impl<T> core::convert::AsMut<T> for MessagePtr<T> {
+impl<T: ?Sized> core::convert::AsMut<T> for MessagePtr<T> {
     fn as_mut(&mut self) -> &mut T {
         &mut self.value
     }
 }
 
 /// Common trait implemented by all code generated protobuf enum types.
-pub trait Enum {
+pub trait Enum: Send + Sync + 'static {
     /// Should convert a number to a valid branch of the enum, or else should
     /// error out it the value is not in the enum.
     ///
@@ -161,4 +171,7 @@ pub trait Enum {
     // TODO: This is inconsistent with the other Message trait.
 
     fn assign_name(&mut self, name: &str) -> WireResult<()>;
+
+    #[cfg(feature = "alloc")]
+    fn box_clone(&self) -> Box<dyn Enum>;
 }

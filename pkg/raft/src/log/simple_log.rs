@@ -53,7 +53,7 @@ impl SimpleLog {
             let sequence = last_sequence.next();
             last_sequence = sequence;
 
-            mem.append(e.clone(), sequence).await?;
+            mem.append(e.as_ref().clone(), sequence).await?;
         }
 
         Ok(SimpleLog {

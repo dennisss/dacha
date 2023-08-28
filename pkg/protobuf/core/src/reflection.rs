@@ -14,6 +14,7 @@ use crate::message::Enum;
 use crate::types::FieldNumber;
 use crate::Message;
 
+// TODO: Rename to align with the protobuf types.
 pub enum Reflection<'a> {
     F32(&'a f32),
     F64(&'a f64),
@@ -102,6 +103,9 @@ pub trait MessageReflection: Message {
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut>;
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber>;
+
+    #[cfg(feature = "alloc")]
+    fn box_clone2(&self) -> Box<dyn MessageReflection>;
 }
 
 pub trait Reflect {

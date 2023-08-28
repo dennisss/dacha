@@ -26,5 +26,13 @@ pub fn escape_rust_identifier(ident: &str) -> &str {
         return "MessageProto";
     }
 
+    if ident == "final" {
+        return "final_field";
+    }
+
+    if ident == "match" {
+        return "match_field";
+    }
+
     ident
 }

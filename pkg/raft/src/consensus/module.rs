@@ -2020,7 +2020,7 @@ impl ConsensusModule {
                     sequence: seq,
                 });
                 tick.new_entries.push(NewLogEntry {
-                    entry: e.clone(),
+                    entry: e.as_ref().clone(),
                     sequence: seq,
                 });
 

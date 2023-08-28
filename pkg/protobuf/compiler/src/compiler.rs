@@ -1,6 +1,7 @@
 // Code for taking a parsed .proto file descriptor and performing code
 // generation into Rust code.
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
 
@@ -108,6 +109,7 @@ struct ResolvedType<'a> {
 }
 
 struct ImportedProto {
+    file_path: String,
     proto: Proto,
     package_path: String,
     file_id: String,
@@ -376,6 +378,7 @@ impl Compiler<'_> {
                 proto: imported_proto_value,
                 package_path,
                 file_id,
+                file_path: import.path.clone(),
             });
         }
 
@@ -388,8 +391,8 @@ impl Compiler<'_> {
             let mut deps = vec![];
             for import in &c.imported_protos {
                 deps.push(format!(
-                    "&{}::FILE_DESCRIPTOR_{}",
-                    import.package_path, import.file_id
+                    "// {}\n&{}::FILE_DESCRIPTOR_{},\n",
+                    import.file_path, import.package_path, import.file_id
                 ));
             }
 
@@ -409,7 +412,7 @@ impl Compiler<'_> {
             file_id = c.file_id,
             runtime_pkg = c.options.runtime_package,
                 proto = proto,
-                deps = deps.join(", ")
+                deps = deps.join("")
             ));
         }
 
@@ -467,8 +470,9 @@ impl Compiler<'_> {
         None
     }
 
+    // TODO: Inline this.
     fn compile_enum_field(&self, f: &EnumField) -> String {
-        format!("\t{} = {},", f.name, f.num)
+        format!("\t{} = {},", escape_rust_identifier(&f.name), f.num)
     }
 
     fn compile_enum(&self, e: &Enum, path: TypePath) -> String {
@@ -488,6 +492,20 @@ impl Compiler<'_> {
             }
         }
 
+        let mut allow_alias = false;
+        for i in &e.body {
+            if let EnumBodyItem::Option(opt) = i {
+                if opt.name == "allow_alias" {
+                    match opt.value {
+                        Constant::Bool(v) => allow_alias = v,
+                        _ => {
+                            panic!("Wrong type for allow_alias");
+                        }
+                    }
+                }
+            }
+        }
+
         let mut lines = LineBuilder::new();
 
         // Because we can't put an enum inside of a struct in Rust, we instead
@@ -499,6 +517,9 @@ impl Compiler<'_> {
             inner_path.join("_")
         };
 
+        let mut seen_numbers = HashMap::new();
+        let mut duplicates = vec![];
+
         // TODO: Implement a better debug function
         lines.add("#[derive(Clone, Copy, PartialEq, Eq, Debug)]");
         lines.add(format!("pub enum {} {{", fullname));
@@ -506,9 +527,33 @@ impl Compiler<'_> {
             match i {
                 EnumBodyItem::Option(_) => {}
                 EnumBodyItem::Field(f) => {
+                    if seen_numbers.contains_key(&f.num) {
+                        if !allow_alias {
+                            panic!("Duplicate enum value: {} in {}", f.num, e.name);
+                        }
+
+                        duplicates.push(f);
+                        continue;
+                    } else {
+                        seen_numbers.insert(f.num, f);
+                    }
+
                     lines.add(self.compile_enum_field(f));
                 }
             }
+        }
+        lines.add("}");
+        lines.nl();
+
+        lines.add(format!("impl {} {{", fullname));
+        for duplicate in duplicates {
+            let main_field = seen_numbers.get(&duplicate.num).unwrap();
+
+            lines.add(format!(
+                "pub const {}: Self = Self::{};",
+                escape_rust_identifier(&duplicate.name),
+                escape_rust_identifier(&main_field.name)
+            ));
         }
         lines.add("}");
         lines.nl();
@@ -548,8 +593,15 @@ impl Compiler<'_> {
         }
 
         lines.add(format!(
-            "impl {}::Enum for {} {{",
-            self.options.runtime_package, fullname
+            r#"impl {pkg}::Enum for {name} {{
+                #[cfg(feature = "alloc")]
+                fn box_clone(&self) -> Box<dyn ({pkg}::Enum) + 'static> {{ 
+                    Box::new(self.clone())
+                }}
+                
+                "#,
+            pkg = self.options.runtime_package,
+            name = fullname
         ));
         lines.indented(|lines| {
             // TODO: Just make from_usize an Option<>
@@ -596,6 +648,10 @@ impl Compiler<'_> {
                 match i {
                     EnumBodyItem::Option(_) => {}
                     EnumBodyItem::Field(f) => {
+                        if seen_numbers[&f.num].name != f.name {
+                            continue;
+                        }
+
                         lines.add(format!("\t\tSelf::{} => \"{}\",", f.name, f.name));
                     }
                 }
@@ -819,6 +875,14 @@ impl Compiler<'_> {
             size
         };
 
+        // We must box raw messages if they may cause cycles. It also simplifies support
+        // for dynamic messages.
+        // TODO: Do the same thing for groups.
+        let is_message = self.is_message(&field.typ, path);
+        if is_message && !self.is_unordered_set(field) && !self.is_primitive(&field.typ, path) {
+            typ = format!("MessagePtr<{}>", typ);
+        }
+
         /*
         Follow the nanopb convection:
         - max_length: For strings and bytes
@@ -837,13 +901,7 @@ impl Compiler<'_> {
             if self.is_primitive(&field.typ, path) && self.proto.syntax == Syntax::Proto3 {
                 s += &typ;
             } else {
-                // We must box raw messages if they may cause cycles.
-                // TODO: Do the same thing for groups.
-                if self.is_message(&field.typ, path) {
-                    s += &format!("Option<MessagePtr<{}>>", typ);
-                } else {
-                    s += &format!("Option<{}>", typ);
-                }
+                s += &format!("Option<{}>", typ);
             }
         }
 
@@ -868,7 +926,7 @@ impl Compiler<'_> {
             let mut typ = self.compile_field_type(&field.typ, path, &field.unknown_options);
 
             // TODO: Only do this for message types.
-            if self.is_message(&field.typ, path) {
+            if self.is_message(&field.typ, path) && !self.is_primitive(&field.typ, path) {
                 typ = format!("MessagePtr<{}>", typ);
             }
 
@@ -1031,6 +1089,11 @@ impl Compiler<'_> {
                 size
             };
 
+            let mut typ = typ.clone();
+            if is_message && !is_primitive {
+                typ = format!("MessagePtr<{}>", typ);
+            }
+
             let vec_type = {
                 if let Some(max_count) = max_count {
                     format!("FixedVec<{typ}, {size}>", typ = typ, size = max_count)
@@ -1158,15 +1221,31 @@ impl Compiler<'_> {
             ));
         } else if is_repeated {
             // add_field(v: T) -> &mut T
+
+            let mut inner_typ = typ.clone();
+            let mut inner_v = "v".to_string();
+            if is_message {
+                inner_typ = format!("MessagePtr<{}>", inner_typ);
+                inner_v = format!("MessagePtr::new({})", inner_v);
+            }
+
             lines.add(format!(
-                "\tpub fn add_{}(&mut self, v: {}) -> &mut {} {{",
-                name, typ, typ
+                "
+                pub fn add_{name}(&mut self, v: {typ}) -> &mut {inner_typ} {{
+                    self.{name}.push({inner_v});
+                    self.{name}.last_mut().unwrap()
+                }}
+
+                pub fn new_{name}(&mut self) -> &mut {inner_typ} {{
+                    self.{name}.push(<{inner_typ}>::default());
+                    self.{name}.last_mut().unwrap()
+                }}
+            ",
+                name = name,
+                typ = typ,
+                inner_typ = inner_typ,
+                inner_v = inner_v,
             ));
-            lines.add(format!(
-                "\t\tself.{}.push(v); self.{}.last_mut().unwrap()",
-                name, name
-            ));
-            lines.add("\t}");
 
         // NOTE: We do not define 'fn add_field() -> &mut T'
         } else {
@@ -1191,7 +1270,7 @@ impl Compiler<'_> {
                         let oneof_fieldname = Self::field_name_inner(&oneof.name);
                         let oneof_case = common::snake_to_camel_case(&field.name);
 
-                        let val = if is_message {
+                        let val = if is_message && !self.is_primitive(&field.typ, path) {
                             "MessagePtr::new(v)"
                         } else {
                             "v"
@@ -1232,7 +1311,7 @@ impl Compiler<'_> {
                     let oneof_case = common::snake_to_camel_case(&field.name);
 
                     let mut typ = typ.clone();
-                    if is_message {
+                    if is_message && !is_primitive {
                         typ = format!("MessagePtr<{}>", typ);
                     }
 
@@ -1578,7 +1657,6 @@ impl Compiler<'_> {
                 fn file_descriptor() -> &'static {runtime_pkg}::StaticFileDescriptor {{
                     &FILE_DESCRIPTOR_{file_id}
                 }}
-        
             }}
         "#,
             name = fullname,
@@ -1616,6 +1694,11 @@ impl Compiler<'_> {
                     self.reflect_merge_from(other)
                 }}
 
+                #[cfg(feature = "alloc")]
+                fn box_clone(&self) -> Box<dyn ({pkg}::Message) + 'static> {{ 
+                    Box::new(self.clone())
+                }}
+
                 "#,
             type_url_prefix = protobuf_core::TYPE_URL_PREFIX,
             type_url = type_url_parts.join("."),
@@ -1636,7 +1719,7 @@ impl Compiler<'_> {
             let use_option = !(self.is_primitive(&field.typ, &inner_path)
                 && self.proto.syntax == Syntax::Proto3);
 
-            let is_message = self.is_message(&field.typ, &inner_path);
+            let is_message: bool = self.is_message(&field.typ, &inner_path);
 
             // TODO: Deduplicate this logic.
             let typeclass = match &field.typ {
@@ -1657,24 +1740,36 @@ impl Compiler<'_> {
             // TODO: Must use repeated variants here.
             let mut p = String::new();
             if self.is_unordered_set(field) {
+                let mut value = "v?".to_string();
+                if is_message && use_option {
+                    value = format!("MessagePtr::new({})", value);
+                }
+
                 p += &format!(
                     "
                     for v in {typeclass}Codec::parse_repeated(&f) {{
-                        self.{name}.insert(v?);
+                        self.{name}.insert({value});
                     }}
                     ",
                     name = name,
-                    typeclass = typeclass
+                    typeclass = typeclass,
+                    value = value
                 );
             } else if is_repeated {
+                let mut value = "v?".to_string();
+                if is_message && use_option {
+                    value = format!("MessagePtr::new({})", value);
+                }
+
                 p += &format!(
                     "
                     for v in {typeclass}Codec::parse_repeated(&f) {{
-                        self.{name}.push(v?);
+                        self.{name}.push({value});
                     }}
                     ",
                     name = name,
-                    typeclass = typeclass
+                    typeclass = typeclass,
+                    value = value,
                 );
             } else {
                 if use_option {
@@ -1722,7 +1817,7 @@ impl Compiler<'_> {
                         };
 
                         let mut value = format!("{}Codec::parse(&f)?", typeclass);
-                        if typeclass == "Message" {
+                        if typeclass == "Message" && !self.is_primitive(&field.typ, &inner_path) {
                             value = format!("MessagePtr::new(MessageCodec::parse(&f)?)");
                         }
 
@@ -1797,10 +1892,12 @@ impl Compiler<'_> {
                 }
             };
 
-            let given_reference = is_repeated || use_option;
+            let given_reference: bool = is_repeated || use_option;
 
             let reference_str = {
-                if pass_reference {
+                if is_message && use_option {
+                    ""
+                } else if pass_reference {
                     if given_reference {
                         ""
                     } else {
@@ -1815,9 +1912,18 @@ impl Compiler<'_> {
                 }
             };
 
+            let post_reference_str = {
+                if is_message && use_option {
+                    // Deref the MessagePtr
+                    ".as_ref()"
+                } else {
+                    ""
+                }
+            };
+
             let serialize_line = format!(
-                "\t\t\t{}({}, {}v, out)?;",
-                serialize_method, field.num, reference_str
+                "\t\t\t{}({}, {}v{}, out)?;",
+                serialize_method, field.num, reference_str, post_reference_str
             );
 
             if is_repeated {
@@ -1826,13 +1932,14 @@ impl Compiler<'_> {
                     lines.add(format!(
                         "
                     for v in self.{name}.iter() {{
-                        {typeclass}Codec::serialize({field_num}, {ref_str}v, out)?;
+                        {typeclass}Codec::serialize({field_num}, {ref_str}v{post_str}, out)?;
                     }}
                     ",
                         typeclass = typeclass,
                         name = name,
                         field_num = field.num,
-                        ref_str = reference_str
+                        ref_str = reference_str,
+                        post_str = post_reference_str,
                     ));
                 } else {
                     lines.add(format!(
@@ -1859,8 +1966,8 @@ impl Compiler<'_> {
                 } else {
                     // TODO: Should borrow the value when using messages
                     lines.add(format!(
-                        "\t\t{}({}, {}self.{}, out)?;",
-                        serialize_method, field.num, reference_str, name,
+                        "\t\t{}({}, {}self.{}{}, out)?;",
+                        serialize_method, field.num, reference_str, name, post_reference_str
                     ));
                 }
 
@@ -1913,7 +2020,9 @@ impl Compiler<'_> {
                         let mut reference = if pass_reference { "" } else { "*" };
 
                         // Need to convert the &MessagePtr<Message> to an &Message
-                        let post_reference = if typeclass == "Message" {
+                        let post_reference = if typeclass == "Message"
+                            && !self.is_primitive(&field.typ, &inner_path)
+                        {
                             ".as_ref()"
                         } else {
                             ""
@@ -1951,6 +2060,10 @@ impl Compiler<'_> {
         lines.add(format!(
             r#"#[cfg(feature = "alloc")]
              impl {pkg}::MessageReflection for {name} {{
+                fn box_clone2(&self) -> Box<dyn ({pkg}::MessageReflection) + 'static> {{ 
+                    Box::new(self.clone())
+                }}
+
                  "#,
             pkg = self.options.runtime_package,
             name = fullname,
@@ -2058,6 +2171,8 @@ impl Compiler<'_> {
                 for item in &msg.body {
                     match item {
                         MessageItem::Field(field) => {
+                            // TODO: Implement handling of None
+
                             let name = self.field_name(field);
 
                             let f = match self.proto.syntax {
@@ -2087,7 +2202,7 @@ impl Compiler<'_> {
                                 );
 
                                 let is_message = self.is_message(&field.typ, &inner_path);
-                                if is_message {
+                                if is_message && !self.is_primitive(&field.typ, &inner_path) {
                                     typ = format!("MessagePtr<{}>", typ);
                                 }
 

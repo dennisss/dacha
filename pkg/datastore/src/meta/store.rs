@@ -206,7 +206,7 @@ impl Metastore {
         }
 
         for op in user_txn.writes() {
-            let mut internal_op = op.clone();
+            let mut internal_op = op.as_ref().clone();
             internal_op.set_key(TableKey::user_value(op.key()));
             internal_txn.add_writes(internal_op);
         }

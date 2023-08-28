@@ -5,8 +5,8 @@ use common::errors::Result;
 use common::list::{Appendable, ByteCounter};
 
 use crate::message::StaticMessage;
-use crate::types::*;
 use crate::wire::*;
+use crate::{types::*, MessagePtr};
 use crate::{Enum, Message};
 
 /*
@@ -444,7 +444,7 @@ impl EnumCodec {
         Ok(())
     }
 
-    pub fn serialize<E: 'static + Enum, A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize<E: 'static + Enum + ?Sized, A: Appendable<Item = u8> + ?Sized>(
         field_number: FieldNumber,
         value: &E,
         out: &mut A,
@@ -453,7 +453,7 @@ impl EnumCodec {
         Int32Codec::serialize(field_number, value.value(), out)
     }
 
-    pub fn serialize_sparse<E: 'static + Enum, A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_sparse<E: 'static + Enum + ?Sized, A: Appendable<Item = u8> + ?Sized>(
         field_number: FieldNumber,
         value: &E,
         out: &mut A,
@@ -498,9 +498,45 @@ impl EnumCodec {
 
         Ok(())
     }
+
+    // TODO: Deduplicate with the previous one.
+    #[cfg(feature = "alloc")]
+    pub fn serialize_repeated_dyn<A: Appendable<Item = u8> + ?Sized>(
+        field_number: FieldNumber,
+        values: &[alloc::boxed::Box<dyn Enum>],
+        out: &mut A,
+    ) -> Result<(), A::Error> {
+        // TODO: Deduplicate this with the other optimizations.
+        if values.len() < 2 {
+            for value in values {
+                Int32Codec::serialize(field_number, value.value(), out)?;
+            }
+
+            return Ok(());
+        }
+
+        let mut length_counter = ByteCounter::new();
+        for value in values {
+            Int32Codec::serialize_single_value(value.value(), &mut length_counter).unwrap();
+        }
+
+        // TODO: Deduplicate this with the logic for serializing LengthDelim fields.
+        Tag {
+            field_number,
+            wire_type: WireType::LengthDelim,
+        }
+        .serialize(out)?;
+        serialize_varint(length_counter.total_bytes() as u64, out)?;
+
+        for value in values {
+            Int32Codec::serialize_single_value(value.value(), out)?;
+        }
+
+        Ok(())
+    }
 }
 
-pub struct MessageCodec<M> {
+pub struct MessageCodec<M: ?Sized> {
     m: PhantomData<M>,
 }
 
@@ -517,7 +553,7 @@ impl<M: StaticMessage> MessageCodec<M> {
     }
 }
 
-impl<M: Message> MessageCodec<M> {
+impl<M: Message + ?Sized> MessageCodec<M> {
     // TODO: Make sure all users of this clear the message first.
     pub fn parse_into(field: &WireField, message: &mut M) -> WireResult<()> {
         let data = field.value.length_delim()?;
@@ -571,11 +607,11 @@ impl<M: Message> MessageCodec<M> {
 
     pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized>(
         field_number: FieldNumber,
-        values: &[M],
+        values: &[MessagePtr<M>],
         out: &mut A,
     ) -> Result<()> {
         for value in values {
-            Self::serialize(field_number, value, out)?;
+            Self::serialize(field_number, value.as_ref(), out)?;
         }
 
         Ok(())

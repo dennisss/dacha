@@ -93,7 +93,7 @@ impl Status {
 
             let proto = protobuf_builtins::google::rpc::Status::parse(&decoded_value)?;
             for detail in proto.details() {
-                details.push(detail.clone());
+                details.push(detail.as_ref().clone());
             }
         }
 

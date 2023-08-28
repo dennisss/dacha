@@ -16,8 +16,9 @@ extern crate macros;
 include!(concat!(env!("OUT_DIR"), "/proto_lib.rs"));
 
 use std::str::FromStr;
-use std::string::ToString;
+use std::string::{String, ToString};
 
+use common::errors::*;
 pub use raft::*;
 
 impl LogPosition {

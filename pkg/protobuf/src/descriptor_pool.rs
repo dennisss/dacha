@@ -146,7 +146,9 @@ impl DescriptorPool {
 
             self.insert_unique_symbol(
                 &name,
-                TypeDescriptorInner::Enum(Arc::new(EnumDescriptorInner { proto: e.clone() })),
+                TypeDescriptorInner::Enum(Arc::new(EnumDescriptorInner {
+                    proto: e.as_ref().clone(),
+                })),
                 state.deref_mut(),
             )?;
         }
@@ -160,7 +162,9 @@ impl DescriptorPool {
 
             self.insert_unique_symbol(
                 &name,
-                TypeDescriptorInner::Service(Arc::new(ServiceDescriptorInner { proto: s.clone() })),
+                TypeDescriptorInner::Service(Arc::new(ServiceDescriptorInner {
+                    proto: s.as_ref().clone(),
+                })),
                 state.deref_mut(),
             )?;
         }
@@ -194,7 +198,9 @@ impl DescriptorPool {
             let name = format!("{}.{}", message_name, e.name());
             self.insert_unique_symbol(
                 &name,
-                TypeDescriptorInner::Enum(Arc::new(EnumDescriptorInner { proto: e.clone() })),
+                TypeDescriptorInner::Enum(Arc::new(EnumDescriptorInner {
+                    proto: e.as_ref().clone(),
+                })),
                 state,
             )?;
         }

@@ -14,6 +14,8 @@ fn main() {
         project_path!("third_party/googleapis/repo/google/type"),
         project_path!("third_party/googleapis/repo/google/logging"),
         project_path!("third_party/googleapis/repo/google/storage"),
+        project_path!("third_party/googleapis/repo/google/cloud/compute"),
+        project_path!("third_party/googleapis/repo/google/cloud/extended_operations.proto"),
     ]);
 
     protobuf_compiler::build_with_options(options).unwrap();
