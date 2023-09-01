@@ -1392,6 +1392,8 @@ impl Compiler<'_> {
         let mut is_typed_num = false;
         // let mut can_be_typed_num = true;
 
+        let mut can_have_extensions = false;
+
         let mut used_nums: HashSet<FieldNumber> = HashSet::new();
         for item in &msg.body {
             match item {
@@ -1442,6 +1444,9 @@ impl Compiler<'_> {
                         };
                     }
                 }
+                MessageItem::Extensions(e) => {
+                    can_have_extensions = true;
+                }
                 _ => {}
             }
         }
@@ -1464,6 +1469,18 @@ impl Compiler<'_> {
                 if let Some(field) = self.compile_message_item(&i, &inner_path)? {
                     lines.add(field);
                 }
+            }
+
+            lines.add(format!(
+                "unknown_fields: {}::UnknownFieldSet,",
+                self.options.runtime_package
+            ));
+
+            if can_have_extensions {
+                lines.add(format!(
+                    "extensions: {}::ExtensionSet,",
+                    self.options.runtime_package
+                ));
             }
 
             Ok(())
@@ -1707,8 +1724,9 @@ impl Compiler<'_> {
         ));
 
         lines.add("\tfn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {");
-        lines.add("\t\tfor f in WireFieldIter::new(data) {");
-        lines.add("\t\t\tlet f = f?;");
+        lines.add("\t\tfor field_ref in WireFieldIter::new(data) {");
+        lines.add("\t\t\tlet field_ref = field_ref?;");
+        lines.add("\t\t\tlet f = field_ref.field;");
         lines.add("\t\t\tmatch f.field_number {");
 
         // TODO: Must also iterate over maps and oneofs.
@@ -1836,7 +1854,13 @@ impl Compiler<'_> {
         }
 
         // TODO: Will need to record this as an unknown field.
-        lines.add("\t\t\t\t_ => {}");
+        lines.add(
+            r#"
+            _ => {
+                self.unknown_fields.fields.push(field_ref.span.into());
+            }
+        "#,
+        );
 
         lines.add("\t\t\t}");
         lines.add("\t\t}");
@@ -2048,6 +2072,11 @@ impl Compiler<'_> {
             }
         }
 
+        lines.add(r#"self.unknown_fields.serialize_to(out)?;"#);
+        if can_have_extensions {
+            lines.add(r#"self.extensions.serialize_to(out)?;"#);
+        }
+
         lines.add("\t\tOk(())");
         lines.add("\t}");
 
@@ -2060,6 +2089,16 @@ impl Compiler<'_> {
         lines.add(format!(
             r#"#[cfg(feature = "alloc")]
              impl {pkg}::MessageReflection for {name} {{
+                
+                fn unknown_fields(&self) -> &{pkg}::UnknownFieldSet {{
+                    &self.unknown_fields
+                }}
+
+
+                fn extensions(&self) -> &{pkg}::ExtensionSet {{
+                    {extensions}
+                }}
+
                 fn box_clone2(&self) -> Box<dyn ({pkg}::MessageReflection) + 'static> {{ 
                     Box::new(self.clone())
                 }}
@@ -2067,6 +2106,20 @@ impl Compiler<'_> {
                  "#,
             pkg = self.options.runtime_package,
             name = fullname,
+            extensions = {
+                if can_have_extensions {
+                    "&self.extensions".to_string()
+                } else {
+                    format!(
+                        "
+                        static DEFAULT: {pkg}::ExtensionSet = {pkg}::ExtensionSet::DEFAULT;
+                        &DEFAULT
+                    
+                    ",
+                        pkg = self.options.runtime_package
+                    )
+                }
+            }
         ));
 
         lines.indented(|lines| {

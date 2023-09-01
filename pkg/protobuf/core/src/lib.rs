@@ -1,4 +1,4 @@
-#![feature(core_intrinsics, trait_alias)]
+#![feature(core_intrinsics, trait_alias, concat_idents)]
 #![no_std]
 
 #[cfg(feature = "std")]
@@ -23,6 +23,8 @@ mod bytes;
 pub mod codecs;
 #[cfg(feature = "std")]
 mod collections;
+#[cfg(feature = "std")]
+pub mod extension;
 #[cfg(feature = "alloc")]
 mod merge;
 mod message;
@@ -33,12 +35,17 @@ pub mod text;
 #[cfg(feature = "std")]
 pub mod tokenizer;
 mod types;
+#[cfg(feature = "std")]
+pub mod unknown;
+#[cfg(feature = "std")]
+mod value;
 pub mod wire;
 
 #[cfg(feature = "alloc")]
 pub use bytes::BytesField;
 #[cfg(feature = "std")]
 pub use collections::*;
+pub use extension::ExtensionSet;
 #[cfg(feature = "alloc")]
 pub use merge::*;
 pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage};
@@ -49,6 +56,9 @@ pub use reflection::{
 };
 pub use types::EnumValue;
 pub use types::FieldNumber;
+pub use unknown::UnknownFieldSet;
+#[cfg(feature = "std")]
+pub use value::*;
 pub use wire::{WireError, WireResult};
 
 pub struct StaticFileDescriptor {

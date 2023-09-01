@@ -34,5 +34,9 @@ pub fn escape_rust_identifier(ident: &str) -> &str {
         return "match_field";
     }
 
+    if ident == "Value" {
+        return "ValueProto";
+    }
+
     ident
 }

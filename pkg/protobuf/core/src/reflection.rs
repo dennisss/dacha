@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use common::any::AsAny;
 use core::convert::Infallible;
 use core::default::Default;
 use core::ops::{Deref, DerefMut};
@@ -10,8 +11,10 @@ use common::collections::FixedString;
 use common::fixed::vec::FixedVec;
 use common::list::List;
 
+use crate::extension::ExtensionSet;
 use crate::message::Enum;
 use crate::types::FieldNumber;
+use crate::unknown::UnknownFieldSet;
 use crate::Message;
 
 // TODO: Rename to align with the protobuf types.
@@ -71,6 +74,12 @@ pub enum StringPtr {
     Dynamic(String),
 }
 
+impl PartialEq for StringPtr {
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+}
+
 impl std::ops::Deref for StringPtr {
     type Target = str;
 
@@ -83,7 +92,7 @@ impl std::ops::Deref for StringPtr {
 }
 
 /// NOTE: Should be implemented by all Messages.
-pub trait MessageReflection: Message {
+pub trait MessageReflection: Message + AsAny + MessageEquals {
     // A non-mutable version would be required for the regular
 
     // Should also have a fields() which iterates over fields?
@@ -94,6 +103,8 @@ pub trait MessageReflection: Message {
     //
     // This includes fields that may not be present in the current message or are
     // set to the default value.
+    //
+    // NOTE: Does not include extensions.
     fn fields(&self) -> &[FieldDescriptorShort];
 
     /// Returns None if the field is now defined in the descriptor or the field
@@ -104,8 +115,28 @@ pub trait MessageReflection: Message {
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber>;
 
+    fn unknown_fields(&self) -> &UnknownFieldSet;
+
+    fn extensions(&self) -> &ExtensionSet;
+
+    // TODO: Find a better name for this.
     #[cfg(feature = "alloc")]
     fn box_clone2(&self) -> Box<dyn MessageReflection>;
+}
+
+pub trait MessageEquals {
+    fn message_equals(&self, other: &dyn MessageReflection) -> bool;
+}
+
+impl<M: Message + PartialEq<M> + 'static> MessageEquals for M {
+    fn message_equals(&self, other: &dyn MessageReflection) -> bool {
+        let any = other.as_any();
+        if let Some(rhs) = any.downcast_ref::<M>() {
+            self == rhs
+        } else {
+            false
+        }
+    }
 }
 
 pub trait Reflect {

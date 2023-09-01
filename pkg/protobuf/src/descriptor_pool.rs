@@ -354,6 +354,12 @@ pub struct MessageDescriptor {
     inner: Arc<MessageDescriptorInner>,
 }
 
+impl PartialEq for MessageDescriptor {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.type_url == other.inner.type_url
+    }
+}
+
 impl MessageDescriptor {
     pub fn type_url(&self) -> &str {
         &self.inner.type_url

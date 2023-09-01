@@ -704,6 +704,14 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
 
 /*
 Given a MessageReflection and a
+
+Eventually extensions would look something like:
+
+```
+local_field: 10
+[com.example.ext_field]​: 20
+```
+
 */
 
 pub struct TextExtension<'a> {

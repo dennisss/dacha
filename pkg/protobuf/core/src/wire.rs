@@ -1,5 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+use common::bytes::Bytes;
 use core::intrinsics::unlikely;
 use core::result::Result;
 
@@ -24,6 +25,9 @@ pub enum WireError {
     /// While interprating a well formed wire value as an enum, we couldn't find
     /// any known enum variant with the given integer value.
     UnknownEnumVariant,
+
+    /// While serializing a proto to binary format,
+    UnknownFieldsDropped,
 }
 
 impl core::fmt::Display for WireError {
@@ -223,7 +227,7 @@ impl<'a> WireField<'a> {
         let mut out = vec![];
 
         for field in WireFieldIter::new(input) {
-            out.push(field?);
+            out.push(field?.field);
         }
 
         Ok(out)
@@ -272,6 +276,11 @@ pub struct WireFieldIter<'a> {
     group: Option<Vec<WireValue<'a>>>,
 }
 
+pub struct WireFieldRef<'a> {
+    pub span: &'a [u8],
+    pub field: WireField<'a>,
+}
+
 impl<'a> WireFieldIter<'a> {
     pub fn new(input: &[u8]) -> WireFieldIter {
         WireFieldIter {
@@ -281,9 +290,10 @@ impl<'a> WireFieldIter<'a> {
         }
     }
 
-    fn next_impl(&mut self) -> WireResult<Option<WireField<'a>>> {
+    fn next_impl(&mut self) -> WireResult<Option<WireFieldRef<'a>>> {
         while !self.input.is_empty() {
             let (tag, rest) = Tag::parse(self.input)?;
+            let span = &self.input[..(self.input.len() - rest.len())];
             self.input = rest;
             let value = match tag.wire_type {
                 WireType::Varint => {
@@ -337,9 +347,12 @@ impl<'a> WireFieldIter<'a> {
                 }
             };
 
-            return Ok(Some(WireField {
-                field_number: tag.field_number,
-                value,
+            return Ok(Some(WireFieldRef {
+                span,
+                field: WireField {
+                    field_number: tag.field_number,
+                    value,
+                },
             }));
         }
 
@@ -355,7 +368,7 @@ impl<'a> WireFieldIter<'a> {
 }
 
 impl<'a> core::iter::Iterator for WireFieldIter<'a> {
-    type Item = WireResult<WireField<'a>>;
+    type Item = WireResult<WireFieldRef<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_impl() {
