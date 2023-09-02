@@ -8,14 +8,19 @@ use std::sync::Mutex;
 use std::{collections::HashMap, sync::Arc};
 
 use common::errors::*;
-use protobuf_builtins::google::protobuf::Any;
-use protobuf_compiler::spec::Syntax;
+// use protobuf_builtins::google::protobuf::Any;
 use protobuf_core::reflection::Reflect;
 use protobuf_core::reflection::ReflectionMut;
 use protobuf_core::{FieldDescriptorShort, FieldNumber, Message, StaticMessage};
 use protobuf_descriptor::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto, MethodDescriptorProto,
 };
+
+use crate::spec::Syntax;
+
+/*
+Need to define
+*/
 
 #[derive(Clone)]
 pub struct DescriptorPool {
@@ -51,6 +56,7 @@ impl DescriptorPool {
     pub async fn add_proto_file<P: AsRef<file::LocalPath>, P2: AsRef<file::LocalPath>>(
         &self,
         path: P,
+        // TODO: Must be smarter and use a similar system to the compiler
         root_dir: P2,
     ) -> Result<String> {
         // TODO: Deduplicate some of this logic with the compiler.
@@ -72,7 +78,7 @@ impl DescriptorPool {
             // to ensure there are no other users concurrently racing to add the same file.
             if !self.state.lock().unwrap().added_files.contains_key(&name) {
                 let proto_file_src = file::read_to_string(path).await?;
-                let proto_file = protobuf_compiler::syntax::parse_proto(&proto_file_src)?;
+                let proto_file = crate::syntax::parse_proto(&proto_file_src)?;
 
                 let mut proto = proto_file.to_proto();
                 proto.set_name(name.as_str());
@@ -272,6 +278,7 @@ impl DescriptorPool {
     }
 }
 
+/*
 impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
     fn parse_text_extension(
         &self,
@@ -286,7 +293,7 @@ impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
                     .and_then(|d| d.to_message())
                     .ok_or_else(|| format_err!("Unknown message with type: {}", path))?;
 
-                let mut inner_message = crate::dynamic::DynamicMessage::new(desc);
+                let mut inner_message = crate::message::DynamicMessage::new(desc);
                 extension.parse_to(inner_message.reflect_mut())?;
 
                 if let Some(ReflectionMut::String(v)) =
@@ -311,11 +318,13 @@ impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
         Err(err_msg("Dynamic extensions not supported"))
     }
 }
+*/
 
 pub enum TypeDescriptor {
     Message(MessageDescriptor),
     Enum(EnumDescriptor),
     Service(ServiceDescriptor),
+    // Maybe an extension
 }
 
 enum TypeDescriptorInner {

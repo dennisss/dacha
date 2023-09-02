@@ -21,6 +21,7 @@ members = [
 	"pkg/math",
 	"pkg/math/compute",
 	"pkg/protobuf/core",
+	"pkg/protobuf/dynamic",
 	"third_party/protobuf_descriptor",
 	"pkg/protobuf/compiler",
 	"pkg/protobuf",

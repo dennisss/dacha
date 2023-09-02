@@ -8,17 +8,17 @@ use std::collections::HashMap;
 
 use common::errors::*;
 use common::list::Appendable;
-use protobuf_compiler::spec::Syntax;
 use protobuf_core::reflection::RepeatedFieldReflection;
+use protobuf_core::reflection::{Reflect, Reflection, ReflectionMut};
 use protobuf_core::wire::{WireError, WireField, WireFieldIter};
+use protobuf_core::BytesField;
 use protobuf_core::{codecs::*, ExtensionSet};
 use protobuf_core::{EnumValue, FieldNumber, WireResult};
 use protobuf_core::{RepeatedValues, SingularValue, Value};
 use protobuf_descriptor::{FieldDescriptorProto_Label, FieldDescriptorProto_Type};
 
 use crate::descriptor_pool::{EnumDescriptor, FieldDescriptor, MessageDescriptor, TypeDescriptor};
-use crate::reflection::{Reflect, Reflection, ReflectionMut};
-use crate::BytesField;
+use crate::spec::Syntax;
 
 #[derive(Clone, PartialEq)]
 pub struct DynamicMessage {
@@ -44,6 +44,7 @@ impl DynamicMessage {
         }
     }
 
+    // TODO: Return a 'Value' here
     fn default_value_for_field(field_desc: &FieldDescriptor) -> WireResult<SingularValue> {
         use FieldDescriptorProto_Type::*;
         Ok(match field_desc.proto().typ() {

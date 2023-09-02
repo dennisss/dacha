@@ -2159,6 +2159,7 @@ dependencies = [
  "protobuf_compiler",
  "protobuf_core",
  "protobuf_descriptor",
+ "protobuf_dynamic",
 ]
 
 [[package]]
@@ -2193,6 +2194,7 @@ dependencies = [
  "parsing",
  "protobuf_core",
  "protobuf_descriptor",
+ "protobuf_dynamic",
  "regexp_macros",
 ]
 
@@ -2213,6 +2215,18 @@ dependencies = [
  "common",
  "macros",
  "protobuf_core",
+]
+
+[[package]]
+name = "protobuf_dynamic"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "file",
+ "macros",
+ "parsing",
+ "protobuf_core",
+ "protobuf_descriptor",
 ]
 
 [[package]]

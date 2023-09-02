@@ -12,6 +12,7 @@ protobuf_builtins = { path = "../../third_party/protobuf_builtins", optional = t
 macros = { path = "../macros" }
 json = { path = "../format/json", optional = true }
 protobuf_compiler = { path = "./compiler", optional = true }
+protobuf_dynamic = { path = "./dynamic", optional = true }
 file = { path = "../file", optional = true }
 executor = { path = "../executor", optional = true }
 
@@ -22,4 +23,4 @@ file = { path = "../file", optional = true }
 [features]
 default = ["std"]
 alloc = ["common/alloc", "protobuf_core/alloc"]
-std = ["alloc", "common/std", "parsing", "protobuf_core/std", "protobuf_descriptor", "json", "protobuf_compiler", "protobuf_builtins", "file", "executor"]
+std = ["alloc", "common/std", "parsing", "protobuf_core/std", "protobuf_descriptor", "json", "protobuf_compiler", "protobuf_builtins", "file", "executor", "protobuf_dynamic"]

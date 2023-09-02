@@ -5,10 +5,10 @@ use std::process::Command;
 use common::errors::*;
 use common::line_builder::LineBuilder;
 use file::{project_path, LocalPath, LocalPathBuf};
+use protobuf_dynamic::syntax::parse_proto;
 
 use crate::compiler::{Compiler, CompilerOptions};
 use crate::escape::escape_rust_identifier;
-use crate::syntax::parse_proto;
 
 pub fn project_default_options() -> CompilerOptions {
     let mut options = CompilerOptions::default();

@@ -10,8 +10,6 @@ extern crate regexp_macros;
 mod build;
 mod compiler;
 mod escape;
-pub mod spec;
-pub mod syntax;
 
 pub use build::{build, build_custom, build_with_options, project_default_options};
 pub use compiler::CompilerOptions;

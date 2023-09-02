@@ -13,9 +13,11 @@ use file::LocalPathBuf;
 use protobuf_core::tokenizer::serialize_str_lit;
 use protobuf_core::FieldNumber;
 use protobuf_core::Message;
+use protobuf_dynamic::spec::*;
+#[cfg(feature = "descriptors")]
+use protobuf_dynamic::DescriptorPool;
 
 use crate::escape::*;
-use crate::spec::*;
 
 // TODO: Lets not forget to serialize and parse unknown fields as well.
 
@@ -91,12 +93,6 @@ impl Default for CompilerOptions {
     }
 }
 
-// Roughly similar to the descriptor database in the regular protobuf library
-// Stores all parsed .proto files currently loaded
-struct DescriptorDatabase {
-    base_dir: String,
-}
-
 enum ResolvedTypeDesc<'a> {
     Message(&'a MessageDescriptor),
     Enum(&'a Enum),
@@ -124,9 +120,6 @@ pub struct Compiler<'a> {
 
     imported_protos: Vec<ImportedProto>,
 
-    options: CompilerOptions, /* TODO: Will also need a DescriptorDatabase to look up items in
-                               * other files runtime_package:
-                               * String */
 
     file_id: String,
 }
@@ -320,7 +313,7 @@ impl Compiler<'_> {
             // process.
             let imported_file = std::fs::read_to_string(&full_path)?;
 
-            let imported_proto_value = crate::syntax::parse_proto(&imported_file)
+            let imported_proto_value = protobuf_dynamic::syntax::parse_proto(&imported_file)
                 .map_err(|e| format_err!("Failed while parsing {}: {:?}", import.path, e))?;
 
             // Search for the crate in which this .proto file exists.
@@ -495,7 +488,7 @@ impl Compiler<'_> {
         let mut allow_alias = false;
         for i in &e.body {
             if let EnumBodyItem::Option(opt) = i {
-                if opt.name == "allow_alias" {
+                if opt.name == OptionName::Builtin("allow_alias".to_string()) {
                     match opt.value {
                         Constant::Bool(v) => allow_alias = v,
                         _ => {
@@ -701,7 +694,7 @@ impl Compiler<'_> {
         let max_length = {
             let mut size = None;
             for opt in options {
-                if opt.name == "max_length" {
+                if opt.name == OptionName::Builtin("max_length".to_string()) {
                     if let Constant::Integer(v) = opt.value {
                         size = Some(v as usize);
                     } else {
@@ -775,7 +768,7 @@ impl Compiler<'_> {
                 ResolvedTypeDesc::Message(m) => {
                     for item in &m.body {
                         if let MessageItem::Option(o) = item {
-                            if o.name == "typed_num" {
+                            if o.name == OptionName::Builtin("typed_num".to_string()) {
                                 // TODO: Must check if a boolean and no duplicate options and that
                                 // the boolean value is true
                                 return true;
@@ -802,7 +795,7 @@ impl Compiler<'_> {
                     ResolvedTypeDesc::Message(m) => {
                         for item in &m.body {
                             if let MessageItem::Option(o) = item {
-                                if o.name == "typed_num" {
+                                if o.name == OptionName::Builtin("typed_num".to_string()) {
                                     // TODO: Must check if a boolean and no duplicate options and
                                     // that the boolean value is true
                                     return true;
@@ -841,7 +834,7 @@ impl Compiler<'_> {
         }
 
         for opt in &field.unknown_options {
-            if opt.name == "unordered_set" {
+            if opt.name == OptionName::Builtin("unordered_set".to_string()) {
                 return true;
             }
         }
@@ -861,7 +854,7 @@ impl Compiler<'_> {
         let max_count = {
             let mut size = None;
             for opt in &field.unknown_options {
-                if opt.name == "max_count" {
+                if opt.name == OptionName::Builtin("max_count".to_string()) {
                     if let Constant::Integer(v) = opt.value {
                         size = Some(v as usize);
                     } else {
@@ -1075,7 +1068,7 @@ impl Compiler<'_> {
             let max_count = {
                 let mut size = None;
                 for opt in &field.unknown_options {
-                    if opt.name == "max_count" {
+                    if opt.name == OptionName::Builtin("max_count".to_string()) {
                         if let Constant::Integer(v) = opt.value {
                             size = Some(v as usize);
                         } else {
@@ -1129,7 +1122,10 @@ impl Compiler<'_> {
 
             // TODO: Need to read the 'default' property
 
-            let explicit_default = field.unknown_options.iter().find(|o| o.name == "default");
+            let explicit_default = field
+                .unknown_options
+                .iter()
+                .find(|o| o.name == OptionName::Builtin("default".to_string()));
 
             let default_value = {
                 if let Some(opt) = &explicit_default {
@@ -1433,7 +1429,7 @@ impl Compiler<'_> {
                     }
                 }
                 MessageItem::Option(option) => {
-                    if option.name == "typed_num" {
+                    if option.name == OptionName::Builtin("typed_num".to_string()) {
                         is_typed_num = match option.value {
                             Constant::Bool(v) => v,
                             _ => {

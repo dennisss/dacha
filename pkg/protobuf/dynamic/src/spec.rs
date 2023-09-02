@@ -1,6 +1,9 @@
 // This file contains structs which define the syntax tree of a .proto file
 // describing a set of messages/services.
 
+use alloc::vec::Vec;
+use std::string::{String, ToString};
+
 use protobuf_core::text::TextMessage;
 use protobuf_core::{EnumValue, FieldNumber};
 #[cfg(feature = "descriptors")]
@@ -38,8 +41,18 @@ pub struct Import {
 
 #[derive(Clone, Debug)]
 pub struct Opt {
-    pub name: String,
+    pub name: OptionName,
     pub value: Constant,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OptionName {
+    Builtin(String),
+    Custom {
+        // TODO: Make sure we support this starting with a '.' to be absolute
+        extension_name: String,
+        field: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +93,7 @@ pub enum FieldType {
     String,
     Bytes,
     /// Either a message or enum type.
+    /// // TODO: Make sure we support this starting with a '.' to be absolute
     Named(String),
 }
 

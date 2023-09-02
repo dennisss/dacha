@@ -32,10 +32,6 @@ extern crate protobuf_builtins;
 #[cfg(feature = "std")]
 extern crate protobuf_descriptor;
 
-#[cfg(feature = "std")]
-mod descriptor_pool;
-#[cfg(feature = "std")]
-pub mod dynamic;
 pub mod proto;
 #[cfg(feature = "std")]
 pub mod viewer;
@@ -43,11 +39,9 @@ pub mod viewer;
 // TODO: Remove this 'use' statement.
 #[cfg(feature = "std")]
 pub use common::bytes::{Bytes, BytesMut};
-#[cfg(feature = "std")]
-pub use descriptor_pool::*;
-#[cfg(feature = "std")]
-pub use dynamic::*;
 pub use protobuf_core::*;
+#[cfg(feature = "std")]
+pub use protobuf_dynamic::*;
 
 #[cfg(test)]
 mod test {

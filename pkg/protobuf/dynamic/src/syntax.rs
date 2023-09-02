@@ -8,7 +8,8 @@
 // []  option (zero or one time)
 // {}  repetition (any number of times)
 
-use std::string::String;
+use alloc::vec::Vec;
+use std::string::{String, ToString};
 
 use common::errors::*;
 use parsing::*;
@@ -226,22 +227,25 @@ parser!(option<&str, Opt> => seq!(c => {
 
 // Proto 2 and 3
 // optionName = ( ident | "(" fullIdent ")" ) { "." ident }
-parser!(option_name<&str, String> => seq!(c => {
-    let prefix = c.next(ident)
-        .or_else(|_| c.next(seq!(c => {
+parser!(option_name<&str, OptionName> => seq!(c => {
+    c.next(alt!(
+        seq!(c => {
             c.next(is(symbol, '('))?;
             let s = c.next(full_ident)?;
             c.next(is(symbol, ')'))?;
-            Ok(String::from("(") + &s + &")")
-        })))?;
 
-    let rest = c.many(seq!(c => {
-        c.next(is(symbol, '.'))?;
-        let id = c.next(ident)?;
-        Ok(String::from(".") + &id)
-    }));
+            let field = c.next(opt(seq!(c => {
+                c.next(is(symbol, '.'))?;
+                c.next(full_ident)
+            })))?;
 
-    Ok(prefix + &rest.join(""))
+            Ok(OptionName::Custom {
+                extension_name: s,
+                field
+            })
+        }),
+        map(ident, |s| OptionName::Builtin(s))
+    ))
 }));
 
 // Proto 2: Required | Optional | Repeated

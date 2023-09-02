@@ -1,0 +1,16 @@
+[package]
+name = "protobuf_dynamic"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+macros = { path = "../../macros" }
+protobuf_core = { path = "../core" }
+parsing = { path = "../../parsing" }
+file = { path = "../../file" }
+protobuf_descriptor = { path = "../../../third_party/protobuf_descriptor", optional = true }
+
+[features]
+default = ["descriptors"]
+descriptors = ["protobuf_descriptor"]
