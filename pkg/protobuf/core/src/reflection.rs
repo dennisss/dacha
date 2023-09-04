@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use common::any::AsAny;
+use core::any::Any;
 use core::convert::Infallible;
 use core::default::Default;
 use core::ops::{Deref, DerefMut};
@@ -31,6 +32,7 @@ pub enum Reflection<'a> {
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
     Enum(&'a dyn Enum),
+    // Map(&'a dyn MapFieldReflection),
     Set(&'a dyn SetFieldReflection),
 }
 
@@ -47,6 +49,7 @@ pub enum ReflectionMut<'a> {
     Repeated(&'a mut dyn RepeatedFieldReflection),
     Message(&'a mut dyn MessageReflection),
     Enum(&'a mut dyn Enum),
+    // Map(&'a mut dyn MapFieldReflection),
     Set(&'a mut dyn SetFieldReflection), /* NOTE: reflect_mut() on an option will simply assign
                                           * a new default value.
                                           * TODO: Support controlling presence with reflection?
@@ -76,7 +79,9 @@ pub enum StringPtr {
 
 impl PartialEq for StringPtr {
     fn eq(&self, other: &Self) -> bool {
-        *self == *other
+        let a: &str = &*self;
+        let b: &str = &*other;
+        a == b
     }
 }
 
@@ -92,7 +97,7 @@ impl std::ops::Deref for StringPtr {
 }
 
 /// NOTE: Should be implemented by all Messages.
-pub trait MessageReflection: Message + AsAny + MessageEquals {
+pub trait MessageReflection: Message + AsAny + MessageEquals + Any + 'static {
     // A non-mutable version would be required for the regular
 
     // Should also have a fields() which iterates over fields?
@@ -115,9 +120,11 @@ pub trait MessageReflection: Message + AsAny + MessageEquals {
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber>;
 
-    fn unknown_fields(&self) -> &UnknownFieldSet;
+    fn unknown_fields(&self) -> Option<&UnknownFieldSet>;
 
-    fn extensions(&self) -> &ExtensionSet;
+    fn extensions(&self) -> Option<&ExtensionSet>;
+
+    fn extensions_mut(&mut self) -> Option<&mut ExtensionSet>;
 
     // TODO: Find a better name for this.
     #[cfg(feature = "alloc")]
@@ -339,6 +346,18 @@ impl<T: Reflect + Default, const LEN: usize> RepeatedFieldReflection for FixedVe
         self[idx].reflect_mut()
     }
 }
+
+/*
+pub trait SetFieldReflection {
+    fn len(&self) -> usize;
+
+    fn entry<'a>(&'a self) -> Box<dyn SetFieldEntryReflection + 'a>;
+
+    fn entry_mut<'a>(&'a mut self) -> Box<dyn SetFieldEntryReflectionMut + 'a>;
+
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = Reflection<'a>> + 'a>;
+}
+*/
 
 pub trait SetFieldReflection {
     fn len(&self) -> usize;

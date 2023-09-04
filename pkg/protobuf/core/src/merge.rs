@@ -33,6 +33,12 @@ fn merge_messages(this: &mut dyn MessageReflection, other: &dyn MessageReflectio
         assign_reflection(old_value, new_value)?;
     }
 
+    // Step 1: Merge all extensions
+    // Step 2: Go through unknown fields to see if we are now able to parse any of
+    // them.
+
+    // TODO: Merge unknown fields and extensions
+
     Ok(())
 }
 

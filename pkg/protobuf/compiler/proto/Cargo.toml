@@ -1,0 +1,17 @@
+[package]
+name = "protobuf_compiler_proto"
+version = "0.0.0"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+common = { path = "../../../common" }
+protobuf_core = { path = "../../core", default-features = false }
+macros = { path = "../../../macros" }
+protobuf_descriptor = { path = "../../../../third_party/protobuf_descriptor", default-features = false }
+
+[features]
+default = ["std"]
+std = ["alloc", "protobuf_core/std", "protobuf_descriptor/std"]
+alloc = ["protobuf_core/alloc", "protobuf_descriptor/alloc"]

@@ -27,8 +27,6 @@ pub struct DynamicMessage {
     // descriptor (have on shared hash map)
     fields: HashMap<FieldNumber, Value, SumHasherBuilder>,
 
-    unknown_fields: UnknownFieldSet,
-
     extensions: ExtensionSet,
 
     desc: MessageDescriptor,
@@ -38,14 +36,15 @@ impl DynamicMessage {
     pub fn new(desc: MessageDescriptor) -> Self {
         Self {
             fields: HashMap::with_hasher(SumHasherBuilder::default()),
-            unknown_fields: UnknownFieldSet::default(),
             extensions: ExtensionSet::default(),
             desc,
         }
     }
 
     // TODO: Return a 'Value' here
-    fn default_value_for_field(field_desc: &FieldDescriptor) -> WireResult<SingularValue> {
+    pub(crate) fn default_value_for_field(
+        field_desc: &FieldDescriptor,
+    ) -> WireResult<SingularValue> {
         use FieldDescriptorProto_Type::*;
         Ok(match field_desc.proto().typ() {
             TYPE_DOUBLE => SingularValue::Double(0.0),
@@ -99,7 +98,7 @@ impl protobuf_core::Message for DynamicMessage {
                 // TODO: Check this behavior.
                 // TODO: Add to unknown fields in this case.
                 None => {
-                    self.unknown_fields.fields.push(wire_field.span.into());
+                    self.extensions.parse_merge(wire_field.span.into())?;
                     continue;
                 }
             };
@@ -136,7 +135,6 @@ impl protobuf_core::Message for DynamicMessage {
             field.serialize_to(*field_num, out)?;
         }
 
-        self.unknown_fields.serialize_to(out)?;
         self.extensions.serialize_to(out)?;
 
         Ok(())
@@ -157,7 +155,7 @@ impl protobuf_core::Message for DynamicMessage {
 
 impl protobuf_core::MessageReflection for DynamicMessage {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
-        &self.desc.fields()
+        &self.desc.fields_short()
     }
 
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
@@ -230,17 +228,22 @@ impl protobuf_core::MessageReflection for DynamicMessage {
         Box::new(self.clone())
     }
 
-    fn unknown_fields(&self) -> &UnknownFieldSet {
-        &self.unknown_fields
+    fn unknown_fields(&self) -> Option<&UnknownFieldSet> {
+        Some(self.extensions.unknown_fields())
     }
 
-    fn extensions(&self) -> &ExtensionSet {
-        &self.extensions
+    fn extensions(&self) -> Option<&ExtensionSet> {
+        Some(&self.extensions)
+    }
+
+    fn extensions_mut(&mut self) -> Option<&mut ExtensionSet> {
+        Some(&mut self.extensions)
     }
 }
 
+// TODO: Make fully private
 #[derive(Clone)]
-struct DynamicEnum {
+pub(crate) struct DynamicEnum {
     value: EnumValue,
     desc: EnumDescriptor,
 }

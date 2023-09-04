@@ -207,6 +207,8 @@ impl ReverseDifferentiator {
     /// 'output' node back to a leaf node or an occurence of 'input'.
     ///
     /// TODO: Ideally this would prune any paths that don't lead to the 'input'
+    ///
+    /// TODO: Generalize this code and move it to a shared library.
     fn topological_subgraph_order(&self, input: Output, output: Output) -> Vec<NodeId> {
         let mut ordering = vec![];
 

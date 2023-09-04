@@ -93,7 +93,7 @@ impl<'a> Type for BufferType<'a> {
             // TODO: Some types like large primitive slices can be optimized.
             BufferTypeProtoSizeCase::FixedLength(len) => {
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
-                    self.proto.element_type().type_case()
+                    self.proto.element_type().typ_case()
                 {
                     // TODO: Ensure that we always take exact a slice (and not Bytes as that
                     // is an expensive copy)!
@@ -152,7 +152,7 @@ impl<'a> Type for BufferType<'a> {
                 assert!(context.stream != "buf");
 
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
-                    self.proto.element_type().type_case()
+                    self.proto.element_type().typ_case()
                 {
                     lines.add(format!(
                         "\tbuf.extend_from_slice(parse_next!({}, ::parsing::take_exact({} as usize)));",
@@ -189,7 +189,7 @@ impl<'a> Type for BufferType<'a> {
                 ));
 
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
-                    self.proto.element_type().type_case()
+                    self.proto.element_type().typ_case()
                 {
                     lines.add(format!(
                         "buf.extend_from_slice(parse_next!({input}, ::parsing::take_exact(length)));",
@@ -236,7 +236,7 @@ impl<'a> Type for BufferType<'a> {
 
                 // TODO: Deduplicate this.
                 if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
-                    self.proto.element_type().type_case()
+                    self.proto.element_type().typ_case()
                 {
                     lines.add("\tbuf.extend_from_slice(input);");
                 } else {
@@ -316,7 +316,7 @@ impl<'a> Type for BufferType<'a> {
 
         // Optimized case for [u8]
         if let TypeProtoTypeCase::Primitive(PrimitiveTypeProto::U8) =
-            self.proto.element_type().type_case()
+            self.proto.element_type().typ_case()
         {
             lines.add(format!("out.extend_from_slice(&{});", value));
         } else {

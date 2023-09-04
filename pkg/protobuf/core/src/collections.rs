@@ -20,6 +20,63 @@ impl<K: Clone + PartialEq + Hash + Eq, V: Clone> ConstDefault for MapField<K, V>
     const DEFAULT: Self = Self { inner: None };
 }
 
+impl<K: Clone + PartialEq + Hash + Eq, V: Clone> MapField<K, V> {
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let map = self.inner.get_or_insert_with(|| HashMap::default());
+        map.insert(key, value)
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (&K, &V)> {
+        MapFieldIter {
+            iter: self.inner.as_ref().map(|v| v.iter()),
+        }
+    }
+}
+
+pub struct MapFieldIter<'a, K, V> {
+    iter: Option<std::collections::hash_map::Iter<'a, K, V>>,
+}
+
+impl<'a, K, V> Iterator for MapFieldIter<'a, K, V> {
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(iter) = &mut self.iter {
+            iter.next()
+        } else {
+            None
+        }
+    }
+}
+
+impl<K: Clone + PartialEq + Hash + Eq, V: Clone> Reflect for MapField<K, V> {
+    fn reflect(&self) -> Reflection {
+        Reflection::Repeated(self)
+    }
+
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        ReflectionMut::Repeated(self)
+    }
+}
+
+impl<K: Clone + PartialEq + Hash + Eq, V: Clone> RepeatedFieldReflection for MapField<K, V> {
+    fn reflect_add(&mut self) -> ReflectionMut {
+        todo!()
+    }
+
+    fn reflect_get(&self, index: usize) -> Option<Reflection> {
+        todo!()
+    }
+
+    fn reflect_get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
+        todo!()
+    }
+
+    fn reflect_len(&self) -> usize {
+        todo!()
+    }
+}
+
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct SetField<T: PartialEq + Eq + Hash> {
     inner: Option<HashSet<T>>,

@@ -5,7 +5,7 @@ use std::process::Command;
 use common::errors::*;
 use common::line_builder::LineBuilder;
 use file::{project_path, LocalPath, LocalPathBuf};
-use protobuf_dynamic::syntax::parse_proto;
+use protobuf_dynamic::DescriptorPool;
 
 use crate::compiler::{Compiler, CompilerOptions};
 use crate::escape::escape_rust_identifier;
@@ -15,18 +15,24 @@ pub fn project_default_options() -> CompilerOptions {
 
     // TODO: Infer these from build dependencies.
     options
+        .descriptor_pool_options
         .paths
         .push(project_path!("third_party/protobuf_builtins/proto"));
     options
+        .descriptor_pool_options
         .paths
         .push(project_path!("third_party/protobuf_descriptor"));
     options
+        .descriptor_pool_options
         .paths
         .push(project_path!("third_party/googleapis/repo"));
 
     // TODO: This is a dangerous default() as we can't use it outside of a real
     // project.
-    options.paths.push(file::project_dir());
+    options
+        .descriptor_pool_options
+        .paths
+        .push(file::project_dir());
 
     options
 }
@@ -112,6 +118,14 @@ pub fn build_custom(
     output_dir: &LocalPath,
     options: CompilerOptions,
 ) -> Result<()> {
+    executor::run(build_custom_impl(input_dir, output_dir, options))?
+}
+
+async fn build_custom_impl(
+    input_dir: &LocalPath,
+    output_dir: &LocalPath,
+    options: CompilerOptions,
+) -> Result<()> {
     let mut input_paths: Vec<LocalPathBuf> = vec![];
 
     // TODO: Only traverse down directories accepted by the allowlist.
@@ -139,29 +153,24 @@ pub fn build_custom(
 
     let mut tree = PackageTree::default();
 
+    let mut descriptor_pool = DescriptorPool::new(options.descriptor_pool_options.clone());
+
     // TODO: Parallelize this?
     for input_path in input_paths {
         let mut relative_path = input_path.strip_prefix(&input_dir).unwrap().to_owned();
         println!("cargo:rerun-if-changed={}", relative_path.as_str());
 
-        let input_src = std::fs::read_to_string(&input_path)?;
-
-        let desc = match parse_proto(&input_src) {
-            Ok(d) => d,
-            Err(e) => {
-                return Err(format_err!("Failed to parse {:?}: {:?}", relative_path, e));
-            }
-        };
+        let file = descriptor_pool.add_file(&input_path).await?;
 
         relative_path.set_extension("rs");
         let mut output_path: LocalPathBuf = output_dir.join(&relative_path);
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
-        let (output, file_id) = Compiler::compile(&desc, &input_path, input_dir, &options)?;
+        let (output, file_id) = Compiler::compile(file.clone(), input_dir, &options)?;
         std::fs::write(&output_path, output)?;
 
-        tree.insert(&desc.package, relative_path, file_id);
+        tree.insert(&file.proto().package(), relative_path, file_id);
 
         if options.should_format {
             // TODO: This doesn't work with 'cross'

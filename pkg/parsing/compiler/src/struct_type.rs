@@ -175,11 +175,11 @@ impl<'a> Type for StructType<'a> {
                     ));
 
                     // Only primitive fields can be used as bit fields.
-                    if let TypeProtoTypeCase::Primitive(_) = field.typ().type_case() {
+                    if let TypeProtoTypeCase::Primitive(_) = field.typ().typ_case() {
                         // All good
                         // TODO: Must also validate that the given primitive
                         // type can fit the num bits.
-                    } else if let TypeProtoTypeCase::Named(name) = field.typ().type_case() {
+                    } else if let TypeProtoTypeCase::Named(name) = field.typ().typ_case() {
 
                         // TODO: Look it up and hotpe that it is an enum with a
                         // primitive type (values can't be larger than the field
@@ -229,7 +229,7 @@ impl<'a> Type for StructType<'a> {
             for field in self.proto.field().iter().rev() {
                 previous_fields.remove(&field.name());
 
-                if let TypeProtoTypeCase::Buffer(b) = field.typ().type_case() {
+                if let TypeProtoTypeCase::Buffer(b) = field.typ().typ_case() {
                     if let BufferTypeProtoSizeCase::EndTerminated(is_end_terminated) = b.size_case()
                     {
                         if !is_end_terminated {

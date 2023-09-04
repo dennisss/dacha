@@ -6,7 +6,6 @@ use std::string::{String, ToString};
 
 use protobuf_core::text::TextMessage;
 use protobuf_core::{EnumValue, FieldNumber};
-#[cfg(feature = "descriptors")]
 use protobuf_descriptor as pb;
 
 // Proto 2 and 3
@@ -45,6 +44,59 @@ pub struct Opt {
     pub value: Constant,
 }
 
+impl Opt {
+    fn to_proto(&self) -> pb::UninterpretedOption {
+        let mut proto = pb::UninterpretedOption::default();
+
+        match &self.name {
+            OptionName::Builtin(name) => {
+                let n = proto.new_name();
+                n.set_name_part(name);
+                n.set_is_extension(false);
+            }
+            OptionName::Custom {
+                extension_name,
+                field,
+            } => {
+                let n1 = proto.new_name();
+                n1.set_name_part(extension_name);
+                n1.set_is_extension(true);
+
+                if let Some(field) = field {
+                    let n2 = proto.new_name();
+                    n2.set_name_part(field);
+                    n2.set_is_extension(false);
+                }
+            }
+        }
+
+        match &self.value {
+            Constant::Identifier(v) => proto.set_identifier_value(v),
+            Constant::Integer(v) => {
+                if *v < 0 {
+                    proto.set_negative_int_value(*v);
+                } else {
+                    proto.set_positive_int_value(*v as u64);
+                }
+            }
+            Constant::Float(v) => {
+                proto.set_double_value(*v);
+            }
+            Constant::String(v) => {
+                proto.set_string_value(&v[..]);
+            }
+            Constant::Bool(v) => {
+                proto.set_identifier_value(v.to_string());
+            }
+            Constant::Message(v) => {
+                proto.set_aggregate_value(v.to_string());
+            }
+        }
+
+        proto
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum OptionName {
     Builtin(String),
@@ -55,7 +107,7 @@ pub enum OptionName {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Label {
     None,
     Required,
@@ -64,7 +116,6 @@ pub enum Label {
 }
 
 impl Label {
-    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::FieldDescriptorProto_Label {
         match self {
             Label::None => pb::FieldDescriptorProto_Label::LABEL_OPTIONAL,
@@ -105,31 +156,6 @@ impl FieldType {
         if let FieldType::Named(_) = self { false } else { true }
     }
     */
-
-    /// Gets an str representing the proto identifier for this type.
-    /// This string is used in the name of all wire format functions so can
-    /// be used for code generation.
-    pub fn as_str(&self) -> &str {
-        use self::FieldType::*;
-        match self {
-            Double => "Double",
-            Float => "Float",
-            Int32 => "Int32",
-            Int64 => "Int64",
-            UInt32 => "UInt32",
-            UInt64 => "UInt64",
-            SInt32 => "SInt32",
-            SInt64 => "SInt64",
-            Fixed32 => "Fixed32",
-            Fixed64 => "Fixed64",
-            SFixed32 => "SFixed32",
-            SFixed64 => "SFixed64",
-            Bool => "Bool",
-            String => "String",
-            Bytes => "Bytes",
-            FieldType::Named(s) => s.as_str(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,12 +164,10 @@ pub struct Field {
     pub typ: FieldType,
     pub name: String,
     pub num: FieldNumber,
-    pub options: FieldOptions,
-    pub unknown_options: Vec<Opt>,
+    pub options: Vec<Opt>,
 }
 
 impl Field {
-    #[cfg(feature = "descriptors")]
     fn to_proto(&self, oneof_index: Option<usize>) -> pb::FieldDescriptorProto {
         let mut proto = pb::FieldDescriptorProto::default();
         proto.set_name(&self.name);
@@ -177,7 +201,9 @@ impl Field {
             proto.set_oneof_index(idx as i32);
         }
 
-        // TODO: options
+        for opt in &self.options {
+            proto.options_mut().add_uninterpreted_option(opt.to_proto());
+        }
 
         proto
     }
@@ -207,15 +233,6 @@ pub struct MapField {
     pub options: Vec<Opt>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct FieldOptions {
-    // TODO: Will be true by default in proto3 for any scalar type.
-    // Basically anything with a known length
-    pub packed: bool,
-    pub deprecated: bool,
-    pub default: Option<Constant>,
-}
-
 pub type Ranges = Vec<Range>;
 
 // Upper and lower bounds are inclusive.
@@ -235,13 +252,14 @@ pub struct Enum {
 }
 
 impl Enum {
-    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::EnumDescriptorProto {
         let mut proto = pb::EnumDescriptorProto::default();
         proto.set_name(&self.name);
         for item in &self.body {
             match item {
-                EnumBodyItem::Option(_) => {} // TODO
+                EnumBodyItem::Option(opt) => {
+                    proto.options_mut().add_uninterpreted_option(opt.to_proto());
+                }
                 EnumBodyItem::Field(field) => {
                     let mut v = pb::EnumValueDescriptorProto::default();
                     v.set_name(&field.name);
@@ -275,10 +293,10 @@ pub struct MessageDescriptor {
 }
 
 impl MessageDescriptor {
-    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::DescriptorProto {
         let mut proto = pb::DescriptorProto::default();
         proto.set_name(&self.name);
+
         for item in &self.body {
             match item {
                 MessageItem::Field(f) => {
@@ -311,8 +329,7 @@ impl MessageDescriptor {
                             typ: f.key_type.clone(),
                             name: "key".to_string(),
                             num: 1, // TODO: Define this in some constants file
-                            options: FieldOptions::default(),
-                            unknown_options: vec![],
+                            options: vec![],
                         }
                         .to_proto(None),
                     );
@@ -322,8 +339,7 @@ impl MessageDescriptor {
                             typ: f.value_type.clone(),
                             name: "value".to_string(),
                             num: 2, // TODO: Define this in some constants file
-                            options: FieldOptions::default(),
-                            unknown_options: vec![],
+                            options: vec![],
                         }
                         .to_proto(None),
                     );
@@ -334,8 +350,7 @@ impl MessageDescriptor {
                             typ: FieldType::Named(entry.name().to_string()),
                             name: f.name.to_string(),
                             num: f.num,
-                            options: FieldOptions::default(),
-                            unknown_options: vec![],
+                            options: vec![],
                         }
                         .to_proto(None),
                     );
@@ -355,8 +370,13 @@ impl MessageDescriptor {
                 MessageItem::Reserved(r) => {
                     // TODO
                 }
-                MessageItem::Option(v) => {
-                    // TODO
+                MessageItem::Option(opt) => {
+                    proto.options_mut().add_uninterpreted_option(opt.to_proto());
+                }
+                MessageItem::Extend(v) => {
+                    for e in v.to_proto() {
+                        proto.add_extension(e);
+                    }
                 }
                 v @ _ => {
                     println!("Do not support {:?}", v);
@@ -396,13 +416,31 @@ pub enum MessageItem {
 #[derive(Debug, Clone)]
 pub enum ExtendItem {
     Field(Field),
-    Group(Group),
+    // Group(Group),
 }
 
 #[derive(Debug, Clone)]
 pub struct Extend {
     pub typ: String,
     pub body: Vec<ExtendItem>,
+}
+
+impl Extend {
+    fn to_proto(&self) -> Vec<pb::FieldDescriptorProto> {
+        let mut out = vec![];
+
+        for item in &self.body {
+            match item {
+                ExtendItem::Field(field) => {
+                    let mut proto = field.to_proto(None);
+                    proto.set_extendee(&self.typ);
+                    out.push(proto);
+                }
+            }
+        }
+
+        out
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -419,7 +457,6 @@ pub struct Service {
 }
 
 impl Service {
-    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::ServiceDescriptorProto {
         let mut proto = pb::ServiceDescriptorProto::default();
         proto.set_name(&self.name);
@@ -437,16 +474,6 @@ impl Service {
 
         proto
     }
-
-    pub fn rpcs(&self) -> impl Iterator<Item = &RPC> {
-        self.body.iter().filter_map(|item| {
-            if let ServiceItem::RPC(r) = item {
-                Some(r)
-            } else {
-                None
-            }
-        })
-    }
 }
 
 // TODO: This should be straight forward to just replace with a
@@ -462,7 +489,6 @@ pub struct RPC {
 }
 
 impl RPC {
-    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::MethodDescriptorProto {
         let mut proto = pb::MethodDescriptorProto::default();
         proto.set_name(&self.name);
@@ -471,7 +497,9 @@ impl RPC {
         proto.set_client_streaming(self.req_stream);
         proto.set_server_streaming(self.res_stream);
 
-        // TODO: Options
+        for opt in &self.options {
+            proto.options_mut().add_uninterpreted_option(opt.to_proto());
+        }
 
         proto
     }
@@ -499,12 +527,10 @@ pub struct Proto {
     pub syntax: Syntax,
     pub package: String,
     pub imports: Vec<Import>,
-    pub options: Vec<Opt>,
     pub definitions: Vec<TopLevelDef>,
 }
 
 impl Proto {
-    #[cfg(feature = "descriptors")]
     pub fn to_proto(&self) -> pb::FileDescriptorProto {
         let mut proto = pb::FileDescriptorProto::default();
         proto.set_syntax(match self.syntax {
@@ -515,9 +541,19 @@ impl Proto {
         proto.set_package(&self.package);
 
         // TODO: Ensure that these are relative to the root of the file
-        // for import in &self.imports {
-        //     proto.add_dependency(v)
-        // }
+        for import in &self.imports {
+            let idx = proto.dependency_len() as i32;
+            proto.add_dependency(import.path.clone());
+            match import.typ {
+                ImportType::Default => {}
+                ImportType::Weak => {
+                    proto.add_weak_dependency(idx);
+                }
+                ImportType::Public => {
+                    proto.add_public_dependency(idx);
+                }
+            }
+        }
 
         for def in &self.definitions {
             match def {
@@ -527,11 +563,17 @@ impl Proto {
                 TopLevelDef::Enum(e) => {
                     proto.add_enum_type(e.to_proto());
                 }
-                TopLevelDef::Extend(_) => {} // TODO
+                TopLevelDef::Extend(e) => {
+                    for e in e.to_proto() {
+                        proto.add_extension(e);
+                    }
+                }
                 TopLevelDef::Service(s) => {
                     proto.add_service(s.to_proto());
                 }
-                TopLevelDef::Option(_) => todo!(),
+                TopLevelDef::Option(opt) => {
+                    proto.options_mut().add_uninterpreted_option(opt.to_proto());
+                }
             }
         }
 

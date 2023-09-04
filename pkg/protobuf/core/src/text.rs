@@ -222,6 +222,17 @@ impl TextMessage {
         map(delimited(TextField::parse, opt(is(symbol, ','))), |fields| Self { fields })
     });
 
+    pub fn to_string(&self) -> String {
+        let mut out = String::new();
+
+        for field in &self.fields {
+            out.push_str(&field.to_string());
+            out.push(' ');
+        }
+
+        out
+    }
+
     fn apply(
         &self,
         message: &mut dyn MessageReflection,
@@ -278,6 +289,10 @@ impl TextField {
         let value = c.next(TextValue::parse)?;
         Ok(Self { name, value })
     }));
+
+    pub fn to_string(&self) -> String {
+        format!("{}: {}", self.name.to_string(), self.value.to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -296,6 +311,13 @@ impl TextFieldName {
         }),
         map(ident, |s| Self::Regular(s))
     ));
+
+    pub fn to_string(&self) -> String {
+        match self {
+            TextFieldName::Regular(v) => v.to_string(),
+            TextFieldName::Extension(v) => format!("[{}]", v),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -339,6 +361,36 @@ impl TextValue {
             Ok(Self::Array(values))
         })
     ));
+
+    pub fn to_string(&self) -> String {
+        match self {
+            TextValue::Bool(v) => v.to_string(),
+            TextValue::Integer(v) => v.to_string(),
+            TextValue::Float(v) => v.to_string(),
+            TextValue::String(v) => {
+                let mut out = String::new();
+                serialize_str_lit(&v[..], &mut out);
+                out
+            }
+            TextValue::Identifier(v) => v.clone(),
+            TextValue::Message(v) => format!("{{ {} }}", v.to_string()),
+            TextValue::Array(v) => {
+                let mut out = String::new();
+                out.push('[');
+
+                for i in 0..v.len() {
+                    if i != 0 {
+                        out.push(',');
+                    }
+
+                    out.push_str(&v[i].to_string());
+                }
+
+                out.push(']');
+                out
+            }
+        }
+    }
 
     fn apply(&self, field: ReflectionMut, options: &ParseTextProtoOptions) -> Result<()> {
         match field {
@@ -700,6 +752,8 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
             out.push_str(v.name());
         }
     }
+
+    // TODO: Handle extensions and unknown fields
 }
 
 /*

@@ -45,7 +45,7 @@ pub mod wire;
 pub use bytes::BytesField;
 #[cfg(feature = "std")]
 pub use collections::*;
-pub use extension::ExtensionSet;
+pub use extension::{ExtensionRef, ExtensionSet, ExtensionTag};
 #[cfg(feature = "alloc")]
 pub use merge::*;
 pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage};
@@ -54,8 +54,8 @@ pub use reflection::{
     FieldDescriptorShort, MessageReflection, SingularFieldReflectionProto2,
     SingularFieldReflectionProto3, StringPtr,
 };
-pub use types::EnumValue;
 pub use types::FieldNumber;
+pub use types::{EnumValue, ExtensionNumberType};
 pub use unknown::UnknownFieldSet;
 #[cfg(feature = "std")]
 pub use value::*;

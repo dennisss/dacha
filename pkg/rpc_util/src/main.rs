@@ -20,7 +20,7 @@ use std::sync::Arc;
 use common::args::parse_args;
 use common::errors::*;
 use grpc_proto::grpc::reflection::v1alpha::*;
-use protobuf::{DescriptorPool, Message};
+use protobuf::{DescriptorPool, DescriptorPoolOptions, Message};
 use rpc::Channel;
 
 #[derive(Args)]
@@ -136,7 +136,7 @@ impl ServerClient {
                 .collect::<Vec<_>>()
         };
 
-        let descriptor_pool = protobuf::DescriptorPool::new();
+        let descriptor_pool = protobuf::DescriptorPool::new(DescriptorPoolOptions::default());
         for service in &services {
             let mut req = ServerReflectionRequest::default();
             req.set_file_containing_symbol(service);

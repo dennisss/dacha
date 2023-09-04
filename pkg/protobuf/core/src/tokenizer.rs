@@ -168,29 +168,42 @@ parser!(exponent<&str, String> => seq!(c => {
 // TODO: Also support "\uXXXX" which is used in the text format to represent a
 // unicode code point rather than just one byte.
 parser!(pub strLit<&str, Vec<u8>> => seq!(c => {
-    let mut out = vec![];
-
     let q = c.next(quote)?;
 
-    loop {
-        if let Some(byte) = c.next(opt(alt!(hex_escape, oct_escape, char_escape)))? {
-            out.push(byte);
-        } else if let Some(c) = c.next(opt(like(|c| c != q && c != '\0' && c != '\n' && c != '\\')))? {
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            out.extend_from_slice(s.as_bytes());
-        } else {
-            break;
-        }
-    }
+    let out = c.next(|i| parse_str_lit_inner(q)(i))?;
 
     c.next(atom(q))?;
 
     Ok(out)
 }));
 
+pub fn parse_str_lit_inner(q: char) -> impl Fn(&str) -> Result<(Vec<u8>, &str)> {
+    seq!(c => {
+        let mut out = vec![];
+
+        loop {
+            if let Some(byte) = c.next(opt(alt!(hex_escape, oct_escape, char_escape)))? {
+                out.push(byte);
+            } else if let Some(c) = c.next(opt(like(|c| c != q && c != '\0' && c != '\n' && c != '\\')))? {
+                let mut buf = [0u8; 4];
+                let s = c.encode_utf8(&mut buf);
+                out.extend_from_slice(s.as_bytes());
+            } else {
+                break;
+            }
+        }
+
+        Ok(out)
+    })
+}
+
 pub fn serialize_str_lit(value: &[u8], out: &mut String) {
     out.push('"');
+    serialize_str_lit_inner(value, out);
+    out.push('"');
+}
+
+pub fn serialize_str_lit_inner(value: &[u8], out: &mut String) {
     for b in value.iter().cloned() {
         if b != b'\\'
             && b != b'"'
@@ -201,7 +214,6 @@ pub fn serialize_str_lit(value: &[u8], out: &mut String) {
             out.push_str(&format!("\\x{:02x}", b));
         }
     }
-    out.push('"');
 }
 
 // hexEscape = '\' ( "x" | "X" ) hexDigit hexDigit

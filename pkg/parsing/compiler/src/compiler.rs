@@ -64,14 +64,14 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
         proto: &'a TypeProto,
         context: &TypeResolverContext,
     ) -> Result<TypeReference<'a>> {
-        Ok(match proto.type_case() {
+        Ok(match proto.typ_case() {
             TypeProtoTypeCase::Primitive(p) => {
                 // TODO: Use cached copies when using the same type.
 
                 self.add_anonymous_type(PrimitiveType::create(p.clone(), context.endian))
             }
             TypeProtoTypeCase::Buffer(buf) => {
-                let typ = BufferType::create(buf, self, context)?;
+                let typ = BufferType::create(buf.as_ref(), self, context)?;
                 self.add_anonymous_type(typ)
             }
             TypeProtoTypeCase::Named(name) => {
@@ -84,7 +84,7 @@ impl<'a> TypeResolver<'a> for CompilerTypeIndex<'a> {
                 TypeReference::new(Rc::downgrade(&typ))
             }
             TypeProtoTypeCase::String(s) => {
-                let typ = StringType::create(s, self, context)?;
+                let typ = StringType::create(s.as_ref(), self, context)?;
                 self.add_anonymous_type(typ)
             }
             TypeProtoTypeCase::NOT_SET => return Err(err_msg("Unspecified type")),
@@ -165,7 +165,7 @@ impl Compiler {
         let mut new_values = HashMap::new();
 
         for field in proto.field_mut() {
-            if let TypeProtoTypeCase::Buffer(buf) = field.typ_mut().type_case_mut() {
+            if let TypeProtoTypeCase::Buffer(buf) = field.typ_mut().typ_case_mut() {
                 if let BufferTypeProtoSizeCase::LengthFieldName(name) = buf.size_case() {
                     let name = name.clone();
 

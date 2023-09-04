@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package dacha;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FieldOptions {
+    optional uint32 max_count = 8001;
+    optional uint32 max_length = 8002;
+    optional bool unordered_set = 8003;
+}
+
+extend google.protobuf.MessageOptions {
+    optional bool typed_num = 8004;
+}

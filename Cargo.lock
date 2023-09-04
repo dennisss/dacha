@@ -1197,6 +1197,8 @@ dependencies = [
  "protobuf",
  "protobuf_builtins",
  "protobuf_compiler",
+ "protobuf_descriptor",
+ "rpc",
 ]
 
 [[package]]
@@ -2157,6 +2159,7 @@ dependencies = [
  "parsing",
  "protobuf_builtins",
  "protobuf_compiler",
+ "protobuf_compiler_proto",
  "protobuf_core",
  "protobuf_descriptor",
  "protobuf_dynamic",
@@ -2190,12 +2193,24 @@ dependencies = [
  "base_radix",
  "common",
  "crypto",
+ "executor",
  "file",
  "parsing",
+ "protobuf_compiler_proto",
  "protobuf_core",
  "protobuf_descriptor",
  "protobuf_dynamic",
  "regexp_macros",
+]
+
+[[package]]
+name = "protobuf_compiler_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf_core",
+ "protobuf_descriptor",
 ]
 
 [[package]]
@@ -2222,6 +2237,7 @@ name = "protobuf_dynamic"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
  "file",
  "macros",
  "parsing",
@@ -2389,7 +2405,6 @@ dependencies = [
  "compression",
  "executor",
  "failure",
- "googleapis_proto",
  "http",
  "macros",
  "net",
@@ -2698,7 +2713,6 @@ dependencies = [
  "common",
  "container",
  "crypto",
- "google",
  "http",
  "macros",
  "nordic_tools",

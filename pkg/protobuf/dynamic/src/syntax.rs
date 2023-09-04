@@ -307,13 +307,12 @@ parser!(field<&str, Field> => seq!(c => {
     let name = c.next(field_name)?;
     c.next(is(symbol, '='))?;
     let num = c.next(field_number)?;
-    let unknown_options = c.next(field_options_wrap).unwrap_or(vec![]);
+    let options = c.next(field_options_wrap).unwrap_or(vec![]);
 
     c.next(is(symbol, ';'))?;
 
     Ok(Field {
-        label: labl, typ, name, num, options: FieldOptions::default(),
-        unknown_options
+        label: labl, typ, name, num, options
     })
 }));
 
@@ -378,10 +377,9 @@ parser!(oneof_field<&str, Field> => seq!(c => {
     let name = c.next(field_name)?;
     c.next(is(symbol, '='))?;
     let num = c.next(field_number)?;
-    let unknown_options = c.next(field_options_wrap).unwrap_or(vec![]);
+    let options = c.next(field_options_wrap).unwrap_or(vec![]);
     c.next(is(symbol, ';'))?;
-    Ok(Field { label: Label::None, typ, name,
-        num, options: FieldOptions::default(), unknown_options })
+    Ok(Field { label: Label::None, typ, name, num, options })
 }));
 
 // Proto 2 and 3
@@ -561,7 +559,7 @@ parser!(extend<&str, Extend> => seq!(c => {
     c.next(is(symbol, '{'))?;
     let body = c.many(seq!(c => {
         let item = c.next(field).map(|f| Some(ExtendItem::Field(f)))
-            .or_else(|_| c.next(group).map(|g| Some(ExtendItem::Group(g))))
+            // .or_else(|_| c.next(group).map(|g| Some(ExtendItem::Group(g))))
             .or_else(|_| c.next(empty_statement).map(|_| None))?;
         Ok(item)
     })).into_iter().filter_map(|x| x).collect::<Vec<_>>();
@@ -648,7 +646,6 @@ parser!(stream<&str, Stream> => seq!(c => {
 
 pub enum ProtoItem {
     Import(Import),
-    Option(Opt),
     Package(String),
     TopLevelDef(TopLevelDef),
     None,
@@ -662,7 +659,6 @@ parser!(proto<&str, Proto> => seq!(c => {
     let body = c.many(alt!(
         map(import, |v| ProtoItem::Import(v)),
         map(package, |v| ProtoItem::Package(v)),
-        map(option, |v| ProtoItem::Option(v)),
         map(top_level_def, |v| ProtoItem::TopLevelDef(v)),
         map(empty_statement, |v| ProtoItem::None)
     ));
@@ -671,7 +667,6 @@ parser!(proto<&str, Proto> => seq!(c => {
         syntax: s,
         package: String::new(),
         imports: vec![],
-        options: vec![],
         definitions: vec![]
     };
 
@@ -679,7 +674,6 @@ parser!(proto<&str, Proto> => seq!(c => {
     for item in body.into_iter() {
         match item {
             ProtoItem::Import(i) => { p.imports.push(i); },
-            ProtoItem::Option(o) => { p.options.push(o); },
             ProtoItem::Package(s) => {
                 // A proto file should only up to one package declaration.
                 if has_package {

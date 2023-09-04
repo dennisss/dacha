@@ -11,10 +11,8 @@ common = { path = "../../common" }
 parsing = { path = "../../parsing" }
 file = { path = "../../file" }
 crypto = { path = "../../crypto" }
+executor = { path = "../../executor" }
 protobuf_core = { path = "../core" }
-protobuf_dynamic = { path = "../dynamic", default-features = false }
-protobuf_descriptor = { path = "../../../third_party/protobuf_descriptor", optional = true }
-
-[features]
-default = ["descriptors"]
-descriptors = ["protobuf_descriptor", "protobuf_dynamic/descriptors"]
+protobuf_dynamic = { path = "../dynamic" }
+protobuf_compiler_proto = { path = "./proto" }
+protobuf_descriptor = { path = "../../../third_party/protobuf_descriptor" }

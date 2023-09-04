@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package protobuf;
 
+import "pkg/protobuf/compiler/proto/extensions.proto";
+
 /*
 TODO: There are two ways in which we can implement this:
 1. max_size creates fixed size arrays
@@ -14,13 +16,13 @@ message ShoppingCart {
     float cost = 1;
 
     message Item {
-        string name = 1 [max_length = 16];
+        string name = 1 [(dacha.max_length) = 16];
         uint32 quantity = 2;
-        bytes data = 3 [max_length = 8];
+        bytes data = 3 [(dacha.max_length) = 8];
 
         
     }
 
-    repeated Item items = 2 [max_count = 10];
+    repeated Item items = 2 [(dacha.max_count) = 10];
 
 }

@@ -27,6 +27,7 @@ message ShoppingList {
     }
     repeated Item items = 4;
 
-    map<string, int32> table = 6;
+    // TODO: Add back to testing eventually.
+    // map<string, int32> table = 6;
 }
 
