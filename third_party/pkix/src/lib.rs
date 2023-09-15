@@ -33,3 +33,12 @@ pub mod PKCS_1 {
 pub mod PKCS_8 {
     include!(concat!(env!("OUT_DIR"), "/src/PKCS_8.rs"));
 }
+pub mod PKCS_9 {
+    include!(concat!(env!("OUT_DIR"), "/src/PKCS_9.rs"));
+}
+pub mod PKCS_10 {
+    include!(concat!(env!("OUT_DIR"), "/src/PKCS_10.rs"));
+}
+pub mod Safecurves_pkix_18 {
+    include!(concat!(env!("OUT_DIR"), "/src/Safecurves_pkix_18.rs"));
+}

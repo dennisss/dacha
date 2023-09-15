@@ -5,9 +5,9 @@ use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{Any, DERWriteable};
 use common::errors::*;
 use common::LeftPad;
-use math::big::Modulo;
 use math::big::SecureBigUint;
 use math::big::SecureModulo;
+use math::big::{BigInt, Modulo};
 use math::big::{BigUint, SecureMontgomeryModulo};
 use math::integer::Integer;
 use pkix::{
@@ -49,6 +49,7 @@ macro_rules! ctor {
 }
 
 // TODO: Ensure all of these use the same bit_width.
+#[derive(Debug, Clone)]
 pub struct RSAPublicKey {
     pub modulus: SecureBigUint,
 
@@ -70,6 +71,15 @@ impl std::convert::TryFrom<PKCS_1::RSAPublicKey> for RSAPublicKey {
                 &value.publicExponent.to_uint()?.to_le_bytes(),
             ),
         })
+    }
+}
+
+impl RSAPublicKey {
+    pub fn to_asn1(&self) -> PKCS_1::RSAPublicKey {
+        PKCS_1::RSAPublicKey {
+            modulus: BigInt::from_le_bytes(&self.modulus.to_le_bytes()),
+            publicExponent: BigInt::from_le_bytes(&self.public_exponent.to_le_bytes()),
+        }
     }
 }
 

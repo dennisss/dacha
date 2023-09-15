@@ -6,6 +6,7 @@ use std::convert::Into;
 
 /// Helper for creating multi-line strings.
 /// Designed to be used for simple code generation.
+#[derive(Default)]
 pub struct LineBuilder {
     lines: Vec<String>,
 }

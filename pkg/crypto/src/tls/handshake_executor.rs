@@ -4,7 +4,6 @@ use std::sync::Arc;
 use asn::encoding::DERWriteable;
 use common::bytes::Bytes;
 use common::errors::*;
-use pkix::PKIX1Algorithms2008;
 
 use crate::elliptic::EllipticCurveGroup;
 use crate::hasher::{GetHasherFactory, HasherFactory};
@@ -28,6 +27,10 @@ pub(super) struct HandshakeExecutorOptions<'a> {
     pub local_supported_algorithms: &'a [SignatureScheme],
     // pub certificate_request: Option<&'a >
 }
+
+// TODO: Limit the max size of handshake state on the server (especially if we
+// get huge certificates to parse) (or just allow disabling certificate
+// authentication).
 
 /// Common interface for executing client/server TLS handshakes.
 ///
@@ -166,6 +169,9 @@ impl<'a> HandshakeExecutor<'a> {
         // - Must validate 'Certificate Basic Constraints' and 'Certificate Key Usage'
         //   to verify that certificates can be signed.
 
+        // TODO: Have a max age to connections so that we eventually require re-checking
+        // TLS certificate validity.
+
         if let Some(usage) = cert_list[0].key_usage()? {
             if !usage.digitalSignature().unwrap_or(false) {
                 return Err(err_msg(
@@ -225,110 +231,34 @@ impl<'a> HandshakeExecutor<'a> {
                 continue;
             }
 
-            let compatible = match private_key {
-                x509::PrivateKey::RSA(_) => {
-                    // TODO: Better distinguish between the two types of RSA.
-                    match algorithm {
-                        SignatureScheme::rsa_pkcs1_sha256
-                        | SignatureScheme::rsa_pkcs1_sha384
-                        | SignatureScheme::rsa_pss_rsae_sha256
-                        | SignatureScheme::rsa_pss_rsae_sha384
-                        | SignatureScheme::rsa_pss_rsae_sha512
-                        | SignatureScheme::rsa_pss_pss_sha256
-                        | SignatureScheme::rsa_pss_pss_sha384
-                        | SignatureScheme::rsa_pss_pss_sha512
-                        | SignatureScheme::rsa_pkcs1_sha1 => true,
-                        _ => false,
-                    }
-                }
-                x509::PrivateKey::ECDSA(group, _, _) => match algorithm {
-                    SignatureScheme::ecdsa_secp256r1_sha256 => {
-                        *group == PKIX1Algorithms2008::SECP256R1
-                    }
-                    SignatureScheme::ecdsa_secp384r1_sha384 => {
-                        *group == PKIX1Algorithms2008::SECP384R1
-                    }
-                    SignatureScheme::ecdsa_secp521r1_sha512 => {
-                        *group == PKIX1Algorithms2008::SECP521R1
-                    }
-                    _ => false,
-                },
+            let (signature_algorithm, constraints) = match algorithm.to_x509_signature_id() {
+                Some(v) => v,
+                None => continue,
             };
 
-            if !compatible {
+            if !private_key.can_create_signature(&signature_algorithm, &constraints)? {
                 continue;
             }
 
-            selected_signature_algorithm = Some(algorithm.clone());
+            selected_signature_algorithm =
+                Some((algorithm.clone(), signature_algorithm, constraints));
             break;
         }
 
-        let selected_signature_algorithm = selected_signature_algorithm
-            .ok_or_else(|| err_msg("Failed to get a good algorithm"))?;
+        let (selected_signature_algorithm, signature_algorithm, constraints) =
+            selected_signature_algorithm
+                .ok_or_else(|| err_msg("Failed to get a good algorithm"))?;
 
-        match selected_signature_algorithm {
-            SignatureScheme::ecdsa_secp256r1_sha256 => {
-                // TODO: Check that the group is SECP256R1
-                let (_, group, private_key) = match private_key {
-                    x509::PrivateKey::ECDSA(a, b, c) => (a, b, c),
-                    _ => {
-                        return Err(err_msg("Wrong private key format"));
-                    }
-                };
+        // TODO: Verify that rsa_pkcs1_sha256 is never used in TLS 1.3
 
-                let mut hasher = crate::sha256::SHA256Hasher::default();
+        let signature = private_key
+            .create_signature(&plaintext, &signature_algorithm, &constraints)
+            .await?;
 
-                let signature = group
-                    .create_signature(&private_key, &plaintext, &mut hasher)
-                    .await?;
-
-                return Ok(CertificateVerify {
-                    algorithm: selected_signature_algorithm,
-                    signature: signature.into(),
-                });
-            }
-            SignatureScheme::rsa_pss_rsae_sha256 => {
-                let private_key = match private_key {
-                    x509::PrivateKey::RSA(key) => key,
-                    _ => {
-                        return Err(err_msg("Wrong private key format"));
-                    }
-                };
-
-                // NOTE: Salt length should be the same as the digest/hash length.
-                let rsa =
-                    crate::rsa::RSASSA_PSS::new(crate::sha256::SHA256Hasher::factory(), 256 / 8);
-
-                let signature = rsa.create_signature(private_key, &plaintext).await?;
-
-                return Ok(CertificateVerify {
-                    algorithm: selected_signature_algorithm,
-                    signature: signature.into(),
-                });
-            }
-            SignatureScheme::rsa_pkcs1_sha256 => {
-                // TODO: This shouldn't be used in TLS 1.3
-
-                let private_key = match private_key {
-                    x509::PrivateKey::RSA(key) => key,
-                    _ => {
-                        return Err(err_msg("Wrong private key format"));
-                    }
-                };
-
-                let rsa = crate::rsa::RSASSA_PKCS_v1_5::sha256();
-
-                let signature = rsa.create_signature(private_key, &plaintext)?;
-
-                return Ok(CertificateVerify {
-                    algorithm: selected_signature_algorithm,
-                    signature: signature.into(),
-                });
-            }
-            _ => {
-                return Err(err_msg("Unsupported cert verify algorithm"));
-            }
-        };
+        Ok(CertificateVerify {
+            algorithm: selected_signature_algorithm,
+            signature: (*signature).as_ref().to_vec().into(),
+        })
     }
 
     /// Receives a TLS 1.3 CertificateVerify message from a remote client or
@@ -402,69 +332,25 @@ impl<'a> HandshakeExecutor<'a> {
         cert_verify: &CertificateVerify,
         certificate_registry: &x509::CertificateRegistry,
     ) -> Result<()> {
-        // TODO: Move more of this code into the certificate class.
+        // TODO: Verify this is an algorithm that we requested.
 
-        // TODO: Verify this is an algorithm that we requested (and that it
-        // matches all relevant params in the certificate.
-        // TOOD: Most of this code should be easy to modularize.
-        match cert_verify.algorithm {
-            SignatureScheme::ecdsa_secp256r1_sha256 => {
-                let (params, point) = cert.ec_public_key(certificate_registry)?;
-                let group = EllipticCurveGroup::secp256r1();
+        // Assuming our code is correct, if this fails it should always be the peer's
+        // fault as we should have advertised our supported algorithms.
+        let (signature_algorithm, constraints) = cert_verify
+            .algorithm
+            .to_x509_signature_id()
+            .ok_or_else(|| err_msg("Unsupported cert verify algorithm"))?;
 
-                if params != group {
-                    return Err(err_msg(
-                        "Mismatch between signature and public key algorithm!!",
-                    ));
-                }
+        let is_valid = cert.public_key(certificate_registry)?.verify_signature(
+            plaintext,
+            &cert_verify.signature,
+            &signature_algorithm,
+            &constraints,
+        )?;
 
-                let mut hasher = crate::sha256::SHA256Hasher::default();
-                let good = group.verify_signature(
-                    point.as_ref(),
-                    &cert_verify.signature,
-                    &plaintext,
-                    &mut hasher,
-                )?;
-                if !good {
-                    return Err(err_msg("Invalid ECSDA certificate verify signature"));
-                }
-            }
-            SignatureScheme::rsa_pss_rsae_sha256 => {
-                // NOTE: Salt length should be the same as the digest/hash length.
-                let public_key = cert.rsa_public_key()?;
-                let rsa =
-                    crate::rsa::RSASSA_PSS::new(crate::sha256::SHA256Hasher::factory(), 256 / 8);
-
-                let good = rsa.verify_signature(
-                    &public_key.try_into()?,
-                    &cert_verify.signature,
-                    &plaintext,
-                )?;
-                if !good {
-                    return Err(err_msg("Invalid RSA certificate verify signature"));
-                }
-            }
-            SignatureScheme::rsa_pkcs1_sha512 => {
-                let public_key = cert.rsa_public_key()?;
-                let rsa = crate::rsa::RSASSA_PKCS_v1_5::sha512();
-
-                let good = rsa.verify_signature(
-                    &public_key.try_into()?,
-                    &cert_verify.signature,
-                    &plaintext,
-                )?;
-
-                if !good {
-                    return Err(err_msg("Invalid RSA PKCS certificate verify signature"));
-                }
-            }
-
-            // TODO:
-            // SignatureScheme::rsa_pkcs1_sha256,
-            _ => {
-                return Err(err_msg("Unsupported cert verify algorithm"));
-            }
-        };
+        if !is_valid {
+            return Err(err_msg("Invalid certificate verify signature"));
+        }
 
         Ok(())
     }

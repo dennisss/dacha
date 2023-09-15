@@ -20,6 +20,7 @@ mod parsing;
 pub mod record;
 mod record_stream;
 pub mod server;
+mod signatures;
 pub mod transcript;
 
 pub use client::Client;

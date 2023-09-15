@@ -24,6 +24,9 @@ use crate::spec::write_body;
 use crate::status_code::{StatusCode, SWITCHING_PROTOCOLS};
 use crate::uri_syntax::serialize_authority;
 
+// TODO: This needs control over the max request deadline (also on the server
+// side and for HTTP2)
+
 // TODO: Important to distinguish between channel failure and hitting something
 // like an enqueued limit.
 

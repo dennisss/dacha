@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use common::errors::*;
 use common::io::{Readable, Writeable};
+use crypto::random::SharedRngExt;
 use executor::sync::Mutex;
 use net::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use parsing::ascii::AsciiString;
@@ -50,7 +51,7 @@ impl ClientOptions {
                         max_num_attempts: 0,
                     },
                     connect_timeout: Duration::from_millis(1000),
-                    idle_timeout: Duration::from_secs(2),
+                    idle_timeout: Duration::from_secs(5 * 60), // 5 minutes.
                     /// MUST be <= v2::ConnectionOptions::max_enqueued_requests
                     max_outstanding_requests: 100,
                     max_num_connections: 10,
@@ -66,6 +67,9 @@ impl ClientOptions {
                     max_num_attempts: 0,
                 },
                 subset_size: 10,
+                max_backend_count: 14,
+                healthy_backend_threshold: 0.8,
+                target_parallelism: 0,
             },
         }
     }
@@ -101,6 +105,11 @@ impl ClientOptions {
             options.backend_balancer.backend.tls = Some(crypto::tls::ClientOptions::recommended());
         }
 
+        // Normally DNS exposes load balancer IPs instead of raw server ips so not worth
+        // having a lot of connections.
+        options.backend_balancer.subset_size = 1;
+        options.backend_balancer.max_backend_count = 10;
+
         Ok(options)
     }
 
@@ -126,7 +135,7 @@ impl TryFrom<&str> for ClientOptions {
     }
 }
 
-/// HTTP client connected to a single server.
+/// HTTP client connected to a single endpoint.
 ///
 /// TODO: When the Client is dropped, we know that no more requests will be made
 /// so we should initiate the shutdown of internal connections.
@@ -154,15 +163,24 @@ impl Client {
     ///
     /// TODO: Instead just take as input an authority string and whether or not
     /// we want it to be secure?
-    pub fn create<E: Into<Error> + Send, O: TryInto<ClientOptions, Error = E>>(
+    pub async fn create<E: Into<Error> + Send, O: TryInto<ClientOptions, Error = E>>(
         options: O,
     ) -> Result<Self> {
         let options = options.try_into().map_err(|e| e.into())?;
-        Self::create_impl(options)
+        Self::create_impl(options).await
     }
 
-    fn create_impl(options: ClientOptions) -> Result<Self> {
-        let lb_client = LoadBalancedClient::new(options.backend_balancer.clone());
+    async fn create_impl(options: ClientOptions) -> Result<Self> {
+        let client_id = {
+            // Must be secure random to provide some DOS protection with affinity keys.
+            let rng = crypto::random::global_rng();
+            rng.uniform::<u64>().await
+        };
+
+        let lb_client = LoadBalancedClient::new(client_id, options.backend_balancer.clone());
+
+        // TODO: eed to ensure that this eventually stops once everything is done
+        // running and all references to the client are closed.
         executor::spawn(lb_client.clone().run());
 
         Ok(Client {

@@ -5,6 +5,7 @@ use math::big::*;
 use math::Integer;
 
 use crate::hasher::Hasher;
+use crate::random::SharedRng;
 use crate::sha512::SHA512Hasher;
 
 // TODO: Figure out how to best re-use code with the montgomery curve code.
@@ -91,6 +92,12 @@ impl EdwardsCurveGroup {
 
     fn encoding_bytes(&self) -> usize {
         self.encoding_bits / 8
+    }
+
+    pub async fn generate_private_key(&self) -> Vec<u8> {
+        let mut key = vec![0; self.encoding_bytes()];
+        crate::random::global_rng().generate_bytes(&mut key).await;
+        key
     }
 
     /// Expands a private key to a public key which can be used to

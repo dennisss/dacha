@@ -1,7 +1,9 @@
+use alloc::string::String;
 use std::vec::Vec;
 
 use common::bytes::Bytes;
 use common::errors::*;
+use common::line_builder::LineBuilder;
 use parsing::ascii::*;
 use parsing::*;
 
@@ -74,6 +76,36 @@ impl PEMEntry {
 
         let out = common::base64::decode(&input)?;
         Ok(out)
+    }
+}
+
+#[derive(Default)]
+pub struct PEMBuilder {
+    lines: LineBuilder,
+}
+
+impl PEMBuilder {
+    pub fn add_binary_entry(&mut self, label: &str, data: &[u8]) -> &mut Self {
+        // TODO: Check given an ASCII label
+
+        self.lines.add(format!("-----BEGIN {}-----", label));
+
+        // 64 base64 characters per line.
+        let encoded = base_radix::base64_encode(data);
+        let mut i = 0;
+        while i < encoded.len() {
+            let j = core::cmp::min(i + 64, encoded.len());
+            self.lines.add(&encoded[i..j]);
+            i = j;
+        }
+
+        self.lines.add(format!("-----END {}-----", label));
+
+        self
+    }
+
+    pub fn build(&self) -> String {
+        self.lines.to_string()
     }
 }
 

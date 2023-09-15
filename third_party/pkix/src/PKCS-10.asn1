@@ -1,0 +1,40 @@
+PKCS-10 {iso(1) member-body(2) us(840) rsadsi(113549) pkcs(1)
+pkcs-10(10) modules(1) pkcs-10(1)}
+
+-- THIS IS A PARTIAL SNIPPET OF THE FULL ASN MODULE WITH ONLY SUPPORTED PARTS.
+
+DEFINITIONS IMPLICIT TAGS ::=
+
+BEGIN
+
+-- EXPORTS All --
+
+-- All types and values defined in this module are exported for use
+-- in other ASN.1 modules.
+
+IMPORTS
+
+AlgorithmIdentifier, Name, Attribute, subjectPublicKeyInfo
+    FROM PKIX1Explicit88 { iso(1) identified-organization(3)
+        dod(6) internet(1) security(5) mechanisms(5) pkix(7)
+        id-mod(0) id-pkix1-explicit(18) };
+
+-- Certificate requests
+CertificationRequestInfo ::= SEQUENCE {
+	version       Version,
+	subject       Name,
+	subjectPKInfo SubjectPublicKeyInfo,
+	attributes    [0] Attributes
+}
+
+Attributes ::= SET OF Attribute
+
+Version ::= INTEGER {v1(0)}
+
+CertificationRequest ::= SEQUENCE {
+	certificationRequestInfo CertificationRequestInfo,
+	signatureAlgorithm AlgorithmIdentifier,
+	signature          BIT STRING
+}
+
+END

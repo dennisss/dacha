@@ -72,6 +72,18 @@ impl<T: std::fmt::Debug + Clone + std::cmp::PartialEq> std::cmp::PartialEq for V
 
 impl<T: std::fmt::Debug + Clone + std::cmp::PartialEq> std::cmp::Eq for VecPtr<T> {}
 
+impl<T: std::fmt::Debug + Clone + PartialOrd> PartialOrd for VecPtr<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.as_ref().partial_cmp(other.as_ref())
+    }
+}
+
+impl<T: std::fmt::Debug + Clone + PartialOrd + Ord> Ord for VecPtr<T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.as_ref().cmp(other.as_ref())
+    }
+}
+
 impl<T: std::fmt::Debug + Clone> std::convert::AsRef<[T]> for VecPtr<T> {
     fn as_ref(&self) -> &[T] {
         match self {

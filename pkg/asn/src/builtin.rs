@@ -91,6 +91,12 @@ pub struct SequenceOf<T> {
     pub items: Vec<T>,
 }
 
+impl<T> From<Vec<T>> for SequenceOf<T> {
+    fn from(value: Vec<T>) -> Self {
+        Self { items: value }
+    }
+}
+
 impl<T: Debug + Clone> AsRef<[T]> for SequenceOf<T> {
     fn as_ref(&self) -> &[T] {
         &self.items
@@ -102,6 +108,12 @@ impl<T: Debug + Clone> AsRef<[T]> for SequenceOf<T> {
 #[derive(Debug, Clone)]
 pub struct SetOf<T> {
     pub items: Vec<T>,
+}
+
+impl<T> From<Vec<T>> for SetOf<T> {
+    fn from(value: Vec<T>) -> Self {
+        Self { items: value }
+    }
 }
 
 impl<T: Debug + Clone> AsRef<[T]> for SetOf<T> {
@@ -119,7 +131,7 @@ impl ToString for PrintableString {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct ObjectIdentifier {
     components: VecPtr<usize>,
 }
@@ -209,6 +221,12 @@ impl std::ops::Deref for BitString {
     type Target = BitVector;
     fn deref(&self) -> &Self::Target {
         &self.data
+    }
+}
+
+impl std::convert::From<BitVector> for BitString {
+    fn from(value: BitVector) -> Self {
+        Self { data: value }
     }
 }
 
@@ -308,6 +326,12 @@ pub struct UTF8String {
 }
 
 impl UTF8String {
+    pub fn new(s: &str) -> Self {
+        Self {
+            data: Bytes::from(s),
+        }
+    }
+
     pub fn from(data: Bytes) -> Result<Self> {
         std::str::from_utf8(&data)?;
         Ok(Self { data })
@@ -353,6 +377,14 @@ impl ToString for BMPString {
 #[derive(Debug, Clone)]
 pub struct IA5String {
     pub data: AsciiString,
+}
+
+impl IA5String {
+    pub fn new(s: &str) -> Result<Self> {
+        Ok(Self {
+            data: AsciiString::from(s)?,
+        })
+    }
 }
 
 impl ToString for IA5String {

@@ -52,6 +52,8 @@ pub struct ClientOptions {
 impl ClientOptions {
     /// Also using this, you probably want to set the 'hostname' field.
     pub fn recommended() -> Self {
+        // TODO: Move this to some config files?
+
         Self {
             // TODO: Should almost always have a value.
             hostname: String::new(),
@@ -218,6 +220,7 @@ impl CertificateRegistrySource {
     pub async fn resolve(&self) -> Result<Arc<x509::CertificateRegistry>> {
         Ok(match self {
             CertificateRegistrySource::PublicRoots => {
+                // TODO: Initialize this once in the entire process.
                 Arc::new(x509::CertificateRegistry::public_roots().await?)
             }
             CertificateRegistrySource::Custom(v) => v.clone(),

@@ -1076,6 +1076,12 @@ impl<'a> DERWriter<'a> {
         self.out.extend_from_slice(&data);
     }
 
+    pub fn write_utf8_string(&mut self, s: &str) {
+        self.write_tag(TagClass::Universal, TAG_NUMBER_UTF8STRING, false);
+        self.write_length(s.as_bytes().len());
+        self.out.extend_from_slice(s.as_bytes());
+    }
+
     // DER Rules:
     // - For 'SET OF' the components are sorted based on the binary encoding value.
     // - If a default value is present, we should never encode any value equal to
@@ -1160,8 +1166,8 @@ impl DERWriteable for ObjectIdentifier {
     }
 }
 impl DERWriteable for UTF8String {
-    fn write_der(&self, _writer: &mut DERWriter) {
-        unimplemented!("TODO: UTF8String");
+    fn write_der(&self, writer: &mut DERWriter) {
+        writer.write_utf8_string(self.as_ref());
     }
 }
 impl DERWriteable for NumericString {

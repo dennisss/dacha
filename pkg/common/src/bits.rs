@@ -169,6 +169,10 @@ impl BitVector {
         out
     }
 
+    pub fn from_bytes(data: &[u8]) -> Self {
+        Self::from(data, data.len() * 8)
+    }
+
     pub fn from(data: &[u8], len: usize) -> Self {
         let mut data = Vec::from(data);
         data.resize(ceil_div(len, 8), 0);

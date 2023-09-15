@@ -1,6 +1,12 @@
+mod certificate_list;
+mod certificate_request;
+mod certificate_request_builder;
 mod certificate_verified;
 mod name_constraints;
 mod private_key;
+mod public_key;
+mod signature_algorithm;
+mod signature_key;
 
 use std::collections::HashMap;
 use std::convert::{AsRef, TryFrom, TryInto};
@@ -25,10 +31,14 @@ use crate::hasher::Hasher;
 use crate::pem::*;
 use crate::rsa::*;
 use crate::tls::extensions::ExtensionType::PskKeyExchangeModes;
+pub use crate::x509::signature_key::SignatureKeyConstraints;
 
+pub use certificate_request::*;
+pub use certificate_request_builder::*;
 use certificate_verified::*;
 use name_constraints::*;
 pub use private_key::*;
+pub use public_key::*;
 
 // TODO: For validating this, we also need to able to check max allowed
 // certificate chain length.
@@ -565,101 +575,16 @@ impl Certificate {
         self.authority_key_id().is_empty() || self.authority_key_id() == self.subject_key_id()
     }
 
-    /// NOTE: The return value is basically equivalent to
-    /// PKIX1Algorithms2008::RSAPublicKey.
-    pub fn rsa_public_key(&self) -> Result<PKCS_1::RSAPublicKey> {
-        let pk = &self.raw.tbsCertificate.subjectPublicKeyInfo;
-
-        if pk.algorithm.algorithm != PKIX1Algorithms2008::RSAENCRYPTION
-            || !der_eq(
-                &pk.algorithm.parameters,
-                &Some(PKIX1_PSS_OAEP_Algorithms::NULLPARAMETERS),
-            )
-        {
-            return Err(format_err!("Wrong public key info: {:?}", pk.algorithm));
-        }
-
-        let data = &pk.subjectPublicKey.data;
-        if data.len() % 8 != 0 {
-            return Err(err_msg("Not complete bytes"));
-        }
-
-        Any::from(Bytes::from(data.as_ref()))?.parse_as()
-    }
-
-    pub fn rsassa_pss_public_key(
-        &self,
-    ) -> Result<(
-        PKCS_1::RSAPublicKey,
-        PKIX1_PSS_OAEP_Algorithms::RSASSA_PSS_params,
-    )> {
-        let pk = &self.raw.tbsCertificate.subjectPublicKeyInfo;
-
-        if pk.algorithm.algorithm != PKIX1_PSS_OAEP_Algorithms::ID_RSASSA_PSS {
-            return Err(format_err!("Wrong public key info: {:?}", pk.algorithm));
-        }
-
-        let params_data = pk
-            .algorithm
-            .parameters
-            .as_ref()
-            .ok_or_else(|| err_msg("Missing params"))?;
-
-        let params = params_data.parse_as::<PKIX1_PSS_OAEP_Algorithms::RSASSA_PSS_params>()?;
-
-        let data = &pk.subjectPublicKey.data;
-        let public_key: PKCS_1::RSAPublicKey = Any::from(Bytes::from(data.as_ref()))?.parse_as()?;
-
-        Ok((public_key, params))
-    }
-
-    pub fn ec_public_key(&self, reg: &CertificateRegistry) -> Result<(EllipticCurveGroup, Bytes)> {
-        let pk = &self.raw.tbsCertificate.subjectPublicKeyInfo;
-        if pk.algorithm.algorithm != PKIX1Algorithms2008::ID_ECPUBLICKEY {
-            return Err(err_msg("Wrong public key type"));
-        }
-
-        let params = match &pk.algorithm.parameters {
-            Some(any) => any.parse_as::<PKIX1Algorithms88::EcpkParameters>()?,
-            None => {
-                return Err(err_msg("No EC params specified"));
-            }
+    pub fn public_key(&self, reg: &CertificateRegistry) -> Result<PublicKey> {
+        let parent_key = match reg.lookup_parent(self)? {
+            Some(cert) => Some(cert.public_key(reg)?),
+            None => None,
         };
 
-        let group = match params {
-            PKIX1Algorithms88::EcpkParameters::namedCurve(id) => {
-                if id == PKIX1Algorithms2008::SECP192R1 {
-                    EllipticCurveGroup::secp192r1()
-                } else if id == PKIX1Algorithms2008::SECP224R1 {
-                    EllipticCurveGroup::secp224r1()
-                } else if id == PKIX1Algorithms2008::SECP256R1 {
-                    EllipticCurveGroup::secp256r1()
-                } else if id == PKIX1Algorithms2008::SECP384R1 {
-                    EllipticCurveGroup::secp384r1()
-                } else if id == PKIX1Algorithms2008::SECP521R1 {
-                    EllipticCurveGroup::secp521r1()
-                } else {
-                    return Err(err_msg("Unsupported named curve"));
-                }
-            }
-            PKIX1Algorithms88::EcpkParameters::implicitlyCA(_) => {
-                let ca = reg.lookup_parent(self)?.ok_or(err_msg("Unknown parent"))?;
-                let (group, _) = ca.ec_public_key(reg)?;
-                group
-            }
-            _ => {
-                return Err(err_msg("Unsupported curve format"));
-            }
-        };
-
-        let point = PKIX1Algorithms2008::ECPoint::from(OctetString::from(
-            pk.subjectPublicKey.data.as_ref(),
-        ));
-
-        Ok((
-            group,
-            std::convert::Into::<OctetString>::into(point).into_bytes(),
-        ))
+        PublicKey::from_asn1(
+            &self.raw.tbsCertificate.subjectPublicKeyInfo,
+            parent_key.as_ref(),
+        )
     }
 
     /// Checks if the current certificate can be used to sign/verify child
@@ -734,81 +659,12 @@ impl Certificate {
         }
         */
 
-        let check_ecdsa = |hasher: &mut dyn Hasher| {
-            let (group, point) = self.ec_public_key(reg)?;
-            return group.verify_signature(point.as_ref(), sig, plaintext, hasher);
-        };
-
-        let check_null_params = || -> Result<()> {
-            if child.raw.signatureAlgorithm.parameters.is_some()
-                && !der_eq(&child.raw.signatureAlgorithm.parameters, &Null::new())
-            {
-                return Err(err_msg("Expected null params for algorithm"));
-            }
-            Ok(())
-        };
-
-        let alg = &child.raw.signatureAlgorithm.algorithm;
-        if alg == &PKIX1_PSS_OAEP_Algorithms::SHA224WITHRSAENCRYPTION {
-            check_null_params()?;
-            return RSASSA_PKCS_v1_5::sha224().verify_signature(
-                &self.rsa_public_key()?.try_into()?,
-                sig,
-                plaintext,
-            );
-        } else if alg == &PKCS_1::SHA1WITHRSAENCRYPTION {
-            check_null_params()?;
-            return RSASSA_PKCS_v1_5::sha1().verify_signature(
-                &self.rsa_public_key()?.try_into()?,
-                sig,
-                plaintext,
-            );
-        } else if alg == &PKCS_1::SHA256WITHRSAENCRYPTION {
-            check_null_params()?;
-            return RSASSA_PKCS_v1_5::sha256().verify_signature(
-                &self.rsa_public_key()?.try_into()?,
-                sig,
-                plaintext,
-            );
-        } else if alg == &PKCS_1::SHA384WITHRSAENCRYPTION {
-            check_null_params()?;
-            return RSASSA_PKCS_v1_5::sha384().verify_signature(
-                &self.rsa_public_key()?.try_into()?,
-                sig,
-                plaintext,
-            );
-        } else if alg == &PKCS_1::SHA512_224WITHRSAENCRYPTION {
-            check_null_params()?;
-            return RSASSA_PKCS_v1_5::sha512_224().verify_signature(
-                &self.rsa_public_key()?.try_into()?,
-                sig,
-                plaintext,
-            );
-        } else if alg == &PKCS_1::SHA512_256WITHRSAENCRYPTION {
-            check_null_params()?;
-            return RSASSA_PKCS_v1_5::sha512_256().verify_signature(
-                &self.rsa_public_key()?.try_into()?,
-                sig,
-                plaintext,
-            );
-        } else if alg == &PKCS_1::SHA512WITHRSAENCRYPTION {
-            check_null_params()?;
-            return RSASSA_PKCS_v1_5::sha512().verify_signature(
-                &self.rsa_public_key()?.try_into()?,
-                sig,
-                plaintext,
-            );
-        } else if alg == &PKIX1Algorithms2008::ECDSA_WITH_SHA384 {
-            check_null_params()?;
-            let mut hasher = crate::sha384::SHA384Hasher::default();
-            return check_ecdsa(&mut hasher);
-        } else if alg == &PKIX1Algorithms2008::ECDSA_WITH_SHA256 {
-            check_null_params()?;
-            let mut hasher = crate::sha256::SHA256Hasher::default();
-            return check_ecdsa(&mut hasher);
-        }
-
-        Err(format_err!("Unsupported signature algorithm {:?}", alg))
+        self.public_key(reg)?.verify_signature(
+            plaintext,
+            sig,
+            &child.raw.signatureAlgorithm,
+            &SignatureKeyConstraints::default(),
+        )
     }
 
     pub fn valid_now(&self) -> bool {
@@ -901,7 +757,6 @@ type AttributeRegistry = std::collections::HashMap<
 >;
 
 // TODO: Refactor to use AttributeType instead of ObjectIdentifier.
-// TODO: Should use lazy_static
 macro_rules! attrs {
 	( $name:ident, $( $attr:tt | $id:expr => $t:ty ),* ) => {
 		lazy_static! {
@@ -922,6 +777,14 @@ macro_rules! attrs {
 		}
 	};
 }
+
+/*
+extensionRequest ATTRIBUTE ::= {
+        WITH SYNTAX ExtensionRequest
+        SINGLE VALUE TRUE
+        ID pkcs-9-at-extensionRequest
+}
+*/
 
 attrs!(ATTRIBUTE_REGISTRY,
     name | PKIX1Explicit88::ID_AT_NAME => PKIX1Explicit88::X520name,
@@ -950,6 +813,8 @@ attrs!(ATTRIBUTE_REGISTRY,
         PKIX1Explicit88::X520SerialNumber,
     pseudonym | PKIX1Explicit88::ID_AT_PSEUDONYM =>
         PKIX1Explicit88::X520Pseudonym
+    // extensionRequest | pkix::PKCS_9::PKCS_9_AT_EXTENSIONREQUEST =>
+    //     pkix::PKCS_9::ExtensionRequest
 );
 
 #[cfg(test)]
