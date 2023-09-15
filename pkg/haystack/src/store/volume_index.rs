@@ -83,6 +83,7 @@ impl PhysicalVolumeIndex {
 
         // Sync directory (assuming that the directory itself has already been around
         // for a while) TODO: Sync after the write?
+        // TODO: Do this in the next File code instead.
         File::open(path.parent().unwrap()).unwrap().sync_all()?;
 
         let superblock = PhysicalVolumeSuperblock {

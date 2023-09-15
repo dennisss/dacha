@@ -78,9 +78,9 @@ impl DiscoveryClient {
     }
 
     async fn call_single_server(&self, addr: &str, request: &Announcement) -> Result<()> {
-        let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-            &addr.parse()?,
-        )?)?);
+        let channel = Arc::new(
+            rpc::Http2Channel::create(http::ClientOptions::from_uri(&addr.parse()?)?).await?,
+        );
 
         let stub = DiscoveryStub::new(channel);
         let res = stub

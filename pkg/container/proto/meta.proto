@@ -12,6 +12,7 @@ import "pkg/container/proto/node.proto";
 import "google/protobuf/timestamp.proto";
 import "pkg/builder/proto/bundle.proto";
 import "google/protobuf/any.proto";
+import "pkg/protobuf/compiler/proto/extensions.proto";
 
 // Ids of different tables stored in the main cluster metastore instance.
 // The numerical values of these dis are used as a key prefix in the key-value store.
@@ -77,7 +78,7 @@ message NodeMetadata {
 
     PortRange allocatable_port_range = 6;
 
-    repeated uint32 allocated_ports = 7 [unordered_set = true];
+    repeated uint32 allocated_ports = 7 [(dacha.unordered_set) = true];
 
     string zone = 8;
 

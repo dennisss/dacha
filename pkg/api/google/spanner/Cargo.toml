@@ -1,0 +1,21 @@
+[package]
+name = "google_spanner"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+base_radix = { path = "../../../base/radix" }
+common = { path = "../../../common" }
+http = { path = "../../../http" }
+json = { path = "../../../format/json" }
+net = { path = "../../../net" }
+parsing = { path = "../../../parsing" }
+macros = { path = "../../../macros" }
+reflection = { path = "../../../reflection" }
+executor = { path = "../../../executor" }
+rpc = { path = "../../../rpc" }
+file = { path = "../../../file" }
+protobuf = { path = "../../../protobuf" }
+google_auth = { path = "../auth" }
+protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
+googleapis_proto = { path = "../../../../third_party/googleapis" }

@@ -259,7 +259,7 @@ struct NodeStubs {
 }
 
 async fn connect_to_node(node_addr: &str) -> Result<NodeStubs> {
-    let channel = Arc::new(rpc::Http2Channel::create(node_addr)?);
+    let channel = Arc::new(rpc::Http2Channel::create(node_addr).await?);
 
     Ok(NodeStubs {
         service: ContainerNodeStub::new(channel.clone()),
@@ -789,9 +789,9 @@ async fn start_job_impl(
                 .await?,
             );
 
-            let channel = Arc::new(rpc::Http2Channel::create(
-                http::ClientOptions::from_resolver(resolver),
-            )?);
+            let channel = Arc::new(
+                rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver)).await?,
+            );
 
             NodeStubs {
                 service: ContainerNodeStub::new(channel.clone()),
@@ -1096,7 +1096,7 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
         let time = std::time::UNIX_EPOCH + Duration::from_micros(event.timestamp());
 
         // TODO: Will eventually need to handle StartFailure
-        match event.type_case() {
+        match event.typ_case() {
             container::WorkerEventTypeCase::Started(_) => attempts.push(Attempt {
                 id: event.timestamp(),
                 start_time: time,

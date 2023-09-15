@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
 
     // TODO: Tune this to only use a single backend ip at a time
     // If there are multiple, only try one until it fails.
-    let client = http::Client::create(root_url.clone())?;
+    let client = http::Client::create(root_url.clone()).await?;
 
     let request = RequestBuilder::new()
         .method(http::Method::GET)

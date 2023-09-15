@@ -14,6 +14,7 @@ rpc = { path = "../../rpc" }
 builder_proto = { path = "../../builder/proto" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
 googleapis_proto = { path = "../../../third_party/googleapis" }
+protobuf_compiler_proto = { path = "../../protobuf/compiler/proto" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../protobuf/compiler" }

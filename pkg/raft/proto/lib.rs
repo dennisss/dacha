@@ -41,7 +41,7 @@ impl LogPosition {
 
 impl Configuration {
     pub fn apply(&mut self, change: &ConfigChange) {
-        match change.type_case() {
+        match change.typ_case() {
             ConfigChangeTypeCase::AddLearner(s) => {
                 if self.members().contains(s) {
                     // TODO: Is this pretty much just a special version of

@@ -63,7 +63,7 @@ impl MetastoreClient {
 
         // We can talk to any metastore worker as they will all redirect requests to the
         // leader if needed.
-        let channel = channel_factory.create_any()?;
+        let channel = channel_factory.create_any().await?;
 
         Self::create_impl(channel, Some(background_thread)).await
     }
@@ -73,9 +73,9 @@ impl MetastoreClient {
     /// This is mainly for use for testing where we only need to communicate
     /// with a single instance.
     pub(super) async fn create_direct(addr: SocketAddr) -> Result<Self> {
-        let channel = Arc::new(rpc::Http2Channel::create(
-            format!("http://{}", addr.to_string()).as_str(),
-        )?);
+        let channel = Arc::new(
+            rpc::Http2Channel::create(format!("http://{}", addr.to_string()).as_str()).await?,
+        );
 
         Self::create_impl(channel, None).await
     }
@@ -89,7 +89,7 @@ impl MetastoreClient {
 
             let req = protobuf_builtins::google::protobuf::Empty::default();
             let mut ctx = rpc::ClientRequestContext::default();
-            ctx.wait_for_ready = true;
+            ctx.http.wait_for_ready = true;
             let res = stub.NewClient(&ctx, &req).await;
 
             res.result?.client_id().to_string()
@@ -384,7 +384,7 @@ impl<'a> MetastoreTransaction<'a> {
         let (client, mut state) = self.get_top_level().await;
 
         if let Some(op) = state.writes.get(key) {
-            match op.type_case() {
+            match op.typ_case() {
                 OperationTypeCase::Put(value) => {
                     return Ok(Some(value.to_vec()));
                 }
@@ -410,7 +410,7 @@ impl<'a> MetastoreTransaction<'a> {
                 let mut entry = KeyValueEntry::default();
                 entry.set_key(op.key());
 
-                match op.type_case() {
+                match op.typ_case() {
                     OperationTypeCase::Put(value) => {
                         entry.set_value(value.as_ref());
                     }

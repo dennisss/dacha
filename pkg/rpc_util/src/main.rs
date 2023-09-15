@@ -117,9 +117,12 @@ struct ServerClient {
 impl ServerClient {
     async fn create(addr: &str, insecure: bool) -> Result<Self> {
         // TODO: Default to a secure channel.
-        let channel = Arc::new(rpc::Http2Channel::create(
-            format!("http{}://{}", if insecure { "" } else { "s" }, addr).as_str(),
-        )?);
+        let channel = Arc::new(
+            rpc::Http2Channel::create(
+                format!("http{}://{}", if insecure { "" } else { "s" }, addr).as_str(),
+            )
+            .await?,
+        );
 
         let mut reflection = ServerReflectionClient::create(channel.clone()).await?;
 

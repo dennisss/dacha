@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
 
     url.query = Some(tracker_request.to_query_string());
 
-    let mut client = http::Client::create(url)?;
+    let mut client = http::Client::create(url).await?;
 
     let mut http_request = http::RequestBuilder::new()
         .method(http::Method::GET)

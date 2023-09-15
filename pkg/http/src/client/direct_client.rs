@@ -136,6 +136,9 @@ pub struct DirectClientOptions {
     /// Hopefully be the time the backoff is complete, the LoadBalancedClient
     /// could use other signals to un-list this DirectClient instance from
     /// the set of available backends.
+    ///
+    /// TODO: Use this for the appropriate resolvers (or swith to a flag in the
+    /// ResolvedBackend like 'is_single_server')
     pub remote_shutdown_is_failure: bool,
 
     /// If true, then while a request's completion (or the start time of the
@@ -400,6 +403,7 @@ impl ClientInterface for DirectClient {
                 let mut overall_state = self.shared.overall_state.lock().await;
                 *overall_state = ClientState::Failure;
                 overall_state.notify_all();
+                self.shared.event_listener.handle_client_state_change();
             }
 
             events.notify_all();
@@ -482,6 +486,7 @@ impl DirectClientRunner {
                 if next_state != *overall_state {
                     *overall_state = next_state;
                     overall_state.notify_all();
+                    self.shared.event_listener.handle_client_state_change();
                 }
             }
 
@@ -531,6 +536,7 @@ impl DirectClientRunner {
                     if next_state != *overall_state {
                         *overall_state = next_state;
                         overall_state.notify_all();
+                        self.shared.event_listener.handle_client_state_change();
                     }
                 }
 
@@ -692,7 +698,7 @@ impl DirectClientRunner {
         self.max_concurrent_connecting = 1;
     }
 
-    /// Attempt to assign requests to channels.
+    /// Attempt to assign requests to connections.
     async fn process_unassigned_requests(&mut self, state: &mut State) {
         let mut num_reserved_connections = 0;
 
@@ -920,12 +926,12 @@ impl DirectClientRunner {
             return ClientState::Shutdown;
         }
 
-        // TODO: Unless
-        if !state.running
-            || state.num_outstanding_requests() >= self.shared.options.max_outstanding_requests
-            || state.failing
-        {
+        if !state.running || state.failing {
             return ClientState::Failure;
+        }
+
+        if state.num_outstanding_requests() >= self.shared.options.max_outstanding_requests {
+            return ClientState::Congested;
         }
 
         for (_, conn) in &state.connection_pool {
@@ -1288,6 +1294,7 @@ impl ConnectionEventListener for ConnectionListener {
                 *overall_state = ClientState::Failure;
                 overall_state.notify_all();
                 drop(overall_state);
+                shared.event_listener.handle_client_state_change();
             }
 
             events.notify_all();

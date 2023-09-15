@@ -2480,7 +2480,16 @@ impl Compiler {
 
         let field_name = escape_rust_identifier(extension.proto().name());
 
-        let field_type = self.compile_field_type_inner(extension.proto(), extension.name())?;
+        use protobuf_core::SingularValue;
+        use protobuf_descriptor::FieldDescriptorProto_Type::*;
+
+        let is_repeated = extension.proto().label()
+            == protobuf_descriptor::FieldDescriptorProto_Label::LABEL_REPEATED;
+
+        let mut field_type = self.compile_field_type_inner(extension.proto(), extension.name())?;
+        if is_repeated {
+            field_type = format!("Vec<{}>", field_type);
+        }
 
         let trait_name = format!(
             "{}Extension",
@@ -2489,13 +2498,7 @@ impl Compiler {
 
         let tag_name = format!("{}_EXTENSION_TAG", extension.proto().name().to_uppercase());
 
-        use protobuf_core::SingularValue;
-        use protobuf_descriptor::FieldDescriptorProto_Type::*;
-
-        let is_repeated = extension.proto().label()
-            == protobuf_descriptor::FieldDescriptorProto_Label::LABEL_REPEATED;
-
-        if is_repeated || extension.proto().has_type_name() {
+        if is_repeated && extension.proto().has_type_name() {
             // Still very poorly supported cases.
             return Ok("".to_string());
         }
@@ -2582,7 +2585,10 @@ impl Compiler {
 
         let value_case = {
             if is_repeated {
-                format!("Value::Repeated(RepeatedValues::{}(v))", value_case)
+                format!(
+                    "Value::Repeated(RepeatedValues::{} {{ values: v, .. }})",
+                    value_case
+                )
             } else {
                 format!("Value::Singular(SingularValue::{}(v))", value_case)
             }
@@ -2599,7 +2605,7 @@ impl Compiler {
         // 'v' is an owned 'Value' type
         let value_get_owned = {
             if extension.proto().has_type_name() {
-                "ExtensionRef::Boxed(v.downcast().ok_or(WireError::BadDescriptor)?)"
+                "ExtensionRef::Boxed(v.into_any().downcast().map_err(|_| WireError::BadDescriptor)?)"
             } else {
                 "ExtensionRef::Owned(v)"
             }
@@ -2607,7 +2613,7 @@ impl Compiler {
 
         let value_get_mut = {
             if extension.proto().has_type_name() {
-                "v.as_any().downcast_mut().ok_or(WireError::BadDescriptor)?"
+                "v.as_mut_any().downcast_mut().ok_or(WireError::BadDescriptor)?"
             } else {
                 "v"
             }

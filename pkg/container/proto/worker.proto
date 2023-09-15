@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package cluster;
 
+import "google/api/field_behavior.proto";
 import "pkg/builder/proto/bundle.proto";
 
 // Complete definition for how a single worker should be started on some cluster node.

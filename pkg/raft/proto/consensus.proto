@@ -5,6 +5,7 @@ package raft;
 import "google/protobuf/empty.proto";
 import "pkg/raft/proto/ident.proto";
 import "pkg/raft/proto/consensus_state.proto";
+import "pkg/protobuf/compiler/proto/extensions.proto";
 
 // Internal RPC Server between servers participating in the consensus protocol
 service Consensus {
@@ -274,11 +275,11 @@ message ProposeErrorProto {
 message Configuration {
     // All servers in the cluster which participate in voting rounds. A majority of servers in this
     // list must vote the same way for a quorem to be achieved.
-    repeated ServerId members = 1 [unordered_set = true];
+    repeated ServerId members = 1 [(dacha.unordered_set) = true];
 
     // All servers which do not participate in votes (at least not yet), but
     // should still be sent new entries
-    repeated ServerId learners = 2 [unordered_set = true];
+    repeated ServerId learners = 2 [(dacha.unordered_set) = true];
 }
 
 // Represents a configuration at a single index

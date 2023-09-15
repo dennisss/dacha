@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use common::errors::Result;
 use executor::channel;
@@ -94,6 +95,12 @@ pub struct ConnectionState {
 
     /// All currently active locally and remotely initialized streams.
     pub streams: HashMap<StreamId, Stream>,
+
+    /// Last time we sent a meaningful packet like a header or data packet.
+    pub last_user_byte_sent_time: SystemTime,
+
+    /// Same as above but for received data.
+    pub last_user_byte_received_time: SystemTime,
 }
 
 impl ConnectionState {

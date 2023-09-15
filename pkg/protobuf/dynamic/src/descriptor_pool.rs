@@ -54,6 +54,27 @@ pub struct DescriptorPoolOptions {
     pub paths: Vec<LocalPathBuf>,
 }
 
+impl DescriptorPoolOptions {
+    pub fn default_for_workspace(workspace_dir: &LocalPath) -> Self {
+        let mut options = Self::default();
+
+        // TODO: Infer these from build dependencies.
+        options
+            .paths
+            .push(workspace_dir.join("third_party/protobuf_builtins/proto"));
+        options
+            .paths
+            .push(workspace_dir.join("third_party/protobuf_descriptor"));
+        options
+            .paths
+            .push(workspace_dir.join("third_party/googleapis/repo"));
+
+        options.paths.push(workspace_dir.to_owned());
+
+        options
+    }
+}
+
 #[derive(Clone)]
 pub struct DescriptorPool {
     shared: Arc<DescriptorPoolShared>,
@@ -219,7 +240,6 @@ impl DescriptorPool {
         // Register types starting with dependencies first so that finish_write() is
         // more likely to succeed.
         for key in file_ordering {
-            println!("Register file: {:?}", key);
             let (proto_file, path) = proto_nodes.remove(&key).unwrap();
 
             self.register_file_descriptor_proto(proto_file, Some(path), &mut write)?;
@@ -599,8 +619,6 @@ impl DescriptorPool {
         // pre-generated FileDescriptorProto).
 
         for (name, mut desc) in write.new_types {
-            println!("Add {}", name.name);
-
             let state = self.shared.state.read().unwrap();
             self.resolve_type_options(&state, &mut desc)?;
             drop(state);
@@ -1046,7 +1064,6 @@ impl DescriptorPool {
     }
 }
 
-/*
 impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
     fn parse_text_extension(
         &self,
@@ -1054,7 +1071,13 @@ impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
         extension: protobuf_core::text::TextExtension,
         message: &mut dyn protobuf_core::MessageReflection,
     ) -> Result<()> {
-        if message.type_url() == Message::type_url(&Any::default()) {
+        // TODO: Figure out if there is a better way to make this directly depend on the
+        // type iur
+        const ANY_TYPE_URL_FIELD_NUM: FieldNumber = 1; // Any::TYPE_URL_FIELD_NUM
+        const ANY_VALUE_FIELD_NUM: FieldNumber = 2; // Any::VALUE_FIELD_NUM
+
+        // This is Message::type_url(&Any::default())
+        if message.type_url() == "type.googleapis.com/google.protobuf.Any" {
             if let Some(path) = extension_path.strip_prefix(protobuf_core::TYPE_URL_PREFIX) {
                 let desc = self
                     .find_relative_type("", path)
@@ -1065,7 +1088,7 @@ impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
                 extension.parse_to(inner_message.reflect_mut())?;
 
                 if let Some(ReflectionMut::String(v)) =
-                    message.field_by_number_mut(Any::TYPE_URL_FIELD_NUM)
+                    message.field_by_number_mut(ANY_TYPE_URL_FIELD_NUM)
                 {
                     *v = inner_message.type_url().to_string();
                 } else {
@@ -1073,7 +1096,7 @@ impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
                 }
 
                 if let Some(ReflectionMut::Bytes(v)) =
-                    message.field_by_number_mut(Any::VALUE_FIELD_NUM)
+                    message.field_by_number_mut(ANY_VALUE_FIELD_NUM)
                 {
                     v.clear();
                     inner_message.serialize_to(v)?;
@@ -1086,7 +1109,6 @@ impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
         Err(err_msg("Dynamic extensions not supported"))
     }
 }
-*/
 
 #[derive(Clone)]
 pub struct FileDescriptor {

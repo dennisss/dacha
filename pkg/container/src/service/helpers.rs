@@ -11,7 +11,7 @@ pub async fn create_rpc_channel(
 ) -> Result<Arc<dyn rpc::Channel>> {
     let resolver = Arc::new(ServiceResolver::create(address, meta_client).await?);
 
-    Ok(Arc::new(rpc::Http2Channel::create(
-        http::ClientOptions::from_resolver(resolver),
-    )?))
+    Ok(Arc::new(
+        rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver)).await?,
+    ))
 }

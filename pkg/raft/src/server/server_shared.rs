@@ -362,8 +362,7 @@ impl<R: Send + 'static> ServerShared<R> {
                 while last_applied < commit_index {
                     let entry = self.log.entry(last_applied + 1).await;
                     if let Some((e, _)) = entry {
-                        let ret = if let LogEntryDataTypeCase::Command(data) = e.data().type_case()
-                        {
+                        let ret = if let LogEntryDataTypeCase::Command(data) = e.data().typ_case() {
                             match self
                                 .state_machine
                                 .apply(e.pos().index(), data.as_ref())

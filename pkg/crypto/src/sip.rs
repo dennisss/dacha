@@ -164,6 +164,16 @@ impl Hasher for SipHasher {
     }
 }
 
+impl std::hash::Hasher for SipHasher {
+    fn finish(&self) -> u64 {
+        self.clone().finish_u64()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.update(bytes);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

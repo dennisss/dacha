@@ -5,11 +5,12 @@ package raft;
 import "pkg/raft/proto/consensus.proto";
 import "pkg/raft/proto/consensus_state.proto";
 import "pkg/raft/proto/ident.proto";
+import "pkg/protobuf/compiler/proto/extensions.proto";
 
 // Identifier used to define a single set of machines running an instance of the Raft
 // protocol. ServerIds are only comparable within the same cluster.
 message GroupId {
-    option typed_num = true;
+    option (dacha.typed_num) = true;
     uint64 value = 1;
 }
 

@@ -101,11 +101,10 @@ pub struct Http2Channel {
 }
 
 impl Http2Channel {
-    pub fn create<O: TryIntoResult<Http2ChannelOptions>>(options: O) -> Result<Self> {
+    pub async fn create<O: TryIntoResult<Http2ChannelOptions>>(options: O) -> Result<Self> {
         let options = options.try_into_result()?;
-        let client = Arc::new(http::Client::create(
-            options.http.clone().set_force_http2(true),
-        )?);
+        let client =
+            Arc::new(http::Client::create(options.http.clone().set_force_http2(true)).await?);
 
         Ok(Self {
             client,
@@ -380,7 +379,7 @@ impl Http2RequestSender {
             })?;
 
         let mut http_request_context = http::ClientRequestContext::default();
-        http_request_context.wait_for_ready = self.request_context.wait_for_ready;
+        http_request_context = self.request_context.http.clone();
 
         let mut response = self.client.request(request, http_request_context).await?;
 

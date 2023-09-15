@@ -63,7 +63,6 @@ pub struct ClientRequestContext {
     pub metadata: Metadata,
 
     pub idempotent: bool,
-    pub wait_for_ready: bool, // TODO: Deadline
 
     /// If true, we will read and buffer the entire before any part of it is
     /// returned to the RPC caller.
@@ -71,6 +70,8 @@ pub struct ClientRequestContext {
     /// - This will be internally set to true for unary responses.
     /// - This is required to support full retrying of RPCs.
     pub buffer_full_response: bool,
+
+    pub http: http::ClientRequestContext,
 }
 
 #[derive(Default, Clone)]

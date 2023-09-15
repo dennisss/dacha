@@ -2,27 +2,29 @@ syntax = "proto3";
 
 package raft;
 
+import "pkg/protobuf/compiler/proto/extensions.proto";
+
 // Type used to uniquely identify each server. These are assigned automatically
 // and increment monotonically starting with the first server having an id of
 // 1 and will never repeat with new servers
 //
 // NOTE: A value of 0 is used to specify the 'NULL' server id.
 message ServerId {
-	option typed_num = true;
+	option (dacha.typed_num) = true;
 	uint64 value = 1;
 }
 
 message Term {
-	option typed_num = true;
+	option (dacha.typed_num) = true;
 	uint64 value = 2;
 }
 
 message LogIndex {
-	option typed_num = true;
+	option (dacha.typed_num) = true;
 	uint64 value = 3;
 }
 
 message RequestId {
-	option typed_num = true;
+	option (dacha.typed_num) = true;
 	uint64 value = 4;
 }

@@ -66,6 +66,7 @@ impl StoreMachineIndex {
         cluster_id: ClusterId,
         machine_id: MachineId,
     ) -> Result<StoreMachineIndex> {
+        // TOOD: Change to sync_on_flush
         let mut opts = OpenOptions::new();
         opts.write(true).create_new(true).read(true);
 

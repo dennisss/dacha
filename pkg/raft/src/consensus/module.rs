@@ -717,7 +717,7 @@ impl ConsensusModule {
             // TODO: Realistically we actually just need to check against the
             // current commit index for doing this (as that may be higher)
 
-            if let LogEntryDataTypeCase::Config(c) = data.type_case() {
+            if let LogEntryDataTypeCase::Config(c) = data.typ_case() {
                 // TODO: Refactor out this usage of an internal field in the config struct
                 if let Some(ref pending) = self.config.pending {
                     return Err(ProposeError::RetryAfter(Proposal::new(
@@ -731,7 +731,7 @@ impl ConsensusModule {
 
                 // Updating the servers progress list on the leader
                 // NOTE: Even if this is wrong, it will still be updated in replicate_entrie
-                match c.type_case() {
+                match c.typ_case() {
                     ConfigChangeTypeCase::RemoveServer(id) => {
                         leader_state.followers.remove(id);
                     }

@@ -226,7 +226,7 @@ async fn respond_from_backend(
 
         // TODO: Next optimization would be to maintain the connections to the backends
         // long term
-        let client = http::Client::create(store_mac.addr())?;
+        let client = http::Client::create(store_mac.addr()).await?;
 
         let probably_should_cache = !from_cdn && store_mac.can_write(&mac_handle.config);
 

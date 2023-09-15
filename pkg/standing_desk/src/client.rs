@@ -37,9 +37,9 @@ impl Client {
                 })
                 .await?;
 
-            let channel = Arc::new(rpc::Http2Channel::create(
-                http::ClientOptions::from_resolver(resolver),
-            )?);
+            let channel = Arc::new(
+                rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver)).await?,
+            );
 
             RadioBridgeStub::new(channel)
         };

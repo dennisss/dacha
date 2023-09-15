@@ -2,7 +2,7 @@ use common::errors::*;
 use common::failure::ResultExt;
 use file::LocalPath;
 use protobuf::{text::*, Message};
-use protobuf::{DescriptorPool, DynamicMessage};
+use protobuf::{DescriptorPool, DescriptorPoolOptions, DynamicMessage};
 
 use crate::proto::*;
 use crate::rule::*;
@@ -47,26 +47,25 @@ impl BuildTarget for ProtoData {
             .proto_file()
             .ok_or_else(|| err_msg("Textproto not annotated with a message file"))?;
 
-        let mut descriptor_pool = DescriptorPool::new();
+        let descriptor_pool = DescriptorPool::new(DescriptorPoolOptions::default_for_workspace(
+            &context.workspace_dir,
+        ));
 
         // TODO: Verify this file contains the proto (and not one of its imports or
         // dependencies).
         let package = descriptor_pool
-            .add_proto_file(
-                context.workspace_dir.join(proto_file),
-                &context.workspace_dir,
-            )
+            .add_file(context.workspace_dir.join(proto_file))
             .await?;
 
         // TODO: Switch to interpreting these as labels.
         for dep in self.attrs.deps() {
             descriptor_pool
-                .add_proto_file(context.workspace_dir.join(dep), &context.workspace_dir)
+                .add_file(context.workspace_dir.join(dep))
                 .await?;
         }
 
         let message_type = descriptor_pool
-            .find_relative_type(&package, &proto_message)
+            .find_relative_type(&package.proto().package(), &proto_message)
             .ok_or_else(|| format_err!("Failed to find type: {}", proto_message))?
             .to_message()
             .ok_or_else(|| format_err!("Type is not a message: {}", proto_message))?;

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use common::errors::*;
 use common::io::{IoError, IoErrorKind, Readable, Writeable};
@@ -146,6 +147,8 @@ impl ConnectionWriter {
                 }
             }
 
+            let now = SystemTime::now();
+
             match event {
                 // TODO: Instead alwas enqueue requests and always
                 ConnectionEvent::SendRequest => {
@@ -247,6 +250,8 @@ impl ConnectionWriter {
                     let max_remote_frame_size =
                         connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
 
+                    connection_state.last_user_byte_sent_time = now;
+
                     drop(connection_state);
 
                     // We are now done setting up the stream.
@@ -328,6 +333,8 @@ impl ConnectionWriter {
 
                     let max_remote_frame_size =
                         connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
+
+                    connection_state.last_user_byte_sent_time = now;
 
                     drop(connection_state);
 
@@ -528,6 +535,10 @@ impl ConnectionWriter {
                         ));
 
                         break;
+                    }
+
+                    if next_frame.is_some() {
+                        connection_state.last_user_byte_sent_time = now;
                     }
 
                     // TODO: Should we ignore stream errors if the stream is already marked as

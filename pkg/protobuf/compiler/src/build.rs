@@ -5,7 +5,7 @@ use std::process::Command;
 use common::errors::*;
 use common::line_builder::LineBuilder;
 use file::{project_path, LocalPath, LocalPathBuf};
-use protobuf_dynamic::DescriptorPool;
+use protobuf_dynamic::{DescriptorPool, DescriptorPoolOptions};
 
 use crate::compiler::{Compiler, CompilerOptions};
 use crate::escape::escape_rust_identifier;
@@ -13,26 +13,10 @@ use crate::escape::escape_rust_identifier;
 pub fn project_default_options() -> CompilerOptions {
     let mut options = CompilerOptions::default();
 
-    // TODO: Infer these from build dependencies.
-    options
-        .descriptor_pool_options
-        .paths
-        .push(project_path!("third_party/protobuf_builtins/proto"));
-    options
-        .descriptor_pool_options
-        .paths
-        .push(project_path!("third_party/protobuf_descriptor"));
-    options
-        .descriptor_pool_options
-        .paths
-        .push(project_path!("third_party/googleapis/repo"));
-
     // TODO: This is a dangerous default() as we can't use it outside of a real
     // project.
-    options
-        .descriptor_pool_options
-        .paths
-        .push(file::project_dir());
+    options.descriptor_pool_options =
+        DescriptorPoolOptions::default_for_workspace(&file::project_dir());
 
     options
 }

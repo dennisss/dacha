@@ -1,0 +1,18 @@
+[package]
+name = "google_auth"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../../common" }
+http = { path = "../../../http" }
+json = { path = "../../../format/json" }
+net = { path = "../../../net" }
+parsing = { path = "../../../parsing" }
+macros = { path = "../../../macros" }
+crypto = { path = "../../../crypto" }
+crypto_jwt = { path = "../../../crypto/jwt" }
+file = { path = "../../../file" }
+reflection = { path = "../../../reflection" }
+executor = { path = "../../../executor" }
+rpc = { path = "../../../rpc" }

@@ -3,8 +3,8 @@ use alloc::boxed::Box;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use common::errors::*;
 use common::list::Appendable;
+use common::{any::AsAny, errors::*};
 
 #[cfg(feature = "alloc")]
 use crate::merge::ReflectMergeFrom;
@@ -150,7 +150,7 @@ impl<T: ?Sized> core::convert::AsMut<T> for MessagePtr<T> {
 }
 
 /// Common trait implemented by all code generated protobuf enum types.
-pub trait Enum: Send + Sync + 'static {
+pub trait Enum: AsAny + Send + Sync + 'static {
     /// Should convert a number to a valid branch of the enum, or else should
     /// error out it the value is not in the enum.
     ///

@@ -121,7 +121,7 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
         // Could be split into a check phase and a run phase
         // Thus we can maintain transactions without lock
 
-        match ret.type_case() {
+        match ret.typ_case() {
             KeyValueOperationTypeCase::Set(op) => {
                 map.insert(op.key().to_owned(), Bytes::from(op.value()));
 

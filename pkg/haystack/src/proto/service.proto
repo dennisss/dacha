@@ -2,7 +2,7 @@ syntax = "proto3";
 
 
 // message VolumeId {
-//     option typed_num = true;
+//     option (dacha.typed_num) = true;
 //     uint32 value = 1;
 // }
 

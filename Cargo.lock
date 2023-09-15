@@ -643,6 +643,7 @@ dependencies = [
  "protobuf",
  "protobuf_builtins",
  "protobuf_compiler",
+ "protobuf_compiler_proto",
  "rpc",
 ]
 
@@ -718,6 +719,17 @@ dependencies = [
  "parsing",
  "pkix",
  "typenum",
+]
+
+[[package]]
+name = "crypto_jwt"
+version = "0.1.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "crypto",
+ "json",
+ "macros",
 ]
 
 [[package]]
@@ -1187,7 +1199,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "google_auth"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "crypto",
+ "crypto_jwt",
+ "executor",
+ "file",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "reflection",
+ "rpc",
+]
 
+[[package]]
+name = "google_spanner"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "google_auth",
+ "googleapis_proto",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "protobuf_builtins",
+ "reflection",
+ "rpc",
+]
+
+[[package]]
 name = "googleapis_proto"
 version = "0.0.0"
 dependencies = [
@@ -2328,6 +2378,7 @@ dependencies = [
  "protobuf",
  "protobuf_builtins",
  "protobuf_compiler",
+ "protobuf_compiler_proto",
  "rpc",
 ]
 

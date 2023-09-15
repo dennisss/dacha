@@ -12,6 +12,7 @@ protobuf = { path = "../../protobuf" }
 macros = { path = "../../macros" }
 rpc = { path = "../../rpc" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+protobuf_compiler_proto = { path = "../../protobuf/compiler/proto" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../protobuf/compiler" }

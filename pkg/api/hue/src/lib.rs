@@ -36,7 +36,8 @@ impl AnonymousHueClient {
             path: AsciiString::from("")?,
             query: None,
             fragment: None,
-        })?)?;
+        })?)
+        .await?;
 
         Ok(Self { client })
     }

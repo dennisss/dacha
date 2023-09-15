@@ -284,7 +284,7 @@ impl TransactionManager {
         let mut write = WriteBatch::new();
 
         for op in transaction.writes() {
-            match op.type_case() {
+            match op.typ_case() {
                 OperationTypeCase::Put(value) => {
                     write.put(op.key(), value);
                 }

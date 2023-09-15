@@ -1371,7 +1371,8 @@ impl NodeInner {
             .ok_or_else(|| err_msg("No such node"))?;
 
         let client =
-            rpc::Http2Channel::create(format!("http://{}", remote_node_meta.address()).as_str())?;
+            rpc::Http2Channel::create(format!("http://{}", remote_node_meta.address()).as_str())
+                .await?;
 
         let stub = BlobStoreStub::new(Arc::new(client));
 

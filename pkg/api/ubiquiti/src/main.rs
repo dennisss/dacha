@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
         .certificate_request
         .trust_remote_certificate = true;
 
-    let client = http::Client::create(client_options)?;
+    let client = http::Client::create(client_options).await?;
 
     let mut client = EdgeSwitchClient::new(uri, client);
 

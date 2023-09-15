@@ -48,7 +48,7 @@ impl ConfigurationStateMachine {
             return;
         }
 
-        if let LogEntryDataTypeCase::Config(change) = entry.data().type_case() {
+        if let LogEntryDataTypeCase::Config(change) = entry.data().typ_case() {
             // Only store a revert record if the change is not comitted
             if entry.pos().index() < commit_index {
                 self.pending = Some(ConfigurationPending {
@@ -57,7 +57,7 @@ impl ConfigurationStateMachine {
                 });
             }
 
-            self.value.apply(change);
+            self.value.apply(change.as_ref());
         } else {
             // Other types of entries have no effect on the configuration
         }
