@@ -8,6 +8,7 @@ extern crate regexp_macros;
 
 mod parser;
 mod path;
+mod streaming_parser;
 mod stringifier;
 mod value;
 mod value_parser;
@@ -15,12 +16,14 @@ mod value_parser;
 use common::errors::*;
 
 pub use path::ValuePath;
+pub use streaming_parser::*;
 pub use stringifier::*;
 pub use value::Value;
 pub use value_parser::ValueParser;
 
 pub fn parse(input: &str) -> Result<Value> {
-    let (v, _) = parsing::complete(parser::parse_json)(input)?;
+    let mut p = StreamingParser::new(input);
+    let v = Value::parse_from(&mut p)?.map_err(|_| ()).unwrap();
     Ok(v)
 }
 
@@ -36,6 +39,7 @@ pub fn pretty_stringify(value: &Value) -> String {
     let options = StringifyOptions {
         indent: Some(String::from("    ")),
         space_after_colon: true,
+        sort_fields: true,
     };
 
     Stringifier::run(value, options)

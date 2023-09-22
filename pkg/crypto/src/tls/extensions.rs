@@ -31,7 +31,10 @@ struct {
 
 #[derive(Debug, Clone)]
 pub enum Extension {
-    ServerName(ServerNameList),
+    // An empty server name is only allowed when a server is responding to a client
+    // https://datatracker.ietf.org/doc/html/rfc6066#section-3
+    ServerName(Option<ServerNameList>),
+
     MaxFragmentLength(MaxFragmentLength),
     SupportedGroups(NamedGroupList),
     SupportedPointFormats(ECPointFormatList),
@@ -73,8 +76,14 @@ impl Extension {
 
             let res = match extension_type {
                 ExtensionType::ServerName => {
-                    map(complete(ServerNameList::parse),
-                        |v| Extension::ServerName(v))(data)
+                    // Per https://datatracker.ietf.org/doc/html/rfc6066#section-3,
+                    // a server is allowed to send back an empty servername
+                    if data.len() == 0 {
+                        Ok((Extension::ServerName(None), data))
+                    } else {
+                        map(complete(ServerNameList::parse),
+                            |v| Extension::ServerName(Some(v)))(data)
+                    }
                 },
                 ExtensionType::MaxFragmentLength => {
                     map(complete(MaxFragmentLength::parse),
@@ -160,7 +169,11 @@ impl Extension {
         typ.serialize(out);
 
         serialize_varlen_vector(0, U16_LIMIT, out, |out| match self {
-            ServerName(e) => e.serialize(out),
+            ServerName(e) => {
+                if let Some(e) = e {
+                    e.serialize(out)
+                }
+            }
             MaxFragmentLength(e) => e.serialize(out),
             SupportedGroups(e) => e.serialize(out),
             SupportedPointFormats(e) => e.serialize(out),
@@ -332,6 +345,7 @@ impl ExtensionType {
         use ExtensionType::*;
         use HandshakeType::*;
         match self {
+            // TODO: In TLS 1.2, ServerName is allowed in ServerHello.
             ServerName => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             MaxFragmentLength => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             StatusRequest => {

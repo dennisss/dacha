@@ -118,8 +118,11 @@ members = [
 	"third_party/v4l2",
 	"pkg/rpi/streamer",
 	"pkg/media/video",
+	"pkg/api/google/discovery",
 	"pkg/api/google/auth",
 	"pkg/api/google/spanner",
+	"pkg/api/google/dns",
+	"pkg/api/acme",
 	"third_party/protobuf_builtins",
 	"third_party/googleapis"
 ]

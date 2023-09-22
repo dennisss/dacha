@@ -58,52 +58,6 @@ pub async fn secure_random_bytes(buf: &mut [u8]) -> Result<()> {
     Ok(())
 }
 
-/// Securely generates a random value in the range '[lower, upper)'.
-///
-/// This is implemented to give every integer in the range the same probabiity
-/// of being output.
-///
-/// NOTE: Both the 'lower' and 'upper' numbers should be publicly known for this
-/// to be secure.
-///
-/// The output integer will have the same width as the 'upper' integer.
-pub async fn secure_random_range(
-    lower: &SecureBigUint,
-    upper: &SecureBigUint,
-) -> Result<SecureBigUint> {
-    if upper.byte_width() == 0 || upper <= lower {
-        return Err(err_msg("Invalid upper/lower range"));
-    }
-
-    let mut buf = vec![];
-    buf.resize(upper.byte_width(), 0);
-
-    let mut num_bytes = ceil_div(upper.value_bits(), 8);
-
-    let msb_mask: u8 = {
-        let r = upper.value_bits() % 8;
-        if r == 0 {
-            0xff
-        } else {
-            !((1 << (8 - r)) - 1)
-        }
-    };
-
-    // TODO: Refactor out retrying. Instead shift to 0
-    loop {
-        secure_random_bytes(&mut buf[0..num_bytes]).await?;
-
-        buf[num_bytes - 1] &= msb_mask;
-
-        let n = SecureBigUint::from_le_bytes(&buf);
-
-        // TODO: This *must* be a secure comparison (which it isn't right now).
-        if &n >= lower && &n < upper {
-            return Ok(n);
-        }
-    }
-}
-
 pub trait Rng {
     fn seed_size(&self) -> usize;
 

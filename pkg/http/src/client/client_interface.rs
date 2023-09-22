@@ -92,7 +92,7 @@ impl AffinityKeyCache {
 }
 
 #[async_trait]
-pub trait ClientInterface {
+pub trait ClientInterface: 'static + Send + Sync {
     async fn request(
         &self,
         request: Request,

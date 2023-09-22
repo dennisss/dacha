@@ -19,9 +19,19 @@ TODOs:
 
 #[macro_use]
 extern crate common;
+#[macro_use]
+extern crate asn;
 
 extern crate crypto;
 extern crate json;
+
+mod algorithm;
+mod key;
+mod signature;
+
+pub use algorithm::*;
+pub use key::*;
+pub use signature::*;
 
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -50,19 +60,6 @@ pub enum JWTPrivateKey {
     RS256(RSAPrivateKey),
 }
 
-enum_def!(JWTAlgorithm str =>
-    None = "none",
-
-    // HMAC SHA-256
-    HS256 = "HS256",
-
-    // RSASSA-PKCS1-v1_5 with SHA-256
-    RS256 = "RS256",
-
-    // ECDSA using the P-256 curve and SHA-256
-    ES256 = "ES256"
-);
-
 pub struct JWTBuilder {
     private_key: JWTPrivateKey,
     header: json::Value,
@@ -72,14 +69,14 @@ pub struct JWTBuilder {
 impl JWTBuilder {
     pub fn new(private_key: JWTPrivateKey) -> Self {
         let mut header = json::Value::Object(HashMap::new());
-        header.set_field(TYP, json::Value::String(JWT.to_string()));
+        header.set_field(TYP, JWT);
 
         let algorithm = match &private_key {
             JWTPrivateKey::None => JWTAlgorithm::None,
             JWTPrivateKey::RS256(_) => JWTAlgorithm::RS256,
         };
 
-        header.set_field(ALG, json::Value::String(algorithm.to_value().to_string()));
+        header.set_field(ALG, algorithm.to_value());
 
         let mut claims_set: json::Value = json::Value::Object(HashMap::new());
 
@@ -91,14 +88,12 @@ impl JWTBuilder {
     }
 
     pub fn add_header_field(mut self, name: &str, value: &str) -> Self {
-        self.header
-            .set_field(name, json::Value::String(value.to_string()));
+        self.header.set_field(name, value);
         self
     }
 
     pub fn add_claim_string(mut self, name: &str, value: &str) -> Self {
-        self.claims_set
-            .set_field(name, json::Value::String(value.to_string()));
+        self.claims_set.set_field(name, value);
         self
     }
 

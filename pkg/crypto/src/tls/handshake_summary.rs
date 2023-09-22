@@ -19,5 +19,6 @@ pub struct HandshakeSummary {
     /// a valid expiration time, chain of trust, and its private keys have
     /// been verified to be known by the remote endpoint.
     pub certificate: Option<Arc<x509::Certificate>>,
-    // TODO: For servers, this should also include the ServerName used.
+    // TODO: For servers, this should also include the ServerName used (or for clients the server
+    // name that was received).
 }

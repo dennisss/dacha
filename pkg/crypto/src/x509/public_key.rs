@@ -2,6 +2,7 @@ use alloc::string::String;
 use common::bits::BitVector;
 use core::convert::TryInto;
 
+use asn::builtin::ObjectIdentifier;
 use asn::builtin::{BitString, Null, OctetString};
 use asn::encoding::{der_eq, Any, DERWriteable};
 use common::bytes::Bytes;
@@ -26,7 +27,7 @@ pub enum PublicKey {
         RSAPublicKey,
         Option<PKIX1_PSS_OAEP_Algorithms::RSASSA_PSS_params>,
     ),
-    EC(EllipticCurveGroup, Bytes),
+    EC(ObjectIdentifier, EllipticCurveGroup, Bytes),
     Ed25519(Bytes),
 }
 
@@ -69,8 +70,10 @@ impl PublicKey {
                 }
             };
 
+            let group_id;
             let group = match params {
                 PKIX1Algorithms88::EcpkParameters::namedCurve(id) => {
+                    group_id = id.clone();
                     if id == PKIX1Algorithms2008::SECP192R1 {
                         EllipticCurveGroup::secp192r1()
                     } else if id == PKIX1Algorithms2008::SECP224R1 {
@@ -87,7 +90,8 @@ impl PublicKey {
                 }
                 PKIX1Algorithms88::EcpkParameters::implicitlyCA(_) => {
                     let parent_key = parent_key.ok_or_else(|| err_msg("Unknown parent CA key"))?;
-                    let (group, _) = parent_key.as_ec_key()?;
+                    let (id, group, _) = parent_key.as_ec_key()?;
+                    group_id = id.clone();
                     group.clone()
                 }
                 _ => {
@@ -100,7 +104,9 @@ impl PublicKey {
             ));
 
             Ok(Self::EC(
+                group_id,
                 group,
+                // TODO: Check this?
                 std::convert::Into::<OctetString>::into(point).into_bytes(),
             ))
         } else if pk.algorithm.algorithm == PKIX1_PSS_OAEP_Algorithms::ID_RSASSA_PSS {
@@ -156,7 +162,15 @@ impl PublicKey {
                 subjectPublicKey: BitString::from(BitVector::from_bytes(&key.to_asn1().to_der())),
             },
             PublicKey::RSASSA_PSS(_, _) => todo!(),
-            PublicKey::EC(_, _) => todo!(),
+            PublicKey::EC(group_id, _, key) => PKIX1Explicit88::SubjectPublicKeyInfo {
+                algorithm: PKIX1Explicit88::AlgorithmIdentifier {
+                    algorithm: PKIX1Algorithms2008::ID_ECPUBLICKEY,
+                    parameters: Some(asn_any!(PKIX1Algorithms2008::ECParameters::namedCurve(
+                        group_id.clone(),
+                    ))),
+                },
+                subjectPublicKey: BitString::from(BitVector::from_bytes(&key)),
+            },
             PublicKey::Ed25519(key) => PKIX1Explicit88::SubjectPublicKeyInfo {
                 algorithm: PKIX1Explicit88::AlgorithmIdentifier {
                     algorithm: Safecurves_pkix_18::ID_ED25519,
@@ -176,7 +190,7 @@ impl PublicKey {
         let sk = match self {
             Self::RSA(_) => SignatureKeyParameters::RSA,
             Self::RSASSA_PSS(_, params) => SignatureKeyParameters::RSASSA_PSS(params.clone()),
-            Self::EC(group, _) => SignatureKeyParameters::ECDSA(group.clone()),
+            Self::EC(_, group, _) => SignatureKeyParameters::ECDSA(group.clone()),
             Self::Ed25519(_) => SignatureKeyParameters::Ed25519,
         };
 
@@ -207,12 +221,15 @@ impl PublicKey {
             DigitalSignatureAlgorithm::Ed25519(group) => {
                 return group.verify_signature(self.as_ed25519_key()?, signature, plaintext);
             }
-            DigitalSignatureAlgorithm::EcDSA(hasher_Factory) => {
-                let mut hasher = hasher_Factory.create();
-                let (group, point) = self.as_ec_key()?;
+            DigitalSignatureAlgorithm::EcDSA(hasher_factory) => {
+                let mut hasher = hasher_factory.create();
+                let (_, group, point) = self.as_ec_key()?;
                 return group.verify_signature(
                     point.as_ref(),
                     signature,
+                    constraints
+                        .ecdsa_signature_format
+                        .unwrap_or(crate::elliptic::EllipticCurveSignatureFormat::X509),
                     plaintext,
                     hasher.as_mut(),
                 );
@@ -220,9 +237,9 @@ impl PublicKey {
         }
     }
 
-    fn as_ec_key(&self) -> Result<(&EllipticCurveGroup, &Bytes)> {
+    fn as_ec_key(&self) -> Result<(&ObjectIdentifier, &EllipticCurveGroup, &Bytes)> {
         match self {
-            Self::EC(a, b) => Ok((a, b)),
+            Self::EC(a, b, c) => Ok((a, b, c)),
             _ => Err(err_msg("Expected an EC public key")),
         }
     }

@@ -20,6 +20,7 @@ use asn::encoding::{der_eq, Any, DERReadable, DERReader, DERWriteable};
 use common::bytes::Bytes;
 use common::chrono::{DateTime, Utc};
 use common::errors::*;
+use common::failure::ResultExt;
 use math::big::{BigInt, BigUint, Modulo};
 use pkix::{
     PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88,
@@ -40,9 +41,6 @@ use name_constraints::*;
 pub use private_key::*;
 pub use public_key::*;
 
-// TODO: For validating this, we also need to able to check max allowed
-// certificate chain length.
-
 // NOTE: This field MUST contain the same algorithm identifier as the
 //    signature field in the sequence tbsCertificate
 
@@ -61,6 +59,7 @@ https://android.googlesource.com/platform/system/ca-certificates/+/master/
 // signature check.
 
 // TODO: Must also deal with possible cycles.
+// Just limit max chain length.
 
 // NOTE: Here is how OpenSSL does Name hashing:
 // https://github.com/openssl/openssl/blob/47b4ccea9cb9b924d058fd5a8583f073b7a41656/crypto/x509/x509_cmp.c#L184
@@ -105,6 +104,9 @@ pub struct CertificateRegistry {
     /// Map of a certificate's subject name to a list of all certificates issued
     /// to that subject.
     ///
+    /// NOTE: Certificates are only added to this once all its parents are added
+    /// so this should never contain a cycle.
+    ///
     /// TODO: Add the certificate's subjectUniqueID to the key and then use that
     /// for lookups as well
     certs: HashMap<NameKey, Vec<Arc<CertificateVerified>>>,
@@ -120,15 +122,26 @@ impl CertificateRegistry {
     */
 
     /// Creates a registry filled with all publicly trusted root certificates.
+    ///
+    /// TODO: Cache this and return an immutable Arc<>
     pub async fn public_roots() -> Result<Self> {
-        let mut data = file::read(project_path!(
-            "third_party/ca-certificates/google/roots.pem"
-        ))
-        .await?;
+        let mut data = file::read(project_path!("third_party/chromium/root_store.bin")).await?;
 
         let buf = Bytes::from(data);
 
-        let certs = Certificate::from_pem(buf)?;
+        let mut certs = vec![];
+        let mut i = 0;
+        while i < buf.len() {
+            let len = u32::from_le_bytes(*array_ref![&buf, i, 4]) as usize;
+            i += 4;
+
+            let data = buf.slice(i..(i + len));
+            i += len;
+
+            let cert = Certificate::read(data)
+                .with_context(|e| format!("While parsing certificate: {}", e))?;
+            certs.push(Arc::new(cert));
+        }
 
         let mut reg = CertificateRegistry::new();
         reg.append(&certs, true)?;
@@ -155,8 +168,10 @@ impl CertificateRegistry {
     }
 
     /// Finds the certificate that was used to sign 'cert'.
+    /// Will return None for self-signed certificates.
     ///
-    /// NOTE: This does not support looking up the parent of a self-signed cert.
+    /// We assume that the 'issuer' in the certificate is the same as the issuer
+    /// in the AuthorityKeyIdentifier (if present).
     fn lookup_parent(&self, cert: &Certificate) -> Result<Option<Arc<CertificateVerified>>> {
         if let Some(parent) = &self.parent {
             if let Some(v) = parent.lookup_parent(cert)? {
@@ -165,9 +180,7 @@ impl CertificateRegistry {
         }
 
         if cert.self_signed() {
-            return Err(err_msg(
-                "Trying to lookup parent of self-signed certificate",
-            ));
+            return Ok(None);
         }
 
         let issuer = NameKey::from(&cert.raw.tbsCertificate.issuer);
@@ -178,17 +191,28 @@ impl CertificateRegistry {
             }
         };
 
+        // NOTE: Per https://www.rfc-editor.org/rfc/rfc4158#section-3.5.12, the authory key id extensions should only be used for hinting at the parent certificate, through we require the exact key id to the present in the child and optionally have the serial number.
+
+        // NOTE: One issuer may have multipl certificates
         for c in certs {
-            if cert.authority_key_id() == c.subject_key_id() {
-                return Ok(Some(c.clone()));
+            if cert.authority_key_id() != c.subject_key_id() {
+                continue;
             }
+
+            if let Some(authority_serial_number) = cert.authority_serial_number() {
+                if authority_serial_number != c.serial_number() {
+                    continue;
+                }
+            }
+
+            return Ok(Some(c.clone()));
         }
 
         Ok(None)
     }
 
     // TODO: Need to perform an exact comparison to be sure.
-    fn contains(&self, cert: &Certificate) -> bool {
+    fn contains(&self, cert: &Certificate) -> Result<bool> {
         let list = self
             .certs
             .get(&NameKey::from(&cert.raw.tbsCertificate.subject))
@@ -196,24 +220,33 @@ impl CertificateRegistry {
             .unwrap_or(&[]);
 
         for c2 in list.iter() {
-            if cert.serial_number() == c2.serial_number() {
-                return true;
+            if cert.subject_key_id() != c2.subject_key_id() {
+                continue;
             }
 
-            if cert.subject_key_id() == c2.subject_key_id() {
-                return true;
+            if cert.serial_number() != c2.serial_number() {
+                continue;
             }
+
+            if !der_eq(&cert.raw, &c2.raw) {
+                return Err(err_msg(
+                    "Registry contains different data for same certificate.",
+                ));
+            }
+
+            return Ok(true);
         }
 
         if let Some(parent) = &self.parent {
             return parent.contains(cert);
         }
 
-        false
+        Ok(false)
     }
 
     /// Performs insertion into the inner certificate map. This assumes that the
-    /// certificate chain has already been verified.
+    /// certificate chain has already been verified and that the certificate is
+    /// NOT already in the registry.
     ///
     /// A certificate can only be inserted if there is no other certificate with
     /// the same (issuer, serial number) or (issuer, subject key id) pair.
@@ -222,12 +255,13 @@ impl CertificateRegistry {
     /// identical certificate already existed in the registry with the exact
     /// same contents.
     /// TODO: Implement allowing exact matches.
-    fn insert(&mut self, cert: Arc<CertificateVerified>) -> Result<bool> {
+    fn insert(&mut self, cert: Arc<CertificateVerified>) -> Result<()> {
         let c = cert.as_ref();
 
-        if self.contains(c) {
-            return Err(err_msg("Registry may already contain the certificate"));
-        }
+        // Already checked in append().
+        // if self.contains(c)? {
+        //     return Ok(());
+        // }
 
         let list = self
             .certs
@@ -235,18 +269,28 @@ impl CertificateRegistry {
             .or_insert(vec![]);
 
         list.push(cert);
-        Ok(true)
+        Ok(())
     }
 
     /// Adds all of the given certificates to the registry.
     ///
     /// NOTE: This is currently O(n*k) where n is the number of certificates
     /// given and k is the length of the chain in the given certificates.
+    ///
+    /// TODO: If the user passes in a certificate already in the registry,
+    /// deduplicate the memory pointers between them.
     pub fn append(&mut self, certs: &[Arc<Certificate>], trusted: bool) -> Result<()> {
         let mut remaining = certs.to_vec();
         while remaining.len() > 0 {
             let mut changed = false;
             for raw_cert in remaining.split_off(0) {
+                // No need to verify the signature if we have an exact match to the certificate
+                // in our registry.
+                if self.contains(&raw_cert)? {
+                    changed = true;
+                    continue;
+                }
+
                 let verified_cert = if raw_cert.self_signed() {
                     if !trusted {
                         return Err(err_msg("Self-signed untrusted signature"));
@@ -310,6 +354,7 @@ pub struct Certificate {
     subject_key_id: Bytes,
 
     authority_key_id: Bytes,
+    authority_serial_number: Option<BigInt>,
 
     extensions: CertificateExtensions,
 
@@ -424,22 +469,31 @@ impl Certificate {
             .unwrap_or(Bytes::new());
 
         // NOTE: This extension should always be non-critical.
-        let authority_key_id = match extensions.get_as::<PKIX1Implicit88::AuthorityKeyIdentifier>(
-            &PKIX1Implicit88::ID_CE_AUTHORITYKEYIDENTIFIER,
-        )? {
-            Some(id) => {
-                /*
-                if id.authorityCertIssuer.is_some() || id.authorityCertSerialNumber.is_some() {
-                    return Err(err_msg(
-                        "authorityCertIssuer|authorityCertSerialNumber not supported",
-                    ));
-                }
-                */
+        let (authority_key_id, authority_serial_number) =
+            match extensions.get_as::<PKIX1Implicit88::AuthorityKeyIdentifier>(
+                &PKIX1Implicit88::ID_CE_AUTHORITYKEYIDENTIFIER,
+            )? {
+                Some(id) => {
+                    // Technically we should allow this, but we don't support looking up
+                    // certificates with this custom issuer and this may lead to having weird chains
+                    // like 'A -> B -> C' where A signs B and C which makes it challenging to
+                    // validate 'C' as we need to ensure A is a parent of C's parent (B).
+                    // if let Some(authority_issuer) = &id.authorityCertIssuer {
+                    //     if !der_eq(authority_issuer, &raw.tbsCertificate.issuer) {
+                    //         return Err(format_err!(
+                    //             "Different authority issuer not supported: {:?}",
+                    //             authority_issuer
+                    //         ));
+                    //     }
+                    // }
 
-                id.keyIdentifier.map(|v| v.to_bytes()).unwrap_or_default()
-            }
-            None => Bytes::new(),
-        };
+                    (
+                        id.keyIdentifier.map(|v| v.to_bytes()).unwrap_or_default(),
+                        id.authorityCertSerialNumber.clone().map(|v| v.into()),
+                    )
+                }
+                None => (Bytes::new(), None),
+            };
 
         let supported_extension_ids = [
             PKIX1Implicit88::ID_CE_AUTHORITYKEYIDENTIFIER,
@@ -472,6 +526,7 @@ impl Certificate {
             raw,
             subject_key_id,
             authority_key_id,
+            authority_serial_number,
         })
     }
 
@@ -525,6 +580,10 @@ impl Certificate {
     /// Authority Key Id (possibly empty if not present or self-signed).
     pub fn authority_key_id(&self) -> &[u8] {
         self.authority_key_id.as_ref()
+    }
+
+    pub fn authority_serial_number(&self) -> Option<&BigInt> {
+        self.authority_serial_number.as_ref()
     }
 
     /// TODO: Validate that this has at least one name.

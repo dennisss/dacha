@@ -125,6 +125,12 @@ impl<T: Debug + Clone> AsRef<[T]> for SetOf<T> {
 #[derive(Debug, Clone)]
 pub struct PrintableString(pub AsciiString);
 
+impl PrintableString {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 impl ToString for PrintableString {
     fn to_string(&self) -> String {
         self.0.to_string()
@@ -299,6 +305,12 @@ pub struct TeletexString {
     pub data: String,
 }
 
+impl TeletexString {
+    pub fn as_str(&self) -> &str {
+        self.data.as_ref()
+    }
+}
+
 impl ToString for TeletexString {
     fn to_string(&self) -> String {
         self.data.clone()
@@ -311,6 +323,12 @@ pub type T61String = TeletexString;
 #[derive(Debug, Clone)]
 pub struct UniversalString {
     pub data: String,
+}
+
+impl UniversalString {
+    pub fn as_str(&self) -> &str {
+        self.data.as_ref()
+    }
 }
 
 impl ToString for UniversalString {
@@ -335,6 +353,10 @@ impl UTF8String {
     pub fn from(data: Bytes) -> Result<Self> {
         std::str::from_utf8(&data)?;
         Ok(Self { data })
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.as_ref()
     }
 }
 
@@ -368,6 +390,12 @@ pub struct BMPString {
     pub data: String,
 }
 
+impl BMPString {
+    pub fn as_str(&self) -> &str {
+        self.data.as_ref()
+    }
+}
+
 impl ToString for BMPString {
     fn to_string(&self) -> String {
         self.data.to_string()
@@ -384,6 +412,10 @@ impl IA5String {
         Ok(Self {
             data: AsciiString::from(s)?,
         })
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.data.as_ref()
     }
 }
 
@@ -606,14 +638,12 @@ impl GeneralizedTime {
             format!(".{}", nanos)
         };
         format!(
-            "{:04}{:02}{:02}{:02}{:02}{:02}{}",
+            "{:04}{:02}{:02}{:02}{:02}{:02}{}Z",
             self.year, self.month, self.day, self.hour, self.minute, self.seconds, decimal
         )
     }
 
     pub fn from_str(s: &str) -> Result<GeneralizedTime> {
-        println!("GeneralizedTime: {}", s);
-
         if s.len() < 15 {
             return Err(err_msg("Too short"));
         }

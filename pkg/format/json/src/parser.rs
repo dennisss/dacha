@@ -5,86 +5,29 @@ use parsing::*;
 
 use crate::value::Value;
 
-parser!(pub parse_json<&str, Value> => {
-    parse_element
-});
-
-parser!(parse_value<&str, Value> => alt!(
-    parse_object,
-    parse_array,
-    map(|v| parse_string(false)(v), |s| Value::String(s)),
-    map(parse_number, |v| Value::Number(v)),
-    map(tag("true"), |_| Value::Bool(true)),
-    map(tag("false"), |_| Value::Bool(false)),
-    map(tag("null"), |_| Value::Null)
-));
-
-parser!(parse_object<&str, Value> => seq!(c => {
-    c.next(tag("{"))?;
-    c.next(parse_whitespace)?;
-
-    let mut obj = HashMap::new();
-    for (key, value) in c.next(delimited(parse_member, tag(",")))? {
-        if obj.contains_key(&key) {
-            return Err(format_err!("Duplicate key in object: {:?}", key));
-        }
-
-        obj.insert(key, value);
-    }
-
-    c.next(tag("}"))?;
-    Ok(Value::Object(obj))
-}));
-
-parser!(parse_member<&str, (String, Value)> => seq!(c => {
-    c.next(parse_whitespace)?;
-    let key = c.next(|v| parse_string(false)(v))?;
-    c.next(parse_whitespace)?;
-    c.next(tag(":"))?;
-    let value = c.next(parse_element)?;
-    Ok((key, value))
-}));
-
-parser!(parse_array<&str, Value> => seq!(c => {
-    c.next(tag("["))?;
-    c.next(parse_whitespace)?;
-
-    let mut arr = vec![];
-    for el in c.next(delimited(parse_element, tag(",")))? {
-        arr.push(el);
-    }
-
-    c.next(tag("]"))?;
-    Ok(Value::Array(arr))
-}));
-
-parser!(parse_element<&str, Value> => seq!(c => {
-    c.next(parse_whitespace)?;
-    let value = c.next(parse_value)?;
-    c.next(parse_whitespace)?;
-    Ok(value)
-}));
-
 pub fn parse_string(allow_single_quote: bool) -> impl Fn(&str) -> Result<(String, &str)> {
     seq!(c => {
         let quote = c.next(one_of(if allow_single_quote { "\"'" } else { "\"" }))?;
 
         let mut s = String::new();
-        while let Some(v) = c.next(opt(|v| parse_character(v, quote)))? {
+        while let Some(v) = c.next(|v| parse_character(v, quote))? {
             s.push(v);
         }
-
-        c.next(atom(quote))?;
 
         Ok(s)
     })
 }
 
-fn parse_character(input: &str, quote: char) -> Result<(char, &str)> {
+// Will return None if we hit the end quote.
+pub(crate) fn parse_character(input: &str, quote: char) -> Result<(Option<char>, &str)> {
     seq!(c => {
         let mut v: char = c.next(like(|_| true))?;
-        if (v as u32) < 0x20 || v == quote {
+        if (v as u32) < 0x20 {
             return Err(err_msg("Unallowed character value"));
+        }
+
+        if v == quote {
+            return Ok(None);
         }
 
         if v == '\\' {
@@ -112,7 +55,7 @@ fn parse_character(input: &str, quote: char) -> Result<(char, &str)> {
             }
         }
 
-        Ok(v)
+        Ok(Some(v))
     })(input)
 }
 

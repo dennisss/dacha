@@ -1,12 +1,17 @@
-use std::time::Duration;
+use std::sync::Arc;
+use std::{collections::HashMap, time::Duration};
 
 use common::{bytes::Bytes, errors::*};
+use executor::sync::Mutex;
 use net::backoff::*;
+use parsing::ascii::AsciiString;
 
 use crate::{
-    response::BufferedResponse, v2, BodyFromData, Client, ClientInterface, ClientRequestContext,
-    Request, RequestHead, ResponseHead,
+    response::BufferedResponse, v2, BodyFromData, Client, ClientInterface, ClientOptions,
+    ClientRequestContext, Request, RequestHead, ResponseHead,
 };
+
+use super::load_balanced_client::LoadBalancedClientOptions;
 
 /// Determines whether or not the given http::Client returned error can be
 /// safely retried by sending a new request regardless of whether or not the
@@ -52,7 +57,9 @@ More needed features:
 - Support following Location re-directs.
     - Block infinite loops.
     - Will need to have a layet above Client because we need to be able to create different clients for different hosts.
-
+- Caching responses / doing If-Not-Modified- stuff.
+- Streaming download of a file using byte ranges
+    - Can intelligently download just
 */
 
 /*
@@ -66,14 +73,15 @@ TODO: Add a test case attempting to connect to an unreachable port on the loal m
 /// TODO: Also add a cookie jar?
 pub struct SimpleClient {
     options: SimpleClientOptions,
-    client: Box<dyn ClientInterface>,
+    /// TODO: Clean up clients if they haven't been used in a while.
+    clients: Mutex<HashMap<String, Arc<dyn ClientInterface>>>,
 }
 
 impl SimpleClient {
-    pub fn new(client: Client, options: SimpleClientOptions) -> Self {
+    pub fn new(options: SimpleClientOptions) -> Self {
         Self {
             options,
-            client: Box::new(client),
+            clients: Mutex::new(HashMap::new()),
         }
     }
 
@@ -83,6 +91,31 @@ impl SimpleClient {
         request_body: Bytes,
         request_context: &ClientRequestContext,
     ) -> Result<BufferedResponse> {
+        let client = {
+            let mut clients = self.clients.lock().await;
+
+            if request_head.uri.scheme.is_none() || request_head.uri.authority.is_none() {
+                return Err(err_msg("No schema/authority specified for request."));
+            }
+
+            let host_uri = crate::uri::Uri {
+                scheme: request_head.uri.scheme.clone(),
+                authority: request_head.uri.authority.clone(),
+                path: AsciiString::new(""),
+                query: None,
+                fragment: None,
+            };
+
+            let key = host_uri.to_string()?;
+
+            if !clients.contains_key(&key) {
+                let client = Client::create(ClientOptions::from_uri(&host_uri)?).await?;
+                clients.insert(key.clone(), Arc::new(client));
+            }
+
+            clients.get(&key).unwrap().clone()
+        };
+
         let mut retry_backoff = ExponentialBackoff::new(self.options.backoff_options.clone());
 
         let mut num_attempts = 0;
@@ -104,7 +137,10 @@ impl SimpleClient {
 
             num_attempts += 1;
 
-            let res = match self.request_once(request, request_context.clone()).await {
+            let res = match self
+                .request_once(client.as_ref(), request, request_context.clone())
+                .await
+            {
                 Ok(v) => {
                     return Ok(v);
                 }
@@ -128,10 +164,11 @@ impl SimpleClient {
 
     async fn request_once(
         &self,
+        client: &dyn ClientInterface,
         request: Request,
         request_context: ClientRequestContext,
     ) -> Result<BufferedResponse> {
-        let mut res = self.client.request(request, request_context).await?;
+        let mut res = client.request(request, request_context).await?;
         let head = res.head;
 
         if let Some(len) = res.body.len() {

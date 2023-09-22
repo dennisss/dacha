@@ -10,12 +10,18 @@ use pkix::{PKIX1Algorithms2008, PKIX1Explicit88, PKIX1_PSS_OAEP_Algorithms};
 use pkix::{PKIX1Algorithms88, PKCS_8};
 use pkix::{Safecurves_pkix_18, PKCS_1};
 
+use crate::dh::DiffieHellmanFn;
 use crate::elliptic::{EdwardsCurveGroup, EllipticCurveGroup};
 use crate::pem::{PEMBuilder, PEM, PEM_PRIVATE_KEY_LABEL};
 use crate::rsa::RSAPrivateKey;
 use crate::x509::signature_algorithm::*;
 use crate::x509::signature_key::*;
 use crate::x509::PublicKey;
+
+pub enum PrivateKeyType {
+    Ed25519,
+    ECDSA_SECP256R1,
+}
 
 #[derive(Debug, Clone)]
 pub enum PrivateKey {
@@ -35,12 +41,24 @@ pub enum PrivateKey {
 impl PrivateKey {
     /// Uses default parameters to generate a private key.
     pub async fn generate_default() -> Result<Self> {
-        Ok(Self::Ed25519(
-            EdwardsCurveGroup::ed25519()
-                .generate_private_key()
-                .await
-                .into(),
-        ))
+        Self::generate(PrivateKeyType::Ed25519).await
+    }
+
+    pub async fn generate(typ: PrivateKeyType) -> Result<Self> {
+        Ok(match typ {
+            PrivateKeyType::Ed25519 => Self::Ed25519(
+                EdwardsCurveGroup::ed25519()
+                    .generate_private_key()
+                    .await
+                    .into(),
+            ),
+            PrivateKeyType::ECDSA_SECP256R1 => {
+                let id = PKIX1Algorithms2008::SECP256R1;
+                let group = EllipticCurveGroup::secp256r1();
+                let key = group.generate_private_key().await;
+                Self::ECDSA(id, group, key.into())
+            }
+        })
     }
 
     pub fn from_pem(data: Bytes) -> Result<Self> {
@@ -107,6 +125,8 @@ impl PrivateKey {
                     }
                 };
 
+                // TODO: Verify that the parameters in the ECPrivateKEy match the ones in the
+                // privateKeyAlgorithm.
                 let key = PKIX1Algorithms2008::ECPrivateKey::from_der(
                     Into::<OctetString>::into(pkey_info.privateKey.clone()).to_bytes(),
                 )?
@@ -171,7 +191,37 @@ impl PrivateKey {
         match self {
             PrivateKey::RSA(_) => todo!(),
             PrivateKey::RSASSA_PSS(_, _) => todo!(),
-            PrivateKey::ECDSA(_, _, _) => todo!(),
+            PrivateKey::ECDSA(group_id, group, key) => {
+                // See
+                // https://datatracker.ietf.org/doc/html/rfc5915
+
+                // NOTE: It's a bit inconclusive as to whether or not we should put the
+                // parameters in privateKeyAlgorithm or ECPrivateKey but for safety, we put them
+                // in both.
+
+                let private_key = PKIX1Algorithms2008::ECPrivateKey {
+                    version: PKIX1Algorithms2008::ecprivatekey::Version::ecPrivkeyVer1,
+                    privateKey: OctetString(asn::builtin::BytesRef::Dynamic(key.clone())),
+                    parameters: Some(PKIX1Algorithms2008::ECParameters::namedCurve(
+                        group_id.clone(),
+                    )),
+                    // TODO:
+                    publicKey: None,
+                };
+
+                pkix::PKCS_8::PrivateKeyInfo {
+                    version: pkix::PKCS_8::Version::v1,
+                    privateKeyAlgorithm: PKIX1Explicit88::AlgorithmIdentifier {
+                        algorithm: PKIX1Algorithms2008::ID_ECPUBLICKEY,
+                        parameters: Some(asn_any!(PKIX1Algorithms88::EcpkParameters::namedCurve(
+                            group_id.clone()
+                        ))),
+                    },
+                    privateKey: PKCS_8::PrivateKey::from(OctetString(
+                        asn::builtin::BytesRef::Dynamic(private_key.to_der().into()),
+                    )),
+                }
+            }
             PrivateKey::Ed25519(private_key) => {
                 let key = pkix::Safecurves_pkix_18::CurvePrivateKey::from(OctetString(
                     asn::builtin::BytesRef::Dynamic(private_key.clone()),
@@ -196,8 +246,9 @@ impl PrivateKey {
         Ok(match self {
             PrivateKey::RSA(_) => todo!(),
             PrivateKey::RSASSA_PSS(_, _) => todo!(),
-            PrivateKey::ECDSA(_, group, private_key) => {
-                todo!()
+            PrivateKey::ECDSA(group_id, group, private_key) => {
+                let public_value = group.public_value(&private_key)?;
+                PublicKey::EC(group_id.clone(), group.clone(), public_value.into())
             }
             PrivateKey::Ed25519(private_key) => {
                 let ed = EdwardsCurveGroup::ed25519();
@@ -215,7 +266,29 @@ impl PrivateKey {
         match self {
             PrivateKey::RSA(_) => todo!(),
             PrivateKey::RSASSA_PSS(_, _) => todo!(),
-            PrivateKey::ECDSA(_, _, _) => todo!(),
+            PrivateKey::ECDSA(group_id, _, _) => {
+                let algorithm = {
+                    if group_id == &PKIX1Algorithms2008::SECP192R1 {
+                        PKIX1Algorithms2008::ECDSA_WITH_SHA256
+                    } else if group_id == &PKIX1Algorithms2008::SECP224R1 {
+                        PKIX1Algorithms2008::ECDSA_WITH_SHA256
+                    } else if group_id == &PKIX1Algorithms2008::SECP256R1 {
+                        PKIX1Algorithms2008::ECDSA_WITH_SHA256
+                    } else if group_id == &PKIX1Algorithms2008::SECP384R1 {
+                        PKIX1Algorithms2008::ECDSA_WITH_SHA384
+                    } else if group_id == &PKIX1Algorithms2008::SECP521R1 {
+                        PKIX1Algorithms2008::ECDSA_WITH_SHA512
+                    } else {
+                        // We don't support other curves.
+                        todo!()
+                    }
+                };
+
+                PKIX1Explicit88::AlgorithmIdentifier {
+                    algorithm,
+                    parameters: None,
+                }
+            }
             PrivateKey::Ed25519(_) => PKIX1Explicit88::AlgorithmIdentifier {
                 algorithm: Safecurves_pkix_18::ID_ED25519,
                 parameters: None,
@@ -223,11 +296,8 @@ impl PrivateKey {
         }
 
         /*
-        Ed25519
-
-        SignatureScheme::ecdsa_secp256r1_sha256,
-                SignatureScheme::rsa_pss_rsae_sha256,
-         */
+               SignatureScheme::rsa_pss_rsae_sha256,
+        */
     }
 
     /// Checks if the given signature algorithm can be used with this key.
@@ -269,11 +339,18 @@ impl PrivateKey {
             DigitalSignatureAlgorithm::Ed25519(group) => {
                 return group.create_signature(self.as_ed25519_key()?, plaintext);
             }
-            DigitalSignatureAlgorithm::EcDSA(hasher_Factory) => {
-                let mut hasher = hasher_Factory.create();
+            DigitalSignatureAlgorithm::EcDSA(hasher_factory) => {
+                let mut hasher = hasher_factory.create();
                 let (_, group, point) = self.as_ec_key()?;
                 return group
-                    .create_signature(point.as_ref(), plaintext, hasher.as_mut())
+                    .create_signature(
+                        point.as_ref(),
+                        plaintext,
+                        constraints
+                            .ecdsa_signature_format
+                            .unwrap_or(crate::elliptic::EllipticCurveSignatureFormat::X509),
+                        hasher.as_mut(),
+                    )
                     .await;
             }
         }

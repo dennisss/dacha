@@ -136,7 +136,10 @@ impl RecordReader {
                                 continue;
                             } else {
                                 // TODO: We received an invalid message, send an alert.
-                                return Err(e);
+                                return Err(format_err!(
+                                    "While parsing TLS handhake message: {}",
+                                    e
+                                ));
                             }
                         }
                     };

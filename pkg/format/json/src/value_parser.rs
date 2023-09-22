@@ -38,9 +38,9 @@ pub struct ObjectParser<'a> {
 
 impl<'a> reflection::ObjectParser<'a> for ObjectParser<'a> {
     type Key = &'a str;
-    type ValueParserType = ValueParser<'a>;
+    type ValueParserType<'b> = ValueParser<'a> where Self: 'b;
 
-    fn next_field(&mut self) -> Result<Option<(Self::Key, Self::ValueParserType)>> {
+    fn next_field<'b>(&'b mut self) -> Result<Option<(Self::Key, Self::ValueParserType<'b>)>> {
         Ok(self
             .map
             .next()
@@ -53,15 +53,15 @@ pub struct ListParser<'a> {
 }
 
 impl<'a> reflection::ListParser<'a> for ListParser<'a> {
-    type ValueParserType = ValueParser<'a>;
+    type ValueParserType<'c> = ValueParser<'a> where Self: 'c;
 
-    fn next(&mut self) -> Option<Self::ValueParserType> {
+    fn next<'b>(&'b mut self) -> Result<Option<Self::ValueParserType<'b>>> {
         if self.values.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let value = &self.values[0];
         self.values = &self.values[1..];
-        Some(ValueParser { value })
+        Ok(Some(ValueParser { value }))
     }
 }

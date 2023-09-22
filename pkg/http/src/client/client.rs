@@ -31,46 +31,15 @@ use crate::v2;
 
 #[derive(Clone)]
 pub struct ClientOptions {
+    pub resolver: Arc<dyn Resolver>,
     pub backend_balancer: LoadBalancedClientOptions,
 }
 
 impl ClientOptions {
     pub fn from_resolver(resolver: Arc<dyn Resolver>) -> Self {
         Self {
-            backend_balancer: LoadBalancedClientOptions {
-                resolver,
-                backend: DirectClientOptions {
-                    tls: None,
-                    force_http2: false,
-                    upgrade_plaintext_http2: false,
-                    connection_backoff: ExponentialBackoffOptions {
-                        base_duration: Duration::from_millis(100),
-                        jitter_duration: Duration::from_millis(200),
-                        max_duration: Duration::from_secs(20),
-                        cooldown_duration: Duration::from_secs(60),
-                        max_num_attempts: 0,
-                    },
-                    connect_timeout: Duration::from_millis(1000),
-                    idle_timeout: Duration::from_secs(5 * 60), // 5 minutes.
-                    /// MUST be <= v2::ConnectionOptions::max_enqueued_requests
-                    max_outstanding_requests: 100,
-                    max_num_connections: 10,
-                    http1_max_requests_per_connection: 1,
-                    remote_shutdown_is_failure: false,
-                    eagerly_connect: true,
-                },
-                resolver_backoff: ExponentialBackoffOptions {
-                    base_duration: Duration::from_millis(100),
-                    jitter_duration: Duration::from_millis(200),
-                    max_duration: Duration::from_secs(20),
-                    cooldown_duration: Duration::from_secs(60),
-                    max_num_attempts: 0,
-                },
-                subset_size: 10,
-                max_backend_count: 14,
-                healthy_backend_threshold: 0.8,
-                target_parallelism: 0,
-            },
+            resolver,
+            backend_balancer: LoadBalancedClientOptions::default(),
         }
     }
 
@@ -100,15 +69,13 @@ impl ClientOptions {
 
         let resolver = Arc::new(SystemDNSResolver::new(authority.host.clone(), port));
 
-        let mut options = Self::from_resolver(resolver);
+        let mut options = Self {
+            resolver,
+            backend_balancer: LoadBalancedClientOptions::default_for_dns(),
+        };
         if secure {
             options.backend_balancer.backend.tls = Some(crypto::tls::ClientOptions::recommended());
         }
-
-        // Normally DNS exposes load balancer IPs instead of raw server ips so not worth
-        // having a lot of connections.
-        options.backend_balancer.subset_size = 1;
-        options.backend_balancer.max_backend_count = 10;
 
         Ok(options)
     }
@@ -177,7 +144,11 @@ impl Client {
             rng.uniform::<u64>().await
         };
 
-        let lb_client = LoadBalancedClient::new(client_id, options.backend_balancer.clone());
+        let lb_client = LoadBalancedClient::new(
+            client_id,
+            options.resolver.clone(),
+            options.backend_balancer.clone(),
+        );
 
         // TODO: eed to ensure that this eventually stops once everything is done
         // running and all references to the client are closed.

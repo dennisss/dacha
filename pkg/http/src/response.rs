@@ -147,6 +147,7 @@ impl ResponseBuilder {
     }
 }
 
+#[derive(Debug)]
 pub struct BufferedResponse {
     pub head: ResponseHead,
     pub body: Bytes,

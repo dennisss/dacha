@@ -144,6 +144,6 @@ impl CertificateRequestBuilder {
             signature: BitString::from(BitVector::from(signature.as_ref(), signature.len() * 8)),
         };
 
-        Ok(CertificateRequest::new(cert))
+        Ok(CertificateRequest::new(cert)?)
     }
 }

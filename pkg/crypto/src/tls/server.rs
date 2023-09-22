@@ -125,7 +125,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
         // our certificates).
 
         // When being requested with an ip address, we won't have a host name.
-        if let Some(server_name) = find_server_name(&client_hello.extensions) {
+        if let Some(server_name) = find_server_name_from_client(&client_hello.extensions)? {
             if server_name.names.len() != 1 {
                 return Err(err_msg("Expected request to have exactly one name"));
             }

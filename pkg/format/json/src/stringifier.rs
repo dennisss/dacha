@@ -11,6 +11,7 @@ use crate::value::Value;
 pub struct StringifyOptions {
     pub indent: Option<String>,
     pub space_after_colon: bool,
+    pub sort_fields: bool,
 }
 
 pub struct Stringifier {
@@ -155,16 +156,29 @@ impl Stringifier {
     }
 
     fn add_object(&mut self, obj: &HashMap<String, Value>) {
+        if self.options.sort_fields {
+            let mut keys = obj.keys().collect::<Vec<_>>();
+            keys.sort();
+
+            let iter = keys.into_iter().map(|key| (key, obj.get(key).unwrap()));
+            self.add_object_impl(iter);
+        } else {
+            self.add_object_impl(obj.iter());
+        }
+    }
+
+    fn add_object_impl<'a, I: Iterator<Item = (&'a String, &'a Value)>>(&mut self, iter: I) {
         self.add_object_start();
 
         let mut first = true;
-        for (key, value) in obj.iter() {
+        for (key, value) in iter {
             self.add_object_field_key(key.as_str(), first);
             self.add_value(value);
             first = false;
         }
 
-        self.add_object_end(obj.is_empty());
+        let was_empty = first;
+        self.add_object_end(was_empty);
     }
 
     fn add_array_start(&mut self) {
@@ -317,7 +331,11 @@ impl<'a> reflection::ObjectSerializer for ObjectStringifier<'a> {
         name: &str,
         value: &Value,
     ) -> Result<()> {
-        value.serialize_to(self.key(name))
+        if !value.serialize_as_empty_value() {
+            value.serialize_to(self.key(name))?;
+        }
+
+        Ok(())
     }
 }
 

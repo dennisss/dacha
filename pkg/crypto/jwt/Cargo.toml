@@ -5,7 +5,9 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../../common" }
+asn = { path = "../../asn" }
 crypto = { path = ".." }
 base_radix = { path = "../../base/radix" }
 macros = { path = "../../macros" }
 json = { path = "../../format/json" }
+pkix = { path = "../../../third_party/pkix" }

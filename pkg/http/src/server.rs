@@ -51,7 +51,7 @@ pub struct ServerOptions {
 
     pub connection_options_v2: v2::ConnectionOptions,
 
-    /// TODO: Provide a reasonable default and implement me.
+    /// Maximum number of concurrent connections to this server.
     pub max_num_connections: usize,
 
     /// For v2 connections, min(graceful_shutdown_timeout,
@@ -68,7 +68,7 @@ impl Default for ServerOptions {
             tls: None,
             force_http2: false,
             connection_options_v2: connection_options_v2.clone(),
-            max_num_connections: 1000,
+            max_num_connections: 10000,
             graceful_shutdown_timeout: connection_options_v2.graceful_shutdown_timeout.clone(),
         }
     }
@@ -317,6 +317,12 @@ impl Server {
                     s.set_nodelay(true)?;
 
                     let mut connection_pool = this.shared.connection_pool.lock().await;
+
+                    if connection_pool.connections.len() > this.shared.options.max_num_connections {
+                        eprintln!("[http::Server] Dropping external connection");
+                        drop(s);
+                        continue;
+                    }
 
                     // TODO: Support over usize # of connections by wrapping and checking if the id
                     // is already in the hashmap.

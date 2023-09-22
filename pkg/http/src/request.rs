@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use automata::regexp::vm::instance::RegExpMatch;
 use common::bytes::Bytes;
 use common::errors::*;
@@ -30,6 +32,8 @@ pub struct RequestHead {
     // TODO: Only certain types of URIs are valid in this context
     pub method: Method,
     pub uri: Uri,
+    // TODO: Remove this from here as we expose the RequestHead to users for both HTTP1,2 clients
+    // libraries.
     pub version: Version,
     pub headers: Headers,
     pub accepts_trailers: bool,
@@ -104,7 +108,17 @@ impl RequestBuilder {
         self
     }
 
-    pub fn uri(mut self, uri: Uri) -> Self {
+    pub fn uri<U: TryInto<Uri, Error = Error>>(mut self, uri: U) -> Self {
+        match uri.try_into() {
+            Ok(v) => self.uri = Some(v),
+            Err(e) => self.error = Some(e),
+        }
+
+        self
+    }
+
+    /// TODO: Get rid of this once Infallible is an Error.
+    pub fn uri2(mut self, uri: Uri) -> Self {
         self.uri = Some(uri);
         self
     }

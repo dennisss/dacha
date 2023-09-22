@@ -1,5 +1,7 @@
 use std::vec::Vec;
 
+use common::errors::*;
+
 use crate::tls::extensions::*;
 
 pub fn find_supported_versions_sh(
@@ -66,14 +68,23 @@ pub fn find_signature_algorithms(extensions: &[Extension]) -> Option<&SignatureS
     None
 }
 
-pub fn find_server_name(extensions: &[Extension]) -> Option<&ServerNameList> {
+pub fn find_server_name_from_client(extensions: &[Extension]) -> Result<Option<&ServerNameList>> {
     for e in extensions {
         if let Extension::ServerName(v) = e {
-            return Some(v);
+            let v = match v {
+                Some(v) => v,
+                None => {
+                    return Err(err_msg(
+                        "Empty server_name only allowed to be sent from servers",
+                    ));
+                }
+            };
+
+            return Ok(Some(v));
         }
     }
 
-    None
+    Ok(None)
 }
 
 pub fn find_alpn_extension(extensions: &[Extension]) -> Option<&ProtocolNameList> {

@@ -3,6 +3,24 @@
 version = 3
 
 [[package]]
+name = "acme"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "crypto",
+ "crypto_jwt",
+ "executor",
+ "file",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "pkix",
+ "reflection",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -725,11 +743,13 @@ dependencies = [
 name = "crypto_jwt"
 version = "0.1.0"
 dependencies = [
+ "asn",
  "base_radix",
  "common",
  "crypto",
  "json",
  "macros",
+ "pkix",
 ]
 
 [[package]]
@@ -1214,6 +1234,39 @@ dependencies = [
  "parsing",
  "reflection",
  "rpc",
+]
+
+[[package]]
+name = "google_discovery"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "reflection",
+]
+
+[[package]]
+name = "google_dns"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "google_auth",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "reflection",
 ]
 
 [[package]]
@@ -2945,6 +2998,8 @@ dependencies = [
  "common",
  "crypto",
  "executor",
+ "file",
+ "http",
  "macros",
  "regexp_macros",
  "uuid",

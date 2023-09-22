@@ -227,12 +227,12 @@ impl ClientHello {
 
         // TODO: Can we send this later as an encrypted header.
         if !options.hostname.is_empty() {
-            extensions.push(Extension::ServerName(ServerNameList {
+            extensions.push(Extension::ServerName(Some(ServerNameList {
                 names: vec![ServerName {
                     typ: NameType::host_name,
                     data: Bytes::from(options.hostname.as_bytes()), // TODO: Must be ASCII
                 }],
-            }));
+            })));
         }
 
         /*

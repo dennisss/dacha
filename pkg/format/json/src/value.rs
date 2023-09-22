@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use common::errors::*;
 use reflection::{ListSerializer, ObjectSerializer};
 
+use crate::{ParsingEvent, StreamingParser};
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Object(HashMap<String, Value>),
@@ -14,6 +16,46 @@ pub enum Value {
 }
 
 impl Value {
+    pub(crate) fn parse_from(input: &mut StreamingParser) -> Result<Result<Self, ParsingEvent>> {
+        Ok(match input.next()?.unwrap() {
+            ParsingEvent::ObjectStart => {
+                let mut out = HashMap::new();
+
+                loop {
+                    let key = match input.next()?.unwrap() {
+                        ParsingEvent::String(v) => v,
+                        ParsingEvent::ObjectEnd => break,
+                        _ => todo!(),
+                    };
+
+                    let value = Self::parse_from(input)?.map_err(|_| ()).unwrap();
+
+                    out.insert(key, value);
+                }
+
+                Ok(Self::Object(out))
+            }
+            ParsingEvent::ArrayStart => {
+                let mut out = vec![];
+
+                loop {
+                    match Self::parse_from(input)? {
+                        Ok(v) => out.push(v),
+                        Err(ParsingEvent::ArrayEnd) => break,
+                        Err(_) => todo!(),
+                    }
+                }
+
+                Ok(Self::Array(out))
+            }
+            event @ ParsingEvent::ObjectEnd | event @ ParsingEvent::ArrayEnd => Err(event),
+            ParsingEvent::String(v) => Ok(Self::String(v)),
+            ParsingEvent::Number(v) => Ok(Self::Number(v)),
+            ParsingEvent::Bool(v) => Ok(Self::Bool(v)),
+            ParsingEvent::Null => Ok(Self::Null),
+        })
+    }
+
     pub fn get_field(&self, name: &str) -> Option<&Value> {
         match self {
             Self::Object(v) => v.get(name),
@@ -28,10 +70,10 @@ impl Value {
         }
     }
 
-    pub fn set_field(&mut self, name: &str, value: Value) {
+    pub fn set_field<V: Into<Value>>(&mut self, name: &str, value: V) {
         match self {
             Self::Object(v) => {
-                v.insert(name.to_string(), value);
+                v.insert(name.to_string(), value.into());
             }
             _ => panic!(),
         }
@@ -77,6 +119,24 @@ impl Value {
             Self::Number(v) => Some(*v),
             _ => None,
         }
+    }
+}
+
+impl From<&str> for Value {
+    fn from(value: &str) -> Self {
+        Self::String(value.into())
+    }
+}
+
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
     }
 }
 

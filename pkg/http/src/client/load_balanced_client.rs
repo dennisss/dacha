@@ -57,14 +57,8 @@ We will retry this whenever:
 NOTE: A big assumption with the LoadBalancedClient is that all endpoints are equivalent in terms of proximity. You'll need more than this if you want to load balance across many regions.
 */
 
-/*
-Sometimes we want to replicate the connections
-*/
-
 #[derive(Clone)]
 pub struct LoadBalancedClientOptions {
-    pub resolver: Arc<dyn Resolver>,
-
     pub resolver_backoff: ExponentialBackoffOptions,
 
     /// Target number of distinct backends to have connected.
@@ -90,6 +84,57 @@ pub struct LoadBalancedClientOptions {
     pub backend: DirectClientOptions,
 }
 
+impl Default for LoadBalancedClientOptions {
+    fn default() -> Self {
+        LoadBalancedClientOptions {
+            backend: DirectClientOptions {
+                tls: None,
+                force_http2: false,
+                upgrade_plaintext_http2: false,
+                connection_backoff: ExponentialBackoffOptions {
+                    base_duration: Duration::from_millis(100),
+                    jitter_duration: Duration::from_millis(200),
+                    max_duration: Duration::from_secs(20),
+                    cooldown_duration: Duration::from_secs(60),
+                    max_num_attempts: 0,
+                },
+                connect_timeout: Duration::from_millis(1000),
+                idle_timeout: Duration::from_secs(5 * 60), // 5 minutes.
+                /// MUST be <= v2::ConnectionOptions::max_enqueued_requests
+                max_outstanding_requests: 100,
+                max_num_connections: 10,
+                http1_max_requests_per_connection: 1,
+                remote_shutdown_is_failure: false,
+                eagerly_connect: true,
+            },
+            resolver_backoff: ExponentialBackoffOptions {
+                base_duration: Duration::from_millis(100),
+                jitter_duration: Duration::from_millis(200),
+                max_duration: Duration::from_secs(20),
+                cooldown_duration: Duration::from_secs(60),
+                max_num_attempts: 0,
+            },
+            subset_size: 10,
+            max_backend_count: 14,
+            healthy_backend_threshold: 0.8,
+            target_parallelism: 0,
+        }
+    }
+}
+
+impl LoadBalancedClientOptions {
+    pub fn default_for_dns() -> Self {
+        let mut options = Self::default();
+
+        // Normally DNS exposes load balancer IPs instead of raw server ips so not worth
+        // having a lot of connections.
+        options.subset_size = 1;
+        options.max_backend_count = 10;
+
+        options
+    }
+}
+
 #[derive(Clone)]
 pub struct LoadBalancedClient {
     shared: Arc<Shared>,
@@ -97,6 +142,7 @@ pub struct LoadBalancedClient {
 
 struct Shared {
     client_id: u64,
+    resolver: Arc<dyn Resolver>,
 
     options: LoadBalancedClientOptions,
     state: Condvar<State>,
@@ -171,12 +217,17 @@ impl Backend {
 }
 
 impl LoadBalancedClient {
-    pub fn new(client_id: u64, options: LoadBalancedClientOptions) -> Self {
+    pub fn new(
+        client_id: u64,
+        resolver: Arc<dyn Resolver>,
+        options: LoadBalancedClientOptions,
+    ) -> Self {
         let (event_sender, event_receiver) = channel::unbounded();
 
         Self {
             shared: Arc::new(Shared {
                 client_id,
+                resolver,
                 options,
                 state: Condvar::new(State {
                     backends: HashMap::new(),
@@ -207,7 +258,6 @@ impl LoadBalancedClient {
         {
             let sender = self.shared.event_sender.clone();
             self.shared
-                .options
                 .resolver
                 .add_change_listener(Box::new(move || {
                     match sender.try_send(Event::ResolverChange) {
@@ -274,7 +324,7 @@ impl LoadBalancedClient {
                 }
 
                 // TODO: Have a timeout on how long this is allowed to run for.
-                resolved_result = Some(self.shared.options.resolver.resolve().await);
+                resolved_result = Some(self.shared.resolver.resolve().await);
             }
 
             let mut state = self.shared.state.lock().await;

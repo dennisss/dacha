@@ -4,7 +4,7 @@ use pkix::{
     PKIX1Algorithms2008, PKIX1Explicit88, PKIX1_PSS_OAEP_Algorithms, Safecurves_pkix_18, PKCS_1,
 };
 
-use crate::elliptic::EllipticCurveGroup;
+use crate::elliptic::{EllipticCurveGroup, EllipticCurveSignatureFormat};
 
 /// Helper for representing the shared parameters between a public/private key.
 pub enum SignatureKeyParameters {
@@ -23,6 +23,9 @@ pub enum SignatureKeyParameters {
 pub struct SignatureKeyConstraints {
     /// When using an ECDSA key, this must be the group that it is using.
     pub ecdsa_group: Option<EllipticCurveGroup>,
+
+    /// If not specified, the X509 format will be used by default.
+    pub ecdsa_signature_format: Option<EllipticCurveSignatureFormat>,
 
     pub key_oid: Option<ObjectIdentifier>,
 }

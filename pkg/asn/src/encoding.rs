@@ -1435,7 +1435,8 @@ impl<T: DERWriteable> PartialEq<T> for Any {
 #[macro_export]
 macro_rules! asn_any {
     ($e:expr) => {{
-        Any::from(::common::bytes::Bytes::from($e.to_der())).unwrap()
+        use $crate::encoding::DERWriteable;
+        $crate::encoding::Any::from(::common::bytes::Bytes::from($e.to_der())).unwrap()
     }};
 }
 

@@ -478,6 +478,11 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
                     self.summary.selected_alpn_protocol = Some(protocols.names[0].clone());
                 }
+                Extension::ServerName(v) => {
+                    if v.is_some() {
+                        return Err(err_msg("Server should not return a non-empty server_name"));
+                    }
+                }
                 _ => {}
             }
         }

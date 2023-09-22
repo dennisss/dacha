@@ -2,13 +2,14 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use asn::encoding::{DERReadable, DERWriteable};
+use common::ceil_div;
 use common::errors::*;
 use math::big::*;
 use math::Integer;
 
 use crate::dh::DiffieHellmanFn;
 use crate::hasher::Hasher;
-use crate::random::secure_random_range;
+use crate::random::SharedRng;
 
 /// Parameters of an elliptic curve of the form:
 /// y^2 = x^3 + a*x + b
@@ -61,6 +62,94 @@ fn swap_bools_if(a: &mut bool, b: &mut bool, should_swap: bool) {
     *b ^= filter;
 }
 
+/// Format used for encoding/decoding ECDSA signatures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EllipticCurveSignatureFormat {
+    /// The signature parameters are packed into a variable length DER encoded
+    /// PKIX1Algorithms2008::ECDSA_Sig_Value struct.
+    ///
+    /// (used in X509 certificates / TLS)
+    X509,
+
+    /// The signature parameters 'r' and 's' are concatened into a fixed length
+    /// string 'r | s' by interpreting each integer as big endian.
+    ///
+    /// (used in JOSE algorithms, DNSSEC)
+    Concatenated,
+}
+
+/// Integers in this struct are assumed to be in the range [1, n).
+#[derive(PartialEq, Debug, Clone)]
+pub struct EllipticCurveSignature {
+    pub r: SecureBigUint,
+    pub s: SecureBigUint,
+}
+
+impl EllipticCurveSignature {
+    pub fn encode(&self, format: EllipticCurveSignatureFormat) -> Vec<u8> {
+        match format {
+            EllipticCurveSignatureFormat::X509 => {
+                let sig = pkix::PKIX1Algorithms2008::ECDSA_Sig_Value {
+                    r: BigUint::from_le_bytes(&self.r.to_le_bytes()).into(),
+                    s: BigUint::from_le_bytes(&self.s.to_le_bytes()).into(),
+                };
+
+                sig.to_der()
+            }
+            EllipticCurveSignatureFormat::Concatenated => {
+                let mut out = vec![];
+                out.extend_from_slice(&self.r.to_be_bytes());
+                out.extend_from_slice(&self.s.to_be_bytes());
+                out
+            }
+        }
+    }
+
+    pub fn decode(
+        signature: &[u8],
+        format: EllipticCurveSignatureFormat,
+        group: &EllipticCurveGroup,
+    ) -> Result<Self> {
+        let (r, s) = match format {
+            EllipticCurveSignatureFormat::X509 => {
+                // TODO: We should allow passing in an Into<Bytes> to avoid cloning the
+                // data here.
+                let parsed =
+                    pkix::PKIX1Algorithms2008::ECDSA_Sig_Value::from_der(signature.into())?;
+
+                let mut r = SecureBigUint::from_le_bytes(&parsed.r.to_uint()?.to_le_bytes());
+                let mut s = SecureBigUint::from_le_bytes(&parsed.s.to_uint()?.to_le_bytes());
+
+                // NOTE: ASN.1 integers are stored using a minimum number of bytes.
+                // This should not panic as we already verified that the numbers aren't larger
+                // than the modulus.
+                r.extend(group.n.bit_width());
+                s.extend(group.n.bit_width());
+
+                (r, s)
+            }
+            EllipticCurveSignatureFormat::Concatenated => {
+                let int_size = ceil_div(group.n.bit_width(), 8);
+                if signature.len() != 2 * int_size {
+                    return Err(err_msg("Signature is the wrong length"));
+                }
+
+                let r = SecureBigUint::from_be_bytes(&signature[0..int_size]);
+                let s = SecureBigUint::from_be_bytes(&signature[int_size..]);
+                (r, s)
+            }
+        };
+
+        // Both must be in the range [1, n).
+        let one = SecureBigUint::from_usize(1, 32);
+        if r < one || r >= group.n || s < one || s >= group.n {
+            return Err(err_msg("Signature out of range"));
+        }
+
+        Ok(Self { r, s })
+    }
+}
+
 /// Parameters for a group of points on an elliptic curve definited over a
 /// finite field of integers.
 ///
@@ -92,11 +181,7 @@ impl DiffieHellmanFn for EllipticCurveGroup {
     /// Generates a secret value.
     async fn secret_value(&self) -> Result<Vec<u8>> {
         assert!(self.k == 1);
-        let two = SecureBigUint::from_usize(2, 32);
-        let n = secure_random_range(&two, &self.n).await?;
-
-        // NOTE: The length is bound by 'n', not 'p'.
-        Ok(n.to_be_bytes())
+        Ok(self.generate_private_key().await)
     }
 
     fn public_value(&self, secret: &[u8]) -> Result<Vec<u8>> {
@@ -166,20 +251,49 @@ impl EllipticCurveGroup {
         }
     }
 
+    /// Generates a new random private key.
+    /// (scalar multiplier in the random [1, n-1]).
+    ///
+    /// The 'official' guidance on how to do this is in
+    /// https://nvlpubs.nist.gov/nistpubs/SpecialPublications/nist.sp.800-56Ar3.pdf
+    ///
+    /// We implement this using the 5.6.1.2.1 section (extra random bits)
+    /// method.
+    pub async fn generate_private_key(&self) -> Vec<u8> {
+        let l = ceil_div(self.n.bit_width() + 64, 8);
+
+        let mut c_raw = vec![0u8; l];
+        crate::random::global_rng().generate_bytes(&mut c_raw).await;
+
+        let c = SecureBigUint::from_le_bytes(&c_raw);
+
+        let one = SecureBigUint::from_usize(1, 32);
+        let n_minus_1 = &self.n - &one;
+
+        let mut x = (c % &n_minus_1) + &one;
+        x.truncate(self.n.bit_width());
+
+        // Must be the opposite encoding as decode_scalar()
+        x.to_be_bytes()
+    }
+
     /// See https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm.
     pub async fn create_signature(
         &self,
         private_key: &[u8],
         data: &[u8],
+        signature_format: EllipticCurveSignatureFormat,
         hasher: &mut dyn Hasher,
     ) -> Result<Vec<u8>> {
         let digest = hasher.finish_with(data);
 
-        let two = SecureBigUint::from_usize(2, 32);
+        // TODO: Maybe switch to using a deterministic randomness as in https://www.rfc-editor.org/rfc/rfc6979.html
 
         for _ in 0..4 {
-            let k = secure_random_range(&two, &self.n).await?;
-            if let Some(val) = self.create_signature_with(private_key, &digest, &k)? {
+            let k = self.decode_scalar(&self.generate_private_key().await)?;
+            if let Some(val) =
+                self.create_signature_with(private_key, &digest, signature_format, &k)?
+            {
                 return Ok(val);
             }
         }
@@ -191,6 +305,7 @@ impl EllipticCurveGroup {
         &self,
         private_key: &[u8],
         digest: &[u8],
+        signature_format: EllipticCurveSignatureFormat,
         random: &SecureBigUint,
     ) -> Result<Option<Vec<u8>>> {
         let mut d_a = self.decode_scalar(private_key)?;
@@ -252,12 +367,8 @@ impl EllipticCurveGroup {
             return Ok(None);
         }
 
-        let sig = pkix::PKIX1Algorithms2008::ECDSA_Sig_Value {
-            r: BigUint::from_le_bytes(&r.to_le_bytes()).into(),
-            s: BigUint::from_le_bytes(&s.to_le_bytes()).into(),
-        };
-
-        Ok(Some(sig.to_der()))
+        let sig = EllipticCurveSignature { r, s }.encode(signature_format);
+        Ok(Some(sig))
     }
 
     // ECDSA
@@ -265,12 +376,13 @@ impl EllipticCurveGroup {
         &self,
         public_key: &[u8],
         signature: &[u8],
+        signature_format: EllipticCurveSignatureFormat,
         data: &[u8],
         hasher: &mut dyn Hasher,
     ) -> Result<bool> {
         hasher.update(data);
         let digest = hasher.finish();
-        self.verify_digest_signature(public_key, signature, &digest)
+        self.verify_digest_signature(public_key, signature, signature_format, &digest)
     }
 
     /// TODO: Consider offering a non-constant time version of there when it is
@@ -279,29 +391,14 @@ impl EllipticCurveGroup {
         &self,
         public_key: &[u8],
         signature: &[u8],
+        signature_format: EllipticCurveSignatureFormat,
         digest: &[u8],
     ) -> Result<bool> {
         // TODO: We should allow passing in an Into<Bytes> to avoid cloning the
         // data here.
         let (r, s) = {
-            let parsed = pkix::PKIX1Algorithms2008::ECDSA_Sig_Value::from_der(signature.into())?;
-
-            let mut r = SecureBigUint::from_le_bytes(&parsed.r.to_uint()?.to_le_bytes());
-            let mut s = SecureBigUint::from_le_bytes(&parsed.s.to_uint()?.to_le_bytes());
-
-            // Both be in the range [1, n).
-            let one = SecureBigUint::from_usize(1, 32);
-            if r < one || r >= self.n || s < one || s >= self.n {
-                return Err(err_msg("Signature out of range"));
-            }
-
-            // NOTE: ASN.1 integers are stored using a minimum number of bytes.
-            // This should not panic as we already verified that the numbers aren't larger
-            // than the modulus.
-            r.extend(self.n.bit_width());
-            s.extend(self.n.bit_width());
-
-            (r, s)
+            let sig = EllipticCurveSignature::decode(signature, signature_format, self)?;
+            (sig.r, sig.s)
         };
 
         /// Length of 'z' in bits (same as 'n').
@@ -391,7 +488,9 @@ impl EllipticCurveGroup {
         Ok(v)
     }
 
-    fn decode_point(&self, data: &[u8]) -> Result<EllipticCurvePoint> {
+    // TODO: Currently only needed for the JWK implementation. Consider making
+    // private again.
+    pub fn decode_point(&self, data: &[u8]) -> Result<EllipticCurvePoint> {
         if data.len() <= 1 {
             return Err(err_msg("Point too small"));
         }
