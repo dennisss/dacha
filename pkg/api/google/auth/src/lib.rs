@@ -8,8 +8,10 @@ mod constants;
 mod jwt;
 mod oauth;
 mod provider;
+mod rest;
 mod service_account;
 
 pub use crate::jwt::*;
 pub use crate::oauth::*;
+pub use crate::rest::*;
 pub use crate::service_account::*;

@@ -837,12 +837,6 @@ impl DescriptorPool {
                 };
 
                 if name_part.is_extension() {
-                    println!(
-                        "Find {} {}",
-                        name_part.name_part(),
-                        state.types.contains_key(name_part.name_part())
-                    );
-
                     let extension_desc = self
                         .find_relative_type_inner(scope, name_part.name_part(), state)
                         .ok_or_else(|| format_err!("Failed to find extension type: {:?}", opt))?

@@ -1,0 +1,22 @@
+[package]
+name = "acme"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+asn = { path = "../../asn" }
+base_radix = { path = "../../base/radix" }
+common = { path = "../../common" }
+http = { path = "../../http" }
+json = { path = "../../format/json" }
+net = { path = "../../net" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+reflection = { path = "../../reflection" }
+executor = { path = "../../executor" }
+crypto = { path = "../../crypto" }
+crypto_jwt = { path = "../../crypto/jwt" }
+file = { path = "../../file" }
+pkix = { path = "../../../third_party/pkix" }
+google_dns = { path = "../../api/google/dns" }
+google_auth = { path = "../../api/google/auth" }

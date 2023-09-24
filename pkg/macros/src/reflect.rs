@@ -223,6 +223,8 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
                 let field_ident = field.ident.clone().unwrap();
                 let mut field_name = field_ident.to_string();
 
+                let mut is_sparse = false;
+
                 let options = get_options(PARSE_ATTR_NAME, &field.attrs);
                 for (key, value) in options {
                     if key.is_ident("name") {
@@ -230,6 +232,16 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
                         field_name = match &v {
                             Lit::Str(s) => s.value().to_string(),
                             _ => panic!("Bad name format"),
+                        };
+
+                        continue;
+                    }
+
+                    if key.is_ident("sparse") {
+                        let v = value.unwrap();
+                        is_sparse = match &v {
+                            Lit::Bool(v) => v.value(),
+                            _ => panic!("Bad sparse format"),
                         };
                     }
                 }
@@ -247,13 +259,29 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
                         }
 
                         #field_value = Some(
-                            <#field_ty as ::reflection::ParseFrom<'a>>::parse_from(value)?
+                            <#field_ty as ::reflection::ParseFrom<'data>>::parse_from(value)?
                         );
                     }
                 });
 
+                if is_sparse {
+                    parse_fields.push(quote! {
+                        #field_ident: #field_value.unwrap_or_else(|| <#field_ty as Default>::default())
+                    });
+
+                    serialize_fields.push(quote! {
+                        if !<#field_ty as ::reflection::SerializeTo>::serialize_sparse_as_empty_value(&self.#field_ident) {
+                            ::reflection::ObjectSerializer::serialize_field(&mut obj, #field_name, &self.#field_ident)?;
+                        }
+                    });
+
+                    continue;
+                }
+
+                // TODO: Inject the absolute field path into this function.
                 parse_fields.push(quote! {
-                    #field_ident: #field_value.ok_or_else(|| err_msg("Missing field"))?
+                    #field_ident: <#field_ty as ::reflection::ParseFromValue<'data>>::unwrap_parsed_result(
+                        #field_name, #field_value)?
                 });
 
                 serialize_fields.push(quote! {
@@ -267,18 +295,17 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
     // TODO: Is the order of execution defined for which fields will be parsed
     // first.
     let out = quote! {
-        impl<'a> ::reflection::ParseFrom<'a> for #name {
-            fn parse_from<Input: ::reflection::ValueParser<'a>>(input: Input) -> Result<Self> {
-                let mut obj = input.parse()?.into_object()?;
-
+        impl<'data> ::reflection::ParseFromValue<'data> for #name {
+            fn parse_from_object<Input: ::reflection::ObjectIterator<'data>>(mut input: Input) -> Result<Self> {
                 #(#parse_values)*
 
-                while let Some((key, value)) = ::reflection::ObjectParser::next_field(&mut obj)? {
-                    match key.as_ref() {
+                while let Some((key, value)) = ::reflection::ObjectIterator::next_field(&mut input)? {
+                    let key: &str = key.as_ref();
+                    match key {
                         #(#parse_branch,)*
                         _ => {
                             if !#allow_unknown {
-                                return Err(format_err!("Unknown field: {}", key.as_ref()));
+                                return Err(format_err!("Unknown field: {}", key));
                             }
                         }
                     }

@@ -46,6 +46,12 @@ impl AsciiString {
     }
 }
 
+impl Into<Bytes> for AsciiString {
+    fn into(self) -> Bytes {
+        self.data
+    }
+}
+
 pub trait ToAsciiString {
     fn to_ascii_string(self) -> Result<AsciiString>;
 }

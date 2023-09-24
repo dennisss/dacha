@@ -171,18 +171,18 @@ impl TrackerRequest {
     pub fn to_query_string(&self) -> AsciiString {
         let mut qs = QueryParamsBuilder::new();
 
-        qs = qs.add(b"info_hash", self.info_hash.as_ref());
-        qs = qs.add(b"peer_id", self.peer_id.as_ref());
+        qs.add(b"info_hash", self.info_hash.as_ref());
+        qs.add(b"peer_id", self.peer_id.as_ref());
 
         if let Some(ip) = &self.ip {
-            qs = qs.add(b"ip", ip.as_bytes());
+            qs.add(b"ip", ip.as_bytes());
         }
 
-        qs = qs.add(b"port", self.port.to_string().as_bytes());
-        qs = qs.add(b"uploaded", self.uploaded.to_string().as_bytes());
-        qs = qs.add(b"downloaded", self.downloaded.to_string().as_bytes());
-        qs = qs.add(b"left", self.left.to_string().as_bytes());
-        qs = qs.add(b"event", self.event.as_bytes());
+        qs.add(b"port", self.port.to_string().as_bytes());
+        qs.add(b"uploaded", self.uploaded.to_string().as_bytes());
+        qs.add(b"downloaded", self.downloaded.to_string().as_bytes());
+        qs.add(b"left", self.left.to_string().as_bytes());
+        qs.add(b"event", self.event.as_bytes());
 
         qs.build()
     }

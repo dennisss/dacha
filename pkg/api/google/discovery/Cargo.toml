@@ -1,19 +1,18 @@
 [package]
-name = "google_auth"
+name = "google_discovery"
 version = "0.0.0"
 edition = "2018"
 
 [dependencies]
+base_radix = { path = "../../../base/radix" }
 common = { path = "../../../common" }
 http = { path = "../../../http" }
 json = { path = "../../../format/json" }
 net = { path = "../../../net" }
 parsing = { path = "../../../parsing" }
 macros = { path = "../../../macros" }
-crypto = { path = "../../../crypto" }
-crypto_jwt = { path = "../../../crypto/jwt" }
-file = { path = "../../../file" }
+automata = { path = "../../../automata" }
+regexp_macros = { path = "../../../automata/regexp_macros" }
 reflection = { path = "../../../reflection" }
 executor = { path = "../../../executor" }
-rpc = { path = "../../../rpc" }
-googleapis_proto = { path = "../../../../third_party/googleapis" }
+file = { path = "../../../file" }

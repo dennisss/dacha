@@ -119,6 +119,7 @@ members = [
 	"pkg/rpi/streamer",
 	"pkg/media/video",
 	"pkg/api/google/discovery",
+	"pkg/api/google/discovery/generated",
 	"pkg/api/google/auth",
 	"pkg/api/google/spanner",
 	"pkg/api/google/dns",

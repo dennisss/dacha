@@ -2,10 +2,43 @@ use std::collections::HashMap;
 
 use common::errors::*;
 
-pub trait ParseFrom<'a> {
-    fn parse_from<Input: ValueParser<'a>>(input: Input) -> Result<Self>
+pub trait ParseFrom<'data> {
+    fn parse_from<Input: ValueReader<'data>>(input: Input) -> Result<Self>
     where
         Self: Sized;
+}
+
+impl<'data, T: ParseFromValue<'data> + Sized> ParseFrom<'data> for T {
+    fn parse_from<Input: ValueReader<'data>>(input: Input) -> Result<Self> {
+        input.parse()
+    }
+}
+
+pub trait ParseFromValue<'data> {
+    fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Err(err_msg("Can't be parsed from a primitive value."))
+    }
+
+    fn parse_from_object<Input: ObjectIterator<'data>>(input: Input) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Err(err_msg("Can't be parsed from an object."))
+    }
+
+    fn parse_from_list<Input: ListIterator<'data>>(input: Input) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Err(err_msg("Can't be parsed from a list."))
+    }
+
+    fn parsing_hint() -> Option<ParsingTypeHint> {
+        None
+    }
 
     fn unwrap_parsed_result(name: &str, value: Option<Self>) -> Result<Self>
     where
@@ -18,30 +51,14 @@ pub trait ParseFrom<'a> {
     }
 }
 
-// pub trait ParserTypes {
-//     type ValueParserType;
-//     type ObjectParserType;
-//     type ListParserType;
-// }
-
-/// TODO: All parsers should check that all bytes are consumed?
-pub trait ValueParser<'a> {
-    type ObjectParserType: ObjectParser<'a>;
-    type ListParserType: ListParser<'a>;
-
-    // /// Returns whether or not there are any remaining readable values in this
-    // /// input stream.
-    // fn is_empty(&self) -> bool;
-
-    /// Reads a single value from the underlying stream and advances forward the
-    /// stream by one position.
-    ///
-    /// TODO: We want to support a value 'hint'
-    /// - For objects, may need to support a 'name'
-    fn parse(self) -> Result<Value<'a, Self::ObjectParserType, Self::ListParserType>>;
+/// Input source of a single list|object|primitive value.
+pub trait ValueReader<'data> {
+    /// Reads the single value in the underlying stream as type T.
+    /// Will consume all the remaining input data in the underylying stream.
+    fn parse<T: ParseFromValue<'data>>(self) -> Result<T>;
 }
 
-pub enum PrimitiveValue<'a> {
+pub enum PrimitiveValue<'data> {
     Null,
     Bool(bool),
     I8(i8),
@@ -56,123 +73,132 @@ pub enum PrimitiveValue<'a> {
     USize(usize),
     F32(f32),
     F64(f64),
-    Str(&'a str),
+    Str(&'data str),
     String(String),
 }
 
-pub enum Value<'a, ObjectParserType, ListParserType> {
-    Primitive(PrimitiveValue<'a>),
-    Object(ObjectParserType),
-    List(ListParserType),
+pub enum ParsingTypeHint {
+    // Primitives
+    Null,
+    Bool,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    ISize,
+    USize,
+    F32,
+    F64,
+    String,
+
+    // Higher level
+    Object,
+    List,
 }
 
-impl<'a, ObjectParserType, ListParserType> Value<'a, ObjectParserType, ListParserType> {
-    pub fn into_object(self) -> Result<ObjectParserType> {
-        match self {
-            Value::Object(v) => Ok(v),
-            _ => Err(err_msg("Not an object")),
-        }
-    }
+pub trait ObjectIterator<'data> {
+    type ValueReaderType: ValueReader<'data>;
+
+    fn next_field(&mut self) -> Result<Option<(String, Self::ValueReaderType)>>;
 }
 
-impl<'a, ObjectParserType: ObjectParser<'a>, ListParserType: ListParser<'a>> ValueParser<'a>
-    for Value<'a, ObjectParserType, ListParserType>
-{
-    type ObjectParserType = ObjectParserType;
-    type ListParserType = ListParserType;
+pub trait ListIterator<'data> {
+    type ValueReaderType: ValueReader<'data>;
 
-    fn parse(self) -> Result<Value<'a, Self::ObjectParserType, Self::ListParserType>> {
-        Ok(self)
-    }
+    fn next(&mut self) -> Result<Option<Self::ValueReaderType>>;
 }
 
-pub trait ObjectParser<'a> {
-    type Key: AsRef<str> + 'a;
-    type ValueParserType<'b>: ValueParser<'a> + 'b
-    where
-        Self: 'b;
+///////////////////////////////////////////////////////////////////////////////
 
-    // TODO: Issue here is that we need to disallow calling this many times in a row
-    // while holding a reference to the old value.
-    fn next_field<'b>(&'b mut self) -> Result<Option<(Self::Key, Self::ValueParserType<'b>)>>;
-}
-
-pub trait ListParser<'a> {
-    type ValueParserType<'c>: ValueParser<'a>
-    where
-        Self: 'c;
-
-    fn next<'c>(&'c mut self) -> Result<Option<Self::ValueParserType<'c>>>;
-}
+impl<'data> ParseFromValue<'data> for () {}
 
 macro_rules! impl_numeric_parse_from {
-    ($t:ty) => {
-        impl<'a> ParseFrom<'a> for $t {
-            fn parse_from<Input: ValueParser<'a>>(input: Input) -> Result<Self> {
-                Ok(match input.parse()? {
-                    Value::Primitive(v) => match v {
-                        PrimitiveValue::I8(v) => v as $t,
-                        PrimitiveValue::U8(v) => v as $t,
-                        PrimitiveValue::I16(v) => v as $t,
-                        PrimitiveValue::U16(v) => v as $t,
-                        PrimitiveValue::I32(v) => v as $t,
-                        PrimitiveValue::U32(v) => v as $t,
-                        PrimitiveValue::I64(v) => v as $t,
-                        PrimitiveValue::U64(v) => v as $t,
-                        PrimitiveValue::ISize(v) => v as $t,
-                        PrimitiveValue::USize(v) => v as $t,
-                        PrimitiveValue::F32(v) => v as $t,
-                        PrimitiveValue::F64(v) => v as $t,
-                        PrimitiveValue::Null
-                        | PrimitiveValue::Bool(_)
-                        | PrimitiveValue::Str(_)
-                        | PrimitiveValue::String(_) => {
-                            return Err(err_msg("Type mismatch"));
-                        }
-                    },
-                    Value::Object(_) | Value::List(_) => {
-                        return Err(err_msg("Expected primitive value"));
+    ($t:ty, $case:ident) => {
+        impl<'data> ParseFromValue<'data> for $t {
+            fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self> {
+                Ok(match value {
+                    PrimitiveValue::I8(v) => v as $t,
+                    PrimitiveValue::U8(v) => v as $t,
+                    PrimitiveValue::I16(v) => v as $t,
+                    PrimitiveValue::U16(v) => v as $t,
+                    PrimitiveValue::I32(v) => v as $t,
+                    PrimitiveValue::U32(v) => v as $t,
+                    PrimitiveValue::I64(v) => v as $t,
+                    PrimitiveValue::U64(v) => v as $t,
+                    PrimitiveValue::ISize(v) => v as $t,
+                    PrimitiveValue::USize(v) => v as $t,
+                    PrimitiveValue::F32(v) => v as $t,
+                    PrimitiveValue::F64(v) => v as $t,
+                    PrimitiveValue::Null
+                    | PrimitiveValue::Bool(_)
+                    | PrimitiveValue::Str(_)
+                    | PrimitiveValue::String(_) => {
+                        return Err(err_msg("Type mismatch"));
                     }
                 })
+            }
+
+            fn parsing_hint() -> Option<ParsingTypeHint> {
+                Some(ParsingTypeHint::$case)
             }
         }
     };
 }
 
-impl_numeric_parse_from!(i8);
-impl_numeric_parse_from!(u8);
-impl_numeric_parse_from!(i16);
-impl_numeric_parse_from!(u16);
-impl_numeric_parse_from!(i32);
-impl_numeric_parse_from!(u32);
-impl_numeric_parse_from!(i64);
-impl_numeric_parse_from!(u64);
-impl_numeric_parse_from!(isize);
-impl_numeric_parse_from!(usize);
+impl_numeric_parse_from!(i8, I8);
+impl_numeric_parse_from!(u8, U8);
+impl_numeric_parse_from!(i16, I16);
+impl_numeric_parse_from!(u16, U16);
+impl_numeric_parse_from!(i32, I32);
+impl_numeric_parse_from!(u32, U32);
+impl_numeric_parse_from!(i64, I64);
+impl_numeric_parse_from!(u64, U64);
+impl_numeric_parse_from!(f32, F32);
+impl_numeric_parse_from!(f64, F64);
+impl_numeric_parse_from!(isize, ISize);
+impl_numeric_parse_from!(usize, USize);
 
-impl<'a> ParseFrom<'a> for bool {
-    fn parse_from<Input: ValueParser<'a>>(input: Input) -> Result<Self> {
-        Ok(match input.parse()? {
-            Value::Primitive(PrimitiveValue::Bool(v)) => v,
+impl<'data> ParseFromValue<'data> for bool {
+    fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self> {
+        Ok(match value {
+            PrimitiveValue::Bool(v) => v,
             _ => {
                 return Err(err_msg("Not a bool"));
             }
         })
     }
+
+    fn parsing_hint() -> Option<ParsingTypeHint> {
+        Some(ParsingTypeHint::Bool)
+    }
 }
 
-// TODO: The main issue with this is that we can't use it to implement parser
-// hints.
-impl<'a, T: ParseFrom<'a> + Sized> ParseFrom<'a> for Option<T> {
-    fn parse_from<Input: ValueParser<'a>>(input: Input) -> Result<Self> {
-        let v = input.parse()?;
+// NOTE: This MUST implement all parse_from method.
+impl<'data, T: ParseFromValue<'data> + Sized> ParseFromValue<'data> for Option<T> {
+    fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self> {
         // TODO: Make it a user option to decide if we should tolerate null
-        if let Value::Primitive(PrimitiveValue::Null) = v {
+        if let PrimitiveValue::Null = value {
             return Ok(None);
         }
 
-        let inner = T::parse_from(v)?;
-        Ok(Some(inner))
+        Ok(Some(T::parse_from_primitive(value)?))
+    }
+
+    fn parse_from_object<Input: ObjectIterator<'data>>(input: Input) -> Result<Self> {
+        Ok(Some(T::parse_from_object(input)?))
+    }
+
+    fn parse_from_list<Input: ListIterator<'data>>(input: Input) -> Result<Self> {
+        Ok(Some(T::parse_from_list(input)?))
+    }
+
+    // TODO: Have a special hint for optional values?
+    fn parsing_hint() -> Option<ParsingTypeHint> {
+        T::parsing_hint()
     }
 
     fn unwrap_parsed_result(name: &str, value: Option<Self>) -> Result<Self> {
@@ -180,61 +206,69 @@ impl<'a, T: ParseFrom<'a> + Sized> ParseFrom<'a> for Option<T> {
     }
 }
 
-impl<'a> ParseFrom<'a> for String {
-    fn parse_from<Input: ValueParser<'a>>(input: Input) -> Result<Self> {
-        Ok(match input.parse()? {
-            Value::Primitive(PrimitiveValue::String(s)) => s,
-            Value::Primitive(PrimitiveValue::Str(s)) => s.to_string(),
+impl<'data> ParseFromValue<'data> for String {
+    fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self> {
+        Ok(match value {
+            PrimitiveValue::String(s) => s,
+            PrimitiveValue::Str(s) => s.to_string(),
             _ => {
                 return Err(err_msg("Not a string"));
             }
         })
     }
-}
 
-impl<'a, T: ParseFrom<'a> + Sized> ParseFrom<'a> for Box<T> {
-    fn parse_from<Input: ValueParser<'a>>(input: Input) -> Result<Self> {
-        Ok(Box::new(T::parse_from(input)?))
+    fn parsing_hint() -> Option<ParsingTypeHint> {
+        Some(ParsingTypeHint::String)
     }
 }
 
-impl<'a, T: ParseFrom<'a> + Sized> ParseFrom<'a> for Vec<T> {
-    fn parse_from<Input: ValueParser<'a>>(input: Input) -> Result<Self> {
-        let mut out = vec![];
-        let mut list = match input.parse()? {
-            Value::List(v) => v,
-            _ => {
-                return Err(err_msg("Not a list"));
-            }
-        };
+impl<'data, T: ParseFromValue<'data> + Sized> ParseFromValue<'data> for Box<T> {
+    fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self> {
+        Ok(Box::new(T::parse_from_primitive(value)?))
+    }
 
-        while let Some(i) = list.next()? {
+    fn parse_from_object<Input: ObjectIterator<'data>>(input: Input) -> Result<Self> {
+        Ok(Box::new(T::parse_from_object(input)?))
+    }
+
+    fn parse_from_list<Input: ListIterator<'data>>(input: Input) -> Result<Self> {
+        Ok(Box::new(T::parse_from_list(input)?))
+    }
+
+    fn parsing_hint() -> Option<ParsingTypeHint> {
+        T::parsing_hint()
+    }
+}
+
+impl<'data, T: ParseFromValue<'data> + Sized> ParseFromValue<'data> for Vec<T> {
+    fn parse_from_list<Input: ListIterator<'data>>(mut input: Input) -> Result<Self> {
+        let mut out = vec![];
+
+        while let Some(i) = input.next()? {
             out.push(T::parse_from(i)?);
         }
 
         Ok(out)
     }
+
+    fn parsing_hint() -> Option<ParsingTypeHint> {
+        Some(ParsingTypeHint::List)
+    }
 }
 
-impl<'a, T: ParseFrom<'a> + Sized> ParseFrom<'a> for HashMap<String, T> {
-    fn parse_from<'b, Input: ValueParser<'a>>(input: Input) -> Result<Self> {
-        let mut obj = match input.parse()? {
-            Value::Object(obj) => obj,
-            _ => {
-                return Err(err_msg("Not an object/map"));
-            }
-        };
-
+impl<'data, T: ParseFromValue<'data> + Sized> ParseFromValue<'data> for HashMap<String, T> {
+    fn parse_from_object<Input: ObjectIterator<'data>>(mut input: Input) -> Result<Self> {
         let mut out = HashMap::new();
-        while let Some((key, value)) = obj.next_field()? {
-            if out
-                .insert(key.as_ref().to_string(), T::parse_from(value)?)
-                .is_some()
-            {
+        while let Some((key, value)) = input.next_field()? {
+            if out.insert(key, T::parse_from(value)?).is_some() {
                 return Err(err_msg("Duplicate field in map"));
             }
         }
 
         Ok(out)
+    }
+
+    fn parsing_hint() -> Option<ParsingTypeHint> {
+        Some(ParsingTypeHint::Object)
     }
 }

@@ -10,6 +10,9 @@ regexp_macros = { path = "../automata/regexp_macros" }
 common = { path = "../common" }
 base_radix = { path = "../base/radix" }
 uuid = { path = "../uuid" }
+http = { path = "../http" }
+file = { path = "../file" }
+asn = { path = "../asn" }
 crypto = { path = "../crypto" }
 executor = { path = "../executor" }
 

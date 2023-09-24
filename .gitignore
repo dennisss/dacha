@@ -6,9 +6,9 @@
 /target
 **/*.rs.bk
 
-out
-data
-ext
+/out
+/data
+/ext
 
 node_modules
 .DS_Store

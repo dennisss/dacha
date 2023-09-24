@@ -1,0 +1,21 @@
+[package]
+name = "google_discovery_generated"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+common = { path = "../../../../common" }
+macros = { path = "../../../../macros" }
+http = { path = "../../../../http" }
+reflection = { path = "../../../../reflection" }
+google_auth = { path = "../../auth" }
+
+[build-dependencies]
+google_discovery = { path = ".." }
+file = { path = "../../../../file" }
+macros = { path = "../../../../macros" }
+executor = { path = "../../../../executor" }
+common = { path = "../../../../common" }

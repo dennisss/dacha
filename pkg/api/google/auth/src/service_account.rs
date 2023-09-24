@@ -22,11 +22,18 @@ pub(crate) struct GoogleServiceAccountData {
 }
 
 impl GoogleServiceAccount {
+    /// Attempts to load credentials from the GOOGLE_APPLICATION_CREDENTIALS
+    /// environment variable.
     pub async fn load_from_environment() -> Result<Self> {
-        // TODO: Try to find a file in the GOOGLE_APPLICATION_CREDENTIALS environment
-        // variable.
+        let path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS")?;
+        let data = file::read(path).await?;
+        let s = std::str::from_utf8(&data)?;
 
-        todo!()
+        Ok(Self::parse_json(s)?)
+    }
+
+    pub fn project_id(&self) -> &str {
+        &self.data.project_id
     }
 
     pub fn parse_json(service_account_json: &str) -> Result<Self> {

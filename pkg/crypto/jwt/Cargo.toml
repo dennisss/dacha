@@ -11,3 +11,4 @@ base_radix = { path = "../../base/radix" }
 macros = { path = "../../macros" }
 json = { path = "../../format/json" }
 pkix = { path = "../../../third_party/pkix" }
+math = { path = "../../math" }

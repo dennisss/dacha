@@ -184,6 +184,14 @@ impl BigInt {
     }
 }
 
+impl From<i32> for BigInt {
+    fn from(value: i32) -> Self {
+        Self {
+            value: VecPtr::Dynamic(vec![value as u32]),
+        }
+    }
+}
+
 impl core::convert::From<BigUint> for BigInt {
     fn from(other: BigUint) -> Self {
         // TODO: We should be able to do this even more efficiently without a

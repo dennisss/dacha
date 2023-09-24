@@ -1,0 +1,1 @@
+The error proto definition is grabbed from https://cloud.google.com/apis/design/errors

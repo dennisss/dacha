@@ -6,11 +6,15 @@ version = 3
 name = "acme"
 version = "0.0.0"
 dependencies = [
+ "asn",
+ "base_radix",
  "common",
  "crypto",
  "crypto_jwt",
  "executor",
  "file",
+ "google_auth",
+ "google_dns",
  "http",
  "json",
  "macros",
@@ -749,6 +753,7 @@ dependencies = [
  "crypto",
  "json",
  "macros",
+ "math",
  "pkix",
 ]
 
@@ -1240,6 +1245,7 @@ dependencies = [
 name = "google_discovery"
 version = "0.0.0"
 dependencies = [
+ "automata",
  "base_radix",
  "common",
  "executor",
@@ -1249,6 +1255,21 @@ dependencies = [
  "macros",
  "net",
  "parsing",
+ "reflection",
+ "regexp_macros",
+]
+
+[[package]]
+name = "google_discovery_generated"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "google_auth",
+ "google_discovery",
+ "http",
+ "macros",
  "reflection",
 ]
 
@@ -1261,6 +1282,7 @@ dependencies = [
  "executor",
  "file",
  "google_auth",
+ "google_discovery_generated",
  "http",
  "json",
  "macros",
@@ -1397,6 +1419,7 @@ dependencies = [
  "net",
  "parsing",
  "parsing_compiler",
+ "reflection",
  "regexp_macros",
  "sys",
 ]
@@ -2993,6 +3016,7 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 name = "tools"
 version = "0.1.0"
 dependencies = [
+ "asn",
  "automata",
  "base_radix",
  "common",

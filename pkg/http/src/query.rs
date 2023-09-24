@@ -26,7 +26,7 @@ impl QueryParamsBuilder {
         Self { out: String::new() }
     }
 
-    pub fn add(mut self, key: &[u8], value: &[u8]) -> Self {
+    pub fn add(&mut self, key: &[u8], value: &[u8]) -> &mut Self {
         self.out.reserve(key.len() + value.len() + 2);
         if !self.out.is_empty() {
             self.out.push('&');
@@ -56,6 +56,112 @@ impl QueryParamsBuilder {
 
     pub fn build(self) -> AsciiString {
         AsciiString::from(self.out).unwrap()
+    }
+}
+
+impl<'a> reflection::ValueSerializer for &'a mut QueryParamsBuilder {
+    type ObjectSerializerType = Self;
+    type ListSerializerType = Self;
+
+    fn serialize_primitive(self, value: reflection::PrimitiveValue) -> Result<()> {
+        Err(err_msg("Must serialize query values in an object"))
+    }
+
+    fn serialize_object(self) -> Self::ObjectSerializerType {
+        self
+    }
+
+    fn serialize_list(self) -> Self::ListSerializerType {
+        self
+    }
+}
+
+impl<'a> reflection::ObjectSerializer for &'a mut QueryParamsBuilder {
+    fn serialize_field<Value: reflection::SerializeTo>(
+        &mut self,
+        name: &str,
+        value: &Value,
+    ) -> Result<()> {
+        if value.serialize_as_empty_value() {
+            return Ok(());
+        }
+
+        value.serialize_to(QueryFieldSerializer {
+            field_name: name,
+            builder: self,
+        })
+    }
+}
+
+impl<'a> reflection::ListSerializer for &'a mut QueryParamsBuilder {
+    fn serialize_element<Value: reflection::SerializeTo>(&mut self, value: &Value) -> Result<()> {
+        Err(err_msg("Can't serialize a list to query params"))
+    }
+}
+
+struct QueryFieldSerializer<'a> {
+    field_name: &'a str,
+    builder: &'a mut QueryParamsBuilder,
+}
+
+impl<'a> reflection::ValueSerializer for QueryFieldSerializer<'a> {
+    type ObjectSerializerType = &'a mut QueryParamsBuilder;
+    type ListSerializerType = &'a mut QueryParamsBuilder;
+
+    fn serialize_primitive(self, value: reflection::PrimitiveValue) -> Result<()> {
+        use reflection::PrimitiveValue;
+        match value {
+            PrimitiveValue::Null => todo!(),
+            PrimitiveValue::Bool(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::I8(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::U8(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::I16(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::U16(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::I32(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::U32(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::I64(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::U64(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::ISize(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::USize(v) => self
+                .builder
+                .add(self.field_name.as_bytes(), v.to_string().as_bytes()),
+            PrimitiveValue::F32(_) => todo!(),
+            PrimitiveValue::F64(_) => todo!(),
+            PrimitiveValue::Str(v) => self.builder.add(self.field_name.as_bytes(), v.as_bytes()),
+            PrimitiveValue::String(v) => self.builder.add(self.field_name.as_bytes(), v.as_bytes()),
+        };
+
+        Ok(())
+    }
+
+    fn serialize_object(self) -> Self::ObjectSerializerType {
+        // TODO: REturn a null serializer
+        todo!()
+    }
+
+    fn serialize_list(self) -> Self::ListSerializerType {
+        // TODO: Return a null serializer.
+        todo!()
     }
 }
 
@@ -137,6 +243,20 @@ impl std::iter::Iterator for QueryParamsParser<'_> {
         Some((OpaqueString::from(name), OpaqueString::from(value)))
     }
 }
+
+/*
+impl<'data> reflection::ValueReader<'data> for QueryParamsParser<'_> {
+    fn parse<T: reflection::ParseFromValue<'data>>(self) -> Result<T> {
+        T::parse_from_object(self)
+    }
+}
+
+impl<'data> reflection::ObjectIterator<'data> for QueryParamsParser<'_> {
+    fn next_field(&mut self) -> Result<Option<(String, Self::ValueReaderType)>> {
+
+    }
+}
+*/
 
 #[cfg(test)]
 mod tests {
