@@ -64,6 +64,10 @@ impl ServerIdentity {
         request_context: &rpc::ServerRequestContext,
         response_context: &mut rpc::ServerResponseContext,
     ) -> Result<()> {
+        /*
+        TODO: Eventually also verify the TLS confirmed client credential
+        */
+
         response_context
             .metadata
             .head_metadata

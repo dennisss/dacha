@@ -11,3 +11,11 @@ SFX-L
 - 146.99mm length
 - 101.85mm width
 - 26.11mm height
+
+
+Meshify 2
+- 65mm for front fan + radiator
+
+
+HDDs
+- ST8000NC0002

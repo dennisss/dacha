@@ -38,6 +38,12 @@ Air Quality
         - CCS811 (MOX) 
        
 
+Air quality sensors to have:
+- 1 inside 3d printer enclosure (suspending in air)
+- 1 above 3d printer enclosure
+- 1 near desk
+- 1 in bedroom
+
 
 Printer Air Filter Module:
 - 130mm x 160mm cutout

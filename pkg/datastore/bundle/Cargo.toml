@@ -1,0 +1,29 @@
+[package]
+name = "db_bundle"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+compression = { path = "../../compression" }
+crypto = { path = "../../crypto" }
+math = { path = "../../math" }
+reflection = { path = "../../reflection" }
+macros = { path = "../../macros" }
+protobuf = { path = "../../protobuf" }
+parsing = { path = "../../parsing" }
+uuid = { path = "../../uuid" }
+uuid_macros = { path = "../../uuid/macros" }
+sstable = { path = "../../sstable" }
+file = { path = "../../file" }
+executor = { path = "../../executor" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../protobuf/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+

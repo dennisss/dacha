@@ -8,6 +8,7 @@ extern crate parsing;
 use common::errors::*;
 use video::h264::*;
 use video::mp4::*;
+use video::mp4_protection::AesCtrClearKeyDecryptor;
 
 /*
 MP4 most info in ISO/IEC 14496-12:2008(E)
@@ -34,7 +35,7 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
 
     let mut remaining = data;
     while !remaining.is_empty() {
-        let (inst, rest) = Box::parse(remaining)?;
+        let (inst, rest) = BoxClass::parse(remaining)?;
         let raw = &remaining[..(remaining.len() - rest.len())];
         remaining = rest;
 
@@ -69,8 +70,72 @@ fn print_boxes(data: &[u8], indent: &str) -> Result<()> {
     Ok(())
 }
 
+/*
+TODO: Print out more verbose info on how many tracks and types of tracks/codecs are present in the MP4. Verify all boxes are parsed.
+
+the hdlr box has a handler_type with
+    ‘vide’
+    Video track
+    ‘soun’
+    Audio track
+    ‘hint’
+    Hint track
+    ‘meta’
+    Timed Metadata track
+
+*/
+
+fn print_box(box_inst: &BoxClass, indent: &str) -> Result<()> {
+    println!("{}{}", indent, box_inst.typ.as_str());
+
+    let inner_indent = format!("{}  ", indent);
+    for b in box_inst.children() {
+        print_box(b, &inner_indent);
+    }
+
+    Ok(())
+}
+
+fn view_boxes(data: &[u8]) -> Result<()> {
+    let mut remaining = data;
+    while !remaining.is_empty() {
+        let (inst, rest) = BoxClass::parse(remaining)?;
+        remaining = rest;
+
+        print_box(&inst, "")?;
+    }
+
+    Ok(())
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
+    {
+        let data = file::read(file::project_path!("testdata/dash/angle_one_clearkey.mp4")).await?;
+
+        view_boxes(&data)?;
+
+        return Ok(());
+    }
+
+    {
+        let data = file::read(file::project_path!("testdata/dash/angle_one_clearkey.mp4")).await?;
+
+        let key = hex!("00112233445566778899AABBCCDDEEFF");
+
+        let decryptor = AesCtrClearKeyDecryptor::new(key.to_vec());
+
+        let out_data = video::mp4_protection::decrypt_video(&data, &decryptor).await?;
+
+        file::write(
+            file::project_path!("testdata/dash/angle_one_clearkey_dec.mp4"),
+            out_data,
+        )
+        .await?;
+
+        return Ok(());
+    }
+
     {
         let data = file::read("image.h264").await?;
 
@@ -96,12 +161,6 @@ async fn main() -> Result<()> {
                 println!("{:x?}", &nalu[..]);
             }
         }
-    }
-
-    {
-        let data = file::read("image.mp4").await?;
-
-        print_boxes(&data, "")?;
     }
 
     Ok(())

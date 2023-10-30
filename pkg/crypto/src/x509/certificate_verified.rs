@@ -9,9 +9,15 @@ use crate::x509::Certificate;
 
 use super::CertificateRegistry;
 
+/*
+The assumption is that you only have a CertificateRegistry created for a short period of time (otherwise validity may change).
+
+TODO: In what order should we process CRLs. e.g. one CRL may revoke certificates used to sign CRLs
+*/
+
 /// If true, we won't perform signature verification on self-signed
 /// certificates (this will save startup time if loading a lot of CAs).
-const SKIP_SELF_SIGNED_VERIFICATION: bool = false;
+const SKIP_SELF_SIGNED_VERIFICATION: bool = true;
 
 /// A certificate which has been 'verified' implying that all constrains imposed
 /// by a parent certificate are satified by this certificate.

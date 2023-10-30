@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use common::concat_slice::ConcatSlicePair;
 use common::errors::*;
 use elf::*;
-use google::proto::profile::*;
 use parsing::binary::*;
+use pprof_proto::perftools::profiles::*;
 use sys::bindings::*;
 use sys::MappedMemory;
 
@@ -337,7 +337,6 @@ impl ProcessProfiler {
 
         let data_tail = unsafe { core::mem::transmute::<&u64, &AtomicU64>(&head_page.data_tail) };
 
-        // TODO: Use atomic u64s
         let current_head = data_head.load(Ordering::Relaxed);
         let current_tail = data_tail.load(Ordering::Relaxed);
 

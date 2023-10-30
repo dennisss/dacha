@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 
 use common::errors::*;
-use common::io::{Readable, Writeable};
+use common::io::{Readable, SharedWriteable, Writeable};
 use executor::{ExecutorOperation, FileHandle, RemapErrno};
 use sys::OpenFileDescriptor;
 
@@ -131,7 +131,7 @@ impl TcpStream {
 
     /// Splits the duplex stream into its two halfs. When either halve is
     /// dropped, we will shutdown that part of the stream.
-    pub fn split(mut self) -> (Box<dyn Readable + Sync>, Box<dyn Writeable>) {
+    pub fn split(mut self) -> (Box<dyn Readable + Sync>, Box<dyn SharedWriteable>) {
         let reader = Box::new(Self {
             mode: sys::ShutdownHow::Read,
             file: self.file.clone(),

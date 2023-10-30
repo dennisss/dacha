@@ -19,7 +19,8 @@ use std::str::FromStr;
 use std::string::{String, ToString};
 
 use common::errors::*;
-pub use raft::*;
+
+use crate::raft::*;
 
 impl LogPosition {
     pub fn new<T: Into<Term>, I: Into<LogIndex>>(term: T, index: I) -> Self {
@@ -68,10 +69,6 @@ impl Configuration {
     pub fn iter(&self) -> impl Iterator<Item = &ServerId> {
         self.members().iter().chain(self.learners().iter())
     }
-}
-pub struct ConfigurationSnapshotRef<'a> {
-    pub last_applied: LogIndex,
-    pub data: &'a Configuration,
 }
 
 impl GroupId {

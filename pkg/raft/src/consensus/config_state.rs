@@ -1,16 +1,5 @@
 use crate::proto::*;
 
-#[derive(Clone)]
-pub struct ConfigurationPending {
-    /// Index of the last entry in our log that changes the config
-    pub last_change: LogIndex,
-
-    /// Configuration as it was before the last change
-    /// In other words the last_applied of this configuration would be
-    /// 'last_change - 1'
-    pub previous: Configuration,
-}
-
 /// Maintains the in-memory state of the configuration with the ability to roll
 /// back to the last comitted value of it in the case of log truncations
 pub struct ConfigurationStateMachine {
@@ -28,6 +17,31 @@ pub struct ConfigurationStateMachine {
     /// This will allow for rolling back the configuration in case there is a
     /// log conflict
     pub pending: Option<ConfigurationPending>,
+}
+
+#[derive(Clone)]
+pub struct ConfigurationPending {
+    /// Index of the last entry in our log that changes the config
+    pub last_change: LogIndex,
+
+    /// Configuration as it was before the last change
+    /// In other words the last_applied of this configuration would be
+    /// 'last_change - 1'
+    pub previous: Configuration,
+}
+
+pub struct ConfigurationSnapshotRef<'a> {
+    pub last_applied: LogIndex,
+    pub data: &'a Configuration,
+}
+
+impl<'a> ConfigurationSnapshotRef<'a> {
+    pub fn to_proto(&self) -> ConfigurationSnapshot {
+        let mut proto = ConfigurationSnapshot::default();
+        proto.set_last_applied(self.last_applied);
+        proto.set_data(self.data.clone());
+        proto
+    }
 }
 
 impl ConfigurationStateMachine {
@@ -105,7 +119,8 @@ impl ConfigurationStateMachine {
         changed
     }
 
-    /// Retrieves the latest persistable version of the configuration
+    /// Retrieves the latest persistable version of the configuration (the one
+    /// containing only commited entries).
     pub fn snapshot(&self) -> ConfigurationSnapshotRef {
         if let Some(ref pending) = self.pending {
             ConfigurationSnapshotRef {

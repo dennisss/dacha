@@ -350,9 +350,11 @@ pub fn local_ip() -> Result<IPAddress> {
             continue;
         }
 
+        /*
         if iface.addrs.len() > 0 && found_ip.is_some() {
             return Err(err_msg("Multiple candidate local ips"));
         }
+        */
 
         let mut found_v4 = false;
 

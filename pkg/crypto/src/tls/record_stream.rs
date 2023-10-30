@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-use common::io::{Readable, Writeable};
+use common::io::{Readable, SharedWriteable, Writeable};
 
 use crate::tls::alert::*;
 use crate::tls::handshake::*;
@@ -243,7 +243,7 @@ impl RecordReader {
 }
 
 pub struct RecordWriter {
-    writer: Box<dyn Writeable>,
+    writer: Box<dyn SharedWriteable>,
 
     is_server: bool,
 
@@ -253,7 +253,7 @@ pub struct RecordWriter {
 }
 
 impl RecordWriter {
-    pub fn new(writer: Box<dyn Writeable>, is_server: bool) -> Self {
+    pub fn new(writer: Box<dyn SharedWriteable>, is_server: bool) -> Self {
         Self {
             writer,
             is_server,

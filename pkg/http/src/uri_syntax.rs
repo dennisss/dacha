@@ -124,6 +124,7 @@ pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
         // 2. If there are any percent encoded components, they are valid.
         // 3. Can't start with '//'
         // 4. Doesn't contain any non-ascii characters (should have all been encoded)
+        // 5. If there is an authority, then this will be empty or start with '/'
         //
         // NOTE: Because we can't distinguish between '/' and the pct-encoded version of
         // it in this stage, we ideally shouldn't try to decode it yet.
@@ -365,7 +366,7 @@ parser!(parse_path_abempty<Vec<OpaqueString>> => {
 parser!(parse_path_absolute<Vec<OpaqueString>> => {
     seq!(c => {
         c.next(one_of("/"))?; // TODO
-        c.next(parse_path_rootless)
+        Ok(c.next(opt(parse_path_rootless))?.unwrap_or_else(|| vec![]))
     })
 });
 
@@ -449,13 +450,16 @@ fn parse_segment_nz_nc(input: Bytes) -> ParseResult<OpaqueString> {
 // `pchar = unreserved / pct-encoded / sub-delims / ":" / "@"`
 //
 // TODO: Parse as a regular expression
-parser!(parse_pchar<u8> => {
+//
+// TODO: Make private
+parser!(pub parse_pchar<u8> => {
     alt!(
         parse_unreserved, parse_pct_encoded, parse_sub_delims, one_of(":@")
     )
 });
 
-fn serialize_pchar(v: u8, out: &mut Vec<u8>) {
+// TODO: Make private
+pub(crate) fn serialize_pchar(v: u8, out: &mut Vec<u8>) {
     if is_unreserved(v) || is_sub_delims(v) || v == b':' || v == b'@' {
         out.push(v);
     } else {
@@ -498,7 +502,7 @@ pub fn serialize_fragment(value: &OpaqueString, out: &mut Vec<u8>) {
 // RFC 3986: Section 4.1
 //
 // `URI-reference = URI / relative-ref`
-parser!(parse_uri_reference<Uri> => {
+parser!(pub parse_uri_reference<Uri> => {
     alt!(
         parse_uri,
         parse_relative_ref
@@ -621,7 +625,7 @@ mod tests {
                     scheme: Some(AsciiString::from("ldap").unwrap()),
                     authority: Some(Authority {
                         user: None,
-                        host: Host::IP(IPAddress::V6(vec![
+                        host: Host::IP(IPAddress::V6([
                             0x20, 0x01, 0x0D, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x07,
                         ])),
                         port: None,
@@ -671,7 +675,7 @@ mod tests {
                     scheme: Some(AsciiString::from("telnet").unwrap()),
                     authority: Some(Authority {
                         user: None,
-                        host: Host::IP(IPAddress::V4(vec![192, 0, 2, 16])),
+                        host: Host::IP(IPAddress::V4([192, 0, 2, 16])),
                         port: Some(80),
                     }),
                     path: AsciiString::from("/").unwrap(),
@@ -756,67 +760,6 @@ mod tests {
             assert_eq!(
                 parse_uri(Bytes::from(input)).unwrap(),
                 (output, Bytes::new())
-            );
-        }
-    }
-
-    #[test]
-    fn parse_ipv4_address_test() {
-        let test_cases: &[(&'static str, &[u8])] = &[
-            ("192.168.0.1", &[192, 168, 0, 1]),
-            ("255.255.255.255", &[255, 255, 255, 255]),
-            ("10.0.0.1", &[10, 0, 0, 1]),
-        ];
-
-        for (input, output) in test_cases {
-            assert_eq!(
-                parse_ipv4_address(Bytes::from(input.as_bytes())).unwrap(),
-                (output.to_vec(), Bytes::new())
-            );
-        }
-    }
-
-    #[test]
-    fn parse_ipv6_address_test() {
-        // TODO:
-        // ::ffff:192.0.2.128 is valid
-        // ::192.0.2.128 is NOT valid
-
-        let test_cases: &[(&'static str, &[u8])] = &[
-            (
-                "::ffff:192.0.2.128",
-                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 128],
-            ),
-            (
-                "0000:0000:0000:0000:0000:0000:0000:0001",
-                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            ),
-            ("::1", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
-            ("::", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-            (
-                "2001:0db8:0000:0000:0000:ff00:0042:8329",
-                &[
-                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
-                ],
-            ),
-            (
-                "2001:db8:0:0:0:ff00:42:8329",
-                &[
-                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
-                ],
-            ),
-            (
-                "2001:db8::ff00:42:8329",
-                &[
-                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
-                ],
-            ),
-        ];
-
-        for (input, output) in test_cases {
-            assert_eq!(
-                parse_ipv6_address(Bytes::from(input.as_bytes())).unwrap(),
-                (output.to_vec(), Bytes::new())
             );
         }
     }

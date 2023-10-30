@@ -42,3 +42,13 @@ In the above example, the `PATTERN` variable is a `StaticRegExp` instance which 
 
 - `test(input: &str) -> bool`
 - `split(input: &str) -> Iterator<&str>` : Splits the input using matches of the pattern as a delimiter.
+
+
+# TODOs
+
+Need some optimizations for:
+
+- Character class matching
+- Long constant sequences
+    - Easiest method is if we want to match 'string1|string2|string3|..'
+        - Then can just use one hasher to find a match to many strings.

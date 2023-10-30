@@ -12,6 +12,7 @@ reflection = { path = "../../reflection" }
 parsing = { path = "../../parsing" }
 executor = { path = "../../executor" }
 file = { path = "../../file" }
+crypto = { path = "../../crypto" }
 
 [build-dependencies]
 parsing_compiler = { path = "../../parsing/compiler" }

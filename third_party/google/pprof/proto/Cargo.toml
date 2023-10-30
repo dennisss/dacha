@@ -1,0 +1,21 @@
+[package]
+name = "pprof_proto"
+version = "0.0.0"
+edition = "2018"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+common = { path = "../../../../pkg/common" }
+protobuf = { path = "../../../../pkg/protobuf" }
+macros = { path = "../../../../pkg/macros" }
+protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../../../pkg/protobuf/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc", "common/std", "protobuf/std"]
+alloc = ["common/alloc", "protobuf/alloc"]

@@ -1,0 +1,158 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Connector_Generic:Conn_02x04_Top_Bottom J2
+U 1 1 63609AB2
+P 1400 1550
+F 0 "J2" H 1450 1867 50  0000 C CNN
+F 1 "TO_GPU" H 1450 1776 50  0000 C CNN
+F 2 "Connector_Molex:Molex_Mini-Fit_Jr_5566-08A_2x04_P4.20mm_Vertical" H 1400 1550 50  0001 C CNN
+F 3 "~" H 1400 1550 50  0001 C CNN
+	1    1400 1550
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:GND #PWR0101
+U 1 1 6360A1C4
+P 1050 1950
+F 0 "#PWR0101" H 1050 1700 50  0001 C CNN
+F 1 "GND" H 1055 1777 50  0000 C CNN
+F 2 "" H 1050 1950 50  0001 C CNN
+F 3 "" H 1050 1950 50  0001 C CNN
+	1    1050 1950
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1050 1950 1050 1750
+Wire Wire Line
+	1050 1450 1200 1450
+Wire Wire Line
+	1200 1550 1050 1550
+Connection ~ 1050 1550
+Wire Wire Line
+	1050 1550 1050 1450
+Wire Wire Line
+	1200 1650 1050 1650
+Connection ~ 1050 1650
+Wire Wire Line
+	1050 1650 1050 1550
+Wire Wire Line
+	1200 1750 1050 1750
+Connection ~ 1050 1750
+Wire Wire Line
+	1050 1750 1050 1650
+$Comp
+L power:+12V #PWR0102
+U 1 1 6360A9F2
+P 1900 1100
+F 0 "#PWR0102" H 1900 950 50  0001 C CNN
+F 1 "+12V" H 1915 1273 50  0000 C CNN
+F 2 "" H 1900 1100 50  0001 C CNN
+F 3 "" H 1900 1100 50  0001 C CNN
+	1    1900 1100
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1900 1100 1900 1450
+Wire Wire Line
+	1900 1750 1700 1750
+Wire Wire Line
+	1700 1650 1900 1650
+Connection ~ 1900 1650
+Wire Wire Line
+	1900 1650 1900 1750
+Wire Wire Line
+	1700 1550 1900 1550
+Connection ~ 1900 1550
+Wire Wire Line
+	1900 1550 1900 1650
+Wire Wire Line
+	1700 1450 1900 1450
+Connection ~ 1900 1450
+Wire Wire Line
+	1900 1450 1900 1550
+$Comp
+L Connector_Generic:Conn_02x04_Top_Bottom J1
+U 1 1 6360C488
+P 2700 1500
+F 0 "J1" H 2750 1817 50  0000 C CNN
+F 1 "TO_PSU" H 2750 1726 50  0000 C CNN
+F 2 "Connector_Molex:Molex_Mini-Fit_Jr_5569-08A2_2x04_P4.20mm_Horizontal" H 2700 1500 50  0001 C CNN
+F 3 "~" H 2700 1500 50  0001 C CNN
+	1    2700 1500
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:GND #PWR0103
+U 1 1 6360C492
+P 2350 1900
+F 0 "#PWR0103" H 2350 1650 50  0001 C CNN
+F 1 "GND" H 2355 1727 50  0000 C CNN
+F 2 "" H 2350 1900 50  0001 C CNN
+F 3 "" H 2350 1900 50  0001 C CNN
+	1    2350 1900
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	2350 1900 2350 1700
+Wire Wire Line
+	2350 1400 2500 1400
+Wire Wire Line
+	2500 1500 2350 1500
+Connection ~ 2350 1500
+Wire Wire Line
+	2350 1500 2350 1400
+Wire Wire Line
+	2500 1600 2350 1600
+Connection ~ 2350 1600
+Wire Wire Line
+	2350 1600 2350 1500
+Wire Wire Line
+	2500 1700 2350 1700
+Connection ~ 2350 1700
+Wire Wire Line
+	2350 1700 2350 1600
+$Comp
+L power:+12V #PWR0104
+U 1 1 6360C4A7
+P 3200 1050
+F 0 "#PWR0104" H 3200 900 50  0001 C CNN
+F 1 "+12V" H 3215 1223 50  0000 C CNN
+F 2 "" H 3200 1050 50  0001 C CNN
+F 3 "" H 3200 1050 50  0001 C CNN
+	1    3200 1050
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3200 1050 3200 1400
+Wire Wire Line
+	3200 1700 3000 1700
+Wire Wire Line
+	3000 1600 3200 1600
+Connection ~ 3200 1600
+Wire Wire Line
+	3200 1600 3200 1700
+Wire Wire Line
+	3000 1500 3200 1500
+Connection ~ 3200 1500
+Wire Wire Line
+	3200 1500 3200 1600
+Wire Wire Line
+	3000 1400 3200 1400
+Connection ~ 3200 1400
+Wire Wire Line
+	3200 1400 3200 1500
+$EndSCHEMATC

@@ -1,3 +1,82 @@
+# Cryptography Algorithms / Primitives
+
+## Well Supported Algorithms
+
+These are the algorithms which are well supported by this library. Where well supported means:
+- Unit-tested
+- Constant time operation
+- Performance optimized
+
+Checksums:
+- CRC32C : Heapless, SSE4.2, ARM64 native instructions.
+- CRC32 : Heapless, LUT optimized.
+- CRC16 : Heapless, LUT optimized.
+- Adler32 : Heapless
+
+Block Ciphers
+- AES-128/256 : x64 AES-NI native instructions
+  - TODO: Make heapless.
+- 
+
+Network Protocols:
+- TLS 1.2/1.3
+  -
+
+TODO: Need tests with corrupt signatures to verify that we don't simply always report signatures as always good.
+
+Critical Algorithms for TLS:
+
+        supported_cipher_suites: vec![
+            // SHOULD implement
+            CipherSuite::TLS_CHACHA20_POLY1305_SHA256,
+            // MUST implement
+            CipherSuite::TLS_AES_128_GCM_SHA256,
+            // SHOULD implement
+            CipherSuite::TLS_AES_256_GCM_SHA384,
+            // TLS 1.2 Only
+            CipherSuite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+            CipherSuite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+            CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+        ],
+        supported_groups: vec![
+            // SHOULD support
+            NamedGroup::x25519,
+            // MUST implement
+            NamedGroup::secp256r1,
+            // optional
+            NamedGroup::secp384r1,
+        ],
+        supported_signature_algorithms: vec![
+        // TODO: Also add ed2519
+
+            // TLS 1.3: These three are the minimum required set to implement.
+            SignatureScheme::ecdsa_secp256r1_sha256,
+            SignatureScheme::rsa_pss_rsae_sha256,
+            SignatureScheme::rsa_pkcs1_sha256,
+            // Extra to allow old TLS 1.2 servers to have a decent fallback.
+            SignatureScheme::rsa_pkcs1_sha384,
+            SignatureScheme::rsa_pkcs1_sha512,
+
+
+Immediate TODO:
+- MUST verify constant time operation of SecureBigUint on different architectures.
+- Ed25519 / X25519 as constant time and heapless
+  - Essential for nordic communication.
+- For prime256v1, we need to validate curve points are actually valid.
+- We should have a constant benchmark going on signature verification time (and record TLS handshake time).
+- AES-GCM constant time implementation
+- TLS 1.2/1.3 unit tests
+
+
+
+Things we need to support right now:
+- 
+
+
+
+
+## Other
 
 
 TODO: See also this module:

@@ -102,6 +102,11 @@ pub fn fill_polygon(
     path_starts: &[usize],
     fill_rule: FillRule,
 ) -> Result<()> {
+    // TODO: Prune these cases higher up in the graphics engine.
+    if vertices.len() == 0 {
+        return Ok(());
+    }
+
     if vertices.len() < 3 {
         return Err(err_msg("Polygon has too few vertices"));
     }

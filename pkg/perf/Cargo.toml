@@ -12,6 +12,7 @@ elf = { path = "../elf" }
 executor = { path = "../executor" }
 file = { path = "../file" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
+pprof_proto = { path = "../../third_party/google/pprof/proto" }
 base_radix = { path = "../base/radix" }
 
 [features]

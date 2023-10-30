@@ -1,0 +1,26 @@
+[package]
+name = "study"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+protobuf = { path = "../../protobuf" }
+protobuf_json = { path = "../../protobuf/json" }
+macros = { path = "../../macros" }
+executor = { path = "../../executor" }
+rpc = { path = "../../rpc" }
+http = { path = "../../http" }
+rpc_util = { path = "../../rpc_util" }
+web = { path = "../../web" }
+file = { path = "../../file" }
+google_auth = { path = "../../api/google/auth" }
+google_spanner = { path = "../../api/google/spanner" }
+study_proto = { path = "./proto" }
+json = { path = "../../format/json" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

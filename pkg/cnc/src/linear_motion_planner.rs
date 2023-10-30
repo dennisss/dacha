@@ -13,6 +13,12 @@ pub struct LinearMotionPlanner {
     queue: VecDeque<LinearMotionConstraints>,
 }
 
+/*
+Higher performance ticking:
+- USe a
+
+*/
+
 impl LinearMotionPlanner {
     pub fn new(start_position: Vector3f) -> Self {
         Self {
@@ -71,6 +77,8 @@ impl LinearMotionPlanner {
             last_motion.max_cornering_speed = max_cornering_speed
                 .min(last_motion.max_speed)
                 .min(max_speed);
+
+            println!("Corner: {}", last_motion.max_cornering_speed);
         }
 
         // Append to queue.
@@ -159,6 +167,22 @@ mod test {
         planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1.0);
 
         let mut out = vec![];
+        planner.next(&mut out);
+        println!("{:#?}", out);
+    }
+
+    #[test]
+    fn square_path() {
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero());
+        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
+        planner.move_to(Vector3f::from_slice(&[100.0, 100.0, 0.0]), 100.0, 1000.0);
+        planner.move_to(Vector3f::from_slice(&[0.0, 100.0, 0.0]), 100.0, 1000.0);
+        planner.move_to(Vector3f::from_slice(&[0.0, 0.0, 0.0]), 100.0, 1000.0);
+
+        let mut out = vec![];
+        planner.next(&mut out);
+        planner.next(&mut out);
+        planner.next(&mut out);
         planner.next(&mut out);
         println!("{:#?}", out);
     }

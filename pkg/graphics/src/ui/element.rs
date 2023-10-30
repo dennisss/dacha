@@ -13,12 +13,10 @@ pub struct Element {
     pub inner: Rc<dyn ElementInterface>,
 }
 
-pub trait ElementInterface: 'static {
+pub trait ElementInterface: 'static + common::any::AsAny {
     fn key(&self) -> (TypeId, &str);
 
     fn instantiate(&self) -> Result<Box<dyn View>>;
-
-    fn as_any<'a>(&'a self) -> &'a dyn Any;
 }
 
 pub struct ViewWithParamsElement<V: 'static + ViewWithParams> {
@@ -42,10 +40,6 @@ impl<V: 'static + ViewWithParams> ElementInterface for ViewWithParamsElement<V> 
 
     fn instantiate(&self) -> Result<Box<dyn View>> {
         V::create_with_params(&self.params)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 

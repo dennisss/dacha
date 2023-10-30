@@ -44,7 +44,11 @@ pub struct Tick {
     /// - These SHOULD be flushed soon to persistent storage in the order they
     ///   are given.
     /// - Once some entries are persisted, the client should call
-    ///   ConsensusModule::log_persisted() to advance the state.
+    ///   ConsensusModule::log_flushed() to advance the state.
+    /// - If an entry has index > (last index in the log) + 1, then the log
+    ///   should get implicitly discarded. This ensures that an AppendEntries
+    ///   request is safe immediately after an InstallSnapshot request is
+    ///   complete without needing to block for log truncation.
     pub new_entries: Vec<NewLogEntry>,
 
     /// List of messages that should be sent to remote servers.
@@ -54,6 +58,10 @@ pub struct Tick {
     /// the messages postmarked to a single server in the given order (possibly
     /// pipelining them). This is especially impact for AppendEntries requests
     /// which can be disruptive if received out of order.
+    ///
+    /// Outgoing requests should have been bounded deadlines (as the messaging
+    /// requirements may change over time) and requests from earlier terms can
+    /// be cancelled.
     ///
     /// NOTE: For the AppendEntries requests, the client is responsible for
     /// fetching all the entries to send from the log.
@@ -135,16 +143,18 @@ pub enum ConsensusMessageBody {
         /// Index of the last log entry index to send to the remote server in
         /// this request.
         last_log_index: LogIndex,
+
+        /// Sequence number associated with last_log_index. Used by the server
+        /// to verify that the correct chain of log messages is being sent.
+        last_log_sequence: LogSequence,
     },
 
-    /// The client should install a snapshot on the given machine.
+    /// The client should install a snapshot on the receipient machine.
     ///
     /// On a snapshot has been installed, the user should call
-    /// ConsensusModule::snapshot_installed()
+    /// ConsensusModule::install_snapshot_callback()
     ///
     /// TODO: While a snapshot is going out, we should avoid discarding stuff
     /// from the log (at least from the on-disk one as we need to )
-    InstallSnapshot {
-        to_id: ServerId,
-    },
+    InstallSnapshot(InstallSnapshotRequest),
 }

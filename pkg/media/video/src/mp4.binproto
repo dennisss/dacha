@@ -15,7 +15,7 @@
 
 
 structs {
-    name: "Box"
+    name: "BoxClass"
     endian: BIG_ENDIAN
 
     # TODO: May need padding depending on the absolute position in the file to align to 8.
@@ -154,6 +154,11 @@ unions {
         type { named: "VisualSampleEntry" }
     }
     case {
+        name: "EncV",
+        case_value: '"encv"'
+        type { named: "VisualSampleEntry" }
+    }
+    case {
         name: "MovieBox",
         case_value: '"moov"'
         type { named: "ContainerBox" }
@@ -194,6 +199,16 @@ unions {
         type { named: "ContainerBox" }
     }
     case {
+        name: "MovieFragmentBox",
+        case_value: '"moof"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "TrackFragmentBox",
+        case_value: '"traf"'
+        type { named: "ContainerBox" }
+    }
+    case {
         name: "SampleDescriptionBox",
         case_value: '"stsd"'
         type { named: "SampleDescriptionBox" }
@@ -202,6 +217,26 @@ unions {
         name: "DataReferenceBox",
         case_value: '"dref"'
         type { named: "DataReferenceBox" }
+    }
+    case {
+        name: "MovieFragmentHeaderBox",
+        case_value: '"mfhd"'
+        type { named: "MovieFragmentHeaderBox" }
+    }
+    #case {
+    #    name: "TrackFragmentHeaderBox",
+    #    case_value: '"tfhd"'
+    #    type { named: "TrackFragmentHeaderBox" }
+    #}
+    #case {
+    #    name: "TrackRunBox",
+    #    case_value: '"trun"'
+    #    type { named: "TrackRunBox" }
+    #}
+    case {
+        name: "SampleEncryptionBox",
+        case_value: '"senc"'
+        type { named: "SampleEncryptionBox" }
     }
     case {
         name: "Unknown"
@@ -332,7 +367,7 @@ structs {
         name: "children"
         type {
             buffer {
-                element_type { named: "Box" }
+                element_type { named: "BoxClass" }
                 end_terminated: true
             }
         }
@@ -988,7 +1023,7 @@ structs {
         name: "children"
         type {
             buffer {
-                element_type { named: "Box" }
+                element_type { named: "BoxClass" }
                 length_field_name: "entry_count"
             }
         }
@@ -1214,7 +1249,7 @@ structs {
         name: "children"
         type {
             buffer {
-                element_type { named: "Box" }
+                element_type { named: "BoxClass" }
                 length_field_name: "entry_count"
             }
         }
@@ -1318,7 +1353,7 @@ structs {
         name: "children"
         type {
             buffer {
-                element_type { named: "Box" }
+                element_type { named: "BoxClass" }
                 end_terminated: true
             }
         }
@@ -1455,3 +1490,260 @@ structs {
         }
     }
 }
+
+# Container: File
+# Mandatory: No
+# Quantity: Zero or more 
+# Definition:
+#
+# aligned(8) class MovieFragmentBox extends Box('moof'){
+# }
+
+
+# Container: Movie Fragment Box ('moof')
+# Mandatory: Yes
+# Quantity: Exactly one
+# 
+# aligned(8) class MovieFragmentHeaderBox extends FullBox(‘mfhd’, 0, 0) {
+#     unsigned int(32) sequence_number;
+# }
+structs {
+    name: "MovieFragmentHeaderBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "full_box_header"
+        type { named: "FullBoxHeader" }
+    }
+    field {
+        name: "sequence_number"
+        type { primitive: U32 }
+    }
+}
+
+# Container: Movie Fragment Box ('moof')
+# Mandatory: No
+# Quantity: Zero or more 
+# Definition:
+#
+# aligned(8) class TrackFragmentBox extends Box(‘traf’){
+# }
+
+# aligned(8) class TrackFragmentHeaderBox
+#   extends FullBox(‘tfhd’, 0, tf_flags){
+#   unsigned int(32) track_ID;
+#   // all the following are optional fields
+#   unsigned int(64) base_data_offset;
+#   unsigned int(32) sample_description_index;
+#   unsigned int(32) default_sample_duration;
+#   unsigned int(32) default_sample_size;
+#   unsigned int(32) default_sample_flags
+# }
+structs {
+    name: "TrackFragmentHeaderBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "full_box_header"
+        type { named: "FullBoxHeader" }
+    }
+    field {
+        name: "track_id"
+        type { primitive: U32 }
+    }
+    field {
+        name: "base_data_offset"
+        type { primitive: U64 }
+    }
+    field {
+        name: "sample_description_index"
+        type { primitive: U32 }
+    }
+    field {
+        name: "default_sample_duration"
+        type { primitive: U32 }
+    }
+    field {
+        name: "default_sample_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "default_sample_flags"
+        type { primitive: U32 }
+    }
+}
+
+# aligned(8) class TrackRunBox
+#     extends FullBox(‘trun’, 0, tr_flags) {
+#     unsigned int(32) sample_count;
+#     // the following are optional fields
+#     signed int(32) data_offset;
+#     unsigned int(32) first_sample_flags;
+#     // all fields in the following array are optional
+#     {
+#         unsigned int(32) sample_duration;
+#         unsigned int(32) sample_size;
+#         unsigned int(32) sample_flags
+#         unsigned int(32) sample_composition_time_offset;
+#     }[ sample_count ]
+# }
+structs {
+    name: "TrackRunBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "full_box_header"
+        type { named: "FullBoxHeader" }
+    }
+    field {
+        name: "sample_count"
+        type { primitive: U32 }
+    }
+    field {
+        name: "data_offset"
+        type { primitive: I32 }
+    }
+    field {
+        name: "first_sample_flags"
+        type { primitive: U32 }
+    }
+    field {
+        name: "samples"
+        argument {
+            name: "sample_count"
+            value: "sample_count"
+        }
+        type {
+            buffer {
+                element_type { named: "TrackRunBoxSample" }
+                length: "sample_count"
+            }
+        }
+    }
+}
+
+structs {
+    name: "TrackRunBoxSample"
+    endian: BIG_ENDIAN
+    field {
+        name: "sample_duration"
+        type { primitive: U32 }
+    }
+    field {
+        name: "sample_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "sample_flags"
+        type { primitive: U32 }
+    }
+    field {
+        name: "sample_composition_time_offset"
+        type { primitive: U32 }
+    }
+}
+
+structs {
+    name: "SampleEncryptionBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "full_box_header"
+        type { named: "FullBoxHeader" }
+    }
+    field {
+        name: "sample_count"
+        type { primitive: U32 }
+    }
+    field {
+        name: "samples"
+        argument {
+            name: "sample_count"
+            value: "sample_count"
+        }
+        argument {
+            name: "flags"
+            value: "full_box_header.flags"
+        }
+        type {
+            buffer {
+                element_type { named: "SampleEncryptionBoxSample" }
+                length: "sample_count"
+            }
+        }
+    }
+}
+
+structs {
+    name: "SampleEncryptionBoxSample"
+    endian: BIG_ENDIAN
+
+    argument {
+        name: "flags"
+        type { primitive: U32 }
+    }
+
+    # NOTE: Assumes that the IV size in the file is 8
+    # (only one IV Size is allowed per file)
+    field {
+        name: "iv"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length: "8"
+            }
+        }
+    }
+    field {
+        name: "subsamples"
+        type {
+            named: "SampleEncryptionBoxSubsamples"
+        }
+        presence: "flags & 2 != 0"
+    }
+}
+
+structs {
+    name: "SampleEncryptionBoxSubsamples"
+    endian: BIG_ENDIAN
+    field {
+        name: "subsample_count"
+        type { primitive: U16 }
+    }
+    field {
+        name: "subsamples"
+        argument {
+            name: "subsample_count"
+            value: "subsample_count"
+        }
+        type {
+            buffer {
+                element_type { named: "SampleEncryptionBoxSubsample" }
+                length: "subsample_count"
+            }
+        }
+    }
+
+}
+
+structs {
+    name: "SampleEncryptionBoxSubsample"
+    endian: BIG_ENDIAN
+    field {
+        name: "bytes_of_clear_data"
+        type { primitive: U16 }
+    }
+    field {
+        name: "bytes_of_encrypted_data"
+        type { primitive: U32 }
+    }
+}
+
+
+# tfdt
+# trun
+# saiz
+# saio
+# senc
+
+# Also must look for the `encv` box
+#Key ids for a track are in the "schi" > "tenc" atom
+#    => Also contains the default constant IV
+
+#"senc" atom

@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package storage;
+
+import "google/protobuf/any.proto";
+
+// TODO: Special 'packed' mode where there is no compression and all files are flat concatenated.
+// - Multi-file 
+
+// message BundleConfig {
+//     // Has a value of 'daBundleV1'
+//     string version_magic = 1;
+
+//     uint64 block_size = 2;
+
+//     uint64 record_size = 3;
+
+//     // If true, this bundle is created using a special mode where data isn't compressed (not even zero ), there is no padding between records/headers and there
+//     bool raw_packed = 6;
+// }
+
+// Need to have the overall BundleConfig to 
+
+// daBS [header_size] [data_offset]
+message BundleShardHeader {
+    enum CompressionType {
+        UNKNOWN = 0;
+        NONE = 1;
+        SNAPPY = 2;
+        ZLIB = 3;
+    }
+
+    // Index of this shard file out of all the shards in the same bundle.
+    uint64 shard_index = 1;
+
+    // Total number of shards in the same bundle.
+    uint64 shard_count = 2;
+
+    // Target number of uncompressed bytes placed 
+    // (this is mainly informative and not to be relied on)
+    uint64 record_size = 3;
+
+    // The start of each record should be aligned to an exact multiple of this many bytes from the
+    // start of the shard file.
+    // (this is mainly informative and not to be relied on)
+    uint64 record_alignment = 4;
+
+    // Compression algorithm used for packing records in this shard. 
+    // This uses the same definition as the LevelDB/RocksDB compression method enum.
+    CompressionType compression_method = 5;
+
+    // Where to find the metadata for files/records in this shard.
+    oneof metadata_location {
+        BundleInlineTable inline_metadata_table = 6;
+
+        // Metadata will be located at the end of this shard file.
+        bool metadata_at_eof = 7;
+
+        bool external_metadata = 8;
+    }
+}
+
+// Having a full SSTable is valuable if we need to deal with a ton of files.
+
+// 
+message BundleInlineTable {
+    message Row {
+        bytes key = 1;
+        bytes value = 2;
+    }
+
+    repeated Row rows = 1;
+}
+
+message BundleFileMetadata {
+    // TODO: Generally unify this across the entire 'file' crate
+    enum FileType {
+        UNKNOWN = 0;
+        REGULAR = 1;
+        DIRECTORY = 2;
+    }
+
+    FileType type = 1;
+
+    uint64 shard_index = 2;
+
+    uint64 shard_uncompressed_offset = 3;
+
+    // Number of bytes occupied by this file.
+    uint64 uncompressed_size = 4;
+
+    uint32 crc32c = 5;
+
+    google.protobuf.Any user_data = 6;
+}
+
+message BundleRecordMetadata {
+    uint64 shard_index = 1;
+
+    uint64 shard_uncompressed_offset = 2;
+
+    oneof data_reference {
+        // Relative to the first data byte in the shard file.
+        uint64 shard_byte_offset = 3;
+
+        // This record wasn't stored as it consists of all zero bytes.
+        bool all_zeros = 4;
+    }
+}
+
+// Usage of SSTable for metadata:
+// - Better if we have many keys as 

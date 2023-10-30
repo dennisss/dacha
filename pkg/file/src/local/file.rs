@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 use alloc::ffi::CString;
 
 use common::errors::*;
-use common::io::{Readable, Writeable};
+use common::io::{Readable, Seekable, Writeable};
 use executor::{FileHandle, FromErrno, RemapErrno};
 use sys::{Errno, OpenFileDescriptor};
 
@@ -273,6 +273,10 @@ impl LocalFile {
     }
 
     pub fn seek(&mut self, offset: u64) {
+        self.seek_impl(offset)
+    }
+
+    fn seek_impl(&mut self, offset: u64) {
         self.file.seek(offset)
     }
 
@@ -283,6 +287,10 @@ impl LocalFile {
     pub async fn set_permissions(&mut self, perms: Permissions) -> Result<()> {
         unsafe { sys::fchmod(self.as_raw_fd(), perms.mode).remap_errno::<FileError>()? }
         Ok(())
+    }
+
+    pub fn path(&self) -> &LocalPath {
+        &self.path
     }
 }
 
@@ -301,6 +309,14 @@ impl std::convert::From<std::fs::File> for LocalFile {
 impl Readable for LocalFile {
     async fn read(&mut self, output: &mut [u8]) -> Result<usize> {
         self.file.read(output).await
+    }
+}
+
+#[async_trait]
+impl Seekable for LocalFile {
+    async fn seek(&mut self, offset: u64) -> Result<()> {
+        self.seek_impl(offset);
+        Ok(())
     }
 }
 

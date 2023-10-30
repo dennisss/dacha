@@ -154,6 +154,8 @@ fn main() {
         &out_path,
     );
 
+    // Bindgen is only used for generating Rust bindings for trivial copyable
+    // structs.
     let bindings = bindgen::Builder::default()
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .header("src/wrapper.h")
@@ -194,6 +196,5 @@ fn main() {
         .compile("libcamera-cxx");
 
     println!("cargo:rerun-if-changed=src/ffi.rs");
-    println!("cargo:rerun-if-changed=src/wrappers.cc");
     println!("cargo:rerun-if-changed=src/wrappers.h");
 }

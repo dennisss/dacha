@@ -2,6 +2,122 @@ use common::errors::*;
 
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/src/mp4.rs"));
+
+    impl BoxClass {
+        pub fn children(&self) -> &[BoxClass] {
+            match &self.value {
+                BoxData::FileTypeBox(_)
+                | BoxData::MovieHeaderBox(_)
+                | BoxData::TrackHeaderBox(_)
+                | BoxData::MediaHeaderBox(_)
+                | BoxData::HandlerBox(_)
+                | BoxData::VideoMediaHeaderBox(_)
+                | BoxData::TimeToSampleBox(_)
+                | BoxData::SyncSampleBox(_)
+                | BoxData::EditListBox(_)
+                | BoxData::DataEntryUrlBox(_)
+                | BoxData::ChunkOffsetBox(_)
+                | BoxData::SampleToChunkBox(_)
+                | BoxData::SampleSizeBox(_)
+                | BoxData::AVCDecoderConfigurationRecord(_)
+                | BoxData::MovieFragmentHeaderBox(_)
+                | BoxData::SampleEncryptionBox(_)
+                | BoxData::Unknown(_) => &[],
+
+                BoxData::MovieBox(v)
+                | BoxData::TrackBox(v)
+                | BoxData::MediaBox(v)
+                | BoxData::MediaInformationBox(v)
+                | BoxData::SampleTableBox(v)
+                | BoxData::EditBox(v)
+                | BoxData::DataInformationBox(v)
+                | BoxData::UserDataBox(v)
+                | BoxData::MovieFragmentBox(v)
+                | BoxData::MovieFragmentBox(v)
+                | BoxData::TrackFragmentBox(v) => &v.children,
+
+                BoxData::AVC1(v) => &v.children,
+                BoxData::EncV(v) => &v.children,
+                BoxData::SampleDescriptionBox(v) => &v.children,
+                BoxData::DataReferenceBox(v) => &v.children,
+            }
+        }
+
+        pub fn children_mut(&mut self) -> Option<&mut Vec<BoxClass>> {
+            match &mut self.value {
+                BoxData::FileTypeBox(_)
+                | BoxData::MovieHeaderBox(_)
+                | BoxData::TrackHeaderBox(_)
+                | BoxData::MediaHeaderBox(_)
+                | BoxData::HandlerBox(_)
+                | BoxData::VideoMediaHeaderBox(_)
+                | BoxData::TimeToSampleBox(_)
+                | BoxData::SyncSampleBox(_)
+                | BoxData::EditListBox(_)
+                | BoxData::DataEntryUrlBox(_)
+                | BoxData::ChunkOffsetBox(_)
+                | BoxData::SampleToChunkBox(_)
+                | BoxData::SampleSizeBox(_)
+                | BoxData::AVCDecoderConfigurationRecord(_)
+                | BoxData::MovieFragmentHeaderBox(_)
+                | BoxData::SampleEncryptionBox(_)
+                | BoxData::Unknown(_) => None,
+
+                BoxData::MovieBox(v)
+                | BoxData::TrackBox(v)
+                | BoxData::MediaBox(v)
+                | BoxData::MediaInformationBox(v)
+                | BoxData::SampleTableBox(v)
+                | BoxData::EditBox(v)
+                | BoxData::DataInformationBox(v)
+                | BoxData::UserDataBox(v)
+                | BoxData::MovieFragmentBox(v)
+                | BoxData::MovieFragmentBox(v)
+                | BoxData::TrackFragmentBox(v) => Some(&mut v.children),
+
+                BoxData::AVC1(v) => Some(&mut v.children),
+                BoxData::EncV(v) => Some(&mut v.children),
+                BoxData::SampleDescriptionBox(v) => Some(&mut v.children),
+                BoxData::DataReferenceBox(v) => Some(&mut v.children),
+            }
+        }
+
+        pub fn visit_children<F: FnMut(&BoxClass) -> Result<()>>(&self, mut f: F) -> Result<()> {
+            fn inner<F: FnMut(&BoxClass) -> Result<()>>(b: &BoxClass, f: &mut F) -> Result<()> {
+                f(b)?;
+
+                for c in b.children() {
+                    inner(c, f)?;
+                }
+
+                Ok(())
+            }
+
+            inner(self, &mut f)
+        }
+
+        pub fn visit_children_mut<F: FnMut(&mut BoxClass) -> Result<()>>(
+            &mut self,
+            mut f: F,
+        ) -> Result<()> {
+            fn inner<F: FnMut(&mut BoxClass) -> Result<()>>(
+                b: &mut BoxClass,
+                f: &mut F,
+            ) -> Result<()> {
+                f(b)?;
+
+                if let Some(children) = b.children_mut() {
+                    for c in children {
+                        inner(c, f)?;
+                    }
+                }
+
+                Ok(())
+            }
+
+            inner(self, &mut f)
+        }
+    }
 }
 
 pub use proto::*;
@@ -50,7 +166,7 @@ impl MP4Builder {
     pub fn new(frame_width: u32, frame_height: u32, frame_rate: u32) -> Result<Self> {
         let mut output_buffer = vec![];
 
-        proto::Box {
+        proto::BoxClass {
             typ: "ftyp".into(),
             value: BoxData::FileTypeBox(FileTypeBox {
                 major_brand: "isom".into(),
@@ -219,18 +335,18 @@ impl MP4Builder {
         // TODO: Use 64-bit precision for this calculation.
         let media_duration = (num_samples * media_timescale) / self.frame_rate;
 
-        let dinf_box = proto::Box {
+        let dinf_box = proto::BoxClass {
             typ: "dinf".into(),
             value: BoxData::DataInformationBox(ContainerBox {
                 children: vec![
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "dref".into(),
                         value: BoxData::DataReferenceBox(DataReferenceBox {
                             full_box_header: FullBoxHeader {
                                 version: 0,
                                 flags: 0,
                             },
-                            children: vec![proto::Box {
+                            children: vec![proto::BoxClass {
                                 typ: "url ".into(),
                                 value: BoxData::DataEntryUrlBox(DataEntryUrlBox {
                                     full_box_header: FullBoxHeader {
@@ -247,18 +363,18 @@ impl MP4Builder {
             }),
         };
 
-        let stbl_box = proto::Box {
+        let stbl_box = proto::BoxClass {
             typ: "stbl".into(),
             value: BoxData::SampleTableBox(ContainerBox {
                 children: vec![
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "stsd".into(),
                         value: BoxData::SampleDescriptionBox(SampleDescriptionBox {
                             full_box_header: FullBoxHeader {
                                 version: 0,
                                 flags: 0,
                             },
-                            children: vec![proto::Box {
+                            children: vec![proto::BoxClass {
                                 typ: "avc1".into(),
                                 value: BoxData::AVC1(VisualSampleEntry {
                                     sample_entry: SampleEntry {
@@ -275,7 +391,7 @@ impl MP4Builder {
                                     ]
                                     .into(),
                                     depth: 24,
-                                    children: vec![proto::Box {
+                                    children: vec![proto::BoxClass {
                                         typ: "avcC".into(),
                                         value: BoxData::AVCDecoderConfigurationRecord(
                                             // TODO: Configurate all this stuff correctly.
@@ -299,7 +415,7 @@ impl MP4Builder {
                             }],
                         }),
                     },
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "stts".into(),
                         value: BoxData::TimeToSampleBox(TimeToSampleBox {
                             full_box_header: FullBoxHeader {
@@ -312,7 +428,7 @@ impl MP4Builder {
                             }],
                         }),
                     },
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "stss".into(),
                         value: BoxData::SyncSampleBox(SyncSampleBox {
                             full_box_header: FullBoxHeader {
@@ -322,7 +438,7 @@ impl MP4Builder {
                             sample_number: self.sample_key_indices,
                         }),
                     },
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "stsc".into(),
                         value: BoxData::SampleToChunkBox(SampleToChunkBox {
                             full_box_header: FullBoxHeader {
@@ -339,7 +455,7 @@ impl MP4Builder {
                             ],
                         }),
                     },
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "stsz".into(),
                         value: BoxData::SampleSizeBox(SampleSizeBox {
                             full_box_header: FullBoxHeader {
@@ -351,7 +467,7 @@ impl MP4Builder {
                             sample_sizes: Some(self.sample_sizes),
                         }),
                     },
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "stco".into(),
                         value: BoxData::ChunkOffsetBox(ChunkOffsetBox {
                             full_box_header: FullBoxHeader {
@@ -365,11 +481,11 @@ impl MP4Builder {
             }),
         };
 
-        proto::Box {
+        proto::BoxClass {
             typ: "moov".into(),
             value: BoxData::MovieBox(ContainerBox {
                 children: vec![
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "mvhd".into(),
                         value: BoxData::MovieHeaderBox(MovieHeaderBox {
                             full_box_header: FullBoxHeader {
@@ -389,11 +505,11 @@ impl MP4Builder {
                             next_track_id: 2,
                         }),
                     },
-                    proto::Box {
+                    proto::BoxClass {
                         typ: "trak".into(),
                         value: BoxData::TrackBox(ContainerBox {
                             children: vec![
-                                proto::Box {
+                                proto::BoxClass {
                                     typ: "tkhd".into(),
                                     value: BoxData::TrackHeaderBox(TrackHeaderBox {
                                         full_box_header: FullBoxHeader {
@@ -419,11 +535,11 @@ impl MP4Builder {
                                     }),
                                 },
                                 // Skip 'edts'
-                                proto::Box {
+                                proto::BoxClass {
                                     typ: "mdia".into(),
                                     value: BoxData::MediaBox(ContainerBox {
                                         children: vec![
-                                            proto::Box {
+                                            proto::BoxClass {
                                                 typ: "mdhd".into(),
                                                 value: BoxData::MediaHeaderBox(MediaHeaderBox {
                                                     full_box_header: FullBoxHeader {
@@ -440,7 +556,7 @@ impl MP4Builder {
                                                     language: 21956,
                                                 }),
                                             },
-                                            proto::Box {
+                                            proto::BoxClass {
                                                 typ: "hdlr".into(),
                                                 value: BoxData::HandlerBox(HandlerBox {
                                                     full_box_header: FullBoxHeader {
@@ -451,11 +567,11 @@ impl MP4Builder {
                                                     name: "VideoHandler".into(),
                                                 }),
                                             },
-                                            proto::Box {
+                                            proto::BoxClass {
                                                 typ: "minf".into(),
                                                 value: BoxData::MediaInformationBox(ContainerBox {
                                                     children: vec![
-                                                        proto::Box {
+                                                        proto::BoxClass {
                                                             typ: "vmhd".into(),
                                                             value: BoxData::VideoMediaHeaderBox(
                                                                 VideoMediaHeaderBox {

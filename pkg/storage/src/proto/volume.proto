@@ -1,0 +1,249 @@
+syntax = "proto3";
+
+package storage;
+
+// 
+
+// Data stored in the first few sectors of the partition holding core details of how to read the
+// partition. This should mainly be used for initializing encryption and the log.
+// - It is risky to modify the header, so this should only contain mostly immutable values. 
+// - Everything else should go into the log.
+message VolumeHeader {    
+    // Serialized VolumeHeaderConfig proto. If 'key_usage' is specified, then this is encrypted.
+    bytes config_string = 1;
+
+    // TODO: Because this is not encrypted, do not rely on this too much.
+    VolumeKeyUsage key_usage = 2;
+}
+
+// Information about how a root/master key is used to perform data encryption.
+//
+// - First the key is 'stretched' through key derivation to generate an encryption key
+// - Then the encryption key is used to encrypt the data.  
+message VolumeKeyUsage {
+    // Algorithm used for 
+    enum KeyDerivationFunction {
+        UNKNOWN = 0;
+        HKDF_SHA512 = 1;
+    }
+    KeyDerivationFunction key_derivation = 1;
+
+    // Algorithm used for encrypting and authenticating data.
+    enum EncryptionCipher {
+        UNKNOWN = 0;
+        AES_GCM_128 = 1;
+    }
+    EncryptionCipher cipher = 2;
+
+    uint32 nonce_size = 3;
+
+    //
+    uint32 salt_size = 4;
+}
+
+
+// Actual config parameters stored in the volume header.
+message VolumeHeaderConfig {
+    // Minimum writable unit on this disk in bytes. Should be a multiple of the disk's physical block size.
+    // All file extents are defined in block_size units.
+    uint64 block_size = 1;
+
+    // Total number of raw bytes in the volume partition.
+    uint64 total_size = 4;
+
+    // TODO: Support using either a local log or a remote log stored on another device.
+    VolumeLogConfig log_config = 2;
+
+    // Copy of VolumeHeader::key_usage. Must exactly match that to open the volume.
+    // This information is duplicated because VolumeHeader::key_usage is not encrypted so may be
+    // modified to force us to encrypt future blocks with weaker parameters.
+    VolumeKeyUsage key_usage_copy = 3;
+
+    // Encoding used for non-replicated files present only on this disk.
+    VolumeDataEncoding local_file_encoding = 5;
+
+    // UUID of the machine this disk was created to be used with.
+    bytes machine_uuid = 6;
+}
+
+message VolumeLogConfig {
+    oneof location {
+        // Relative to the start of this volume, the position of the log in bytes.
+        uint64 offset = 1;
+
+        // Path to some file containing the log on another disk.
+        string path = 5;
+    }
+
+    // Number of bytes in the log region. Must be an exact multiple of 'record_size'.
+    uint64 size = 2;
+
+    // Size of each entry/group of changes in the log. Each record is independently
+    // checksummed and encrypted (there is no distinction between 'records', 'segments',
+    // 'chunks' in the log).
+    uint64 record_size = 3;
+
+    // Salt used to derive the encryption key for encrypting records in this log.
+    bytes encryption_salt = 4;
+}
+
+// Settings used when 
+message VolumeDataEncoding {
+    // Number of contiguous bytes on disk which are backed by a single checksum.
+    // MUST be a multiple of the disk 'block_size'.
+    // (this includes the size of any inline checksum).
+    uint64 record_size = 1;
+
+    // Size in bytes of a single contiguous section of encrypted data (including any encryption
+    // tag overhead).
+    //
+    // TODO: Support having a stripe_size that is any multiple of the segment_size. 
+    //
+    // MUST be a multiple of record_size. If encryption is disabled this must equal the stripe_size.
+    uint64 segment_size = 2;
+
+    // Size in bytes of a single chunk.
+    // This is the amount of data which can be written to a single disk
+    //
+    // MUST be a multiple of segment_size.
+    uint64 chunk_size = 3;
+}
+
+// A single atomic entry in the volume log. Multiple VolumeLogChange protos are batched together
+// to improve compactness of the log.
+message VolumeLogBatch {
+    // Sequence number of the last log entry applied to this snapshot.
+    uint64 sequence_num = 1;
+
+    repeated VolumeLogChange changes = 2;
+}
+
+message VolumeLogChange {
+    // A single file has been newly created, updated, or deleted.
+    message ChangeFile {
+        // TODO: Make it efficient to only update the size.
+        LocalFileEntry file = 1;
+
+    }
+
+    oneof type {
+        ChangeFile change_file = 1; 
+    }
+}
+
+// Metadata associated with an unreplicated file stored on a single volume.
+message LocalFileEntry {
+    enum UpdateMask {
+        UNKNOWN = 0;
+        PATH = 1;
+        SIZE = 2;
+        CHECKSUM = 5;
+        EXTENTS = 6;
+        DELETED = 7;
+    }
+
+    // NOTE: Ids are > 0 and may be re-used if a file is deleted.
+    uint64 id = 1;
+
+    string path = 2;
+
+    uint64 size = 3;
+   
+    bytes checksum = 4;
+
+    bytes encryption_salt = 5;
+    
+    // Set of all block ranges allocated to store the data for this file.
+    repeated LocalFileExtent extents = 6;
+}
+
+
+message LocalFileExtent {
+    uint64 start_block = 1;
+
+    uint64 end_block = 2;
+
+    // If not specified, this is the same as the previous extent in the file.
+    // bytes encryption_salt = 3;
+}
+
+// List of all files correctly stored in the volume's local filesystem.
+// This represents 
+// This proto is stored as a local '/.volume/snapshot' file.
+message VolumeLocalSnapshot {
+    // Sequence number of the last 
+    uint64 sequence_num = 2;
+
+    repeated LocalFileEntry files = 1;
+}
+
+message VolumeConfig {
+    // Number number of useable bytes in the partition
+    uint64 total_bytes = 1;
+
+    // This will only contain records for pools 
+    repeated VolumePool machine_pools = 2;
+
+    repeated VolumeLocalNamespace namespaces = 3;
+}
+
+message VolumePool {
+    // Name of this pool.
+    // All pools in a single scope must have unique names.
+    string name = 1;
+
+    // Globally unique identifier for this pool.
+    bytes uuid = 2;
+
+    // Monotonically increasing revision/version number of this proto.
+    uint64 revision = 3;
+
+    repeated bytes volume_guids = 4;
+}
+
+message VolumeLocalNamespace {
+    string name = 1;
+
+    bytes uuid = 2;
+
+    // UUID of the pool on which this namespace's file metadata is stored.
+    bytes location_pool_uuid = 3;
+
+    // UUIDs of all pools which are used by files in this namespace.
+    repeated bytes contained_pool_uuids = 4;
+}
+
+/*
+How to store the machine pool metadata?
+- Consensus is necessary to decide which disk's information is correct (but don't need multi-host consistency)
+- First merge information about which pools exist 
+    - This is some hardcoded logic.
+- Important details
+    - All metadata and data regarding pools must be in chunks to allow parallel writes without re-encoding.
+- One worker is running to serve as the 'big table manager' for the pool's metadata.
+
+- Simple strategy
+    - Use a directory on each local disk to store the metadata
+    - Merging 'k' EmbeddedDBs based on separate disks
+        - Each table is identified by the largest sequence based on log recovery
+    - The metadata is the set of files in the pool.
+        - These files are now in chunk space
+        - Alternatively we could use this table or a single sector map file to store the list of sectors
+
+*/
+
+
+/*
+TODO: Also store in machine pool storage the stats on disk failures / errors
+*/
+
+
+/*
+Need to basically just store root files.
+- The full allocated block table can be recovered from that.
+
+- Also need to know about general info like chunk size and total size of the data/filesystem
+*/
+
+
+

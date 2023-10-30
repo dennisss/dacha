@@ -188,6 +188,10 @@ impl CanvasFontRenderer {
         Ok(glyph_paths.get_mut(&code).unwrap())
     }
 
+    /*
+    TODO: Need a unit test for a few of these characters/curve points.
+    */
+
     fn build_glyph_path(g: &SimpleGlyph) -> Result<Path> {
         let mut path_builder = PathBuilder::new();
 

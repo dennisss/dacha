@@ -95,6 +95,16 @@ impl VersionSet {
     /// - 'writer' should refer to an empty log file.
     /// - This can later be restored using 'recover_existing'
     pub async fn write_to_new(&self, exclude_logs: bool, writer: &mut RecordWriter) -> Result<()> {
+        let edit = self.to_version_edit(exclude_logs);
+
+        let mut out = vec![];
+        edit.serialize(&mut out)?;
+        writer.append(&out).await?;
+
+        Ok(())
+    }
+
+    pub fn to_version_edit(&self, exclude_logs: bool) -> VersionEdit {
         let mut edit = VersionEdit::default();
         edit.next_file_number = Some(self.next_file_number);
         if !exclude_logs {
@@ -110,11 +120,7 @@ impl VersionSet {
             }
         }
 
-        let mut out = vec![];
-        edit.serialize(&mut out)?;
-        writer.append(&out).await?;
-
-        Ok(())
+        edit
     }
 
     pub async fn recover_existing(

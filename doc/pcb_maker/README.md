@@ -1,3 +1,50 @@
+Components to get:
+- NRF52 system
+- STM32 system
+- RP2040 system
+
+- LM311
+- TS391
+- LM358
+
+
+The Ant PCB Maker
+
+25 x 11
+
+- X/Y
+    - Motors are 'NEMA11 2-Phase 1.8 Degree Stepper Motor 1200g.cm/0.67A'
+        - Wires:
+            - Black (coil 1 +)
+            - Green (coil 1 -)
+            - Red (coil 2 +)
+            - Blue (coil 2 -) 
+    - Using GT2 16T pulleys so 6.25 full steps per mm.
+- Z
+    - Motor is a NEMA 8 2-phase 1.8 degree stepper motor
+    - Max 0.6A current
+    - Wires:
+        - Green (coil 1)
+        - Yellow (coil 1)
+        - Black (coil 2)
+        - Red (coil 2)
+    - Tr4.76 0.635mm pitch
+        - 314.96 full steps per mm
+
+
+
+- General limits to aim for:
+    - 100mm/s
+    - 1000mm/s^2
+
+- 625 full steps performed per second
+    - 10K individual steps per second (at 1/16 microstepping)
+    - 
+
+
+GT2 Pulley 16T
+- GT2 belt is 2mm bitch.
+
 
 
 --- a/firmware/grbl_port/common_src/config.h
@@ -56,79 +103,8 @@ Past work:
 
 ## Using SLA printing LCD
 
-Past work:
-- https://hackaday.io/project/178451-qwicktrace-pcb
 
-
-
-
-Sainsmart CNC 3020 settings
-
-- Isolation Routing Copper Traces
-    - 0.15mm Tool Diameter (or 0.21 if using 60 degree)
-    - V-Bit 30 degree with 0.1mm diameter
-    - 3 passes with 10% overlap
-    - Travel Z: 2mm
-    - Feedrate X/Y: 120 mm/min
-    - Feedrate Z: 60 mm/min
-    - Spindle: 10000 RPM
-    - Rapid Move Feedrate: 1500 mm/min
-- Drilling
-    - Travel XY feed rate: 1500
-    - Z feed rate: 40
-    - Spindle Speed: 10000 RPM
-    - Z Cut Position: -1.7
-    - Z Move Position: 2
-- Routing Edge:
-    - 1.2mm bit (3rd from smallest)
-    - 1.7mm cut depth, 0.5mm per pass (4 passes)
-    - 0.1mm margin
-    - No gaps
-    - 60mm/min XY cutting speed
-    - 40mm/min Z cutting speed
-    - Travel Z: 2mm
-
-
-## Old
-
-
-Settings using 3018
-- How to do mesh leveling/
-- Engraving settings from 'Teaching Tech'
-    - For 20 degree v cutter
-    - Tool number 10
-    - 0.15mm depth
-    - 254mm/min feed rate
-    - 50mm/min plunge rate
-    - 1000 RPM
-    - 20% step over
-
-- Documentation from Sainsmart
-    - https://docs.sainsmart.com/3018-prover
-    - https://docs.sainsmart.com/3018-prover-offline
-
-
-- Should install grblcontrol
-    - from https://github.com/Denvi/Candle
-    - `mkdir build`
-    - `cd build`
-    - `qmake ../src/candle.pro`
-    - `make -j4`
-
-- Installing flatcam
-    - `git clone https://bitbucket.org/jpcgt/flatcam`
-    - `git checkout origin/Beta`
-    - `./setup_ubuntu.sh`
-    - `pip3 install -r requirements.txt`
-    - `python3 FlatCAM.py`
-    - Must have vispy at 0.6.6
-        - Can fix this by changing the requirements.txt and re-installing.
-        - See https://gist.github.com/natevw/3e6fc929aff358b38c0a
 
 - Creating ubuntu live usb
     - `sudo apt install usb-creator-gtk`
 
-
-- By default, speed rates would be from 0-1000
-    - https://docs.sainsmart.com/article/9m0rbnw6k1-introduction-to-cnc-for-a-total-novice-tuning-gbrl-settings
-    - Could set tothe actual RPM range.

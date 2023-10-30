@@ -10,7 +10,7 @@ use crate::transforms::transform2f;
 // TODO: Increase if we can use more anti-aliasing.
 const LINEARIZATION_ERROR_THRESHOLD: f32 = 0.5;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Path {
     sub_paths: Vec<SubPath>,
 }
@@ -91,11 +91,52 @@ impl Path {
 
         (stroke_vertices, stroke_path_starts)
     }
+
+    /// Determines whether or not the result of linearizing the path (returned
+    /// by self.linearize or self.stroke) can be reused under a new transform.
+    pub fn can_reuse_linearized(
+        &self,
+        current_transform: &Matrix3f,
+        last_transform_inv: &Matrix3f,
+    ) -> bool {
+        let mut all_lines = true;
+        for sub_path in &self.sub_paths {
+            for segment in &sub_path.segments {
+                if let PathSegment::Line(_) = segment {
+                    // Good
+                } else {
+                    all_lines = false;
+                    break;
+                }
+            }
+
+            if !all_lines {
+                break;
+            }
+        }
+
+        if all_lines {
+            return true;
+        }
+
+        let mut diff = current_transform * last_transform_inv;
+
+        // Ignore translations
+        diff[(0, 2)] = 0.0;
+        diff[(1, 2)] = 0.0;
+
+        let mut error = 0.0;
+        for i in 0..diff.len() {
+            error += diff[i];
+        }
+
+        error < 1e-3
+    }
 }
 
 /// A sub-path is a continuous set of line/curve segments where the last point
 /// of the previous segment is the same as the start point of the next segment.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SubPath {
     pub segments: Vec<PathSegment>,
 }
@@ -106,12 +147,17 @@ impl SubPath {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PathSegment {
     /// NOTE: Could also be implemented as a two point bezier curve.
     Line(LineSegment2<f32>),
     Ellipse(Ellipse),
     BezierCurve(BezierCurve),
+}
+
+pub enum PathUsage {
+    Fill,
+    Stroke { width: f32 },
 }
 
 pub struct PathBuilder {

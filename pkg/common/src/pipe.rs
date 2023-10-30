@@ -16,17 +16,18 @@ use async_std::channel;
 use async_std::sync::Mutex;
 
 use crate::errors::*;
-use crate::io::{Readable, Writeable};
+use crate::io::{IoError, IoErrorKind, Readable, Writeable};
 
 pub struct PipeWriter {
     buffer: Arc<Mutex<Vec<u8>>>,
-    notifier: channel::Sender<()>,
+    notifier: channel::Sender<Option<Result<()>>>,
     waiter: channel::Receiver<()>,
 }
 
 #[async_trait]
 impl Writeable for PipeWriter {
     async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        // TODO: Make dynamic as in some cases, we need more data per frame.
         const MAX_BUFFER_SIZE: usize = 4096;
 
         loop {
@@ -36,14 +37,14 @@ impl Writeable for PipeWriter {
                     let n = std::cmp::min(MAX_BUFFER_SIZE - buffer.len(), buf.len());
                     buffer.extend_from_slice(&buf[0..n]);
 
-                    let _ = self.notifier.try_send(());
+                    let _ = self.notifier.try_send(None);
 
                     return Ok(n);
                 }
             }
 
             if let Err(_) = self.waiter.recv().await {
-                return Err(err_msg("Reader hung up"));
+                return Err(IoError::new(IoErrorKind::RemoteReaderClosed, "").into());
             }
         }
     }
@@ -53,10 +54,17 @@ impl Writeable for PipeWriter {
     }
 }
 
+impl PipeWriter {
+    // TODO: Move to Writeable.
+    pub async fn close(&mut self, result: Result<()>) {
+        self.notifier.send(Some(result)).await;
+    }
+}
+
 pub struct PipeReader {
     buffer: Arc<Mutex<Vec<u8>>>,
     notifier: channel::Sender<()>,
-    waiter: channel::Receiver<()>,
+    waiter: channel::Receiver<Option<Result<()>>>,
 }
 
 #[async_trait]
@@ -79,6 +87,20 @@ impl Readable for PipeReader {
                     let _ = self.notifier.try_send(());
 
                     return Ok(n);
+                }
+            }
+
+            match self.waiter.recv().await {
+                Ok(None) => continue,
+                Ok(Some(res)) => {
+                    // Other side was closed either successfully due to EOF or not.
+                    return res.map(|_| 0);
+                }
+                Err(_) => {
+                    // TODO: Maybe change to Cancelled.
+                    return Err(
+                        IoError::new(IoErrorKind::Aborted, "Pipe writer was never closed").into(),
+                    );
                 }
             }
 

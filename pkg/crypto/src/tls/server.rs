@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use common::io::{Readable, Writeable};
+use common::io::{Readable, SharedWriteable, Writeable};
 
 use crate::random::secure_random_bytes;
 use crate::tls::application_stream::ApplicationStream;
@@ -26,7 +26,7 @@ pub struct Server {}
 impl Server {
     pub async fn connect(
         reader: Box<dyn Readable + Sync>,
-        writer: Box<dyn Writeable>,
+        writer: Box<dyn SharedWriteable>,
         options: &ServerOptions,
     ) -> Result<ApplicationStream> {
         let executor = ServerHandshakeExecutor::create(reader, writer, options).await?;
@@ -45,7 +45,7 @@ struct ServerHandshakeExecutor<'a> {
 impl<'a> ServerHandshakeExecutor<'a> {
     pub async fn create(
         reader: Box<dyn Readable + Sync>,
-        writer: Box<dyn Writeable>,
+        writer: Box<dyn SharedWriteable>,
         options: &'a ServerOptions,
     ) -> Result<ServerHandshakeExecutor<'a>> {
         let mut certificate_registry = None;

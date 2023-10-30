@@ -17,7 +17,7 @@ extern crate rpc_util;
 extern crate macros;
 
 // TODO: Eventually make this private
-pub use raft_proto as proto;
+pub use raft_proto::raft as proto;
 
 pub mod atomic;
 mod consensus;

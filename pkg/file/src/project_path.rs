@@ -5,6 +5,8 @@ use crate::LocalPathBuf;
 pub fn project_dir() -> LocalPathBuf {
     let mut dir = crate::current_dir().unwrap();
 
+    // TOOD: Instead base this on finding a WORKSPACE file or environment variable?
+
     // Special case which running in the 'cross' docker container.
     if dir.starts_with("/project") {
         return "/project".into();

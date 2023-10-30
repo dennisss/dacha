@@ -55,11 +55,18 @@ impl http::ServerHandler for Service {
 
 #[executor_main]
 async fn main() -> Result<()> {
-    // let handler =
-    // http::static_file_handler::StaticFileHandler::new(file::project_dir());
+    /*
+    cd doc/pi_rack/board-latest/bom
+
+    python3 -m http.server 8000
+    */
+
+    let handler = http::static_file_handler::StaticFileHandler::new(
+        file::project_dir().join("doc/pi_rack/board-latest/bom"),
+    );
     // let handler = http::HttpFn(handle_request);
 
-    let handler = Service {};
+    // let handler = Service {};
 
     /*
     secp256 is still very slow :(
@@ -81,7 +88,7 @@ async fn main() -> Result<()> {
         trust_remote_certificate: true,
     });
 
-    options.tls = Some(tls_options);
+    // options.tls = Some(tls_options);
 
     let server = http::Server::new(handler, options);
     server.run(8000).await

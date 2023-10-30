@@ -23,5 +23,15 @@ pub const NODE_ID_ENV_VAR: &'static str = "CLUSTER_NODE";
 
 /// Environment variable containing the name of the currently running Worker.
 ///
+/// TODO: This should be used by the server to verify the host name provided.
+/// (Host name must also align with the TLS name)
+///
 /// This is set by the Node runtime.
 pub const WORKER_NAME_ENV_VAR: &'static str = "CLUSTER_WORKER";
+
+/// Environment variable containing a URI for connecting to a metastore.
+///
+/// This will be set by the Node runtime to point to either the metastore itself
+/// or a proxy. This should always contain an ip address host as it can't detect
+/// on the meta store for resolving the address.
+pub const META_STORE_ADDR_ENV_VAR: &'static str = "CLUSTER_META_STORE";

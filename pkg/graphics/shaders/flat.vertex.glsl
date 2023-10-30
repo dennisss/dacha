@@ -1,5 +1,7 @@
 #version 330
 
+// TODO: Stop calling this 'flat' shading as it doesn't use any lights.
+
 uniform mat4 proj;
 uniform mat4 modelview;
 

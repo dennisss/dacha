@@ -194,6 +194,7 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
     // Used in the quasi-quotation below as `#name`.
     let name = input.ident;
 
+    let mut parse_early = vec![];
     let mut parse_values = vec![];
     let mut parse_branch = vec![];
     let mut parse_fields = vec![];
@@ -224,6 +225,7 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
                 let mut field_name = field_ident.to_string();
 
                 let mut is_sparse = false;
+                let mut flatten = false;
 
                 let options = get_options(PARSE_ATTR_NAME, &field.attrs);
                 for (key, value) in options {
@@ -243,30 +245,66 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
                             Lit::Bool(v) => v.value(),
                             _ => panic!("Bad sparse format"),
                         };
+
+                        continue;
+                    }
+
+                    if key.is_ident("flatten") {
+                        let v = value.unwrap();
+                        flatten = match &v {
+                            Lit::Bool(v) => v.value(),
+                            _ => panic!("Bad flatten format"),
+                        };
+
+                        continue;
                     }
                 }
 
                 let field_value = format_ident!("{}_value", field_ident);
 
+                if flatten {
+                    parse_values.push(quote! {
+                        #field_value: #field_ty::Builder
+                    });
+
+                    parse_early.push(quote! {
+                        let (key, value) = match self.#field_value.add_field(key, value)? {
+                            Some(v) => v,
+                            None => return Ok(None)
+                        };
+                    });
+
+                    parse_fields.push(quote! {
+                        #field_ident: self.#field_value.build()?
+                    });
+
+                    // TODO: Add to serialization.
+
+                    continue;
+
+                }
+
                 parse_values.push(quote! {
-                    let mut #field_value = None;
+                    #field_value: Option<#field_ty>
                 });
 
                 parse_branch.push(quote! {
                     #field_name => {
-                        if #field_value.is_some() {
-                            return Err(err_msg("Duplicate value for field"));
-                        }
-
-                        #field_value = Some(
-                            <#field_ty as ::reflection::ParseFrom<'data>>::parse_from(value)?
-                        );
+                        if let Some(existing_value) = &mut self.#field_value {
+                            <#field_ty as ::reflection::ParseFromValue<'data>>::parse_merge(existing_value, value)
+                                .map_err(|e| format_err!("[{}] {}", #field_name, e))?;
+                        } else {
+                            self.#field_value = Some(
+                                <#field_ty as ::reflection::ParseFrom<'data>>::parse_from(value)
+                                    .map_err(|e| format_err!("[{}] {}", #field_name, e))?
+                            );
+                        }                        
                     }
                 });
 
                 if is_sparse {
                     parse_fields.push(quote! {
-                        #field_ident: #field_value.unwrap_or_else(|| <#field_ty as Default>::default())
+                        #field_ident: self.#field_value.unwrap_or_else(|| <#field_ty as Default>::default())
                     });
 
                     serialize_fields.push(quote! {
@@ -281,7 +319,7 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
                 // TODO: Inject the absolute field path into this function.
                 parse_fields.push(quote! {
                     #field_ident: <#field_ty as ::reflection::ParseFromValue<'data>>::unwrap_parsed_result(
-                        #field_name, #field_value)?
+                        #field_name, self.#field_value)?
                 });
 
                 serialize_fields.push(quote! {
@@ -292,28 +330,84 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
         _ => {}
     }
 
+    let name_string = name.to_string();
+
+    let name_builder = format_ident!("{}Builder", name);
+
     // TODO: Is the order of execution defined for which fields will be parsed
     // first.
     let out = quote! {
-        impl<'data> ::reflection::ParseFromValue<'data> for #name {
-            fn parse_from_object<Input: ::reflection::ObjectIterator<'data>>(mut input: Input) -> Result<Self> {
-                #(#parse_values)*
 
-                while let Some((key, value)) = ::reflection::ObjectIterator::next_field(&mut input)? {
-                    let key: &str = key.as_ref();
-                    match key {
-                        #(#parse_branch,)*
-                        _ => {
-                            if !#allow_unknown {
-                                return Err(format_err!("Unknown field: {}", key));
-                            }
-                        }
+        #[derive(Default)]
+        pub struct #name_builder {
+            #(#parse_values,)*
+        }
+
+        impl<'data> ::reflection::ObjectBuilder<'data> for #name_builder {
+            type ObjectType = #name;
+
+            fn add_field<V: ::reflection::ValueReader<'data>>(
+                &mut self,
+                key: String,
+                value: V,
+            ) -> Result<Option<(String, V)>> {
+                use ::reflection::ObjectBuilder;
+
+                #(#parse_early)*
+
+                let key_s: &str = key.as_ref();
+                match key_s {
+                    #(#parse_branch,)*
+                    _ => {
+                        return Ok(Some((key, value)));
                     }
                 }
+
+                Ok(None)
+            }
+
+            fn build(self) -> Result<Self::ObjectType> {
+                use ::reflection::ObjectBuilder;
 
                 Ok(#name {
                     #(#parse_fields,)*
                 })
+            }
+
+        }
+
+        impl #name {
+            pub type Builder = #name_builder;
+
+            pub fn builder() -> #name_builder {
+                #name_builder::default()
+            }
+        }
+
+
+        impl<'data> ::reflection::ParseFromValue<'data> for #name {
+            fn parse_from_object<Input: ::reflection::ObjectIterator<'data>>(mut input: Input) -> Result<Self> {
+                use ::reflection::ObjectBuilder;
+
+                let mut builder = Self::builder();
+
+                while let Some((key, value)) = ::reflection::ObjectIterator::next_field(&mut input)? {
+                    if let Some((key, _)) = builder.add_field(key, value)? {
+                        if !#allow_unknown {
+                            return Err(format_err!("Unknown field: {}", key));
+                        }
+                    }
+                }
+
+                builder.build()
+            }
+
+            fn parsing_hint() -> Option<::reflection::ParsingTypeHint> {
+                Some(::reflection::ParsingTypeHint::Object)
+            }
+
+            fn parsing_typename() -> Option<&'static str> {
+                Some(#name_string)
             }
         }
 

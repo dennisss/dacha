@@ -113,6 +113,10 @@ impl Context {
         Ok(instance)
     }
 
+    // TODO: For some reason this thread must finish for your parent process to
+    // complete?
+    // TODO: The reference to this is contained inside the context_state so when
+    // this will finish is somewhat unclear.
     fn run_background_thread(context_state: Arc<ContextState>) {
         let mut fds = vec![];
         loop {

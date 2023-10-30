@@ -398,7 +398,7 @@ impl<T: 'static + Send, S: crate::futures::sink::Sink<T> + Send + Unpin> Sinkabl
 /// An asynchronously readable object. Works similarly to std::io::Read except
 /// is easier to implement for async.
 #[async_trait]
-pub trait Readable: 'static + Send + Unpin {
+pub trait Readable: Send + Unpin {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
     async fn read_at_most(&mut self, buf: &mut Vec<u8>, max_additional_bytes: usize) -> Result<()> {
@@ -463,7 +463,23 @@ pub trait Readable: 'static + Send + Unpin {
 
         Ok(())
     }
+
+    async fn pipe(&mut self, writer: &mut dyn Writeable) -> Result<()> {
+        let mut buf = vec![0u8; BUF_SIZE];
+        loop {
+            let n = self.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+
+            writer.write_all(&mut buf[0..n]).await?;
+        }
+
+        Ok(())
+    }
 }
+
+pub trait SharedReadable = Readable + 'static;
 
 #[async_trait]
 impl<R: Readable> Readable for Borrowed<R> {
@@ -476,6 +492,20 @@ impl<R: Readable> Readable for Borrowed<R> {
 impl<R: Readable + ?Sized> Readable for Box<R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.deref_mut().read(buf).await
+    }
+}
+
+#[async_trait]
+impl Readable for &mut dyn Readable {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        (*self).read(buf).await
+    }
+}
+
+#[async_trait]
+impl<R: Readable> Readable for &mut R {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        (*self).read(buf).await
     }
 }
 
@@ -519,7 +549,7 @@ impl<R: Readable> Readable for DeferredReadable<R> {
 }
 
 #[async_trait]
-pub trait Writeable: Send + Sync + Unpin + 'static {
+pub trait Writeable: Send {
     async fn write(&mut self, buf: &[u8]) -> Result<usize>;
 
     async fn flush(&mut self) -> Result<()>;
@@ -551,8 +581,44 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
     }
 }
 
+pub trait SharedWriteable = Writeable + Sync + 'static;
+
 #[async_trait]
-impl<T: 'static + AsRef<[u8]> + Send + Unpin> Readable for std::io::Cursor<T> {
+impl Writeable for Vec<u8> {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    async fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<T: Writeable> Writeable for &mut T {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        (*self).write(buf).await
+    }
+
+    async fn flush(&mut self) -> Result<()> {
+        (*self).flush().await
+    }
+}
+
+#[async_trait]
+impl Writeable for &mut dyn Writeable {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        (*self).write(buf).await
+    }
+
+    async fn flush(&mut self) -> Result<()> {
+        (*self).flush().await
+    }
+}
+
+#[async_trait]
+impl<T: AsRef<[u8]> + Send + Unpin> Readable for std::io::Cursor<T> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         Ok(std::io::Read::read(self, buf)?)
     }
@@ -570,4 +636,9 @@ impl<T: Readable + Writeable> ReadWriteable for T {
     fn as_write(&mut self) -> &mut dyn Writeable {
         self
     }
+}
+
+#[async_trait]
+pub trait Seekable {
+    async fn seek(&mut self, offset: u64) -> Result<()>;
 }

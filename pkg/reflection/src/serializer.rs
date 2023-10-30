@@ -11,6 +11,8 @@ pub trait SerializeTo {
         false
     }
 
+    // TODO: This is only really supported by primitive types and may be mistakenly
+    // used by other types so consider making this a separate trait.
     fn serialize_sparse_as_empty_value(&self) -> bool {
         false
     }

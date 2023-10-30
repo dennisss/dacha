@@ -1,3 +1,13 @@
+# Homebrewing the switch:
+
+Following https://yuzu-emu.org/help/quickstart/
+
+TODO: Fork all of these repositories.
+
+
+# Battery Emulation Stuff
+
+
 Passing through USB-C
 - Need to pass through VBUS, GND, CC1 and CC2 pins
 

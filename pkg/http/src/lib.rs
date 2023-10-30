@@ -10,6 +10,8 @@ extern crate parsing;
 extern crate failure;
 #[macro_use]
 extern crate regexp_macros;
+#[macro_use]
+extern crate macros;
 extern crate crypto;
 extern crate net;
 extern crate sys;

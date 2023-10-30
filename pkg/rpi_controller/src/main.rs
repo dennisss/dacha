@@ -16,9 +16,13 @@ Fan curve:
 
 Testing using an independent Pi:
 
-ssh -i ~/.ssh/id_cluster pi@10.1.0.73
+cargo run --bin builder -- build //pkg/rpi_controller:bundle
 
-scp -i ~/.ssh/id_cluster built/pkg/rpi_fan_control/bundle/sha256:1472d87b195a0c9df6922badf7e2929980af814aa4e389c5197ef0f01d6144a7 pi@10.1.0.73:~/rpi_fan_control.tar
+
+
+ssh -i ~/.ssh/id_cluster pi@10.1.0.114
+
+scp -i ~/.ssh/id_cluster built/pkg/rpi_controller/bundle/sha256:1ace733a525dd7e9567ae74174a276eee778888dfd5ae87870dd87355c259916 pi@10.1.0.114:~/rpi_fan_control.tar
 
 rm -r dacha
 
@@ -28,7 +32,9 @@ tar -xf rpi_fan_control.tar -C dacha
 
 cd dacha
 
-./built/pkg/rpi_controller/rpi_controller --rpc_port=8001 --web_port=8000 --fan_pwm_pin=18 --fan_inverted
+./built/pkg/rpi_controller/rpi_controller --rpc_port=8001 --web_port=8000
+
+--fan_pwm_pin=18 --fan_inverted
 
 */
 
@@ -230,6 +236,8 @@ struct Args {
     #[arg(default = false)]
     fan_inverted: bool,
 
+    /// Raspberry Pi BCM pin number of a binary on/off LED controlled with
+    /// high/low pulses.
     led_pin: Option<usize>,
 }
 
@@ -258,12 +266,14 @@ async fn main() -> Result<()> {
         });
 
         let web_server = http::Server::new(web_handler, http::ServerOptions::default());
+        // TODO: Add a shutdown token.
 
         web_server.run(args.web_port.value())
     });
 
     task_bundle.add("RpcServer", {
         let mut rpc_server = rpc::Http2Server::new();
+        rpc_server.set_shutdown_token(executor::signals::new_shutdown_token());
         rpc_server.add_service(service.clone().into_service())?;
         rpc_server.enable_cors();
         rpc_server.allow_http1();

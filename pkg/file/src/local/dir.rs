@@ -4,10 +4,49 @@ use alloc::{ffi::CString, string::String, vec::Vec};
 
 use common::errors::*;
 use executor::RemapErrno;
+use sys::OpenFileDescriptor;
 
 use crate::{FileError, LocalFile, LocalPath};
 
 pub type FileType = sys::FileType;
+
+/*
+We'd ideally like to be able to propagate a file system implementation that forces strict syncronization of all data in some directory.
+
+*/
+
+/*
+Need to implement an appendable file wrapper which buffers the last page of data for O_DIRECT un-aligned writes
+
+- In some cases, it might be better to pad the file than to append though.
+- We also don't need to re-write it unless we are flushing.
+
+Note that we don't want it to implement readable (otherwise we're getting into the same issues as the linux page cache)
+
+For synced io, we must validate that a file exists using O_DIRECT
+
+*/
+
+/*
+pub struct LocalDirectory {
+    file: OpenFileDescriptor,
+}
+
+impl LocalDirectory {
+    pub fn open<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
+        let cpath = CString::new(path.as_ref().as_str())?;
+
+        // TODO: Make file errors. Also do it in LocalFile::open
+        let fd = unsafe { sys::open(cpath.as_ptr(), sys::O_RDONLY | sys::O_DIRECTORY, 0) }?;
+
+        let file = OpenFileDescriptor::new(fd);
+
+        Ok(Self { file })
+    }
+
+    //
+}
+*/
 
 #[derive(Debug, Clone)]
 pub struct LocalDirEntry {
@@ -35,6 +74,7 @@ pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
 
     let mut out = vec![];
 
+    // TODO: If we are checking critical files, it makes sense it us O_DIRECT here?
     let dir = LocalFile::open(path)?;
 
     let mut buffer = [0u8; 8192];

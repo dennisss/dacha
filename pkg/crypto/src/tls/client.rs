@@ -51,7 +51,7 @@ impl Client {
     pub async fn connect(
         &mut self,
         reader: Box<dyn Readable + Sync>,
-        writer: Box<dyn Writeable>,
+        writer: Box<dyn SharedWriteable>,
         options: &ClientOptions,
     ) -> Result<ApplicationStream> {
         let handshake_exec = ClientHandshakeExecutor::new(reader, writer, options).await?;
@@ -110,7 +110,7 @@ struct ClientHandshakeExecutor<'a> {
 impl<'a> ClientHandshakeExecutor<'a> {
     async fn new(
         reader: Box<dyn Readable + Sync>,
-        writer: Box<dyn Writeable>,
+        writer: Box<dyn SharedWriteable>,
         options: &'a ClientOptions,
     ) -> Result<ClientHandshakeExecutor<'a>> {
         Ok(ClientHandshakeExecutor {

@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package study;
+
+message User {
+    int64 id = 1;
+    string email_address = 2;
+    string first_name = 3;
+    string last_name = 4;
+    // repeated google.protobuf.Any providers = 5;
+}
+
+// message GoogleUserProvider {
+//     string id = 1;    
+// }
+
+message Session {
+    int64 id = 1;
+    int64 user_id = 2;
+    bytes auth_key = 3;
+    bool deleted = 4;
+}
+
+message FlashCardGroup {
+    int64 id = 1;
+    int64 owner_id = 2;
+    string name = 3;
+    string description = 4;
+}
+
+message FlashCardDimension {
+    string name = 1;
+}
+
+message FlashCardDimensionValue {
+    string name = 1;
+    string value = 2;
+}
+
+
+message FlashCard {
+    int64 id = 1;
+    int64 group_id = 2;
+    repeated FlashCardDimensionValue dimensions = 3;
+    uint32 order = 4;
+}
+
+
+message FlashCardEvent {    
+    int64 user_id = 1;
+    int64 card_id = 2;
+    uint64 timestamp = 3;
+
+    string query_dimension = 4;
+
+    string value_dimension = 5;
+
+    float score = 6;
+
+    // How much time in milliseconds on completing this event (measured from the first time the user saw the query).
+    uint64 time_spent_millis = 7;
+}
+
+message FlashCardState {
+    int64 user_id = 1;
+    int64 card_id = 2;
+
+    // If true, we will allow giving the user this flash card.
+    bool enabled = 3;
+}
+
+message FlashCardProgress {
+    int64 user_id = 1;
+    int64 card_id = 2;
+    string query_dimension = 3;
+    string value_dimension = 4;
+
+    float confidence_score = 7;
+
+    float current_decay = 8;
+
+    uint64 num_attempts = 9;
+
+    uint64 last_attempt_time = 10;
+
+    // Last time this proto was updated (used for tracking how much exponential decay to apply).
+    uint64 last_update_time = 11;
+}

@@ -8,8 +8,26 @@ platform {
 
 rule_defaults {
     [type.googleapis.com/builder.RustBinaryAttrs] {
-        compiler: CROSS
+        compiler: CARGO
         profile: "release"
         target: "aarch64-unknown-linux-gnu"
+        env: [
+            {
+                key: "PKG_CONFIG_PATH_aarch64_unknown_linux_gnu"
+                value: "/opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu/pkgconfig"
+            },
+            {
+                key: "PKG_CONFIG_SYSROOT_DIR_aarch64_unknown_linux_gnu"
+                value: "/opt/dacha/pi/rootfs"
+            },
+            {
+                key: "BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu"
+                value: "--sysroot=/opt/dacha/pi/rootfs"
+            },
+            {
+                key: "CMAKE_TOOLCHAIN_FILE_aarch64_unknown_linux_gnu"
+                value: "pkg/rpi/toolchain.cmake"
+            }
+        ]
     }
 }

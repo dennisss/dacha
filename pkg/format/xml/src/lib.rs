@@ -1,7 +1,18 @@
+#[macro_use]
+extern crate macros;
+#[macro_use]
+extern crate regexp_macros;
+
+mod duration;
+mod list;
+mod reflect;
 pub mod spec;
 mod syntax;
 
 use common::errors::*;
+pub use duration::*;
+pub use list::*;
+pub use reflect::ElementParser;
 pub use spec::*;
 
 fn pretty_print_parsing_error(input: &str, remaining_bytes: usize) {

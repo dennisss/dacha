@@ -287,3 +287,69 @@ pub fn parse_port(input: &[u8]) -> ParseResult<Option<u16>, &[u8]> {
     let p = u16::from_str_radix(s, 10)?;
     Ok((Some(p), rest))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_ipv4_address_test() {
+        let test_cases: &[(&'static str, &[u8])] = &[
+            ("192.168.0.1", &[192, 168, 0, 1]),
+            ("255.255.255.255", &[255, 255, 255, 255]),
+            ("10.0.0.1", &[10, 0, 0, 1]),
+        ];
+
+        for (input, output) in test_cases {
+            assert_eq!(
+                parse_ipv4_address(input.as_bytes()).unwrap(),
+                (output.to_vec(), &[])
+            );
+        }
+    }
+
+    #[test]
+    fn parse_ipv6_address_test() {
+        // TODO:
+        // ::ffff:192.0.2.128 is valid
+        // ::192.0.2.128 is NOT valid
+
+        let test_cases: &[(&'static str, &[u8])] = &[
+            (
+                "::ffff:192.0.2.128",
+                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 128],
+            ),
+            (
+                "0000:0000:0000:0000:0000:0000:0000:0001",
+                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            ),
+            ("::1", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+            ("::", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            (
+                "2001:0db8:0000:0000:0000:ff00:0042:8329",
+                &[
+                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
+                ],
+            ),
+            (
+                "2001:db8:0:0:0:ff00:42:8329",
+                &[
+                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
+                ],
+            ),
+            (
+                "2001:db8::ff00:42:8329",
+                &[
+                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
+                ],
+            ),
+        ];
+
+        for (input, output) in test_cases {
+            assert_eq!(
+                parse_ipv6_address(input.as_bytes()).unwrap(),
+                (output.to_vec(), &[])
+            );
+        }
+    }
+}

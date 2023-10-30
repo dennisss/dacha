@@ -1,6 +1,8 @@
 Raft Consensus
 ==============
 
+TODO: Split up the client and server code so that we can avoid everyone linking to the entire Raft crate.
+
 Next steps:
 - Need a raw to get a read index.
 - Requires an 

@@ -30,6 +30,17 @@ pub struct MetastoreClient {
     background_thread: Option<ChildTask>,
 }
 
+/*
+Doing discovery in a GCP instance
+- Use SRV records to discover internal servers
+- Unless in a cluster worker, then we can rely on cached info
+
+`meta.discovery.[zone].cluster.internal.`
+
+- Configure using Cloud DNS API.
+
+*/
+
 impl MetastoreClient {
     /// Creates a new client instance.
     ///

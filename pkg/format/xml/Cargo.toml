@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
 common = { path = "../../common" }
+reflection = { path = "../../reflection" }
+macros = { path = "../../macros" }
 parsing = { path = "../../parsing" }
 file = { path = "../../file" }

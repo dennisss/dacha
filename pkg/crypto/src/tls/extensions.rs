@@ -346,7 +346,11 @@ impl ExtensionType {
         use HandshakeType::*;
         match self {
             // TODO: In TLS 1.2, ServerName is allowed in ServerHello.
-            ServerName => (msg_type == ClientHello || msg_type == EncryptedExtensions),
+            ServerName => {
+                (msg_type == ClientHello
+                    || msg_type == EncryptedExtensions
+                    || msg_type == ServerHello)
+            }
             MaxFragmentLength => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             StatusRequest => {
                 msg_type == ClientHello || msg_type == CertificateRequest || msg_type == Certificate
@@ -358,7 +362,9 @@ impl ExtensionType {
             Heartbeat => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             ApplicationLayerProtocolNegotiation => {
                 // TODO: In TLS 1.2, this cna be sent in ServerHello
-                msg_type == ClientHello || msg_type == EncryptedExtensions
+                msg_type == ClientHello
+                    || msg_type == EncryptedExtensions
+                    || msg_type == ServerHello
             }
             SignedCertificateTimestamp => {
                 msg_type == ClientHello || msg_type == CertificateRequest || msg_type == Certificate

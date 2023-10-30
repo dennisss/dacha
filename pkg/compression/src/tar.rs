@@ -8,8 +8,7 @@ use std::usize;
 
 use common::check_zero_padding;
 use common::errors::*;
-use common::io::Readable;
-use common::io::Writeable;
+use common::io::{Readable, Seekable, Writeable};
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
 const BLOCK_SIZE: u64 = 512;
@@ -121,26 +120,51 @@ pub struct AppendFileOptions {
 /// When writing files originally from the local file system to
 pub struct FileMetadataMask {}
 
-pub struct Reader {
-    file: LocalFile,
+pub struct Reader<Input> {
+    file: Input,
+
+    /// Current location in the file. We assume that 'file' is seeked to this
+    /// position.
+    current_offset: u64,
+
+    /// Offset at which the current file's data ends (excludes block padding).
+    data_end_offset: u64,
 
     /// Offset into the archive file of the next unread file header.
     next_offset: u64,
 }
 
-impl Reader {
+impl Reader<LocalFile> {
     pub async fn open<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
-        Ok(Self {
-            file: LocalFile::open(path)?,
+        Ok(Self::new(LocalFile::open(path)?))
+    }
+}
+
+impl<Input: Readable> Reader<Input> {
+    /// NOTE: The file should be currently seeked to the beginning.
+    pub fn new(file: Input) -> Self {
+        Self {
+            file,
+            current_offset: 0,
+            data_end_offset: 0,
             next_offset: 0,
-        })
+        }
     }
 
+    /// Reads the next file entry in the archive.
+    ///
+    /// This is only allowed to be called at the beginning of the file or after
+    /// reading (or skipping) all data in the previous file.
     pub async fn read_entry(&mut self) -> Result<Option<FileEntry>> {
-        self.file.seek(self.next_offset);
+        if self.current_offset != self.next_offset {
+            return Err(err_msg(
+                "Not at a file offset. Must read or skip all data in the previous file.",
+            ));
+        }
 
         let mut block = [0u8; BLOCK_SIZE as usize];
         self.file.read_exact(&mut block).await?;
+        self.current_offset += BLOCK_SIZE;
 
         // The end of the archive is marked by two nul records.
         if check_zero_padding(&block).is_ok() {
@@ -184,30 +208,12 @@ impl Reader {
 
         let file_size = entry.metadata.header.file_size.unwrap_or(0);
 
-        self.next_offset += BLOCK_SIZE
+        self.data_end_offset = self.current_offset + file_size;
+
+        self.next_offset = self.current_offset
             + BLOCK_SIZE * (common::ceil_div(file_size as usize, BLOCK_SIZE as usize) as u64);
 
         Ok(Some(entry))
-    }
-
-    pub async fn read_data(&mut self, entry: &FileEntry) -> Result<Vec<u8>> {
-        self.file.seek(entry.offset + BLOCK_SIZE);
-
-        let file_size = entry.metadata.header.file_size.unwrap_or(0);
-
-        let padded_length = (BLOCK_SIZE
-            * (common::ceil_div(file_size as usize, BLOCK_SIZE as usize) as u64))
-            as usize;
-
-        let mut data = vec![];
-        data.resize(padded_length, 0);
-        self.file.read_exact(&mut data).await?;
-
-        check_zero_padding(&data[(file_size as usize)..])?;
-
-        data.truncate(file_size as usize);
-
-        Ok(data)
     }
 
     // NOTE: Data should be the entire 512 byte block.
@@ -217,7 +223,7 @@ impl Reader {
         let stored_checksum = Self::parse_checksum_value(&raw_header.header_checksum)?;
 
         // NOTE: The checksum is computed over the entire block.
-        let expected_checksum = Self::calculate_checksum(data);
+        let expected_checksum = calculate_checksum(data);
 
         if stored_checksum != expected_checksum {
             return Err(err_msg("Invalid checksum in header"));
@@ -241,21 +247,6 @@ impl Reader {
             },
             raw_header_rest,
         ))
-    }
-
-    fn calculate_checksum(block: &[u8]) -> u32 {
-        let mut sum = 0;
-        for i in 0..block.len() {
-            // Sum the checksum field as spaces.
-            if i >= 148 && i < 148 + 8 {
-                sum += b' ' as u32;
-                continue;
-            }
-
-            sum += block[i] as u32;
-        }
-
-        sum
     }
 
     fn parse_ustar_extension(data: &[u8]) -> Result<Option<(USTarHeaderExtension, &[u8])>> {
@@ -356,7 +347,49 @@ impl Reader {
 
         Ok(out)
     }
+}
 
+#[async_trait]
+impl<Input: Readable> Readable for Reader<Input> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let n = core::cmp::min(
+            buf.len(),
+            (self.data_end_offset - self.current_offset) as usize,
+        );
+        let n_read = self.file.read(&mut buf[0..n]).await?;
+
+        self.current_offset += n_read as u64;
+        if self.current_offset == self.data_end_offset {
+            let padding_amount = (self.next_offset - self.data_end_offset) as usize;
+            let mut block = [0u8; BLOCK_SIZE as usize];
+
+            self.file.read_exact(&mut block[0..padding_amount]).await?;
+            check_zero_padding(&block[0..padding_amount])?;
+        }
+
+        Ok(n_read)
+    }
+}
+
+impl<Input: Seekable> Reader<Input> {
+    pub async fn seek_to_file(&mut self, entry: &FileEntry) -> Result<()> {
+        self.current_offset = entry.offset + BLOCK_SIZE;
+
+        // TODO: Deduplicate with above.
+        let file_size = entry.metadata.header.file_size.unwrap_or(0);
+        self.data_end_offset = self.current_offset + file_size;
+        self.next_offset = self.current_offset
+            + BLOCK_SIZE * (common::ceil_div(file_size as usize, BLOCK_SIZE as usize) as u64);
+
+        self.file.seek(self.current_offset).await
+    }
+
+    pub async fn skip_current_file(&mut self) -> Result<()> {
+        self.file.seek(self.next_offset).await
+    }
+}
+
+impl<Input: Readable> Reader<Input> {
     pub async fn extract_files(&mut self, output_dir: &LocalPath) -> Result<()> {
         self.extract_files_with_modes(output_dir, None, None).await
     }
@@ -445,9 +478,9 @@ impl Reader {
                     &path,
                     &LocalFileOpenOptions::new().create_new(true).write(true),
                 )?;
+                // TODO: Reserve contiguous space on disk for the file.
 
-                let data = self.read_data(&entry).await?;
-                file.write_all(&data).await?;
+                self.pipe(&mut file).await?;
                 file.flush().await?;
 
                 // Preserve any execute bits on regular files.
@@ -485,11 +518,27 @@ impl Reader {
     }
 }
 
-pub struct Writer {
-    file: LocalFile,
+fn calculate_checksum(block: &[u8]) -> u32 {
+    let mut sum = 0;
+    for i in 0..block.len() {
+        // Sum the checksum field as spaces.
+        if i >= 148 && i < 148 + 8 {
+            sum += b' ' as u32;
+            continue;
+        }
+
+        sum += block[i] as u32;
+    }
+
+    sum
 }
 
-impl Writer {
+pub struct Writer<Output> {
+    // NOTE: This should always be seeked to the end of the file.
+    file: Output,
+}
+
+impl Writer<LocalFile> {
     /// TODO: Support appending files to the end of an archive.
     /// (quickest way is to find scan backwards )
     pub async fn open<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
@@ -502,6 +551,13 @@ impl Writer {
                     .write(true),
             )?,
         })
+    }
+}
+
+impl<Output: Writeable> Writer<Output> {
+    /// Creates a writer using a writer which corresponds to an EMPTY file.
+    pub fn new(file: Output) -> Self {
+        Self { file }
     }
 
     /// Appends a single file to the end of the file using the exact metadata
@@ -579,7 +635,7 @@ impl Writer {
 
         // Add checksum now that we are done writing.
         {
-            let checksum = Reader::calculate_checksum(&header_block);
+            let checksum = calculate_checksum(&header_block);
             let checksum_data = &mut header_block[148..(148 + 8)];
 
             let s = format!("{:06o}\0 ", checksum);
@@ -613,7 +669,38 @@ impl Writer {
             n += nblock_padded as u64;
         }
 
+        // Verify we hit the end of the reader.
+        {
+            let mut buf = [0u8; 1];
+            if reader.read(&mut buf).await? != 0 {
+                return Err(err_msg("Extra data in input file"));
+            }
+        }
+
         Ok(())
+    }
+
+    pub async fn append_regular_file(
+        &mut self,
+        name: &str,
+        size: u64,
+        reader: &mut dyn Readable,
+    ) -> Result<()> {
+        let metadata = FileMetadata {
+            header: Header {
+                file_name: name.to_string(),
+                file_mode: None,
+                owner_id: None,
+                group_id: None,
+                file_size: Some(size),
+                last_modified_time: None,
+                file_type: FileType::NormalFile,
+                linked_file_name: "".into(),
+            },
+            ustar_extension: None,
+        };
+
+        self.append(&metadata, reader).await
     }
 
     fn serialize_string(value: &str, out: &mut [u8]) -> Result<()> {

@@ -39,7 +39,7 @@ pub struct SimpleClientOptions {
 impl Default for SimpleClientOptions {
     fn default() -> Self {
         Self {
-            max_in_memory_response_size: 10 * 1024 * 1024, // 10MB
+            max_in_memory_response_size: 20 * 1024 * 1024, // 20MiB
             backoff_options: ExponentialBackoffOptions {
                 base_duration: Duration::from_millis(10),
                 jitter_duration: Duration::from_millis(200),
@@ -142,6 +142,8 @@ impl SimpleClient {
                 .await
             {
                 Ok(v) => {
+                    // tODO: Also retry some HTTP codes.
+
                     return Ok(v);
                 }
                 Err(e) => {

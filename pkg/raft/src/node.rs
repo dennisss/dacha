@@ -42,12 +42,8 @@ pub struct NodeOptions<R> {
 
     pub seed_list: Vec<String>,
 
-    /// State machine instance to be used
+    /// State machine instance to be used.
     pub state_machine: Arc<dyn StateMachine<R> + Send + Sync + 'static>,
-
-    /// Index of the last log entry applied to the state machine. For a newly
-    /// created state machine, this would be zero.
-    pub last_applied: LogIndex,
 
     pub route_labels: Vec<RouteLabel>,
     /* pub task_bundle: &'a mut TaskResultBundle, */
@@ -272,7 +268,6 @@ impl<R: 'static + Send> Node<R> {
             config_file,
             log: Box::new(log),
             state_machine: options.state_machine,
-            last_applied: options.last_applied,
         };
 
         let empty_log = initial_state.log.last_index().await.value() == 0;

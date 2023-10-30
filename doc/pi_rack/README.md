@@ -1,4 +1,41 @@
 
+Assembly:
+- Assemble the 2U case
+  - attach to Ikea Lack with 4 x (M5 60mm) screws
+- Single tray
+  - Laser cut 1 tray (DXF is in inch units) out of ~3mm thick acrylic.
+  - Tap all small holes with an M3 tap.
+  - 4 pi-mounts
+    - Glue these with Gorilla glue to the tray
+    - Use 4 x M2.5 8mm screws to fix the Pi to the tray
+    - 
+  - Print 1 fan-mount
+    - Supports Noctua 40mm x 10 or 20mm fans (use the appropriate holes for either)
+    - Screw on the fan with regular noctua self-tapping screws
+    - Use 2 x M3 6mm screws to fix it to the tray
+- 'Standard Pi 4 Armor'
+  - Comes with 4 x M2.5 8mm screws 
+
+New board design:
+
+- POE diodes and module connector
+  - CD-HD201
+  - AG5405
+- TPM over I2C
+  - Infineon OPTIGA TRUST M SLS 32AIA
+- RTC over I2C
+  - DS3231: +/- 5ppm
+  - CR1220 battery for this.
+  - Battery voltage monitor for this.
+- Fan connector (capability to monitor speed as well as control speed)
+  - Noctua NF-A4x20mm fans have 26 AWG wiring 
+  - Noctua NF-A4x10mm fans have 28 AWG wiring
+- 1 LED (maybe RGB side-illuminated)
+- OLED 128x32
+  - I2C
+- General purpose button
+- Export a few of the I2C or SPI pins from the Raspberry Pi.
+
 Fuse:
 - 2JQ 3-R
     - https://www.digikey.com/en/products/detail/bel-fuse-inc/2JQ-3-R/1009870
@@ -14,11 +51,55 @@ Short circuit protection:
 - Ceramic fuse
     -
 
+100 + 3.5 + 29 - 9.5*2.54
+
+100 + 3.5 + 2.54/2
+
+80mm total height
+
+POE module needs 19.5mm
+Pi is 56
+
+2.35 side pad
+
+110.25 + ((103.685 - 97.335) / 2)
 
 
+Top hat connections:
+- I2C for screen
+- I2C for Accelerometer
+- I2C for thermal
+  - - 2 pins
+- SPI for DWM
+  - Also an extra GPIO for deep sleep + IRQ
+  - 4 + 2
+- PWM for IR LEDs
+  - 1
+- Serial for Neopixel Ring
+  - 1
+- Extra IO for shutter swap
+  - 1
+
+- So total is 12 (also add another 2 for extra 5V and GND)
+  - Can reduce to UART + 5V + 3V + GND (5 pins) if we use an external IC
+
+TODO: In Mocap code, lock the CPU frequency.
+
+Pi Pins are ~6mm above board
+=> So need another 34mm of rise
+=> Minimum is 28mm
+
+Arducam camera boards are max 40x40 mm
+=> Holes at 34x34 with each being M2
+
+Main TODOs
+- Verify all old raspberry pis have the UART in the same spot
 
 TODO: Use a relay to control the Pi as this is probably lower voltage drop? but will have 
 
+
+Center of 16 pin at 139
+14mm wide lens
 
 16 AWG stranded power distribution by 450mm
 - Around 0.01 ohms
@@ -38,8 +119,17 @@ Decisions:
 - TVS diode
 - 1000uF capacitor on each pi
 
+(122, 128)
+
 Power Supply
 - UHP-200R-5
+
+103.5 + 29 - (2.54*9.5)
+
+126.6 + 1.55
+
+LED Controller:
+- MPQ3362
 
 PCB should support either bridging input power to 5V or 
 

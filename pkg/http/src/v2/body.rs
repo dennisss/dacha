@@ -85,6 +85,9 @@ impl OutgoingStreamBodyPoller {
         // Intermediate buffer used to read data before copying into the stream state.
         let mut buffer = vec![];
 
+        // TODO: Fro unary responses, can we batch all the stuff needed to generate the
+        // request.
+
         loop {
             let stream = self.stream_state.lock().await;
 

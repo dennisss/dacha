@@ -6,6 +6,7 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 parsing = { path = "../parsing" }
+reflection = { path = "../reflection" }
 net = { path = "../net" }
 compression = { path = "../compression" }
 crypto = { path = "../crypto" }

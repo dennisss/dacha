@@ -685,6 +685,10 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     //     println!("missing id: {:?}", current_id);
                     // }
 
+                    /*
+                    TODO
+                    thread 'main' panicked at 'no entry found for key', /home/dennis/workspace/dacha/pkg/math/src/geometry/half_edge.rs:688:33
+                    */
                     let edge = &self.half_edges[current_id];
 
                     self_faces.insert(edge.incident_face);
@@ -960,7 +964,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
     fn make_y_monotone_face(&mut self, face_id: FaceId) {
         let face = &self.faces[face_id];
 
-        let mut line_segments = vec![];
+        let mut line_segments: Vec<LineSegment2<f64>> = vec![];
         let mut line_segments_to_edge = vec![];
 
         // Extract line segments from all edges.
@@ -1005,7 +1009,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
         // TODO: For this we should use exact matching of intersections.
 
-        let intersections = LineSegment2::intersections(&line_segments, 1e-3);
+        let intersections = LineSegment2::intersections(&line_segments, 0.);
 
         // let mut intersection_starts = vec![];
         // for intersection in &intersections {

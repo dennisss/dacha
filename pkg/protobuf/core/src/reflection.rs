@@ -96,8 +96,13 @@ impl std::ops::Deref for StringPtr {
     }
 }
 
-/// NOTE: Should be implemented by all Messages.
-pub trait MessageReflection: Message + AsAny + MessageEquals + Any + 'static {
+/// Enables dynamic retrieval of fields in a message.
+///
+/// - Should be implemented by all Messages.
+/// - Note that unlike the mainline C++ implementation, '.*field.*' methods in
+///   this trait do NOT include unknown fields or extensions.
+///   - The user should use the unknown_fields() and extensions() to get these.
+pub trait MessageReflection: Message + AsAny + MessageEquals {
     // A non-mutable version would be required for the regular
 
     // Should also have a fields() which iterates over fields?
@@ -108,12 +113,17 @@ pub trait MessageReflection: Message + AsAny + MessageEquals + Any + 'static {
     //
     // This includes fields that may not be present in the current message or are
     // set to the default value.
-    //
-    // NOTE: Does not include extensions.
     fn fields(&self) -> &[FieldDescriptorShort];
+
+    // /// Checks if
+    // fn has_field_with_number(&self, num: FieldNumber) -> bool;
+
+    // clear_field_with_number()
 
     /// Returns None if the field is now defined in the descriptor or the field
     /// doesn't have a value (based on field presence rules).
+    ///
+    /// TODO: Change this to return default values if not present.
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection>;
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut>;

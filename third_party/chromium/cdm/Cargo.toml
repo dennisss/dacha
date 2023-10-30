@@ -1,0 +1,16 @@
+[package]
+name = "chromium_cdm"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+cxx = "1.0"
+sys = { path = "../../../pkg/sys" }
+base_error = { path = "../../../pkg/base/error" }
+base_radix = { path = "../../../pkg/base/radix" }
+executor = { path = "../../../pkg/executor" }
+macros = { path = "../../../pkg/macros" }
+
+[build-dependencies]
+cxx-build = "1.0"
+bindgen = "0.63.0"

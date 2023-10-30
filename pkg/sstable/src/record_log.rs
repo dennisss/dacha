@@ -533,25 +533,22 @@ impl RecordReader {
         file.seek(append_offset);
 
         Ok(Some(RecordWriter {
-            path: self.path,
-            file: Box::new(file),
+            file,
             extent: append_offset,
         }))
     }
 }
 
-pub struct RecordWriter {
-    path: LocalPathBuf,
-
+pub struct RecordWriter<Output: Writeable = LocalFile> {
     /// NOTE: If this is a file, it should already be seeked to the end of the
     /// file.
-    file: Box<dyn Writeable>,
+    file: Output,
 
     /// Byte offset at which we will next write in the file.
     extent: u64,
 }
 
-impl RecordWriter {
+impl RecordWriter<LocalFile> {
     /// Creates a new record log file at the given path (it must not already
     /// exist).
     pub async fn create_new<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
@@ -568,11 +565,7 @@ impl RecordWriter {
 
         file.seek(0);
 
-        Ok(Self {
-            path: path.to_owned(),
-            file: Box::new(file),
-            extent: 0,
-        })
+        Ok(Self { file, extent: 0 })
     }
 
     /// Opens an existing log file with the write cursor places after the last
@@ -590,7 +583,17 @@ impl RecordWriter {
     }
 
     pub fn path(&self) -> &LocalPath {
-        &self.path
+        self.file.path()
+    }
+}
+
+impl<Output: Writeable> RecordWriter<Output> {
+    /// NOTE: The writer MUST be empty.
+    pub fn new(writer: Output) -> Self {
+        Self {
+            file: writer,
+            extent: 0,
+        }
     }
 
     /// Size of the file if we were to flush all previously appended changes.

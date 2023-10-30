@@ -378,6 +378,7 @@ impl ServerHello {
 		let legacy_compression_method = c.next(as_bytes(be_u8))?;
 		let extensions = {
 			let data = c.next(varlen_vector(6, U16_LIMIT))?;
+            // TOOD: Replace 'complete(many(' with a parser that returns the last error (so that we don't get generic incomplete errors).
 			let (arr, _) = complete(many(
 				|i| Extension::parse(i, HandshakeType::ServerHello)))(data)?;
 			arr

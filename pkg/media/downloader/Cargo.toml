@@ -1,0 +1,22 @@
+[package]
+name = "media_downloader"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+automata = { path = "../../automata" }
+base_radix = { path = "../../base/radix" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+common = { path = "../../common" }
+compression = { path = "../../compression" }
+math = { path = "../../math" }
+macros = { path = "../../macros" }
+reflection = { path = "../../reflection" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+xml = { path = "../../format/xml" }
+http = { path = "../../http" }
+file = { path = "../../file" }
+video = { path = "../video" }
+uuid = { path = "../../uuid" }
+chromium_cdm = { path = "../../../third_party/chromium/cdm" }

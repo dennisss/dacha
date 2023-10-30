@@ -37,6 +37,12 @@ use crate::v2;
 // TODO: See https://tools.ietf.org/html/rfc7230#section-3.3.3 with
 // special HEAD/status code behavior
 
+/*
+Some more server protections needed:
+- Max request deadline (don't respect grpc deadlines from untrusted clients or at least set a hard cap to them)
+- Max connection age.
+*/
+
 #[derive(Clone)]
 pub struct ServerOptions {
     // TODO: We should make sure that the client uses the "https" scheme
@@ -761,7 +767,7 @@ impl Server {
         shared: &Arc<ServerShared>,
         connection_context: ServerConnectionContext,
         reader: Box<dyn Readable>,
-        writer: Box<dyn Writeable>,
+        writer: Box<dyn SharedWriteable>,
         input: ServerConnectionV2Input,
     ) -> Result<()> {
         let connection_id = connection_context.id;

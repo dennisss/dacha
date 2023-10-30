@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package storage;
+
+service SimpleFileSystem {
+    rpc List (ListRequest) returns (ListResponse);
+
+    rpc Read (ReadRequest) returns (ReadResponse);
+
+    rpc Create (CreateRequest) returns (CreateResponse);
+
+    rpc Append (AppendRequest) returns (AppendResponse);
+}
+
+message ListRequest {
+    string prefix = 1;
+}
+
+message ListResponse {
+
+}
+
+message ReadRequest {
+    string path = 1;
+}
+
+message ReadResponse {
+    bytes data = 1;
+}
+
+message CreateRequest {
+
+}
+
+message CreateResponse {
+
+}
+
+message AppendRequest {
+
+}
+
+message AppendResponse {
+
+}
+
+
+service Disk {
+    // rpc ListVolumes
+    // - For getting list of disks and health / space used on each.
+
+    // rpc ListPools
+    
+    // rpc CreatePool
+
+    // 
+}

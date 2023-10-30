@@ -58,23 +58,133 @@ pub struct OpenGLCanvas {
     pub(super) context: WindowContext,
 
     pub(super) dirty: bool,
-
     // tODO
     // Store a reference to the window in which we are drawing.
 }
 
 impl_deref!(OpenGLCanvas::base as CanvasBase);
 
-impl OpenGLCanvas {
-    fn create_path_object(
-        &mut self,
+impl Canvas for OpenGLCanvas {
+    // TODO: Implement a clear_rect which uses glClear if we want to remove the
+    // entire screen.
+
+    fn create_path_fill(&mut self, path: &Path) -> Result<Box<dyn CanvasObject>> {
+        Ok(Box::new(OpenGLCanvasPath {
+            path: path.clone(),
+            usage: PathUsage::Fill,
+            data: None,
+        }))
+    }
+
+    fn create_path_stroke(&mut self, path: &Path, width: f32) -> Result<Box<dyn CanvasObject>> {
+        Ok(Box::new(OpenGLCanvasPath {
+            path: path.clone(),
+            usage: PathUsage::Stroke { width },
+            data: None,
+        }))
+    }
+
+    /// When drawn, an image is rendered with the top-left corner at position
+    /// (0,0). Any transforms applied to the canvas may move this to a different
+    /// position on the screen though.
+    fn create_image(&mut self, image: &Image<u8>) -> Result<Box<dyn CanvasObject>> {
+        let texture = Rc::new(Texture::new(self.context.clone(), image));
+        Ok(Box::new(OpenGLCanvasImage {
+            texture,
+            width: image.width(),
+            height: image.height(),
+        }))
+    }
+
+    /*
+    OpenGL rounded corner rendering
+    - Could be implemented as a fragment shader.
+    - Mainly need to know the x,y of the circle center.
+    - Compute distance to the center
+    - Render if pixel is
+    */
+
+    /*
+
+    fill_path
+    -> Hard.
+        For each closed path segment
+            Linearize any arc segments.
+            Generate HalfEdgeStruct and label each label post repair with winding increment
+        Perform overlap of all path structs.
+        Do monotone conversion and triangulation.
+
+        The final output is a list of triangles to actually draw!
+        => Ideally we would cache this to avoid re-computing every time (although this is scale dependent)
+
+        Some challenges:
+        - Handling clipping
+        - Can only use a path handle on the same canvas that twas used to create it (need globally unique ids or references).
+
+    */
+}
+
+struct OpenGLCanvasPath {
+    path: Path,
+    usage: PathUsage,
+    data: Option<CachedPathData>,
+}
+
+struct CachedPathData {
+    transform_inv: Matrix3f,
+    mesh: Mesh,
+}
+
+impl OpenGLCanvasPath {
+    fn data<'a>(&'a mut self, canvas: &OpenGLCanvas) -> &'a mut CachedPathData {
+        let transform = canvas.current_transform();
+
+        if let Some(existing_data) = self.data.as_mut() {
+            if !self
+                .path
+                .can_reuse_linearized(transform, &existing_data.transform_inv)
+            {
+                self.data = None;
+            }
+        }
+
+        // NOTE: This code is organized this way to avoid NLL bugs.
+        if let Some(ref mut existing_data) = self.data {
+            return existing_data;
+        }
+
+        self.recompute(canvas)
+    }
+
+    fn recompute(&mut self, canvas: &OpenGLCanvas) -> &mut CachedPathData {
+        let mut transform = canvas.current_transform();
+
+        // TODO: Deduplicate the
+        let ((vertices, path_starts), fill_rule) = match self.usage {
+            PathUsage::Fill => (self.path.linearize(transform), FillRule::NonZero),
+            PathUsage::Stroke { width } => (self.path.stroke(width, transform), FillRule::EvenOdd),
+        };
+
+        self.data.insert(CachedPathData {
+            transform_inv: transform.inverse(),
+            mesh: Self::recompute_mesh(&vertices, &path_starts, fill_rule, canvas),
+        })
+    }
+
+    fn recompute_mesh(
         vertices: &[Vector2f],
         path_starts: &[usize],
         fill_rule: FillRule,
-    ) -> Result<Box<dyn CanvasObject>> {
-        // Fast path: When the path is formed of just triangles, triangulation is trivial. Assuming there isn't significant overlap, this should be more efficient than trying to re-triangulate it.
+        canvas: &OpenGLCanvas,
+    ) -> Mesh {
+        // Fast path: When the path is formed of just triangles, triangulation is
+        // trivial. Assuming there isn't significant overlap, this should be more
+        // efficient than trying to re-triangulate it.
         if fill_rule == FillRule::EvenOdd {
-            let all_triangles = path_starts.pair_iter().find(|(a, b)| *b - *a != 3).is_none();
+            let all_triangles = path_starts
+                .pair_iter()
+                .find(|(a, b)| *b - *a != 3)
+                .is_none();
 
             if all_triangles {
                 let mut new_vertices: Vec<Vector3f> = vec![];
@@ -86,29 +196,25 @@ impl OpenGLCanvas {
                         new_vertices.len() as u32 + 1,
                         new_vertices.len() as u32 + 2,
                     ]);
-    
+
                     for vert in verts {
                         new_vertices.push((vert.clone(), 1.).into());
                     }
                 }
 
                 let mut mesh = Mesh::from(
-                    self.context.clone(),
+                    canvas.context.clone(),
                     &new_vertices,
                     &faces,
                     &[],
-                    self.shader.clone(),
+                    canvas.shader.clone(),
                 );
-        
+
                 mesh.set_vertex_texture_coordinates(vec2f(0., 0.))
-                    .set_texture(self.empty_texture.clone());
-                return Ok(Box::new(OpenGLCanvasPath {
-                    mesh,
-                    transform_inv: self.base.current_transform().inverse(),
-                }));
+                    .set_texture(canvas.empty_texture.clone());
+                return mesh;
             }
         }
-
 
         let mut half_edges = HalfEdgeStruct::<()>::new();
         for i in 0..(path_starts.len() - 1) {
@@ -166,7 +272,7 @@ impl OpenGLCanvas {
             path_starts,
             fill_rule,
             face_centroids.iter().map(|(c, _)| c.y()),
-        )?;
+        );
 
         for (centroid, face_i) in &face_centroids {
             let (_, xs) = iter.next().unwrap();
@@ -202,79 +308,17 @@ impl OpenGLCanvas {
 
         // TODO: Make sure that this doesn't try computing any normals.
         let mut mesh = Mesh::from(
-            self.context.clone(),
+            canvas.context.clone(),
             &new_vertices,
             &faces,
             &[],
-            self.shader.clone(),
+            canvas.shader.clone(),
         );
 
         mesh.set_vertex_texture_coordinates(vec2f(0., 0.))
-            .set_texture(self.empty_texture.clone());
-        Ok(Box::new(OpenGLCanvasPath {
-            mesh,
-            transform_inv: self.base.current_transform().inverse(),
-        }))
+            .set_texture(canvas.empty_texture.clone());
+        mesh
     }
-}
-
-impl Canvas for OpenGLCanvas {
-    // TODO: Implement a clear_rect which uses glClear if we want to remove the
-    // entire screen.
-
-    fn create_path_fill(&mut self, path: &Path) -> Result<Box<dyn CanvasObject>> {
-        let (vertices, path_starts) = path.linearize(self.current_transform());
-        self.create_path_object(&vertices, &path_starts, FillRule::NonZero)
-    }
-
-    fn create_path_stroke(&mut self, path: &Path, width: f32) -> Result<Box<dyn CanvasObject>> {
-        let (vertices, path_starts) = path.stroke(width, self.current_transform());
-        self.create_path_object(&vertices, &path_starts, FillRule::EvenOdd)
-    }
-
-    /// When drawn, an image is rendered with the top-left corner at position
-    /// (0,0). Any transforms applied to the canvas may move this to a different
-    /// position on the screen though.
-    fn create_image(&mut self, image: &Image<u8>) -> Result<Box<dyn CanvasObject>> {
-        let texture = Rc::new(Texture::new(self.context.clone(), image));
-        Ok(Box::new(OpenGLCanvasImage {
-            texture,
-            width: image.width(),
-            height: image.height(),
-        }))
-    }
-
-    /*
-    OpenGL rounded corner rendering
-    - Could be implemented as a fragment shader.
-    - Mainly need to know the x,y of the circle center.
-    - Compute distance to the center
-    - Render if pixel is
-    */
-
-    /*
-
-    fill_path
-    -> Hard.
-        For each closed path segment
-            Linearize any arc segments.
-            Generate HalfEdgeStruct and label each label post repair with winding increment
-        Perform overlap of all path structs.
-        Do monotone conversion and triangulation.
-
-        The final output is a list of triangles to actually draw!
-        => Ideally we would cache this to avoid re-computing every time (although this is scale dependent)
-
-        Some challenges:
-        - Handling clipping
-        - Can only use a path handle on the same canvas that twas used to create it (need globally unique ids or references).
-
-    */
-}
-
-struct OpenGLCanvasPath {
-    mesh: Mesh,
-    transform_inv: Matrix3f,
 }
 
 impl CanvasObject for OpenGLCanvasPath {
@@ -283,17 +327,21 @@ impl CanvasObject for OpenGLCanvasPath {
         let canvas = canvas.as_mut_any().downcast_mut::<OpenGLCanvas>().unwrap();
         canvas.dirty = true;
 
+        let data = self.data(canvas);
+
         // TODO: Have a custom variation of block() with just one dimension type for
         // vectors.
-        self.mesh
+        data.mesh
             .set_vertex_colors(
                 paint.color.block::<U3, U1>(0, 0).to_owned().cast::<f32>() / (u8::MAX as f32),
             )
             .set_vertex_alphas(paint.alpha);
 
-        self.mesh.draw(
+        // TODO: This transforms too many times as already transformed for the
+        // linearize.
+        data.mesh.draw(
             &canvas.camera,
-            &Transform::from_3f(canvas.base.current_transform() * &self.transform_inv),
+            &Transform::from_3f(canvas.base.current_transform() * &data.transform_inv),
         );
         Ok(())
     }

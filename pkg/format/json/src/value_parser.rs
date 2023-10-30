@@ -14,21 +14,18 @@ impl<'a> ValueParser<'a> {
     }
 }
 
-impl<'a> reflection::ValueParser<'a> for ValueParser<'a> {
-    type ListParserType = ListParser<'a>;
-    type ObjectParserType = ObjectParser<'a>;
-
-    fn parse(self) -> Result<reflection::Value<'a, Self::ObjectParserType, Self::ListParserType>> {
-        Ok(match self.value {
-            Value::Object(v) => reflection::Value::Object(ObjectParser { map: v.iter() }),
-            Value::Array(v) => reflection::Value::List(ListParser { values: &v[..] }),
+impl<'a> reflection::ValueReader<'a> for ValueParser<'a> {
+    fn parse<T: reflection::ParseFromValue<'a>>(self) -> Result<T> {
+        match self.value {
+            Value::Object(v) => T::parse_from_object(ObjectParser { map: v.iter() }),
+            Value::Array(v) => T::parse_from_list(ListParser { values: &v[..] }),
             Value::String(v) => {
-                reflection::Value::Primitive(reflection::PrimitiveValue::String(v.clone()))
+                T::parse_from_primitive(reflection::PrimitiveValue::String(v.clone()))
             }
-            Value::Number(v) => reflection::Value::Primitive(reflection::PrimitiveValue::F64(*v)),
-            Value::Bool(v) => reflection::Value::Primitive(reflection::PrimitiveValue::Bool(*v)),
-            Value::Null => reflection::Value::Primitive(reflection::PrimitiveValue::Null),
-        })
+            Value::Number(v) => T::parse_from_primitive(reflection::PrimitiveValue::F64(*v)),
+            Value::Bool(v) => T::parse_from_primitive(reflection::PrimitiveValue::Bool(*v)),
+            Value::Null => T::parse_from_primitive(reflection::PrimitiveValue::Null),
+        }
     }
 }
 
@@ -36,15 +33,14 @@ pub struct ObjectParser<'a> {
     map: std::collections::hash_map::Iter<'a, String, Value>,
 }
 
-impl<'a> reflection::ObjectParser<'a> for ObjectParser<'a> {
-    type Key = &'a str;
-    type ValueParserType<'b> = ValueParser<'a> where Self: 'b;
+impl<'a> reflection::ObjectIterator<'a> for ObjectParser<'a> {
+    type ValueReaderType = ValueParser<'a>;
 
-    fn next_field<'b>(&'b mut self) -> Result<Option<(Self::Key, Self::ValueParserType<'b>)>> {
+    fn next_field(&mut self) -> Result<Option<(String, Self::ValueReaderType)>> {
         Ok(self
             .map
             .next()
-            .map(|(key, value)| (key.as_str(), ValueParser { value })))
+            .map(|(key, value)| (key.clone(), ValueParser { value })))
     }
 }
 
@@ -52,10 +48,10 @@ pub struct ListParser<'a> {
     values: &'a [Value],
 }
 
-impl<'a> reflection::ListParser<'a> for ListParser<'a> {
-    type ValueParserType<'c> = ValueParser<'a> where Self: 'c;
+impl<'a> reflection::ListIterator<'a> for ListParser<'a> {
+    type ValueReaderType = ValueParser<'a>;
 
-    fn next<'b>(&'b mut self) -> Result<Option<Self::ValueParserType<'b>>> {
+    fn next(&mut self) -> Result<Option<Self::ValueReaderType>> {
         if self.values.is_empty() {
             return Ok(None);
         }

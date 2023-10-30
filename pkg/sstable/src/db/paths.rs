@@ -60,6 +60,10 @@ impl FilePaths {
         })
     }
 
+    pub fn root_dir(&self) -> &LocalPath {
+        &self.root_dir
+    }
+
     /// Empty file used to guarantee that exactly one process is accessing the
     /// DB data directory at a single time.
     ///

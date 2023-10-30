@@ -1,3 +1,5 @@
+// TODO: Move this to the net crate.
+
 use std::ffi::CString;
 use std::fs::File;
 use std::os::unix::prelude::{AsRawFd, FromRawFd};
@@ -83,6 +85,13 @@ pub fn lookup_hostname(name: &str) -> Result<Vec<AddrInfo>> {
     let cname = CString::new(name).unwrap();
 
     let mut addrs: *mut libc::addrinfo = null_mut();
+
+    /*
+    Internally this would use nsswitch to:
+    - Check /etc/hosts
+    - Check mDNS
+    - Check normal DNS
+    */
     let ret = unsafe { getaddrinfo(cname.as_ptr(), null(), null(), &mut addrs) };
 
     // TODO: Use gai_strerror to print the error?
@@ -172,23 +181,22 @@ mod tests {
     #[test]
     fn check_ip_routable_test() -> Result<()> {
         // println!("XXX");
-        // let local_ip = http::uri_syntax::parse_ip_literal("192.168.0.1".into())?.0;
+        // let local_ip = IPAddress::parse(b"192.168.0.1")?.0;
 
         // println!("A");
         // http::dns::check_ip_routable(&local_ip)?;
 
-        let google_aaaa =
-            crate::uri_syntax::parse_ip_literal("[2607:f8b0:4005:813::200e]".into())?.0;
+        let google_aaaa = IPAddress::parse(b"[2607:f8b0:4005:813::200e]")?.0;
         assert_eq!(check_ip_routable(&google_aaaa)?, false);
 
-        let local_v4 = net::ip::IPAddress::V4(vec![192, 168, 0, 1]);
+        let local_v4 = net::ip::IPAddress::V4([192, 168, 0, 1]);
         assert_eq!(check_ip_routable(&local_v4)?, true);
 
-        let loopback = crate::uri_syntax::parse_ip_literal("[::1]".into())?.0;
+        let loopback = IPAddress::parse(b"[::1]")?.0;
         println!("{:?}", loopback);
         assert_eq!(check_ip_routable(&loopback)?, true);
 
-        let local_v6 = crate::uri_syntax::parse_ip_literal("[fe80::db3e:1d48:720a:a743]".into())?.0;
+        let local_v6 = IPAddress::parse(b"[fe80::db3e:1d48:720a:a743]")?.0;
         println!("{:x?}", local_v6);
         assert_eq!(check_ip_routable(&local_v6)?, true);
 

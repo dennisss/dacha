@@ -24,13 +24,59 @@ perf record ./target/release/http_client
 pprof -web target/release/http_client perf.data
 */
 
+// TODO: Disallow Authorization like headers in in-secure channels
+
 #[executor_main]
 async fn main() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
+    /*
     {
-        let mut options = http::ClientOptions::try_from("https://google.com/")?;
+        let mut options = http::ClientOptions::try_from("https://spanner.googleapis.com")?;
         let client = http::Client::create(options)?;
+
+        let req = http::RequestBuilder::new()
+            .method(http::Method::POST)
+            .path("/google.spanner.admin.database.v1.DatabaseAdmin/CreateDatabase")
+            .accept_trailers(true)
+            // .header("grpc-timeout", "1S")
+            .header("grpc-encoding", "identity")
+            // .header("authorization", "Bearer value")
+            // .header("Accept", "application/grpc+proto")
+            .body(http::BodyFromData("hello".as_bytes()))
+            .header("Content-Type", "application/grpc")
+            // .header("Accept", "text/html")
+            // .header("Accept-Encoding", "gzip")
+            .build()?;
+
+        let mut res = client.request(req, ClientRequestContext::default()).await?;
+        println!("{:?}", res.head);
+
+        let mut body = http::encoding::decode_content_encoding_body(&res.head.headers, res.body)?;
+
+        let mut body_buf = vec![];
+        body.read_to_end(&mut body_buf).await?;
+
+        println!(
+            "BODY\n{}",
+            Latin1String::from_bytes(body_buf.into())
+                .unwrap()
+                .to_string()
+        );
+
+        let trailers = body.trailers().await?;
+        println!("{:?}", trailers);
+
+        return Ok(());
+    }
+    */
+
+    {
+        let mut options =
+            http::ClientOptions::try_from("https://acme-staging-v02.api.letsencrypt.org")?;
+        let client = http::Client::create(options).await?;
+
+        // /directory
 
         let req = http::RequestBuilder::new()
             .method(http::Method::GET)
@@ -78,9 +124,7 @@ async fn main() -> Result<()> {
        )?);
     */
 
-    let client = http::Client::create(options)?;
-
-    let client = http::SimpleClient::new(client, SimpleClientOptions::default());
+    let client = http::SimpleClient::new(SimpleClientOptions::default());
 
     let req = http::RequestBuilder::new()
         .method(http::Method::GET)

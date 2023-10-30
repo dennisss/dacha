@@ -213,6 +213,8 @@ impl Stream {
         }
     }
 
+    // TODO: Do we need to specify end_stream here if we have the 'state' which
+    // should have similar information.
     fn receive_response_inner(
         &self,
         request_method: Method,

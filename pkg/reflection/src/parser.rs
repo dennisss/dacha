@@ -15,6 +15,10 @@ impl<'data, T: ParseFromValue<'data> + Sized> ParseFrom<'data> for T {
 }
 
 pub trait ParseFromValue<'data> {
+    fn parse_merge<Input: ValueReader<'data>>(&mut self, input: Input) -> Result<()> {
+        return Err(err_msg("Duplicate value for field"));
+    }
+
     fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self>
     where
         Self: Sized,
@@ -26,7 +30,10 @@ pub trait ParseFromValue<'data> {
     where
         Self: Sized,
     {
-        Err(err_msg("Can't be parsed from an object."))
+        Err(format_err!(
+            "Can't be parsed from an object: {}",
+            std::any::type_name::<Self>()
+        ))
     }
 
     fn parse_from_list<Input: ListIterator<'data>>(input: Input) -> Result<Self>
@@ -34,6 +41,10 @@ pub trait ParseFromValue<'data> {
         Self: Sized,
     {
         Err(err_msg("Can't be parsed from a list."))
+    }
+
+    fn parsing_typename() -> Option<&'static str> {
+        None
     }
 
     fn parsing_hint() -> Option<ParsingTypeHint> {
@@ -77,6 +88,7 @@ pub enum PrimitiveValue<'data> {
     String(String),
 }
 
+#[derive(Debug)]
 pub enum ParsingTypeHint {
     // Primitives
     Null,
@@ -106,6 +118,18 @@ pub trait ObjectIterator<'data> {
     fn next_field(&mut self) -> Result<Option<(String, Self::ValueReaderType)>>;
 }
 
+pub trait ObjectBuilder<'data> {
+    type ObjectType;
+
+    fn add_field<V: ValueReader<'data>>(
+        &mut self,
+        key: String,
+        value: V,
+    ) -> Result<Option<(String, V)>>;
+
+    fn build(self) -> Result<Self::ObjectType>;
+}
+
 pub trait ListIterator<'data> {
     type ValueReaderType: ValueReader<'data>;
 
@@ -121,6 +145,7 @@ macro_rules! impl_numeric_parse_from {
         impl<'data> ParseFromValue<'data> for $t {
             fn parse_from_primitive(value: PrimitiveValue<'data>) -> Result<Self> {
                 Ok(match value {
+                    // TODO: Block lossy conversions.
                     PrimitiveValue::I8(v) => v as $t,
                     PrimitiveValue::U8(v) => v as $t,
                     PrimitiveValue::I16(v) => v as $t,
