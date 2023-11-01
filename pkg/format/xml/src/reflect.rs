@@ -155,7 +155,7 @@ fn parse_from_string<'data, T: reflection::ParseFromValue<'data>>(s: &'data str)
         None => PrimitiveValue::Str(s),
     };
 
-    T::parse_from_primitive(reflection::PrimitiveValue::Str(s))
+    T::parse_from_primitive(primitive)
 }
 
 struct ElementContentObjectIterator<'data> {

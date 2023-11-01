@@ -17,6 +17,8 @@ pub trait MediaDecryptor {
     ) -> Result<()>;
 }
 
+// TODO: Do not use. We need to concatenate all ciphertexts and decrypt without
+// padding to be correct.
 pub struct AesCtrClearKeyDecryptor {
     key: Vec<u8>,
 }
@@ -105,8 +107,15 @@ pub async fn decrypt_video(data: &[u8], decryptor: &dyn MediaDecryptor) -> Resul
                     // TODO: Do we need to un-next any of the data in this.
                     // TODO: Need to see is "saio" / "saiz" contain non-encrpytion related info.
                     let t = children[i].typ.as_str();
-                    if t == "encv" || t == "saio" || t == "saiz" || t == "pssh" {
+                    if t == "saio" || t == "saiz" || t == "pssh" {
                         remove_box = true;
+                    }
+
+                    // TODO: Change based on the codec.
+                    if let BoxData::EncV(v) = &children[i].value {
+                        let v = v.clone();
+                        children[i].typ = "avc1".into();
+                        children[i].value = BoxData::AVC1(v);
                     }
 
                     // Expected to be nested inside of a 'moof' box

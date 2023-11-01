@@ -51,6 +51,14 @@ pub struct RestMethod {
     pub request: Option<ReferencedType>,
     pub response: Option<ReferencedType>,
     pub etagRequired: Option<bool>,
+
+    #[parse(sparse = true)]
+    pub supportsMediaDownload: bool,
+
+    #[parse(sparse = true)]
+    pub supportsMediaUpload: bool,
+
+    pub mediaUpload: Option<MediaUpload>,
 }
 
 #[derive(Parseable, Debug)]
@@ -81,4 +89,26 @@ pub struct JsonSchema {
     pub default: Option<String>,
     pub format: Option<String>,
     pub location: Option<String>,
+}
+
+#[derive(Parseable, Debug)]
+#[parse(allow_unknown = true)]
+pub struct MediaUpload {
+    pub protocols: MediaUploadProtocols,
+}
+
+#[derive(Parseable, Debug)]
+#[parse(allow_unknown = true)]
+pub struct MediaUploadProtocols {
+    pub simple: MediaUploadProtocol,
+    pub resumable: MediaUploadProtocol,
+}
+
+#[derive(Parseable, Debug)]
+#[parse(allow_unknown = true)]
+pub struct MediaUploadProtocol {
+    pub path: String,
+
+    #[parse(sparse = true)]
+    pub multipart: bool,
 }

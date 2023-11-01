@@ -23,6 +23,8 @@ use crate::client::resolver::{ResolvedEndpoint, Resolver};
 use crate::request::Request;
 use crate::response::Response;
 
+use super::direct_client::ClientHeartbeatOptions;
+
 /*
 Backend Selection / Subsetting Algorithm
 Parameters:
@@ -98,7 +100,7 @@ impl Default for LoadBalancedClientOptions {
                     cooldown_duration: Duration::from_secs(60),
                     max_num_attempts: 0,
                 },
-                connect_timeout: Duration::from_millis(1000),
+                connect_timeout: Duration::from_millis(2000),
                 idle_timeout: Duration::from_secs(5 * 60), // 5 minutes.
                 /// MUST be <= v2::ConnectionOptions::max_enqueued_requests
                 max_outstanding_requests: 100,
@@ -106,6 +108,12 @@ impl Default for LoadBalancedClientOptions {
                 http1_max_requests_per_connection: 1,
                 remote_shutdown_is_failure: false,
                 eagerly_connect: true,
+                heartbeat: ClientHeartbeatOptions {
+                    // Note that this must be at least 5 minutes to be compatible with the gRPC
+                    // server side min interval of 5 minutes.
+                    ping_interval: Duration::from_secs(20 * 60),
+                    ping_timeout: Duration::from_secs(10),
+                },
             },
             resolver_backoff: ExponentialBackoffOptions {
                 base_duration: Duration::from_millis(100),

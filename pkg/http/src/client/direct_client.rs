@@ -3,11 +3,12 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 use std::time::Instant;
+use std::time::{Duration, SystemTime};
 
 use common::errors::*;
 use common::io::{Readable, Writeable};
+use crypto::random::RngExt;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
@@ -148,6 +149,21 @@ pub struct DirectClientOptions {
     /// If false, we will only begin connections if a request is actively
     /// waiting to be executed.
     pub eagerly_connect: bool,
+
+    pub heartbeat: ClientHeartbeatOptions,
+}
+
+#[derive(Clone)]
+pub struct ClientHeartbeatOptions {
+    /// If we haven't sent or received any data within this amount of time, we
+    /// will send another ping.
+    ///
+    /// NOTE: With the current implementation, this must be >= ping_timeout.
+    pub ping_interval: Duration,
+
+    /// If we don't get a response to a ping within this amount of time, we will
+    /// close the connection.
+    pub ping_timeout: Duration,
 }
 
 /// An HTTP client which is just responsible for connecting to a single ip
@@ -288,7 +304,11 @@ struct ConnectionEntry {
 
     instance: ConnectionInstance,
 
-    main_task: ChildTask,
+    /// If a ping was sent out, this is the data associated with it. This is
+    /// cleared when the ack is received.
+    pending_ping: Option<u64>,
+
+    tasks: Vec<ChildTask>,
 }
 
 enum ConnectionInstance {
@@ -1051,11 +1071,17 @@ impl DirectClientRunner {
 
             // TODO: Wait for the receiving remote headers.
 
+            let heartbeat_task = ChildTask::spawn(Self::heartbeat_runner(
+                Arc::downgrade(shared),
+                connection_id,
+            ));
+
             return Ok(ConnectionEntry {
                 last_active: Instant::now(),
                 is_secure,
                 instance: ConnectionInstance::V2(connection_v2),
-                main_task,
+                pending_ping: None,
+                tasks: vec![main_task, heartbeat_task],
                 num_outstanding_requests: 0,
                 shutting_down: false,
             });
@@ -1091,7 +1117,7 @@ impl DirectClientRunner {
             let mut upgrade_request = RequestBuilder::new()
                 // HEAD is used to avoid having to read a response body if we end up
                 .method(Method::HEAD)
-                .uri(upgrade_uri)
+                .uri2(upgrade_uri)
                 .header(CONNECTION, "Upgrade, HTTP2-Settings")
                 .header("Upgrade", "h2c")
                 .build()
@@ -1120,14 +1146,16 @@ impl DirectClientRunner {
             last_active: Instant::now(),
             is_secure,
             instance: ConnectionInstance::V1(conn),
-            main_task,
+            pending_ping: None,
+            tasks: vec![main_task],
             num_outstanding_requests: 0,
             shutting_down: false,
         })
     }
 
-    // NOTE: This uses a Weak pointer to ensure that the ClientShared and Connection
-    // can be dropped which may lead to the Connection shutting down.
+    /// NOTE: This uses a Weak pointer to ensure that the ClientShared and
+    /// Connection can be dropped which may lead to the Connection shutting
+    /// down.
     async fn connection_runner<F: std::future::Future<Output = Result<()>>>(
         client_shared: Weak<Shared>,
         connection_id: usize,
@@ -1149,6 +1177,72 @@ impl DirectClientRunner {
                 .closed = true;
 
             events.notify_all();
+        }
+    }
+
+    /// Background task that runs on HTTP2 connections to continously heartbeat
+    /// the other end.
+    async fn heartbeat_runner(client_shared: Weak<Shared>, connection_id: usize) {
+        // TODO: Switch to using monotonic clocks to avoid over-aggressive pinging if
+        // the time winds back (e.g. laptop wakes up from sleep).
+
+        let mut last_ping_time = SystemTime::now();
+        // Time at which the last ping which was sent out expires.
+        let mut ping_expiration_time = SystemTime::now();
+
+        loop {
+            let time_to_sleep = {
+                let client = {
+                    match client_shared.upgrade() {
+                        Some(v) => v,
+                        None => return,
+                    }
+                };
+
+                let mut state = client.processing_state.lock().await;
+
+                let conn = match state.connection_pool.get_mut(&connection_id) {
+                    Some(v) => v,
+                    None => return,
+                };
+
+                let conn_v2 = match &conn.instance {
+                    ConnectionInstance::V1(_) => return,
+                    ConnectionInstance::V2(v) => v,
+                };
+
+                let now = SystemTime::now();
+
+                if let Some(pending_ping) = &conn.pending_ping {
+                    if now >= ping_expiration_time {
+                        conn_v2.shutdown(false).await;
+                        return;
+                    } else {
+                        ping_expiration_time.duration_since(now).unwrap()
+                    }
+                } else {
+                    let (_, last_received) = conn_v2.last_byte_times().await;
+
+                    let next_ping_time = core::cmp::max(last_received, last_ping_time)
+                        + client.options.heartbeat.ping_interval;
+
+                    if now >= next_ping_time {
+                        last_ping_time = now;
+                        ping_expiration_time =
+                            next_ping_time + client.options.heartbeat.ping_timeout;
+
+                        let data = crypto::random::clocked_rng().uniform();
+                        conn.pending_ping = Some(data);
+                        conn_v2.ping(data).await;
+
+                        client.options.heartbeat.ping_timeout
+                    } else {
+                        next_ping_time.duration_since(now).unwrap()
+                    }
+                }
+            };
+
+            executor::sleep(core::cmp::min(time_to_sleep, Duration::from_millis(100))).await;
         }
     }
 
@@ -1240,7 +1334,7 @@ impl DirectClientRunner {
 }
 
 /// Listener for connection events. One of these is connected to every
-/// connection managed by the
+/// connection managed by the client.
 ///
 /// NOTE: Functions in this struct MUST NOT lock the State struct of the
 /// DirectClient. Normally the DirectClient state is locked prior to the
@@ -1298,6 +1392,31 @@ impl ConnectionEventListener for ConnectionListener {
             }
 
             events.notify_all();
+        }
+    }
+
+    async fn handle_ping_response(&self, opaque_data: u64, is_ack: bool) {
+        // Ignore attempts by servers to ping us.
+        if !is_ack {
+            return;
+        }
+
+        let client = {
+            match self.shared.upgrade() {
+                Some(v) => v,
+                None => return,
+            }
+        };
+
+        let mut state = client.processing_state.lock().await;
+
+        let conn = match state.connection_pool.get_mut(&self.connection_id) {
+            Some(v) => v,
+            None => return,
+        };
+
+        if conn.pending_ping == Some(opaque_data) {
+            conn.pending_ping = None;
         }
     }
 }

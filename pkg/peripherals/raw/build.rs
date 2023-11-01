@@ -12,6 +12,9 @@ use cmsis_svd::compiler::*;
 use common::errors::*;
 
 fn main() -> Result<()> {
+    // TODO: Re-enable once this build script is faster.
+    return Ok(());
+
     let mut options = CompilerOptions::default();
 
     options.field_rewrites.push(FieldRewriteRule {

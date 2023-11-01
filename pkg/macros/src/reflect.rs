@@ -334,12 +334,14 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
 
     let name_builder = format_ident!("{}Builder", name);
 
+    let visibility = input.vis;
+
     // TODO: Is the order of execution defined for which fields will be parsed
     // first.
     let out = quote! {
 
         #[derive(Default)]
-        pub struct #name_builder {
+        #visibility struct #name_builder {
             #(#parse_values,)*
         }
 

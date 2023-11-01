@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use common::bytes::Bytes;
+
 #[derive(Debug)]
 pub struct MediaSource {
     pub tracks: Vec<MediaTrack>,
@@ -71,11 +73,14 @@ pub enum ContentProtection {
 
 #[derive(Debug)]
 pub struct WidevineContentProtection {
-    pub pssh: Vec<Vec<u8>>,
+    pub pssh: Vec<Bytes>,
+
+    /// NOTE: This is specifically the CENC default key id.
+    pub default_key_id: Option<Bytes>,
 }
 
 #[derive(Debug)]
 
 pub struct CENCContentProtection {
-    pub default_key_id: Option<Vec<u8>>,
+    pub default_key_id: Option<Bytes>,
 }

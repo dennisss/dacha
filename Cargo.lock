@@ -1572,6 +1572,7 @@ dependencies = [
  "executor",
  "file",
  "http",
+ "json",
  "macros",
  "math",
  "parsing",

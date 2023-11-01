@@ -1,5 +1,6 @@
 use std::fmt::Write;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use common::errors::*;
 use common::io::IoError;
@@ -222,6 +223,7 @@ impl ConnectionReader {
         let mut remote_header_decoder;
 
         let mut max_frame_size;
+        let mut max_header_list_size;
 
         // Loading the above two variables from local settings.
         // NOTE: Because settings only change when they are acknowledged on this thread,
@@ -231,6 +233,7 @@ impl ConnectionReader {
             remote_header_decoder =
                 hpack::Decoder::new(state.local_settings[SettingId::HEADER_TABLE_SIZE] as usize);
             max_frame_size = state.local_settings[SettingId::MAX_FRAME_SIZE];
+            max_header_list_size = state.local_settings[SettingId::MAX_HEADER_LIST_SIZE];
         }
 
         // Whether or not we've received a non-ACK SETTINGS frame from the other
@@ -282,7 +285,9 @@ impl ConnectionReader {
             // Idle state check.
             // Only
             {
-                let state = self.shared.state.lock().await;
+                let now = SystemTime::now();
+
+                let mut state = self.shared.state.lock().await;
 
                 let mut idle = {
                     if frame_header.stream_id == 0 {
@@ -311,6 +316,10 @@ impl ConnectionReader {
                         local: true,
                     }
                     .into());
+                }
+
+                if frame_header.typ == FrameType::HEADERS || frame_header.typ == FrameType::DATA {
+                    state.last_user_byte_received_time = now;
                 }
             }
 
@@ -543,6 +552,10 @@ impl ConnectionReader {
                         HeadersFramePayload::parse_complete(&payload, &headers_flags)?;
                     frame_utils::check_padding(&headers_frame.padding)?;
 
+                    /*
+                    TODO: check if we exceed max_header_list_size
+                    */
+
                     let received_headers = ReceivedHeaders {
                         data: headers_frame.header_block_fragment,
                         stream_id: frame_header.stream_id,
@@ -573,6 +586,10 @@ impl ConnectionReader {
                             promised_stream_id: push_promise_frame.promised_stream_id,
                         },
                     };
+
+                    /*
+                    TODO: check if we exceed max_header_list_size
+                    */
 
                     if push_promise_flags.end_headers {
                         self.receive_headers(received_headers, &mut remote_header_decoder)
@@ -716,6 +733,8 @@ impl ConnectionReader {
                             connection_state.local_settings[SettingId::HEADER_TABLE_SIZE] as usize,
                         );
                         max_frame_size = connection_state.local_settings[SettingId::MAX_FRAME_SIZE];
+                        max_header_list_size =
+                            connection_state.local_settings[SettingId::MAX_HEADER_LIST_SIZE];
 
                         // TODO: Adjust flow control window.
                     } else {
@@ -802,9 +821,20 @@ impl ConnectionReader {
                     let ping_flags = PingFrameFlags::parse_complete(&[frame_header.flags])?;
                     let ping_frame = PingFramePayload::parse_complete(&payload)?;
 
-                    if ping_flags.ack {
-                        // TODO
-                    } else {
+                    // TODO: Ideally expose the listener without a state lock.
+                    {
+                        let state = self.shared.state.lock().await;
+                        if let Some(listener) = &state.event_listener {
+                            listener
+                                .handle_ping_response(
+                                    u64::from_le_bytes(ping_frame.opaque_data),
+                                    ping_flags.ack,
+                                )
+                                .await;
+                        }
+                    }
+
+                    if !ping_flags.ack {
                         // TODO: Block if too many pings in a short period of time.
                         self.shared
                             .connection_event_sender
@@ -1062,6 +1092,16 @@ impl ConnectionReader {
                     let continuation_flags =
                         ContinuationFrameFlags::parse_complete(&[frame_header.flags])?;
 
+                    if received_headers.data.len() + payload.len() > (max_header_list_size as usize)
+                    {
+                        /*
+                        If a server, we can send back a 'HTTP 431 (Request Header Fields Too Large)'
+                        - But must make sure we fully close the stream
+
+                        If the client, then we would drop the response returning an error to the client
+                        */
+                    }
+
                     // NOTE: The entire payload is a header chunk.
                     // TODO: Enforce a max size to the combined header data.
                     received_headers.data.extend_from_slice(&payload);
@@ -1094,6 +1134,8 @@ impl ConnectionReader {
         s
     }
 
+    // TODO: Ensure that we don't give back valid bodies if END_STREAM is already
+    // set on the headers.
     async fn receive_headers(
         &self,
         received_headers: ReceivedHeaders,

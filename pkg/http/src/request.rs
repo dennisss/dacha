@@ -123,6 +123,10 @@ impl RequestBuilder {
         self
     }
 
+    pub fn get_uri(&self) -> Option<&Uri> {
+        self.uri.as_ref()
+    }
+
     // // TODO: Use a different parsing rule for this?
     // // We should allow either relative or absolute URIs (or things like '*').
     // // When an absolute Uri is given, we should move the authority to the 'Host'

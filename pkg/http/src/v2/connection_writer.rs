@@ -154,6 +154,7 @@ impl ConnectionWriter {
                 ConnectionEvent::SendRequest => {
                     // TODO: If anything in here fails, we should report it to the requester rather
                     // than killing the whole thread.
+                    // ^ We also need to let any listeners know that the request was dropped.
 
                     let mut connection_state = self.shared.state.lock().await;
 
@@ -257,10 +258,27 @@ impl ConnectionWriter {
                     // We are now done setting up the stream.
                     // Now we should just send the request to the other side.
 
+                    // TODO: Write a unit test to ensure that if there is a single malformed
+                    // request, the request still works.
+
                     // TODO: Split this up into the request validation and header encoding
                     // components so that we can return errors if it is invalid.
                     let header_block =
                         encode_request_headers_block(&request.head, &mut local_header_encoder)?;
+
+                    /*
+                    if header_block.len()
+                        > (connection_state.remote_settings[SettingId::MAX_HEADER_LIST_SIZE]
+                            as usize)
+                    {
+                        // Return an error to the request sender.
+
+                        // We also need to revert changes to the
+                        // local_header_encoder (instead it would probably be
+                        // easier to approximate the size of the header block
+                        // based on the raw size and add some overhead).
+                    }
+                    */
 
                     write_headers_block(
                         writer.as_mut(),

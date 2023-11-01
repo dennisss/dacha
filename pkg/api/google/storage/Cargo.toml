@@ -1,0 +1,17 @@
+[package]
+name = "google_storage"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+base_radix = { path = "../../../base/radix" }
+common = { path = "../../../common" }
+http = { path = "../../../http" }
+json = { path = "../../../format/json" }
+net = { path = "../../../net" }
+parsing = { path = "../../../parsing" }
+macros = { path = "../../../macros" }
+executor = { path = "../../../executor" }
+file = { path = "../../../file" }
+google_auth = { path = "../auth" }
+google_discovery_generated = { path = "../discovery/generated" }

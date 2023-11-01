@@ -22,6 +22,10 @@ pub trait ConnectionEventListener: Send + Sync + 'static {
     /// case, run() will return shortly after the last sent request's
     /// completion.
     async fn handle_request_completed(&self);
+
+    /// For HTTP2 connections, notifies the user that we can a request/response
+    /// for a ping from the other side.
+    async fn handle_ping_response(&self, opaque_data: u64, is_ack: bool);
 }
 
 #[derive(Clone, Copy)]

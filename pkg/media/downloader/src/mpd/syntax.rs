@@ -161,6 +161,9 @@ pub struct RepresentationBaseAttributes {
     // <xs:attribute name="maxPlayoutRate" type="xs:double"/>
     // <xs:attribute name="codingDependency" type="xs:boolean"/>
     // <xs:attribute name="scanType" type="VideoScanType"/>
+
+    // TODO: If we ever implement seeking, then we need to implement this.
+    pub startWithSAP: Option<String>,
 }
 
 impl RepresentationBaseAttributes {
@@ -254,6 +257,7 @@ pub struct SegmentTimeline {
 
 #[derive(Parseable, Debug, Clone)]
 pub struct SegmentTimelineChildren {
+    #[parse(name = "S")]
     pub s: xml::List<SegmentTimelineElement>,
 }
 
@@ -317,6 +321,9 @@ pub struct Descriptor {
     #[parse(name = "xmlns:cenc")]
     pub xmlns_cenc: Option<String>,
 
+    #[parse(name = "xmlns:mspr")]
+    pub xmlns_mspr: Option<String>,
+
     #[parse(name = "$content", sparse = true)]
     pub children: DescriptorChildren,
 }
@@ -325,6 +332,9 @@ pub struct Descriptor {
 pub struct DescriptorChildren {
     #[parse(name = "cenc:pssh")]
     pub cenc_pssh: Option<StringElement>,
+
+    #[parse(name = "mspr:pro")]
+    pub mspr_pro: Option<StringElement>,
 }
 
 #[derive(Parseable, Debug, Clone)]

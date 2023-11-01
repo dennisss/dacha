@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::time::SystemTime;
 use std::{convert::TryFrom, sync::Arc};
 
 use common::chrono::prelude::*;
@@ -109,6 +110,8 @@ Important points:
 
 // TODO: Should we support allowing the connection itself to stay half open.
 
+// TODO: Have a simpler request API with a direct reader/writer interface.
+
 /// A single HTTP2 connection to a remote endpoint.
 ///
 /// After
@@ -145,6 +148,7 @@ impl Connection {
         let is_server = server_options.is_some();
 
         // TODO: Implement SETTINGS_MAX_HEADER_LIST_SIZE.
+        // XXX: Yes
 
         let local_pending_settings = options.protocol_settings.clone();
 
@@ -177,6 +181,9 @@ impl Connection {
 
                     streams: HashMap::new(),
                     event_listener: None,
+
+                    last_user_byte_received_time: SystemTime::now(),
+                    last_user_byte_sent_time: SystemTime::now(),
                 }),
             }),
         }
@@ -414,6 +421,28 @@ impl Connection {
         Ok(receiver.recv())
     }
 
+    /// Gets the approximate last time when a byte was sent and received over
+    /// the connection.
+    pub async fn last_byte_times(&self) -> (std::time::SystemTime, std::time::SystemTime) {
+        let state = self.shared.state.lock().await;
+        (
+            state.last_user_byte_sent_time.clone(),
+            state.last_user_byte_received_time.clone(),
+        )
+    }
+
+    pub async fn ping(&self, data: u64) {
+        let _ = self
+            .shared
+            .connection_event_sender
+            .send(ConnectionEvent::Ping {
+                ping_frame: PingFramePayload {
+                    opaque_data: data.to_le_bytes(),
+                },
+            })
+            .await;
+    }
+
     /// Shuts down the server.
     /// This function will return immediately upon triggering the shutdown with
     /// the actual shutdown occuring later in time (when the run() function
@@ -440,7 +469,39 @@ impl Connection {
         Self::shutdown_impl(&self.shared, graceful).await
     }
 
+    /// Shutdown the connection by sending the given error to the remote
+    /// connection.
+    ///
+    /// A non-NO_ERROR code MUST NOT be graceful
+    pub async fn shutdown_with_error(&self, graceful: bool, error: ProtocolErrorV2) {
+        Self::shutdown_with_error_impl(&self.shared, graceful, error).await
+    }
+
     async fn shutdown_impl(shared: &Arc<ConnectionShared>, graceful: bool) {
+        let error = {
+            if graceful {
+                ProtocolErrorV2 {
+                    code: ErrorCode::NO_ERROR,
+                    message: "Gracefully shutting down",
+                    local: true,
+                }
+            } else {
+                ProtocolErrorV2 {
+                    code: ErrorCode::NO_ERROR,
+                    message: "About to close connection",
+                    local: true,
+                }
+            }
+        };
+
+        Self::shutdown_with_error_impl(shared, graceful, error).await
+    }
+
+    async fn shutdown_with_error_impl(
+        shared: &Arc<ConnectionShared>,
+        graceful: bool,
+        error: ProtocolErrorV2,
+    ) {
         let mut connection_state = shared.state.lock().await;
 
         // Ensure that we never decrease the shutdown in severity.
@@ -484,11 +545,7 @@ impl Connection {
             let _ = shared
                 .connection_event_sender
                 .send(ConnectionEvent::Closing {
-                    send_goaway: Some(ProtocolErrorV2 {
-                        code: ErrorCode::NO_ERROR,
-                        message: "Gracefully shutting down",
-                        local: true,
-                    }),
+                    send_goaway: Some(error),
                     close_with: None,
                 })
                 .await;
@@ -501,14 +558,11 @@ impl Connection {
                 .set_shutting_down(ShuttingDownState::Abrupt)
                 .await;
 
+            //
             let _ = shared
                 .connection_event_sender
                 .send(ConnectionEvent::Closing {
-                    send_goaway: Some(ProtocolErrorV2 {
-                        code: ErrorCode::NO_ERROR,
-                        message: "About to close connection",
-                        local: true,
-                    }),
+                    send_goaway: Some(error),
                     close_with: Some(Ok(())),
                 })
                 .await;
@@ -755,7 +809,7 @@ mod tests {
         let server_options = ServerConnectionOptions {
             connection_context: ServerConnectionContext {
                 id: 0,
-                peer_addr: IPAddress::V4(vec![0, 0, 0, 0]),
+                peer_addr: IPAddress::V4([0, 0, 0, 0]),
                 peer_port: 0,
                 tls: None,
             },
@@ -780,7 +834,7 @@ mod tests {
             .enqueue_request(
                 RequestBuilder::new()
                     .method(Method::GET)
-                    .uri("http://localhost/hello".parse()?)
+                    .uri("http://localhost/hello")
                     .build()
                     .unwrap(),
             )
@@ -813,7 +867,7 @@ mod tests {
             .enqueue_request(
                 RequestBuilder::new()
                     .method(Method::GET)
-                    .uri("http://localhost/hello".parse()?)
+                    .uri("http://localhost/hello")
                     .build()
                     .unwrap(),
             )
@@ -842,6 +896,21 @@ mod tests {
     - Test sending and receiving a very large body requiring flow control.
         - Send 10MB
 
+    - If we send a request or request a response with a Content-Length that doesn't match the actual length of the stream, we should return an error.
 
+    - Test that if out outgoing body has a well defined length, then we add a Content-Length header automatically to the request.
+
+    - Test that if we send an empty body with no trailes,
+
+    - Test that when using the DirectClient, we can't provide reserved headers like Content-Length
+
+    - Test that if we send headers that are too long, then we don't break the connection (only the stream)
+
+    - If we exist
+
+    - Test that even if we stop reading an incoming body, the connection still keeps track of ensuring the remaining data is the correct length (this implies that we are still writing to the stream as otherwise we can just drop the stream entirely).
+
+    TODO: Enforce a timeout on packets received on dead streams.
+    - If we receive a packet on a dead stream more than 2 seconds after it was killed, let's just end the connection.
     */
 }

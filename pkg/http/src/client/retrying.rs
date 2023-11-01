@@ -6,6 +6,7 @@ use executor::sync::Mutex;
 use net::backoff::*;
 use parsing::ascii::AsciiString;
 
+use crate::Response;
 use crate::{
     response::BufferedResponse, v2, BodyFromData, Client, ClientInterface, ClientOptions,
     ClientRequestContext, Request, RequestHead, ResponseHead,
@@ -85,36 +86,23 @@ impl SimpleClient {
         }
     }
 
+    /// NOTE: This doesn't do any retrying.
+    pub async fn request_raw(
+        &self,
+        request: Request,
+        request_context: ClientRequestContext,
+    ) -> Result<Response> {
+        let client = self.get_client(&request.head).await?;
+        client.request(request, request_context).await
+    }
+
     pub async fn request(
         &self,
         request_head: &RequestHead,
         request_body: Bytes,
         request_context: &ClientRequestContext,
     ) -> Result<BufferedResponse> {
-        let client = {
-            let mut clients = self.clients.lock().await;
-
-            if request_head.uri.scheme.is_none() || request_head.uri.authority.is_none() {
-                return Err(err_msg("No schema/authority specified for request."));
-            }
-
-            let host_uri = crate::uri::Uri {
-                scheme: request_head.uri.scheme.clone(),
-                authority: request_head.uri.authority.clone(),
-                path: AsciiString::new(""),
-                query: None,
-                fragment: None,
-            };
-
-            let key = host_uri.to_string()?;
-
-            if !clients.contains_key(&key) {
-                let client = Client::create(ClientOptions::from_uri(&host_uri)?).await?;
-                clients.insert(key.clone(), Arc::new(client));
-            }
-
-            clients.get(&key).unwrap().clone()
-        };
+        let client = self.get_client(request_head).await?;
 
         let mut retry_backoff = ExponentialBackoff::new(self.options.backoff_options.clone());
 
@@ -162,6 +150,31 @@ impl SimpleClient {
             num_attempts,
             last_error
         ))
+    }
+
+    async fn get_client(&self, request_head: &RequestHead) -> Result<Arc<dyn ClientInterface>> {
+        let mut clients = self.clients.lock().await;
+
+        if request_head.uri.scheme.is_none() || request_head.uri.authority.is_none() {
+            return Err(err_msg("No schema/authority specified for request."));
+        }
+
+        let host_uri = crate::uri::Uri {
+            scheme: request_head.uri.scheme.clone(),
+            authority: request_head.uri.authority.clone(),
+            path: AsciiString::new(""),
+            query: None,
+            fragment: None,
+        };
+
+        let key = host_uri.to_string()?;
+
+        if !clients.contains_key(&key) {
+            let client = Client::create(ClientOptions::from_uri(&host_uri)?).await?;
+            clients.insert(key.clone(), Arc::new(client));
+        }
+
+        Ok(clients.get(&key).unwrap().clone())
     }
 
     async fn request_once(

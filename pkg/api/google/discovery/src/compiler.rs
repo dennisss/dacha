@@ -79,7 +79,10 @@ impl Compiler {
                 }
             }
 
-            let mut args = String::new();
+            let mut method_required_args = String::new();
+            let mut method_request_args = String::new();
+            let mut method_params_args = String::new();
+
             let mut path_args = String::new();
             let mut query_building = String::new();
 
@@ -103,7 +106,7 @@ impl Compiler {
 
                     let typ = self.compile_field_type(&schema_name, schema, true, false)?;
 
-                    args.push_str(&format!(", {}: {}", arg_name, typ));
+                    method_required_args.push_str(&format!(", {}: {}", arg_name, typ));
 
                     let location = schema
                         .location
@@ -134,7 +137,7 @@ impl Compiler {
 
             let mut request_ref = "&()".to_string();
             if let Some(request) = &method.request {
-                args.push_str(&format!(", request: &{}", &request.typ_reference));
+                method_request_args.push_str(&format!(", request: &{}", &request.typ_reference));
                 request_ref = format!("request");
             }
 
@@ -153,7 +156,7 @@ impl Compiler {
 
                 self.compile_object(&schema_name, &params)?;
 
-                args.push_str(&format!(", parameters: &{}", schema_name));
+                method_params_args.push_str(&format!(", parameters: &{}", schema_name));
 
                 query_building
                     .push_str(&format!("parameters.serialize_to(&mut query_builder)?;\n"));
@@ -180,7 +183,10 @@ impl Compiler {
                 "#,
                 resource_name = resource_name,
                 method_name = method_name,
-                args = args,
+                args = format!(
+                    "{}{}{}",
+                    method_required_args, method_request_args, method_params_args
+                ),
                 return_typ = return_typ,
                 http_method = method.httpMethod,
                 path = self.clean_path(&method.path),
@@ -188,6 +194,66 @@ impl Compiler {
                 request_ref = request_ref,
                 query_building = query_building,
             ));
+
+            if method.supportsMediaUpload {
+                let media_upload = method
+                    .mediaUpload
+                    .as_ref()
+                    .ok_or_else(|| err_msg("Missing mediaUpload with supportsMediaUpload"))?;
+
+                methods_output.add(format!(
+                    r#"
+                    pub async fn {resource_name}_{method_name}_with_upload(
+                        &self{args}, data: Box<dyn http::Body>
+                    ) -> Result<{return_typ}> {{
+                        let mut query_builder = http::query::QueryParamsBuilder::new();
+                        {query_building}
+
+                        // TODO: Clear the old value.
+                        let content_type = request.contentType.clone();
+
+                        self.rest_client.request_upload::<_, {return_typ}>(
+                            ::http::Method::{http_method},
+                            &format!("{{base_url}}{simple_path}", base_url = Self::BASE_URL{path_args}),
+                            &format!("{{base_url}}{resumable_path}", base_url = Self::BASE_URL{path_args}),
+                            query_builder,
+                            &content_type,
+                            {request_ref},
+                            data
+                        ).await
+                    }}
+                    "#,
+                    resource_name = resource_name,
+                    method_name = method_name,
+                    args = format!(
+                        "{}{}{}",
+                        method_required_args, method_request_args, method_params_args
+                    ),
+                    return_typ = return_typ,
+                    http_method = method.httpMethod,
+                    simple_path = self.clean_path(&media_upload.protocols.simple.path),
+                    resumable_path = self.clean_path(&media_upload.protocols.resumable.path),
+                    path_args = path_args,
+                    request_ref = request_ref,
+                    query_building = query_building,
+                ));
+            }
+
+            /*
+                    objects_insert_with_upload(required_params, Body, Params)
+                    // request: &Object,
+
+                    Multi-part is defined in
+                        - https://datatracker.ietf.org/doc/html/rfc1521#section-7.2.1
+
+                    multipart/related
+                    - https://datatracker.ietf.org/doc/html/rfc2387
+
+            "https://storage.googleapis.com/upload/storage/v1/b/BUCKET_NAME/o?uploadType=media&name=OBJECT_NAME"
+
+
+                    Boundary must be <= 70 characters
+                    */
         }
 
         Ok(())

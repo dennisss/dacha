@@ -18,5 +18,6 @@ xml = { path = "../../format/xml" }
 http = { path = "../../http" }
 file = { path = "../../file" }
 video = { path = "../video" }
+json = { path = "../../format/json" }
 uuid = { path = "../../uuid" }
 chromium_cdm = { path = "../../../third_party/chromium/cdm" }

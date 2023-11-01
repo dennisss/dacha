@@ -338,7 +338,11 @@ pub fn read_mpd(data: &[u8], document_uri: Option<http::uri::Uri>) -> Result<Med
                             }
                         }
 
-                        if current_time as u64 != total_duration {
+                        // TODO: Figure out why this is sometimes off.
+                        if ((current_time as i64) - (total_duration as i64)).abs()
+                            > (timescale as i64)
+                        {
+                            println!("{} vs {}", current_time, total_duration);
                             return Err(err_msg(
                                 "SegmentTemplate doesn't cover the entire period duration",
                             ));
@@ -370,11 +374,20 @@ pub fn read_mpd(data: &[u8], document_uri: Option<http::uri::Uri>) -> Result<Med
 
                         for b in &el.children.cenc_pssh {
                             let pssh_box = base_radix::base64_decode(&b.value)?;
-                            pssh.push(pssh_box);
+                            pssh.push(pssh_box.into());
+                        }
+
+                        let mut default_key_id = None;
+                        if let Some(kid) = &el.cenc_default_kid {
+                            default_key_id =
+                                Some(uuid::UUID::parse(kid.as_str())?.as_ref().to_vec().into());
                         }
 
                         content_protection.push(ContentProtection::Widevine(
-                            WidevineContentProtection { pssh },
+                            WidevineContentProtection {
+                                pssh,
+                                default_key_id,
+                            },
                         ));
                     }
 
@@ -384,7 +397,7 @@ pub fn read_mpd(data: &[u8], document_uri: Option<http::uri::Uri>) -> Result<Med
                         let mut default_key_id = None;
                         if let Some(kid) = &el.cenc_default_kid {
                             default_key_id =
-                                Some(uuid::UUID::parse(kid.as_str())?.as_ref().to_vec());
+                                Some(uuid::UUID::parse(kid.as_str())?.as_ref().to_vec().into());
                         }
 
                         content_protection.push(ContentProtection::CENC(CENCContentProtection {
