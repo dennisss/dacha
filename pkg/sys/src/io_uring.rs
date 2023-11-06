@@ -350,37 +350,17 @@ impl SubmissionQueue {
 }
 
 impl bindings::io_uring_sqe {
-    #[cfg(target_arch = "x86_64")]
-    pub fn set_off(&mut self, off: u64) {
-        self.off = off;
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
     pub fn set_off(&mut self, off: u64) {
         self.__bindgen_anon_1.off = off;
     }
 
-    #[cfg(target_arch = "x86_64")]
-    pub fn set_addr(&mut self, addr: u64) {
-        self.addr = addr;
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
     pub fn set_addr(&mut self, addr: u64) {
         self.__bindgen_anon_2.addr = addr;
     }
 
-    #[cfg(target_arch = "x86_64")]
-    pub fn set_op_flags(&mut self, flags: u32) {
-        self.__bindgen_anon_1.fsync_flags = flags;
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
     pub fn set_op_flags(&mut self, flags: u32) {
         self.__bindgen_anon_3.fsync_flags = flags;
     }
-
-    // entry.__bindgen_anon_1.off
 }
 
 pub struct IoCompletionUring {

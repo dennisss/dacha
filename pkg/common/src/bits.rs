@@ -40,12 +40,13 @@ pub fn bitget(v: u8, bit: u8) -> bool {
 /// Represents a variable length number of ordered bits
 #[derive(PartialEq, Eq, Clone)]
 pub struct BitVector {
+    /// Number of bits stored in 'data'.
     len: usize,
 
     // TODO: std::mem::size_of::<Vec<u8>>() is 24, so let's inline any usage of up to 192 bits
     // which is good enough for most compression).
-
-    // Bits are stored from MSB to LSB in each individual byte.
+    /// Bits are stored from MSB to LSB in each individual byte.
+    /// (in other words, bit index 0 is sotred in the MSB of data[0])
     data: Vec<u8>,
 }
 
@@ -295,25 +296,37 @@ impl std::convert::TryFrom<&'_ str> for BitVector {
 /// Wrapper around a readable stream which allows for reading individual bits
 /// from the stream at a time.
 ///
+/// ALL READS ARE CACHED until the user calls consume() to allow discarding bits
+/// that have been read.
+///
 /// For reading many bytes, Read is also implemented, but it is invalid to use
 /// Read until a multiple of 8 bits have been partially read.
 pub struct BitReader<'a> {
     /// Base reader from which we will pull full bytes.
     reader: &'a mut dyn Read,
 
-    /// Offset from 0-N bits within the buffer
-    /// Usually N will be 7 if no errors occur which would cause more than 8
-    /// bits to be buffered.
+    /// Order in which to pull
+    /// NOTE: This only effects reading partial partial bytes
+    bit_order: BitOrder,
+    /*
+    We want to keep this byte aligned to
+    */
+    /// Bits read from the 'reader' which haven't yet been given to the user.
+    ///
+    /// NOTE: This may continue a non-multiple-of-8 bits if we called load()
+    /// after into_unconsumed_bits() with a non-exact number of bytes being
+    /// read.
+    ///
+    /// TODO:
+    buffer: BitVector,
+
+    /// Offset from 0-N bits within the buffer at which the next read will
+    /// occur. Usually N will be 7 if no errors occur which would cause more
+    /// than 8 bits to be buffered.
     offset: usize,
 
     /// How many bits were consumed (aka we can drop all bits before this point)
     consumed_offset: usize,
-
-    //
-    buffer: BitVector,
-
-    // NOTE: This only effects reading
-    bit_order: BitOrder,
 }
 
 // NOTE: THis reads from
@@ -333,6 +346,12 @@ impl<'a> BitReader<'a> {
         }
     }
 
+    /// Pre-loads the reader with some set of bits which should be returned next
+    /// on reads. Normally these will be bits retrieved from
+    /// into_unconsumed_bits() from another BitReader instance.
+    ///
+    /// MUST be called immediately after new() and before any reads to this
+    /// instance.
     pub fn load(&mut self, bits: BitVector) -> Result<()> {
         if self.offset != self.buffer.len() {
             return Err(err_msg("Already have pending bits loaded"));
@@ -348,7 +367,7 @@ impl<'a> BitReader<'a> {
     /// Reads a given number of bits from the stream and returns them as a byte.
     /// Up to 8 bits can be read.
     /// The final bit read will be in the most significant position of the
-    ///  return value.
+    /// return value.
     ///
     /// NOTE: Unless consume() is called, then this will accumulate bits
     /// indefinately
@@ -385,6 +404,7 @@ impl<'a> BitReader<'a> {
                     }
                 }
 
+                // TODO: Optimize this into full byte pushes.
                 match self.bit_order {
                     BitOrder::LSBFirst => {
                         // Push bits into buffer from LSB to MSB
@@ -433,6 +453,8 @@ impl<'a> BitReader<'a> {
     }
 
     pub fn consume(&mut self) {
+        // TODO: If we have very few bits, then it would also make sense to shift over
+        // the buffer if we consume a round number of bits.
         if self.offset == self.buffer.len() {
             self.buffer.clear();
             self.offset = 0;
@@ -443,13 +465,12 @@ impl<'a> BitReader<'a> {
 
     /// Moves the cursor of the stream to the next full byte
     pub fn align_to_byte(&mut self) {
-        let r = self.offset % 8;
-        if r != 0 {
-            self.offset += 8 - r;
-        }
+        // NOTE: We assign based on distance to the end of the buffer as the start may
+        // contain a partially read byte from a past call to into_unconsumed_bits().
+        self.offset += (self.buffer.len() - self.offset) % 8;
     }
 
-    // Outputs all remaining unread bits in the last read bytes.
+    /// Outputs all remaining unread bits in the last read bytes.
     pub fn into_unconsumed_bits(self) -> BitVector {
         let mut buf = BitVector::new();
         for i in self.consumed_offset..self.buffer.len() {
@@ -661,6 +682,8 @@ impl BitWrite for BitWriter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
 
     #[test]
@@ -720,5 +743,72 @@ mod tests {
         let a = BitVector::from(&[0xde, 0xff], 10);
         let b = BitVector::from(&[0b01011000], 6);
         assert_eq!(a.concat(&b).as_ref(), &[0xde, 0b11010110]);
+    }
+
+    #[test]
+    fn bitreader_align_to_byte() -> Result<()> {
+        // No-op at beginning
+        {
+            let data = &[0xAA, 0xBB];
+            let mut cursor = Cursor::new(data);
+
+            let mut reader = BitReader::new(&mut cursor);
+            reader.align_to_byte();
+
+            let mut buf = [0u8];
+            reader.read(&mut buf)?;
+
+            assert_eq!(&buf, &[0xAA]);
+        }
+
+        // After reading some bits
+        {
+            let data = &[0xAA, 0xBB];
+            let mut cursor = Cursor::new(data);
+
+            let mut reader = BitReader::new(&mut cursor);
+
+            reader.read_bits_exact(2)?;
+            reader.align_to_byte();
+
+            let mut buf = [0u8];
+            reader.read(&mut buf)?;
+
+            assert_eq!(&buf, &[0xBB]);
+        }
+
+        // After loading a part of one byte.
+        {
+            let data = &[0xAA, 0xBB];
+            let mut cursor = Cursor::new(data);
+
+            let mut reader = BitReader::new(&mut cursor);
+            reader.load(BitVector::from_usize(0, 2))?;
+
+            reader.align_to_byte();
+
+            let mut buf = [0u8];
+            reader.read(&mut buf)?;
+
+            assert_eq!(&buf, &[0xAA]);
+        }
+
+        // After loading 10 bits
+        {
+            let data = &[0xAA, 0xBB];
+            let mut cursor = Cursor::new(data);
+
+            let mut reader = BitReader::new_with_order(&mut cursor, BitOrder::MSBFirst);
+            reader.load(BitVector::from_usize(0xCC, 10))?;
+
+            reader.align_to_byte();
+
+            let mut buf = [0u8];
+            reader.read(&mut buf)?;
+
+            assert_eq!(&buf, &[0xCC]);
+        }
+
+        Ok(())
     }
 }

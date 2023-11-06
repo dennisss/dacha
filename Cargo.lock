@@ -2486,6 +2486,7 @@ dependencies = [
  "common",
  "executor",
  "file",
+ "macros",
  "usb",
 ]
 
@@ -2641,6 +2642,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "executor",
+ "macros",
  "usb",
 ]
 

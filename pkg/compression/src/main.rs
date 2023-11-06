@@ -20,6 +20,12 @@ use compression::zlib::*;
 // TODO: Maintain a histogram of characters in the block to determine when to
 // cut the block?
 
+/*
+Fuzzing the compression:
+- Generate random inputs until it crashes
+- Perform random mutations to existing valid inputs to make it break.
+*/
+
 #[executor_main]
 async fn main() -> Result<()> {
     let mut tar = compression::tar::Reader::open(

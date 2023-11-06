@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::f32::consts::E;
 use std::ops::DerefMut;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -28,6 +29,7 @@ use crate::table::comparator::KeyComparator;
 use crate::table::table::{SSTable, SSTableIterator, SSTableOpenOptions};
 use crate::table::table_builder::{SSTableBuilder, SSTableBuilderOptions, SSTableBuiltMetadata};
 
+use super::backup::Backup;
 use super::paths::FilePaths;
 use super::snapshot::Snapshot;
 
@@ -139,7 +141,7 @@ pub struct EmbeddedDB {
 
 struct EmbeddedDBShared {
     options: Arc<EmbeddedDBOptions>,
-    dir: FilePaths,
+    dir: Arc<FilePaths>,
     state: RwLock<EmbeddedDBState>,
     flushed_channel: (channel::Sender<()>, channel::Receiver<()>),
     compaction_waterline: AtomicU64,
@@ -155,6 +157,8 @@ struct EmbeddedDBState {
     /// into a table.
     ///
     /// Will be None only if EmbeddedDBOptions.disable_wal or read_only was set.
+    /// Note that a read_only database may still have a log even if this is
+    /// None.
     log: Option<RecordWriter>,
 
     /// Last sequence written to the log but not yet flushed to a table.
@@ -200,8 +204,9 @@ impl EmbeddedDB {
             file::create_dir_all(path).await?;
         }
 
-        let dir = FilePaths::new(path).await?;
+        let dir = Arc::new(FilePaths::new(path).await?);
 
+        // TODO: de-duplicate with the DirLock code.
         let lock_file = {
             let file = LocalFile::open_with_options(
                 dir.lock(),
@@ -252,7 +257,7 @@ impl EmbeddedDB {
     async fn open_new(
         options: Arc<EmbeddedDBOptions>,
         lock_file: LocalFile,
-        dir: FilePaths,
+        dir: Arc<FilePaths>,
     ) -> Result<Self> {
         // TODO: In this mode, ensure that we truncate any existing files (they may have
         // been partially opened only).
@@ -350,7 +355,7 @@ impl EmbeddedDB {
     async fn open_existing(
         options: Arc<EmbeddedDBOptions>,
         lock_file: LocalFile,
-        dir: FilePaths,
+        dir: Arc<FilePaths>,
         manifest_path: LocalPathBuf,
     ) -> Result<Self> {
         let (compaction_receiver, compaction_notifier, release_callback) =
@@ -515,6 +520,12 @@ impl EmbeddedDB {
         state.version_set.last_sequence()
     }
 
+    /// Returns the sequence of the last write to this database.
+    pub async fn last_sequence(&self) -> u64 {
+        let state = self.shared.state.read().await;
+        state.log_last_sequence
+    }
+
     /// Blocks until the database has been flushed past the last time
     /// wait_for_flush() was called.
     ///
@@ -525,6 +536,10 @@ impl EmbeddedDB {
     }
 
     /// Blocks until there are no more scheduled compactions.
+    ///
+    /// If the database has manual compaction mode on, then this will trigger
+    /// all pending compactions to run.
+    ///
     /// Note that if the database still receives writes after this is called,
     /// then this function may never return.
     pub async fn wait_for_compaction(&self) -> Result<()> {
@@ -701,10 +716,10 @@ impl EmbeddedDB {
                 )
                 .await?;
 
-                println!("MEMTABLE TO: {}", selected_level.level);
-                for entry in &version_edit.new_files {
-                    println!("- NEW: {}", entry.number);
-                }
+                // println!("MEMTABLE TO: {}", selected_level.level);
+                // for entry in &version_edit.new_files {
+                //     println!("- NEW: {}", entry.number);
+                // }
 
                 let mut out = vec![];
                 version_edit.serialize(&mut out)?;
@@ -712,6 +727,7 @@ impl EmbeddedDB {
                 manifest.flush().await?;
 
                 if let Some(num) = old_log_number {
+                    // TODO:
                     file::remove_file(shared.dir.log(num)).await?;
                 }
 
@@ -1054,6 +1070,53 @@ impl EmbeddedDB {
         }
     }
 
+    /// Creates a point in time backup of the on-disk state of the database
+    /// excluding any WALs.
+    pub async fn backup(&self) -> Result<Backup> {
+        let state = self.shared.state.read().await;
+
+        let version = state.version_set.latest_version().clone();
+
+        // Preparing the manifest to use for the backup (consolidated version based on
+        // the )
+
+        let mut edit = state.version_set.to_version_edit(true);
+
+        let manifest_number = state.version_set.next_file_number();
+        edit.next_file_number = Some(manifest_number + 1);
+
+        let mut log_number = None;
+        if !self.shared.options.disable_wal {
+            // TODO: We should have the log in memory for the memtable so we should be able
+            // to back it up cheaply without reading from disk (just need to retain a
+            // reference to the memory arena)
+
+            let n = state.version_set.next_file_number();
+            edit.next_file_number = Some(n + 1);
+            edit.log_number = Some(n);
+            edit.prev_log_number = None;
+            log_number = Some(n)
+        }
+
+        let mut manifest_data = vec![0u8; 0];
+        {
+            let mut writer = RecordWriter::new(&mut manifest_data);
+
+            let mut edit_data = vec![];
+            edit.serialize(&mut edit_data)?;
+
+            writer.append(&edit_data).await?;
+        }
+
+        Ok(Backup {
+            version,
+            manifest_number,
+            manifest_data,
+            log_number,
+            dir: self.shared.dir.clone(),
+        })
+    }
+
     pub async fn get(&self, user_key: &[u8]) -> Result<Option<Bytes>> {
         let snapshot = self.snapshot().await;
         snapshot.get(user_key).await
@@ -1065,6 +1128,8 @@ impl EmbeddedDB {
     /// TODO: If anything in here fails, they we need to mark the database as
     /// being in an error state and we can't allow reads or writes from the
     /// database at that point.
+    ///
+    /// TODO: Verify this future never gets cancelled.
     ///
     /// TODO: Also note that we shouldn't increment the last_sequence until the
     /// write is successful.

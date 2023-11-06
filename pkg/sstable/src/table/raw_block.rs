@@ -93,11 +93,7 @@ impl RawBlock {
             }
             CompressionType::ZLib => {
                 let mut out = vec![];
-                let mut decoder = ZlibDecoder::new();
-                let progress = transform_to_vec(&mut decoder, &self.data, true, &mut out)?;
-                if !progress.done || progress.input_read != self.data.len() {
-                    return Err(err_msg("Failed to decode full block"));
-                }
+                transform_to_vec(ZlibDecoder::new(), &self.data, &mut out)?;
 
                 out
             }

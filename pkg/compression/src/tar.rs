@@ -196,7 +196,7 @@ impl<Input: Readable> Reader<Input> {
             }
         };
 
-        check_zero_padding(rest)?;
+        check_zero_padding(rest).map_err(|_| err_msg("Pad padding after tar header"))?;
 
         let entry = FileEntry {
             metadata: FileMetadata {
@@ -352,6 +352,10 @@ impl<Input: Readable> Reader<Input> {
 #[async_trait]
 impl<Input: Readable> Readable for Reader<Input> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        if self.current_offset == self.next_offset {
+            return Ok(0);
+        }
+
         let n = core::cmp::min(
             buf.len(),
             (self.data_end_offset - self.current_offset) as usize,
@@ -364,7 +368,8 @@ impl<Input: Readable> Readable for Reader<Input> {
             let mut block = [0u8; BLOCK_SIZE as usize];
 
             self.file.read_exact(&mut block[0..padding_amount]).await?;
-            check_zero_padding(&block[0..padding_amount])?;
+            check_zero_padding(&block[padding_amount..])?;
+            self.current_offset = self.next_offset;
         }
 
         Ok(n_read)
@@ -445,7 +450,6 @@ impl<Input: Readable> Reader<Input> {
         }
 
         while let Some(entry) = self.read_entry().await? {
-            // TODO: Also remove any '..' parts from the path
             let mut relpath = LocalPath::new(&entry.metadata.header.file_name);
 
             if relpath.is_absolute() {
@@ -872,7 +876,8 @@ mod tests {
         let mut variations = [
             project_path!("testdata/tar/archive.tar"),
             // Doesn't contain directory entries so we must create them implicitly.
-            project_path!("testdata/tar/archive.tar"),
+            // TODO: Check the above comment is correct.
+            project_path!("testdata/tar/archive2.tar"),
         ];
 
         for archive_path in variations {

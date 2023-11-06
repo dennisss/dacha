@@ -627,13 +627,10 @@ mod tests {
 
             // Decode the golden
             {
-                let mut decoder = GzipDecoder::new();
-
                 let mut uncompressed_test = vec![];
                 crate::transform::transform_to_vec(
-                    &mut decoder,
+                    GzipDecoder::new(),
                     &compressed,
-                    true,
                     &mut uncompressed_test,
                 )?;
 
@@ -643,21 +640,16 @@ mod tests {
             // Encode and decode.
             {
                 let mut compressed_test = vec![];
-                let mut encoder = GzipEncoder::default_without_metadata();
                 crate::transform::transform_to_vec(
-                    &mut encoder,
+                    GzipEncoder::default_without_metadata(),
                     &uncompressed,
-                    true,
                     &mut compressed_test,
                 )?;
 
-                let mut decoder = GzipDecoder::new();
-
                 let mut uncompressed_test = vec![];
                 crate::transform::transform_to_vec(
-                    &mut decoder,
+                    GzipDecoder::new(),
                     &compressed_test,
-                    true,
                     &mut uncompressed_test,
                 )?;
 

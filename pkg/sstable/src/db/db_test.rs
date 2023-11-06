@@ -3,10 +3,11 @@ use std::collections::{HashMap, HashSet};
 use common::bytes::Bytes;
 use common::errors::*;
 use common::futures::StreamExt;
+use common::io::Writeable;
 use file::temp::TempDir;
 
 use crate::db::write_batch::WriteBatch;
-use crate::db::Snapshot;
+use crate::db::{Backup, Snapshot};
 use crate::iterable::Iterable;
 use crate::table::CompressionType;
 use crate::{EmbeddedDB, EmbeddedDBOptions};
@@ -406,9 +407,49 @@ async fn embedded_db_compaction_test() -> Result<()> {
 
     db.snapshot().await.verify_all().await?;
 
-    // Another possible idea is to randomly stop the program and verify that
+    /*
+    // Writing to a re-opened database should still work (should write changes to
+    // the log).
+    {
+        db.write(3, 40000, 0).await?;
+        db.snapshot().await.verify_all().await?;
+
+        db = db.reopen().await?;
+        db.snapshot().await.verify_all().await?;
+    }
+    */
+
+    // TODO: Another possible idea is to randomly stop the program and verify that
     // the set of written keys is still consistent and that the db is
     // recoverable.
+
+    {
+        let backup_dir = TempDir::create()?;
+
+        let backup = db.db.backup().await?;
+
+        let backup_path = backup_dir.path().join("backup.tar");
+
+        let mut backup_file = file::LocalFile::open_with_options(
+            &backup_path,
+            &file::LocalFileOpenOptions::new()
+                .create_new(true)
+                .write(true),
+        )?;
+
+        backup.write_to(&mut backup_file).await?;
+
+        backup_file.flush().await?;
+        drop(backup_file);
+
+        let mut backup_file = file::LocalFile::open(backup_path)?;
+
+        Backup::read_from(&mut backup_file, backup_dir.path()).await?;
+
+        db.dir = backup_dir;
+        db = db.reopen().await?;
+        db.snapshot().await.verify_all().await?;
+    }
 
     Ok(())
 }

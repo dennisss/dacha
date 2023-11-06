@@ -151,12 +151,16 @@ impl BundleShardWriter {
                     (self.header.record_size() - pending_record.uncompressed_length) as usize,
                 );
 
-                compression::transform::transform_to_vec(
+                let progress = compression::transform::partially_transform_to_vec(
                     pending_record.compressor.as_mut(),
                     &remaining[0..n],
                     false,
                     &mut pending_record.buffer,
                 )?;
+                if progress.input_read != n {
+                    return Err(err_msg("Not all input bytes were compressed."));
+                }
+
                 pending_record.uncompressed_length += n as u64;
 
                 hasher.update(&remaining[0..n]);
@@ -220,12 +224,15 @@ impl BundleShardWriter {
             meta.set_all_zeros(true);
         } else {
             // Flush pending compression state by signaling the end of inputs.
-            compression::transform::transform_to_vec(
+            let progress = compression::transform::partially_transform_to_vec(
                 record.compressor.as_mut(),
                 &[],
                 true,
                 &mut record.buffer,
             )?;
+            if !progress.done {
+                return Err(err_msg("Not all input bytes were compressed."));
+            }
 
             // Pad up to alignment
             let padded_len = record.buffer.len()

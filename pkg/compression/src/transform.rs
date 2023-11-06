@@ -1,4 +1,4 @@
-use common::errors::Result;
+use common::errors::*;
 
 /// Applies some operation to a stream of input byes in order to produce a
 /// stream of output bytes.
@@ -15,7 +15,8 @@ pub trait Transform {
     /// Applies the operation on one chunk of input/output buffers.
     ///
     /// Unless an error occured, the transform is expected to make as much
-    /// progress as possible. This means that:
+    /// progress as possible and MUST make at least some progress. This means
+    /// that:
     /// - When this returns, the input buffer and/or the output buffer will be
     ///   completely used or done will be set to true.
     /// - If the output buffer isn't completely used, then no more internally
@@ -47,12 +48,17 @@ pub struct TransformProgress {
 
 /// Helper that consumes all of the input data and transforms it into the output
 /// vector.
-/// 
-/// TODO: Verify that in all the places where this is used, we check the 'done' flag.
+///
+/// NOTE: The caller should check the returned
+///
+/// - The caller should
+///
+/// TODO: Verify that in all the places where this is used, we check the 'done'
+/// flag.
 ///
 /// Returns the number of input bytes read. Number of output bytes should be
 /// trivial. But, the question is whether or
-pub fn transform_to_vec(
+pub fn partially_transform_to_vec(
     transform: &mut dyn Transform,
     mut input: &[u8],
     end_of_input: bool,
@@ -100,4 +106,26 @@ pub fn transform_to_vec(
         output_written: (output_len - original_output_len),
         done: final_done,
     })
+}
+
+/// Runs all 'input' bytes through 'transform' and appends the resulting bytes
+/// to 'output'.
+///
+/// This is meant for one-shot compression/decompression of some buffers.
+///
+/// - Only returns successful if all 'input' bytes were fully processed by the
+///  Transform and the Transform has reported that it is 'done'.
+/// - 'transform' should normally be a fresh never before used instance which
+///   won't be used again after the calling of this function.
+pub fn transform_to_vec<T: Transform>(
+    mut transform: T,
+    input: &[u8],
+    output: &mut Vec<u8>,
+) -> Result<()> {
+    let progress = partially_transform_to_vec(&mut transform, input, true, output)?;
+    if !progress.done || progress.input_read != input.len() {
+        return Err(err_msg("Data transform stalled"));
+    }
+
+    Ok(())
 }

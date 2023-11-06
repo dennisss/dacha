@@ -75,7 +75,7 @@ https://www.w3.org/TR/2014/WD-encrypted-media-20140828/cenc-format.html
 
 pub struct WidevineMediaDecryptor {
     cdm: Arc<chromium_cdm::ContentDecryptionModule>,
-    key_id: Vec<u8>,
+    key_id: Bytes,
     decrypted_block: Mutex<DecryptedBlock>,
 }
 
@@ -88,7 +88,11 @@ impl video::mp4_protection::MediaDecryptor for WidevineMediaDecryptor {
         subsamples: &[video::mp4::SampleEncryptionBoxSubsample],
         out: &mut Vec<u8>,
     ) -> Result<()> {
-        let mut inner_subsamples = vec![];
+        // NOTE: For CENC encryption, all ciphertexts are treated as one contiguous
+        // chunk (ignoring the plaintext and with no padding) so we join them all for
+        // decryption. Also note that the Widevine CDM sometimes gives back kNoKey
+        // errors when given more than one subsample in CENC mode, so for simplicity, we
+        // do all the subsample extraction for the CDM in this code.
 
         // TODO: Also implement ciphertext concatenation in the Clear key
         // implementation.
@@ -96,24 +100,19 @@ impl video::mp4_protection::MediaDecryptor for WidevineMediaDecryptor {
         let mut cipher_text = vec![];
 
         let mut pos = 0;
-        for (i, s) in subsamples.iter().enumerate() {
+        for s in subsamples.iter() {
             pos += s.bytes_of_clear_data as usize;
 
             cipher_text.extend_from_slice(&data[pos..(pos + s.bytes_of_encrypted_data as usize)]);
             pos += s.bytes_of_encrypted_data as usize;
         }
 
-        inner_subsamples.push(chromium_cdm::SubsampleEntry {
+        let inner_subsamples = vec![chromium_cdm::SubsampleEntry {
             clear_bytes: 0,
             cipher_bytes: cipher_text.len() as u32,
-        });
+        }];
 
         let mut decrypted_block = self.decrypted_block.lock().await;
-
-        // println!(
-        //     "{}",
-        //     unsafe { core::mem::transmute::<_, u64>(data.as_ptr()) } % 16
-        // );
 
         // TODO: Loop / backoff if keys aren't available.
         // Firefox has no throttling logic on kNoKey?
@@ -144,8 +143,23 @@ impl video::mp4_protection::MediaDecryptor for WidevineMediaDecryptor {
         }
 
         let decrypted_data = &decrypted_block.get_mut()[..];
+        if decrypted_data.len() != cipher_text.len() {
+            return Err(err_msg("Wrong number of bytes were decrypted"));
+        }
 
-        out.extend_from_slice(decrypted_data);
+        let mut input_pos = 0;
+        let mut decrypted_pos = 0;
+        for s in subsamples.iter() {
+            out.extend_from_slice(&data[input_pos..(input_pos + s.bytes_of_clear_data as usize)]);
+            input_pos += s.bytes_of_clear_data as usize;
+
+            out.extend_from_slice(
+                &decrypted_data
+                    [decrypted_pos..(decrypted_pos + s.bytes_of_encrypted_data as usize)],
+            );
+            input_pos += s.bytes_of_encrypted_data as usize;
+            decrypted_pos += s.bytes_of_encrypted_data as usize;
+        }
 
         Ok(())
     }

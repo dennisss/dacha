@@ -49,21 +49,14 @@ pub fn read_zip_file(mut input: &[u8]) -> Result<()> {
                 } else if let CompressionMethod::Deflated = header.compression_method {
                     uncompressed.reserve_exact(header.uncompressed_size as usize);
 
-                    let mut inflater = crate::deflate::Inflater::new();
+                    transform_to_vec(
+                        crate::deflate::Inflater::new(),
+                        file_data,
+                        &mut uncompressed,
+                    )?;
 
-                    // TODO: This should be optimized to automatically read up to the known reserved
-                    // size.
-                    let progress =
-                        transform_to_vec(&mut inflater, file_data, true, &mut uncompressed)?;
-
-                    if !progress.done
-                        || progress.input_read != file_data.len()
-                        || progress.output_written != uncompressed.len()
-                    {
-                        println!("{:?}", header);
-                        println!("{:?}", progress);
-
-                        return Err(err_msg("Too many/few deflate bytes"));
+                    if uncompressed.len() != header.uncompressed_size as usize {
+                        return Err(err_msg("Too many/few inflated bytes"));
                     }
                 } else {
                     return Err(format_err!(

@@ -1,2 +1,1 @@
-
-pub struct Armored
+pub struct Armored {}

@@ -193,14 +193,11 @@ impl SSTableBuilder {
             CompressionType::ZLib => {
                 self.compressed_buffer.clear();
 
-                let mut encoder = ZlibEncoder::new();
                 transform_to_vec(
-                    &mut encoder,
+                    ZlibEncoder::new(),
                     &block_buffer,
-                    true,
                     &mut self.compressed_buffer,
                 )?;
-                // TODO: Verify the progress is done in the above.
 
                 &mut self.compressed_buffer
             }
