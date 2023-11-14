@@ -23,7 +23,7 @@ pub struct AVLTree<T, A = EmptyAttribute, C = OrdComparator> {
 
 impl<T: Ord> AVLTree<T, EmptyAttribute, OrdComparator> {
     pub fn default() -> Self {
-        Self::new(OrdComparator {})
+        Self::new(OrdComparator::default())
     }
 }
 

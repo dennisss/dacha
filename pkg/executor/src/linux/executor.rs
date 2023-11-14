@@ -16,6 +16,7 @@ use crate::linux::epoll::*;
 use crate::linux::io_uring::*;
 use crate::linux::options::{ExecutorOptions, ExecutorRunMode};
 use crate::linux::task::{Task, TaskEntry, TaskState};
+use crate::linux::timeout::ExecutorTimeouts;
 use crate::linux::waker::create_waker;
 use crate::stack_pinned::stack_pinned;
 
@@ -56,6 +57,9 @@ pub(super) struct ExecutorShared {
 
     pub(super) epoll: ExecutorEpoll,
 
+    pub(super) timeouts: ExecutorTimeouts,
+
+    // pub(super)
     /// List of tasks which need to be polled next.
     pending_queue: Mutex<VecDeque<TaskId>>,
 
@@ -73,6 +77,7 @@ impl Executor {
 
             io_uring: ExecutorIoUring::create()?,
             epoll: ExecutorEpoll::create()?,
+            timeouts: ExecutorTimeouts::new(),
 
             pending_queue: Mutex::new(VecDeque::new()),
             pending_queue_condvar: Condvar::new(),

@@ -4,23 +4,62 @@ use core::cmp::Ordering;
 
 use crate::tree::comparator::*;
 
-pub struct BinaryHeap<T, C = OrdComparator> {
-    items: Vec<T>,
-    comparator: C,
+/// Abstract data structure for keeping a mapping from to some offset into
+/// another data structure (like a binary heap which naturally does not support
+/// random lookup within an external like this).
+///
+/// (so this operates sort of like an inverted index)
+pub trait BinaryHeapIndex<V> {
+    type Query;
+
+    fn record_offset(&mut self, value: &V, offset: usize);
+
+    fn lookup_offset(&self, query: &Self::Query) -> Option<usize>;
+
+    fn clear_offset(&mut self, value: &V);
 }
 
-impl<T: Ord> BinaryHeap<T, OrdComparator> {
+impl<V> BinaryHeapIndex<V> for () {
+    type Query = ();
+
+    fn record_offset(&mut self, value: &V, offset: usize) {}
+
+    fn lookup_offset(&self, query: &Self::Query) -> Option<usize> {
+        None
+    }
+
+    fn clear_offset(&mut self, value: &V) {}
+}
+
+impl<T: Ord> BinaryHeap<T, OrdComparator, ()> {
     pub fn default() -> Self {
-        Self::new(OrdComparator {})
+        Self::new(OrdComparator::default(), ())
     }
 }
 
-impl<T, C: Comparator<T>> BinaryHeap<T, C> {
+pub struct BinaryHeap<V, C = OrdComparator, Index = ()> {
+    items: Vec<V>,
+    comparator: C,
+    index: Index,
+}
+
+impl<V, C: Default, I: Default> Default for BinaryHeap<V, C, I> {
+    fn default() -> Self {
+        Self {
+            items: vec![],
+            comparator: C::default(),
+            index: I::default(),
+        }
+    }
+}
+
+impl<T, C: Comparator<T>, Index: BinaryHeapIndex<T>> BinaryHeap<T, C, Index> {
     // TODO: Implement O(n) creation of a new heap.
-    pub fn new(comparator: C) -> Self {
+    pub fn new(comparator: C, index: Index) -> Self {
         Self {
             items: vec![],
             comparator,
+            index,
         }
     }
 
@@ -32,11 +71,51 @@ impl<T, C: Comparator<T>> BinaryHeap<T, C> {
         self.items.reserve_exact(additional)
     }
 
+    pub fn index(&self) -> &Index {
+        &self.index
+    }
+
+    pub fn index_mut(&mut self) -> &mut Index {
+        &mut self.index
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     fn compare(&self, a: &T, b: &T) -> Ordering {
         self.comparator.compare(a, b)
     }
 
+    // BEGIN: Helpers for mutating self.items. All operations that mutate self.items
+    // should use these to ensure that indexes are tracked.
+
+    fn swap(&mut self, a: usize, b: usize) {
+        self.items.swap(a, b);
+        self.index.record_offset(&self.items[a], a);
+        self.index.record_offset(&self.items[b], b);
+    }
+
+    fn swap_remove(&mut self, index: usize) -> T {
+        self.swap(index, self.items.len() - 1);
+        self.pop_any().unwrap()
+    }
+
+    fn pop(&mut self) -> Option<T> {
+        let v = self.items.pop();
+        let idx = self.items.len();
+        if let Some(value) = &v {
+            self.index.clear_offset(value);
+        }
+
+        v
+    }
+
+    // END
+    ///////
+
     pub fn insert(&mut self, value: T) {
+        self.index.record_offset(&value, self.items.len());
         self.items.push(value);
 
         let mut i = self.items.len() - 1;
@@ -46,7 +125,7 @@ impl<T, C: Comparator<T>> BinaryHeap<T, C> {
                 break;
             }
 
-            self.items.swap(i, parent_i);
+            self.swap(i, parent_i);
             i = parent_i;
         }
     }
@@ -55,12 +134,12 @@ impl<T, C: Comparator<T>> BinaryHeap<T, C> {
         self.items.get(0)
     }
 
-    pub fn extract_min(&mut self) -> Option<T> {
+    fn remove_at_index(&mut self, index: usize) -> Option<T> {
         if self.items.len() <= 1 {
-            return self.items.pop();
+            return self.pop();
         }
 
-        let v = self.items.swap_remove(0);
+        let v = self.swap_remove(0);
 
         let mut i = 0;
         loop {
@@ -86,7 +165,9 @@ impl<T, C: Comparator<T>> BinaryHeap<T, C> {
             }
 
             if min_i != i {
-                self.items.swap(i, min_i);
+                self.swap(i, min_i);
+
+                // Swap in keys
                 i = min_i;
             } else {
                 break;
@@ -96,9 +177,23 @@ impl<T, C: Comparator<T>> BinaryHeap<T, C> {
         Some(v)
     }
 
+    pub fn extract_min(&mut self) -> Option<T> {
+        self.remove_at_index(0)
+    }
+
+    /// Removes a specific
+    pub fn remove(&mut self, query: &Index::Query) -> Option<T> {
+        let offset = match self.index.lookup_offset(query) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        self.remove_at_index(offset)
+    }
+
     /// Removes any arbitrary entry from the queue.
     pub fn pop_any(&mut self) -> Option<T> {
-        self.items.pop()
+        self.pop()
     }
 }
 

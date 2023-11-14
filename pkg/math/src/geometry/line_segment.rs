@@ -103,7 +103,7 @@ impl<T: FloatElementType> LineSegment2<T> {
         // (otherwise this may grow excessively large due to lines becoming adjacent and
         // then not-adjacent and then adjacent again due to interleaved lines).
         let mut event_queue =
-            BinaryHeap::<Event<T>, EventComparator<T>>::new(EventComparator { max_error });
+            BinaryHeap::<Event<T>, EventComparator<T>>::new(EventComparator { max_error }, ());
         for (i, segment) in segments.iter().enumerate() {
             let (upper, lower) = upper_lower_endpoints(segment, max_error);
 

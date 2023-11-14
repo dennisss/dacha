@@ -21,8 +21,11 @@ async fn main() -> Result<()> {
 
     let mut data_gz = vec![];
 
-    let mut encoder = GzipEncoder::default_without_metadata();
-    compression::transform::transform_to_vec(&mut encoder, &data, true, &mut data_gz)?;
+    compression::transform::transform_to_vec(
+        GzipEncoder::default_without_metadata(),
+        &data,
+        &mut data_gz,
+    )?;
 
     println!("Write : {}", data_gz.len());
 

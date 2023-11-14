@@ -12,6 +12,7 @@ mod version;
 mod version_edit;
 mod write_batch;
 
+pub use backup::Backup;
 pub use db::EmbeddedDB;
 pub use options::EmbeddedDBOptions;
 pub use snapshot::{Snapshot, SnapshotIterator, SnapshotIteratorOptions};

@@ -38,7 +38,7 @@ impl MergeIterator {
         key_comparator: Arc<dyn KeyComparator>,
         iterators: Vec<Box<dyn Iterable<KeyValueEntry>>>,
     ) -> Self {
-        let next_queue = BinaryHeap::new(MergeKeysComparator { key_comparator });
+        let next_queue = BinaryHeap::new(MergeKeysComparator { key_comparator }, ());
         let exhausted_iters = vec![];
 
         // NOTE: We don't add the iterators to the queue until the user requests
