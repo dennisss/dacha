@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use common::errors::*;
 use executor::sync::Mutex;
+use raft_client::server::channel_factory::ChannelFactory;
 
 use crate::consensus::module::NotLeaderError;
 use crate::node::Node;
 use crate::proto::{NotLeaderErrorProto, Term};
-use crate::server::channel_factory::ChannelFactory;
 
 const PROXY_KEY: &'static str = "raft-proxy";
 

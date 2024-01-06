@@ -14,13 +14,13 @@ sstable = { path = "../sstable" }
 macros = { path = "../macros" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 libc = "0.2"
-nix = "0.21.0"
 failure = "0.1.8"
 executor = { path = "../executor" }
 file = { path = "../file" }
 net = { path = "../net" }
 base_radix = { path = "../base/radix" }
 raft_proto = { path = "./proto" }
+raft_client = { path = "./client" }
 
 [features]
 default = ["std"]

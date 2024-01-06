@@ -9,7 +9,7 @@ use rpc_util::NamedPortArg;
 // a counter.
 // - Then we can verify that all versions of the counter key are monotonic.
 
-use datastore::meta::client::*;
+use datastore_meta_client::*;
 
 async fn increment_counter(txn: &dyn MetastoreClientInterface) -> Result<()> {
     let mut current_num = 0;

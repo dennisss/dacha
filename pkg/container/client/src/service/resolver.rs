@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use datastore::meta::client::MetastoreClient;
+use datastore_meta_client::MetastoreClient;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
 use http::ResolvedEndpoint;

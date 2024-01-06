@@ -1,0 +1,23 @@
+[package]
+name = "raft_client"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+http = { path = "../../http" }
+rpc = { path = "../../rpc" }
+protobuf = { path = "../../protobuf" }
+crypto = { path = "../../crypto" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+net = { path = "../../net" }
+base_radix = { path = "../../base/radix" }
+base_error = { path = "../../base/error" }
+raft_proto = { path = "../proto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

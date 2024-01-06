@@ -136,9 +136,9 @@ async fn run_set_config_command(cmd: SetConfigCommand) -> Result<()> {
 }
 
 async fn create_bridge_stub(addr: &str) -> Result<RadioBridgeStub> {
-    let resolver = container::ServiceResolver::create_with_fallback(addr, async move {
+    let resolver = cluster_client::ServiceResolver::create_with_fallback(addr, async move {
         Ok(Arc::new(
-            container::meta::client::ClusterMetaClient::create_from_environment().await?,
+            cluster_client::meta::client::ClusterMetaClient::create_from_environment().await?,
         ))
     })
     .await?;

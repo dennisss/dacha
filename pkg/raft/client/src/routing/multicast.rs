@@ -2,12 +2,10 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::FromRawFd;
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 use failure::ResultExt;
 use net::ip::{IPAddress, SocketAddr};
 use net::udp::{UdpBindOptions, UdpSocket};
-use nix::sys::socket::sockopt::{ReuseAddr, ReusePort};
-use nix::sys::socket::{AddressFamily, InetAddr, SockAddr, SockFlag, SockProtocol, SockType};
 use protobuf::{Message, StaticMessage};
 
 use crate::proto::Announcement;

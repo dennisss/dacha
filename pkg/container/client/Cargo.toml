@@ -1,0 +1,28 @@
+[package]
+name = "cluster_client"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+base_radix = { path = "../../base/radix" }
+crypto = { path = "../../crypto" }
+protobuf = { path = "../../protobuf" }
+http = { path = "../../http" }
+macros = { path = "../../macros" }
+datastore_meta_client = { path = "../../datastore/meta/client" }
+datastore_proto = { path = "../../datastore/proto" }
+rpc = { path = "../../rpc" }
+net = { path = "../../net" }
+raft_client = { path = "../../raft/client" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+failure = "0.1.8"
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+sys = { path = "../../sys" }
+container_proto = { path = "../proto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

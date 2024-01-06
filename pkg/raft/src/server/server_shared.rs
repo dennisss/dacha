@@ -16,6 +16,7 @@ use executor::child_task::ChildTask;
 use executor::sync::Mutex;
 use executor::Condvar;
 use protobuf::Message;
+use raft_client::server::channel_factory::ChannelFactory;
 
 use crate::atomic::BlobFile;
 use crate::consensus::constraint::*;
@@ -24,7 +25,6 @@ use crate::consensus::tick::*;
 use crate::log::log::Log;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::*;
-use crate::server::channel_factory::ChannelFactory;
 use crate::server::server_client::ServerClient;
 use crate::server::server_identity::ServerIdentity;
 use crate::server::state_machine::StateMachine;

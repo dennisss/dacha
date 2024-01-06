@@ -526,6 +526,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_client"
+version = "0.1.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "container_proto",
+ "crypto",
+ "datastore_meta_client",
+ "datastore_proto",
+ "executor",
+ "failure",
+ "file",
+ "http",
+ "macros",
+ "net",
+ "protobuf",
+ "protobuf_builtins",
+ "raft_client",
+ "rpc",
+ "sys",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -620,11 +643,13 @@ dependencies = [
  "automata",
  "base_radix",
  "builder",
+ "cluster_client",
  "common",
  "compression",
  "container_proto",
  "crypto",
  "datastore",
+ "datastore_meta_client",
  "executor",
  "failure",
  "file",
@@ -833,6 +858,7 @@ dependencies = [
  "base_radix",
  "common",
  "crypto",
+ "datastore_meta_client",
  "datastore_proto",
  "executor",
  "file",
@@ -843,26 +869,14 @@ dependencies = [
  "protobuf",
  "protobuf_builtins",
  "raft",
+ "raft_client",
  "rpc",
  "rpc_util",
  "sstable",
 ]
 
 [[package]]
-name = "datastore_proto"
-version = "0.0.0"
-dependencies = [
- "common",
- "macros",
- "protobuf",
- "protobuf_builtins",
- "protobuf_compiler",
- "raft_proto",
- "rpc",
-]
-
-[[package]]
-name = "db_bundle"
+name = "datastore_bundle"
 version = "0.1.0"
 dependencies = [
  "common",
@@ -880,6 +894,33 @@ dependencies = [
  "sstable",
  "uuid",
  "uuid_macros",
+]
+
+[[package]]
+name = "datastore_meta_client"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "datastore_proto",
+ "executor",
+ "http",
+ "net",
+ "protobuf_builtins",
+ "raft_client",
+ "rpc",
+]
+
+[[package]]
+name = "datastore_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "raft_proto",
+ "rpc",
 ]
 
 [[package]]
@@ -1707,8 +1748,8 @@ dependencies = [
 name = "nordic_tools"
 version = "0.1.0"
 dependencies = [
+ "cluster_client",
  "common",
- "container",
  "crypto",
  "executor",
  "http",
@@ -2164,13 +2205,31 @@ dependencies = [
  "libc",
  "macros",
  "net",
- "nix 0.21.0",
  "protobuf",
  "protobuf_builtins",
+ "raft_client",
  "raft_proto",
  "rpc",
  "rpc_util",
  "sstable",
+]
+
+[[package]]
+name = "raft_client"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "crypto",
+ "executor",
+ "file",
+ "http",
+ "net",
+ "protobuf",
+ "protobuf_builtins",
+ "raft_proto",
+ "rpc",
 ]
 
 [[package]]
@@ -2253,8 +2312,8 @@ dependencies = [
 name = "rpc_test"
 version = "0.1.0"
 dependencies = [
+ "cluster_client",
  "common",
- "container",
  "executor",
  "file",
  "http",
@@ -2439,8 +2498,8 @@ dependencies = [
 name = "standing_desk"
 version = "0.1.0"
 dependencies = [
+ "cluster_client",
  "common",
- "container",
  "crypto",
  "http",
  "macros",

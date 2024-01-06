@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use common::errors::*;
 use crypto::random::RngExt;
+use raft_client::server::channel_factory::ChannelFactory;
 
 use crate::log::log::Log;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::*;
-use crate::server::channel_factory::*;
 use crate::server::server_identity::ServerIdentity;
 
 pub async fn bootstrap_first_server(log: &dyn Log) -> Result<ServerId> {

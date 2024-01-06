@@ -17,7 +17,9 @@ http = { path = "../http" }
 macros = { path = "../macros" }
 sstable = { path = "../sstable" }
 datastore = { path = "../datastore" }
+datastore_meta_client = { path = "../datastore/meta/client" }
 compression = { path = "../compression" }
+cluster_client = { path = "./client" }
 usb = { path = "../usb" }
 rpc = { path = "../rpc" }
 rpc_util = { path = "../rpc_util" }

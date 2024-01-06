@@ -3,6 +3,7 @@ use std::sync::{Arc, Weak};
 
 use common::bytes::Bytes;
 use common::errors::*;
+use datastore_meta_client::key_utils::*;
 use executor::channel;
 use executor::sync::Mutex;
 use raft::proto::LogEntryData;
@@ -12,7 +13,6 @@ use sstable::db::{Snapshot, SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
 
 use crate::meta::key_ranges::KeyRanges;
-use crate::meta::key_utils::*;
 use crate::meta::state_machine::EmbeddedDBStateMachine;
 use crate::meta::table_key::*;
 use crate::proto::*;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 
 use crate::proto::*;
 use crate::routing::route_store::*;

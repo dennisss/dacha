@@ -68,7 +68,7 @@ use container::manager::Manager;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use crypto::sip::SipHasher;
-use datastore::meta::client::MetastoreClientInterface;
+use datastore_meta_client::MetastoreClientInterface;
 use executor::child_task::ChildTask;
 use executor::JoinHandle;
 use nix::{
@@ -78,12 +78,14 @@ use nix::{
 use protobuf::text::parse_text_proto;
 use protobuf::text::ParseTextProto;
 use protobuf::Message;
+use raft::proto::Configuration_ServerRole;
 use rpc::ClientRequestContext;
 
-use container::meta::client::ClusterMetaClient;
+use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::meta::*;
 use container::{
-    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec,
-    ListWorkersRequest, ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
+    AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec, ListWorkersRequest,
+    ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
     WorkerStateMetadata_ReportedState,
 };
 use container::{
@@ -324,7 +326,7 @@ async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
     let mut route_label = raft::proto::RouteLabel::default();
     route_label.set_value(format!(
         "{}={}",
-        container::meta::constants::ZONE_ENV_VAR,
+        cluster_client::meta::constants::ZONE_ENV_VAR,
         zone
     ));
 
@@ -353,13 +355,18 @@ async fn run_bootstrap_inner(
     // the server.
     let local_server_id = {
         let status = meta_client.inner().current_status().await?;
-        if status.configuration().members().len() != 1 {
+        if status.configuration().servers_len() != 1 {
             return Err(err_msg("Expected exactly one metastore replica initially"));
         }
 
         // TODO: Find a better way of ensuring that this is definately the server that
         // is running in the local worker.
-        *status.configuration().members().iter().next().unwrap()
+        let server = status.configuration().servers().iter().next().unwrap();
+        if server.role() != Configuration_ServerRole::MEMBER {
+            return Err(err_msg("First raft server is not a member"));
+        }
+
+        server.id()
     };
 
     // This is required so that the manager can schedule the metastore worker
@@ -388,7 +395,7 @@ async fn run_bootstrap_inner(
     let manager =
         Manager::new(meta_client.clone(), Arc::new(crypto::random::global_rng())).into_service();
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
-    let manager_stub = container::ManagerStub::new(manager_channel);
+    let manager_stub = cluster_client::ManagerStub::new(manager_channel);
 
     // TODO: Verify that this actually has created the worker
     println!("Starting metastore job");
@@ -406,7 +413,24 @@ async fn run_bootstrap_inner(
     loop {
         let status = meta_client.inner().current_status().await?;
 
-        if status.configuration().members().len() >= 2 {
+        let mut done = false;
+        for server in status.configuration().servers() {
+            if server.id() == local_server_id {
+                continue;
+            }
+
+            println!(
+                "Found server {} with role {:?}",
+                server.id().value(),
+                server.role()
+            );
+            if server.role() == Configuration_ServerRole::MEMBER {
+                done = true;
+                break;
+            }
+        }
+
+        if done {
             break;
         }
 
@@ -426,6 +450,8 @@ async fn run_bootstrap_inner(
                 This may have one of two errors:
                 - Failing because we tried directly connecting to the local metastore
                 - Failing indirectly because we connected to the second replica and it piped our request to the remote server.
+
+                TODO: Eventually we want to ensure that all these errors are eliminated through graceful leader transition.
                 */
                 // if let Some(status) = e.downcast_ref::<rpc::Status>() {
                 //     // Requests may fail if trying to contact the currently stopping server.
@@ -443,9 +469,9 @@ async fn run_bootstrap_inner(
         if status.id() == local_server_id
             || status
                 .configuration()
-                .members()
+                .servers()
                 .iter()
-                .find(|id| **id == local_server_id)
+                .find(|s| s.id() == local_server_id)
                 .is_some()
         {
             executor::sleep(Duration::from_secs(4)).await?;
@@ -502,7 +528,7 @@ async fn get_metastore_job(zone: &str) -> Result<JobSpec> {
 
     meta_job_spec.worker_mut().add_args(format!(
         "--labels={}={}",
-        container::meta::constants::ZONE_ENV_VAR,
+        cluster_client::meta::constants::ZONE_ENV_VAR,
         zone
     ));
 
@@ -683,7 +709,7 @@ async fn run_start_worker(cmd: StartWorkerCommand) -> Result<()> {
     // Instead we should look up the worker
     executor::sleep(std::time::Duration::from_secs(1)).await;
 
-    let mut log_request = container::LogRequest::default();
+    let mut log_request = cluster_client::LogRequest::default();
     log_request.set_worker_name(worker_spec.name());
 
     // TODO: Deduplicate with the log command code.
@@ -738,7 +764,7 @@ async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
 }
 
 async fn connect_to_manager(meta_client: Arc<ClusterMetaClient>) -> Result<ManagerStub> {
-    let manager_channel = container::service::create_rpc_channel(
+    let manager_channel = cluster_client::service::create_rpc_channel(
         "manager.system.job.local.cluster.internal",
         meta_client,
     )
@@ -779,7 +805,7 @@ async fn start_job_impl(
 
         let node = {
             let resolver = Arc::new(
-                container::ServiceResolver::create(
+                cluster_client::ServiceResolver::create(
                     &format!(
                         "{}.node.local.cluster.internal",
                         base_radix::base32_encode_cl64(assignment.node_id())
@@ -887,7 +913,7 @@ async fn start_worker_impl(
 
     println!("Starting server");
 
-    let mut start_request = container::StartWorkerRequest::default();
+    let mut start_request = cluster_client::StartWorkerRequest::default();
     start_request.set_spec(worker_spec.clone());
     if let Some(rev) = worker_revision {
         start_request.set_revision(rev);
@@ -906,14 +932,16 @@ async fn start_worker_impl(
     Ok(())
 }
 
-async fn build_worker_blobs(worker_spec: &mut WorkerSpec) -> Result<Vec<container::BlobData>> {
+async fn build_worker_blobs(worker_spec: &mut WorkerSpec) -> Result<Vec<cluster_client::BlobData>> {
     let mut out = vec![];
 
     let build_context = builder::BuildConfigTarget::default_for_local_machine()?;
     let mut builder_inst = builder::Builder::default()?;
 
     for volume in worker_spec.volumes_mut() {
-        if let container::WorkerSpec_VolumeSourceCase::BuildTarget(label) = volume.source_case() {
+        if let cluster_client::WorkerSpec_VolumeSourceCase::BuildTarget(label) =
+            volume.source_case()
+        {
             println!("Building volume target: {}", label);
 
             let res = builder_inst
@@ -939,7 +967,7 @@ async fn build_worker_blobs(worker_spec: &mut WorkerSpec) -> Result<Vec<containe
             volume.set_bundle(bundle_spec.clone());
 
             for variant in bundle_spec.variants() {
-                let mut blob_data = container::BlobData::default();
+                let mut blob_data = cluster_client::BlobData::default();
                 blob_data.set_spec(variant.blob().clone());
 
                 let data = file::read(bundle_dir.join(variant.blob().id())).await?;
@@ -1024,7 +1052,7 @@ async fn run_log(cmd: LogCommand) -> Result<()> {
 
     let request_context = rpc::ClientRequestContext::default();
 
-    let mut log_request = container::LogRequest::default();
+    let mut log_request = cluster_client::LogRequest::default();
     log_request.set_worker_name(&cmd.worker_selector.worker_name);
 
     if let Some(num) = cmd.attempt_id {
@@ -1032,7 +1060,7 @@ async fn run_log(cmd: LogCommand) -> Result<()> {
     }
 
     if cmd.latest_attempt == Some(true) {
-        let mut request = container::GetEventsRequest::default();
+        let mut request = cluster_client::GetEventsRequest::default();
         request.set_worker_name(&cmd.worker_selector.worker_name);
 
         let mut resp = node
@@ -1067,7 +1095,7 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
     let node = cmd.worker_selector.connect().await?;
     let request_context = rpc::ClientRequestContext::default();
 
-    let mut request = container::GetEventsRequest::default();
+    let mut request = cluster_client::GetEventsRequest::default();
     request.set_worker_name(&cmd.worker_selector.worker_name);
 
     let mut resp = node
@@ -1080,8 +1108,8 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
         id: u64,
         start_time: SystemTime,
         end_time: Option<SystemTime>,
-        exit_status: Option<container::ContainerStatus>,
-        events: Vec<&'a container::WorkerEvent>,
+        exit_status: Option<cluster_client::ContainerStatus>,
+        events: Vec<&'a cluster_client::WorkerEvent>,
     }
 
     resp.events_mut()
@@ -1097,21 +1125,21 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
 
         // TODO: Will eventually need to handle StartFailure
         match event.typ_case() {
-            container::WorkerEventTypeCase::Started(_) => attempts.push(Attempt {
+            cluster_client::WorkerEventTypeCase::Started(_) => attempts.push(Attempt {
                 id: event.timestamp(),
                 start_time: time,
                 end_time: None,
                 exit_status: None,
                 events: vec![],
             }),
-            container::WorkerEventTypeCase::StartFailure(v) => attempts.push(Attempt {
+            cluster_client::WorkerEventTypeCase::StartFailure(v) => attempts.push(Attempt {
                 id: event.timestamp(),
                 start_time: time,
                 end_time: Some(time.clone()),
                 exit_status: None,
                 events: vec![],
             }),
-            container::WorkerEventTypeCase::Stopped(e) => {
+            cluster_client::WorkerEventTypeCase::Stopped(e) => {
                 let last_attempt = attempts.last_mut().unwrap();
                 last_attempt.exit_status = Some(e.status().clone());
                 last_attempt.end_time = Some(time);

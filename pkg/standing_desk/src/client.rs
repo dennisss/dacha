@@ -28,14 +28,16 @@ struct ClientState {
 impl Client {
     pub async fn create(radio_bridge_addr: &str, device_name: &str) -> Result<Self> {
         let stub = {
-            let resolver =
-                container::ServiceResolver::create_with_fallback(radio_bridge_addr, async move {
+            let resolver = cluster_client::ServiceResolver::create_with_fallback(
+                radio_bridge_addr,
+                async move {
                     Ok(Arc::new(
-                        container::meta::client::ClusterMetaClient::create_from_environment()
+                        cluster_client::meta::client::ClusterMetaClient::create_from_environment()
                             .await?,
                     ))
-                })
-                .await?;
+                },
+            )
+            .await?;
 
             let channel = Arc::new(
                 rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver)).await?,

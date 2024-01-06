@@ -12,13 +12,12 @@ extern crate rpc;
 extern crate rpc_test;
 #[macro_use]
 extern crate macros;
-extern crate container;
 
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
+use cluster_client::meta::client::ClusterMetaClient;
 use common::errors::*;
-use container::meta::client::ClusterMetaClient;
 use rpc_test::proto::adder::*;
 
 #[derive(Args)]
@@ -53,12 +52,13 @@ async fn main() -> Result<()> {
     // read the full length, then we should error out the request.
 
     let channel = {
-        let resolver = container::ServiceResolver::create_with_fallback(&args.target, async move {
-            Ok(Arc::new(
-                ClusterMetaClient::create_from_environment().await?,
-            ))
-        })
-        .await?;
+        let resolver =
+            cluster_client::ServiceResolver::create_with_fallback(&args.target, async move {
+                Ok(Arc::new(
+                    ClusterMetaClient::create_from_environment().await?,
+                ))
+            })
+            .await?;
 
         Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver)).await?)
     };

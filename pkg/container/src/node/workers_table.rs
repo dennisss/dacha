@@ -3,7 +3,7 @@
 
 use builder::proto::BlobSpec;
 use common::errors::*;
-use datastore::key_encoding::KeyEncoder;
+use datastore_meta_client::key_encoding::KeyEncoder;
 use protobuf::{Message, StaticMessage};
 use sstable::db::WriteBatch;
 use sstable::iterable::Iterable;

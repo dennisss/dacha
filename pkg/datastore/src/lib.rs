@@ -15,6 +15,5 @@ extern crate sstable;
 #[macro_use]
 extern crate parsing;
 
-pub mod key_encoding;
 pub mod meta;
 pub use datastore_proto::db::meta as proto;

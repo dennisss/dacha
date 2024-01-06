@@ -1,5 +1,4 @@
 pub mod bootstrap;
-pub mod channel_factory;
 pub mod server;
 mod server_client;
 mod server_identity;

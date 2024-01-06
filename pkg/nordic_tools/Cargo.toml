@@ -9,7 +9,7 @@ protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 usb = { path = "../usb" }
 crypto = { path = "../crypto" }
-container = { path = "../container" }
+cluster_client = { path = "../container/client" }
 nordic_proto = { path = "../nordic_proto" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }

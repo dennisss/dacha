@@ -5,7 +5,6 @@ extern crate rpi;
 extern crate stream_deck;
 #[macro_use]
 extern crate macros;
-extern crate container;
 extern crate home_hub;
 extern crate hue;
 extern crate protobuf;
@@ -23,7 +22,8 @@ struct Args {
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
-    let meta_client = container::meta::client::ClusterMetaClient::create_from_environment().await?;
+    let meta_client =
+        cluster_client::meta::client::ClusterMetaClient::create_from_environment().await?;
 
     if let Some(new_config) = args.set_config {
         let mut config = Config::default();

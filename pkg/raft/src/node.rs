@@ -11,18 +11,16 @@ use executor::channel;
 use executor::sync::Mutex;
 use file::dir_lock::DirLock;
 use protobuf::{Message, StaticMessage};
+use raft_client::{
+    DiscoveryClient, DiscoveryMulticast, DiscoveryServer, RouteChannelFactory, RouteStore,
+};
 use rpc_util::AddReflection;
 
 use crate::atomic::*;
 use crate::log::segmented_log::{SegmentedLog, SegmentedLogOptions};
 use crate::proto::*;
-use crate::routing::discovery_client::DiscoveryClient;
-use crate::routing::discovery_server::DiscoveryServer;
-use crate::routing::route_channel::*;
-use crate::routing::route_store::RouteStore;
 use crate::server::server::*;
 use crate::server::state_machine::*;
-use crate::DiscoveryMulticast;
 use crate::Log;
 
 /// Configuration for creating a SimpleServer instance.
@@ -192,7 +190,7 @@ impl<R: 'static + Send> Node<R> {
                     None
                 } else {
                     let init_signal = ServerInit::wait_for_init(options.init_port).fuse();
-                    let found_peer = Self::find_peer_group_id(&route_store).fuse();
+                    let found_peer = raft_client::utils::find_peer_group_id(&route_store).fuse();
                     let background_error = task_bundle.join().fuse();
 
                     pin_mut!(init_signal, found_peer, background_error);
@@ -267,23 +265,6 @@ impl<R: 'static + Send> Node<R> {
             task_bundle: Some(task_bundle),
             empty_log,
         })
-    }
-
-    pub(crate) async fn find_peer_group_id(route_store: &RouteStore) -> GroupId {
-        loop {
-            let route_store = route_store.lock().await;
-
-            let remote_groups = route_store.remote_groups();
-
-            if remote_groups.is_empty() {
-                route_store.wait().await;
-                continue;
-            }
-
-            drop(route_store);
-
-            return *remote_groups.iter().next().unwrap();
-        }
     }
 
     pub fn id(&self) -> ServerId {

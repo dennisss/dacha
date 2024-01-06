@@ -11,6 +11,7 @@ rpc_util = { path = "../rpc_util" }
 parsing = { path = "../parsing" }
 sstable = { path = "../sstable" }
 raft = { path = "../raft" }
+raft_client = { path = "../raft/client" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 net = { path = "../net" }
@@ -20,6 +21,7 @@ file = { path = "../file" }
 crypto = { path = "../crypto" }
 base_radix = { path = "../base/radix" }
 datastore_proto = { path = "./proto" }
+datastore_meta_client = { path = "./meta/client" }
 
 [features]
 default = ["std"]

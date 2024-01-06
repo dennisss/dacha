@@ -1,8 +1,8 @@
 use common::bytes::Bytes;
 use common::errors::*;
+use datastore_meta_client::key_encoding::KeyEncoder;
 use protobuf::{Enum, EnumValue};
 
-use crate::key_encoding::KeyEncoder;
 use crate::proto::*;
 
 /// Parsed representation of the key stored in the metastore's underlying

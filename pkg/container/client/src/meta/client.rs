@@ -1,10 +1,10 @@
 use core::ops::{Deref, DerefMut};
 
 use common::errors::*;
-use datastore::meta::client::MetastoreClient;
-use datastore::meta::client::MetastoreClientInterface;
+use datastore_meta_client::MetastoreClient;
+use datastore_meta_client::MetastoreClientInterface;
 use protobuf_builtins::google::protobuf::Any;
-use raft::proto::RouteLabel;
+use raft_client::proto::RouteLabel;
 
 use crate::meta::constants::ZONE_ENV_VAR;
 use crate::meta::{ClusterMetaTable, GetClusterMetaTable};
@@ -102,7 +102,7 @@ impl MetastoreClientInterface for ClusterMetaClient {
         &self,
         start_key: &[u8],
         end_key: &[u8],
-    ) -> Result<Vec<datastore::proto::KeyValueEntry>> {
+    ) -> Result<Vec<datastore_proto::db::meta::KeyValueEntry>> {
         self.inner.get_range(start_key, end_key).await
     }
 
@@ -116,7 +116,7 @@ impl MetastoreClientInterface for ClusterMetaClient {
 
     async fn new_transaction<'a>(
         &'a self,
-    ) -> Result<datastore::meta::client::MetastoreTransaction<'a>> {
+    ) -> Result<datastore_meta_client::MetastoreTransaction<'a>> {
         self.inner.new_transaction().await
     }
 }

@@ -16,6 +16,8 @@ extern crate rpc;
 extern crate sstable;
 #[macro_use]
 extern crate datastore;
+#[macro_use]
+extern crate datastore_meta_client;
 extern crate net;
 extern crate rpc_util;
 extern crate usb;
@@ -26,15 +28,12 @@ extern crate base_radix;
 
 pub mod init;
 pub mod manager;
-pub mod meta;
 pub mod node;
 use container_proto::cluster as proto;
 mod runtime;
-pub mod service;
 mod setup_socket;
 
 pub use manager::main::main as manager_main;
 pub use node::main::main as node_main;
 pub use proto::*;
 pub use runtime::ContainerRuntime;
-pub use service::resolver::ServiceResolver;

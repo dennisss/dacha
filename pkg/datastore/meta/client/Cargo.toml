@@ -1,0 +1,19 @@
+[package]
+name = "datastore_meta_client"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../../common" }
+http = { path = "../../../http" }
+rpc = { path = "../../../rpc" }
+net = { path = "../../../net" }
+raft_client = { path = "../../../raft/client" }
+protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
+executor = { path = "../../../executor" }
+datastore_proto = { path = "../../proto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use cluster_client::meta::client::ClusterMetaClient;
 use common::errors::*;
 use common::list::Appendable;
-use container::meta::client::ClusterMetaClient;
 use crypto::random::SharedRng;
 use executor::channel;
 use executor::sync::Mutex;

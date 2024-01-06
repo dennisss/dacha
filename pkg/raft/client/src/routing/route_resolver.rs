@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use common::errors::*;
+use base_error::*;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
 use http::uri::Authority;

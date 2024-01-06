@@ -11,7 +11,7 @@ rpi = { path = "../rpi" }
 stream_deck = { path = "../peripherals/devices/stream_deck" }
 hue = { path = "../api/hue" }
 protobuf = { path = "../protobuf" }
-container = { path = "../container" }
+cluster_client = { path = "../container/client" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf/compiler" }

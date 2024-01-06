@@ -1,11 +1,11 @@
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
+use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
 use executor::child_task::ChildTask;
 use file::temp::TempDir;
 use protobuf::text::ParseTextProto;
 use raft::proto::RouteLabel;
 
-use super::client::{MetastoreClient, MetastoreClientInterface};
 use crate::proto::KeyValueEntry;
 
 /// In-process single node metastore instance for testing.
@@ -25,7 +25,7 @@ impl TestMetastore {
         // instance.
         let port = crypto::random::global_rng().between(8000, 10000).await;
 
-        let route_labels = raft::utils::generate_unique_route_labels().await;
+        let route_labels = raft_client::utils::generate_unique_route_labels().await;
 
         // TODO: Disable multicast as we don't need it in a unit test.
         let fut = crate::meta::store::run(crate::meta::store::MetastoreConfig {

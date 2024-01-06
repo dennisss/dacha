@@ -8,7 +8,6 @@ extern crate rpi;
 extern crate stream_deck;
 #[macro_use]
 extern crate macros;
-extern crate container;
 extern crate home_hub;
 extern crate hue;
 extern crate protobuf;
@@ -86,7 +85,7 @@ impl App {
         let args = common::args::parse_args::<Args>()?;
 
         let mut meta_client =
-            container::meta::client::ClusterMetaClient::create_from_environment().await?;
+            cluster_client::meta::client::ClusterMetaClient::create_from_environment().await?;
 
         let config = meta_client
             .get_object::<Config>(&args.config_object)

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use common::errors::*;
+use base_error::*;
 
 use crate::proto::ServerId;
 

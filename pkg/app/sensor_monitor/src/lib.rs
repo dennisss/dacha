@@ -25,7 +25,7 @@ use std::{
 
 use common::errors::*;
 use crypto::random::RngExt;
-use datastore::key_encoding::KeyEncoder;
+use datastore_meta_client::key_encoding::KeyEncoder;
 use executor::bundle::TaskResultBundle;
 use parsing::{ascii::AsciiString, parse_next};
 use sstable::{db::SnapshotIterator, iterable::Iterable, EmbeddedDB, EmbeddedDBOptions};

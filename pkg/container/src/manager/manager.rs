@@ -3,16 +3,16 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use cluster_client::meta::{ClusterMetaTable, GetClusterMetaTable};
 use common::errors::*;
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use datastore::meta::client::MetastoreClient;
-use datastore::meta::client::MetastoreClientInterface;
-use datastore::meta::client::MetastoreTransaction;
+use datastore_meta_client::MetastoreClient;
+use datastore_meta_client::MetastoreClientInterface;
+use datastore_meta_client::MetastoreTransaction;
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
 
-use crate::meta::GetClusterMetaTable;
 use crate::proto::*;
 
 /*

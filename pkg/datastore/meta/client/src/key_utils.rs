@@ -1,5 +1,4 @@
 use common::bytes::Bytes;
-use sstable::table::KeyComparator;
 
 pub fn single_key_range(key: &[u8]) -> (Bytes, Bytes) {
     let start_key = Bytes::from(key);
@@ -14,6 +13,19 @@ pub fn single_key_range(key: &[u8]) -> (Bytes, Bytes) {
 
 pub fn prefix_key_range(prefix: &[u8]) -> (Bytes, Bytes) {
     let start_key = prefix.to_vec();
-    let end_key = sstable::table::BytewiseComparator::new().find_short_successor(start_key.clone());
+    let end_key = find_short_successor(start_key.clone());
     (start_key.into(), end_key.into())
+}
+
+// TODO: Dedup with sstable::table::BytewiseComparator
+fn find_short_successor(mut key: Vec<u8>) -> Vec<u8> {
+    for i in (0..key.len()).rev() {
+        if key[i] != 0xff {
+            key[i] += 1;
+            key.truncate(i + 1);
+            break;
+        }
+    }
+
+    key
 }

@@ -6,9 +6,12 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use builder::proto::BundleSpec;
+use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::meta::constants::*;
+use cluster_client::meta::GetClusterMetaTable;
 use common::errors::*;
 use crypto::random::RngExt;
-use datastore::meta::client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
+use datastore_meta_client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
@@ -20,9 +23,6 @@ use nix::unistd::Gid;
 use protobuf::Message;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
-use crate::meta::client::ClusterMetaClient;
-use crate::meta::constants::*;
-use crate::meta::GetClusterMetaTable;
 use crate::node::blob_store::*;
 use crate::node::resources::*;
 use crate::node::shadow::*;

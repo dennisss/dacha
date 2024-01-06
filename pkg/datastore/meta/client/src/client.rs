@@ -6,14 +6,14 @@ use std::sync::Arc;
 use common::async_fn::AsyncFn1;
 use common::bytes::Bytes;
 use common::errors::*;
+use datastore_proto::db::meta::*;
 use executor::child_task::ChildTask;
 use executor::sync::{Mutex, MutexGuard};
 use net::ip::SocketAddr;
-use raft::proto::RouteLabel;
-use sstable::table::KeyComparator;
+use raft_client::proto::RouteLabel;
 
-use crate::meta::key_utils::*;
-use crate::proto::*;
+use crate::constants::*;
+use crate::key_utils::*;
 
 /// Maximum number of times metastore transactions should be retried if
 pub const MAX_TRANSACTION_RETRIES: usize = 5;
@@ -48,7 +48,7 @@ impl MetastoreClient {
     /// main downside of this is that it may take a few seconds to receive the
     /// next broadcast in order to connect.
     pub async fn create(labels: &[RouteLabel]) -> Result<Self> {
-        let route_store = raft::RouteStore::new(labels);
+        let route_store = raft_client::RouteStore::new(labels);
 
         /// TODO: With this approach, it may take us up to 2 seconds (the
         /// broadcast interval) to find a server.
@@ -61,7 +61,7 @@ impl MetastoreClient {
         ///     - This means that we can sustain an outage to the metastore so
         ///       long as all needed services are cached.
         /// - If running in a unit test, the facttory
-        let discovery = raft::DiscoveryMulticast::create(route_store.clone()).await?;
+        let discovery = raft_client::DiscoveryMulticast::create(route_store.clone()).await?;
 
         let background_thread = ChildTask::spawn(async move {
             eprintln!("DiscoveryClient exited: {:?}", discovery.run().await);
@@ -70,7 +70,8 @@ impl MetastoreClient {
         // TODO: In the resolver, also subscribe to one of the server's CurrentStatus.
         // Whenever the set of members changes, use that info to prune the routes we
         // have on the client side.
-        let channel_factory = raft::RouteChannelFactory::find_group(route_store.clone()).await;
+        let channel_factory =
+            raft_client::RouteChannelFactory::find_group(route_store.clone()).await;
 
         // We can talk to any metastore worker as they will all redirect requests to the
         // leader if needed.
@@ -83,7 +84,9 @@ impl MetastoreClient {
     ///
     /// This is mainly for use for testing where we only need to communicate
     /// with a single instance.
-    pub(super) async fn create_direct(addr: SocketAddr) -> Result<Self> {
+    ///
+    /// TODO: Restrict to other this and the main crate.
+    pub async fn create_direct(addr: SocketAddr) -> Result<Self> {
         let channel = Arc::new(
             rpc::Http2Channel::create(format!("http://{}", addr.to_string()).as_str()).await?,
         );
@@ -118,7 +121,7 @@ impl MetastoreClient {
         let mut request_context = rpc::ClientRequestContext::default();
         request_context
             .metadata
-            .add_text(crate::meta::constants::CLIENT_ID_KEY, &self.client_id)?;
+            .add_text(CLIENT_ID_KEY, &self.client_id)?;
         Ok(request_context)
     }
 
@@ -263,7 +266,7 @@ impl MetastoreClient {
         Ok(WatchStream { response })
     }
 
-    pub async fn current_status(&self) -> Result<raft::proto::Status> {
+    pub async fn current_status(&self) -> Result<raft_client::proto::Status> {
         let stub = ServerManagementStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
 
@@ -271,7 +274,7 @@ impl MetastoreClient {
         stub.CurrentStatus(&request_context, &request).await.result
     }
 
-    pub async fn remove_server(&self, id: raft::proto::ServerId) -> Result<()> {
+    pub async fn remove_server(&self, id: raft_client::proto::ServerId) -> Result<()> {
         let stub = ServerManagementStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
 
@@ -531,7 +534,7 @@ pub struct WatchStream {
 macro_rules! run_transaction {
     ($client:expr, $txn:ident, $f:expr) => {{
         let mut retval = None;
-        for i in 0..$crate::meta::client::MAX_TRANSACTION_RETRIES {
+        for i in 0..$crate::MAX_TRANSACTION_RETRIES {
             let $txn = $client.new_transaction().await?;
             retval = Some($f);
             $txn.commit().await?;

@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use cluster_client::meta::client::ClusterMetaClient;
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
 use rpc_util::{AddReflection, NamedPortArg};
 
 use crate::manager::manager::Manager;
-use crate::meta::client::ClusterMetaClient;
 use crate::proto::*;
 
 #[derive(Args)]

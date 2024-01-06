@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use common::errors::*;
+use base_error::*;
 
 use crate::proto::*;
 use crate::routing::route_resolver::RouteResolver;
 use crate::routing::route_store::RouteStore;
 use crate::server::channel_factory::ChannelFactory;
+use crate::utils::find_peer_group_id;
 
 pub struct RouteChannelFactory {
     group_id: GroupId,
@@ -18,7 +19,7 @@ impl RouteChannelFactory {
     /// will wait for the first server group to be discovered and create a
     /// factory that connects to it.
     pub async fn find_group(route_store: RouteStore) -> Self {
-        let group_id = crate::node::Node::<()>::find_peer_group_id(&route_store).await;
+        let group_id = find_peer_group_id(&route_store).await;
         Self::new(group_id, route_store)
     }
 

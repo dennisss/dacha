@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
+use datastore_meta_client::constants::*;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::child_task::ChildTask;
@@ -20,7 +21,6 @@ use rpc_util::AddReflection;
 use sstable::db::{SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
 
-use crate::meta::constants::*;
 use crate::meta::state_machine::*;
 use crate::meta::table_key::TableKey;
 use crate::meta::transaction::*;

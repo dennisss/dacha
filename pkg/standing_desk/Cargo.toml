@@ -8,7 +8,7 @@ common = { path = "../common" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 crypto = { path = "../crypto" }
-container = { path = "../container" }
+cluster_client = { path = "../container/client" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }
 nordic_tools = { path = "../nordic_tools" }
