@@ -1,3 +1,5 @@
+use common::fixed::vec::FixedVec;
+
 pub trait WindowBuffer: std::ops::Index<usize, Output = u8> {
     fn extend_from_slice(&mut self, data: &[u8]);
     fn start_offset(&self) -> usize;
@@ -116,7 +118,7 @@ impl<'a> WindowBuffer for SliceBuffer<'a> {
         self.pos
     }
     fn slice_from(&self, start_off: usize) -> ConcatSlice {
-        ConcatSlice::with(&self.data[start_off..])
+        ConcatSlice::with(&self.data[start_off..self.pos])
     }
 }
 
@@ -129,14 +131,16 @@ impl<'a> std::ops::Index<usize> for SliceBuffer<'a> {
 
 /// A slice like object consisting of multiple slices concatenated sequentially.
 ///
-/// TODO: Optimize this for the case of having up to 3-4 concatenated slices
+/// NOTE: This is limited to storing 4 slices.
 pub struct ConcatSlice<'a> {
-    inner: Vec<&'a [u8]>,
+    inner: FixedVec<&'a [u8], 4>,
 }
 
 impl<'a> ConcatSlice<'a> {
     pub fn with(s: &'a [u8]) -> Self {
-        ConcatSlice { inner: vec![s] }
+        let mut inner = FixedVec::new();
+        inner.push(s);
+        ConcatSlice { inner }
     }
 
     pub fn append(mut self, s: &'a [u8]) -> Self {
@@ -150,7 +154,7 @@ impl<'a> ConcatSlice<'a> {
 
     pub fn to_vec(&self) -> Vec<u8> {
         let mut out = vec![];
-        for piece in &self.inner {
+        for piece in self.inner.as_ref() {
             out.extend_from_slice(piece);
         }
 

@@ -997,7 +997,7 @@ impl DirectClientRunner {
                 ConnectionInstance::V1(_) => "V1",
                 ConnectionInstance::V2(_) => "V2",
             },
-            None => "",
+            None => "failure",
         };
 
         println!(

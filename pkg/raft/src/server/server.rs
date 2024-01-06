@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use common::errors::*;
-use common::futures::channel::oneshot;
+use common::io::Writeable;
+use executor::channel::oneshot;
+use executor::child_task::ChildTask;
 use executor::sync::Mutex;
 use executor::Condvar;
 
@@ -19,6 +21,7 @@ use crate::server::server_identity::ServerIdentity;
 use crate::server::server_shared::*;
 use crate::server::state_machine::StateMachine;
 use crate::sync::*;
+use crate::StateMachineSnapshot;
 
 // Basically whenever we connect to another node with a fresh connection, we
 // must be able to negogiate with each the correct pair of group id and server
@@ -107,7 +110,7 @@ pub enum PendingExecutionResult<R> {
 
 impl<R> PendingExecution<R> {
     pub async fn wait(self) -> PendingExecutionResult<R> {
-        let v = self.receiver.await;
+        let v = self.receiver.recv().await;
         match v {
             Ok(v) => PendingExecutionResult::Committed {
                 value: v,
@@ -139,19 +142,13 @@ pub struct ServerInitialState<R> {
     ///
     /// We will assume that this metadata hasn't been flushed to disk yet.
     ///
+    /// TODO: Instead pre-sync the initial metadata.
+    ///
     /// MUST already have a group_id and server_id set if this is a new server.
     pub meta: ServerMetadata,
 
     /// File used to persist the above metadata.
     pub meta_file: BlobFile,
-
-    /// Snapshot of the configuration to use.
-    ///
-    /// TODO: Are we assuming that this is already flushed?
-    pub config_snapshot: ServerConfigurationSnapshot,
-
-    /// A way to persist the configuration snapshot
-    pub config_file: BlobFile,
 
     /// The initial or restored log
     /// NOTE: The server takes ownership of the log
@@ -160,11 +157,6 @@ pub struct ServerInitialState<R> {
     /// Instantiated instance of the state machine
     /// (either an initial empty one or one restored from a local snapshot)
     pub state_machine: Arc<dyn StateMachine<R> + Send + Sync + 'static>,
-
-    /// Index of the last log entry applied to the state machine given
-    /// Should be 0 unless this is a state machine that was recovered from a
-    /// snapshot
-    pub last_applied: LogIndex,
 }
 
 /// A single member of a Raft group.
@@ -204,7 +196,8 @@ impl<R> Clone for Server<R> {
 }
 
 impl<R: Send + 'static> Server<R> {
-    // TODO: Everything in this function should be immediately available.
+    // TODO: Everything in this function should be immediately available so it
+    // shouldn't need to be async in theory.
     pub async fn new(
         channel_factory: Arc<dyn ChannelFactory>,
         initial: ServerInitialState<R>,
@@ -212,15 +205,20 @@ impl<R: Send + 'static> Server<R> {
         let ServerInitialState {
             mut meta,
             meta_file,
-            config_snapshot,
-            config_file,
             log,
             state_machine,
-            last_applied,
         } = initial;
+
+        let last_applied = state_machine.last_applied().await;
 
         let log: Arc<dyn Log + Send + Sync + 'static> = Arc::from(log);
 
+        // NOTE: Because we correctly have the config and user state machine snapshots
+        // decoupled (not atomically restored at the same time during InstallSnapshot),
+        // we may be an intermediate state where only one of the two state machines was
+        // restored and we accidentally use stale log entries to advance the other state
+        // machine forward.
+        /*
         // We make no assumption that the commit_index is consistently persisted, and if
         // it isn't we can initialize to the the last_applied of the state machine as we
         // will never apply an uncomitted change to the state machine
@@ -230,9 +228,18 @@ impl<R: Send + 'static> Server<R> {
             meta.meta_mut().set_commit_index(last_applied);
         }
 
-        // Gurantee no log discontinuities (only overlaps are allowed)
+        // Snapshots are only of committed data, so seeing a newer snapshot
+        // implies the config index is higher than we think it is
+        if config_snapshot.last_applied() > meta.commit_index() {
+            // This means that we did not bother to persist the commit_index
+            meta.set_commit_index(config_snapshot.last_applied());
+        }
+
+        */
+
+        // Guarantee no log discontinuities (only overlaps are allowed)
         // This is similar to the check on the config snapshot that we do in the
-        // consensus module
+        // consensus module.
         if last_applied < log.prev().await.index() {
             return Err(err_msg(
                 "State machine snapshot is from before the start of the log",
@@ -254,29 +261,31 @@ impl<R: Send + 'static> Server<R> {
         let inst = ConsensusModule::new(
             meta.id(),
             meta.meta().clone(),
-            config_snapshot.config().clone(),
+            meta.config().clone(),
             log.as_ref(),
             Instant::now(),
         )
         .await;
 
         let (tx_state, rx_state) = change();
-        let (tx_log, rx_log) = change();
         let (tx_meta, rx_meta) = change();
+        let (tx_snapshot, rx_snapshot) = change();
 
         let state = ServerState {
             inst,
-            meta_file,
-            config_file,
-            client_stubs: HashMap::new(),
+            meta_file: Some(meta_file),
+            clients: HashMap::new(),
             state_changed: tx_state,
             state_receiver: Some(rx_state),
             scheduled_cycle: None,
             meta_changed: tx_meta,
             meta_receiver: Some(rx_meta),
-            log_changed: tx_log,
-            log_receiver: Some(rx_log),
             callbacks: LinkedList::new(),
+            last_task_id: 0,
+            term_tasks: HashMap::new(),
+            snapshot_sender: tx_snapshot,
+            snapshot_receiver: Some(rx_snapshot),
+            snapshot_state: IncomingSnapshotState::None,
         };
 
         let shared = Arc::new(ServerShared {
@@ -287,14 +296,18 @@ impl<R: Send + 'static> Server<R> {
             state_machine,
 
             // NOTE: these will be initialized below
-            last_flushed: Condvar::new(LogSequence::zero()),
+            log_last_flushed: Condvar::new(LogSequence::zero()),
             commit_index: Condvar::new(LogPosition::zero()),
 
             last_applied: Condvar::new(last_applied),
             lease_start: Condvar::new(None),
+
+            // TODO: Initialize this.
+            config_last_flushed: Condvar::new(LogIndex::default()),
         });
 
-        ServerShared::update_last_flushed(&shared).await;
+        // TODO: Instead run this stuff during the first run() cycle.
+        ServerShared::update_log_last_flushed(&shared).await;
         let state = shared.state.lock().await;
         ServerShared::update_commit_index(&shared, &state).await;
         drop(state);
@@ -309,12 +322,11 @@ impl<R: Send + 'static> Server<R> {
     }
 
     pub async fn join_group(&self) -> Result<()> {
-        // TODO: Instead become a learner first and promote later.
         let mut request = ProposeRequest::default();
         request
             .data_mut()
             .config_mut()
-            .set_AddMember(self.shared.identity.server_id);
+            .set_AddAspiring(self.shared.identity.server_id);
         request.set_wait(false);
 
         // TODO: We can stop trying to join the group early if we get a log entry
@@ -364,7 +376,7 @@ impl<R: Send + 'static> Server<R> {
             self.shared
                 .run_tick(
                     |state, tick, _| {
-                        state.inst.schedule_heartbeat();
+                        state.inst.schedule_heartbeat(tick);
                     },
                     (),
                 )
@@ -478,6 +490,8 @@ impl<R: Send + 'static> Server<R> {
     }
 }
 
+// TODO: Verify which of these RPCs is safe to allow cancellation.
+
 #[async_trait]
 impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn PreVote(
@@ -490,7 +504,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .check_incoming_request_context(&req.context, &mut res.context)?;
 
         let state = self.shared.state.lock().await;
-        res.value = state.inst.pre_vote(&req);
+        res.value = state.inst.pre_vote(&req, Instant::now());
         Ok(())
     }
 
@@ -514,25 +528,55 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         Ok(())
     }
 
-    async fn AppendEntries(
+    async fn Heartbeat(
         &self,
-        req: rpc::ServerRequest<AppendEntriesRequest>,
-        res: &mut rpc::ServerResponse<AppendEntriesResponse>,
+        req: rpc::ServerRequest<HeartbeatRequest>,
+        res: &mut rpc::ServerResponse<HeartbeatResponse>,
     ) -> Result<()> {
         self.shared
             .identity
             .check_incoming_request_context(&req.context, &mut res.context)?;
 
-        let c = ServerShared::run_tick(
+        res.value = ServerShared::run_tick(
             &self.shared,
-            |state, tick, _| state.inst.append_entries(&req.value, tick),
-            (),
+            |state, tick, req| state.inst.heartbeat(req, tick),
+            &req.value,
         )
         .await?;
 
-        // Once the match constraint is satisfied, this will send back a
-        // response (or no response)
-        res.value = self.shared.wait_for_match(c).await?;
+        Ok(())
+    }
+
+    async fn AppendEntries(
+        &self,
+        mut req_stream: rpc::ServerStreamRequest<AppendEntriesRequest>,
+        res_stream: &mut rpc::ServerStreamResponse<AppendEntriesResponse>,
+    ) -> Result<()> {
+        self.shared
+            .identity
+            .check_incoming_request_context(req_stream.context(), res_stream.context())?;
+
+        while let Some(req) = req_stream.recv().await? {
+            let c = ServerShared::run_tick(
+                &self.shared,
+                |state, tick, _| state.inst.append_entries(&req, tick),
+                (),
+            )
+            .await?;
+
+            // Once the match constraint is satisfied, this will send back a
+            // response (or no response)
+            //
+            // TODO: Don't block on this for receiving additional entries.
+            res_stream
+                .send(self.shared.wait_for_match(c).await?)
+                .await?;
+
+            if req.timeout_now() {
+                // TODO: Perform the timeout.
+            }
+        }
+
         Ok(())
     }
 
@@ -556,19 +600,128 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
     async fn InstallSnapshot(
         &self,
-        req: rpc::ServerStreamRequest<InstallSnapshotRequest>,
-        res: &mut rpc::ServerStreamResponse<InstallSnapshotResponse>,
+        mut req: rpc::ServerStreamRequest<InstallSnapshotRequest>,
+        res: &mut rpc::ServerResponse<InstallSnapshotResponse>,
     ) -> Result<()> {
         // TODO: Ideally only one snapshot should ever be getting installed at a time.
         // ^ If we receive a second request, pick the latest leader.
 
-        // Basically interface with the state machine.
-        // But, also periodically send back the term.
-        // If we observe a term
+        let first_request = req.recv().await?.ok_or_else(|| {
+            rpc::Status::invalid_argument(
+                "Expected to get at least one message in the InstallSnapshot body.",
+            )
+        })?;
 
-        /*
-        TODO: Consider having a separate 'DataTransfer' RPC Service for generic chunked transfers that we'd initialize with an async callback.
-        */
+        // TODO: Make sure that this counts as a heartbeat from the leader.
+        let r = ServerShared::run_tick(
+            &self.shared,
+            |state, tick, req| state.inst.install_snapshot(&first_request, tick),
+            &first_request,
+        )
+        .await;
+
+        // Exit early if the term mismatches.
+        if !r.accepted() {
+            res.value = r;
+            return Ok(());
+        }
+
+        // TODO: Also check this before accepting the snapshot as the new one.
+        // Tricky due to the chance of concurrent operations.
+        if first_request.last_applied().index() > self.shared.state_machine.last_flushed().await {
+            let (mut pipe_writer, pipe_reader) = common::pipe::pipe();
+
+            let (callback_sender, callback_receiver) = oneshot::channel();
+            let snapshot = IncomingStateMachineSnapshot {
+                snapshot: StateMachineSnapshot {
+                    data: Box::new(pipe_reader),
+                    last_applied: first_request.last_applied().index(),
+                },
+                last_applied: first_request.last_applied().clone(),
+                callback: callback_sender,
+            };
+
+            // Tell the applier thread to start intaking the snapshot.
+            {
+                let mut state = self.shared.state.lock().await;
+                let already_in_progress = {
+                    if let IncomingSnapshotState::None = &state.snapshot_state {
+                        false
+                    } else {
+                        true
+                    }
+                };
+
+                if already_in_progress {
+                    return Err(rpc::Status::unavailable(
+                        "Another snapshot is currently being installed",
+                    )
+                    .into());
+                }
+
+                state.snapshot_state = IncomingSnapshotState::Pending(snapshot);
+                state.snapshot_sender.notify();
+            }
+
+            // TODO: We should time this out after 30 seconds (timeouts should forward
+            // errors through the pipe).
+            /*
+            TODO: Consider having a separate 'DataTransfer' RPC Service for generic chunked transfers that we'd initialize with an async callback.
+            */
+            let data_reader = ChildTask::spawn(async move {
+                if let Err(_) = pipe_writer.write_all(first_request.data()).await {
+                    // Errors writing to the pipe imply that the data is no longer needed by the
+                    // restorer.
+                    return;
+                }
+
+                let mut last_request = first_request;
+                last_request.clear_data();
+
+                while !last_request.done() {
+                    let next_request = req.recv().await.and_then(|v| {
+                        v.ok_or_else(|| {
+                            rpc::Status::invalid_argument(
+                                "Didn't receive all parts of the InstallSnapshot body",
+                            )
+                            .into()
+                        })
+                    });
+
+                    let next_request = match next_request {
+                        Ok(v) => v,
+                        Err(e) => {
+                            pipe_writer.close(Err(e)).await;
+                            return;
+                        }
+                    };
+
+                    // TODO: Check the returned index.
+
+                    if let Err(_) = pipe_writer.write_all(next_request.data()).await {
+                        // Errors writing to the pipe imply that the data is no longer needed by the
+                        // restorer.
+                        return;
+                    }
+
+                    last_request = next_request;
+                    last_request.clear_data();
+                }
+
+                pipe_writer.close(Ok(())).await;
+            });
+
+            match callback_receiver.recv().await {
+                Ok(v) => {
+                    res.value.set_accepted(v);
+                }
+                Err(_) => {
+                    // This may happen if there is a non-recoverable I/O failure while restoring so
+                    // the whole server needs to shut down.
+                    return Err(rpc::Status::aborted("InstallSnapshot stopped abruptly").into());
+                }
+            }
+        }
 
         Ok(())
     }

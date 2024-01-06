@@ -11,6 +11,8 @@ use crate::log::log_metadata::LogSequence;
 use crate::log::memory_log::*;
 use crate::proto::*;
 
+// TODO: Delete this or make it up to date with the latest features.
+
 /// A simple log implementation backed be a single file that is rewritten
 /// completely every time a flush is needed and otherwise stores all entries in
 /// memory
@@ -20,7 +22,7 @@ pub struct SimpleLog {
     /// The position of the last entry stored in the snapshot
     last_flushed: Mutex<LogSequence>,
 
-    /// The single file backing the log
+    /// The single file backing the log.
     snapshot: Mutex<BlobFile>,
 }
 
@@ -56,9 +58,12 @@ impl SimpleLog {
             mem.append(e.as_ref().clone(), sequence).await?;
         }
 
+        // Clear the initial change state.
+        mem.wait_for_flush().await?;
+
         Ok(SimpleLog {
             mem,
-            last_flushed: Mutex::new(LogSequence::zero()),
+            last_flushed: Mutex::new(last_sequence),
             snapshot: Mutex::new(file),
         })
     }
@@ -88,6 +93,15 @@ impl Log for SimpleLog {
     async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
         self.mem.entry(index).await
     }
+
+    async fn entries(
+        &self,
+        start_index: LogIndex,
+        end_index: LogIndex,
+    ) -> Option<(Vec<Arc<LogEntry>>, LogSequence)> {
+        self.mem.entries(start_index, end_index).await
+    }
+
     async fn append(&self, entry: LogEntry, sequence: LogSequence) -> Result<()> {
         self.mem.append(entry, sequence).await
     }
@@ -100,11 +114,13 @@ impl Log for SimpleLog {
         self.last_flushed.lock().await.clone()
     }
 
-    async fn flush(&self) -> Result<()> {
+    async fn wait_for_flush(&self) -> Result<()> {
         // TODO: Must also make sure to not do unnecessary updates if nothing
         // has changed
         // TODO: This should ideally also not hold a snapshot lock for too long
         // as that may
+
+        self.mem.wait_for_flush().await?;
 
         let s = self.snapshot.lock().await;
 

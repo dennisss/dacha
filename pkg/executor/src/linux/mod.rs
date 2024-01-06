@@ -23,7 +23,7 @@ pub use condvar::*;
 pub use epoll::ExecutorPollingContext;
 pub use error::*;
 pub use eventually::*;
-pub use file::FileHandle;
+pub use file::{FileHandle, SyncRange};
 pub use io_uring::ExecutorOperation;
 pub use join_handle::*;
 pub use options::*;

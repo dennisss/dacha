@@ -1,3 +1,8 @@
+/*
+cargo run --bin adder_client -- add 1 2 --target=127.0.0.1:8000
+
+*/
+
 #![feature(async_closure)]
 #![feature(fn_traits)]
 #[macro_use]
@@ -55,9 +60,7 @@ async fn main() -> Result<()> {
         })
         .await?;
 
-        Arc::new(rpc::Http2Channel::create(
-            http::ClientOptions::from_resolver(resolver),
-        )?)
+        Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver)).await?)
     };
 
     let stub = AdderStub::new(channel);

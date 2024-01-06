@@ -1212,12 +1212,14 @@ impl Compiler {
         }
 
         // clear_field()
-        if is_repeated || use_option {
+        if oneof.is_none() {
             lines.add(format!("\tpub fn clear_{}(&mut self) {{", name));
             if is_repeated {
                 lines.add_inline(format!(" self.{}.clear(); }}", name));
-            } else {
+            } else if use_option {
                 lines.add_inline(format!(" self.{} = None; }}", name));
+            } else {
+                lines.add(format!(" self.{} = Default::default() }}", name));
             }
         }
 

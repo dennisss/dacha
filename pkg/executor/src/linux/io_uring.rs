@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::Thread;
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use common::io::{IoError, IoErrorKind};
 use sys::{
     IoCompletionUring, IoSubmissionUring, IoUring, IoUringCompletion, IoUringOp, IoUringResult,
@@ -50,7 +51,7 @@ struct ExecutorIoUringSubmissions {
     ///
     /// TODO: Use a slab. Tasks can have locks on slab entries because there
     /// will only ever be on thing accessing it.
-    operations: HashMap<u64, ExecutorOperationState>,
+    operations: HashMap<u64, ExecutorOperationState, FastHasherBuilder>,
 
     next_operation_id: u64,
 
@@ -88,6 +89,10 @@ impl ExecutorIoUring {
 
         let max_pending_operations = completion_ring.capacity();
 
+        /*
+        TODO: Reserve two slots for timeouts as we generally always need those across many
+        */
+
         let submissions = Mutex::new(ExecutorIoUringSubmissions {
             running: true,
             max_pending_operations,
@@ -95,7 +100,7 @@ impl ExecutorIoUring {
                 * (1. - CANCELATION_BUFFER_FRACTION))
                 as usize,
             submission_ring,
-            operations: HashMap::new(),
+            operations: HashMap::with_hasher(FastHasherBuilder::default()),
             next_operation_id: 1,
             blocked_tasks: HashSet::new(),
         });
@@ -110,7 +115,10 @@ impl ExecutorIoUring {
     /// tasks that need to be woken up.
     ///
     /// NOTE: We strictly append to 'tasks_to_wake'.
-    pub fn poll_events(&self, tasks_to_wake: &mut HashSet<TaskId>) -> Result<()> {
+    pub fn poll_events(
+        &self,
+        tasks_to_wake: &mut HashSet<TaskId, FastHasherBuilder>,
+    ) -> Result<()> {
         let mut completion_ring = self.completion_ring.lock().unwrap();
         completion_ring.wait(Some(std::time::Duration::from_secs(1)))?;
 

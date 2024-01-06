@@ -24,12 +24,7 @@ message ServerMetadata {
 
     // REQUIRED
     Metadata meta = 3;
-}
 
-// This is the format of the file on disk for the snapshot of the configuration
-message ServerConfigurationSnapshot {
     // REQUIRED
-    ConfigurationSnapshot config = 1;
-
-    //pub routes: HashMap<ServerId, String>
+    ConfigurationSnapshot config = 4;
 }

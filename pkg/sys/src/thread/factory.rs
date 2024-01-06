@@ -44,7 +44,7 @@ At the start of the stack, we'll place a tcbhead_t / 'pthread' struct
 use core::ptr::write_volatile;
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 
-use common::errors::*;
+use base_error::*;
 
 use crate::thread::entry::*;
 use crate::thread::tls::TLSSegment;

@@ -32,23 +32,21 @@ pub struct KeyValueData {
 
 */
 
-struct State {
-    last_applied: LogIndex,
-    data: HashMap<Vec<u8>, Bytes>,
-
-    /// Reference to the most recent snapshot taken of the machine
-    snapshot: Option<StateMachineSnapshot>,
-
-    /// Optionally where new snapshots will be stored on disk
-    snapshot_file: Option<BlobFile>,
-}
-
 /// A simple key-value state machine implementation that provides most redis
 /// style functionality including atomic (multi-)key operations and transactions
 /// NOTE: This does not
 pub struct MemoryKVStateMachine {
-    // Better to also hold on to a version and possibly
-    data: Mutex<HashMap<Vec<u8>, Bytes>>,
+    state: Mutex<State>,
+}
+
+struct State {
+    last_applied: LogIndex,
+    data: HashMap<Vec<u8>, Bytes>,
+    //     /// Reference to the most recent snapshot taken of the machine
+    //     snapshot: Option<StateMachineSnapshot>,
+
+    //     /// Optionally where new snapshots will be stored on disk
+    //     snapshot_file: Option<BlobFile>,
 }
 
 impl MemoryKVStateMachine {
@@ -96,16 +94,16 @@ impl MemoryKVStateMachine {
 
     pub fn new() -> MemoryKVStateMachine {
         MemoryKVStateMachine {
-            data: Mutex::new(HashMap::new()),
+            state: Mutex::new(State {
+                last_applied: 0.into(),
+                data: HashMap::new(),
+            }),
         }
     }
 
-    /// Very simple, non-linearizable read operation
     pub async fn get(&self, key: &[u8]) -> Option<Bytes> {
-        let data = self.data.lock().await;
-
-        // TODO: Probably inefficient (probably better to return an Arc)
-        data.get(key).map(|v| v.clone())
+        let state = self.state.lock().await;
+        state.data.get(key).map(|v| v.clone())
     }
 }
 
@@ -116,19 +114,23 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
     async fn apply(&self, index: LogIndex, data: &[u8]) -> Result<KeyValueReturn> {
         let ret = KeyValueOperation::parse(data)?;
 
-        let mut map = self.data.lock().await;
+        let mut state = self.state.lock().await;
 
         // Could be split into a check phase and a run phase
         // Thus we can maintain transactions without lock
 
+        state.last_applied = index;
+
         match ret.typ_case() {
             KeyValueOperationTypeCase::Set(op) => {
-                map.insert(op.key().to_owned(), Bytes::from(op.value()));
+                state
+                    .data
+                    .insert(op.key().to_owned(), Bytes::from(op.value()));
 
                 Ok(KeyValueReturn { success: true })
             }
             KeyValueOperationTypeCase::Delete(op) => {
-                let old = map.remove(op.key());
+                let old = state.data.remove(op.key());
                 Ok(KeyValueReturn {
                     success: old.is_some(),
                 })
@@ -141,24 +143,29 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
         0.into()
     }
 
+    async fn last_applied(&self) -> LogIndex {
+        let state = self.state.lock().await;
+        state.last_applied
+    }
+
     async fn wait_for_flush(&self) {
         // The state machine never snapshots itself.
         common::futures::future::pending().await
     }
 
-    async fn snapshot(&self) -> Option<StateMachineSnapshot> {
+    async fn snapshot(&self) -> Result<Option<StateMachineSnapshot>> {
         // For now just copy the
 
         // Possibly consider it to have a zero-byte snapshot that generates an empty
         // state machine Alternatively, we can just assume that all snapshots
         // will only be available in memory Complicates in readin them back
         // without a mmemory lock though
-        None
+        Ok(None)
     }
 
-    async fn restore(&self, data: StateMachineSnapshot) -> Result<()> {
+    async fn restore(&self, data: StateMachineSnapshot) -> Result<bool> {
         // A snapshot should not have been generatable
-        Ok(())
+        Ok(false)
     }
 }
 

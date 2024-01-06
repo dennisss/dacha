@@ -2518,6 +2518,7 @@ name = "sys"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_error",
  "bindgen 0.63.0",
  "common",
  "elf",

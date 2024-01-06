@@ -1,4 +1,4 @@
-use common::errors::*;
+use base_error::*;
 
 use crate::proc::current_exe;
 use crate::virtual_memory::*;

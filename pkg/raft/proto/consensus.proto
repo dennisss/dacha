@@ -16,11 +16,21 @@ service Consensus {
 	rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse);
 	
 	// Sent from the current leader to followers to replicate new log entries.
-	rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse);
+	//
+	// Requests are ordered and generally only one stream should be opened between a leader and
+	// follower as log entries can only be appended in ascending order.
+	rpc AppendEntries (stream AppendEntriesRequest) returns (stream AppendEntriesResponse);
 	
+	// Non-data carrying version of AppendEntries used to maintain leadership without blocking on
+	// storage writes.
+	//
+	// In the case of a Heartbeat request is made concurrently to an AppendEntries request, it
+	// should be prioritized for network bandwidth and processing time.
+	rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+
 	rpc TimeoutNow (TimeoutNow) returns (google.protobuf.Empty);
 
-	rpc InstallSnapshot (stream InstallSnapshotRequest) returns (stream InstallSnapshotResponse);
+	rpc InstallSnapshot (stream InstallSnapshotRequest) returns (InstallSnapshotResponse);
 
     // This is the odd ball out internal client method
     // NOTE: 'AddServer' and 'RemoveServer' will be implemented by clients in
@@ -32,8 +42,6 @@ service Consensus {
 }
 
 message RequestVoteRequest {
-	RequestId request_id = 5;
-
 	// Candidate's term.
 	// This will be the term in which the candidate is elected to be leader (if successful). This
 	// should be selected to be greater than all previously seen terms.  
@@ -50,17 +58,34 @@ message RequestVoteRequest {
 	
 	// REQUIRED
 	Term last_log_term = 4;
+
+	// If present, is the term of a leader which granted us approval to overthrow it as the
+	// new leader.
+	Term leader_approval = 6;
+
+	reserved 5;
 }
 
 message RequestVoteResponse {
-	RequestId request_id = 3;
-
 	// REQUIRED
 	Term term = 1; /* < If granted then this is redundant as it will only ever grant a vote for
                      * the same up-to-date term */
 
 	// REQUIRED
 	bool vote_granted = 2;
+
+	// Returned in response to PreVote requests when the server being called doesn't believe
+	// that the caller is in the set of full members. In response, the caller (the server requesting
+	// votes) should update its config based on this hint (if the hint is commited at a higher log
+	// index). This may trigger the caller to stop requesting votes upon noticing it isn't a voting
+	// member.
+	//
+	// This feature is used to ensure that servers which are removed from the follower pool
+	// eventually learn (in a graceful way) that they are no longer in the config so they shouldn't
+	// disrupt other servers.
+	ConfigurationSnapshot last_config_hint = 4;
+
+	reserved 3;
 }
 
 // Represents a change to the cluster configuration in some configuration (in
@@ -82,6 +107,8 @@ message ConfigChange {
 
 		// Removes a server completely from either the learners or members pools
 		ServerId RemoveServer = 3;
+
+		ServerId AddAspiring = 4;
 	}
 }
 
@@ -127,10 +154,22 @@ message LogEntryData {
 	}
 }
 
+message HeartbeatRequest {
+	// Term in which the leader generating this request was elected.
+	// REQUIRED
+	Term term = 1;
+
+	// Id of the leader server.
+	// Generally this will be the id of the server than sent this request.
+	// REQUIRED
+	ServerId leader_id = 2;
+}
+
+message HeartbeatResponse {
+	Term term = 1;
+}
 
 message AppendEntriesRequest {
-	RequestId request_id = 7; 
-
 	// Term in which the leader generating this request was elected.
 	// REQUIRED
 	Term term = 1;
@@ -167,61 +206,39 @@ message AppendEntriesRequest {
 	//
 	// REQUIRED
 	LogIndex leader_commit = 6;
+
+	// After all entries in this request have been added at least to the in-memory log of the
+	// recipient follower, the follower should start an election to take over as leader. 
+	bool timeout_now = 8;
+
+	reserved 7;
 }
 
 message AppendEntriesResponse {
-	// The request_id of the corresponding AppendEntriesRequest to which this is a response. 
-	// REQUIRED
-	RequestId request_id = 4;
-
 	// Current term of the server producing this response.
+	//
 	// REQUIRED
 	Term term = 1;
 
 	// Whether or not all the entries in the corresponding AppendEntriesRequest were able to be
 	// successfully flushed to the server's log.
+	//
 	// REQUIRED
 	bool success = 2;
 
 	// Index of the last log index in the server's log.
-	// When success = false, this informs the leader that we can't send any entries with 
-
-    // this is an addon to what is mentioned in the original research paper so
+	//
+	// When success = false, this informs the leader that we can't send any entries with index
+	// '> last_log_index + 1'.
+	//
+    // This is an addon to what is mentioned in the original research paper so
     // that the leader knows what it needs to replicate to this server
 	//
 	// OPTIONAL
     LogIndex last_log_index = 3;
+
+	reserved 4;
 }
-/*
-General alforithm:
-- I don't really want the ConsensusModule to do RPC tracking
-- But, I do want it to perform heartbeat tracking
-- The server is free to partition the log entries however it wants. 
-- It is convenient though to have the state in the ConsensusModule as it also 
-
-AppendEntries{last, last + 1}
-AppendEntries{last + 1, last + 2}
-=> Realize that the follower's 
-
-If I put all the log entry sizes into the Consensus module, then this would be a straight forward problem.
-But I don't want the Consensus module to store a lot of data?
-- This will just be 4 bytes per log entry so isn't all that big.
-- 
-
-So do I still need to track individual requests?
-- Yes!!
-
-General algorithm:
-- Match index set to 0
-- Start with the next_index set to 'last_leader_index + 1'
-	- Assume leader is up to date with all followers
-- We will send a heartbeat with prev index equal to 'last_leader_index'
-	- For some servers, this may fail.
-	- Next we will try to wind back the index to 'n - 1' or 'last_log_index' from the response
-	- Mus mark as being in a failed state (we will disable pipelining until )
-
-*/
-
 
 // Upon being received a server should immediatley timeout and start its own
 // election
@@ -273,13 +290,27 @@ message ProposeErrorProto {
 // the same time (possibly convert to one single list and make the two
 // categories purely getter methods for iterators)
 message Configuration {
-    // All servers in the cluster which participate in voting rounds. A majority of servers in this
-    // list must vote the same way for a quorem to be achieved.
-    repeated ServerId members = 1 [(dacha.unordered_set) = true];
+	enum ServerRole {
+		UNKNOWN = 0;
 
-    // All servers which do not participate in votes (at least not yet), but
-    // should still be sent new entries
-    repeated ServerId learners = 2 [(dacha.unordered_set) = true];
+		// The server receives log entries actively but doesn't participate in elections.
+		LEARNER = 1;
+
+		// Same as LEARNER except that the server will be promoted to a VOTER once it is caught up
+		// and stable. 
+		ASPIRING = 2;
+
+		// The server can participate in leader elections through voting or starting its own
+		// election.
+		MEMBER = 3;
+	}
+
+	message Server {
+		ServerId id = 1;
+		ServerRole role = 2;
+	}
+
+	repeated Server servers = 1;
 }
 
 // Represents a configuration at a single index
@@ -302,12 +333,14 @@ message InstallSnapshotRequest {
 
 	// Id of the leader. Used to inform the follower of the current leader.
 	// Currently this will always be set to the id of the server sending the request.
+	// 
+	// TODO: Eventually send snapshots from non-leaders (/followers if available) as they are
+	// likely less overloaded than the leader.
+	//
 	// REQUIRED
 	ServerId leader_id = 2; 
 
 	// Position of the last log entry applied to the snapshot.
-	//
-	// TODO: Do we need this if the state machine snapshot encodes it?
 	//
 	// NOTE: This is sent only with the first chunk/request. 
 	// REQUIRED
@@ -315,15 +348,8 @@ message InstallSnapshotRequest {
 
 	// Current configuration snapshot which is at least as far ahead as the state machine snapshot.
 	//
-	// NOTE: This is sent only with the first chunk/request.
+	// NOTE: This is sent only with the first chunk/request (REQUIRED in that request).
 	ConfigurationSnapshot last_config = 4;
-	
-	// Byte offset into the complete snapshot at which the data in this request is starting at.
-	// Requests will always send contigious chunks with the offset always being equal to the last offset
-	// sent in the previous request + 1, or 0 for the first request.
-	//
-	// REQUIRED
-	uint64 offset = 5;
 
 	// Chunk of data in the snapshot starting at 'offset' and ending at 'offset + data.len()'.
 	//
@@ -333,12 +359,18 @@ message InstallSnapshotRequest {
 	// If this is the final chunk in the snapshot, this is set to true, else false.
 	// REQUIRED
 	bool done = 7;
+
+	reserved 5;
 }
 
 message InstallSnapshotResponse {
 	// Current term of the server receiving the snapshot.
 	// REQUIRED
 	Term term = 1;
+
+	// Whether or not we successfully accepted and installed the snapshot.
+	// REQUIRED
+	bool accepted = 2;
 }
 
 message Status {
@@ -358,6 +390,7 @@ message Status {
 
 	message FollowerProgress {
 		ServerId id = 1;
+		
 		LogIndex match_index = 2;
 	}
 

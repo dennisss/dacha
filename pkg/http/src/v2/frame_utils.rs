@@ -5,8 +5,7 @@ use common::errors::*;
 use crate::proto::v2::*;
 use crate::v2::types::*;
 
-pub fn new_window_update_frame(stream_id: StreamId, increment: usize) -> Vec<u8> {
-    let mut frame = vec![];
+pub fn new_window_update_frame(stream_id: StreamId, increment: usize, out: &mut Vec<u8>) {
     FrameHeader {
         typ: FrameType::WINDOW_UPDATE,
         length: WindowUpdateFramePayload::size_of() as u32,
@@ -14,17 +13,15 @@ pub fn new_window_update_frame(stream_id: StreamId, increment: usize) -> Vec<u8>
         reserved: 0,
         stream_id,
     }
-    .serialize(&mut frame)
+    .serialize(out)
     .unwrap();
 
     WindowUpdateFramePayload {
         reserved: 0,
         window_size_increment: increment as u32,
     }
-    .serialize(&mut frame)
+    .serialize(out)
     .unwrap();
-
-    frame
 }
 
 pub fn new_data_frame(stream_id: StreamId, data: Vec<u8>, end_stream: bool) -> Vec<u8> {

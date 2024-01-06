@@ -3,11 +3,15 @@
 // TODO: This code needs more error checking for the case of getting really
 // large inputs.
 
-use crate::deflate::cyclic_buffer::SliceBuffer;
-use crate::deflate::matching_window::*;
+mod window;
+
 use common::errors::*;
 use parsing::binary::{le_u16, le_u32};
 use protobuf::wire::{parse_varint, serialize_varint};
+
+use crate::deflate::cyclic_buffer::SliceBuffer;
+use crate::deflate::matching_window::*;
+use crate::snappy::window::*;
 
 const TAG_TYPE_NBITS: u8 = 2;
 const TAG_TYPE_MASK: u8 = 0b11;
@@ -47,22 +51,23 @@ pub fn snappy_decompress<'a>(mut input: &'a [u8], output: &mut Vec<u8>) -> Resul
     let uncompressed_length = parse_next!(input, parse_varint) as usize;
     output.reserve(uncompressed_length);
 
-    // TODO: Generalize this code and use it for deflate as well.
-    let copy = |mut len: usize, offset: usize, output: &mut Vec<u8>| {
+    // TODO: Generalize this code and use it for deflate as well. It is somewhat
+    // redundant with Inflater::read_reference.
+    let copy = |mut len: usize, distance: usize, output: &mut Vec<u8>| {
         if len == 0
-            || offset == 0
-            || offset > output.len()
+            || distance == 0
+            || distance > output.len()
             || output.len() + len > uncompressed_length
         {
-            return Err(err_msg("Invalid len/offset pair"));
+            return Err(err_msg("Invalid len/distance pair"));
         }
 
         let mut pos = output.len();
         output.resize(output.len() + len, 0);
 
         while len > 0 {
-            let n = std::cmp::min(offset, len);
-            let start = pos - offset;
+            let n = core::cmp::min(distance, len);
+            let start = pos - distance;
             let end = start + n;
 
             let (prev, next) = output.split_at_mut(pos);
@@ -204,13 +209,17 @@ fn snappy_write_literal(data: &[u8], output: &mut Vec<u8>) {
 pub fn snappy_compress(input: &[u8], output: &mut Vec<u8>) {
     serialize_varint(input.len() as u64, output);
 
-    let mut window = MatchingWindow::new(
-        SliceBuffer::new(input),
-        MatchingWindowOptions {
-            max_chain_length: 32,
-            max_match_length: 64,
-        },
-    );
+    let buffer = SliceBuffer::new(input);
+
+    let mut window = MatchingWindowSnappy::new(buffer, MatchingWindowSnappyOptions::default());
+
+    // let mut window = MatchingWindow::new(
+    //     SliceBuffer::new(input),
+    //     MatchingWindowOptions {
+    //         max_chain_length: 32,
+    //         max_match_length: 64,
+    //     },
+    // );
 
     // Index of the next byte index that needs to be compressed.
     let mut next_idx = 0;
@@ -273,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn snappy_compress_test() {
+    fn snappy_compress_test1() {
         const INPUT: &'static [u8] =
             b"hello hello hello hello there you hello and this is super cool and awesome hello.";
         let mut compressed = vec![];

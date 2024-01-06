@@ -1,7 +1,7 @@
 use core::ops::Deref;
 use std::ffi::{CStr, CString};
 
-use common::errors::*;
+use base_error::*;
 
 use crate::{c_int, close, open, read, Errno, O_CLOEXEC, O_RDONLY};
 

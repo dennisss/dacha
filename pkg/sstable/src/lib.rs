@@ -22,6 +22,7 @@ pub mod memtable;
 pub mod record_log;
 // mod skip_list;
 pub mod iterable;
+pub mod log_writer;
 pub mod table;
 
 /*

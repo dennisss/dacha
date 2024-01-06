@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use common::errors::*;
 use executor::sync::Mutex;
+use executor::sync::RwLock;
 use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 use raft::atomic::BlobFile;
-use sstable::db::{Snapshot, Write, WriteBatch};
+use sstable::db::{Backup, Snapshot, Write, WriteBatch};
 use sstable::iterable::Iterable;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
@@ -23,6 +24,10 @@ Every 1 hour, the metastore background thread will try to find a log index which
 Other complexities:
 - If a key wasn't changed for a while, it may
 
+*/
+
+/*
+TODO: Rather than having synced path logic, we can maybe just always force syncing when opening files
 */
 
 /// Key-value state machine based on the EmbeddedDB implementation.
@@ -47,11 +52,13 @@ Other complexities:
 ///     implemented by writing the new snapshot into a new snapshot directory
 ///     and later switching to that directory.
 pub struct EmbeddedDBStateMachine {
-    db: EmbeddedDB,
-
     /// Root data directory containing the individual snapshot sub-directories.
     dir: LocalPathBuf,
+
+    /// File used to mark
     current: Mutex<(Current, BlobFile)>,
+
+    db: RwLock<EmbeddedDB>,
 
     watchers: Watchers,
 }
@@ -73,6 +80,22 @@ impl EmbeddedDBStateMachine {
             }
         };
 
+        for file in file::read_dir(dir)? {
+            let num_prefix = match file.name().strip_prefix("snapshot-") {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let num = num_prefix.parse::<u32>()?;
+            if num == current.current_snapshot() {
+                continue;
+            }
+
+            let path = dir.join(file.name());
+            eprintln!("Delete stale snapshot: {:?}", path);
+            file::remove_dir_all(path).await?;
+        }
+
         let db_path = dir.join(format!("snapshot-{:04}", current.current_snapshot()));
 
         let mut db_options = EmbeddedDBOptions::default();
@@ -84,15 +107,26 @@ impl EmbeddedDBStateMachine {
         let db = EmbeddedDB::open(db_path, db_options).await?;
 
         Ok(Self {
-            db,
+            db: RwLock::new(db),
             dir: dir.to_owned(),
             current: Mutex::new((current, current_file)),
             watchers: Watchers::new(),
         })
     }
 
+    async fn open_db(path: &LocalPath) -> Result<EmbeddedDB> {
+        let mut db_options = EmbeddedDBOptions::default();
+        db_options.create_if_missing = true;
+        db_options.error_if_exists = false;
+        db_options.disable_wal = true;
+        db_options.initial_compaction_waterline = 1;
+
+        let db = EmbeddedDB::open(path, db_options).await?;
+        Ok(db)
+    }
+
     pub async fn snapshot(&self) -> Snapshot {
-        self.db.snapshot().await
+        self.db.read().await.snapshot().await
     }
 
     pub fn watchers(&self) -> &Watchers {
@@ -106,9 +140,11 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         // The operation should be a serialized WriteBatch
         // We just need to add the sequence to it and then apply it.
 
+        let db = self.db.read().await;
+
         let mut write = WriteBatch::from_bytes(op)?;
         write.set_sequence(index.value());
-        self.db.write(&mut write).await?;
+        db.write(&mut write).await?;
 
         // Send the change to watchers.
         // TODO: This can be parrallelized with future writes.
@@ -135,19 +171,76 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         Ok(())
     }
 
+    async fn last_applied(&self) -> raft::LogIndex {
+        self.db.read().await.last_sequence().await.into()
+    }
+
     async fn last_flushed(&self) -> raft::LogIndex {
-        self.db.last_flushed_sequence().await.into()
+        self.db.read().await.last_flushed_sequence().await.into()
     }
 
     async fn wait_for_flush(&self) {
-        self.db.wait_for_flush().await
+        self.db.read().await.wait_for_flush().await
     }
 
-    async fn snapshot(&self) -> Option<raft::StateMachineSnapshot> {
-        todo!()
+    async fn snapshot(&self) -> Result<Option<raft::StateMachineSnapshot>> {
+        let backup = self.db.read().await.backup().await?;
+        let last_applied = backup.last_sequence().into();
+
+        let (mut writer, reader) = common::pipe::pipe();
+
+        executor::spawn(async move {
+            let res = backup.write_to(&mut writer).await;
+            writer.close(res).await;
+        });
+
+        Ok(Some(raft::StateMachineSnapshot {
+            data: Box::new(reader),
+            last_applied,
+        }))
     }
 
-    async fn restore(&self, data: raft::StateMachineSnapshot) -> Result<()> {
-        todo!();
+    async fn restore(&self, data: raft::StateMachineSnapshot) -> Result<bool> {
+        let mut current = self.current.lock().await;
+
+        // TODO: Validate the last_applied isn't regressing.
+
+        let num = current.0.current_snapshot() + 1;
+        // TODO: Deduplicate this.
+        let path = self.dir.join(format!("snapshot-{:04}", num));
+
+        file::create_dir(&path).await?;
+
+        match Backup::read_from(data.data, &path).await {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("Failed to restore snapshot to {:?}. Error: {}", path, e);
+                file::remove_dir_all(&path).await?;
+                return Ok(false);
+            }
+        }
+
+        // TODO: Initialize with the right waterline.
+        let mut new_db = Self::open_db(&path).await?;
+
+        // Swap in the new database.
+        {
+            let mut db = self.db.write().await;
+            core::mem::swap(&mut *db, &mut new_db);
+            drop(db);
+
+            // TODO: Use some form of abrupt cancellation of this.
+            new_db.close().await?;
+        }
+
+        let old_number = current.0.current_snapshot();
+
+        current.0.set_current_snapshot(num);
+        current.1.store(&current.0.serialize()?).await?;
+
+        let old_path = self.dir.join(format!("snapshot-{:04}", old_number));
+        file::remove_dir_all(&old_path).await?;
+
+        Ok(true)
     }
 }

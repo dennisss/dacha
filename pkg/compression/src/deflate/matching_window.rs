@@ -141,7 +141,7 @@ impl<B: WindowBuffer> MatchingWindow<B> {
         };
 
         for off in offsets {
-            // If off is too far back, then stop immediately as all later
+            // If 'off' is too far back, then stop immediately as all later
             // ones will only be even further away.
             //
             // Note that because we don't truncate trigrams until it is seen again, it is

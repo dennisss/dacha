@@ -4,6 +4,7 @@ use crate::proto::LogPosition;
 
 /// Represents the current state of a constraint retrieved by polling the
 /// constraint.
+#[derive(Debug)]
 pub enum ConstraintPoll<C, T> {
     /// The constraint has been satisfied. The wrapped value is encapsulated in
     /// this enum
@@ -24,6 +25,7 @@ pub enum ConstraintPoll<C, T> {
 /// TODO: We don't really need to store the LogPosition as long as we don't care
 /// about whether or not it succeeded vs whether it completed. As long as the
 /// sequence is high enough, then it should be OK to release the constraint
+#[derive(Debug)]
 pub struct FlushConstraint<T> {
     inner: T,
     point: Option<(LogSequence, LogPosition)>,

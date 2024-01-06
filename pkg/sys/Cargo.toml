@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+base_error = { path = "../base/error" }
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 elf = { path = "../elf" }

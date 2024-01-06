@@ -583,4 +583,18 @@ mod tests {
 
         assert_eq!(&out2[0..13], &[0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]);
     }
+
+    #[test]
+    fn deflate_repeating_test() {
+        const INPUT: &'static [u8] =
+            b"hello hello hello hello there you hello and this is super cool and awesome hello.";
+
+        let mut encoded = vec![];
+        crate::transform::transform_to_vec(Deflater::new(), INPUT, &mut encoded).unwrap();
+
+        let mut decoded = vec![];
+        crate::transform::transform_to_vec(Inflater::new(), &encoded, &mut decoded).unwrap();
+
+        assert_eq!(&decoded, INPUT);
+    }
 }

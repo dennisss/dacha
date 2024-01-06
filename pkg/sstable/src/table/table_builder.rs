@@ -236,6 +236,8 @@ impl SSTableBuilder {
 
     /// Immediately writes any buffered keyed in the current block to disk.
     /// NOTE: The table will still not be readable until finished is called.
+    ///
+    /// TODO: Pick a better name for this as it doesn't do any fsyncing.
     async fn flush(&mut self) -> Result<()> {
         if self.data_block_builder.empty() {
             return Ok(());
@@ -359,6 +361,7 @@ impl SSTableBuilder {
         .serialize(&mut footer);
         self.file.write_all(&footer).await?;
 
+        // TODO: We need this to do an dsync always.
         self.file.flush().await?;
 
         Ok(SSTableBuiltMetadata {

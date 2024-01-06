@@ -3,87 +3,66 @@ use std::sync::Arc;
 
 use common::errors::*;
 use executor::sync::Mutex;
+use executor::Condvar;
 
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::*;
 
-pub struct MemoryLog {
-    state: Mutex<State>,
-}
-
-struct State {
+pub struct MemoryLogSync {
     /// Position of th last discarded log entry.
     /// Position of the entry immediately before the first entry in this log
-    /// TODO: Rename to 'start'
     prev: LogPosition,
 
     /// All of the actual entries in the log.
     /// TODO: Compress the sequences and LogPositions using a LogMetadata
     /// object.
     log: VecDeque<(Arc<LogEntry>, LogSequence)>,
-
-    last_flushed: LogSequence,
 }
 
-impl MemoryLog {
+impl MemoryLogSync {
     pub fn new() -> Self {
-        MemoryLog {
-            state: Mutex::new(State {
-                prev: LogPosition::zero(),
-                log: VecDeque::new(),
-                last_flushed: LogSequence::zero(),
-            }),
+        Self {
+            prev: LogPosition::zero(),
+            log: VecDeque::new(),
         }
     }
 
-    // NOTE: This is only safe to call from append() as the sequence isn't advanced.
-    // TODO: Call this in append().
-    //
-    // TODO: Inline into the append
-    async fn truncate(&self, start_index: LogIndex) {
-        let mut state = self.state.lock().await;
-    }
-}
-
-impl State {
     // EIther it is a valid index, it is the index for the previous entry, or None
     fn off_for(&self, index: LogIndex) -> Option<usize> {
-        if self.log.len() == 0 {
+        let first_index = self.prev.index().value() + 1;
+
+        let index = match index.value().checked_sub(first_index) {
+            Some(v) => v as usize,
+            None => return None,
+        };
+
+        if index >= self.log.len() {
             return None;
         }
 
-        let first_index = self.prev.index().value() + 1;
-
-        // TODO: This could go negative if we are not careful
-        Some((index.value() - first_index) as usize)
+        Some(index)
     }
 
-    fn last_index(&self) -> LogIndex {
+    pub fn last_index(&self) -> LogIndex {
         (self.prev.index().value() + (self.log.len() as u64)).into() // TODO: Remove the u64
     }
-}
 
-#[async_trait]
-impl Log for MemoryLog {
-    async fn prev(&self) -> LogPosition {
-        let state = self.state.lock().await;
-        state.prev.clone()
+    pub fn prev(&self) -> LogPosition {
+        self.prev.clone()
     }
 
-    async fn term(&self, index: LogIndex) -> Option<Term> {
-        let state = self.state.lock().await;
-
-        if index == state.prev.index() {
-            return Some(state.prev.term());
+    pub fn term(&self, index: LogIndex) -> Option<Term> {
+        if index == self.prev.index() {
+            return Some(self.prev.term());
         }
 
-        let off = match state.off_for(index) {
+        let off = match self.off_for(index) {
             Some(v) => v,
             None => return None,
         };
 
-        match state.log.get(off) {
+        match self.log.get(off) {
             Some(v) => {
                 assert_eq!(v.0.pos().index(), index);
                 Some(v.0.pos().term())
@@ -92,41 +71,159 @@ impl Log for MemoryLog {
         }
     }
 
-    async fn last_index(&self) -> LogIndex {
-        let state = self.state.lock().await;
-        state.last_index()
-    }
-
-    // Arcs would be pointless if we can support a read-only guard on it
-
-    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
-        let state = self.state.lock().await;
-
-        let off = match state.off_for(index) {
+    pub fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
+        let off = match self.off_for(index) {
             Some(v) => v,
             None => return None,
         };
 
-        state.log.get(off).cloned()
+        self.log.get(off).cloned()
     }
 
-    async fn append(&self, entry: LogEntry, sequence: LogSequence) -> Result<()> {
-        let mut state = self.state.lock().await;
+    pub fn entries(
+        &self,
+        start_index: LogIndex,
+        end_index: LogIndex,
+    ) -> Option<(Vec<Arc<LogEntry>>, LogSequence)> {
+        let start_off = match self.off_for(start_index) {
+            Some(v) => v,
+            None => return None,
+        };
 
+        let end_off = match self.off_for(end_index) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        if start_off >= self.log.len() || end_off >= self.log.len() {
+            return None;
+        }
+
+        let mut out = vec![];
+
+        for i in start_off..(end_off + 1) {
+            out.push(self.log[i].0.clone());
+        }
+
+        Some((out, self.log[end_off].1))
+    }
+
+    pub fn append(&mut self, entry: LogEntry, sequence: LogSequence) -> Result<()> {
         // Perform truncation if getting an old entry.
-        if entry.pos().index() <= state.last_index() {
-            let off = match state.off_for(entry.pos().index()) {
+        if entry.pos().index() <= self.last_index() {
+            let off = match self.off_for(entry.pos().index()) {
                 Some(v) => v,
                 None => panic!("Truncating starting at unknown position"),
             };
 
             // Performing the actual truncation
-            state.log.truncate(off);
+            self.log.truncate(off);
         }
 
-        assert_eq!(state.last_index() + 1, entry.pos().index());
+        assert_eq!(self.last_index() + 1, entry.pos().index());
 
-        state.log.push_back((Arc::new(entry), sequence));
+        self.log.push_back((Arc::new(entry), sequence));
+
+        Ok(())
+    }
+
+    /// TODO: Fix this.
+    pub fn discard(&mut self, pos: LogPosition) -> Result<()> {
+        if pos.index() <= self.prev.index() {
+            if pos.term() > self.prev.term() {
+                return Err(err_msg("Re-discard has unrealistic term"));
+            }
+
+            return Ok(());
+        }
+
+        if pos.index() > self.last_index() {
+            let last_term = self.term(self.last_index()).unwrap();
+            if pos.term() < last_term {
+                return Err(err_msg("Discarding must strictly use monotonic terms"));
+            }
+
+            self.prev = pos;
+            self.log.clear();
+            return Ok(());
+        }
+
+        // NOTE: Unwrap should never panic as we check for OOB in the above if
+        // statements.
+        let i = self.off_for(pos.index()).unwrap();
+
+        if pos.term() != self.log[i].0.pos().term() {
+            return Err(err_msg("Inconsistent term in log and discard call."));
+        }
+
+        self.prev = self.log[i].0.pos().clone();
+        self.log = self.log.split_off(i + 1);
+
+        Ok(())
+    }
+}
+
+/// Fully in-memory log implementation.
+///
+/// - Performs fake flushing with all the contents of the log disappearing once
+///   this instance disappears.
+/// - Most other log implementations should be implemented as a MemoryLog with
+///   persistence added.
+pub struct MemoryLog {
+    state: Mutex<MemoryLogSync>,
+    changed: Condvar<bool>,
+}
+
+impl MemoryLog {
+    pub fn new() -> Self {
+        MemoryLog {
+            state: Mutex::new(MemoryLogSync::new()),
+            changed: Condvar::new(false),
+        }
+    }
+}
+
+#[async_trait]
+impl Log for MemoryLog {
+    async fn prev(&self) -> LogPosition {
+        let state = self.state.lock().await;
+        state.prev()
+    }
+
+    async fn term(&self, index: LogIndex) -> Option<Term> {
+        let state = self.state.lock().await;
+        state.term(index)
+    }
+
+    async fn last_index(&self) -> LogIndex {
+        let state = self.state.lock().await;
+        state.last_index()
+    }
+
+    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
+        let state = self.state.lock().await;
+        state.entry(index)
+    }
+
+    async fn entries(
+        &self,
+        start_index: LogIndex,
+        end_index: LogIndex,
+    ) -> Option<(Vec<Arc<LogEntry>>, LogSequence)> {
+        let state = self.state.lock().await;
+        state.entries(start_index, end_index)
+    }
+
+    async fn append(&self, entry: LogEntry, sequence: LogSequence) -> Result<()> {
+        let mut state = self.state.lock().await;
+
+        state.append(entry, sequence)?;
+
+        {
+            let mut changed = self.changed.lock().await;
+            *changed = true;
+            changed.notify_all();
+        }
 
         Ok(())
     }
@@ -135,90 +232,35 @@ impl Log for MemoryLog {
     async fn discard(&self, pos: LogPosition) -> Result<()> {
         let mut state = self.state.lock().await;
 
-        if state.log.len() == 0 {
-            // TODO: If we ever do this, we can still essentially modify the
-            // 'previous' entry here
-            // Generally will still assume that we want to be able to
-            // immediately start appending new entries
-            return Ok(());
+        state.discard(pos)?;
+
+        {
+            let mut changed = self.changed.lock().await;
+            *changed = true;
+            changed.notify_all();
         }
-
-        let mut i = match state.off_for(pos.index()) {
-            Some(v) => v,
-            _ => state.log.len() - 1,
-        };
-
-        // Look backwards until we find a position that is equal to to or older
-        // than the given position
-        loop {
-            let (e, _) = &state.log[i];
-
-            if e.pos().term() <= pos.term() && e.pos().index() <= pos.index() {
-                break;
-            }
-
-            // Failed to find anything
-            if i == 0 {
-                return Ok(());
-            }
-
-            i -= 1;
-        }
-
-        // Realistically no matter what, we can discard even farther forward
-
-        // If state_machine is ahead of the log, then we do need to have a term
-        // in order to properly discard
-        // If we are ever elected the leader, we would totally screw up in this case
-        // because discard() requires having a valid position that is well known
-
-        // NOTE: how would snapshot installation work?
-        // snapshot must come with a log_position
-        // otherwise, we can't do proper discards up to a snapshot right?
-
-        // Issue with dummy records is that we really don't care about dummy records
-        // TODO: Realistically we could actually just use 'pos' here that was given as
-        // an argument (this would have the effect of rewiping stuff)
-        // ^ complication being that we must
-        // We can use pos if and only if we were successful, but regardless
-        state.prev = state.log[i].0.pos().clone(); // < Alternatively we would convert it to a dummy record
-        state.log = state.log.split_off(i + 1);
 
         Ok(())
     }
 
-    /*
-        TODO: This still needs to properly handle log appends
-
-        - If we have a snapshot of the state machine, then there is no point in waiting for log entries to come in from an earlier point in time
-            - Unless we enforce log completeness
-
-        Something like this will need to be called when restarting from a snapshot
-
-        Basically no matter what, once this suceeds, we will have the log at some index
-    */
-
-    // the memory store will just assume that everything in the log is immediately
-    // durable
     async fn last_flushed(&self) -> LogSequence {
-        // This doesn't support flushing.
+        // This doesn't support flushing so we fake it and assume that everything
+        // immediately gets flushed.
         let state = self.state.lock().await;
-        state.last_flushed
+        state.log.back().map(|v| v.1).unwrap_or(LogSequence::zero())
     }
 
-    async fn flush(&self) -> Result<()> {
-        {
-            let state = self.state.lock().await;
-            if state.log.is_empty() {
-                return Ok(());
+    async fn wait_for_flush(&self) -> Result<()> {
+        loop {
+            let mut changed = self.changed.lock().await;
+            if !*changed {
+                changed.wait(()).await;
+                continue;
             }
+
+            *changed = false;
+            break;
         }
-
-        // TODO: Verify this doesn't ever crash.
-        let seq = self.entry(self.last_index().await).await.unwrap().1;
-
-        let mut state = self.state.lock().await;
-        state.last_flushed = seq;
 
         Ok(())
     }

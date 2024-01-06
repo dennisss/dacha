@@ -30,7 +30,9 @@ pub async fn bootstrap_first_server(log: &dyn Log) -> Result<ServerId> {
         log.append(e, next_seq).await?;
     }
 
-    log.flush().await?;
+    while log.last_flushed().await < seq {
+        log.wait_for_flush().await?;
+    }
 
     Ok(server_id)
 }

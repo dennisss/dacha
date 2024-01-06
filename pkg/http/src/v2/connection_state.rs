@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use common::errors::Result;
+use common::hash::FastHasherBuilder;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
@@ -94,7 +95,7 @@ pub struct ConnectionState {
     pub remote_stream_count: usize,
 
     /// All currently active locally and remotely initialized streams.
-    pub streams: HashMap<StreamId, Stream>,
+    pub streams: HashMap<StreamId, Stream, FastHasherBuilder>,
 
     /// Last time we sent a meaningful packet like a header or data packet.
     pub last_user_byte_sent_time: SystemTime,

@@ -7,10 +7,11 @@ use std::time::Duration;
 use std::time::Instant;
 
 use common::errors::*;
-use common::futures::channel::oneshot;
 use common::futures::FutureExt;
+use executor::bundle::TaskBundle;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
+use executor::channel::oneshot;
 use executor::child_task::ChildTask;
 use executor::sync::Mutex;
 use executor::Condvar;
@@ -24,9 +25,11 @@ use crate::log::log::Log;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::*;
 use crate::server::channel_factory::ChannelFactory;
+use crate::server::server_client::ServerClient;
 use crate::server::server_identity::ServerIdentity;
 use crate::server::state_machine::StateMachine;
 use crate::sync::*;
+use crate::StateMachineSnapshot;
 
 /*
 TODO: While a machine is receiving a snapshot, it should still be able to receive new log entries to ensure that recovery is fast.
@@ -41,6 +44,7 @@ TODO: Regarding HTTP2 tuning, we should ideally reserve some space in the flow c
 */
 
 /// After this amount of time, we will assume that an rpc request has failed
+/// (except for InstallSnapshot requests).
 ///
 /// NOTE: This value doesn't matter very much, but the important part is that
 /// every single request must have some timeout associated with it to prevent
@@ -49,18 +53,64 @@ TODO: Regarding HTTP2 tuning, we should ideally reserve some space in the flow c
 /// time (so that we never run out of file descriptors)
 const REQUEST_TIMEOUT: u64 = 2000;
 
+/// Maximum amount of time we will wait for an InstallSnapshot request to
+/// response.
+const INSTALL_SNAPSHOT_CLIENT_TIMEOUT: Duration = Duration::from_secs(40);
+
+const INSTALL_SNAPSHOT_SERVER_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Once a log entry has been committed for at least this amount of time, it
+/// will be eligible for being discarded from the log.
+const MAX_FLUSHED_LOG_ENTRY_AGE: Duration = Duration::from_secs(2);
+
+/*
+Also need to limit the max size of the log to prevent OOMing.
+- EmbeddedDB has a limit on memtable size that is used for flushing
+- Log size limit must be > EmbeddedDB flush threshold
+
+When the Raft leader is overloaded by writes it may cause AppendEntries to time out as too many writes could be queued
+- Must push back to increased client latency
+- Mitigations
+    - Limit max number of bytes in the log that are not flushed or commited
+        - Client facing append operation will block
+        - Should support cancellation that removed enqueued ops that didn't start getting applied.
+    - Limit max number of bytes outstanding for AppendEntries requests to each external server
+        - Can make this a dynamic limit.
+
+Need to limit memory usage as we store all log entries in memory even post commit
+- If the size of the non-discarded log becomes too big, we should block before writing (this is bubbled up to the leader which limits more entries coming in)
+    - Assumption is that wait_for_flush() is pretty quick
+    - Last 2 seconds of data should always be stored in memory.
+    - Truncation should also be fairly quick
+
+NOTE: These limits need to be global as a single server may manage many raft groups
+
+- Writing
+
+- Note that for slow followers in pessimistic mode, we should only send a few entries per
+
+TODO: Raft cross-member traffic should be prioritized on the NIC above clietn traffic
+
+Other issue:
+- When a task is restarting, if many entries are coming in, it will be left behind
+    - If the log is bigger than a snapshot, then its worth snapshotting.
+
+- EmbeddedDB could support incremental snapshot
+    - Only send tables which have changed since a sequence
+
+
+Must
+*/
+
 /// Server variables that can be shared by many different threads
 pub struct ServerShared<R> {
     /// As stated in the initial metadata used to create the server
     pub identity: ServerIdentity,
 
-    pub state: Mutex<ServerState<R>>,
+    pub(crate) state: Mutex<ServerState<R>>,
 
-    /// Factory used for
+    /// Factory used for creating stubs to other servers.
     pub channel_factory: Arc<dyn ChannelFactory>,
-
-    // /// Used for network message sending and connection management
-    // pub client: Arc<crate::rpc::Client>,
 
     // TODO: Need not have a lock for this right? as it is not mutable
     // Definately we want to lock the Log separately from the rest of this code
@@ -68,16 +118,19 @@ pub struct ServerShared<R> {
 
     pub state_machine: Arc<dyn StateMachine<R> + Send + Sync + 'static>,
 
-    // TODO: Shall be renamed to FlushedIndex
+    /// Index of the last applied entry in the latest configuration state
+    /// machine snapshot flushed to disk.
+    pub config_last_flushed: Condvar<LogIndex, LogIndex>,
+
     /// Holds the index of the log index most recently persisted to disk
     /// This is eventually consistent with the index in the log itself
     /// NOTE: This is safe to always have a term for as it should always be in
     /// the log
-    pub last_flushed: Condvar<LogSequence, LogSequence>,
+    pub log_last_flushed: Condvar<LogSequence, LogSequence>,
 
-    /// Holds the value of the current commit_index for the server
-    /// This is eventually consistent with the index in the internal consensus
-    /// module NOTE: This is the highest commit index currently available in
+    /// Holds the value of the index in the local log that has been committed.
+    ///
+    /// NOTE: This is the highest commit index currently available in
     /// the log and not the highest index ever seen A listener will be
     /// notified if we got a commit_index at least as up to date as their given
     /// position NOTE: The state machine will listen for (0,0) always so
@@ -90,32 +143,30 @@ pub struct ServerShared<R> {
     /// This should only ever be modified by the separate applier thread
     pub last_applied: Condvar<LogIndex, LogIndex>,
 
-    ///
+    /// Latest value of lease_start() observed in the consensus module.
     pub lease_start: Condvar<Option<Instant>, Instant>,
 }
 
 /// All the mutable state for the server that you hold a lock in order to look
 /// at
-pub struct ServerState<R> {
+pub(crate) struct ServerState<R> {
+    /// NOTE: This is only mutated within the run_tick() method.
     pub inst: ConsensusModule,
 
-    // TODO: Move those out
-    pub meta_file: BlobFile,
-    pub config_file: BlobFile,
+    pub meta_file: Option<BlobFile>,
 
     /// Connections maintained by the leader to all followers for replicating
     /// commands.
     ///
-    /// TODO: Clean up this map if we are no longer leader.
-    pub client_stubs: HashMap<ServerId, Arc<ConsensusStub>>,
+    /// TODO: TTL these so that we remove ones that are removed from the
+    /// cluster.
+    pub clients: HashMap<ServerId, Arc<ServerClient>>,
 
-    // TODO: Move the ChangeSenders out of the state now that we don't need a lock for them.
-    /// Trigered whenever the state or configuration is changed
+    /// Trigered whenever the state or configuration is changed.
+    ///
     /// TODO: currently this will not fire on configuration changes
     /// Should be received by the cycler to update timeouts for
     /// heartbeats/elections
-    /// TODO: The events don't need a lock (but if we are locking, then we might
-    /// as well use it right)
     pub state_changed: ChangeSender,
     pub state_receiver: Option<ChangeReceiver>,
 
@@ -126,23 +177,45 @@ pub struct ServerState<R> {
     pub meta_changed: ChangeSender,
     pub meta_receiver: Option<ChangeReceiver>,
 
-    /// Triggered whenever a new entry has been queued onto the log
-    /// Used to trigger the log to get flushed to persistent storage
-    pub log_changed: ChangeSender,
-    pub log_receiver: Option<ChangeReceiver>,
+    /// Triggered when when we get an InstallSnapshot request that we want to
+    /// apply to the state machine.
+    pub snapshot_sender: ChangeSender,
+    pub snapshot_receiver: Option<ChangeReceiver>,
+
+    pub snapshot_state: IncomingSnapshotState,
 
     /// Whenever an operation is proposed, this will store callbacks that will
     /// be given back the result once it is applied
     ///
     /// TODO: Switch to a VecDeque,
     pub callbacks: LinkedList<(LogPosition, oneshot::Sender<Option<R>>)>,
+
+    /// Long running tasks (e.g. outgoing RPCs) associated with the current
+    /// term. These are stopped whenever the term advances.
+    pub term_tasks: HashMap<u64, ChildTask>,
+    pub last_task_id: u64,
+}
+
+pub enum IncomingSnapshotState {
+    None,
+    Pending(IncomingStateMachineSnapshot),
+    Installing,
+}
+
+pub struct IncomingStateMachineSnapshot {
+    pub snapshot: StateMachineSnapshot,
+
+    pub last_applied: LogPosition,
+
+    /// Channel to notify once we have successfully installed the snapshot.
+    pub callback: oneshot::Sender<bool>,
 }
 
 impl<R: Send + 'static> ServerShared<R> {
     /// Starts all of the server background threads and blocks until they are
     /// all complete (or one fails).
     pub async fn run(self: Arc<Self>) -> Result<()> {
-        let (state_changed, log_changed, meta_changed) = {
+        let (state_changed, meta_changed, meta_file, snapshot_receiver) = {
             let mut state = self.state.lock().await;
 
             // If the application required a lot of initialization, a long time may have
@@ -162,22 +235,31 @@ impl<R: Send + 'static> ServerShared<R> {
                     .take()
                     .ok_or_else(|| err_msg("State receiver already taken"))?,
                 state
-                    .log_receiver
-                    .take()
-                    .ok_or_else(|| err_msg("Log receiver already taken"))?,
-                state
                     .meta_receiver
                     .take()
                     .ok_or_else(|| err_msg("Meta receiver already taken"))?,
+                state
+                    .meta_file
+                    .take()
+                    .ok_or_else(|| err_msg("Meta file already taken"))?,
+                state
+                    .snapshot_receiver
+                    .take()
+                    .ok_or_else(|| err_msg("Install snapshot receiver already taken"))?,
             )
         };
 
         /*
         TODO: Implementing graceful shutdown:
         - If we are the leader, send a TimeoutNow message to one of the followers to take over
+            - Does not apply if twe are the only node in the cluster.
         - Finish flushing log entries to disk.
         - Keep the cycler thread alive (if we are leader, we should stay leader until we timed out, but we shouldn't start new elections?)
         - Immediately stop the applier thread.
+
+        - State machine and log shutdown should be triggered post raft shutdown
+
+        XXX: Yes, we need this.
         */
 
         // TODO: This should support graceful shutdown such that we wait for the log
@@ -186,11 +268,16 @@ impl<R: Send + 'static> ServerShared<R> {
 
         let mut task_bundle = TaskResultBundle::new();
 
+        // TODO: A failure here should probably trigger a shurdown rather than instantly
+        // cancelling the whole bundle.
         task_bundle
             .add("Cycler", self.clone().run_cycler(state_changed))
-            .add("Matcher", self.clone().run_matcher(log_changed))
-            .add("Applier", self.clone().run_applier())
-            .add("MetaWriter", self.clone().run_meta_writer(meta_changed));
+            .add("Matcher", self.clone().run_matcher())
+            .add("Applier", self.clone().run_applier(snapshot_receiver))
+            .add(
+                "MetaWriter",
+                self.clone().run_meta_writer(meta_changed, meta_file),
+            );
 
         task_bundle.join().await
     }
@@ -234,25 +321,107 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
-    async fn run_meta_writer(self: Arc<Self>, meta_changed: ChangeReceiver) -> Result<()> {
-        loop {
-            // TODO: Potentially batchable if we choose to make this something
-            // that can do an async write to the disk
+    /// Performs flushing of the metadata (term/commit_index/voted_for) and the
+    /// configuration (list of members) snapshot to disk.
+    ///
+    /// This data is written out to a separate file each time so is relatively
+    /// expensive to store but the good news is that we rarely need to flush the
+    /// data immediately. Specifically we will only force a flush if:
+    ///
+    /// - voted_for has changed and is not none.
+    /// - Size of log entries not in the last config snapshot is > a threshold
+    ///   - TODO: Implement this as config snapshot flushing blocking discarding
+    ///     the log.
+    ///
+    /// Else, we will wait 10 seconds before flushing any changes. Nothing will
+    /// be written if the metadata hasn't changed since last write.
+    ///
+    /// TODO: Eventually we should be able to move the config snapshot into the
+    /// log. Specifically for the segmented log, we can store the latest live
+    /// config snapshot at the beginning of each segment (with last_applied ==
+    /// prev). Then because all discarded log segments are committed, we can
+    /// start restoring from the snapshot in the FIRST segment. The main issue
+    /// is that we need to make sure this is compatible with log truncations and
+    /// discards beyond the end of the log.
+    ///
+    /// TODO: This will run rather frequently as it contains the commit index.
+    /// We should maybe move the commit index into the log.
+    async fn run_meta_writer(
+        self: Arc<Self>,
+        meta_changed: ChangeReceiver,
+        meta_file: BlobFile,
+    ) -> Result<()> {
+        let mut last_proto: Option<ServerMetadata> = None;
+        let mut last_time = None;
 
+        loop {
             {
                 let state = self.state.lock().await;
+
+                let mut now = Instant::now();
+
+                // Whether or not there has been any change to the metadata since the last time
+                // it was persisted to disk.
+                let mut changed = false;
+
+                // Whether or not we need to immediately.
+                let mut flush_now = false;
+
+                if let Some(last_proto) = &last_proto {
+                    changed = state.inst.meta() != last_proto.meta()
+                        || state.inst.config_snapshot().last_applied
+                            != last_proto.config().last_applied();
+
+                    flush_now = state.inst.meta().voted_for() != 0.into()
+                        && (
+                            state.inst.meta().current_term(),
+                            state.inst.meta().voted_for(),
+                        ) != (
+                            last_proto.meta().current_term(),
+                            last_proto.meta().voted_for(),
+                        );
+                } else {
+                    changed = true;
+                    flush_now = true;
+                }
+
+                if changed && last_time.is_none() {
+                    last_time = Some(now);
+                }
+
+                if let Some(last_time) = last_time {
+                    if now - last_time > Duration::from_secs(10) {
+                        flush_now = true;
+                    }
+                }
+
+                if !flush_now {
+                    drop(state);
+                    executor::timeout(Duration::from_secs(1), meta_changed.wait()).await;
+                    continue;
+                }
 
                 // TODO: Use a reference based type to serialize this.
                 let mut server_metadata = ServerMetadata::default();
                 server_metadata.set_id(state.inst.id().clone());
                 server_metadata.set_group_id(self.identity.group_id.clone());
                 server_metadata.set_meta(state.inst.meta().clone());
+                server_metadata.set_config(state.inst.config_snapshot().to_proto());
+
+                drop(state);
 
                 // TODO: Steal the reference to the meta_file so that we don't need to lock the
                 // state to save to it.
-                state.meta_file.store(&server_metadata.serialize()?).await?;
+                meta_file.store(&server_metadata.serialize()?).await?;
 
-                drop(state);
+                {
+                    let mut v = self.config_last_flushed.lock().await;
+                    *v = server_metadata.config().last_applied();
+                    v.notify_all();
+                }
+
+                last_time = None;
+                last_proto = Some(server_metadata.clone());
 
                 self.run_tick(
                     |state, tick, _| {
@@ -263,52 +432,44 @@ impl<R: Send + 'static> ServerShared<R> {
                     (),
                 )
                 .await;
-            }
 
-            meta_changed.wait().await;
+                // Limit max rate.
+                executor::sleep(Duration::from_millis(10)).await?;
+            }
         }
     }
 
-    /// Flushes log entries to persistent storage as they come in
-    /// This is responsible for pushing changes to the last_flushed variable
-    async fn run_matcher(self: Arc<ServerShared<R>>, log_changed: ChangeReceiver) -> Result<()> {
+    /// Waits for changes to the log.
+    ///
+    /// This is responsible for pushing changes to the last_flushed variable.
+    ///
+    /// TODO: Merge this with the applier thread?
+    async fn run_matcher(self: Arc<ServerShared<R>>) -> Result<()> {
         // TODO: Must explicitly run in a separate thread until we can make disk
         // flushing a non-blocking operation
 
         // XXX: We can also block once the server is shutting down
 
         loop {
-            // NOTE: The log object is responsible for doing its own internal locking as
-            // needed TODO: Should we make this non-blocking right now
-            if let Err(e) = self.log.flush().await {
-                eprintln!("Matcher failed to flush log: {:?}", e);
-                return Ok(());
-
-                // TODO: If something like this fails then we need to make sure
-                // that we can reject all requestions instead of stalling them
-                // for a match
-
-                // TODO: The other issue is that if the failure is not
-                // completely atomic, then the index may have been updated in
-                // the log internals incorrectly without the flush following
-                // through properly
-            }
+            self.log.wait_for_flush().await?;
 
             // TODO: Ideally if the log requires a lock, this should use the
             // same lock used for updating this as well (or the last_flushed should
             // be returned from the flush method <- Preferably also with the
             // term that was flushed)
-            self.update_last_flushed().await;
-
-            log_changed.wait().await;
+            self.update_log_last_flushed().await;
         }
     }
 
+    // TODO: This also needs to do any needed discarding in the consensus module
+
     /// TODO: Make this private.
-    pub async fn update_last_flushed(self: &Arc<Self>) {
+    pub(super) async fn update_log_last_flushed(self: &Arc<Self>) {
         let cur = self.log.last_flushed().await;
 
-        let mut mi = self.last_flushed.lock().await;
+        // TODO: Also want to update 'prev' by running discard() on the
+
+        let mut mi = self.log_last_flushed.lock().await;
         if *mi == cur {
             return;
         }
@@ -332,170 +493,337 @@ impl<R: Send + 'static> ServerShared<R> {
         .await;
     }
 
+    /// Handles all writes to the state machine.
+    ///
     /// When entries are comitted, this will apply them to the state machine
     /// This is the exclusive modifier of the last_applied shared variable and
     /// is also responsible for triggerring snapshots on the state machine when
     /// we want one to happen
+    ///
     /// NOTE: If this thing fails, we can still participate in raft but we can
     /// not perform snapshots or handle read/write queries
-    async fn run_applier(self: Arc<ServerShared<R>>) -> Result<()> {
+    async fn run_applier(
+        self: Arc<ServerShared<R>>,
+        snapshot_receiver: ChangeReceiver,
+    ) -> Result<()> {
         let mut callbacks = std::collections::LinkedList::new();
 
+        let (event_sender, event_receiver) = change();
+
+        // Trigger the first run.
+        event_sender.notify();
+
+        let mut listeners = TaskBundle::new();
+
+        // Wait for a commit index change.
+        // => In response, we will apply more entries to the log.
+        listeners.add(async {
+            let mut last = 0.into();
+            loop {
+                let ci = self.commit_index.lock().await;
+                if ci.index() != last {
+                    last = ci.index();
+                    event_sender.notify();
+                }
+
+                ci.wait(LogPosition::default()).await;
+            }
+        });
+
+        // Wait for an InstallSnapshot request.
+        // => In response, we will install the snapshot.
+        listeners.add(async {
+            loop {
+                snapshot_receiver.wait().await;
+                event_sender.notify();
+            }
+        });
+
+        // Wait for a state machine flush.
+        // => In response, we may be able to truncate some of the log.
+        listeners.add(async {
+            loop {
+                self.state_machine.wait_for_flush().await;
+            }
+        });
+
+        // Wait for the config state machine to be flushed.
+        // => In response, we may be able to truncate some of the log.
+        listeners.add(async {
+            let mut last = 0.into();
+            loop {
+                let next_index = self.config_last_flushed.lock().await;
+                if *next_index != last {
+                    last = *next_index;
+                    event_sender.notify();
+                }
+
+                next_index.wait(LogIndex::default()).await;
+            }
+        });
+
+        /*
+        TODO: For snapshots, also update the last_applied.
+
+        TODO: Commit index needs to change to reflect any snapshot installations.
+        */
+
         loop {
-            let commit_index = self.commit_index.lock().await.index().clone();
-            let mut last_applied = *self.last_applied.lock().await;
+            event_receiver.wait().await;
 
-            // Take ownership of all pending callbacks (as long as a callback is appended to
-            // the list before the commit_index variable is incremented, this should always
-            // see them)
-            {
-                let mut state = self.state.lock().await;
-                callbacks.append(&mut state.callbacks);
-            }
+            // TODO: Execute the snapshot using the task context of the request that
+            // triggered it so that RPC tracing works.
+            self.run_apply_snapshot().await?;
 
-            // TODO: Suppose we have the item in our log but it gets truncated,
-            // then in this case, callbacks will all be blocked until a new
-            // operation of some type is proposed
+            self.run_apply_entries(&mut callbacks).await?;
 
-            {
-                // Apply all committed entries to state machine
-                while last_applied < commit_index {
-                    let entry = self.log.entry(last_applied + 1).await;
-                    if let Some((e, _)) = entry {
-                        let ret = if let LogEntryDataTypeCase::Command(data) = e.data().typ_case() {
-                            match self
-                                .state_machine
-                                .apply(e.pos().index(), data.as_ref())
-                                .await
-                            {
-                                Ok(v) => Some(v),
-                                Err(e) => {
-                                    // TODO: Ideally notify everyone that all
-                                    // progress has been halted
-                                    // If we are the leader, then we should probably
-                                    // demote ourselves to a healthier node
-                                    eprintln!("Applier failed to apply to state machine: {:?}", e);
-                                    return Err(e);
-                                }
-                            }
-                        } else {
-                            // Other types of log entries produce no output and
-                            // generally any callbacks specified shouldn't expect
-                            // any output
-                            None
-                        };
-
-                        // TODO: the main complication is that we should probably
-                        // execute all of the callbacks after we have updated the
-                        // last_applied index so that they are guranteed to see a
-                        // consistent view of the world if they try to observe its
-                        // value
-
-                        // So we should probably defer all results until after that
-
-                        // Resolve/reject callbacks waiting for this change to get
-                        // commited
-                        // TODO: In general, we should assert that the linked list
-                        // is monotonically increasing always based on proposal
-                        // indexes
-                        // TODO: the other thing is that callbacks can be rejected
-                        // early in the case of something newer getting commited
-                        // which would override it
-                        while callbacks.len() > 0 {
-                            let first = callbacks.front().unwrap().0.clone();
-
-                            if e.pos().term() > first.term() || e.pos().index() >= first.index() {
-                                let item = callbacks.pop_front().unwrap();
-
-                                if e.pos().term() == first.term()
-                                    && e.pos().index() == first.index()
-                                {
-                                    item.1.send(ret).ok();
-                                    break; // NOTE: This is not really necessary
-                                           // asit should immediately get
-                                           // completed on the next run through
-                                           // the loop by the other break
-                                }
-                                // Otherwise, older than the current entry
-                                else {
-                                    item.1.send(None).ok();
-                                }
-                            }
-                            // Otherwise possibly more recent than the current commit
-                            else {
-                                break;
-                            }
-                        }
-
-                        *last_applied.value_mut() += 1;
-                    } else {
-                        // Our log may be behind the commit_index in the consensus
-                        // module, but the commit_index conditional variable should
-                        // always be at most at the newest value in our log
-                        // (so if we see this, then we have a bug somewhere in this
-                        // file)
-                        eprintln!("Need to apply an entry not in our log yet");
-                        break;
-                    }
-                }
-            }
-
-            // Update last_applied
-            {
-                let mut guard = self.last_applied.lock().await;
-                if last_applied > *guard {
-                    *guard = last_applied;
-                    guard.notify_all();
-                }
-            }
-
-            // Wait for the next time commit_index changes
-            let waiter = {
-                let guard = self.commit_index.lock().await;
-
-                // If the commit index changed since last we checked, we can
-                // immediately cycle again
-                if guard.index().value() != commit_index.value() {
-                    // We can immediately cycle again
-                    // TODO: We should be able to refactor out this clone
-                    continue;
-                }
-
-                guard.wait(LogPosition::zero())
-            };
-
-            // Otherwise we will wait for it to change
-            waiter.await;
+            self.run_apply_discard().await?;
         }
     }
 
-    /// Discards log entries which have been persisted to a snapshot.
     ///
-    /// TODO: Consider optimistically removing applied entries from memory but
-    /// keep them on disk before they are added to a snapshot.
-    pub async fn run_discarder(self: Arc<Self>) -> Result<()> {
-        loop {
-            let last_flushed = self.state_machine.last_flushed().await;
-            // self.log.discard(pos)
+    ///
+    /// TODO: Because this risks locking the state machine during the restore,
+    /// we don't want to allow this replica to be used for any follower
+    /// reads during the restore.
+    async fn run_apply_snapshot(self: &Arc<Self>) -> Result<()> {
+        let mut state = self.state.lock().await;
 
-            // {
-            //     let state = self.state.lock().await;
-            //     state.inst.log_discarded(prev)
-            // }
+        let mut snapshot_state = IncomingSnapshotState::None;
+        core::mem::swap(&mut snapshot_state, &mut state.snapshot_state);
 
-            // TODO: Discard in consensus module and in the log file.
+        let snapshot = match snapshot_state {
+            IncomingSnapshotState::None => return Ok(()),
+            IncomingSnapshotState::Pending(snapshot) => {
+                // TODO: Re-set this whenever we leave this function.
+                state.snapshot_state = IncomingSnapshotState::Installing;
+                snapshot
+            }
+            IncomingSnapshotState::Installing => {
+                panic!("Multiple tasks doing snapshot installation")
+            }
+        };
 
-            self.state_machine.wait_for_flush().await;
+        drop(state);
+
+        let last_applied = snapshot.snapshot.last_applied.clone();
+
+        let success = self.state_machine.restore(snapshot.snapshot).await?;
+
+        if !success {
+            let _ = snapshot.callback.send(false);
+
+            self.state.lock().await.snapshot_state = IncomingSnapshotState::None;
+            return Ok(());
+        }
+
+        // TODO: Deduplicate this.
+
+        // TODO: Find other places where we needd to add the discarding.
+
+        // NOTE: The config snapshot we recieved should always be further ahead than the
+        // main state machine snapshot.
+        self.log.discard(snapshot.last_applied.clone()).await?;
+
+        /*
+        Note that it's possible that if the discard() doesn't flush, we could restart with the log
+        */
+
+        // TODO: Update the commit_index stored locally (or should we just wait for the
+        // consensus module to tell us about this)?
+
+        // TODO: Wait for discard to get applied? (mainly need to ensure that if we are
+        // truncating the entire log, then we are able to )
+
+        // TODO: Need to run this in other places where the log is discarded as well.
+        let prev = self.log.prev().await;
+        self.run_tick(
+            |state, tick, prev| {
+                state.inst.log_discarded(prev);
+            },
+            prev,
+        )
+        .await;
+
+        // Update last_applied
+        {
+            let mut guard = self.last_applied.lock().await;
+            if last_applied > *guard {
+                *guard = last_applied;
+                guard.notify_all();
+            }
+        }
+
+        self.state.lock().await.snapshot_state = IncomingSnapshotState::None;
+        let _ = snapshot.callback.send(true);
+        Ok(())
+    }
+
+    async fn run_apply_entries(
+        self: &Arc<Self>,
+        callbacks: &mut LinkedList<(LogPosition, oneshot::Sender<Option<R>>)>,
+    ) -> Result<()> {
+        let commit_index = self.commit_index.lock().await.index().clone();
+        let mut last_applied = *self.last_applied.lock().await;
+
+        // Take ownership of all pending callbacks (as long as a callback is appended to
+        // the list before the commit_index variable is incremented, this should always
+        // see them)
+        {
+            let mut state = self.state.lock().await;
+            callbacks.append(&mut state.callbacks);
+        }
+
+        // TODO: Suppose we have the item in our log but it gets truncated,
+        // then in this case, callbacks will all be blocked until a new
+        // operation of some type is proposed
+
+        // TODO: Before we allow a server to fully start up, we must wait for
+        // last_applied to become commit_index (or or at least to match the initial
+        // commit_index at the time of server startup.).
+        //
+        // ^ Though the serer must be started up before we allow it become a leader
+
+        {
+            // Apply all committed entries to state machine
+            while last_applied < commit_index {
+                let entry = self.log.entry(last_applied + 1).await;
+                if let Some((e, _)) = entry {
+                    let ret = if let LogEntryDataTypeCase::Command(data) = e.data().typ_case() {
+                        match self
+                            .state_machine
+                            .apply(e.pos().index(), data.as_ref())
+                            .await
+                        {
+                            Ok(v) => Some(v),
+                            Err(e) => {
+                                // TODO: Ideally notify everyone that all
+                                // progress has been halted
+                                // If we are the leader, then we should probably
+                                // demote ourselves to a healthier node
+                                eprintln!("Applier failed to apply to state machine: {:?}", e);
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        // Other types of log entries produce no output and
+                        // generally any callbacks specified shouldn't expect
+                        // any output
+                        None
+                    };
+
+                    // TODO: the main complication is that we should probably
+                    // execute all of the callbacks after we have updated the
+                    // last_applied index so that they are guranteed to see a
+                    // consistent view of the world if they try to observe its
+                    // value
+
+                    // So we should probably defer all results until after that
+
+                    // Resolve/reject callbacks waiting for this change to get
+                    // commited
+                    // TODO: In general, we should assert that the linked list
+                    // is monotonically increasing always based on proposal
+                    // indexes
+                    // TODO: the other thing is that callbacks can be rejected
+                    // early in the case of something newer getting commited
+                    // which would override it
+                    while callbacks.len() > 0 {
+                        let first = callbacks.front().unwrap().0.clone();
+
+                        if e.pos().term() > first.term() || e.pos().index() >= first.index() {
+                            let item = callbacks.pop_front().unwrap();
+
+                            if e.pos().term() == first.term() && e.pos().index() == first.index() {
+                                item.1.send(ret).ok();
+                                break; // NOTE: This is not really necessary
+                                       // asit should immediately get
+                                       // completed on the next run through
+                                       // the loop by the other break
+                            }
+                            // Otherwise, older than the current entry
+                            else {
+                                item.1.send(None).ok();
+                            }
+                        }
+                        // Otherwise possibly more recent than the current commit
+                        else {
+                            break;
+                        }
+                    }
+
+                    *last_applied.value_mut() += 1;
+                } else {
+                    // Our log may be behind the commit_index in the consensus
+                    // module, but the commit_index conditional variable should
+                    // always be at most at the newest value in our log
+                    // (so if we see this, then we have a bug somewhere in this
+                    // file)
+                    eprintln!("Need to apply an entry not in our log yet");
+                    break;
+                }
+            }
+        }
+
+        // Update last_applied
+        {
+            let mut guard = self.last_applied.lock().await;
+            if last_applied > *guard {
+                *guard = last_applied;
+                guard.notify_all();
+            }
         }
 
         Ok(())
     }
 
-    pub async fn run_tick<O: 'static, F, C>(self: &Arc<Self>, f: F, captured: C) -> O
+    /*
+    TODO: Currently log discarding doesn't seem to happen automatically without a process restart.
+
+    */
+
+    /// Discards log entries which have been persisted to a snapshot.
+    async fn run_apply_discard(self: &Arc<Self>) -> Result<()> {
+        let mut last_flushed = self.state_machine.last_flushed().await;
+        let commit_index = self.commit_index.lock().await.index();
+
+        // Verify the config state machine is also sufficiently flushed.
+        last_flushed = core::cmp::min(last_flushed, *self.config_last_flushed.lock().await);
+
+        // Wait until we verify that all the entries in the log are commited.
+        // (else the log may contain the wrong term)
+        last_flushed = core::cmp::min(last_flushed, commit_index);
+
+        let last_flushed_term = match self.log.term(last_flushed).await {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+
+        let mut pos = LogPosition::default();
+        pos.set_index(last_flushed);
+        pos.set_term(last_flushed_term);
+
+        self.log.discard(pos).await?;
+
+        let prev = self.log.prev().await;
+        self.run_tick(
+            |state, tick, prev| {
+                state.inst.log_discarded(prev);
+            },
+            prev,
+        )
+        .await;
+
+        Ok(())
+    }
+
+    pub(crate) async fn run_tick<O: 'static, F, C>(self: &Arc<Self>, f: F, captured: C) -> O
     where
         F: for<'a, 'b> FnOnce(&'a mut ServerState<R>, &'b mut Tick, C) -> O,
     {
         let mut state = self.state.lock().await;
+
+        let initial_term = state.inst.meta().current_term();
 
         // NOTE: Tick must be created after the state is locked to gurantee
         // monotonic time always
@@ -505,12 +833,15 @@ impl<R: Send + 'static> ServerShared<R> {
 
         let out: O = f(&mut state, &mut tick, captured);
 
+        // TODO: This is in the critical path and MUST NOT be cancelled at the task
+        // level.
+
         // In the case of a failure here, we want to attempt to backoff or
         // demote ourselves from leadership
         // NOTE: We can survive short term disk failures as long as we know that
         // there is metadata that has not been sent
         // Also splitting up
-        if let Err(e) = self.finish_tick(&mut state, tick).await {
+        if let Err(e) = self.finish_tick(initial_term, &mut state, tick).await {
             // This should poison the state guard that we still hold and thus
             // prevent any more progress from occuring
             // TODO: Eventually we can decompose exactly what failed and defer
@@ -525,11 +856,27 @@ impl<R: Send + 'static> ServerShared<R> {
     // failures may ignore the fact that metadata from previous rounds was not )
     // NOTE: This function assumes that the given state guard is for the exact
     // same state as represented within this shared state
-    async fn finish_tick(self: &Arc<Self>, state: &mut ServerState<R>, tick: Tick) -> Result<()> {
+    async fn finish_tick(
+        self: &Arc<Self>,
+        initial_term: Term,
+        state: &mut ServerState<R>,
+        tick: Tick,
+    ) -> Result<()> {
+        let latest_term = state.inst.meta().current_term();
+        if latest_term != initial_term {
+            state.term_tasks.clear();
+
+            // New term means that we are probably not the leader anymore.
+            state.clients.clear();
+        }
+
         let mut should_update_commit = false;
 
         // If new entries were appended, we must notify the flusher
         if !tick.new_entries.is_empty() {
+            // TODO: Remove this from the blocking path
+            // (only issue is that we need it to be in the log to support creating
+            // AppendEntry requests).
             for entry in &tick.new_entries {
                 self.log.append(entry.entry.clone(), entry.sequence).await?;
             }
@@ -538,9 +885,6 @@ impl<R: Send + 'static> ServerShared<R> {
             // index may go up
             // TODO: Will end up being a redundant operation with the below one
             should_update_commit = true;
-
-            // XXX: Simple scenario is to just use the fact that we have the lock
-            state.log_changed.notify();
         }
 
         // XXX: Single sender for just the
@@ -574,21 +918,9 @@ impl<R: Send + 'static> ServerShared<R> {
         // TODO: In most cases it is not necessary to persist the config unless
         // we are doing a compaction, but we should schedule a task to ensure
         // that this gets saved eventually
+        // (maybe do this before appending log entries so that the state machine knows )
         if tick.config {
-            let snapshot_ref = state.inst.config_snapshot();
-
-            let mut server_config_snapshot = ServerConfigurationSnapshot::default();
-            server_config_snapshot
-                .config_mut()
-                .set_last_applied(snapshot_ref.last_applied.clone());
-            server_config_snapshot
-                .config_mut()
-                .set_data(snapshot_ref.data.clone());
-
-            state
-                .config_file
-                .store(&server_config_snapshot.serialize()?)
-                .await?;
+            state.meta_changed.notify();
         }
 
         // TODO: We currently assume that the ConsensusModule will always output
@@ -617,19 +949,39 @@ impl<R: Send + 'static> ServerShared<R> {
         // metadata so long as the metadata is flushed before it elects itself
         // as the leader (aka befoer it processes replies to RequestVote)
 
-        // TODO: Don't hold the state lock while dispatching RPCs.
-
-        executor::spawn(self.clone().dispatch_messages(tick.messages));
+        self.spawn_term_task(state, self.clone().dispatch_messages(tick.messages));
 
         Ok(())
     }
 
+    fn spawn_term_task<Fut: 'static + std::future::Future<Output = ()> + Send>(
+        self: &Arc<Self>,
+        state: &mut ServerState<R>,
+        future: Fut,
+    ) {
+        let id = state.last_task_id + 1;
+        state.last_task_id = id;
+
+        let shared = self.clone();
+
+        state.term_tasks.insert(
+            id,
+            ChildTask::spawn(async move {
+                future.await;
+
+                let mut state = shared.state.lock().await;
+                state.term_tasks.remove(&id);
+            }),
+        );
+    }
+
     /// Notifies anyone waiting on something to get committed
+    ///
     /// TODO: Realistically as long as we enforce that it atomically goes up, we
     /// don't need to have a lock on the state in order to perform this update
     ///
     /// TODO: Make this private.
-    pub async fn update_commit_index(&self, state: &ServerState<R>) {
+    pub(crate) async fn update_commit_index(&self, state: &ServerState<R>) {
         let latest_commit_index = state.inst.meta().commit_index().clone();
 
         let latest = match self.log.term(latest_commit_index).await {
@@ -671,69 +1023,128 @@ impl<R: Send + 'static> ServerShared<R> {
         Box::pin(self.dispatch_messages_impl(messages))
     }
 
+    // TODO: Discard on module must run before the first tick to ensure we don't try
+    // sending old values.
+
     async fn dispatch_messages_impl(self: Arc<Self>, mut messages: Vec<ConsensusMessage>) {
         if messages.len() == 0 {
             return;
         }
 
-        let mut append_entries = vec![];
-        let mut request_votes = vec![];
+        let mut bundle = executor::bundle::TaskBundle::new();
 
         for msg in &mut messages {
             // Populate all the log entries.
             if let ConsensusMessageBody::AppendEntries {
                 request,
                 last_log_index,
+                last_log_sequence,
             } = &mut msg.body
             {
-                // TODO: If the log was truncated, then we may send the wrong sequence of
-                // entries here.
+                if request.prev_log_index() != *last_log_index {
+                    let (entries, last_entry_sequence) = match self
+                        .log
+                        .entries(request.prev_log_index() + 1, *last_log_index)
+                        .await
+                    {
+                        Some(v) => v,
+                        None => {
+                            // This may happen if the log needed to be truncated by a new leader
+                            // than contacted us or if we just truncated
+                            // the log.
+                            eprintln!(
+                                "Adandoned AppendEntries for range [{}, {}], sequence: {:?}",
+                                request.prev_log_index().value() + 1,
+                                last_log_index.value(),
+                                *last_log_sequence
+                            );
+                            for to_id in msg.to.iter() {
+                                bundle.add(self.dispatch_append_entries_abandon(
+                                    to_id.clone(),
+                                    msg.request_id,
+                                ));
+                            }
+                            continue;
+                        }
+                    };
 
-                let mut idx = request.prev_log_index() + 1;
-                while idx <= *last_log_index {
-                    let entry = self.log.entry(idx).await;
+                    if last_entry_sequence != last_entry_sequence {
+                        eprintln!(
+                            "Adandoned AppendEntries due to inconsistent references for {:?}",
+                            *last_log_sequence
+                        );
+                    }
 
-                    request.add_entries(self.log.entry(idx).await.unwrap().0.as_ref().clone());
-                    idx = idx + 1;
+                    for entry in entries {
+                        request.add_entries(entry.as_ref().clone());
+                    }
                 }
             }
 
+            // TODO: Must enforce a backoff on any failures.
             for to_id in msg.to.iter() {
                 match msg.body {
+                    ConsensusMessageBody::Heartbeat(ref request) => {
+                        bundle.add(self.dispatch_heartbeat(to_id.clone(), msg.request_id, request));
+                    }
                     ConsensusMessageBody::AppendEntries {
                         ref request,
                         ref last_log_index,
+                        ref last_log_sequence,
                     } => {
-                        // TODO: Must add the entries from the log here as the Consensus Module
-                        // hasn't done that.
-
-                        append_entries.push(self.dispatch_append_entries(to_id.clone(), request));
+                        bundle.add(self.dispatch_append_entries(
+                            to_id.clone(),
+                            msg.request_id,
+                            request,
+                        ));
                     }
                     ConsensusMessageBody::RequestVote(ref req) => {
-                        request_votes.push(self.dispatch_request_vote(to_id.clone(), req));
+                        bundle.add(self.dispatch_request_vote(
+                            to_id.clone(),
+                            msg.request_id,
+                            false,
+                            &req,
+                        ));
                     }
-                    _ => {} // TODO: Handle all cases
+                    ConsensusMessageBody::PreVote(ref req) => {
+                        bundle.add(self.dispatch_request_vote(
+                            to_id.clone(),
+                            msg.request_id,
+                            true,
+                            &req,
+                        ));
+                    }
+                    ConsensusMessageBody::InstallSnapshot(ref req) => {
+                        bundle.add(self.dispatch_install_snapshot(to_id.clone(), &req));
+                    }
                 };
             }
         }
 
-        // Let them all loose
-        let f = common::futures::future::join(
-            common::futures::future::join_all(append_entries),
-            common::futures::future::join_all(request_votes),
-        );
-        f.await;
+        bundle.join().await
     }
 
     // TODO: We should chain on some promise holding one side of a channel
     // so that we can cancel this entire request later if we end up needing
     // to
-    async fn dispatch_request_vote(self: &Arc<Self>, to_id: ServerId, req: &RequestVoteRequest) {
-        let res = self.dispatch_request_vote_impl(to_id, req).await;
+    async fn dispatch_request_vote(
+        self: &Arc<Self>,
+        to_id: ServerId,
+        request_id: RequestId,
+        is_pre_vote: bool,
+        req: &RequestVoteRequest,
+    ) {
+        let res = self
+            .dispatch_request_vote_impl(to_id, is_pre_vote, req)
+            .await;
 
         self.run_tick(
             |state, tick, _| match res {
-                Ok(resp) => state.inst.request_vote_callback(to_id, resp, tick),
+                Ok(resp) => {
+                    state
+                        .inst
+                        .request_vote_callback(to_id, request_id, is_pre_vote, resp, tick)
+                }
                 Err(e) => eprintln!("RequestVote error: {}", e),
             },
             (),
@@ -744,17 +1155,69 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn dispatch_request_vote_impl(
         &self,
         to_id: ServerId,
+        is_pre_vote: bool,
         req: &RequestVoteRequest,
     ) -> Result<RequestVoteResponse> {
-        let stub = self.get_client(to_id).await?;
+        let client = self.get_client(to_id).await?;
 
         let request_context = self.identity.new_outgoing_request_context(to_id)?;
 
         // TODO: Even though the future times up, it seems like the requests still end
         // up getting sent.
+        let res = {
+            if is_pre_vote {
+                executor::timeout(
+                    Duration::from_millis(REQUEST_TIMEOUT),
+                    client.stub().PreVote(&request_context, req),
+                )
+                .await?
+                .result?
+            } else {
+                executor::timeout(
+                    Duration::from_millis(REQUEST_TIMEOUT),
+                    client.stub().RequestVote(&request_context, req),
+                )
+                .await?
+                .result?
+            }
+        };
+
+        Ok(res)
+    }
+
+    async fn dispatch_heartbeat(
+        self: &Arc<Self>,
+        to_id: ServerId,
+        request_id: RequestId,
+        req: &HeartbeatRequest,
+    ) {
+        let res = match self.dispatch_heartbeat_impl(to_id, req).await {
+            Ok(v) => Some(v),
+            Err(e) => {
+                eprintln!("Heartbeat error: {}", e);
+                None
+            }
+        };
+
+        self.run_tick(
+            |state, tick, _| state.inst.heartbeat_callback(to_id, request_id, res, tick),
+            (),
+        )
+        .await;
+    }
+
+    async fn dispatch_heartbeat_impl(
+        &self,
+        to_id: ServerId,
+        req: &HeartbeatRequest,
+    ) -> Result<HeartbeatResponse> {
+        let client = self.get_client(to_id).await?;
+
+        let request_context = self.identity.new_outgoing_request_context(to_id)?;
+
         let res = executor::timeout(
             Duration::from_millis(REQUEST_TIMEOUT),
-            stub.RequestVote(&request_context, req),
+            client.stub().Heartbeat(&request_context, req),
         )
         .await?
         .result?;
@@ -765,9 +1228,11 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn dispatch_append_entries(
         self: &Arc<Self>,
         to_id: ServerId,
+        request_id: RequestId,
         req: &AppendEntriesRequest,
     ) {
-        let res = self.dispatch_append_entries_impl(to_id, req).await;
+        // TODO: Get rid of the clone.
+        let res = self.dispatch_append_entries_impl(to_id, req.clone()).await;
 
         self.run_tick(
             |state, tick, _| {
@@ -779,13 +1244,13 @@ impl<R: Send + 'static> ServerShared<R> {
                         // object that we have in order to determine this
                         state
                             .inst
-                            .append_entries_callback(to_id, req.request_id(), resp, tick);
+                            .append_entries_callback(to_id, request_id, resp, tick);
                     }
                     Err(e) => {
                         eprintln!("AppendEntries failure: {} ", e);
                         state
                             .inst
-                            .append_entries_noresponse(to_id, req.request_id(), tick);
+                            .append_entries_noresponse(to_id, request_id, tick);
                     }
                 }
             },
@@ -801,26 +1266,135 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn dispatch_append_entries_impl(
         &self,
         to_id: ServerId,
-        req: &AppendEntriesRequest,
+        req: AppendEntriesRequest,
     ) -> Result<AppendEntriesResponse> {
-        let stub = self.get_client(to_id).await?;
+        let client = self.get_client(to_id).await?;
 
-        let request_context = self.identity.new_outgoing_request_context(to_id)?;
-
+        // TODO: Move the timeout to the client instance.
+        // (a timeout of one entry will timeout any other pending requests as well)
         let res = executor::timeout(
             Duration::from_millis(REQUEST_TIMEOUT),
-            stub.AppendEntries(&request_context, &req),
+            client.send_append_entries(req),
         )
-        .await?
-        .result?;
+        .await??;
 
         Ok(res)
     }
 
-    async fn get_client(&self, server_id: ServerId) -> Result<Arc<ConsensusStub>> {
+    async fn dispatch_append_entries_abandon(
+        self: &Arc<Self>,
+        to_id: ServerId,
+        request_id: RequestId,
+    ) {
+        self.run_tick(
+            |state, tick, _| {
+                state
+                    .inst
+                    .append_entries_noresponse(to_id, request_id, tick);
+            },
+            (),
+        )
+        .await;
+    }
+
+    async fn dispatch_install_snapshot(
+        self: &Arc<Self>,
+        to_id: ServerId,
+        req: &InstallSnapshotRequest,
+    ) {
+        eprintln!("Installing a snapshot to server id {:?}", to_id.value());
+
+        let res = executor::timeout(
+            INSTALL_SNAPSHOT_CLIENT_TIMEOUT,
+            self.dispatch_install_snapshot_impl(to_id, req),
+        )
+        .await;
+
+        self.run_tick(
+            |state, tick, res| match res {
+                Ok(Ok((res, last_applied_index))) => {
+                    println!("Install snapshot successful! {:?}", res);
+                    state.inst.install_snapshot_callback(
+                        to_id,
+                        req,
+                        &res,
+                        last_applied_index,
+                        tick,
+                    );
+                }
+                Ok(Err(err)) | Err(err) => {
+                    eprintln!("Failed to install snapshot: {}", err);
+                    state.inst.install_snapshot_noresponse(to_id, req, tick);
+                }
+            },
+            res,
+        )
+        .await;
+    }
+
+    async fn dispatch_install_snapshot_impl(
+        &self,
+        to_id: ServerId,
+        req: &InstallSnapshotRequest,
+    ) -> Result<(InstallSnapshotResponse, LogIndex)> {
+        let mut req = req.clone();
+
+        let mut snapshot = self
+            .state_machine
+            .snapshot()
+            .await?
+            .ok_or_else(|| err_msg("No snapshot available to install"))?;
+
+        let client = self.get_client(to_id).await?;
+
+        let last_applied_term = self
+            .log
+            .term(snapshot.last_applied)
+            .await
+            .ok_or_else(|| err_msg("State machine snapshot last_applied is not in the log"))?;
+
+        req.last_applied_mut().set_index(snapshot.last_applied);
+        req.last_applied_mut().set_term(last_applied_term);
+
+        let request_context = self.identity.new_outgoing_request_context(to_id)?;
+        let mut call = client.stub().InstallSnapshot(&request_context).await;
+
+        let mut buffer = vec![0u8; 16 * 1024];
+        loop {
+            let n = snapshot.data.read(&mut buffer).await?;
+
+            req.set_data(&buffer[0..n]);
+            req.set_done(n == 0);
+
+            if !call.send(&req).await {
+                break;
+            }
+
+            if req.done() {
+                println!("SENT DONE");
+            }
+
+            req.clear_last_applied();
+            req.clear_last_config();
+
+            if n == 0 {
+                break;
+            }
+        }
+
+        let res = call.finish().await?;
+
+        // NOTE: We don't care about whether or not all bytes were actually read from
+        // the snapshot and sent to the client as we assume the stream has its own
+        // length delimiter.
+
+        Ok((res, snapshot.last_applied.clone()))
+    }
+
+    async fn get_client(&self, server_id: ServerId) -> Result<Arc<ServerClient>> {
         let mut state = self.state.lock().await;
-        if let Some(stub) = state.client_stubs.get(&server_id) {
-            return Ok(stub.clone());
+        if let Some(client) = state.clients.get(&server_id) {
+            return Ok(client.clone());
         }
 
         // TODO: Support parallelizing the creation of many channels. Also if this is
@@ -828,9 +1402,12 @@ impl<R: Send + 'static> ServerShared<R> {
         // blocking the server for a long time.
         let channel = self.channel_factory.create(server_id).await?;
 
+        let request_context = self.identity.new_outgoing_request_context(server_id)?;
+
         let stub = Arc::new(ConsensusStub::new(channel));
-        state.client_stubs.insert(server_id, stub.clone());
-        Ok(stub)
+        let client = Arc::new(ServerClient::new(stub, request_context));
+        state.clients.insert(server_id, client.clone());
+        Ok(client)
     }
 
     // TODO: Can we more generically implement as waiting on a Constraint driven
@@ -843,7 +1420,7 @@ impl<R: Send + 'static> ServerShared<R> {
         loop {
             let log = self.log.as_ref();
             let (c_next, fut) = {
-                let mi = self.last_flushed.lock().await;
+                let mi = self.log_last_flushed.lock().await;
 
                 // TODO: I don't think yields sufficient atomic gurantees
                 let (c, pos) = match c.poll(log).await {

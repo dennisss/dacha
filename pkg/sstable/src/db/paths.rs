@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::DerefMut;
+use std::sync::Mutex;
 
 use common::errors::*;
 use common::io::Readable;
@@ -14,9 +16,11 @@ pub struct FilePaths {
     /// Paths to existing files in the database directory which were present
     /// before we opened the database.
     existing_files: HashMap<FileId, LocalPathBuf>,
+
+    used_existing_files: Mutex<HashSet<FileId>>,
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum FileId {
     Table(u64),
     Log(u64),
@@ -57,6 +61,7 @@ impl FilePaths {
         Ok(Self {
             root_dir: root_dir.to_owned(),
             existing_files,
+            used_existing_files: Mutex::new(HashSet::new()),
         })
     }
 
@@ -86,23 +91,12 @@ impl FilePaths {
         self.root_dir.join("CURRENT")
     }
 
-    /// Gets the set of all log numbers that already existed in the DB directory
-    /// before it was opened.
-    pub fn existing_logs(&self) -> Vec<u64> {
-        self.existing_files
-            .keys()
-            .filter_map(|id| {
-                if let FileId::Log(num) = id {
-                    Some(*num)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     pub fn log(&self, num: u64) -> LocalPathBuf {
         if let Some(path) = self.existing_files.get(&FileId::Log(num)) {
+            self.used_existing_files
+                .lock()
+                .unwrap()
+                .insert(FileId::Log(num));
             return path.clone();
         }
 
@@ -111,6 +105,10 @@ impl FilePaths {
 
     pub fn manifest(&self, num: u64) -> LocalPathBuf {
         if let Some(path) = self.existing_files.get(&FileId::Manifest(num)) {
+            self.used_existing_files
+                .lock()
+                .unwrap()
+                .insert(FileId::Manifest(num));
             return path.clone();
         }
 
@@ -119,6 +117,10 @@ impl FilePaths {
 
     pub fn table(&self, num: u64) -> LocalPathBuf {
         if let Some(path) = self.existing_files.get(&FileId::Table(num)) {
+            self.used_existing_files
+                .lock()
+                .unwrap()
+                .insert(FileId::Table(num));
             return path.clone();
         }
 
@@ -141,12 +143,21 @@ impl FilePaths {
             .split_once("\n")
             .ok_or_else(|| err_msg("No new line found in CURRENT file"))?;
 
-        Ok(Some(self.root_dir.join(file_name)))
+        let path = self.root_dir.join(file_name);
+
+        for (id, p) in &self.existing_files {
+            if p == &path {
+                self.used_existing_files.lock().unwrap().insert(id.clone());
+                break;
+            }
+        }
+
+        Ok(Some(path))
     }
 
     pub async fn set_current_manifest(&self, num: u64) -> Result<()> {
-        // TODO: Deduplicate with .manifest().
-        let new_path = format!("MANIFEST-{:06}\n", num);
+        let new_absolute_path = self.manifest(num);
+        let mut new_path = format!("{}\n", new_absolute_path.file_name().unwrap());
 
         // NOTE: We intentionally do not truncate on open.
         let mut current_file = LocalFile::open_with_options(
@@ -164,6 +175,34 @@ impl FilePaths {
         current_file.set_len(new_path.len() as u64).await?;
 
         current_file.flush().await?;
+
+        Ok(())
+    }
+
+    /// Returned a list of existing file paths which haven't been reference by
+    /// the program yet.
+    pub fn unused_files(&self) -> Vec<LocalPathBuf> {
+        let mut unused = vec![];
+        let used_ids = self.used_existing_files.lock().unwrap();
+
+        for (existing_id, path) in &self.existing_files {
+            if used_ids.contains(existing_id) {
+                continue;
+            }
+
+            unused.push(path.clone());
+        }
+
+        unused
+    }
+
+    pub async fn cleanup_unused_files(&self) -> Result<()> {
+        let paths = self.unused_files();
+
+        for p in paths {
+            eprintln!("Deleting unused file in DB: {:?}", p);
+            file::remove_file(p).await?;
+        }
 
         Ok(())
     }

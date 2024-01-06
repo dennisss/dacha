@@ -27,6 +27,9 @@ pub struct Backup {
     /// Version containing all the on-disk tables that we want to back up.
     pub(crate) version: Arc<Version>,
 
+    /// Sequence number of the last write applied to this backup.
+    pub(crate) last_sequence: u64,
+
     /// File number to use for the manifest.
     pub(crate) manifest_number: u64,
 
@@ -47,10 +50,14 @@ impl Backup {
     ///
     /// If this operation is successful, then the directory can be loaded with
     /// the normal EmbeddedDB functions.
-    pub async fn read_from(reader: &mut dyn Readable, output_dir: &LocalPath) -> Result<()> {
+    pub async fn read_from<R: Readable>(reader: R, output_dir: &LocalPath) -> Result<()> {
         let mut archive = compression::tar::Reader::new(reader);
         archive.extract_files(output_dir).await?;
         Ok(())
+    }
+
+    pub fn last_sequence(&self) -> u64 {
+        self.last_sequence
     }
 
     /// Serializes the backup to a byte stream.

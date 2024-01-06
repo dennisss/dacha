@@ -175,6 +175,10 @@ impl CRC32CHasher {
         CRC32CHasher { val: !0 }
     }
 
+    pub fn raw_value(&self) -> u32 {
+        self.val
+    }
+
     pub fn finish_u32(&self) -> u32 {
         !self.val
     }
@@ -268,6 +272,16 @@ impl Hasher for CRC32CHasher {
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }
+}
+
+/// Performs the fastest CRC32-C hashing operation possible to convert one u32
+/// to another randomly distributed u32.
+///
+/// WARNING: The value of this may not be stable across machines or binaries.
+#[cfg(target_feature = "sse4.2")]
+#[inline(always)]
+pub fn crc32c_raw_oneshot(data: u32) -> u32 {
+    unsafe { core::arch::x86_64::_mm_crc32_u32(0, data) }
 }
 
 #[cfg(test)]

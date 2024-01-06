@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use common::tree::binary_heap::*;
 
 use crate::channel;
@@ -32,7 +33,7 @@ pub(super) struct ExecutorTimeouts {
 
 /// Unique identifier for a single timeout. These are never repeated and once a
 /// timeout is removed from the heap, it is considered to be fulfilled.
-type TimeoutId = usize;
+type TimeoutId = u64;
 
 struct Shared {
     state: Mutex<State>,
@@ -59,7 +60,7 @@ struct State {
 
 #[derive(Default)]
 struct TimeoutHeapIndex {
-    entries: HashMap<TimeoutId, TimeoutEntry>,
+    entries: HashMap<TimeoutId, TimeoutEntry, FastHasherBuilder>,
 }
 
 impl BinaryHeapIndex<(Instant, TimeoutId)> for TimeoutHeapIndex {

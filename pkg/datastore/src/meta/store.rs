@@ -383,7 +383,6 @@ pub async fn run(config: MetastoreConfig) -> Result<()> {
         bootstrap: config.bootstrap,
         seed_list: vec![], // Will just find everyone via multi-cast
         state_machine: state_machine.clone(),
-        last_applied: state_machine.last_flushed().await,
         route_labels: config.route_labels.clone(),
     })
     .await?;

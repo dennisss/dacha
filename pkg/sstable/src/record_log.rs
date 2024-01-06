@@ -243,7 +243,7 @@ impl RecordReader {
     /// Reads the next complete record from the file.
     ///
     /// Will return None once we are out of data to read. This will also filter
-    /// out any inconsistencies
+    /// out any inconsistencies.
     ///
     /// - Will error out if we detect corruption.
     /// - Will return None if we hit the end of file (or the file ends in an
@@ -532,6 +532,8 @@ impl RecordReader {
 
         file.seek(append_offset);
 
+        let file = LogWriter::create(LogWriterOptions::default(), file).await?;
+
         Ok(Some(RecordWriter {
             file,
             extent: append_offset,
@@ -539,7 +541,7 @@ impl RecordReader {
     }
 }
 
-pub struct RecordWriter<Output: Writeable = LocalFile> {
+pub struct RecordWriter<Output: Writeable = LogWriter> {
     /// NOTE: If this is a file, it should already be seeked to the end of the
     /// file.
     file: Output,
@@ -548,7 +550,7 @@ pub struct RecordWriter<Output: Writeable = LocalFile> {
     extent: u64,
 }
 
-impl RecordWriter<LocalFile> {
+impl RecordWriter<LogWriter> {
     /// Creates a new record log file at the given path (it must not already
     /// exist).
     pub async fn create_new<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
@@ -564,6 +566,8 @@ impl RecordWriter<LocalFile> {
         )?;
 
         file.seek(0);
+
+        let file = LogWriter::create(LogWriterOptions::default(), file).await?;
 
         Ok(Self { file, extent: 0 })
     }
@@ -584,6 +588,10 @@ impl RecordWriter<LocalFile> {
 
     pub fn path(&self) -> &LocalPath {
         self.file.path()
+    }
+
+    pub fn new_flush_subscriber(&self) -> LogFlushSubscriber {
+        self.file.new_flush_subscriber()
     }
 }
 

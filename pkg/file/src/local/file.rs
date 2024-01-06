@@ -6,12 +6,12 @@ use alloc::ffi::CString;
 
 use common::errors::*;
 use common::io::{Readable, Seekable, Writeable};
+pub use executor::SyncRange;
 use executor::{FileHandle, FromErrno, RemapErrno};
 use sys::{Errno, OpenFileDescriptor};
 
 use crate::local::path::LocalPath;
 use crate::{FileError, LocalPathBuf, Metadata, Permissions};
-
 pub struct LocalFileOpenOptions {
     read: bool,
     write: bool,
@@ -255,16 +255,26 @@ impl LocalFile {
         Ok(())
     }
 
-    // TODO: Use an io_uring
-    pub async fn sync_all(&self) -> Result<()> {
-        unsafe { sys::fsync(self.as_raw_fd()).remap_errno::<FileError>()? }
-        Ok(())
+    pub async fn write_at(&self, offset: u64, data: &[u8]) -> Result<usize> {
+        self.file.write_at(offset, data).await
     }
 
-    // TODO: Use an io_uring
+    /// WARNING: This is NOT retryable.
+    // TODO: We can't allow a sync to be cancelled as we won't be able to record
+    // what happened.
+    pub async fn sync(&self, data_sync: bool, range: Option<SyncRange>) -> Result<()> {
+        self.file
+            .sync(data_sync, range)
+            .await
+            .remap_errno::<FileError>()
+    }
+
     pub async fn sync_data(&self) -> Result<()> {
-        unsafe { sys::fdatasync(self.as_raw_fd()).remap_errno::<FileError>()? }
-        Ok(())
+        self.sync(true, None).await
+    }
+
+    pub async fn sync_all(&self) -> Result<()> {
+        self.sync(false, None).await
     }
 
     pub async fn set_len(&mut self, new_size: u64) -> Result<()> {
@@ -327,8 +337,10 @@ impl Writeable for LocalFile {
     }
 
     async fn flush(&mut self) -> Result<()> {
+        // TODO: Add some cancellation poisoning to this.
+
         if self.sync_on_flush {
-            self.sync_data().await?;
+            self.sync(true, None).await?;
         }
 
         Ok(())

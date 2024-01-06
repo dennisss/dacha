@@ -469,14 +469,14 @@ impl ConnectionWriter {
                     // of our progress. TODO: Ideally batch these so that
                     // individual reads can't be used to determine internal control
                     // flow state.
-                    writer
-                        .write_all(&frame_utils::new_window_update_frame(0, count))
-                        .await?;
+                    let mut out = vec![];
+                    frame_utils::new_window_update_frame(0, count, &mut out);
+
                     if stream_id != 0 {
-                        writer
-                            .write_all(&frame_utils::new_window_update_frame(stream_id, count))
-                            .await?;
+                        frame_utils::new_window_update_frame(stream_id, count, &mut out);
                     }
+
+                    writer.write_all(&out).await?;
                 }
                 ConnectionEvent::StreamReaderCancelled { stream_id } => {
                     let mut connection_state_guard = self.shared.state.lock().await;

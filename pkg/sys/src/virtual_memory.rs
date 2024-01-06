@@ -1,4 +1,4 @@
-use common::errors::*;
+use base_error::*;
 
 use crate::file::blocking_read_to_string;
 

@@ -36,6 +36,9 @@ pub struct Tick {
     /// should be persisted to disk at some point. In general, there is no
     /// requirement to persist the config to disk unless discarding log
     /// entries after the previous persisted state of the config.
+    ///
+    /// NOTE: Even if this is false, last_applied may have still been advanced
+    /// in the config snapshot if the commit index has advanced in the metadata.
     pub config: bool,
 
     /// Ordered list of new log entries that need to be appended to the log.
@@ -117,6 +120,7 @@ pub struct NewLogEntry {
 /// previous requests, then it can cancel all previously issues requests.
 #[derive(Debug, PartialEq)]
 pub struct ConsensusMessage {
+    pub request_id: RequestId,
     pub to: Vec<ServerId>,
     pub body: ConsensusMessageBody,
 }
@@ -127,6 +131,7 @@ pub struct ConsensusMessage {
 pub enum ConsensusMessageBody {
     PreVote(RequestVoteRequest),
     RequestVote(RequestVoteRequest),
+    Heartbeat(HeartbeatRequest),
 
     /// The client should fetch all entries from the log in the range
     /// [(request.prev_log_index + 1), last_log_index] and send that in the
@@ -137,7 +142,8 @@ pub enum ConsensusMessageBody {
     /// ConsensusModule::append_entries_noresponse if the request failed or
     /// timed out.
     AppendEntries {
-        /// The partial request to send. The 'entries' field
+        /// The partial request to send. The 'entries' field will be empty and
+        /// needs to be populated by the ConsensusModule's caller.
         request: AppendEntriesRequest,
 
         /// Index of the last log entry index to send to the remote server in

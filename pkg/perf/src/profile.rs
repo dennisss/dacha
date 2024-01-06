@@ -166,8 +166,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
     // - 'inherit' doesn't register existing children so we must register all
     //   existing threads by themselves.
     // - We can't use PERF_FLAG_FD_OUTPUT across all events because the kernel will
-    //   refuse to map buffers
-    // across CPUs.
+    //   refuse to map buffers across CPUs.
     //
     // TODO: It's possibly that some threads may be created while we are loading
     // these events and thus wouldn't be included in our metrics.
@@ -188,7 +187,6 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
                     (PERF_FLAG_FD_CLOEXEC | PERF_FLAG_FD_NO_GROUP | PERF_FLAG_FD_OUTPUT).into(),
                 )?)
             };
-            // PERF_FLAG_FD_NO_GROUP
 
             if group_fd == -1 {
                 // NOTE: If this returns EPERM, then we may need to increase

@@ -10,6 +10,9 @@ message AddRequest {
 
     // For AddStreaming, if true, we will stop trying to receive extra request messages.
     bool stop_receiving = 4;
+
+    // Unused data. Just for testing RPC throughput.
+    bytes data = 5;
 }
 
 message AddResponse {

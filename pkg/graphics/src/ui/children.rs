@@ -1,6 +1,5 @@
 use core::any::TypeId;
 use core::ops::{Deref, DerefMut};
-use std::collections::HashMap;
 
 use common::errors::*;
 

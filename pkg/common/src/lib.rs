@@ -89,6 +89,8 @@ pub mod option;
 pub mod pipe;
 pub mod register;
 pub mod segmented_buffer;
+#[cfg(feature = "alloc")]
+pub mod small;
 pub mod sort;
 pub mod struct_bytes;
 #[cfg(feature = "alloc")]

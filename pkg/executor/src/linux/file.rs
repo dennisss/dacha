@@ -14,10 +14,18 @@ use sys::{
 use crate::linux::executor::FileDescriptor;
 use crate::linux::io_uring::ExecutorOperation;
 use crate::RemapErrno;
-// use crate::linux::polling::PollingContext;
+
+#[derive(Clone, Copy, Debug)]
+pub struct SyncRange {
+    pub start: u64,
+    pub end: u64,
+}
 
 /// Generic wrapper around a Linux file descriptor for performing common I/O
 /// operations.
+///
+/// DO NOT USE DIRECTLY: Prefer to use the file wrappers such as those in the
+/// 'net and 'file' crates.
 ///
 /// NOTE: It is generally not a good idea to directly use this as it doesn't
 /// account for file type specific requirements (like seekability).
@@ -47,16 +55,18 @@ impl FileHandle {
 
     pub async fn read(&mut self, output: &mut [u8]) -> Result<usize> {
         // TODO: Only up to 2^32 bytes can be read in one operation right?
-
         let buffers = [IoSliceMut::new(output)];
+        self.read_vectored(&buffers).await
+    }
 
+    pub async fn read_vectored(&mut self, output: &[IoSliceMut<'_>]) -> Result<usize> {
         let mut zero = 0;
         let mut offset = self.offset.as_mut().unwrap_or(&mut zero);
 
         let op = ExecutorOperation::submit(IoUringOp::ReadV {
             fd: **self.fd,
             offset: *offset,
-            buffers: &buffers,
+            buffers: output,
             flags: RWFlags::empty(),
         })
         .await?;
@@ -70,14 +80,25 @@ impl FileHandle {
     }
 
     pub async fn write(&mut self, data: &[u8]) -> Result<usize> {
-        let buffers = [IoSlice::new(data)];
-
         let mut zero = 0;
         let mut offset = self.offset.as_mut().unwrap_or(&mut zero);
 
+        let n = Self::write_impl(&self.fd, *offset, data).await?;
+        *offset += n as u64;
+
+        Ok(n)
+    }
+
+    pub async fn write_at(&self, offset: u64, data: &[u8]) -> Result<usize> {
+        Self::write_impl(&self.fd, offset, data).await
+    }
+
+    async fn write_impl(fd: &Arc<OpenFileDescriptor>, offset: u64, data: &[u8]) -> Result<usize> {
+        let buffers = [IoSlice::new(data)];
+
         let op = ExecutorOperation::submit(IoUringOp::WriteV {
-            fd: **self.fd,
-            offset: *offset,
+            fd: ***fd,
+            offset,
             buffers: &buffers,
             flags: RWFlags::empty(),
         })
@@ -85,10 +106,38 @@ impl FileHandle {
 
         let res = op.wait().await?;
         let n = res.writev_result().remap_errno::<IoError>()?;
-
-        *offset += n as u64;
-
         Ok(n)
+    }
+
+    /// NOTE: Raw Errno failures will be returned for fsync errors.
+    pub async fn sync(&self, data_sync: bool, range: Option<SyncRange>) -> Result<()> {
+        let mut offset = None;
+        let mut length = None;
+        if let Some(range) = range {
+            offset = Some(range.start);
+
+            if range.start > range.end || range.end - range.start > (core::u32::MAX as u64) {
+                return Err(err_msg("Invalid or too large of a sync range"));
+            }
+
+            if range.start == range.end {
+                return Ok(());
+            }
+
+            length = Some((range.end - range.start) as u32);
+        }
+
+        let op = ExecutorOperation::submit(IoUringOp::Fsync {
+            fd: **self.fd,
+            data_sync,
+            offset,
+            length,
+        })
+        .await?;
+
+        let res = op.wait().await?;
+
+        Ok(res.fsync_result()?)
     }
 
     pub fn seek(&mut self, offset: u64) {

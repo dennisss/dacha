@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use common::io::{IoError, IoErrorKind};
 use sys::{Epoll, EpollEvent, EpollEvents, EpollOp, OpenFileDescriptor};
 
@@ -66,7 +67,10 @@ impl ExecutorEpoll {
         })
     }
 
-    pub fn poll_events(&self, tasks_to_wake: &mut HashSet<TaskId>) -> Result<()> {
+    pub fn poll_events(
+        &self,
+        tasks_to_wake: &mut HashSet<TaskId, FastHasherBuilder>,
+    ) -> Result<()> {
         // TODO: Re-use this memory.
         let mut events = [EpollEvent::default(); 8];
 

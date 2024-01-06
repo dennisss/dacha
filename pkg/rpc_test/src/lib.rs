@@ -505,7 +505,7 @@ mod tests {
         }
 
         // TODO: Eventually uncomment these once fixed.
-        /*
+
         // It's ok for the server to stop reading the request and just send a response
         // of some type.
         //
@@ -536,9 +536,7 @@ mod tests {
                 .unwrap();
             assert_eq!(status.code(), rpc::StatusCode::InvalidArgument);
         }
-        */
 
-        /*
         // It's ok for the server to stop reading the request and just send a response
         // of some type.
         //
@@ -567,7 +565,6 @@ mod tests {
             // No failure.
             res_stream.finish().await.unwrap();
         }
-        */
 
         // TODO: After the server is dropped, verify there is nothing left in the
         // receiver.
@@ -891,9 +888,10 @@ mod tests {
         let server_task = executor::spawn(async move { server.run().await.unwrap() });
 
         let channel = {
-            Arc::new(rpc::Http2Channel::create(
-                format!("http://{}", server_addr.to_string()).as_str(),
-            )?)
+            Arc::new(
+                rpc::Http2Channel::create(format!("http://{}", server_addr.to_string()).as_str())
+                    .await?,
+            )
         };
 
         let stub = AdderStub::new(channel);

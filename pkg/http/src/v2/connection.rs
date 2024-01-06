@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use std::{convert::TryFrom, sync::Arc};
 
 use common::chrono::prelude::*;
+use common::hash::FastHasherBuilder;
 use common::io::{IoError, IoErrorKind, Readable, Writeable};
 use common::{chrono::Duration, errors::*};
 use executor::channel;
@@ -179,7 +180,7 @@ impl Connection {
                     local_stream_count: 0,
                     remote_stream_count: 0,
 
-                    streams: HashMap::new(),
+                    streams: HashMap::with_hasher(FastHasherBuilder::default()),
                     event_listener: None,
 
                     last_user_byte_received_time: SystemTime::now(),

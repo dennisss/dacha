@@ -9,8 +9,8 @@ extern crate sys;
 #[macro_use]
 extern crate parsing;
 
+use base_error::*;
 use common::array_ref;
-use common::errors::*;
 use parsing::binary::*;
 use sys::VirtualMemoryMap;
 use sys::{bindings::*, Errno};

@@ -2,7 +2,7 @@ use core::mem::transmute;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 use common::register::RawRegister;
 
 use crate::file::OpenFileDescriptor;
@@ -70,9 +70,6 @@ impl IoUring {
             )
         }?;
 
-        /*
-        Each value is a io_uring_sqe
-        */
         let submit_queue_entries = unsafe {
             MappedMemory::create(
                 core::ptr::null_mut(),
@@ -185,12 +182,28 @@ impl IoSubmissionUring {
                 buffers,
                 flags,
             } => {
+                // TODO: Use WRITE when we only need a single buffer passed in.
                 entry.opcode = kernel::io_uring_op::IORING_OP_WRITEV as u8;
                 entry.fd = fd;
                 entry.set_off(offset);
                 entry.set_addr(unsafe { core::mem::transmute(buffers.as_ptr()) });
                 entry.len = buffers.len() as u32;
                 entry.set_op_flags(flags.to_raw() as u32);
+            }
+            IoUringOp::Fsync {
+                fd,
+                data_sync,
+                offset,
+                length,
+            } => {
+                entry.opcode = kernel::io_uring_op::IORING_OP_FSYNC as u8;
+                entry.fd = fd;
+
+                if data_sync {
+                    entry.set_op_flags(bindings::IORING_FSYNC_DATASYNC)
+                }
+                entry.set_off(offset.unwrap_or(0));
+                entry.len = length.unwrap_or(0);
             }
             IoUringOp::Accept {
                 fd,
@@ -224,6 +237,7 @@ impl IoSubmissionUring {
 
                 entry.len = 1; // Only 1 timespec is provided.
 
+                // TODO: Use IORING_TIMEOUT_ABS so that we just use absolute timers.
                 entry.set_op_flags(0); // timeout_flags field. Use a relative timeout.
                 entry.set_off(0); // Only count timeouts. Ignore other
                                   // completions.
@@ -257,7 +271,6 @@ impl IoSubmissionUring {
         For waiting use IORING_ENTER_GETEVENTS?
         */
 
-        // TODO: Retry EINTR
         retry_interruptions(|| unsafe {
             io_uring_enter(&self.fd, 1, 0, IoUringEnterFlags::empty(), 0, None)
         })?;
@@ -485,19 +498,30 @@ impl CompletionQueue {
 
 // NOTE: If a file is not seekable, the offset should be 0 or -1
 
+// TODO: File descriptor numbers may get re-used so do I need to ensure that
+// files aren't closed until operations are officially cancelled or resolved.
 pub enum IoUringOp<'a, 'b> {
     Noop,
+
     ReadV {
         fd: c_int,
         offset: u64,
         buffers: &'a [IoSliceMut<'b>],
         flags: RWFlags,
     },
+
     WriteV {
         fd: c_int,
         offset: u64,
         buffers: &'a [IoSlice<'b>],
         flags: RWFlags,
+    },
+
+    Fsync {
+        fd: c_int,
+        data_sync: bool,
+        offset: Option<u64>,
+        length: Option<u32>,
     },
 
     Accept {
@@ -542,7 +566,6 @@ pub enum IoUringOp<'a, 'b> {
         user_data: u64,
     },
 
-    // FSync,
     /// An invalid operation that the kernel will drop.
     Invalid,
 }
@@ -559,6 +582,17 @@ impl<'a, 'b> IoUringOp<'a, 'b> {
 
             IoUringOp::ReadV { .. } => None,
             IoUringOp::WriteV { .. } => None,
+            IoUringOp::Fsync {
+                fd,
+                data_sync,
+                offset,
+                length,
+            } => Some(IoUringOp::Fsync {
+                fd: *fd,
+                data_sync: *data_sync,
+                offset: *offset,
+                length: *length,
+            }),
             IoUringOp::Accept { .. } => None,
             IoUringOp::SendMessage { .. } => None,
             IoUringOp::ReceiveMessage { .. } => None,
@@ -639,6 +673,10 @@ impl IoUringResult {
     }
 
     pub fn cancel_result(&self) -> Result<(), Errno> {
+        self.connect_result()
+    }
+
+    pub fn fsync_result(&self) -> Result<(), Errno> {
         self.connect_result()
     }
 }

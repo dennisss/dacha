@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use net::backoff::ExponentialBackoff;
+
 use crate::proto::*;
 
 /// Ephemeral in-memory state associated with a server.
@@ -32,14 +34,15 @@ pub struct ConsensusFollowerState {
 
 #[derive(Clone, Debug)]
 pub struct ConsensusCandidateState {
-    /// Time at which this candidate started its election
+    /// Time at which this candidate started its election (when pre-votes were
+    /// issued).
     pub election_start: Instant,
 
     /// Similar to the follower one this is when we should start the next
     /// election all over again
     pub election_timeout: Duration,
 
-    /// Id of the RequestVote used in this election.
+    /// Id of the PreVote/RequestVote used in this election.
     ///
     /// Note that if we are retrying this election at the same term we will
     /// ignore any responses from old rounds of RequestVote requests that arive
@@ -48,9 +51,18 @@ pub struct ConsensusCandidateState {
     /// to store the timings of old requests.
     pub vote_request_id: RequestId,
 
-    /// All the votes we have received so far from other servers
-    /// TODO: This would also be a good time to pre-warm the leader states
-    /// based on this
+    /// Set of successful pre-vote votes we have received from remote servers.
+    pub pre_votes_received: HashSet<ServerId>,
+
+    /// When the main RequestVote requests were sent out (after enough pre-votes
+    /// responses are recieved).
+    pub main_vote_start: Option<Instant>,
+
+    /// All the votes (from RequestVote requests) we have received so far from
+    /// other servers.
+    ///
+    /// TODO: Consider using these vote responses to pre-initialize the follower
+    /// states.
     pub votes_received: HashSet<ServerId>,
 
     /// Defaults to false, if we receive a vote rejection in a valid response,
@@ -66,11 +78,18 @@ pub struct ConsensusCandidateState {
 pub struct ConsensusLeaderState {
     pub followers: HashMap<ServerId, ConsensusFollowerProgress>,
 
-    pub read_index: LogIndex,
+    /// Smallest read_index() value that we are allowed to return.
+    pub min_read_index: LogIndex,
 
     /// Latest local time at which we know that a majority of servers (including
     /// ourselves) have acknowledged that we are still the leader.
+    ///
+    /// (the min time across all lease_starts in the followers map)
     pub lease_start: Instant,
+
+    /// If true, cycle() will internally trigger Heartbeat RPCs to be sent
+    /// immediately to all followers.
+    pub heartbeat_now: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -83,10 +102,6 @@ pub struct ConsensusFollowerProgress {
 
     /// Index of the highest entry known to be persistently replicated to this
     /// server.
-    ///
-    /// TODO: These can be long term persisted even after we fall out of being
-    /// leader as long as we only persist the largest match_index for a client
-    /// that is >= the commited_index at the time of persisting the value
     pub match_index: LogIndex,
 
     /// The largest local time at which this remote server has acknowledged that
@@ -94,28 +109,51 @@ pub struct ConsensusFollowerProgress {
     ///
     /// Whenever a response is received from this server, this value is set to
     /// the time at which the corresponding request was sent.
-    ///
-    /// TODO: Per section 6.2 of the thesis, a leader should
-    /// ideally step down once not receiving a heartbeat for an entire
-    /// election cycle (we must make sure that stepping down cancels any
-    /// pending waiters if appropriate)
     pub lease_start: Option<Instant>,
 
     /// Last time we have sent a request to this server after becoming leader.
     /// (not including RequestVote requests).
     ///
     /// If enough time elapses without any other requests sent, we will trigger
-    /// an additional heartbeats to ensure that the least is renewed.
-    pub last_sent: Option<Instant>,
+    /// an additional heartbeat to ensure that the lease is renewed.
+    pub last_heartbeat_sent: Option<Instant>,
+
+    /// Last time we sent an AppendEntries request after becoming the leader.
+    pub last_append_entries_sent: Option<Instant>,
+
+    /// Largest commit index we have tried to send in any AppendEntries request
+    /// to this follower (or zero)
+    pub last_commit_index_sent: LogIndex,
+
+    /// In-flight Heartbeat requests being sent to this remote server. The value
+    /// associated with each request id is the time at which the request was
+    /// sent out.
+    pub pending_heartbeat_requests: HashMap<RequestId, Instant>,
 
     /// In-flight AppendEntry requests being sent to this remote server.
-    pub pending_requests: HashMap<RequestId, PendingAppendEntries>,
+    pub pending_append_requests: HashMap<RequestId, PendingAppendEntries>,
+
+    /// Number of consecutive successful rounds which this follower has
+    /// observed. (resets to 0 when there is a failure)
+    ///
+    /// A round starts if one hasn't been started when a leader sends out an
+    /// AppendEntries request. The round is marked by the largest log index in
+    /// the leader's log. The round ends when the leader gets the next response
+    /// stating that the follower has replicated at least up to that log
+    /// index.
+    ///
+    /// A round is successful if it took less that some target amount of
+    /// time to complete.
+    pub successful_rounds: usize,
+
+    /// Start marker for the current round.
+    pub round_start: Option<(LogIndex, Instant)>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConsensusFollowerMode {
     /// The remote follower's log overlaps with ours and new AppendEntries
-    /// requests that we send to the server are expected to suceed.
+    /// requests that we send to the server are expected to succeed.
     ///
     /// In this state, we will optimistically pipeline entries to the server.
     Live,
@@ -135,9 +173,8 @@ pub enum ConsensusFollowerMode {
     /// a snapshot to be installed before we can continue replicating entries
     /// here.
     ///
-    /// TODO: While we are installing a snapshot, we should support feeding the
-    /// server the log (up to a point), but we need to ensure that we don't
-    /// trust any remote flushes until the state machine snapshot is installed.
+    /// In this mode, we will send 1 InstallSnapshot request followed by
+    /// heartbeats to maintain the leadership lease with this follower.
     InstallingSnapshot,
 }
 
@@ -152,20 +189,24 @@ pub struct PendingAppendEntries {
 }
 
 impl ConsensusFollowerProgress {
-    // NOTE: Upon becoming leader, we will trivially have heartbeats from at least a
-    // quorum of servers based on the RequestVotes
-    // - This will allow us to immediately serve read requests in many cases
-
     /// Create a new progress entry given the leader's last log index
     pub fn new(last_log_index: LogIndex) -> Self {
         ConsensusFollowerProgress {
+            // TODO: If this is one of the servers which granted us a vote, we can immediately move
+            // it to Live.
             mode: ConsensusFollowerMode::Pesimistic,
             next_index: last_log_index + 1,
             match_index: 0.into(),
             lease_start: None,
-            pending_requests: HashMap::new(),
-            last_sent: None, /* This will force the leader to send initial heartbeats to all
-                              * servers upon being elected */
+            pending_heartbeat_requests: HashMap::new(),
+            pending_append_requests: HashMap::new(),
+            // NOTE: This will force the leader to send initial heartbeats to all servers upon being
+            // elected.
+            last_heartbeat_sent: None,
+            last_append_entries_sent: None,
+            last_commit_index_sent: 0.into(),
+            successful_rounds: 0,
+            round_start: None,
         }
     }
 }

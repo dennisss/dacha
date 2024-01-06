@@ -27,13 +27,16 @@ pub trait StateMachine<R> {
     /// integrating it.
     ///
     /// If this fails, then the user will assume that the state machine is in a
-    /// corrupt/invalid state and the server should die.
+    /// corrupt/invalid state and the server should shutdown.
     ///
     /// If successful, the state machine can return an arbitrary value which
     /// will be fed back to the original creator of the given operation. No
     /// gurantees are made that the creator actually gets back the returned
     /// value.
     async fn apply(&self, index: LogIndex, op: &[u8]) -> Result<R>;
+
+    /// Last log index applied to the state machine.
+    async fn last_applied(&self) -> LogIndex;
 
     /// Gets the index of the last log entry which has been persisted to disk.
     /// Future calls to snapshot() should return a snapshot with at least this
@@ -59,7 +62,7 @@ pub trait StateMachine<R> {
     /// server, it should ensure that no local log entries are deleted beyond
     /// the last_applied index of the snapshot as the remote server will need
     /// them to catch up after the snapshot is installed.
-    async fn snapshot(&self) -> Option<StateMachineSnapshot>;
+    async fn snapshot(&self) -> Result<Option<StateMachineSnapshot>>;
 
     /// Resets the state machine to a state defined by the given snapshot.
     ///
@@ -69,20 +72,30 @@ pub trait StateMachine<R> {
     ///
     /// NOTE: It is illegal to call ::restore(::snapshot()) on a single state
     /// machine instance.
-    async fn restore(&self, data: StateMachineSnapshot) -> Result<()>;
+    ///
+    /// Returns whether or not the restore was successfully applied or not
+    /// applied. A snapshot is 'applied' if we were able to advance last_flushed
+    /// in one way or another to >= data.last_flushed. Note that the
+    /// last_applied index MUST NOT ever decrease after calling this. To
+    /// succeed, the state machine may need to flush the current state to
+    /// disk rather than taking the newly given snapshot. An error should
+    /// only be returned if the state machine has entered an unrecoverable
+    /// state.
+    async fn restore(&self, data: StateMachineSnapshot) -> Result<bool>;
 }
 
 pub struct StateMachineSnapshot {
     /// Index of the last log entry in this snapshot.
+    ///
+    /// This is mainly used for early rejection. The state machine should do its
+    /// own checks as well to verify that we don't accept any old snapshots
+    /// during restore().
     pub last_applied: LogIndex,
-
-    /// Number of bytes needed to store this snapshot.
-    pub size: u64,
 
     /// A reader for retrieving the contents of the snapshot.
     ///
     /// This can only be traversed once. If an error is encountered while
     /// reading from this in StateMachine::restore(), the restore should be
     /// reliably cancelled.
-    pub data: Box<dyn Readable>,
+    pub data: Box<dyn Readable + Sync + 'static>,
 }

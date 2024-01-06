@@ -231,7 +231,6 @@ async fn main() -> Result<()> {
     // do that But we will end up thinking of all the stuff initially on disk as
     // one atomic unit that is initially loaded
     let state_machine = Arc::new(MemoryKVStateMachine::new());
-    let last_applied = LogIndex::from(0);
 
     let mut tasks = executor::bundle::TaskResultBundle::new();
 
@@ -241,7 +240,6 @@ async fn main() -> Result<()> {
         bootstrap: args.bootstrap,
         seed_list,
         state_machine: state_machine.clone(),
-        last_applied,
         route_labels: vec![],
     })
     .await?;

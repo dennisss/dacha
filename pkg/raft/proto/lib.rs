@@ -41,24 +41,73 @@ impl LogPosition {
 }
 
 impl Configuration {
+    pub fn server(&self, server_id: &ServerId) -> Option<&Configuration_Server> {
+        for s in self.servers() {
+            if &s.id() == server_id {
+                return Some(s);
+            }
+        }
+
+        None
+    }
+
+    pub fn server_role(&self, server_id: &ServerId) -> Configuration_ServerRole {
+        self.server(server_id)
+            .map(|s| s.role())
+            .unwrap_or(Configuration_ServerRole::UNKNOWN)
+    }
+
+    fn server_mut(&mut self, server_id: &ServerId) -> &mut Configuration_Server {
+        let mut idx = None;
+        for (i, s) in self.servers().iter().enumerate() {
+            if &s.id() == server_id {
+                idx = Some(i);
+                break;
+            }
+        }
+
+        if idx.is_none() {
+            let mut s = Configuration_Server::default();
+            s.set_id(server_id.clone());
+            self.add_servers(s);
+            idx = Some(self.servers().len() - 1);
+        }
+
+        self.servers_mut()[idx.unwrap()].as_mut()
+    }
+
+    // TODO: Move this into a separate ConfigurationStateMachine struct?
     pub fn apply(&mut self, change: &ConfigChange) {
         match change.typ_case() {
             ConfigChangeTypeCase::AddLearner(s) => {
-                if self.members().contains(s) {
-                    // TODO: Is this pretty much just a special version of
-                    // removing a server
-                    panic!("Can not change member to learner");
-                }
-
-                self.learners_mut().insert(*s);
+                let server = self.server_mut(s);
+                server.set_role(Configuration_ServerRole::LEARNER);
             }
             ConfigChangeTypeCase::AddMember(s) => {
-                self.learners_mut().remove(s);
-                self.members_mut().insert(*s);
+                let server = self.server_mut(s);
+                server.set_role(Configuration_ServerRole::MEMBER);
+            }
+            ConfigChangeTypeCase::AddAspiring(s) => {
+                let server = self.server_mut(s);
+
+                match server.role() {
+                    Configuration_ServerRole::UNKNOWN
+                    | Configuration_ServerRole::ASPIRING
+                    | Configuration_ServerRole::LEARNER => {
+                        server.set_role(Configuration_ServerRole::ASPIRING);
+                    }
+                    Configuration_ServerRole::MEMBER => {
+                        // Already a member, so no need to downgrade.
+                    }
+                }
             }
             ConfigChangeTypeCase::RemoveServer(s) => {
-                self.learners_mut().remove(s);
-                self.members_mut().remove(s);
+                for (i, server) in self.servers().iter().enumerate() {
+                    if &server.id() == s {
+                        self.servers_mut().remove(i);
+                        break;
+                    }
+                }
             }
             ConfigChangeTypeCase::NOT_SET => {
                 // TODO: Return an error.
@@ -66,9 +115,9 @@ impl Configuration {
         };
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &ServerId> {
-        self.members().iter().chain(self.learners().iter())
-    }
+    // pub fn iter(&self) -> impl Iterator<Item = &ServerId> {
+    //     self.members().iter().chain(self.learners().iter())
+    // }
 }
 
 impl GroupId {

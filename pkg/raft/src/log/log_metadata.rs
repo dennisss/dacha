@@ -58,7 +58,6 @@ impl LogMetadata {
         Self {
             offsets,
             last_offset: zero,
-            // last_flushed: LogSequence::zero(),
         }
     }
 
@@ -147,25 +146,30 @@ impl LogMetadata {
 
     // TODO: Implement and call this whenever the commit_index changes in the
     // consensus module.
-    pub fn discard(&mut self, new_start: LogOffset) {
-        if new_start.position.index() > self.last_offset.position.index() {
+    pub fn discard(&mut self, new_start: LogPosition) {
+        if new_start.index() > self.last_offset.position.index() {
             self.offsets.clear();
-            self.offsets.push_back(new_start.clone());
-            self.last_offset = new_start;
+            self.offsets.push_back(LogOffset {
+                position: new_start.clone(),
+                sequence: self.last_offset.sequence,
+            });
+            self.last_offset.position = new_start;
             return;
         }
 
-        let offset_idx = upper_bound_by(
-            self.offsets.as_slices(),
-            new_start.position.index(),
-            |off, idx| off.position.index() <= idx,
-        )
+        if new_start.index() <= self.prev().position.index() {
+            return;
+        }
+
+        let offset_idx = upper_bound_by(self.offsets.as_slices(), new_start.index(), |off, idx| {
+            off.position.index() <= idx
+        })
         .unwrap();
 
         // Truncate front
         drop(self.offsets.drain(0..offset_idx));
 
-        self.offsets[0] = new_start;
+        self.offsets[0].position = new_start;
     }
 
     /// Should remove all log entries starting at the given index until the end
@@ -310,10 +314,10 @@ mod tests {
 
         let offset = LogOffset {
             position: LogPosition::new(10, 20),
-            sequence: LogSequence { opaque_value: 30 },
+            sequence: LogSequence { opaque_value: 0 },
         };
 
-        meta.discard(offset.clone());
+        meta.discard(offset.position.clone());
         assert_eq!(*meta.prev(), offset);
         assert_eq!(*meta.last(), offset);
         assert_eq!(meta.lookup(4.into()), None);

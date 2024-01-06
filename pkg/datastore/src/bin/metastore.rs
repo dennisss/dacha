@@ -1,15 +1,15 @@
 /*
 
 Example:
-    cargo run --bin metastore -- --dir=data/meta1 --init_port=4000 --port=4001
-    cargo run --bin metastore -- --dir=data/meta2 --init_port=4000 --port=4002
+    cargo run --release --bin metastore -- --dir=/tmp/meta1 --init_port=4000 --port=4001
+    cargo run --release --bin metastore -- --dir=/tmp/meta2 --init_port=5000 --port=5002
 
 Bootstrap using:
-    cargo run --package rpc_util -- call 127.0.0.1:30001 ServerInit.Bootstrap ''
+    cargo run --package rpc_util -- call 127.0.0.1:4000 ServerInit.Bootstrap '' --insecure
 
-cargo run --package rpc_util -- ls 127.0.0.1:4001
+cargo run --package rpc_util -- ls 127.0.0.1:4001 --insecure
 
-cargo run --package rpc_util -- call 127.0.0.1:4001 KeyValueStore.Get 'data: "hello"'
+cargo run --package rpc_util -- call 127.0.0.1:4001 KeyValueStore.Get 'data: "hello"' --insecure
 */
 
 #[macro_use]

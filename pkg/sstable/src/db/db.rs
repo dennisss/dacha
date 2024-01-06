@@ -316,6 +316,8 @@ impl EmbeddedDB {
 
         dir.set_current_manifest(manifest_num).await?;
 
+        dir.cleanup_unused_files().await?;
+
         let mutable_table = Arc::new(MemTable::new(options.table_options.comparator.clone()));
 
         let shared = Arc::new(EmbeddedDBShared {
@@ -443,6 +445,8 @@ impl EmbeddedDB {
         } else {
             None
         };
+
+        dir.cleanup_unused_files().await?;
 
         // TODO: Look up all files in the directory and delete any not-referenced
         // by the current log.
@@ -1077,6 +1081,8 @@ impl EmbeddedDB {
 
         let version = state.version_set.latest_version().clone();
 
+        let last_sequence = state.version_set.last_sequence();
+
         // Preparing the manifest to use for the backup (consolidated version based on
         // the )
 
@@ -1106,10 +1112,13 @@ impl EmbeddedDB {
             edit.serialize(&mut edit_data)?;
 
             writer.append(&edit_data).await?;
+
+            writer.flush().await?;
         }
 
         Ok(Backup {
             version,
+            last_sequence,
             manifest_number,
             manifest_data,
             log_number,

@@ -19,6 +19,8 @@ const DISK_SECTOR_SIZE: u64 = 512;
     NOTE: etcd/raft assumes that the entire snapshot fits in memory
     -> Not particularly good
     -> Fine as long as limit range sizes for
+
+    TODO: ALso sync the directories leading up to the file.
 */
 
 // TODO: For unlinks, unlinkat would probably be most efficient using a relative

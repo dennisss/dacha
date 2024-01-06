@@ -14,7 +14,7 @@ use protobuf::{Message, StaticMessage};
 use rpc_util::AddReflection;
 
 use crate::atomic::*;
-use crate::log::segmented_log::SegmentedLog;
+use crate::log::segmented_log::{SegmentedLog, SegmentedLogOptions};
 use crate::proto::*;
 use crate::routing::discovery_client::DiscoveryClient;
 use crate::routing::discovery_server::DiscoveryServer;
@@ -145,12 +145,11 @@ impl<R: 'static + Send> Node<R> {
             });
         }
 
-        let meta_builder = BlobFile::builder(&options.dir.path().join("STATE".to_string())).await?;
-        let config_builder =
-            BlobFile::builder(&options.dir.path().join("CONFIG".to_string())).await?;
+        let meta_builder =
+            BlobFile::builder(&options.dir.path().join("METADATA".to_string())).await?;
         let log_path = options.dir.path().join("log".to_string());
 
-        let log = SegmentedLog::open(log_path, 32 * 1024 * 1024).await?;
+        let log = SegmentedLog::open(log_path, SegmentedLogOptions::default()).await?;
 
         // ^ A known issue is that a bootstrapped node will currently not be
         // able to recover if it hasn't fully flushed its own log through the
@@ -158,43 +157,29 @@ impl<R: 'static + Send> Node<R> {
 
         let channel_factory;
 
-        let (meta, meta_file, config_snapshot, config_file): (
-            ServerMetadata,
-            BlobFile,
-            ServerConfigurationSnapshot,
-            BlobFile,
-        ) = if meta_builder.exists().await? {
+        let (meta, meta_file): (ServerMetadata, BlobFile) = if meta_builder.exists().await? {
             // TODO: Must check that the meta exists and is valid.
 
             let (meta_file, meta_data) = meta_builder.open().await?;
 
-            let (config_file, config_data) = config_builder.open().await?;
-
             let meta = ServerMetadata::parse(&meta_data)?;
-            let config_snapshot = ServerConfigurationSnapshot::parse(&config_data)?;
 
             channel_factory = Arc::new(RouteChannelFactory::new(
                 meta.group_id(),
                 route_store.clone(),
             ));
 
-            (meta, meta_file, config_snapshot, config_file)
+            (meta, meta_file)
         }
         // Otherwise we are starting a new server instance
         else {
-            if options.last_applied > 0.into() || log.last_index().await > 0.into() {
+            if options.state_machine.last_applied().await > 0.into()
+                || log.last_index().await > 0.into()
+            {
                 return Err(err_msg(
                     "Missing raft state, but have non-empty data. Possible corruption?",
                 ));
             }
-
-            // Cleanup any old partially written files
-            // TODO: Log when this occurs
-            config_builder.purge().await?;
-
-            // Every single server starts with totally empty versions of everything
-            let meta = crate::proto::Metadata::default();
-            let config_snapshot = ServerConfigurationSnapshot::default();
 
             // Get a group id (or None to imply that we should bootstrap a new group).
             //
@@ -248,15 +233,12 @@ impl<R: 'static + Send> Node<R> {
             let mut server_meta = ServerMetadata::default();
             server_meta.set_id(id);
             server_meta.set_group_id(group_id);
-            server_meta.set_meta(meta);
-
-            let config_file = config_builder.create(&config_snapshot.serialize()?).await?;
 
             // We save the meta file to disk last such that if the meta file exists, then we
             // know that we have a complete set of files on disk
             let meta_file = meta_builder.create(&server_meta.serialize()?).await?;
 
-            (server_meta, meta_file, config_snapshot, config_file)
+            (server_meta, meta_file)
         };
 
         println!("Starting with id {}", meta.id().value());
@@ -264,8 +246,6 @@ impl<R: 'static + Send> Node<R> {
         let initial_state = ServerInitialState {
             meta,
             meta_file,
-            config_snapshot,
-            config_file,
             log: Box::new(log),
             state_machine: options.state_machine,
         };

@@ -10,6 +10,7 @@ use std::thread::{spawn, JoinHandle};
 use std::time::Duration;
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use sys::{IoCompletionUring, IoSubmissionUring, IoUring, IoUringOp, IoUringResult};
 
 use crate::linux::epoll::*;
@@ -47,7 +48,7 @@ pub(super) struct ExecutorShared {
     accepting_root_tasks: AtomicBool,
 
     /// Set of all actively running tasks.
-    tasks: Mutex<HashMap<TaskId, Arc<TaskEntry>>>,
+    tasks: Mutex<HashMap<TaskId, Arc<TaskEntry>, FastHasherBuilder>>,
 
     next_task_id: Mutex<TaskId>,
 
@@ -72,7 +73,7 @@ impl Executor {
         let shared = Arc::new(ExecutorShared {
             accepting_root_tasks: AtomicBool::new(true),
 
-            tasks: Mutex::new(HashMap::new()),
+            tasks: Mutex::new(HashMap::with_hasher(FastHasherBuilder::default())),
             next_task_id: Mutex::new(1),
 
             io_uring: ExecutorIoUring::create()?,
@@ -244,7 +245,7 @@ impl Executor {
     }
 
     fn io_uring_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
-        let mut tasks_to_wake = HashSet::new();
+        let mut tasks_to_wake = HashSet::with_hasher(FastHasherBuilder::default());
 
         while !shared.io_uring.finished() {
             tasks_to_wake.clear();
@@ -269,7 +270,7 @@ impl Executor {
     }
 
     fn epoll_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
-        let mut tasks_to_wake = HashSet::new();
+        let mut tasks_to_wake = HashSet::with_hasher(FastHasherBuilder::default());
 
         while !shared.epoll.finished() {
             tasks_to_wake.clear();

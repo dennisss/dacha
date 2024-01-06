@@ -22,15 +22,6 @@ use crate::proto::*;
 // config that has uncommited entries in it
 
 /*
-Issues with log truncation:
-- Truncation implies that we might lose information about last_term.
-- So, the preferance is to perform truncation as an atomic operation that apppends a new entry with a new log entry. THis simplies the reasoning behind term indexes.
-
-TODOs:
-- Implement PreVote : Send out before the normal round
-- Reject RequestVote requests if the election timeout isn't close to being elapsed yet.
-- Prevent sending AppendEntries or redundant InstallSnapshot messages while an InstallSnapshot is pending.
-
     Notes:
     - CockroachDB uses RaftTickInterval as 100ms between heartbeats
     - Election Timeout is 300ms (3 ticks)
@@ -66,24 +57,47 @@ TODO: Verify that receiving an AppendEntries response out of order doesn't mess 
 
 // TODO: Ensure that we ignore responses received to very old requests.
 
+// TODO: Need to protect against talking to servers with very slow or fast
+// clocks.
+
 /// At some random time in this range of milliseconds, a follower will become a
 /// candidate if no
 const ELECTION_TIMEOUT: (u64, u64) = (400, 800);
 
-/// If the leader doesn't send anything else within this amount of time, then it
-/// will send an empty heartbeat to all followers (this default value would mean
-/// around 6 heartbeats each second)
+/// Minumum interval at which Heartbeat RPCs will be sent by the leader to all
+/// followers for maintaining the stability of its leadership.
+///
+/// This default value would mean around 6 heartbeats each second.
 ///
 /// Must be less than the minimum ELECTION_TIMEOUT.
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(150);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(150);
+
+/// Minimum interval at which AppendEntries RPCs will be sent by the leader to
+/// all followers to verify that all logs are up to date.
+///
+/// This must be periodically sent to ensure that any followers that were
+/// unreachable at the beginning of a leader's term eventually get retried.
+const APPEND_ENTRIES_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Maximum speed deviation between the faster and slowest moving clock in the
 /// cluster. A value of '2' means that the fastest clock runs twice as fast as
 /// the slowest clock.
 ///
-/// 'min(ELECTION_TIMEOUT) / CLOCK_DRIFT_BOUND' should be > HEARTBEAT_TIMEOUT to
-/// ensure that we always have a lease for reads.
+/// 'min(ELECTION_TIMEOUT) / CLOCK_DRIFT_BOUND' should be > HEARTBEAT_INTERVAL
+/// to ensure that we always have a lease for reads.
 const CLOCK_DRIFT_BOUND: f32 = 2.0;
+
+/// Target duration of a round (timed from the start of sending an AppendEntries
+/// request with the latest log entry to time we get a successful response to
+/// that request from a follower).
+const ROUND_TARGET_DURATION: Duration = Duration::from_millis(200);
+
+/// Number of rounds that must take <= ROUND_TARGET_DURATION in order  
+const HEALTHY_ROUNDS_THRESHOLD: usize = 4;
+
+// Maximum in-flight requests of one type (either Heartbeat or AppendEntries) to
+// followers.
+const MAX_IN_FLIGHT_REQUESTS: usize = 128;
 
 // NOTE: This is basically the same type as a LogPosition (we might as well wrap
 // a LogPosition and make the contents of a proposal opaque to other programs
@@ -92,7 +106,7 @@ pub type Proposal = LogPosition;
 
 /// On success, the entry has been accepted and may eventually be committed with
 /// the given proposal
-pub type ProposeResult = std::result::Result<Proposal, ProposeError>;
+pub type ProposeResult = Result<Proposal, ProposeError>;
 
 #[derive(Debug, Fail, PartialEq)]
 pub enum ProposeError {
@@ -106,6 +120,7 @@ pub enum ProposeError {
     /// current leader
     NotLeader(NotLeaderError),
 
+    /// The given entry is an unparseable config state change
     RejectedConfigChange,
 }
 
@@ -143,7 +158,7 @@ pub enum ProposalStatus {
 // TODO: Finish and move to the constraint file
 
 /// Wrapper around a value which indicates that the value must NOT be accessed
-/// until the concensus metadata has been persisted to disk.
+/// until the consensus metadata has been persisted to disk.
 pub struct MustPersistMetadata<T> {
     inner: T,
 }
@@ -246,14 +261,24 @@ pub struct ConsensusModule {
     state: ConsensusState,
 
     /// Highest log entry sequence at which we have seen a conflict
+    ///
     /// (aka this is the position of some log entry that we added to the log
     /// that requires a truncation to occur)
+    ///
     /// This is caused by log truncations (aka overwriting existing indexes).
-    /// This index will be the index of the new The index of this implies the
+    ///
+    /// This index will be the index of the new index of this implies the
     /// highest point at which there may exist more than one possible entry (of
-    /// one of which being the latest one)
+    /// one of which being the latest one).
+    ///
+    /// If the leader detects that followers need a truncation, they will
+    /// resolve it once in power via an initial no-op entry.
     pending_conflict: Option<LogSequence>,
 
+    /// Highest index known to be committed.
+    ///
+    /// We can't transition to this commit index until the pending_conflict is
+    /// resolved (the log has been flushed beyond a truncation).
     pending_commit_index: Option<LogIndex>,
 
     /// Id of the last request that we've sent out.
@@ -261,7 +286,16 @@ pub struct ConsensusModule {
 }
 
 impl ConsensusModule {
-    /// Creates a new consensus module given the current/inital state
+    /// Creates a new consensus module given the current/initial state
+    ///
+    /// Arguments:
+    /// - id: Unique id of this server
+    /// - meta: Latest metadata saved to storage.
+    /// - config_snapshot: Last config saved to storage. This will be
+    ///   internalized by the module which will maintain the latest value of the
+    ///   config in memory.
+    /// - log: Reference to the log.
+    /// - time: Current time.
     pub async fn new(
         id: ServerId,
         mut meta: Metadata,
@@ -284,10 +318,7 @@ impl ConsensusModule {
         // TODO: Check this.
         // for i in
 
-        log_meta.discard(LogOffset {
-            position: log.prev().await,
-            sequence: LogSequence::zero(),
-        });
+        log_meta.discard(log.prev().await);
         for i in (log.prev().await.index().value() + 1)..=log.last_index().await.value() {
             let idx = LogIndex::from(i);
 
@@ -316,13 +347,6 @@ impl ConsensusModule {
             meta.set_voted_for(0);
         }
 
-        // Snapshots are only of committed data, so seeing a newer snapshot
-        // implies the config index is higher than we think it is
-        if config_snapshot.last_applied() > meta.commit_index() {
-            // This means that we did not bother to persist the commit_index
-            meta.set_commit_index(config_snapshot.last_applied());
-        }
-
         // The external process responsible for snapshotting should never
         // compact the log until a config snapshot has been persisted (as this
         // would result in a discontinuity between the log and the snapshots)
@@ -337,6 +361,8 @@ impl ConsensusModule {
         let last_log_index = log.last_index().await;
 
         // TODO: Implement an iterator over the log for this
+        // TODO: To efficiently support logs not in memory, this will need to be re-used
+        // for the regular state machine restoration.
         for i in (config.last_applied + 1).value()..(last_log_index + 1).value() {
             let (e, _) = log.entry(i.into()).await.unwrap();
             config.apply(&e, meta.commit_index());
@@ -344,10 +370,9 @@ impl ConsensusModule {
 
         // TODO: Understand exactly when this line is needed.
         // Without this, we sometimes get into a position where proposals lead to
-        // RetryAfter(...) given the config has a pending config uppon startup.
+        // RetryAfter(...) given the config has a pending config upon startup.
         config.commit(meta.commit_index());
 
-        // TODO: Take the initial time as input
         let state = Self::new_follower(time);
 
         ConsensusModule {
@@ -372,6 +397,9 @@ impl ConsensusModule {
         &self.meta
     }
 
+    /// Gets the identity of which server we believe is currently the leader of
+    /// the raft group.
+    ///
     /// NOTE: The returned id may be equal to the current server id.
     pub fn leader_hint(&self) -> NotLeaderError {
         match &self.state {
@@ -390,14 +418,24 @@ impl ConsensusModule {
         }
     }
 
-    /// Gets the latest configuration snapshot currently available in memory
+    /// Gets the latest **committed** configuration snapshot known by the
+    /// current server.
+    ///
+    /// Internally the module will operate on the latest configuration with all
+    /// uncommitted entries applied so may be ahead of this snapshot.
+    ///
     /// NOTE: This says nothing about what snapshot actually exists on disk at
-    /// the current time
+    /// the current time.
     pub fn config_snapshot(&self) -> ConfigurationSnapshotRef {
         self.config.snapshot()
     }
 
+    /// Gets the latest local time at which we know that are the leader of the
+    /// current term.
+    ///
     /// TODO: Consider adding this value into the tick.
+    ///
+    /// Returns None only if we aren't the leader.
     pub fn lease_start(&self) -> Option<Instant> {
         match &self.state {
             ConsensusState::Leader(s) => Some(s.lease_start),
@@ -413,6 +451,8 @@ impl ConsensusModule {
         match &self.state {
             ConsensusState::Leader(s) => {
                 status.set_role(Status_Role::LEADER);
+                // TODO: Add info on the successful rounds progress.
+                // Also on the state (installing snapshot, etc.)
                 for (id, s) in s.followers.iter() {
                     let mut f = Status_FollowerProgress::default();
                     f.set_id(id.clone());
@@ -441,17 +481,17 @@ impl ConsensusModule {
     ///
     /// NOTE: It is only valid for this to be called on the leader. If we aren't
     /// the leader, this will return an error.
-    pub fn read_index(&self, mut time: Instant) -> std::result::Result<ReadIndex, NotLeaderError> {
+    pub fn read_index(&self, mut time: Instant) -> Result<ReadIndex, NotLeaderError> {
         match &self.state {
             ConsensusState::Leader(s) => {
                 // In the case of a single node cluster, we shouldn't need to wait.
-                if self.config.value.members_len() == 1 {
+                if self.config.value.servers_len() == 1 {
                     time = s.lease_start;
                 }
 
                 Ok(ReadIndex {
                     term: self.meta.current_term(),
-                    index: s.read_index,
+                    index: core::cmp::max(self.meta.commit_index(), s.min_read_index),
                     time,
                 })
             }
@@ -489,7 +529,7 @@ impl ConsensusModule {
     ///
     /// When optimistic=false, the maximum amount of time a user should expect
     /// to wait between calling ::read_index() and getting a successful
-    /// response from ::resolve_read_index() is 'HEARTBEAT_TIMEOUT +
+    /// response from ::resolve_read_index() is 'HEARTBEAT_INTERVAL +
     /// NETWORK_RTT'. If the user doesn't want to wait that long, the user can
     /// call ::schedule_heartbeat() AFTER ::read_index() is called to schedule
     /// an immediate set of heartbeat messages to be sent. Then the max time
@@ -521,7 +561,7 @@ impl ConsensusModule {
         &self,
         read_index: &ReadIndex,
         optimistic: bool,
-    ) -> std::result::Result<LogIndex, ReadIndexError> {
+    ) -> Result<LogIndex, ReadIndexError> {
         // Verify that we are still the leader.
         let leader_state = match &self.state {
             ConsensusState::Leader(s) => s,
@@ -547,6 +587,7 @@ impl ConsensusModule {
             }));
         }
 
+        // If we returned the min_read_index, ensure that it has been commited.
         if self.meta.commit_index() < read_index.index {
             return Err(ReadIndexError::RetryAfter(
                 self.log_meta.lookup(read_index.index).unwrap().position,
@@ -566,26 +607,26 @@ impl ConsensusModule {
         Ok(read_index.index)
     }
 
-    /// Forces a heartbeat to immediately occur
-    /// (only valid on the current leader)
-    pub fn schedule_heartbeat(&mut self) {
-        // TODO: Implement me.
+    /// Forces a round of heartbeats to be immediately sent from the this server
+    /// (the leader) to all followers (does nothing we are not the leader).
+    ///
+    /// This is mainly useful for making read indexes quicker to resolve.
+    ///
+    /// TODO: Because AppendEntries RPCs are bottlenecked by disk writes,
+    /// writing will delay reads so it might make sense to have a separate
+    /// heartbeat RPC method.
+    pub fn schedule_heartbeat(&mut self, tick: &mut Tick) {
+        let state: &mut ConsensusLeaderState = match self.state {
+            ConsensusState::Leader(ref mut s) => s,
+            _ => return,
+        };
+
+        state.heartbeat_now = true;
+
+        self.cycle(tick);
     }
 
-    /*
-        TODO: If many writes are going on, then this may slow down acquiring a read index as AppendEntries requests require a disk write to return a response.
-        => Consider making a heart-beat only request type.
-
-        How to execute a complete command:
-
-        1. Check that the current server is the raft leader.
-            => If it isn't ask the client to retry on the leader (or next server if unknown)
-        2. Acquire a read index
-            => Will be in the current server's leadership term
-        3.
-
-    */
-
+    /// Assuming we are currently a follower, resets us to
     pub fn reset_follower(&mut self, time: Instant) {
         if let ConsensusState::Follower(f) = &self.state {
             self.state = Self::new_follower(time);
@@ -620,8 +661,9 @@ impl ConsensusModule {
     */
 
     /// Checks the progress of a previously initiated proposal.
+    ///
     /// This can be safely queried on any server in the cluster but naturally
-    /// the status on the current leader will be the first to converge
+    /// the status on the current leader will be the first to converge.
     pub fn proposal_status(&self, prop: &Proposal) -> ProposalStatus {
         let last_off = self.log_meta.last();
 
@@ -675,11 +717,15 @@ impl ConsensusModule {
     /// The entry is asyncronously commited. The status of the proposal can be
     /// checked for ConsensusModule::proposal_status().
     ///
-    /// TODO: Support providing a ReadIndex. If provided, we should be able to
-    /// gurantee that the new entry is comitted in the same term as the read
-    /// index.
-    /// ^ NOTE: We assume that the user has already resolved the read index (at
-    /// least optimistically).
+    /// A 'read_index' that was previously returned by read_index() on this same
+    /// module instance can optionally be passed in.
+    /// - The user MUST have already resolved it using resolve_read_index().
+    /// - This function will return an error and prevent the entry from being
+    ///   added if we weren't the leader since the time the read_index was
+    ///   created.
+    /// - This means that if read_index was resolved optimistically and the
+    ///   entry is successfully commited, then any previous reads done with the
+    ///   index were strongly consistent.
     ///
     /// NOTE: This is an internal function meant to only be used in the Propose
     /// RPC call used by other Raft members internally. Prefer to use the
@@ -729,13 +775,31 @@ impl ConsensusModule {
                     )));
                 }
 
+                // Disallow any change that touches ourselves (to avoid having a server leading
+                // a group it is not allowed to lead).
+                match c.typ_case() {
+                    ConfigChangeTypeCase::RemoveServer(id)
+                    | ConfigChangeTypeCase::AddLearner(id)
+                    | ConfigChangeTypeCase::AddMember(id)
+                    | ConfigChangeTypeCase::AddAspiring(id) => {
+                        if id == &self.id {
+                            return Err(ProposeError::RejectedConfigChange);
+                        }
+                    }
+                    ConfigChangeTypeCase::NOT_SET => {
+                        return Err(ProposeError::RejectedConfigChange);
+                    }
+                }
+
                 // Updating the servers progress list on the leader
-                // NOTE: Even if this is wrong, it will still be updated in replicate_entrie
+                // NOTE: Even if this is wrong, it will still be updated in replicate_entries
                 match c.typ_case() {
                     ConfigChangeTypeCase::RemoveServer(id) => {
                         leader_state.followers.remove(id);
                     }
-                    ConfigChangeTypeCase::AddLearner(id) | ConfigChangeTypeCase::AddMember(id) => {
+                    ConfigChangeTypeCase::AddLearner(id)
+                    | ConfigChangeTypeCase::AddAspiring(id)
+                    | ConfigChangeTypeCase::AddMember(id) => {
                         leader_state
                             .followers
                             .insert(*id, ConsensusFollowerProgress::new(last_log_index));
@@ -789,49 +853,51 @@ impl ConsensusModule {
         ret
     }
 
-    // TODO: We need some monitoring of wether or not a tick was completely
-    // meaninless (no changes occured because of it implying that it could have
-    // been executed later)
-    // Input (meta, config, state) -> (meta, state)   * config does not get changed
-    // May produce messages and new log entries
-    // TODO: In general, we can basically always cycle until we have produced a
-    // new next_tick time (if we have not produced a duration, this implies that
-    // there may immediately be more work to be done which means that we are
-    // not done yet)
+    /// Performs general evolution of the current server state after all
+    /// external actions have been applied.
+    ///
+    /// The user should periodically call this to ensure that time based state
+    /// changes take effect. 'tick.next_tick' will ALWAYS be set after this is
+    /// called.
+    ///
+    /// Notes on state transitions:
+    /// - Follower state
+    ///   - Waits until the last heartbeat times out before starting an election
+    ///   - May immediately transition to the Candidate state
+    /// - Candidate state
+    ///   - Waits
+    ///   - May immediately transition to the Leader state
+    /// - Leader state
+    ///   - Always stays the leader for at least one heartbeat cycle.
+    ///   - Periodically triggers more heartbeats to go out.
+    ///
+    /// TODO: We need some monitoring of wether or not a tick was completely
+    /// meaninless (no changes occured because of it implying that it could have
+    /// been executed later)
+    /// Input (meta, config, state) -> (meta, state)   * config does not get
+    /// changed May produce messages and new log entries
+    /// TODO: In general, we can basically always cycle until we have produced a
+    /// new next_tick time (if we have not produced a duration, this implies
+    /// that there may immediately be more work to be done which means that
+    /// we are not done yet)
     pub fn cycle(&mut self, tick: &mut Tick) {
-        // TODO: Main possible concern is about this function recursing a lot
-
-        // Transitioning between states is ok, but
-
         let is_leader = match &self.state {
             ConsensusState::Leader(_) => true,
             _ => false,
         };
 
-        // If there are no members in the cluster, there is trivially nothing to
-        // do, so we might as well wait indefinitely
-        // If we didn't have this line, then the follower code would go wild
-        // trying to propose an election
-        //
-        // Additionally there is no work to be done if we are not in the voting members
-        // set (unless we are currently the leader: this may happen if we recently
-        // removed ourselves from the cluster).
-        if self.config.value.members_len() == 0
-            || (!self.config.value.members().contains(&self.id) && !is_leader)
-        {
+        // There is nothing to do if the server isn't part of the group.
+        // Such servers should never be candidates or leaders.
+        if self.config.value.server_role(&self.id) == Configuration_ServerRole::UNKNOWN {
+            let is_follower = match &self.state {
+                ConsensusState::Follower(_) => true,
+                _ => false,
+            };
+            assert!(is_follower);
+
             tick.next_tick = Some(Duration::from_secs(1));
             return;
         }
-
-        // Basically on any type:
-        // If a pending_conflict exists, check it has been resolved
-        // If so, attempt to move any (but if )
-
-        /*
-        Follower may immediately transition to Candidate
-        Candidate may immediately transition to Leader.
-        Leader will always stay the leader for at one hearbeat duration.
-        */
 
         // Perform state changes
         match &self.state {
@@ -840,27 +906,17 @@ impl ConsensusModule {
                 let election_timeout = state.election_timeout.clone();
 
                 if !self.can_be_leader() {
-                    if self.config.value.members_len() == 1 {
-                        // In this scenario it is impossible for the cluster to
-                        // progress
-                        panic!(
-                            "Corrupt log in single-node mode will not allow \
-								us to become the leader"
-                        );
-                    }
-
                     // Can not become a leader, so just wait keep deferring the
                     // election until we can potentially elect ourselves
                     self.state = Self::new_follower(tick.time.clone());
-
-                    println!("Can't be leader yet.");
                     tick.next_tick = Some(Duration::from_secs(2));
                     return;
                 }
                 // NOTE: If we are the only server in the cluster, then we can
                 // trivially win the election without waiting
-                else if elapsed >= election_timeout || self.config.value.members_len() == 1 {
-                    self.start_election(tick);
+                // TODO: Also check that we are actually a voting member in the config.
+                else if elapsed >= election_timeout || self.config.value.servers_len() == 1 {
+                    self.become_candidate(tick);
                 } else {
                     // Otherwise sleep until the next election
                     // The preferred method here will be to wait on the
@@ -872,14 +928,34 @@ impl ConsensusModule {
                 }
             }
             ConsensusState::Candidate(state) => {
+                // If too much time has elapsed, restart the election.
+                let elapsed = tick.time.duration_since(state.election_start);
+                if elapsed >= state.election_timeout {
+                    // This always recursively calls cycle().
+                    self.become_candidate(tick);
+                    return;
+                } else {
+                    // TODO: Ideally use absolute times for the next_tick.
+                    tick.next_tick = Some(state.election_timeout - elapsed);
+                }
+
+                let have_self_voted = self.persisted_meta.current_term()
+                    == self.meta.current_term()
+                    && self.persisted_meta.voted_for() != 0.into()
+                    && self.config.value.server_role(&self.id) == Configuration_ServerRole::MEMBER;
+
+                let pre_vote_count = {
+                    let mut num = state.pre_votes_received.len();
+                    // NOTE: We don't require persistence of any state for pre-vote to succeed.
+                    if self.config.value.server_role(&self.id) == Configuration_ServerRole::MEMBER {
+                        num += 1;
+                    }
+
+                    num
+                };
+
                 let vote_count = {
                     let mut num = state.votes_received.len();
-
-                    let have_self_voted = self.persisted_meta.current_term()
-                        == self.meta.current_term()
-                        && self.persisted_meta.voted_for() != 0.into()
-                        && self.config.value.members().contains(&self.id);
-
                     if have_self_voted {
                         num += 1;
                     }
@@ -889,6 +965,31 @@ impl ConsensusModule {
 
                 let majority = self.majority_size();
 
+                let main_vote_start = {
+                    if let Some(time) = state.main_vote_start {
+                        time.clone()
+                    } else {
+                        if pre_vote_count >= majority {
+                            let state = match &mut self.state {
+                                ConsensusState::Candidate(c) => c,
+                                _ => todo!(),
+                            };
+
+                            state.main_vote_start = Some(tick.time);
+
+                            let request_id = state.vote_request_id;
+                            self.perform_election(request_id, false, tick);
+
+                            // After this, we will drop down to the below checks and may immediately
+                            // become a leader in the case of a single member group.
+
+                            tick.time
+                        } else {
+                            return;
+                        }
+                    }
+                };
+
                 if vote_count >= majority {
                     // TODO: For a single-node system, this should occur
                     // instantly without any timeouts
@@ -896,31 +997,34 @@ impl ConsensusModule {
 
                     let last_log_index = self.log_meta.last().position.index();
 
-                    // TODO: For all followers that responsded to us, we should set the lease_start
-                    // time.
                     let servers = self
                         .config
                         .value
+                        .servers()
                         .iter()
-                        .filter(|s| **s != self.id)
-                        .map(|s| (*s, ConsensusFollowerProgress::new(last_log_index)))
+                        .filter(|s| s.id() != self.id)
+                        .map(|s| (s.id(), ConsensusFollowerProgress::new(last_log_index)))
                         .collect::<_>();
+
+                    // TODO: For all followers that responsded to us, we should set the lease_start
+                    // time in their ConsensusFollowerProgress entries.
 
                     self.state = ConsensusState::Leader(ConsensusLeaderState {
                         followers: servers,
-                        lease_start: state.election_start,
+                        lease_start: main_vote_start,
                         // The only case in which we definately have the latest committed index
                         // immediately after an election is when we know that all entries in our
                         // local log are committed. Because of the leader log completeness
                         // guarantee, we know that there don't exist any newer committed entries
                         // anywhere else in the cluster.
-                        read_index: if self.meta.commit_index() == last_log_index {
+                        min_read_index: if self.meta.commit_index() == last_log_index {
                             last_log_index
                         } else {
                             // This will be the no-op entry that is added in the below
                             // propose_noop() run.
                             last_log_index + 1
                         },
+                        heartbeat_now: false,
                     });
 
                     // We are starting our leadership term with at least one
@@ -936,32 +1040,18 @@ impl ConsensusModule {
 
                     // On the next cycle we issue initial heartbeats as the leader
                     self.cycle(tick);
-
-                    return;
-                } else {
-                    let elapsed = tick.time.duration_since(state.election_start);
-
-                    // TODO: This will basically end up being the same exact
-                    // precedure as for folloders
-                    // Possibly some logic for retring requests during the same
-                    // election cycle
-
-                    if elapsed >= state.election_timeout {
-                        // This always recursively calls cycle().
-                        self.start_election(tick);
-                    } else {
-                        // TODO: Ideally use absolute times for the next_tick.
-                        tick.next_tick = Some(state.election_timeout - elapsed);
-                        return;
-                    }
                 }
+
+                return;
             }
             ConsensusState::Leader(state) => {
+                // A leader should never be removed from the config while in power.
+                assert!(self.can_be_leader());
+
                 let next_commit_index = self.find_next_commit_index(state);
-                let next_lease_start = self.find_next_lease_start(state);
+                let next_lease_start = self.find_next_lease_start(state, tick.time);
 
                 if let Some(ci) = next_commit_index {
-                    //println!("Commiting up to: {}", ci);
                     self.update_commited(ci, tick);
                 }
 
@@ -969,43 +1059,107 @@ impl ConsensusModule {
                 // (which must be advanced whenever the commit index is advanced).
                 self.update_lease_start(next_lease_start);
 
+                // Per section 6.2 in the Raft thesis, leaders should step down if they don't
+                // get a successful round of heartbeart responses within an election period.
+                // This should cause clients to retry requests on another server.
+                //
+                // TODO: Verify with tests that E2E reads/writes will retry on a different
+                // server when this happens (we must make sure that stepping down cancels any
+                /// pending waiters if appropriate).
+                if tick.time >= next_lease_start + Duration::from_millis(ELECTION_TIMEOUT.1) {
+                    println!("Leader stepping down...");
+                    self.become_candidate(tick);
+                    return;
+                }
+
                 // TODO: Optimize the case of a single node in which case there
                 // is no events or timeouts to wait for and the server can block
                 // indefinitely until that configuration changes
 
-                let mut next_heartbeat = self.replicate_entries(tick);
+                let mut next_heartbeat =
+                    core::cmp::min(self.send_heartbeats(tick), self.replicate_entries(tick))
+                        - tick.time;
 
                 // If we are the only server in the cluster, then we don't
                 // really need heartbeats at all, so we will just change this
                 // to some really large value
-                if self.config.value.members_len() + self.config.value.learners_len() == 1 {
+                if self.config.value.servers_len() == 1 {
                     next_heartbeat = Duration::from_secs(2);
                 }
 
-                // TODO: We could be more specific about this by getting the
-                // shortest amount of time after the last heartbeat we've send
-                // out up to now (replicate_entries could probably give us this)
+                // Stop any rounds that are taking too long.
+                {
+                    let state = match &mut self.state {
+                        ConsensusState::Leader(s) => s,
+                        _ => todo!(),
+                    };
+
+                    for follower in state.followers.values_mut() {
+                        if let Some((_, round_start)) = &follower.round_start {
+                            if *round_start + ROUND_TARGET_DURATION > tick.time {
+                                follower.round_start = None;
+                                follower.successful_rounds = 0;
+                            }
+                        }
+
+                        // TODO: Update tick.next_tick so that we wait until the
+                        // above time threshold.
+                    }
+                }
+
+                /*
+                TODO: Maybe upgrade ASPIRING servers to become MEMBERs
+
+                => Only if there is no uncomitted config change.
+                => Propose a config change.
+                */
+
                 tick.next_tick = Some(next_heartbeat);
 
                 // Annoyingly right now a tick will always self-trigger itself
                 return;
             }
         };
-
-        // TODO: Otherwise, no timeout till next tick?
     }
 
+    /// To be called by the user when some new log entries have been flushed
+    /// durably to storage.
+    ///
+    /// Arguments:
+    /// - last_flushed: Latest value of 'Log::last_flushed()'
     pub fn log_flushed(&mut self, last_flushed: LogSequence, tick: &mut Tick) {
         assert!(last_flushed >= self.log_last_flushed);
         self.log_last_flushed = last_flushed;
         self.cycle(tick);
     }
 
-    pub fn log_discarded(&mut self, prev: LogOffset) {
-        assert!(prev.position.index() <= self.meta.commit_index());
-        self.log_meta.discard(prev);
+    /// To be called by the user when entries in the log have been discarded.
+    ///
+    /// 'prev' should be the offset immediately before the first entry in the
+    /// log.
+    ///
+    /// The user is responsible for deciding when to discard entries as,
+    /// depending on the log implementation, the exact discard offset may
+    /// change. We want to be as generous as possible about keeping log entries
+    /// in case they are still needed for catching up servers.
+    pub fn log_discarded(&mut self, prev: LogPosition) {
+        self.log_meta.discard(prev.clone());
+
+        // TODO: Is this necesary?
+
+        // Advance any followers that are too far behind.
+        if let ConsensusState::Leader(leader) = &mut self.state {
+            for follower in leader.followers.values_mut() {
+                if follower.next_index <= prev.index() {
+                    follower.next_index = prev.index() + 1;
+                }
+            }
+        }
     }
 
+    /// To be called by the user when some metadata has been persisted to
+    /// storage.
+    ///
     /// NOTE: The caller is responsible for ensuring that this is called in
     /// order of metadata generation.
     pub fn persisted_metadata(&mut self, meta: Metadata, tick: &mut Tick) {
@@ -1013,20 +1167,25 @@ impl ConsensusModule {
         self.cycle(tick);
     }
 
-    // TODO: Think about this check more and what it means for the ordering of
-    // metadata writes.
-
+    /// Determines whether or not the current server is allowed to be the group
+    /// leader.
+    ///
     /// Leaders are allowed to commit entries before they are locally matches
     /// This means that a leader that has crashed and restarted may not have all
     /// of the entries that it has commited. In this case, it cannot become the
     /// leader again until it is resynced
     fn can_be_leader(&self) -> bool {
+        // Must be a voting member in the latest config.
+        if self.config.value.server_role(&self.id) != Configuration_ServerRole::MEMBER {
+            return false;
+        }
+
         self.log_meta.last().position.index() >= self.meta().commit_index()
     }
 
     /// On the leader, this will find the best value for the next commit index
     /// if any is currently possible
-    //
+    ///
     /// TODO: Optimize this. We should be able to do this in ~O(num members)
     fn find_next_commit_index(&self, s: &ConsensusLeaderState) -> Option<LogIndex> {
         if self.log_meta.last().position.index() == self.meta.commit_index() {
@@ -1034,19 +1193,22 @@ impl ConsensusModule {
             return None;
         }
 
-        // Collect all flushed indices across all servers.
+        // Collect all flushed indices across all voting servers.
         let mut match_indexes = vec![];
-        match_indexes.reserve_exact(self.config.value.members().len());
 
-        for server_id in self.config.value.members().iter().cloned() {
-            if server_id == self.id {
+        for server in self.config.value.servers().iter() {
+            if server.role() != Configuration_ServerRole::MEMBER {
+                continue;
+            }
+
+            if server.id() == self.id {
                 match_indexes.push(
                     self.log_meta
                         .lookup_seq(self.log_last_flushed)
                         .map(|off| off.position.index())
                         .unwrap_or(0.into()),
                 );
-            } else if let Some(progress) = s.followers.get(&server_id) {
+            } else if let Some(progress) = s.followers.get(&server.id()) {
                 match_indexes.push(progress.match_index);
             } else {
                 match_indexes.push(0.into());
@@ -1064,12 +1226,18 @@ impl ConsensusModule {
             return None;
         }
 
-        let candidate_term = self
+        let candidate_term = match self
             .log_meta
             .lookup(candidate_index)
-            .unwrap()
-            .position
-            .term();
+            .map(|v| v.position.term())
+        {
+            Some(v) => v,
+            None => {
+                // May happen during log discards if self.log_last_flushed hasn't been updated
+                // yet.
+                return None;
+            }
+        };
 
         // A leader is only allowed to commit values from its own term.
         if candidate_term != self.meta.current_term() {
@@ -1079,30 +1247,25 @@ impl ConsensusModule {
         Some(candidate_index)
     }
 
-    /*
-        For the server to read:
-        - Create a new Instant time 't'
-        - Access the read_index field of the leader.
-        - Wait until consensus.read_time >= 't'.
-        - Wait for
-
-        When will the lease time ever change:
-        - Only when we get a response back.
-    */
-
-    /// Finds the latest local time at which we know that we are the leader
-    fn find_next_lease_start(&self, s: &ConsensusLeaderState) -> Instant {
+    /// Finds the latest local time at which we know that we are the leader.
+    fn find_next_lease_start(&self, s: &ConsensusLeaderState, now: Instant) -> Instant {
         let mut majority = self.majority_size();
-        if self.config.value.members().contains(&self.id) {
+        // Exclude the current server if we are allowed to vote.
+        if self.config.value.server_role(&self.id) == Configuration_ServerRole::MEMBER {
             majority -= 1;
         }
 
         if majority == 0 {
-            return Instant::now();
+            return now;
         }
 
         let mut lease_start_times = vec![];
-        for (_, follower) in s.followers.iter() {
+        for (follower_id, follower) in s.followers.iter() {
+            // Can only count voting members.
+            if self.config.value.server_role(follower_id) != Configuration_ServerRole::MEMBER {
+                continue;
+            }
+
             if let Some(time) = follower.lease_start {
                 lease_start_times.push(time);
             }
@@ -1123,22 +1286,114 @@ impl ConsensusModule {
         candidate_time
     }
 
-    /// TODO: In the case of many servers in the cluster, enforce some maximum
-    /// limit on requests going out of this server at any one time and
-    /// prioritize members that are actually part of the voting process
+    // TODO: If the last_sent times of all of the servers diverge, then we implement
+    // some simple algorithm for delaying out-of-phase hearbeats to get all
+    // servers to beat at the same time and minimize serialization cost/context
+    // switches per second
 
-    // NOTE: If we have failed to heartbeat enough machines recently, then we are no longer a leader
+    // TODO: Limit the max size of an AppendEntries request
 
-    // TODO: If the last_sent times of all of the servers diverge, then we implement some simple
-    // algorithm for delaying out-of-phase hearbeats to get all servers to beat at the same time and
-    // minimize serialization cost/context switches per second
+    /// Sends out Heartbeat RPCs on a regular interval.
+    ///
+    /// Returns: Time when we will next want to run this function to send more
+    /// heartbeats (guaranteed to be in the future relative to tick.time).
+    fn send_heartbeats(&mut self, tick: &mut Tick) -> Instant {
+        let state: &mut ConsensusLeaderState = match self.state {
+            ConsensusState::Leader(ref mut s) => s,
+
+            // Generally this entire function should only be called if we are a leader, so hopefully
+            // this never happen
+            _ => panic!("Not the leader"),
+        };
+
+        let heartbeat_now = state.heartbeat_now;
+        state.heartbeat_now = false;
+
+        let leader_id = self.id;
+        let term = self.meta.current_term();
+        let last_log_index = self.log_meta.last().position.index();
+
+        let mut to_ids = vec![];
+
+        let mut next_heartbeat_time = tick.time + HEARTBEAT_INTERVAL;
+
+        let request_id = self.last_request_id + 1;
+
+        for server in self.config.value.servers() {
+            // Don't send to ourselves (the leader)
+            if server.id() == leader_id {
+                continue;
+            }
+
+            // Make sure there is a progress entry for the this server
+            //
+            // TODO: Currently no mechanism for removing servers from the leaders state if
+            // they are removed from this (TODO: Eventually we should get rid of the insert
+            // here and make sure that we always rely on the config changes for this)
+            let progress = {
+                if !state.followers.contains_key(&server.id()) {
+                    state
+                        .followers
+                        .insert(server.id(), ConsensusFollowerProgress::new(last_log_index));
+                }
+
+                state.followers.get_mut(&server.id()).unwrap()
+            };
+
+            // Flow control
+            if progress.pending_heartbeat_requests.len() >= MAX_IN_FLIGHT_REQUESTS {
+                continue;
+            }
+
+            let mut next_follower_heartbeat_time = core::cmp::max(
+                // Wait for lease to become stale.
+                progress
+                    .lease_start
+                    .map(|s| s + HEARTBEAT_INTERVAL)
+                    .unwrap_or(tick.time),
+                // Wait if we recently sent a heartbeat.
+                progress
+                    .last_heartbeat_sent
+                    .map(|s| s + HEARTBEAT_INTERVAL)
+                    .unwrap_or(tick.time),
+            );
+
+            if tick.time >= next_follower_heartbeat_time || heartbeat_now {
+                next_follower_heartbeat_time = tick.time + HEARTBEAT_INTERVAL;
+                progress.last_heartbeat_sent = Some(tick.time);
+                progress
+                    .pending_heartbeat_requests
+                    .insert(request_id, tick.time);
+                to_ids.push(server.id());
+            }
+
+            next_heartbeat_time = core::cmp::min(next_heartbeat_time, next_follower_heartbeat_time);
+        }
+
+        if !to_ids.is_empty() {
+            self.last_request_id = request_id;
+
+            let mut request = HeartbeatRequest::default();
+            request.set_term(term);
+            request.set_leader_id(leader_id);
+
+            tick.send(ConsensusMessage {
+                request_id,
+                to: to_ids,
+                body: ConsensusMessageBody::Heartbeat(request),
+            });
+        }
+
+        next_heartbeat_time
+    }
 
     /// On the leader, this will produce requests to replicate or maintain the
     /// state of the log on all other servers in this cluster
-    /// This also handles sending out heartbeats as a base case of that process
-    /// This will return the amount of time remaining until the next heartbeat
-    fn replicate_entries<'a>(&'a mut self, tick: &mut Tick) -> Duration {
-        let state: &'a mut ConsensusLeaderState = match self.state {
+    ///
+    /// Returns: Amount of time until this needs to be called again for issueing
+    /// another heartbeat.
+    fn replicate_entries(&mut self, tick: &mut Tick) -> Instant {
+        let state: &mut ConsensusLeaderState = match self.state {
             ConsensusState::Leader(ref mut s) => s,
 
             // Generally this entire function should only be called if we are a leader, so hopefully
@@ -1155,34 +1410,37 @@ impl ConsensusModule {
 
         // TODO: Must limit the total size of the entries sent?
         let last_log_index = log_meta.last().position.index();
-        //let last_log_term = log.term(last_log_index).unwrap();
+        let last_log_sequence = log_meta.last().sequence;
 
         // Map used to duduplicate messages that will end up being exactly the
         // same to different followers
         let mut message_map: HashMap<LogIndex, ConsensusMessage> = HashMap::new();
 
-        // Amount of time that has elapsed since the oldest timeout for any of
-        // the followers we are managing
-        let mut since_last_heartbeat = Duration::from_millis(0);
+        // Ids of peers to which we need to send InstallSnapshot RPCs
+        let mut install_snapshot_ids = vec![];
 
-        for server_id in config.iter() {
+        // Next time cycle() needs to be called to send more entries.
+        let mut next_send_time = tick.time + APPEND_ENTRIES_INTERVAL;
+
+        for server in self.config.value.servers() {
             // Don't send to ourselves (the leader)
-            if *server_id == leader_id {
+            if server.id() == leader_id {
                 continue;
             }
 
             // Make sure there is a progress entry for the this server
+            //
             // TODO: Currently no mechanism for removing servers from the leaders state if
             // they are removed from this (TODO: Eventually we should get rid of the insert
             // here and make sure that we always rely on the config changes for this)
             let progress = {
-                if !state.followers.contains_key(server_id) {
+                if !state.followers.contains_key(&server.id()) {
                     state
                         .followers
-                        .insert(*server_id, ConsensusFollowerProgress::new(last_log_index));
+                        .insert(server.id(), ConsensusFollowerProgress::new(last_log_index));
                 }
 
-                state.followers.get_mut(server_id).unwrap()
+                state.followers.get_mut(&server.id()).unwrap()
             };
 
             // Flow control.
@@ -1191,7 +1449,8 @@ impl ConsensusModule {
                     // Good to send. Pipeline many requests.
                 }
                 ConsensusFollowerMode::Pesimistic | ConsensusFollowerMode::CatchingUp => {
-                    if progress.pending_requests.len() > 0 {
+                    // Limit to one AppendEntries request at a time.
+                    if progress.pending_append_requests.len() > 0 {
                         continue;
                     }
 
@@ -1199,33 +1458,47 @@ impl ConsensusModule {
                     // we sent up the next request
                 }
                 ConsensusFollowerMode::InstallingSnapshot => {
+                    // No AppendEntries RPCs during InstallingSnapshot. Only Heartbeat RPCs will be
+                    // sent.
                     continue;
                 }
             }
 
-            // If this server is already up-to-date, don't replicate if the last
-            // request was within the heartbeat timeout
-            if progress.match_index >= last_log_index {
-                if let Some(ref time) = progress.last_sent {
-                    // TODO: This version of duration_since may panic
-                    // XXX: Here we can update our next hearbeat time
+            if progress.pending_append_requests.len() >= MAX_IN_FLIGHT_REQUESTS {
+                continue;
+            }
 
-                    let elapsed = tick.time.duration_since(*time);
-
-                    if elapsed < HEARTBEAT_TIMEOUT {
-                        if elapsed > since_last_heartbeat {
-                            since_last_heartbeat = elapsed;
-                        }
-
-                        continue;
+            // Whether or not another AppendEntries request is needed.
+            let need_another_request = (
+                // Always send a request immediately after becoming leader to check the initial
+                // state of all remote logs or send every once in a while to retry any failures.
+                progress.last_append_entries_sent.map(|t| {
+                    let next_t = t + APPEND_ENTRIES_INTERVAL;
+                    if next_t <= tick.time {
+                        true
+                    } else {
+                        next_send_time = core::cmp::min(next_t, next_send_time);
+                        false
                     }
-                }
+                }).unwrap_or(true) ||
+                // Send if we have unsent log entries.
+                progress.next_index <= last_log_index ||
+                // Send if the commit index has advanced
+                progress.last_commit_index_sent < leader_commit
+            );
+
+            if !need_another_request {
+                continue;
             }
 
             // Otherwise, we are definately going to make a request to it
 
-            // progress.request_pending = true;
-            progress.last_sent = Some(tick.time.clone());
+            progress.last_append_entries_sent = Some(tick.time.clone());
+            progress.last_commit_index_sent = leader_commit;
+
+            if progress.round_start.is_none() {
+                progress.round_start = Some((last_log_index, tick.time));
+            }
 
             // TODO: See the pipelining section of the thesis
             // - We can optimistically increment the next_index as soon as we
@@ -1241,28 +1514,30 @@ impl ConsensusModule {
 
             let request_id;
 
-            // If we are already
+            // If we are already sending a request for this log index, re-use the existing
+            // request.
             if let Some(msg) = message_map.get_mut(&prev_log_index) {
-                msg.to.push(*server_id);
-                // TODO: Make this cleaner.
-                request_id = match &msg.body {
-                    ConsensusMessageBody::AppendEntries { request, .. } => {
-                        Some(request.request_id())
-                    }
-                    _ => None,
-                }
-                .unwrap();
+                msg.to.push(server.id());
+                request_id = msg.request_id;
             } else {
                 let mut request = AppendEntriesRequest::default();
-                let prev_log_term = log_meta
+                let prev_log_term = match log_meta
                     .lookup(prev_log_index)
                     .map(|off| off.position.term())
-                    .unwrap();
+                {
+                    Some(v) => v,
+                    None => {
+                        progress.mode = ConsensusFollowerMode::InstallingSnapshot;
+                        // Ignore AppendEntries responses while in InstallingSnapshot mode.
+                        progress.pending_append_requests.clear();
+                        install_snapshot_ids.push(server.id());
+                        continue;
+                    }
+                };
 
                 request_id = self.last_request_id + 1;
                 self.last_request_id = request_id;
 
-                request.set_request_id(request_id);
                 request.set_term(term);
                 request.set_leader_id(leader_id);
                 request.set_prev_log_index(prev_log_index);
@@ -1272,20 +1547,23 @@ impl ConsensusModule {
                 message_map.insert(
                     prev_log_index,
                     ConsensusMessage {
-                        to: vec![*server_id],
+                        request_id,
+                        to: vec![server.id()],
                         body: ConsensusMessageBody::AppendEntries {
                             request,
                             last_log_index,
+                            last_log_sequence,
                         },
                     },
                 );
             }
 
-            progress.pending_requests.insert(
+            progress.pending_append_requests.insert(
                 request_id,
                 PendingAppendEntries {
                     start_time: tick.time.clone(),
                     prev_log_index,
+                    // TODO: Don't trust this without also tracking the sequence?
                     last_index_sent: last_log_index,
                 },
             );
@@ -1297,13 +1575,30 @@ impl ConsensusModule {
             tick.send(msg);
         }
 
-        HEARTBEAT_TIMEOUT - since_last_heartbeat
+        drop(state);
+
+        if !install_snapshot_ids.is_empty() {
+            println!("Trigger Install: {:?}", install_snapshot_ids);
+
+            let mut req = InstallSnapshotRequest::default();
+            req.set_leader_id(self.id);
+            req.set_term(self.meta.current_term());
+            req.set_last_config(self.config_snapshot().to_proto());
+            tick.send(ConsensusMessage {
+                request_id: 0.into(),
+                to: install_snapshot_ids,
+                body: ConsensusMessageBody::InstallSnapshot(req),
+            });
+        }
+
+        next_send_time
     }
 
-    // Side effects:
-    // - Changes the 'meta'
-    // - Changes the 'state'
-    fn start_election(&mut self, tick: &mut Tick) {
+    /// Transitions the current server to become a candidate trying to become
+    /// the leader.
+    ///
+    /// This will send out the initial round of pre-vote RPCs.
+    fn become_candidate(&mut self, tick: &mut Tick) {
         // Will be triggerred by a timeoutnow request
         if !self.can_be_leader() {
             panic!("We can not be the leader of this cluster");
@@ -1331,6 +1626,7 @@ impl ConsensusModule {
             }
         };
 
+        // TODO: Don't write metadata until the pre-vote succeeds?
         if must_increment {
             *self.meta.current_term_mut().value_mut() += 1;
             self.meta.set_voted_for(self.id);
@@ -1352,26 +1648,30 @@ impl ConsensusModule {
         self.state = ConsensusState::Candidate(ConsensusCandidateState {
             election_start: tick.time.clone(),
             election_timeout: Self::new_election_timeout(),
+            pre_votes_received: HashSet::new(),
+            main_vote_start: None,
             vote_request_id: request_id,
             votes_received: HashSet::new(),
             some_rejected: false,
         });
 
-        self.perform_election(request_id, tick);
+        // TODO: We can skip these if we got a TimeoutNow
+
+        // Send out PreVote requests.
+        self.perform_election(request_id, true, tick);
 
         // This will make the next tick at the election timeout or will
         // immediately make us the leader in the case of a single node cluster
         self.cycle(tick);
     }
 
-    fn perform_election(&self, request_id: RequestId, tick: &mut Tick) {
+    fn perform_election(&self, request_id: RequestId, pre_vote: bool, tick: &mut Tick) {
         let (last_log_index, last_log_term) = {
             let off = self.log_meta.last();
             (off.position.index(), off.position.term())
         };
 
         let mut req = RequestVoteRequest::default();
-        req.set_request_id(request_id);
         req.set_term(self.meta.current_term());
         req.set_candidate_id(self.id);
         req.set_last_log_index(last_log_index);
@@ -1381,10 +1681,10 @@ impl ConsensusModule {
         let ids = self
             .config
             .value
-            .members()
+            .servers()
             .iter()
-            .map(|s| *s)
-            .filter(|s| *s != self.id)
+            .filter(|s| s.id() != self.id && s.role() == Configuration_ServerRole::MEMBER)
+            .map(|s| s.id())
             .collect::<Vec<_>>();
 
         // This will happen for a single node cluster
@@ -1393,8 +1693,13 @@ impl ConsensusModule {
         }
 
         tick.send(ConsensusMessage {
+            request_id,
             to: ids,
-            body: ConsensusMessageBody::RequestVote(req),
+            body: if pre_vote {
+                ConsensusMessageBody::PreVote(req)
+            } else {
+                ConsensusMessageBody::RequestVote(req)
+            },
         });
     }
 
@@ -1452,18 +1757,19 @@ impl ConsensusModule {
             }
         }
 
-        self.meta.set_commit_index(index);
-        tick.write_meta();
+        // TODO: Only do this if there was a change.
+
+        if index > self.meta.commit_index() {
+            self.meta.set_commit_index(index);
+            tick.write_meta();
+        }
 
         // Check if any pending configuration has been resolved
         if self.config.commit(self.meta.commit_index()) {
             tick.write_config();
         }
-
-        // TODO: Advance the leader's read index (if we are )
     }
 
-    // NOTE: Also advances the read index.
     fn update_lease_start(&mut self, new_time: Instant) {
         let leader_state = match &mut self.state {
             ConsensusState::Leader(s) => s,
@@ -1471,41 +1777,58 @@ impl ConsensusModule {
         };
 
         leader_state.lease_start = new_time;
-        if self.meta.commit_index() > leader_state.read_index {
-            leader_state.read_index = self.meta.commit_index();
-        }
     }
 
     /// Number of votes for voting members required to get anything done
     /// NOTE: This is always at least one, so a cluster of zero members should
     /// require at least 1 vote
     fn majority_size(&self) -> usize {
+        let mut num_voters = 0;
+        for server in self.config.value.servers() {
+            if server.role() == Configuration_ServerRole::MEMBER {
+                num_voters += 1;
+            }
+        }
+
         // A safe-guard for empty clusters. Because our implementation right now always
         // counts one vote from ourselves, we will just make sure that a majority in a
         // zero node cluster is near impossible instead of just requiring 1 vote
-        if self.config.value.members().len() == 0 {
+        if num_voters == 0 {
             return std::usize::MAX;
         }
 
-        (self.config.value.members().len() / 2) + 1
+        (num_voters / 2) + 1
     }
 
-    // NOTE: For clients, we can basically always close the other side of the
-    // connection?
+    fn observe_last_config_hint(&mut self, resp: &RequestVoteResponse, tick: &mut Tick) {
+        if resp.has_last_config_hint()
+            && resp.last_config_hint().last_applied() > self.config.last_applied
+        {
+            self.config = ConfigurationStateMachine {
+                value: resp.last_config_hint().data().clone(),
+                last_applied: resp.last_config_hint().last_applied(),
+                pending: None,
+            };
 
-    /// Handles the response to a RequestVote that this module issued the given
-    /// server id
-    /// This depends on the
+            tick.write_config();
+        }
+    }
+
+    /// Handles the response to a RequestVote (or PreVote) that this module
+    /// issued the given server id.
     ///
     /// TODO: Also have a no-reply case so that we can regulate how many out
     /// going requests we have pending.
     pub fn request_vote_callback(
         &mut self,
         from_id: ServerId,
+        request_id: RequestId,
+        is_pre_vote: bool,
         resp: RequestVoteResponse,
         tick: &mut Tick,
     ) {
         self.observe_term(resp.term(), tick);
+        self.observe_last_config_hint(&resp, tick);
 
         // All of this only matters if we are still the candidate in the current term
         // (aka the state hasn't changed since we initially requested a vote)
@@ -1524,12 +1847,16 @@ impl ConsensusModule {
             _ => return,
         };
 
-        if candidate_state.vote_request_id != resp.request_id() {
+        if candidate_state.vote_request_id != request_id {
             return;
         }
 
         if resp.vote_granted() {
-            candidate_state.votes_received.insert(from_id);
+            if is_pre_vote {
+                candidate_state.pre_votes_received.insert(from_id);
+            } else {
+                candidate_state.votes_received.insert(from_id);
+            }
         } else {
             candidate_state.some_rejected = true;
         }
@@ -1538,13 +1865,11 @@ impl ConsensusModule {
         self.cycle(tick);
     }
 
-    // XXX: Better way is to encapsulate a single change
-
-    // TODO: Will need to support optimistic updating of next_index to support
-    // batching
-
-    // last_index should be the index of the last entry that we sent via this
-    // request
+    /// Should be called by the user after an AppendEntries RPC sent out from
+    /// the current server has completed successfully.
+    ///
+    /// last_index should be the index of the last entry that we sent via this
+    /// request
     pub fn append_entries_callback(
         &mut self,
         from_id: ServerId,
@@ -1559,10 +1884,19 @@ impl ConsensusModule {
             _ => return,
         };
 
-        // TODO: Across multiple election cycles, this may no longer be available
-        let mut progress = leader_state.followers.get_mut(&from_id).unwrap();
+        // NOTE: This may become missing across election cycles.
+        let mut progress = match leader_state.followers.get_mut(&from_id) {
+            Some(v) => v,
+            None => return,
+        };
 
-        let request_ctx = match progress.pending_requests.remove(&request_id) {
+        // Should not be sending out AppendEntries requests during snapshot
+        // installation.
+        if progress.mode == ConsensusFollowerMode::InstallingSnapshot {
+            return;
+        }
+
+        let request_ctx = match progress.pending_append_requests.remove(&request_id) {
             Some(data) => data,
             None => {
                 // Not interesting.
@@ -1579,11 +1913,15 @@ impl ConsensusModule {
             progress.mode = ConsensusFollowerMode::Live;
 
             // On success, we should
+            //
+            // NOTE: THis condition is needed as we allow multiple concurrent AppendEntry
+            // RPCs.
             if request_ctx.last_index_sent > progress.match_index {
-                // NOTE: THis condition should only be needed if we allow multiple concurrent
-                // requests to occur
                 progress.match_index = request_ctx.last_index_sent;
-                // progress.next_index = last_index + 1;
+
+                // NOTE: We don't need to update next_index as it is updated
+                // proactively in replicate_entries when pipelining multiple
+                // requests.
             }
 
             // On success, a server will send back the index of the very very end of its log
@@ -1609,12 +1947,21 @@ impl ConsensusModule {
             // Meaning that we must role back the log index
             // TODO: Assert that next_index becomes strictly smaller
 
-            if resp.last_log_index() > 1.into() {
-                let idx = resp.last_log_index();
-                progress.next_index = idx + 1;
-            } else {
-                // TODO: If we hit the start of the log, enter snapshot sending mode.
-                progress.next_index = request_ctx.prev_log_index;
+            progress.next_index = resp.last_log_index() + 1;
+        }
+
+        // NOTE: We only allow incrementing successful_rounds on successful
+        // AppendEntries replies. So even if no new entries have been proposed in a
+        // while, we still require a successful roundtrip to verify health.
+        if let Some((target_index, round_start)) = progress.round_start {
+            if progress.match_index >= target_index {
+                if tick.time - round_start <= ROUND_TARGET_DURATION {
+                    progress.successful_rounds += 1;
+                } else {
+                    progress.successful_rounds = 0;
+                }
+
+                progress.round_start = None;
             }
         }
 
@@ -1647,11 +1994,114 @@ impl ConsensusModule {
             None => return,
         };
 
-        if progress.pending_requests.remove(&request_id).is_none() {
+        // Should not be sending out AppendEntries requests during snapshot
+        // installation.
+        if progress.mode == ConsensusFollowerMode::InstallingSnapshot {
+            return;
+        }
+
+        if progress
+            .pending_append_requests
+            .remove(&request_id)
+            .is_none()
+        {
             return;
         }
 
         progress.mode = ConsensusFollowerMode::Pesimistic;
+
+        self.cycle(tick);
+    }
+
+    pub fn heartbeat(
+        &mut self,
+        req: &HeartbeatRequest,
+        tick: &mut Tick,
+    ) -> Result<HeartbeatResponse> {
+        // TODO: Deduplicate with append_entries().
+
+        self.observe_term(req.term(), tick);
+
+        // If a candidate observes another leader for the current term, then it
+        // should become a follower
+        // This is generally triggered by the initial heartbeat that a leader
+        // does upon being elected to assert its authority and prevent further
+        // elections
+        if req.term() == self.meta.current_term() {
+            let is_candidate = match self.state {
+                ConsensusState::Candidate(_) => true,
+                _ => false,
+            };
+
+            if is_candidate {
+                self.become_follower(tick);
+            }
+        }
+
+        let mut res = HeartbeatResponse::default();
+        res.set_term(self.meta().current_term());
+
+        if req.term() < self.meta.current_term() {
+            // Don't ack on the heartbeat. Just lead the caller know it is no longer the
+            // leader.
+            return Ok(res);
+        }
+
+        match self.state {
+            // This is generally the only state we expect to see
+            ConsensusState::Follower(ref mut s) => {
+                // Update the time now that we have seen a request from the
+                // leader in the current term
+                s.last_heartbeat = tick.time.clone();
+                s.last_leader_id = Some(req.leader_id());
+            }
+            // We will only see this when the leader is applying a change to
+            // itself
+            ConsensusState::Leader(_) => {
+                return Err(err_msg(
+                    "This should never happen. We are receiving append \
+                        entries from another leader in the same term",
+                ));
+            }
+            // We should never see this
+            ConsensusState::Candidate(_) => {
+                return Err(err_msg("How can we still be a candidate right now?"));
+            }
+        };
+
+        Ok(res)
+    }
+
+    pub fn heartbeat_callback(
+        &mut self,
+        from_id: ServerId,
+        request_id: RequestId,
+        response: Option<HeartbeatResponse>,
+        tick: &mut Tick,
+    ) {
+        if let Some(response) = response.as_ref() {
+            self.observe_term(response.term(), tick);
+        }
+
+        let leader_state = match &mut self.state {
+            ConsensusState::Leader(s) => s,
+            _ => return,
+        };
+
+        let mut progress = match leader_state.followers.get_mut(&from_id) {
+            Some(v) => v,
+            None => return,
+        };
+
+        let heartbeat_start_time = match progress.pending_heartbeat_requests.remove(&request_id) {
+            Some(v) => v,
+            None => return,
+        };
+
+        // Update lease if the request was successful.
+        if response.is_some() {
+            progress.lease_start = core::cmp::max(progress.lease_start, Some(heartbeat_start_time));
+        }
 
         self.cycle(tick);
     }
@@ -1663,7 +2113,7 @@ impl ConsensusModule {
         Duration::from_millis(time)
     }
 
-    fn pre_vote_should_grant(&self, req: &RequestVoteRequest) -> bool {
+    fn pre_vote_should_grant(&self, req: &RequestVoteRequest, now: Instant) -> bool {
         // NOTE: Accordingly with the last part of Section 4.1 in the Raft
         // thesis, a server should grant votes to servers not currently in
         // their configuration in order to gurantee availability during
@@ -1707,28 +2157,74 @@ impl ConsensusModule {
         // because that implies that we have no record of voting for anyone else
         // during that time
         if req.term() > self.meta.current_term() {
-            return true;
+            // This will mainly happen during immutable pre-vote requests as we
+            // didn't observe the term.
+        } else {
+            // In this case 'term == current_term'
+
+            // If we have already voted in this term, we are not allowed to change our
+            // minds.
+            if self.meta.voted_for().value() > 0 && self.meta.voted_for() != req.candidate_id() {
+                return false;
+            }
         }
 
-        if self.meta.voted_for().value() > 0 {
-            // If we have already voted in this term, we are not allowed to change our minds
-            let id = self.meta.voted_for();
-            id == req.candidate_id()
+        if req.leader_approval() == self.meta.current_term() {
+            // Don't need to check for disruption.
         } else {
-            // Grant the vote if we have not yet voted
-            true
+            // Don't allow unapproved disruption unless enough time as passed since the last
+            // heartbeat.
+
+            let last_leader_seen = match &self.state {
+                ConsensusState::Follower(s) => {
+                    if s.last_leader_id.is_some() {
+                        Some(s.last_heartbeat)
+                    } else {
+                        None
+                    }
+                }
+                ConsensusState::Candidate(_) => None,
+                ConsensusState::Leader(s) => Some(s.lease_start),
+            };
+
+            if let Some(last_leader_seen) = last_leader_seen {
+                if last_leader_seen
+                    + Duration::from_millis(
+                        ((ELECTION_TIMEOUT.0 as f32) / CLOCK_DRIFT_BOUND) as u64,
+                    )
+                    > now
+                {
+                    return false;
+                }
+            }
         }
+
+        true
     }
 
     /// Checks if a RequestVote request would be granted by the current server
-    /// This will not actually grant the vote for the term and will only mutate
-    /// our state if the request has a higher observed term than us
-    pub fn pre_vote(&self, req: &RequestVoteRequest) -> RequestVoteResponse {
-        let granted = self.pre_vote_should_grant(req);
+    ///
+    /// This will not actually grant the vote for the term and will not perform
+    /// any changes to the state of the server.
+    pub fn pre_vote(&self, req: &RequestVoteRequest, now: Instant) -> RequestVoteResponse {
+        let granted = self.pre_vote_should_grant(req, now);
 
         let mut res = RequestVoteResponse::default();
-        res.set_request_id(req.request_id());
+
+        // When getting a request from servers we believe are not members, send them to
+        // the current config in case they missed it.
+        if self.config_snapshot().data.server_role(&req.candidate_id())
+            != Configuration_ServerRole::MEMBER
+        {
+            res.set_last_config_hint(self.config_snapshot().to_proto());
+        }
+
         res.set_term(self.meta.current_term());
+        // NOTE: PreVote is immutable to our state so this will always happen.
+        if req.term() > res.term() {
+            res.set_term(req.term());
+        }
+
         res.set_vote_granted(granted);
         res
     }
@@ -1750,7 +2246,7 @@ impl ConsensusModule {
 
         self.observe_term(req.term(), tick);
 
-        let res = self.pre_vote(req);
+        let res = self.pre_vote(req, tick.time);
 
         if res.vote_granted() {
             // We want to make sure that even if this is a recast of a vote in
@@ -1775,12 +2271,15 @@ impl ConsensusModule {
     // TODO: If we really wanted to, we could have the leader also execute this
     // in order to get consistent local behavior
 
-    // NOTE: This doesn't really error out, but rather responds with constraint
-    // failures if the request violates a core raft property (in which case
-    // closing the connection is sufficient but otherwise our internal state
-    // should still be consistent)
-    // XXX: May have have a mutation to the hard state but I guess that is
-    // trivial right?
+    /// Should be called by the user when a server received an AppendEntries
+    /// request.
+    ///
+    /// NOTE: This doesn't really error out, but rather responds with constraint
+    /// failures if the request violates a core raft property (in which case
+    /// closing the connection is sufficient but otherwise our internal state
+    /// should still be consistent)
+    /// XXX: May have have a mutation to the hard state but I guess that is
+    /// trivial right?
     pub fn append_entries(
         &mut self,
         req: &AppendEntriesRequest,
@@ -1788,8 +2287,10 @@ impl ConsensusModule {
     ) -> Result<FlushConstraint<AppendEntriesResponse>> {
         // NOTE: It is totally normal for this to receive a request from a
         // server that does not exist in our configuration as we may be in the
-        // middle of a configuration change adn this could be the request that
+        // middle of a configuration change and this could be the request that
         // adds that server to the configuration
+
+        // TODO: Process req.leader_hint and detect if there are conflicts.
 
         self.observe_term(req.term(), tick);
 
@@ -1813,7 +2314,6 @@ impl ConsensusModule {
 
         let make_response = |success: bool, last_log_index: Option<LogIndex>| {
             let mut r = AppendEntriesResponse::default();
-            r.set_request_id(req.request_id());
             r.set_term(current_term);
             r.set_success(success);
             r.set_last_log_index(last_log_index.unwrap_or(0.into()));
@@ -1821,18 +2321,13 @@ impl ConsensusModule {
         };
 
         if req.term() < self.meta.current_term() {
-            // Simplest way to be parallel writing is to add another thread that
-            // does the synchronous log writing
-            // For now this only really applies
-            // Currently we assume that the entire log
-
-            // In this case, this is not the current leader so we will reject
-            // them
-            // This rejection will give the server a higher term index and thus
-            // it will demote itself
+            // In this case, we received a request from a caller that is not the current
+            // leader so we will reject them. This rejection will give the
+            // calling server a higher term index and thus it will demote itself
             return Ok(make_response(false, None).into());
         }
 
+        // Verify we are talking to the current leader.
         // Trivial considering observe_term gurantees the > case
         assert_eq!(req.term(), self.meta.current_term());
 
@@ -1849,12 +2344,10 @@ impl ConsensusModule {
             ConsensusState::Leader(_) => {
                 // NOTE: In all cases, we currently don't use this track for
                 // anything
-                if req.leader_id() != self.id {
-                    return Err(err_msg(
-                        "This should never happen. We are receiving append \
-						entries from another leader in the same term",
-                    ));
-                }
+                return Err(err_msg(
+                    "This should never happen. We are receiving append \
+                    entries from another leader in the same term",
+                ));
             }
             // We should never see this
             ConsensusState::Candidate(_) => {
@@ -1901,6 +2394,11 @@ impl ConsensusModule {
             ));
         }
 
+        /*
+        If we did know how much the state machine was flushed, we could do a discard here.
+        */
+
+        // Verify the (prev_log_index, prev_log_term) match what is in our log.
         match self
             .log_meta
             .lookup(req.prev_log_index())
@@ -1918,8 +2416,8 @@ impl ConsensusModule {
                     // commit point so that all future append_entries requests
                     // are guranteed to suceed but may take some time to get to
                     // the conflict point
-                    // TODO: Possibly do some type of binary search (next time try 3/4 of the way to
-                    // the end of the prev entry from the commit_index)
+                    // TODO: Possibly do some type of binary search (e.g. next time try 3/4 of the
+                    // way to the end of the prev entry from the commit_index)
                     return Ok(make_response(false, Some(self.meta.commit_index())).into());
                 }
             }
@@ -2089,8 +2587,155 @@ impl ConsensusModule {
 
     pub fn timeout_now(&mut self, req: &TimeoutNow, tick: &mut Tick) -> Result<()> {
         // TODO: Possibly avoid a pre-vote in this case to speed up leader transfer
-        self.start_election(tick);
+        self.become_candidate(tick);
         Ok(())
+    }
+
+    /*
+    TODO: Limit the max number of concurrent InstallSnapshot requests coming to one server
+    - Either intentionally or via some backoff with many leaders biding for the opportunity to send the next snapshot.
+    - A leader should also make sure it isn't sending out more than one snapshot across all of its managed groups.
+
+    Reasons a snapshot couldn't be installed:
+    - General error like out of space (should be reporting this status)
+        - Just return in RPC status.
+        - Keep retrying with some backoff.
+
+    - Rejected as there is a new leader
+        - Report in the response by showing a new term and giving a 'false' in the success field.
+
+    Other issue:
+    - Loading a new SSTable can take some time, so don't want the client to timeout while waiting.
+    */
+
+    /// Should be called by the user when installation of a snapshot starts.
+    ///
+    /// Assuming this returns a response with accepted == true, the user should
+    /// follow up by:
+    /// - Writing and flushing the config snapshot to persistent storage.
+    /// - Writing and flushing the user state machine to persistent storage and
+    ///   loading into memory.
+    /// - Discarding the log up to the 'last_applied' position in the request.
+    ///   - MUST happen after previous two steps are done.
+    /// - Telling the ConsensusModule by calling log_discarded().
+    ///   - The module won't successfully accept new AppendEntries requests
+    ///     until this is done.
+    pub fn install_snapshot(
+        &mut self,
+        first_request: &InstallSnapshotRequest,
+        tick: &mut Tick,
+    ) -> InstallSnapshotResponse {
+        self.observe_term(first_request.term(), tick);
+
+        let mut res = InstallSnapshotResponse::default();
+        res.set_term(self.meta.current_term());
+
+        // Early reject requests from stale leaders.
+        if first_request.term() != self.meta().current_term() {
+            res.set_accepted(false);
+            return res;
+        }
+
+        // We will discard the log up to 'first_request.last_applied', but because both
+        // state machines must always be ahead of the log, the config state machine must
+        // be ahead of the user state machine.
+        if first_request.last_applied().index() > first_request.last_config().last_applied() {
+            res.set_accepted(false);
+            return res;
+        }
+
+        if self.config.last_applied < first_request.last_config().last_applied() {
+            self.config = ConfigurationStateMachine::from(first_request.last_config().clone());
+            tick.write_config();
+        }
+
+        res.set_accepted(true);
+        res
+    }
+
+    /// To be called by the user once we get a successful response back from an
+    /// InstallSnapshot RPC to another node.
+    pub fn install_snapshot_callback(
+        &mut self,
+        to_id: ServerId,
+        request: &InstallSnapshotRequest,
+        response: &InstallSnapshotResponse,
+        last_applied_index: LogIndex,
+        tick: &mut Tick,
+    ) {
+        self.observe_term(response.term(), tick);
+
+        // Ignore stale responses from past terms.
+        //
+        // NOTE: It is not necessary to check the request id as we only exit
+        // InstallingSnapshot mode if we get a callback for one in-flight
+        // InstallSnapshot RPC.
+        if request.term() != self.meta.current_term() {
+            return;
+        }
+
+        // Verify that the follower is still in the installing snapshot state.
+        let follower = {
+            let leader_state = match &mut self.state {
+                ConsensusState::Leader(s) => s,
+                _ => return,
+            };
+
+            let follower = match leader_state.followers.get_mut(&to_id) {
+                Some(v) => v,
+                None => return,
+            };
+
+            if let ConsensusFollowerMode::InstallingSnapshot = &follower.mode {
+                // Good
+            } else {
+                return;
+            }
+
+            follower
+        };
+
+        // If the snapshot wasn't accepted, then we will re-poll the
+        if !response.accepted() {
+            follower.next_index = self.log_meta.last().position.index();
+            follower.mode = ConsensusFollowerMode::Pesimistic;
+            self.cycle(tick);
+            return;
+        }
+
+        // The snapshot should only not be accepted if the term changed since the
+        // snapshot started.
+        //
+        // Otherwise, we'd entire an infinite loop of trying to install a snapshot as we
+        // have no backoff when !response.accepted.
+        assert!(response.accepted());
+
+        follower.next_index = last_applied_index + 1;
+        follower.match_index = last_applied_index;
+        follower.mode = ConsensusFollowerMode::Live;
+
+        self.cycle(tick);
+    }
+
+    /// To be called by the user if an outgoing InstallSnapshot request failed
+    /// or timed out.
+    pub fn install_snapshot_noresponse(
+        &mut self,
+        to_id: ServerId,
+        request: &InstallSnapshotRequest,
+        tick: &mut Tick,
+    ) {
+        let mut res = InstallSnapshotResponse::default();
+        res.set_term(self.meta.current_term());
+        res.set_accepted(false);
+
+        self.install_snapshot_callback(
+            to_id,
+            request,
+            &res,
+            self.log_meta.last().position.index(),
+            tick,
+        );
     }
 }
 
@@ -2135,6 +2780,7 @@ mod tests {
         // Trigger election.
         // - Just emits metadata to persist.
         // - Should not wait for the entire period.
+        // - Should immediately
         let mut tick = Tick::empty();
         let t1 = t0 + Duration::from_millis(1);
         tick.time = t1;
@@ -2152,6 +2798,16 @@ mod tests {
         tick.time = t2;
         server1.persisted_metadata(server1.meta().clone(), &mut tick);
         println!("{:#?}", tick);
+
+        assert_eq!(server1.current_status().role(), Status_Role::LEADER);
+
+        // Keeps being the leader even after a long timeout.
+        for i in 0..10 {
+            let mut tick = Tick::empty();
+            tick.time = t0 + Duration::from_secs(i + 1);
+            server1.cycle(&mut tick);
+            assert_eq!(server1.current_status().role(), Status_Role::LEADER);
+        }
     }
 
     #[testcase]
@@ -2165,9 +2821,9 @@ mod tests {
             r#"
             last_applied { value: 0 }
             data {
-                members: [
-                    { value: 1 },
-                    { value: 2 }
+                servers: [
+                    { id { value: 1 } role: MEMBER },
+                    { id { value: 2 } role: MEMBER }
                 ]
             }
         "#,
@@ -2196,7 +2852,6 @@ mod tests {
 
         let request_vote_req = RequestVoteRequest::parse_text(
             "
-            request_id { value: 1 }
             term { value: 1 }
             candidate_id { value: 1 }
             last_log_index { value: 0 }
@@ -2221,13 +2876,39 @@ mod tests {
         assert_eq!(
             &tick.messages,
             &[ConsensusMessage {
+                request_id: 1.into(),
                 to: vec![2.into()],
-                body: ConsensusMessageBody::RequestVote(request_vote_req.clone())
+                body: ConsensusMessageBody::PreVote(request_vote_req.clone())
             }]
         );
         // The next tick should be to re-start the election after a random period of
         // time.
         assert!(tick.next_tick.is_some());
+
+        /////////////////////
+
+        // Server 2 accepts the pre-vote
+        let prevote_resp = server2.pre_vote(&request_vote_req, t1);
+        assert_eq!(
+            prevote_resp,
+            RequestVoteResponse::parse_text("term { value: 1 } vote_granted: true").unwrap()
+        );
+
+        // Server 1 receives the PreVote response and starts the main election.
+        let mut tickx = Tick::empty();
+        tickx.time = t1;
+        server1.request_vote_callback(2.into(), 1.into(), true, prevote_resp, &mut tickx);
+        assert!(!tickx.meta);
+        assert!(!tickx.config);
+        assert_eq!(tickx.new_entries, &[]);
+        assert_eq!(
+            &tickx.messages,
+            &[ConsensusMessage {
+                request_id: 1.into(),
+                to: vec![2.into()],
+                body: ConsensusMessageBody::RequestVote(request_vote_req.clone())
+            }]
+        );
 
         /////////////////////
 
@@ -2246,7 +2927,6 @@ mod tests {
             resp,
             RequestVoteResponse::parse_text(
                 "
-            request_id { value: 1 }
             term { value: 1 }
             vote_granted: true"
             )
@@ -2291,7 +2971,7 @@ mod tests {
         let mut tick3 = Tick::empty();
         let t3 = t2 + Duration::from_millis(2);
         tick3.time = t3;
-        server1.request_vote_callback(2.into(), resp, &mut tick3);
+        server1.request_vote_callback(2.into(), 1.into(), false, resp, &mut tick3);
         assert!(!tick3.meta);
         assert!(!tick3.config);
         assert_eq!(tick3.new_entries, &[]);
@@ -2304,7 +2984,6 @@ mod tests {
 
         let append_entries2 = AppendEntriesRequest::parse_text(
             "
-            request_id { value: 2 }
             term { value: 1 }
             leader_id { value: 1 }
             prev_log_index { value: 0 }
@@ -2325,13 +3004,25 @@ mod tests {
         assert_eq!(tick4.new_entries, &[]);
         assert_eq!(
             tick4.messages,
-            &[ConsensusMessage {
-                to: vec![2.into()],
-                body: ConsensusMessageBody::AppendEntries {
-                    request: append_entries2.clone(),
-                    last_log_index: 0.into()
-                }
-            }]
+            &[
+                ConsensusMessage {
+                    request_id: 2.into(),
+                    to: vec![2.into()],
+                    body: ConsensusMessageBody::Heartbeat(
+                        HeartbeatRequest::parse_text("term { value: 1} leader_id { value: 1 } ")
+                            .unwrap()
+                    )
+                },
+                ConsensusMessage {
+                    request_id: 3.into(),
+                    to: vec![2.into()],
+                    body: ConsensusMessageBody::AppendEntries {
+                        request: append_entries2.clone(),
+                        last_log_index: 0.into(),
+                        last_log_sequence: LogSequence::zero(),
+                    }
+                },
+            ]
         );
 
         let log_entry1 = LogEntry::parse_text(
@@ -2343,7 +3034,7 @@ mod tests {
             data {
                 command: "\x10\x11\x12"
             }
-        "#,
+            "#,
         )
         .unwrap();
 
@@ -2372,7 +3063,6 @@ mod tests {
         let t6 = t5 + Duration::from_millis(1);
         let append_entries_res2 = AppendEntriesResponse::parse_text(
             "
-            request_id { value: 2 }
             term { value: 1 }
             success: true
             last_log_index { value: 0 }
@@ -2405,7 +3095,6 @@ mod tests {
         let t7 = t6 + Duration::from_millis(1);
         let append_entries3_raw = AppendEntriesRequest::parse_text(
             r#"
-            request_id { value: 3 }
             term { value: 1 }
             leader_id { value: 1 }
             prev_log_index { value: 0 }
@@ -2417,7 +3106,6 @@ mod tests {
         // TODO: Implement this with a text merge on top of the append_entries_raw.
         let append_entries3 = AppendEntriesRequest::parse_text(
             r#"
-            request_id { value: 3 }
             term { value: 1 }
             leader_id { value: 1 }
             prev_log_index { value: 0 }
@@ -2440,7 +3128,7 @@ mod tests {
             tick7.time = t7;
 
             // TODO: Also test with the no-reply case.
-            server1.append_entries_callback(2.into(), 2.into(), append_entries_res2, &mut tick7);
+            server1.append_entries_callback(2.into(), 3.into(), append_entries_res2, &mut tick7);
 
             assert!(!tick7.meta);
             assert!(!tick7.config);
@@ -2448,10 +3136,12 @@ mod tests {
             assert_eq!(
                 &tick7.messages,
                 &[ConsensusMessage {
+                    request_id: 4.into(), // TODO
                     to: vec![2.into()],
                     body: ConsensusMessageBody::AppendEntries {
                         request: append_entries3_raw.clone(),
-                        last_log_index: 1.into()
+                        last_log_index: 1.into(),
+                        last_log_sequence: LogSequence::zero().next(),
                     }
                 }]
             )
@@ -2462,7 +3152,6 @@ mod tests {
         let t8 = t7 + Duration::from_millis(1);
         let append_entries_res3 = AppendEntriesResponse::parse_text(
             "
-            request_id { value: 3 }
             term { value: 1 }
             success: true
             last_log_index { value: 1 }
@@ -2508,10 +3197,12 @@ mod tests {
             res = match res.poll(&log2).await {
                 // TODO: Check the 'seq'
                 ConstraintPoll::Pending((v, seq)) => v,
-                _ => panic!(),
+                p @ _ => {
+                    panic!("{:?}", p)
+                }
             };
 
-            log2.flush().await.unwrap();
+            log2.wait_for_flush().await.unwrap();
 
             // Now that it's flushed, we should have it get resolved.
 
@@ -2524,6 +3215,8 @@ mod tests {
 
             // TODO: Call log_flushed on server2.
         }
+
+        todo!();
 
         // Give server1 the append entries response.
         // - we still shouldn't commit anything as we only have it flushed on 1 of 2
@@ -2611,6 +3304,8 @@ mod tests {
         - There are two scenarios we can test:
             - Either the leader has the shorter log or the leader has the longest log.
             - In both cases, this will require syncing up out logs with at least 1 other servers.
+
+    With 3 servers, we won't win an election if the leader only got one response and didn't persistent its local metadata yet.
 
     - Need lot's of tests for messages come out of order or at awkward times.
 
