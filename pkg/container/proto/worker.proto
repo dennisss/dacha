@@ -2,13 +2,15 @@ syntax = "proto3";
 
 package cluster;
 
-import "google/api/field_behavior.proto";
+// NOTE: Currently linking googleapis_proto makes the compile time really bad.
+// import "google/api/field_behavior.proto";
+
 import "pkg/builder/proto/bundle.proto";
 
 // Complete definition for how a single worker should be started on some cluster node.
 message WorkerSpec {
     // Name of the worker. This is assigned by the manager job.
-    string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+    string name = 1; // [(google.api.field_behavior) = OUTPUT_ONLY];
 
     string cwd = 10;
 
@@ -84,7 +86,7 @@ message WorkerSpec {
         // INTERNAL ONLY
         // The port number on the node to use if this is a TCP port.
         // Set by the Cluster Manager when assigning the worker to a node.
-        uint32 number = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+        uint32 number = 4; // [(google.api.field_behavior) = OUTPUT_ONLY];
     }
     repeated Port ports = 6;
 
@@ -95,7 +97,7 @@ message WorkerSpec {
     // This is set by the Cluster Manager for system workers that must survive a cluster cold-start
     // and any workers which can't be moved to another node (e.g. due to resources local to only one
     // node). If set by a user, then the worker will be rejected.
-    bool persistent = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+    bool persistent = 7; // [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // List of devices to mount into the container.
     repeated Device devices = 9;

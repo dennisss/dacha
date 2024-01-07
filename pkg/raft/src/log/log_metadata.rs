@@ -161,6 +161,8 @@ impl LogMetadata {
             return;
         }
 
+        let seq = self.lookup(new_start.index()).unwrap().sequence;
+
         let offset_idx = upper_bound_by(self.offsets.as_slices(), new_start.index(), |off, idx| {
             off.position.index() <= idx
         })
@@ -170,6 +172,7 @@ impl LogMetadata {
         drop(self.offsets.drain(0..offset_idx));
 
         self.offsets[0].position = new_start;
+        self.offsets[0].sequence = seq;
     }
 
     /// Should remove all log entries starting at the given index until the end
@@ -325,7 +328,73 @@ mod tests {
         assert_eq!(meta.lookup(25.into()), None);
     }
 
-    // TODO: Test truncation of everything.
+    #[test]
+    fn discard_some_entries() {
+        let mut meta = LogMetadata::new();
+
+        assert_eq!(
+            meta.prev().clone(),
+            LogOffset {
+                position: LogPosition::new(0, 0),
+                sequence: LogSequence { opaque_value: 0 },
+            }
+        );
+
+        for i in 1..101 {
+            meta.append(LogOffset {
+                position: LogPosition::new((i / 10) + 1, i),
+                sequence: LogSequence { opaque_value: i },
+            });
+        }
+
+        assert_eq!(meta.offsets.len(), 12);
+
+        // TODO: Also check immediately before and after the end of the range.
+        for i in 1..101 {
+            let offset = LogOffset {
+                position: LogPosition::new((i / 10) + 1, i),
+                sequence: LogSequence { opaque_value: i },
+            };
+
+            assert_eq!(meta.lookup(i.into()), Some(offset.clone()));
+
+            assert_eq!(
+                meta.lookup_seq(LogSequence { opaque_value: i }),
+                Some(offset.clone())
+            );
+        }
+
+        // TODO: Extend this test to try discarding at all log positions.
+        {
+            let i = 32;
+            meta.discard(LogPosition::new((i / 10) + 1, i));
+
+            assert_eq!(
+                meta.prev().clone(),
+                LogOffset {
+                    position: LogPosition::new((i / 10) + 1, i),
+                    sequence: LogSequence { opaque_value: i },
+                }
+            );
+        }
+
+        for i in 33..101 {
+            let offset = LogOffset {
+                position: LogPosition::new((i / 10) + 1, i),
+                sequence: LogSequence { opaque_value: i },
+            };
+
+            assert_eq!(meta.lookup(i.into()), Some(offset.clone()));
+
+            assert_eq!(
+                meta.lookup_seq(LogSequence { opaque_value: i }),
+                Some(offset.clone())
+            );
+        }
+    }
+
+    // TODO: Test truncation to various indexes or the truncation of everything
+    // in the log.
 
     // TODO: Test discard only some existing entries.
 

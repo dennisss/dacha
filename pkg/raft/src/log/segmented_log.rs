@@ -211,8 +211,10 @@ impl SegmentedLog {
                 }
 
                 if record.has_entry() {
-                    let sequence = last_sequence.next();
-                    last_sequence = sequence;
+                    // NOTE: We assume that all read data is already flushed as RecordReader
+                    // performs an fsync before
+                    let sequence = state.last_flushed.next();
+                    state.last_flushed = sequence;
 
                     Self::append_in_memory_impl(record.entry(), sequence, &mut state)?;
                 }
@@ -803,6 +805,9 @@ mod tests {
         }
 
         // TODO: Re-open the log and verify we still have content.
+
+        // TODO: Re-open the log and verify that without any changes we eventually
+        // report that all the contents are flushed to disk.
 
         Ok(())
     }

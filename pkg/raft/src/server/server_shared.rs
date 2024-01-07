@@ -1370,10 +1370,6 @@ impl<R: Send + 'static> ServerShared<R> {
                 break;
             }
 
-            if req.done() {
-                println!("SENT DONE");
-            }
-
             req.clear_last_applied();
             req.clear_last_config();
 

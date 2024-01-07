@@ -180,7 +180,10 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
     }
 
     async fn wait_for_flush(&self) {
-        self.db.read().await.wait_for_flush().await
+        let f = { self.db.read().await.wait_for_flush() };
+        // NOTE: Must not keep 'self.db' locked as that would permanently block getting
+        // the writer lock in restore().
+        f.await
     }
 
     async fn snapshot(&self) -> Result<Option<raft::StateMachineSnapshot>> {

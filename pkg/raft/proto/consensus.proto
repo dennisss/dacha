@@ -392,6 +392,8 @@ message Status {
 		ServerId id = 1;
 		
 		LogIndex match_index = 2;
+
+		bool synchronized = 3;
 	}
 
 	// Only present if this is the leader.

@@ -96,19 +96,21 @@ I want to provide a Content-Length hint for basic requests
 */
 
 pub struct Http2Channel {
-    client: Arc<http::Client>,
-    options: Arc<Http2ChannelOptions>,
+    shared: Arc<Shared>,
+}
+
+struct Shared {
+    client: http::Client,
+    options: Http2ChannelOptions,
 }
 
 impl Http2Channel {
     pub async fn create<O: TryIntoResult<Http2ChannelOptions>>(options: O) -> Result<Self> {
         let options = options.try_into_result()?;
-        let client =
-            Arc::new(http::Client::create(options.http.clone().set_force_http2(true)).await?);
+        let client = http::Client::create(options.http.clone().set_force_http2(true)).await?;
 
         Ok(Self {
-            client,
-            options: Arc::new(options),
+            shared: Arc::new(Shared { client, options }),
         })
     }
 
@@ -121,14 +123,14 @@ impl Http2Channel {
     ) -> ClientStreamingResponse<()> {
         // TODO: Tune the length.
         let buffer = Arc::new(MessageRequestBuffer::new(
-            self.options.max_request_buffer_size,
+            self.shared.options.max_request_buffer_size,
             request_receiver,
         ));
 
         // TODO: Apply this later as authorization metadata may need to be refreshed
         // between retries?
         let mut request_context = request_context.clone();
-        if let Some(creds) = self.options.credentials.as_ref() {
+        if let Some(creds) = self.shared.options.credentials.as_ref() {
             if let Err(e) = creds
                 .attach_request_credentials(service_name, method_name, &mut request_context)
                 .await
@@ -138,8 +140,7 @@ impl Http2Channel {
         }
 
         let request_sender = Http2RequestSender {
-            client: self.client.clone(),
-            options: self.options.clone(),
+            shared: self.shared.clone(),
             // TODO: Add the full package path.
             path: format!("/{}/{}", service_name, method_name),
             request_context,
@@ -217,9 +218,7 @@ impl Channel for Http2Channel {
 
 /// Worker for sending a single RPC over HTTP2.
 struct Http2RequestSender {
-    // TODO: Use a single Arc for both of these.
-    client: Arc<http::Client>,
-    options: Arc<Http2ChannelOptions>,
+    shared: Arc<Shared>,
 
     path: String,
     request_context: ClientRequestContext,
@@ -235,9 +234,10 @@ impl Http2RequestSender {
         }
 
         // TODO: Somewhere we want to return an Internal error if we run out of retries.
-        let mut retrier = self.options.retrying.as_ref().map(|options| {
+        let mut retrier = self.shared.options.retrying.as_ref().map(|options| {
             let mut backoff = ExponentialBackoff::new(options.backoff.clone());
-            let _ = backoff.start_attempt(); // Start first attempt.
+            // Start first attempt (will never require backoff).
+            let _ = backoff.start_attempt();
 
             Retrier {
                 options,
@@ -381,7 +381,11 @@ impl Http2RequestSender {
         let mut http_request_context = http::ClientRequestContext::default();
         http_request_context = self.request_context.http.clone();
 
-        let mut response = self.client.request(request, http_request_context).await?;
+        let mut response = self
+            .shared
+            .client
+            .request(request, http_request_context)
+            .await?;
 
         Self::process_single_response(response, &self.request_context, might_retry, output).await
     }

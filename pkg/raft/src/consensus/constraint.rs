@@ -41,7 +41,7 @@ impl<T> FlushConstraint<T> {
 
     pub async fn poll(self, log: &dyn Log) -> ConstraintPoll<(Self, LogSequence), T> {
         let (seq, pos) = match self.point {
-            Some(pos) => pos,
+            Some(v) => v,
             None => return ConstraintPoll::Satisfied(self.inner),
         };
 

@@ -11,6 +11,8 @@ use crypto::hasher::Hasher;
 use file::sync::{SyncedFile, SyncedPath};
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
+use crate::log_writer::*;
+
 const BLOCK_SIZE: u64 = 32 * 1024;
 
 /// Number of bytes needed to represent just the header of a single fragment.
@@ -219,7 +221,12 @@ impl RecordReader {
         let path = path.as_ref();
 
         // TODO: Open with O_DIRECT
+        // TODO: Add read ahead to this.
         let file = LocalFile::open(path)?;
+
+        // TODO: Also sync all directories leading up to this file before opening the
+        // file.
+        file.sync_data().await?;
 
         let mut block = vec![];
         block.reserve_exact(BLOCK_SIZE as usize);

@@ -675,7 +675,6 @@ version = "0.0.0"
 dependencies = [
  "builder_proto",
  "common",
- "googleapis_proto",
  "macros",
  "protobuf",
  "protobuf_builtins",

@@ -1,3 +1,4 @@
+use core::future::Future;
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::E;
 use std::ops::DerefMut;
@@ -511,6 +512,9 @@ impl EmbeddedDB {
             thread.join().await;
         }
 
+        // Notify anyone waiting for a flush.
+        let _ = self.shared.flushed_channel.0.try_send(());
+
         Ok(())
     }
 
@@ -535,8 +539,11 @@ impl EmbeddedDB {
     ///
     /// last_flushed_sequence() can be used to get a monotonic marker
     /// corresponding to last write that was flushed.
-    pub async fn wait_for_flush(&self) {
-        let _ = self.shared.flushed_channel.1.recv().await;
+    pub fn wait_for_flush(&self) -> impl Future<Output = ()> + 'static {
+        let receiver = self.shared.flushed_channel.1.clone();
+        async move {
+            let _ = receiver.recv().await;
+        }
     }
 
     /// Blocks until there are no more scheduled compactions.

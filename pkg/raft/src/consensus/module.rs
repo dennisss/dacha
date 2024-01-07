@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use crypto::random::{self, RngExt};
 
 use crate::consensus::config_state::*;
@@ -92,8 +93,9 @@ const CLOCK_DRIFT_BOUND: f32 = 2.0;
 /// that request from a follower).
 const ROUND_TARGET_DURATION: Duration = Duration::from_millis(200);
 
-/// Number of rounds that must take <= ROUND_TARGET_DURATION in order  
-const HEALTHY_ROUNDS_THRESHOLD: usize = 4;
+/// Number of rounds that must take <= ROUND_TARGET_DURATION in order to
+/// consider a follower fully caught up to the leader and expected to quickly
+const SYNCHRONIZED_ROUNDS_THRESHOLD: usize = 4;
 
 // Maximum in-flight requests of one type (either Heartbeat or AppendEntries) to
 // followers.
@@ -457,6 +459,7 @@ impl ConsensusModule {
                     let mut f = Status_FollowerProgress::default();
                     f.set_id(id.clone());
                     f.set_match_index(s.match_index);
+                    f.set_synchronized(self.is_follower_synchronized(s));
                 }
             }
             ConsensusState::Follower(_) => {
@@ -468,6 +471,11 @@ impl ConsensusModule {
         }
 
         status
+    }
+
+    fn is_follower_synchronized(&self, progress: &ConsensusFollowerProgress) -> bool {
+        progress.mode == ConsensusFollowerMode::Live
+            && progress.successful_rounds >= SYNCHRONIZED_ROUNDS_THRESHOLD
     }
 
     /// Gets what we believe is the highest log index that has been comitted
@@ -1096,7 +1104,7 @@ impl ConsensusModule {
 
                     for follower in state.followers.values_mut() {
                         if let Some((_, round_start)) = &follower.round_start {
-                            if *round_start + ROUND_TARGET_DURATION > tick.time {
+                            if *round_start + ROUND_TARGET_DURATION <= tick.time {
                                 follower.round_start = None;
                                 follower.successful_rounds = 0;
                             }
@@ -1107,12 +1115,44 @@ impl ConsensusModule {
                     }
                 }
 
-                /*
-                TODO: Maybe upgrade ASPIRING servers to become MEMBERs
+                // If there aren't already any config changes pending, we can upgrade/promote at
+                // most one server from ASPIRING to MEMBER.
+                if self.config.pending.is_none() {
+                    let state = match &self.state {
+                        ConsensusState::Leader(s) => s,
+                        _ => todo!(),
+                    };
 
-                => Only if there is no uncomitted config change.
-                => Propose a config change.
-                */
+                    let mut server_to_promote = None;
+                    for (id, progress) in &state.followers {
+                        if self.config.value.server_role(id) != Configuration_ServerRole::ASPIRING {
+                            continue;
+                        }
+
+                        println!("Success: {}", progress.successful_rounds);
+
+                        if !self.is_follower_synchronized(progress) {
+                            continue;
+                        }
+
+                        server_to_promote = Some(id.clone());
+                    }
+
+                    if let Some(id) = server_to_promote {
+                        let mut data = LogEntryData::default();
+                        data.config_mut().set_AddMember(id.clone());
+
+                        let res = self.propose_entry(&data, None, tick).unwrap();
+                        println!(
+                            "Promoting server {} to member at index {}",
+                            id.value(),
+                            res.index().value()
+                        );
+
+                        // propose_entry should recursively call cycle() again.
+                        return;
+                    }
+                }
 
                 tick.next_tick = Some(next_heartbeat);
 
@@ -1648,10 +1688,10 @@ impl ConsensusModule {
         self.state = ConsensusState::Candidate(ConsensusCandidateState {
             election_start: tick.time.clone(),
             election_timeout: Self::new_election_timeout(),
-            pre_votes_received: HashSet::new(),
+            pre_votes_received: HashSet::with_hasher(FastHasherBuilder::default()),
             main_vote_start: None,
             vote_request_id: request_id,
-            votes_received: HashSet::new(),
+            votes_received: HashSet::with_hasher(FastHasherBuilder::default()),
             some_rejected: false,
         });
 
@@ -2543,6 +2583,8 @@ impl ConsensusModule {
                 // TODO: Ideally compute the latest commit_index before we apply
                 // these changes so that we don't need to maintain a rollback
                 // history if we don't need to
+                //
+                // TODO: Update self.state based on this if our role has changed?
                 self.config.apply(e, self.meta.commit_index());
             }
         }

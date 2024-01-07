@@ -568,9 +568,9 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             // response (or no response)
             //
             // TODO: Don't block on this for receiving additional entries.
-            res_stream
-                .send(self.shared.wait_for_match(c).await?)
-                .await?;
+            let res = self.shared.wait_for_match(c).await?;
+
+            res_stream.send(res).await?;
 
             if req.timeout_now() {
                 // TODO: Perform the timeout.

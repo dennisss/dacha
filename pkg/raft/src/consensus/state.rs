@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use common::hash::FastHasherBuilder;
 use net::backoff::ExponentialBackoff;
 
 use crate::proto::*;
@@ -52,7 +53,7 @@ pub struct ConsensusCandidateState {
     pub vote_request_id: RequestId,
 
     /// Set of successful pre-vote votes we have received from remote servers.
-    pub pre_votes_received: HashSet<ServerId>,
+    pub pre_votes_received: HashSet<ServerId, FastHasherBuilder>,
 
     /// When the main RequestVote requests were sent out (after enough pre-votes
     /// responses are recieved).
@@ -63,7 +64,7 @@ pub struct ConsensusCandidateState {
     ///
     /// TODO: Consider using these vote responses to pre-initialize the follower
     /// states.
-    pub votes_received: HashSet<ServerId>,
+    pub votes_received: HashSet<ServerId, FastHasherBuilder>,
 
     /// Defaults to false, if we receive a vote rejection in a valid response,
     /// we will mark this as true to indicate that this current term has
@@ -76,7 +77,7 @@ pub struct ConsensusCandidateState {
 /// (Reinitialized after election)
 #[derive(Clone, Debug)]
 pub struct ConsensusLeaderState {
-    pub followers: HashMap<ServerId, ConsensusFollowerProgress>,
+    pub followers: HashMap<ServerId, ConsensusFollowerProgress, FastHasherBuilder>,
 
     /// Smallest read_index() value that we are allowed to return.
     pub min_read_index: LogIndex,
@@ -128,10 +129,10 @@ pub struct ConsensusFollowerProgress {
     /// In-flight Heartbeat requests being sent to this remote server. The value
     /// associated with each request id is the time at which the request was
     /// sent out.
-    pub pending_heartbeat_requests: HashMap<RequestId, Instant>,
+    pub pending_heartbeat_requests: HashMap<RequestId, Instant, FastHasherBuilder>,
 
     /// In-flight AppendEntry requests being sent to this remote server.
-    pub pending_append_requests: HashMap<RequestId, PendingAppendEntries>,
+    pub pending_append_requests: HashMap<RequestId, PendingAppendEntries, FastHasherBuilder>,
 
     /// Number of consecutive successful rounds which this follower has
     /// observed. (resets to 0 when there is a failure)
@@ -198,8 +199,8 @@ impl ConsensusFollowerProgress {
             next_index: last_log_index + 1,
             match_index: 0.into(),
             lease_start: None,
-            pending_heartbeat_requests: HashMap::new(),
-            pending_append_requests: HashMap::new(),
+            pending_heartbeat_requests: HashMap::with_hasher(FastHasherBuilder::default()),
+            pending_append_requests: HashMap::with_hasher(FastHasherBuilder::default()),
             // NOTE: This will force the leader to send initial heartbeats to all servers upon being
             // elected.
             last_heartbeat_sent: None,
