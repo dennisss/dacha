@@ -127,7 +127,6 @@ impl MemoryLogSync {
         Ok(())
     }
 
-    /// TODO: Fix this.
     pub fn discard(&mut self, pos: LogPosition) -> Result<()> {
         if pos.index() <= self.prev.index() {
             if pos.term() > self.prev.term() {

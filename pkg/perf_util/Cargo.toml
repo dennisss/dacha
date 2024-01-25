@@ -11,6 +11,7 @@ compression = { path = "../compression" }
 sys = { path = "../sys" }
 elf = { path = "../elf" }
 perf = { path = "../perf" }
+macros = { path = "../macros" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 file = { path = "../file" }
 executor = { path = "../executor" }

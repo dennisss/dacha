@@ -4,7 +4,7 @@ extern crate sys;
 
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 
 /*
 We want to ensure that even if we don't have panic = "abort", if we detect thread failures, we should stop the main thread as well.

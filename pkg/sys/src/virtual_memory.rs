@@ -3,7 +3,7 @@ use base_error::*;
 use crate::file::blocking_read_to_string;
 
 // TODO: Switch to expecting exactly 2 numbers fo the device_bus and device_num.
-regexp!(LINE => "^([a-f0-9]+)-([a-f0-9]+) +(r|-)(w|-)(x|-)(p|-) +([0-9a-f]+) +([0-9a-f]+):([0-9a-f]+) +([0-9]+) +([^ ]*)$");
+regexp!(LINE => "^([a-f0-9]+)-([a-f0-9]+) +(r|-)(w|-)(x|-)(s|p) +([0-9a-f]+) +([0-9a-f]+):([0-9a-f]+) +([0-9]+) +([^ ]*)$");
 
 #[derive(Clone, Debug)]
 pub struct VirtualMemoryMap {
@@ -31,24 +31,29 @@ pub struct VirtualMemoryPermissions {
     pub read: bool,
     pub write: bool,
     pub execute: bool,
-    pub p: bool,
+    pub private: bool,
 }
 
 impl VirtualMemoryMap {
     pub fn read_current() -> Result<Self> {
         let data = blocking_read_to_string("/proc/self/maps")?;
+        Self::read_data(&data)
+    }
 
+    fn read_data(data: &str) -> Result<Self> {
         let mut areas = vec![];
 
         for line in data.lines() {
-            let m = LINE.exec(line).ok_or_else(|| err_msg("Invalid line"))?;
+            let m = LINE
+                .exec(line)
+                .ok_or_else(|| format_err!("Invalid line: \"{}\"", line))?;
 
             let start_address = u64::from_str_radix(m.group_str(1).unwrap()?, 16)?;
             let end_address = u64::from_str_radix(m.group_str(2).unwrap()?, 16)?;
             let read = m.group_str(3).unwrap()? != "-";
             let write = m.group_str(4).unwrap()? != "-";
             let execute = m.group_str(5).unwrap()? != "-";
-            let p = m.group_str(6).unwrap()? != "-";
+            let private = m.group_str(6).unwrap()? != "p";
 
             let offset = u64::from_str_radix(m.group_str(7).unwrap()?, 16)?;
             let device_bus = u8::from_str_radix(m.group_str(8).unwrap()?, 16)?;
@@ -64,7 +69,7 @@ impl VirtualMemoryMap {
                     read,
                     write,
                     execute,
-                    p,
+                    private,
                 },
                 offset,
                 device_bus,

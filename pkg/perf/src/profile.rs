@@ -74,6 +74,9 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
             let build_id = base_radix::hex_encode(build_id);
             mapping.set_build_id(profile.string_table_len() as i64);
             profile.add_string_table(build_id);
+
+            // If we have the build id then we were able to read the ELF.
+            mapping.set_has_functions(true);
         }
 
         /*
@@ -114,6 +117,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
 
     attr.set_inherit(1);
 
+    /*
     // let child_task = executor::spawn(task1());
 
     let mut cpu = 0;
@@ -129,6 +133,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
             node
         );
     };
+    */
 
     let num_cpus = sys::num_cpus()?;
     if num_cpus == 0 {
@@ -214,7 +219,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
 
     let mut start_time = Instant::now();
 
-    let child_thread2 = std::thread::spawn(task2);
+    // let child_thread2 = std::thread::spawn(task2);
 
     let mut profiler = ProcessProfiler {
         header_buf: [0u8; core::mem::size_of::<perf_event_header>()],
@@ -229,7 +234,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
         for addr in &event_buffers {
             processed += profiler.read_perf_ring_buffer(addr.addr(), |sample| {
                 /*
-                // println!("Stack:");
+                println!("Stack:");
                 for ip in sample.ips.iter().cloned() {
                     let mut path = "[unknown]";
                     let mut func = "[unknown]";
@@ -241,7 +246,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
                         }
                     }
 
-                    // println!("=> {:x} {} @ {}", ip, path, func);
+                    println!("=> {:x} {} @ {}", ip, path, func);
                 }
                 */
 
@@ -269,7 +274,20 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
 
                             if let Some(symbol) = memory_map.lookup_symbol(ip) {
                                 loc.set_mapping_id((symbol.area_index + 1) as u64);
-                            };
+
+                                if let Some(fname) = &symbol.function_name {
+                                    let func_id = (profile.function_len() + 1) as u64;
+
+                                    let func_name_id = profile.string_table_len() as i64;
+                                    profile.add_string_table(fname.clone());
+
+                                    let func = profile.new_function();
+                                    func.set_id(func_id);
+                                    func.set_name(func_name_id);
+
+                                    loc.new_line().set_function_id(func_id);
+                                }
+                            }
 
                             profile.add_location(loc);
 
@@ -288,7 +306,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
             })?;
         }
 
-        println!("{}", processed);
+        // println!("{}", processed);
 
         let now = Instant::now();
         if now >= start_time + duration {

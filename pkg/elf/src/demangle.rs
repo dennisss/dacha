@@ -9,12 +9,7 @@ pub fn demangle_name(name: &str) -> String {
 }
 
 fn demangle_name_standard(name: &str) -> Option<String> {
-    let name = match name.strip_prefix("_ZN") {
-        Some(v) => v,
-        None => return None,
-    };
-
-    let mut name = match name.strip_suffix("E") {
+    let mut name = match name.strip_prefix("_ZN") {
         Some(v) => v,
         None => return None,
     };
@@ -22,6 +17,15 @@ fn demangle_name_standard(name: &str) -> Option<String> {
     let mut out = String::new();
 
     while !name.is_empty() {
+        if let Some(rest) = name.strip_prefix("E") {
+            if !rest.is_empty() {
+                out.push_str(" | ");
+                out.push_str(rest);
+            }
+
+            break;
+        }
+
         let end_of_length = match name.char_indices().find(|(i, c)| !c.is_numeric()) {
             Some((i, _)) => i,
             None => return None,
@@ -50,7 +54,10 @@ fn demangle_name_standard(name: &str) -> Option<String> {
     Some(
         out.replace("$LT$", "<")
             .replace("$GT$", ">")
-            .replace("$u20$", " "),
+            .replace("$u20$", " ")
+            .replace("$u7b$", "{")
+            .replace("$u7d$", "}")
+            .replace("$C$", ","),
     )
 }
 
@@ -76,5 +83,10 @@ mod tests {
             demangle_name("_ZN4core5slice4iter13Iter$LT$T$GT$3new17haa7ae5771d10d65aE"),
             "core::slice::iter::Iter<T>::new::haa7ae5771d10d65a"
         );
+
+        assert_eq!(
+            demangle_name("_ZN8executor5linux8io_uring29ExecutorOperationSubmitFuture14poll_with_task17hd48856b5511dc74cE.llvm.1186342266959941915"),
+            "executor::linux::io_uring::ExecutorOperationSubmitFuture::poll_with_task::hd48856b5511dc74c | .llvm.1186342266959941915"
+        )
     }
 }

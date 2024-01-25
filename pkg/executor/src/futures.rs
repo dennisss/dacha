@@ -50,3 +50,19 @@ impl<T, F: Future<Output = T>> Future for Optional<F> {
 pub fn optional<F>(future: Option<F>) -> Optional<F> {
     Optional { future }
 }
+
+pub struct Pending<T> {
+    _data: PhantomData<T>,
+}
+
+impl<T> Future for Pending<T> {
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Pending
+    }
+}
+
+pub fn pending<T>() -> Pending<T> {
+    Pending { _data: PhantomData }
+}

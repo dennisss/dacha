@@ -9,6 +9,8 @@ pub type StringPointer = usize;
 /// TODO: Pick the min(u32, usize)
 pub type ProgramCounter = u32;
 
+/// TODO: We currently always feed in one byte at a time so we can likely reduce
+/// this size.
 pub type CharacterValue = u32;
 
 /// The discrete input value/token/symbol on which the VM operates during a
@@ -81,7 +83,7 @@ pub enum Instruction {
     Save {
         /// The index into the string pointers list at which to store the
         /// position.
-        index: usize,
+        index: u32,
 
         /// If true, instead of storing the current position, we will store the
         /// position immediately before the last input value.

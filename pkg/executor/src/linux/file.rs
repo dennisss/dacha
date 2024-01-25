@@ -4,7 +4,7 @@ use core::task::{Context, Poll};
 use std::ffi::CString;
 use std::sync::Arc;
 
-use common::errors::*;
+use base_error::*;
 use common::io::IoError;
 use sys::{
     c_int, close, open, read, Errno, IoSlice, IoSliceMut, IoUringOp, OpenFileDescriptor, RWFlags,

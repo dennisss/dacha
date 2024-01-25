@@ -955,6 +955,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "elf_tools"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "parsing",
+]
+
+[[package]]
 name = "emulator"
 version = "0.1.0"
 dependencies = [
@@ -973,7 +981,9 @@ checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 name = "executor"
 version = "0.1.0"
 dependencies = [
+ "base_error",
  "common",
+ "failure",
  "macros",
  "sys",
 ]
@@ -1927,6 +1937,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "perf_util"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "compression",
+ "elf",
+ "executor",
+ "file",
+ "macros",
+ "parsing",
+ "perf",
+ "protobuf",
+ "protobuf_builtins",
+ "sys",
+]
+
+[[package]]
 name = "peripheral"
 version = "0.1.0"
 dependencies = [
@@ -2333,6 +2360,7 @@ dependencies = [
  "grpc_proto",
  "http",
  "macros",
+ "perf",
  "protobuf",
  "rpc",
 ]

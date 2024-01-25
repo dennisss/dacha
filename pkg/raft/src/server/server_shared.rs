@@ -7,7 +7,6 @@ use std::time::Duration;
 use std::time::Instant;
 
 use common::errors::*;
-use common::futures::FutureExt;
 use executor::bundle::TaskBundle;
 use executor::bundle::TaskResultBundle;
 use executor::channel;

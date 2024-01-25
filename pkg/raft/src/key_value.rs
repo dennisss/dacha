@@ -150,7 +150,7 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
 
     async fn wait_for_flush(&self) {
         // The state machine never snapshots itself.
-        common::futures::future::pending().await
+        executor::futures::pending().await
     }
 
     async fn snapshot(&self) -> Result<Option<StateMachineSnapshot>> {

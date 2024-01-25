@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::thread::Thread;
 
-use common::errors::*;
+use base_error::*;
 
 use crate::linux::executor::{Executor, ExecutorShared, TaskId};
 use crate::linux::thread_local::CurrentTaskContext;

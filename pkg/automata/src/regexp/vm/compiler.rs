@@ -208,12 +208,12 @@ impl Compiler {
                     }
 
                     self.add_instruction(Instruction::Save {
-                        index: start_idx,
+                        index: start_idx as u32,
                         lookbehind: false,
                     });
                     self.compile_node(inner)?;
                     self.add_instruction(Instruction::Save {
-                        index: end_idx,
+                        index: end_idx as u32,
                         lookbehind: false,
                     });
                 } else {

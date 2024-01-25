@@ -1,3 +1,5 @@
+use base_error::Error;
+
 /// NOTE: This is not an Error as we we'd prefer for T to be dropped ASAP rather
 /// than being propagated through errors.
 pub struct SendRejected<T> {
@@ -5,8 +7,8 @@ pub struct SendRejected<T> {
     pub error: SendError,
 }
 
-impl<T> From<SendRejected<T>> for common::errors::Error {
-    fn from(value: SendRejected<T>) -> common::errors::Error {
+impl<T> From<SendRejected<T>> for Error {
+    fn from(value: SendRejected<T>) -> Error {
         value.error.into()
     }
 }

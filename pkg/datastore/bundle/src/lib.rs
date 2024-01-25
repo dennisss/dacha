@@ -1,7 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use common::async_std::future::pending;
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use compression::transform::Transform;

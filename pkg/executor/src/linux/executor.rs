@@ -9,7 +9,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{spawn, JoinHandle};
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 use common::hash::FastHasherBuilder;
 use sys::{IoCompletionUring, IoSubmissionUring, IoUring, IoUringOp, IoUringResult};
 

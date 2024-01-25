@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use common::hash::FastHasherBuilder;
+
 use crate::regexp::vm::instruction::*;
 
 /// Helper for performing a single step of the executor given the current input
@@ -238,6 +240,8 @@ impl<'a, P: Program> ExecutorStepState<'a, P> {
                 self.schedule_thread(pc2, saved);
             }
             Instruction::Save { index, lookbehind } => {
+                let index = index as usize;
+
                 // TODO: For regular expressions such as '.*(a)', this will run on every input
                 // byte so we need to see if we can reduce the number of copies that this
                 // requires (we'd need to gurantee that no other threads will need this ).
@@ -297,14 +301,14 @@ struct ThreadList {
     /// PCs is finite and known in advance.
     ///
     /// NOTE: We don't just store the threads in a HashMap to ensure that
-    seen_pcs: HashSet<ProgramCounter>,
+    seen_pcs: HashSet<ProgramCounter, FastHasherBuilder>,
 }
 
 impl ThreadList {
     fn new() -> Self {
         Self {
             list: vec![],
-            seen_pcs: HashSet::new(),
+            seen_pcs: HashSet::with_hasher(FastHasherBuilder::default()),
         }
     }
 

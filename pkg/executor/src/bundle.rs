@@ -12,7 +12,7 @@ use std::string::ToString;
 use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll};
 
-use common::errors::*;
+use base_error::*;
 use common::failure::ResultExt;
 
 use crate::channel;

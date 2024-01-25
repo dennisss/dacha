@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::Once;
 
-use common::errors::*;
+use base_error::*;
 pub use common::nix::sys::signal::Signal;
 use common::nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet};
 

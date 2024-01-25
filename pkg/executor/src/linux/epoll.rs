@@ -5,7 +5,7 @@ use core::task::{Context, Poll};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use common::errors::*;
+use base_error::*;
 use common::hash::FastHasherBuilder;
 use common::io::{IoError, IoErrorKind};
 use sys::{Epoll, EpollEvent, EpollEvents, EpollOp, OpenFileDescriptor};

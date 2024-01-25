@@ -1,4 +1,4 @@
-use common::errors::*;
+use base_error::*;
 use sys::IoUringOp;
 
 use crate::linux::io_uring::ExecutorOperation;

@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use core::time::Duration;
 use std::future::Future;
 
-use common::errors::*;
+use base_error::*;
 
 use crate::channel::oneshot;
 use crate::linux::executor::Executor;
