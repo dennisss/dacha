@@ -11,7 +11,6 @@ use common::io::IoError;
 use common::io::IoErrorKind;
 use common::io::Readable;
 use executor::channel::spsc;
-use executor::sync::Mutex;
 use http::header::*;
 use http::headers::content_type::MediaType;
 use http::ClientInterface;

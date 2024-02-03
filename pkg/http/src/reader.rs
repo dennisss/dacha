@@ -79,7 +79,7 @@ impl Matcher for LineMatcher {
 /// After it is called, the reader can continue to be used as a Readable as if
 /// the pattern was read exactly without overreading.
 pub struct PatternReader {
-    reader: Box<dyn Readable>,
+    reader: Box<dyn SharedReadable>,
 
     /// TODO: Use something lighter weight like the BufferQueue.
     head: Bytes,
@@ -88,7 +88,7 @@ pub struct PatternReader {
 }
 
 impl PatternReader {
-    pub fn new(reader: Box<dyn Readable>, options: StreamBufferOptions) -> Self {
+    pub fn new(reader: Box<dyn SharedReadable>, options: StreamBufferOptions) -> Self {
         PatternReader {
             reader,
             head: Bytes::new(),

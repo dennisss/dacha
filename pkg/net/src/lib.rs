@@ -46,7 +46,6 @@ mod tests {
     use super::*;
 
     use alloc::{sync::Arc, vec::Vec};
-    use executor::sync::Mutex;
     use std::time::Duration;
 
     use common::{

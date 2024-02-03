@@ -36,7 +36,7 @@ pub(super) struct ExecutorTimeouts {
 type TimeoutId = u64;
 
 struct Shared {
-    state: Mutex<State>,
+    state: std::sync::Mutex<State>,
 
     // Used to wake the task that is running to
     sender: channel::Sender<()>,

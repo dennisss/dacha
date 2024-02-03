@@ -8,12 +8,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use common::futures::stream::StreamExt;
 use common::io::*;
 use executor::cancellation::CancellationToken;
 use executor::channel;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
+use executor::sync::PoisonError;
 use executor::JoinHandle;
+use executor::{lock, lock_async};
 use net::ip::IPAddress;
 use net::tcp::TcpListener;
 use net::tcp::TcpStream;
@@ -97,7 +98,7 @@ struct ServerShared {
 
     options: ServerOptions,
 
-    connection_pool: Mutex<ServerConnectionPool>,
+    connection_pool: AsyncMutex<ServerConnectionPool>,
 
     // TODO: Make the channels broadcast to all listeners in the case that we call run() multiple
     // times.
@@ -182,7 +183,7 @@ impl Server {
             shared: Arc::new(ServerShared {
                 handler: Box::new(handler),
                 options,
-                connection_pool: Mutex::new(ServerConnectionPool {
+                connection_pool: AsyncMutex::new(ServerConnectionPool {
                     connections: HashMap::new(),
                     last_id: 0,
                 }),
@@ -220,6 +221,8 @@ impl Server {
     /// - In all cases, shutdown is over once all connection tasks have exited.
     ///
     /// TODO: Currently this is always called with graceful.
+    ///
+    /// NOT CANCEL SAFE
     async fn shutdown(&mut self, graceful: bool) {
         Self::shutdown_impl(&self.shared, graceful).await;
 
@@ -235,12 +238,22 @@ impl Server {
         Self::shutdown_impl(&shared, false).await;
     }
 
-    async fn shutdown_impl(shared: &ServerShared, graceful: bool) {
-        shared.shutting_down.store(true, Ordering::Relaxed);
-
+    // TODO: Verify everyone is using the return value of this.
+    async fn shutdown_impl(shared: &ServerShared, graceful: bool) -> Result<(), PoisonError> {
         // TODO: Spawn in this in a separate task so that it can't be interrupted.
+        lock_async!(connection_pool <= shared.connection_pool.lock().await?, {
+            Self::shutdown_impl_inner(shared, graceful, &mut connection_pool).await
+        });
 
-        let mut connection_pool = shared.connection_pool.lock().await;
+        Ok(())
+    }
+
+    async fn shutdown_impl_inner(
+        shared: &ServerShared,
+        graceful: bool,
+        connection_pool: &mut ServerConnectionPool,
+    ) {
+        shared.shutting_down.store(true, Ordering::Relaxed);
 
         let mut cancel_ids = vec![];
 
@@ -322,28 +335,36 @@ impl Server {
                     let mut s = stream?;
                     s.set_nodelay(true)?;
 
-                    let mut connection_pool = this.shared.connection_pool.lock().await;
+                    lock!(
+                        connection_pool <= this.shared.connection_pool.lock().await?,
+                        {
+                            if connection_pool.connections.len()
+                                > this.shared.options.max_num_connections
+                            {
+                                eprintln!("[http::Server] Dropping external connection");
+                                drop(s);
+                                return;
+                            }
 
-                    if connection_pool.connections.len() > this.shared.options.max_num_connections {
-                        eprintln!("[http::Server] Dropping external connection");
-                        drop(s);
-                        continue;
-                    }
+                            // TODO: Support over usize # of connections by wrapping and checking if
+                            // the id is already in the hashmap.
+                            let connection_id = connection_pool.last_id + 1;
+                            connection_pool.last_id = connection_id;
 
-                    // TODO: Support over usize # of connections by wrapping and checking if the id
-                    // is already in the hashmap.
-                    let connection_id = connection_pool.last_id + 1;
-                    connection_pool.last_id = connection_id;
+                            let task_handle = executor::spawn(Self::handle_stream(
+                                this.shared.clone(),
+                                connection_id,
+                                s,
+                            ));
 
-                    let task_handle =
-                        executor::spawn(Self::handle_stream(this.shared.clone(), connection_id, s));
-
-                    connection_pool.connections.insert(
-                        connection_id,
-                        ServerConnection {
-                            task_handle,
-                            mode: ServerConnectionMode::Unknown,
-                        },
+                            connection_pool.connections.insert(
+                                connection_id,
+                                ServerConnection {
+                                    task_handle,
+                                    mode: ServerConnectionMode::Unknown,
+                                },
+                            );
+                        }
                     );
                 }
                 Event::Shutdown => {
@@ -359,15 +380,20 @@ impl Server {
 
         // Wait for all connections to die.
         loop {
-            {
-                let connection_pool = this.shared.connection_pool.lock().await;
-                if connection_pool.connections.is_empty() {
-                    break;
-                }
+            let done = lock!(
+                connection_pool <= this.shared.connection_pool.lock().await?,
+                { connection_pool.connections.is_empty() }
+            );
+
+            if done {
+                break;
             }
 
             let _ = this.shared.connection_pool_empty_channel.1.recv().await;
         }
+
+        // TODO: Block until all tasks spawned within this server's context are done
+        // running.
 
         Ok(())
     }
@@ -410,13 +436,15 @@ impl Server {
         };
 
         // Now that the connection is finished, remove it from the global list.
-        {
-            let mut connection_pool = shared.connection_pool.lock().await;
-            connection_pool.connections.remove(&connection_id);
-            if connection_pool.connections.is_empty() {
-                let _ = shared.connection_pool_empty_channel.0.try_send(());
+        lock!(
+            connection_pool <= shared.connection_pool.lock().await.unwrap(),
+            {
+                connection_pool.connections.remove(&connection_id);
+                if connection_pool.connections.is_empty() {
+                    let _ = shared.connection_pool_empty_channel.0.try_send(());
+                }
             }
-        }
+        );
     }
 
     // TODO: Verify that the HTTP2 error handling works ok.
@@ -801,11 +829,10 @@ impl Server {
 
         // Mark this connection as V2 so that we can perform graceful shutdown if
         // needed.
-        {
-            let mut connection_pool = shared.connection_pool.lock().await;
+        lock!(connection_pool <= shared.connection_pool.lock().await?, {
             let connection = connection_pool.connections.get_mut(&connection_id).unwrap();
             connection.mode = ServerConnectionMode::V2(conn);
-        }
+        });
 
         return conn_runner.await;
     }

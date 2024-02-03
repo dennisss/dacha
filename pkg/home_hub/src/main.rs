@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use common::{errors::*, project_path};
 use executor::channel;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 use home_hub::proto::config::Config;
 use peripheral::ddc::DDCDevice;
 use rpi::gpio::*;
@@ -61,7 +61,7 @@ enum_def_with_unknown!(InputSelectValue u8 =>
 );
 
 struct App {
-    state: Mutex<State>,
+    state: AsyncMutex<State>,
     state_event: (channel::Sender<()>, channel::Receiver<()>),
     light_event: (channel::Sender<()>, channel::Receiver<()>),
     ddc_event: (channel::Sender<()>, channel::Receiver<()>),

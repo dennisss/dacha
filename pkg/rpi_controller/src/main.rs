@@ -53,7 +53,7 @@ use std::time::Duration;
 
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 use protobuf_builtins::google::protobuf::Empty;
 use rpc_util::NamedPortArg;
 use rpi::gpio::*;
@@ -69,7 +69,7 @@ const FAN_PWM_FREQUENCY: f32 = 25000.0;
 
 #[derive(Clone)]
 struct FanControlServiceImpl {
-    state: Arc<Mutex<State>>,
+    state: Arc<AsyncMutex<State>>,
 }
 
 struct State {
@@ -96,7 +96,7 @@ impl FanControlServiceImpl {
         )?;
 
         Ok(Self {
-            state: Arc::new(Mutex::new(State {
+            state: Arc::new(AsyncMutex::new(State {
                 proto,
                 led_pin: None,
             })),

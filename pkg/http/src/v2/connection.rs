@@ -7,9 +7,9 @@ use common::chrono::prelude::*;
 use common::hash::FastHasherBuilder;
 use common::io::{IoError, IoErrorKind, Readable, Writeable};
 use common::{chrono::Duration, errors::*};
-use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
+use executor::sync::{AsyncMutex, PoisonError};
+use executor::{channel, lock_async};
 
 use crate::connection_event_listener::ConnectionEventListener;
 use crate::proto::v2::*;
@@ -161,7 +161,7 @@ impl Connection {
                 options,
                 server_options,
                 connection_event_sender,
-                state: Mutex::new(ConnectionState {
+                state: AsyncMutex::new(ConnectionState {
                     running: false,
                     shutting_down: ShuttingDownState::No,
                     connection_event_receiver: Some(connection_event_receiver),
@@ -190,8 +190,16 @@ impl Connection {
         }
     }
 
-    pub async fn set_event_listener(&self, event_listener: Box<dyn ConnectionEventListener>) {
-        self.shared.state.lock().await.event_listener = Some(event_listener);
+    pub async fn set_event_listener(
+        &self,
+        event_listener: Box<dyn ConnectionEventListener>,
+    ) -> Result<(), PoisonError> {
+        Ok(lock_async!(
+            connection_state <= self.shared.state.lock().await?,
+            {
+                connection_state.event_listener = Some(event_listener);
+            }
+        ))
     }
 
     /// Called on a client which just sent a request over HTTP 1.1 with an
@@ -204,8 +212,17 @@ impl Connection {
         &self,
         request_method: Method,
     ) -> Result<impl std::future::Future<Output = Result<Response>> + 'static> {
-        let mut connection_state = self.shared.state.lock().await;
+        lock_async!(connection_state <= self.shared.state.lock().await?, {
+            self.receive_upgrade_response_impl(&mut connection_state, request_method)
+                .await
+        })
+    }
 
+    async fn receive_upgrade_response_impl(
+        &self,
+        connection_state: &mut ConnectionState,
+        request_method: Method,
+    ) -> Result<impl std::future::Future<Output = Result<Response>> + 'static> {
         if self.shared.is_server {
             return Err(err_msg("Must be a client to receive a upgrade response"));
         }
@@ -228,8 +245,10 @@ impl Connection {
 
         // Perform a local close.
         {
-            let mut stream_state = stream.state.lock().await;
-            stream_state.sending_end = true;
+            lock_async!(stream_state <= stream.state.lock().await?, {
+                stream_state.sending_end = true;
+            });
+
             drop(outgoing_body);
             stream.sending_end_flushed = true;
         }
@@ -261,8 +280,17 @@ impl Connection {
     ///
     /// NOTE: Must be called before 'run()'
     pub async fn receive_upgrade_request(&self, request: Request) -> Result<()> {
-        let mut connection_state = self.shared.state.lock().await;
+        lock_async!(connection_state <= self.shared.state.lock().await?, {
+            self.receive_upgrade_request_impl(&mut connection_state, request)
+                .await
+        })
+    }
 
+    async fn receive_upgrade_request_impl(
+        &self,
+        connection_state: &mut ConnectionState,
+        request: Request,
+    ) -> Result<()> {
         // TODO: This could be a convenienct place to deal with reading the settings
         // header?
 
@@ -297,8 +325,10 @@ impl Connection {
 
         // Completely close the remote (client) endpoint.
         {
-            let mut stream_state = stream.state.lock().await;
-            stream_state.received_end = true;
+            lock_async!(stream_state <= stream.state.lock().await?, {
+                stream_state.received_end = true;
+            });
+
             drop(incoming_body);
         }
 
@@ -327,7 +357,7 @@ impl Connection {
     /// error out instantly with a retryable error so the caller must be
     /// prepared to retry.
     pub async fn accepting_requests(&self) -> bool {
-        let connection_state = self.shared.state.lock().await;
+        let connection_state = self.shared.state.lock().await.unwrap().read_exclusive();
 
         // NOTE: It is not necessary to check upper_sent_stream_id because if that is
         // not MAX_STREAM_ID, then that would imply that we sent or received a
@@ -336,7 +366,7 @@ impl Connection {
     }
 
     pub async fn num_outstanding_streams(&self) -> usize {
-        let connection_state = self.shared.state.lock().await;
+        let connection_state = self.shared.state.lock().await.unwrap().read_exclusive();
         connection_state.pending_requests.len() + connection_state.streams.len()
     }
 
@@ -376,16 +406,14 @@ impl Connection {
 
         // TODO: Fail if the connection runner isn't started yet.
 
-        let empty_queue;
-        {
-            let mut connection_state = self.shared.state.lock().await;
+        let mut empty_queue = false; // Initialized below.
+        lock_async!(connection_state <= self.shared.state.lock().await?, {
             if connection_state.shutting_down.is_some() {
                 return Err(ProtocolErrorV2 {
                     code: ErrorCode::REFUSED_STREAM,
                     message: "Connection is shutting down",
                     local: true,
-                }
-                .into());
+                });
             }
 
             // TODO: Ensure this limit isn't hit before the DirectClient marks itself as
@@ -396,8 +424,7 @@ impl Connection {
                     code: ErrorCode::REFUSED_STREAM,
                     message: "Hit max_enqueued_requests limit on this connection",
                     local: true,
-                }
-                .into());
+                });
             }
 
             empty_queue = connection_state.pending_requests.is_empty();
@@ -408,7 +435,9 @@ impl Connection {
                     request,
                     response_sender: sender,
                 });
-        }
+
+            Ok(())
+        })?;
 
         // For the first request in the queue, send an event so that the
         // connection takes notice
@@ -424,12 +453,15 @@ impl Connection {
 
     /// Gets the approximate last time when a byte was sent and received over
     /// the connection.
-    pub async fn last_byte_times(&self) -> (std::time::SystemTime, std::time::SystemTime) {
-        let state = self.shared.state.lock().await;
-        (
-            state.last_user_byte_sent_time.clone(),
-            state.last_user_byte_received_time.clone(),
-        )
+    pub async fn last_byte_times(
+        &self,
+    ) -> Result<(std::time::SystemTime, std::time::SystemTime), PoisonError> {
+        Ok(lock_async!(state <= self.shared.state.lock().await?, {
+            (
+                state.last_user_byte_sent_time.clone(),
+                state.last_user_byte_received_time.clone(),
+            )
+        }))
     }
 
     pub async fn ping(&self, data: u64) {
@@ -503,8 +535,17 @@ impl Connection {
         graceful: bool,
         error: ProtocolErrorV2,
     ) {
-        let mut connection_state = shared.state.lock().await;
+        let mut connection_state = shared.state.lock().await.unwrap().enter();
+        Self::shutdown_with_error_impl_inner(shared, graceful, error, &mut connection_state);
+        connection_state.exit();
+    }
 
+    async fn shutdown_with_error_impl_inner(
+        shared: &Arc<ConnectionShared>,
+        graceful: bool,
+        error: ProtocolErrorV2,
+        connection_state: &mut ConnectionState,
+    ) {
         // Ensure that we never decrease the shutdown in severity.
         match &connection_state.shutting_down {
             ShuttingDownState::Complete | ShuttingDownState::Abrupt => {
@@ -613,14 +654,13 @@ impl Connection {
         reader: Box<dyn Readable>,
         writer: Box<dyn Writeable>,
     ) -> Result<()> {
-        {
-            let mut state = shared.state.lock().await;
-
+        lock_async!(state <= shared.state.lock().await?, {
             if state.running {
                 return Err(err_msg("run() can only be called once per connection"));
             }
             state.running = true;
-        }
+            Ok(())
+        })?;
 
         // NOTE: We could use a select! for these, but we'd rather run them in separate
         // tasks so that they can run in separate CPU threads.
@@ -649,71 +689,74 @@ impl Connection {
 
         let mut connection_state = shared.state.lock().await;
 
-        // Well behaved peers SHOULD send a GOAWAY before closing the connection so
-        // allow ignoring abrupt pipe closures in this case.
-        //
-        // TODO: Should we
-        // also verify that all streams have been processed.
-        if let Err(e) = &result {
-            // TODO: Annoying part of this logic is that we can't run HTTP2 on HTTP2
-            // (because HTTP2 generates ProtocolErrorV2 errors which )
-            if let Some(io_error) = e.downcast_ref::<IoError>() {
-                let got_remote_goaway = match &connection_state.shutting_down {
-                    ShuttingDownState::GracefulRemote => true,
-                    _ => false,
-                };
+        lock_async!(connection_state <= shared.state.lock().await?, {
+            // Well behaved peers SHOULD send a GOAWAY before closing the connection so
+            // allow ignoring abrupt pipe closures in this case.
+            //
+            // TODO: Should we
+            // also verify that all streams have been processed.
+            if let Err(e) = &result {
+                // TODO: Annoying part of this logic is that we can't run HTTP2 on HTTP2
+                // (because HTTP2 generates ProtocolErrorV2 errors which )
+                if let Some(io_error) = e.downcast_ref::<IoError>() {
+                    let got_remote_goaway = match &connection_state.shutting_down {
+                        ShuttingDownState::GracefulRemote => true,
+                        _ => false,
+                    };
 
-                if got_remote_goaway {
-                    result = Ok(());
+                    if got_remote_goaway {
+                        result = Ok(());
+                    }
                 }
             }
-        }
 
-        if result.is_ok() && !connection_state.streams.is_empty() {
-            result = Err(IoError::new(
-                IoErrorKind::Aborted,
-                "HTTP2 Connection closed while streams are still active",
-            )
-            .into());
-        }
+            if result.is_ok() && !connection_state.streams.is_empty() {
+                result = Err(IoError::new(
+                    IoErrorKind::Aborted,
+                    "HTTP2 Connection closed while streams are still active",
+                )
+                .into());
+            }
 
-        // Cleanup all outstanding state.
-        // TODO: Ideally if we did everything correctly then this shouldn't be needed
-        // right?
-        {
-            connection_state
-                .set_shutting_down(ShuttingDownState::Complete)
-                .await;
-            // TODO: Hopefully this line is not needed?
-            connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
+            // Cleanup all outstanding state.
+            // TODO: Ideally if we did everything correctly then this shouldn't be needed
+            // right?
+            {
+                connection_state
+                    .set_shutting_down(ShuttingDownState::Complete)
+                    .await;
+                // TODO: Hopefully this line is not needed?
+                connection_state.upper_received_stream_id =
+                    connection_state.last_received_stream_id;
 
-            // TODO: Should we call finish_stream to perform this cleanup?
-            for (stream_id, stream) in connection_state.streams.iter_mut() {
-                if let Some((_, response_sender, _)) = stream.incoming_response_handler.take() {
-                    // TODO: Check if this is a good error to return.
-                    response_sender
+                // TODO: Should we call finish_stream to perform this cleanup?
+                for (stream_id, stream) in connection_state.streams.iter_mut() {
+                    if let Some((_, response_sender, _)) = stream.incoming_response_handler.take() {
+                        // TODO: Check if this is a good error to return.
+                        response_sender
+                            .send(Err(ProtocolErrorV2 {
+                                code: ErrorCode::STREAM_CLOSED,
+                                message: "Connection shutting down.",
+                                local: true,
+                            }
+                            .into()))
+                            .await;
+                    }
+                }
+                connection_state.streams.clear();
+
+                while let Some(req) = connection_state.pending_requests.pop_front() {
+                    req.response_sender
                         .send(Err(ProtocolErrorV2 {
-                            code: ErrorCode::STREAM_CLOSED,
-                            message: "Connection shutting down.",
+                            code: ErrorCode::REFUSED_STREAM,
+                            message: "Connection shutting down",
                             local: true,
                         }
                         .into()))
                         .await;
                 }
             }
-            connection_state.streams.clear();
-
-            while let Some(req) = connection_state.pending_requests.pop_front() {
-                req.response_sender
-                    .send(Err(ProtocolErrorV2 {
-                        code: ErrorCode::REFUSED_STREAM,
-                        message: "Connection shutting down",
-                        local: true,
-                    }
-                    .into()))
-                    .await;
-            }
-        }
+        });
 
         // TODO: No matter what, go through the state and verify that every pending
         // request is refused gracefully. Any streams that are still active

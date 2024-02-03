@@ -9,7 +9,6 @@ use datastore_meta_client::constants::*;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
 use file::dir_lock::DirLock;
 use file::LocalPathBuf;
 use protobuf::Message;
@@ -17,7 +16,7 @@ use raft::atomic::{BlobFile, BlobFileBuilder};
 use raft::proto::RouteLabel;
 use raft::PendingExecutionResult;
 use raft::StateMachine;
-use rpc_util::AddReflection;
+use rpc_util::{AddProfilingEndpoints, AddReflection};
 use sstable::db::{SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
 
@@ -99,6 +98,7 @@ impl Metastore {
         }
     }
 
+    /// CANCEL SAFE
     async fn snapshot_impl<'a>(
         &self,
         request: rpc::ServerRequest<SnapshotRequest>,
@@ -126,6 +126,7 @@ impl Metastore {
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn read_impl<'a>(
         &self,
         request: rpc::ServerRequest<ReadRequest>,
@@ -215,9 +216,9 @@ impl Metastore {
             .shared
             .transaction_manager
             .execute(
-                &internal_txn,
+                internal_txn,
                 self.shared.node.clone(),
-                &self.shared.state_machine,
+                self.shared.state_machine.clone(),
             )
             .await?;
 
@@ -323,7 +324,7 @@ impl ServerManagementService for Metastore {
         req: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         res: &mut rpc::ServerResponse<raft::proto::Status>,
     ) -> Result<()> {
-        res.value = self.shared.node.server().current_status().await;
+        res.value = self.shared.node.server().current_status().await?;
         Ok(())
     }
 }
@@ -423,6 +424,7 @@ pub async fn run(config: MetastoreConfig) -> Result<()> {
     )))?;
 
     rpc_server.add_reflection()?;
+    rpc_server.add_profilez()?;
 
     task_bundle.add("rpc::Server", rpc_server.run(config.service_port));
 

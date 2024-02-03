@@ -4,7 +4,7 @@ use std::sync::Arc;
 use common::errors::*;
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 use nordic_tools::proto::bridge::*;
 
 use crate::packet::*;
@@ -17,7 +17,7 @@ pub struct Client {
 struct ClientShared {
     stub: RadioBridgeStub,
     device_name: String,
-    state: Mutex<ClientState>,
+    state: AsyncMutex<ClientState>,
 }
 
 struct ClientState {
@@ -49,7 +49,7 @@ impl Client {
         let shared = Arc::new(ClientShared {
             stub,
             device_name: device_name.to_string(),
-            state: Mutex::new(ClientState {
+            state: AsyncMutex::new(ClientState {
                 last_subscriber_id: 0,
                 subscribers: HashMap::new(),
             }),

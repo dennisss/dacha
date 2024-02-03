@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use common::errors::*;
-use executor::sync::Mutex;
-use executor::sync::RwLock;
+use executor::lock_async;
+use executor::sync::AsyncMutex;
+use executor::sync::AsyncRwLock;
 use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 use raft::atomic::BlobFile;
@@ -56,15 +57,19 @@ pub struct EmbeddedDBStateMachine {
     dir: LocalPathBuf,
 
     /// File used to mark
-    current: Mutex<(Current, BlobFile)>,
+    current: AsyncMutex<(Current, BlobFile)>,
 
-    db: RwLock<EmbeddedDB>,
+    db: AsyncRwLock<EmbeddedDB>,
 
     watchers: Watchers,
 }
 
 impl EmbeddedDBStateMachine {
     pub async fn open(dir: &LocalPath) -> Result<Self> {
+        // TODO: Add a LOCK file and ensure that all file I/Os require that the lock is
+        // still held.
+        // (can also remove the internal EmbeddedDB lock per snapshot)
+
         let mut current = Current::default();
 
         let current_file = {
@@ -107,9 +112,9 @@ impl EmbeddedDBStateMachine {
         let db = EmbeddedDB::open(db_path, db_options).await?;
 
         Ok(Self {
-            db: RwLock::new(db),
+            db: AsyncRwLock::new(db),
             dir: dir.to_owned(),
-            current: Mutex::new((current, current_file)),
+            current: AsyncMutex::new((current, current_file)),
             watchers: Watchers::new(),
         })
     }
@@ -125,8 +130,9 @@ impl EmbeddedDBStateMachine {
         Ok(db)
     }
 
+    /// CANCEL SAFE
     pub async fn snapshot(&self) -> Snapshot {
-        self.db.read().await.snapshot().await
+        self.db.read().await.unwrap().snapshot().await
     }
 
     pub fn watchers(&self) -> &Watchers {
@@ -140,11 +146,11 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         // The operation should be a serialized WriteBatch
         // We just need to add the sequence to it and then apply it.
 
-        let db = self.db.read().await;
+        let db = self.db.read().await?;
 
         let mut write = WriteBatch::from_bytes(op)?;
         write.set_sequence(index.value());
-        db.write(&mut write).await?;
+        db.write(&write).await?;
 
         // Send the change to watchers.
         // TODO: This can be parrallelized with future writes.
@@ -172,22 +178,28 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
     }
 
     async fn last_applied(&self) -> raft::LogIndex {
-        self.db.read().await.last_sequence().await.into()
+        self.db.read().await.unwrap().last_sequence().await.into()
     }
 
     async fn last_flushed(&self) -> raft::LogIndex {
-        self.db.read().await.last_flushed_sequence().await.into()
+        self.db
+            .read()
+            .await
+            .unwrap()
+            .last_flushed_sequence()
+            .await
+            .into()
     }
 
     async fn wait_for_flush(&self) {
-        let f = { self.db.read().await.wait_for_flush() };
+        let f = { self.db.read().await.unwrap().wait_for_flush() };
         // NOTE: Must not keep 'self.db' locked as that would permanently block getting
         // the writer lock in restore().
         f.await
     }
 
     async fn snapshot(&self) -> Result<Option<raft::StateMachineSnapshot>> {
-        let backup = self.db.read().await.backup().await?;
+        let backup = self.db.read().await?.backup().await?;
         let last_applied = backup.last_sequence().into();
 
         let (mut writer, reader) = common::pipe::pipe();
@@ -204,7 +216,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
     }
 
     async fn restore(&self, data: raft::StateMachineSnapshot) -> Result<bool> {
-        let mut current = self.current.lock().await;
+        let mut current = self.current.lock().await?.read_exclusive();
 
         // TODO: Validate the last_applied isn't regressing.
 
@@ -228,9 +240,9 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
 
         // Swap in the new database.
         {
-            let mut db = self.db.write().await;
+            let mut db = self.db.write().await?.enter();
             core::mem::swap(&mut *db, &mut new_db);
-            drop(db);
+            db.exit();
 
             // TODO: Use some form of abrupt cancellation of this.
             new_db.close().await?;
@@ -238,8 +250,10 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
 
         let old_number = current.0.current_snapshot();
 
-        current.0.set_current_snapshot(num);
-        current.1.store(&current.0.serialize()?).await?;
+        lock_async!(current <= current.upgrade(), {
+            current.0.set_current_snapshot(num);
+            current.1.store(&current.0.serialize()?).await
+        })?;
 
         let old_path = self.dir.join(format!("snapshot-{:04}", old_number));
         file::remove_dir_all(&old_path).await?;

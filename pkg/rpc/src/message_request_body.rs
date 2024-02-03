@@ -5,7 +5,8 @@ use common::errors::*;
 use common::io::{IoError, IoErrorKind, Readable};
 use executor::channel::error::RecvError;
 use executor::channel::spsc;
-use executor::sync::Mutex;
+use executor::lock_async;
+use executor::sync::AsyncMutex;
 use http::Headers;
 
 use crate::buffer_queue::*;
@@ -27,10 +28,10 @@ pub struct MessageRequestBuffer {
     ///
     /// If this needs to be locked, then it MUST be locked before 'received' is
     /// locked.
-    request_receiver: Mutex<spsc::Receiver<Result<Option<Bytes>>>>,
+    request_receiver: AsyncMutex<spsc::Receiver<Result<Option<Bytes>>>>,
 
     /// MUST NOT be locked while blocking for an indefinite amount of time.
-    received: Mutex<MessageRequestBufferReceived>,
+    received: AsyncMutex<MessageRequestBufferReceived>,
 }
 
 struct MessageRequestBufferReceived {
@@ -65,8 +66,8 @@ impl MessageRequestBuffer {
     pub fn new(max_length: usize, request_receiver: spsc::Receiver<Result<Option<Bytes>>>) -> Self {
         Self {
             max_length,
-            request_receiver: Mutex::new(request_receiver),
-            received: Mutex::new(MessageRequestBufferReceived {
+            request_receiver: AsyncMutex::new(request_receiver),
+            received: AsyncMutex::new(MessageRequestBufferReceived {
                 state: MessageRequestBufferState::Receiving,
                 buffer: BufferQueue::new(),
             }),
@@ -76,7 +77,10 @@ impl MessageRequestBuffer {
     /// Checks whether or not this buffer can currently be used to retry the
     /// request.
     pub async fn is_retryable(&self) -> bool {
-        let mut received = self.received.lock().await;
+        let received = match self.received.lock().await {
+            Ok(v) => v.read_exclusive(),
+            Err(_) => return false,
+        };
 
         // Can't be retried if we truncated some data.
         if received.buffer.start_byte_offset() != 0 {
@@ -94,11 +98,21 @@ impl MessageRequestBuffer {
     // TODO: Cancellations of this future are potentially problematic as we may lose
     // request bytes.
     async fn read(&self, cursor: &mut BufferQueueCursor, mut buf: &mut [u8]) -> Result<usize> {
-        let mut request_receiver = self.request_receiver.lock().await;
+        lock_async!(request_receiver <= self.request_receiver.lock().await?, {
+            self.read_with_receiver(&mut request_receiver, cursor, buf)
+                .await
+        })
+    }
 
+    async fn read_with_receiver(
+        &self,
+        request_receiver: &mut spsc::Receiver<Result<Option<Bytes>>>,
+        cursor: &mut BufferQueueCursor,
+        mut buf: &mut [u8],
+    ) -> Result<usize> {
         let mut nread = 0;
         loop {
-            let mut received = self.received.lock().await;
+            let mut received = self.received.lock().await?.read_exclusive();
             let current_state = received.state;
             match current_state {
                 MessageRequestBufferState::Receiving | MessageRequestBufferState::Done => {
@@ -135,7 +149,7 @@ impl MessageRequestBuffer {
                             request_receiver.wait().await;
                         }
 
-                        let mut received = self.received.lock().await;
+                        let mut received = self.received.lock().await?.enter();
 
                         // NOTE: All code after this point must be syncronous.
                         // Once we receive data, we must apply it to the state regardless of whether
@@ -146,6 +160,7 @@ impl MessageRequestBuffer {
                             Some(v) => v,
                             None => {
                                 assert!(nread != 0);
+                                received.exit();
                                 break;
                             }
                         };
@@ -162,21 +177,25 @@ impl MessageRequestBuffer {
 
                                 received.buffer.push(header);
                                 received.buffer.push(data);
+                                received.exit();
                                 continue;
                             }
                             Ok(Ok(None)) => {
                                 received.state = MessageRequestBufferState::Done;
+                                received.exit();
                                 break;
                             }
                             Ok(Err(e)) => {
                                 // Custom failure reason (non-cancellation).
                                 received.state = MessageRequestBufferState::Error;
+                                received.exit();
                                 return Err(e);
                             }
                             Err(RecvError::SenderDropped) => {
                                 // The sender was dropped before the None (end of stream indicator)
                                 // was sent.
                                 received.state = MessageRequestBufferState::Cancelled;
+                                received.exit();
                                 continue;
                             }
                         }

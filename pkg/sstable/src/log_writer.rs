@@ -3,8 +3,9 @@ use std::time::{Duration, Instant};
 
 use common::errors::*;
 use common::io::Writeable;
-use executor::SyncRange;
-use executor::{child_task::ChildTask, sync::Mutex, Condvar};
+use executor::child_task::ChildTask;
+use executor::sync::AsyncVariable;
+use executor::{lock, SyncRange};
 use file::{LocalFile, LocalPath};
 
 #[derive(Defaultable, Clone, Debug)]
@@ -58,7 +59,7 @@ pub struct LogWriter {
 struct Shared {
     options: LogWriterOptions,
     file: LocalFile,
-    state: Condvar<State>,
+    state: AsyncVariable<State>,
 }
 
 struct State {
@@ -93,7 +94,7 @@ impl LogWriter {
         let shared = Arc::new(Shared {
             options,
             file,
-            state: Condvar::new(State {
+            state: AsyncVariable::new(State {
                 offset,
                 flushed_offset: 0,
                 force_offset: 0,
@@ -118,7 +119,10 @@ impl LogWriter {
 
     async fn background_thread_fn(shared: Arc<Shared>) {
         loop {
-            let mut state = shared.state.lock().await;
+            let mut state = match shared.state.lock().await {
+                Ok(s) => s.enter(),
+                Err(_) => return,
+            };
 
             let now = Instant::now();
             let flushed_offset = state.flushed_offset;
@@ -129,7 +133,7 @@ impl LogWriter {
             let next_flush_offset = match next_flush_offset {
                 Some(v) => v,
                 None => {
-                    let waiter = state.wait(());
+                    let waiter = state.wait();
 
                     if let Some(time) = next_flush_time {
                         assert!(time > now);
@@ -146,7 +150,7 @@ impl LogWriter {
                 state.last_block_start_time = None;
             }
 
-            drop(state);
+            state.exit();
 
             assert!(next_flush_offset > flushed_offset);
 
@@ -162,19 +166,26 @@ impl LogWriter {
                 )
                 .await;
 
-            let mut state = shared.state.lock().await;
-            let is_error = res.is_err();
-            match res {
-                Ok(()) => {
-                    state.flushed_offset = next_flush_offset;
-                    state.first_pending_byte_time = state.last_block_start_time.clone();
-                }
-                Err(e) => {
-                    state.flush_error.set(e);
-                }
-            }
+            let state_permit = match shared.state.lock().await {
+                Ok(v) => v,
+                Err(_) => return,
+            };
 
-            state.notify_all();
+            let is_error = lock!(state <= state_permit, {
+                let is_error = res.is_err();
+                match res {
+                    Ok(()) => {
+                        state.flushed_offset = next_flush_offset;
+                        state.first_pending_byte_time = state.last_block_start_time.clone();
+                    }
+                    Err(e) => {
+                        state.flush_error.set(e);
+                    }
+                }
+
+                state.notify_all();
+                is_error
+            });
 
             if is_error {
                 break;
@@ -251,35 +262,42 @@ impl LogFlushSubscriber {
     /// blocking future is pre-empted.
     pub async fn wait_for_flush(&mut self) {
         loop {
-            let mut state = self.shared.state.lock().await;
+            let mut state = match self.shared.state.lock().await {
+                Ok(v) => v.enter(),
+                Err(_) => return,
+            };
+
             if state.flushed_offset > self.last_flushed_offset {
                 self.last_flushed_offset = state.flushed_offset;
+                state.exit();
                 break;
             }
 
             if state.flush_error.is_err() {
+                state.exit();
                 break;
             }
 
-            state.wait(()).await;
+            state.wait().await;
         }
     }
 
     pub async fn last_flushed_offset(&mut self) -> Result<u64> {
-        let mut state = self.shared.state.lock().await;
-        self.last_flushed_offset = state.flushed_offset;
-        state.flush_error.get()?;
-        Ok(self.last_flushed_offset)
+        lock!(state <= self.shared.state.lock().await?, {
+            self.last_flushed_offset = state.flushed_offset;
+            state.flush_error.get()?;
+            Ok(self.last_flushed_offset)
+        })
     }
 }
 
 #[async_trait]
 impl Writeable for LogWriter {
     async fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let mut state = self.shared.state.lock().await;
+        let mut state = self.shared.state.lock().await?.enter();
 
-        // TODO: Stop accepting writes if syncing is in a failing state.
-
+        // NOTE: If this fails or is cancelled, we will poison the whole log state as we
+        // don't know how much was actually written.
         let n = self.shared.file.write_at(state.offset, buf).await?;
 
         if n != 0 {
@@ -304,27 +322,29 @@ impl Writeable for LogWriter {
             state.notify_all();
         }
 
+        state.exit();
+
         Ok(n)
     }
 
-    // Want to immediately force flushing.
     async fn flush(&mut self) -> Result<()> {
-        let mut state = self.shared.state.lock().await;
+        let mut state = self.shared.state.lock().await?.enter();
         let target_offset = state.offset;
         state.force_offset = target_offset;
         state.notify_all();
-        drop(state);
+        state.exit();
 
         loop {
-            let mut state = self.shared.state.lock().await;
+            let mut state = self.shared.state.lock().await?.enter();
 
             if state.flushed_offset >= target_offset {
+                state.exit();
                 break;
             }
 
             state.flush_error.get()?;
 
-            state.wait(()).await;
+            state.wait().await;
         }
 
         Ok(())

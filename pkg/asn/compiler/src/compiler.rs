@@ -103,7 +103,7 @@ enum EncodingMode {
 /// Multi-file compiler. Currently all files must be added before any individual
 /// files get compiled.
 pub struct Compiler {
-    inner: Mutex<CompilerInner>,
+    inner: std::sync::Mutex<CompilerInner>,
 }
 
 struct CompilerInner {

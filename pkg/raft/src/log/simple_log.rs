@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common::errors::*;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use file::LocalPath;
 use protobuf::{Message, StaticMessage};
 
@@ -20,10 +21,10 @@ pub struct SimpleLog {
     mem: MemoryLog,
 
     /// The position of the last entry stored in the snapshot
-    last_flushed: Mutex<LogSequence>,
+    last_flushed: AsyncMutex<LogSequence>,
 
     /// The single file backing the log.
-    snapshot: Mutex<BlobFile>,
+    snapshot: AsyncMutex<BlobFile>,
 }
 
 impl SimpleLog {
@@ -35,8 +36,8 @@ impl SimpleLog {
 
         Ok(SimpleLog {
             mem: MemoryLog::new(),
-            last_flushed: Mutex::new(LogSequence::zero()),
-            snapshot: Mutex::new(file),
+            last_flushed: AsyncMutex::new(LogSequence::zero()),
+            snapshot: AsyncMutex::new(file),
         })
     }
 
@@ -63,8 +64,8 @@ impl SimpleLog {
 
         Ok(SimpleLog {
             mem,
-            last_flushed: Mutex::new(last_sequence),
-            snapshot: Mutex::new(file),
+            last_flushed: AsyncMutex::new(last_sequence),
+            snapshot: AsyncMutex::new(file),
         })
     }
 
@@ -111,7 +112,12 @@ impl Log for SimpleLog {
 
     // TODO: Is there any point in ever
     async fn last_flushed(&self) -> LogSequence {
-        self.last_flushed.lock().await.clone()
+        self.last_flushed
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive()
+            .clone()
     }
 
     async fn wait_for_flush(&self) -> Result<()> {
@@ -122,7 +128,7 @@ impl Log for SimpleLog {
 
         self.mem.wait_for_flush().await?;
 
-        let s = self.snapshot.lock().await;
+        let s = self.snapshot.lock().await?.enter();
 
         // TODO: Must also serialize the start position. (although I'm not sure if I
         // need more than just the index?)
@@ -145,7 +151,11 @@ impl Log for SimpleLog {
 
         s.store(&log.serialize()?).await?;
 
-        *self.last_flushed.lock().await = last_seq;
+        lock!(last_flushed <= self.last_flushed.lock().await.unwrap(), {
+            *last_flushed = last_seq;
+        });
+
+        s.exit();
 
         Ok(())
     }

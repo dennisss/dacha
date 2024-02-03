@@ -324,7 +324,7 @@ mod tests {
     ///   print(*objects, sep=' ', end='\n', file=sys.stdout, flush=False)
     /// See https://docs.python.org/3/library/functions.html#print
     struct InMemoryPrintFunc {
-        buffer: Arc<Mutex<String>>,
+        buffer: Arc<std::sync::Mutex<String>>,
     }
 
     impl BuiltinFunction for InMemoryPrintFunc {

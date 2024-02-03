@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use executor::{Condvar, CondvarGuard};
+use executor::sync::{AsyncVariable, AsyncVariableGuard, AsyncVariablePermit};
 
 use crate::proto::*;
 
@@ -16,7 +16,7 @@ const ROUTE_EXPIRATION_DURATION: Duration = Duration::from_secs(10);
 /// server.
 #[derive(Clone)]
 pub struct RouteStore {
-    state: Arc<Condvar<State>>,
+    state: Arc<AsyncVariable<State>>,
 }
 
 struct State {
@@ -32,7 +32,7 @@ struct State {
 impl RouteStore {
     pub fn new(labels: &[RouteLabel]) -> Self {
         Self {
-            state: Arc::new(Condvar::new(State {
+            state: Arc::new(AsyncVariable::new(State {
                 routes: HashMap::new(),
                 local_route: None,
                 labels: labels.to_vec(),
@@ -41,14 +41,17 @@ impl RouteStore {
     }
 
     pub async fn lock<'a>(&'a self) -> RouteStoreGuard<'a> {
-        RouteStoreGuard {
-            state: self.state.lock().await,
-        }
+        let mut state = self.state.lock().await.unwrap().enter();
+
+        // All intermediate states / partial mutations to the route store should be ok
+        unsafe { state.unpoison() };
+
+        RouteStoreGuard { state }
     }
 }
 
 pub struct RouteStoreGuard<'a> {
-    state: CondvarGuard<'a, State, ()>,
+    state: AsyncVariableGuard<'a, State>,
 }
 
 impl<'a> RouteStoreGuard<'a> {
@@ -97,7 +100,7 @@ impl<'a> RouteStoreGuard<'a> {
     /// Looks up routing information for connecting to another server in the
     /// cluster by id. Also marks the request with routing metadata if a
     /// route is fond.
-    pub fn lookup(&mut self, group_id: GroupId, server_id: ServerId) -> Option<&Route> {
+    pub fn lookup(&self, group_id: GroupId, server_id: ServerId) -> Option<&Route> {
         // TODO: Use the local route version if available.
 
         // TODO: Mark the route as recently used.
@@ -206,7 +209,7 @@ impl<'a> RouteStoreGuard<'a> {
     }
 
     pub async fn wait(self) {
-        self.state.wait(()).await
+        self.state.wait().await
     }
 
     // pub fn apply(&mut self, an: &Announcement) {

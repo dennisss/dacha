@@ -2,7 +2,8 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 
 use common::errors::*;
-use executor::sync::Mutex;
+use executor::sync::{AsyncMutex, AsyncMutexPermit};
+use executor::{lock, lock_async};
 use raft_client::server::channel_factory::ChannelFactory;
 
 use crate::consensus::module::NotLeaderError;
@@ -28,7 +29,7 @@ pub struct LeaderServiceWrapper<R> {
 
     local_service: Arc<dyn rpc::Service>,
 
-    state: Mutex<State>,
+    state: AsyncMutex<State>,
 }
 
 struct State {
@@ -45,7 +46,7 @@ impl<R: 'static + Send> LeaderServiceWrapper<R> {
         Self {
             node,
             local_service,
-            state: Mutex::new(State {
+            state: AsyncMutex::new(State {
                 term: Term::default(),
                 leader_client: None,
             }),
@@ -71,10 +72,8 @@ impl<R: 'static + Send> LeaderServiceWrapper<R> {
             } else {
                 let latest_leader_hint = self.node.server().leader_hint().await;
 
-                let mut state = self.state.lock().await;
-                self.apply_leader_hint(state.deref_mut(), &latest_leader_hint)
-                    .await?;
-                state.leader_client.clone()
+                self.apply_leader_hint(self.state.lock().await?, &latest_leader_hint)
+                    .await?
             }
         };
 
@@ -141,17 +140,18 @@ impl<R: 'static + Send> LeaderServiceWrapper<R> {
 
     async fn apply_leader_hint(
         &self,
-        state: &mut State,
+        state_permit: AsyncMutexPermit<'_, State>,
         leader_hint: &NotLeaderError,
-    ) -> Result<()> {
+    ) -> Result<Option<Arc<dyn rpc::Channel>>> {
+        let state = state_permit.read_exclusive();
+
         if leader_hint.term < state.term
             || (leader_hint.term == state.term && state.leader_client.is_some())
         {
-            return Ok(());
+            return Ok(state.leader_client.clone());
         }
 
-        state.term = leader_hint.term;
-        state.leader_client = match leader_hint.leader_hint {
+        let leader_client = match leader_hint.leader_hint {
             Some(server_id) => {
                 if server_id == self.node.id() {
                     None
@@ -162,7 +162,12 @@ impl<R: 'static + Send> LeaderServiceWrapper<R> {
             None => None,
         };
 
-        Ok(())
+        lock!(state <= state.upgrade(), {
+            state.term = leader_hint.term;
+            state.leader_client = leader_client.clone();
+        });
+
+        Ok(leader_client)
     }
 }
 

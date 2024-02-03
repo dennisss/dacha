@@ -8,7 +8,6 @@ use crypto::random;
 use crypto::random::RngExt;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
-use executor::sync::Mutex;
 use file::dir_lock::DirLock;
 use protobuf::{Message, StaticMessage};
 use raft_client::{

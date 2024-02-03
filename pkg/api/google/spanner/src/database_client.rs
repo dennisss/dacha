@@ -6,8 +6,8 @@ use std::{convert::TryFrom, sync::Arc};
 use common::errors::*;
 use executor::channel::queue::ConcurrentQueue;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
-use executor::Condvar;
+use executor::lock;
+use executor::sync::AsyncVariable;
 use google_auth::*;
 use http::uri::Uri;
 use http::{AffinityContext, AffinityKey, AffinityKeyCache};
@@ -81,7 +81,7 @@ struct Shared {
     /// TODO: Consider supporting stub re-use across many databases.
     stub: proto::SpannerStub,
 
-    state: Condvar<State>,
+    state: AsyncVariable<State>,
 
     // TODO: Clear sessions from here when done.
     affinity_pins: AffinityKeyCache,
@@ -175,22 +175,24 @@ impl<'a> SessionGuard<'a> {
     }
 
     async fn reclaim_impl(shared: Arc<Shared>, session_name: AsciiString, is_dead: bool) {
-        let mut state = shared.state.lock().await;
+        let mut state = shared.state.lock().await.unwrap();
 
-        if is_dead {
-            state.sessions.remove(&session_name);
-            return;
-        }
+        lock!(state <= shared.state.lock().await.unwrap(), {
+            if is_dead {
+                state.sessions.remove(&session_name);
+                return;
+            }
 
-        let session = state.sessions.get_mut(&session_name).unwrap();
+            let session = state.sessions.get_mut(&session_name).unwrap();
 
-        if session.state != SessionState::Active {
-            session.state = SessionState::Inactive;
-            return;
-        }
+            if session.state != SessionState::Active {
+                session.state = SessionState::Inactive;
+                return;
+            }
 
-        state.available_sessions.insert(session_name);
-        state.notify_all();
+            state.available_sessions.insert(session_name);
+            state.notify_all();
+        });
     }
 }
 
@@ -260,7 +262,7 @@ impl SpannerDatabaseClient {
             database_resource_path,
             stub,
             affinity_pins: AffinityKeyCache::default(),
-            state: Condvar::new(State {
+            state: AsyncVariable::new(State {
                 sessions,
                 available_sessions,
             }),
@@ -283,13 +285,13 @@ impl SpannerDatabaseClient {
             let now = SystemTime::now();
 
             // Find sessions we need to ping or refresh.
-            let total_num_sessions;
+            let mut total_num_sessions = 0;
             let mut num_active_sessions = 0;
             let mut num_active_old_sessions = 0;
             idle_sessions.clear();
             deletable_sessions.clear();
-            {
-                let mut state_guard = shared.state.lock().await;
+
+            lock!(state_guard <= shared.state.lock().await.unwrap(), {
                 let state = &mut *state_guard;
 
                 total_num_sessions = state.sessions.len();
@@ -347,7 +349,7 @@ impl SpannerDatabaseClient {
                 for (session_name, _) in &deletable_sessions {
                     state.sessions.remove(session_name);
                 }
-            }
+            });
 
             // Ping sessions
             for session_name in idle_sessions.drain() {
@@ -395,7 +397,7 @@ impl SpannerDatabaseClient {
 
                 match sessions_res {
                     Ok(sessions_res) => {
-                        let mut state = shared.state.lock().await;
+                        let mut state = shared.state.lock().await.unwrap().enter();
 
                         for session in sessions_res.session() {
                             let name = AsciiString::new(session.name());
@@ -414,6 +416,7 @@ impl SpannerDatabaseClient {
                         }
 
                         state.notify_all();
+                        state.exit();
                     }
                     Err(e) => {
                         eprintln!("Failed to create more spanner sessions: {}", e);
@@ -443,7 +446,7 @@ impl SpannerDatabaseClient {
                     );
                 }
 
-                shared.affinity_pins.remove(key)
+                shared.affinity_pins.remove(affinity_key);
             }
 
             executor::sleep(BACKGROUND_THREAD_INTERVAL).await;
@@ -461,13 +464,13 @@ impl SpannerDatabaseClient {
         session_name: Option<AsciiString>,
     ) -> Option<(SessionGuard, rpc::ClientRequestContext)> {
         loop {
-            let mut state = shared.state.lock().await;
+            let mut state = shared.state.lock().await.unwrap().read_exclusive();
             if state.available_sessions.is_empty() {
                 if session_name.is_some() {
                     return None;
                 }
 
-                state.wait(()).await;
+                state.wait().await;
                 continue;
             }
 
@@ -476,25 +479,25 @@ impl SpannerDatabaseClient {
                 None => state.available_sessions.iter().next().unwrap().clone(),
             };
 
-            if !state.available_sessions.remove(&session_name) {
-                return None;
-            }
+            return Some(lock!(state <= state.downgrade(), {
+                state.available_sessions.remove(&session_name);
 
-            let mut session = state.sessions.get_mut(&session_name).unwrap();
+                let mut session = state.sessions.get_mut(&session_name).unwrap();
 
-            let mut ctx = rpc::ClientRequestContext::default();
-            ctx.http.affinity = Some(AffinityContext {
-                key: session.affinity_key.clone(),
-                // Only need to set to false if this request is part of a transaction.
-                reassignment_tolerant: true,
-                cache: Some(shared.affinity_pins.clone()),
-            });
+                let mut ctx = rpc::ClientRequestContext::default();
+                ctx.http.affinity = Some(AffinityContext {
+                    key: session.affinity_key.clone(),
+                    // Only need to set to false if this request is part of a transaction.
+                    reassignment_tolerant: true,
+                    cache: Some(shared.affinity_pins.clone()),
+                });
 
-            // NOTE: May be inaccurate if the operation is immediately cancelled after the
-            // session is retrieved.
-            session.last_used = SystemTime::now();
+                // NOTE: May be inaccurate if the operation is immediately cancelled after the
+                // session is retrieved.
+                session.last_used = SystemTime::now();
 
-            return Some((SessionGuard::new(shared, session_name), ctx));
+                (SessionGuard::new(shared, session_name), ctx)
+            }));
         }
     }
 

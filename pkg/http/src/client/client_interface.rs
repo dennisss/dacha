@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use crypto::hasher::Hasher;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 
 use crate::request::Request;
 use crate::response::Response;

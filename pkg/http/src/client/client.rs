@@ -7,7 +7,6 @@ use std::time::Duration;
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use crypto::random::SharedRngExt;
-use executor::sync::Mutex;
 use net::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use parsing::ascii::AsciiString;
 

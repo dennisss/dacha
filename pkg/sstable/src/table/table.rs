@@ -6,13 +6,17 @@ use std::ops::{Deref, Index};
 use std::slice::SliceIndex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::Weak;
 
 use common::algorithms::SliceLike;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::failure::ResultExt;
 use executor::channel::oneshot;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::lock_async;
+use executor::sync::AsyncMutex;
+use executor::sync::AsyncVariable;
 use file::LocalFile;
 use file::LocalPath;
 use parsing::complete;
@@ -347,17 +351,16 @@ impl<'a> SliceLike for IndexBlockSlice<'a> {
 /// addition to non-DataBlock blocks
 #[derive(Clone)]
 pub struct DataBlockCache {
-    state: Arc<Mutex<DataBlockCacheState>>,
+    state: Arc<AsyncVariable<DataBlockCacheState>>,
 }
 
 impl DataBlockCache {
     pub fn new(allowed_size: usize) -> Self {
         Self {
-            state: Arc::new(Mutex::new(DataBlockCacheState {
+            state: Arc::new(AsyncVariable::new(DataBlockCacheState {
                 last_table_id: 0,
                 loaded_blocks: HashMap::new(),
                 unused_blocks: HashSet::new(),
-                change_listeners: vec![],
                 loaded_size: 0,
                 allowed_size,
             })),
@@ -365,17 +368,16 @@ impl DataBlockCache {
     }
 
     pub async fn cache_file(self, file: LocalFile, file_footer: Footer) -> BlockCacheFile {
-        let id = {
-            let mut state = self.state.lock().await;
+        let id = lock!(state <= self.state.lock().await.unwrap(), {
             let id = state.last_table_id + 1;
             state.last_table_id = id;
             id
-        };
+        });
 
         BlockCacheFile {
             id,
             cache: self,
-            file: Mutex::new(file),
+            file,
             file_footer,
         }
     }
@@ -384,11 +386,12 @@ impl DataBlockCache {
 pub struct BlockCacheFile {
     id: usize,
     cache: DataBlockCache,
-    file: Mutex<LocalFile>,
+    file: LocalFile,
     file_footer: Footer,
 }
 
 impl BlockCacheFile {
+    /// CANCEL SAFE
     async fn lookup_or_read(&self, block_handle: &BlockHandle) -> Result<DataBlockPtr> {
         let key = (self.id, block_handle.offset);
         loop {
@@ -397,12 +400,13 @@ impl BlockCacheFile {
             // keep track of memory usage.
             let block_size = block_handle.size as usize;
 
-            let mut state = self.cache.state.lock().await;
+            let mut state = self.cache.state.lock().await?.read_exclusive();
+
             if let Some(value) = state.loaded_blocks.get(&key) {
                 return Ok(DataBlockPtr {
                     cache_key: key,
                     inner: Some(value.clone()),
-                    outer: Some(self.cache.state.clone()),
+                    outer: Some(Arc::downgrade(&self.cache.state)),
                 });
             }
 
@@ -411,6 +415,7 @@ impl BlockCacheFile {
             }
 
             // If we are out of space, free unused blocks if there are any.
+            let mut state = state.downgrade().enter();
             while state.loaded_size + block_size >= state.allowed_size {
                 if let Some(block_key) = state.unused_blocks.iter().next().cloned() {
                     state.unused_blocks.remove(&block_key);
@@ -422,27 +427,37 @@ impl BlockCacheFile {
                 }
             }
 
+            // Safe as the above the above block cleanup is always ok to perform without
+            // inserting an additional block.
+            let state = unsafe { state.downgrade() };
+
+            /*
+            TODO: Need to allow multiple blocks to be loaded in parallel (up to some parallelism limit). (need to have state dropped)
+
+            TODO: If a block fails to be read, we need some backoff for retrying it.
+            */
+
             if state.loaded_size + block_size <= state.allowed_size {
                 let block = self.read_block(block_handle).await?;
-                state.loaded_size += block.estimated_memory_usage();
-                state.loaded_blocks.insert(key, block.clone());
+
+                lock!(state <= state.downgrade(), {
+                    state.loaded_size += block.estimated_memory_usage();
+                    state.loaded_blocks.insert(key, block.clone());
+                });
                 return Ok(DataBlockPtr {
                     cache_key: key,
                     inner: Some(block),
-                    outer: Some(self.cache.state.clone()),
+                    outer: Some(Arc::downgrade(&self.cache.state)),
                 });
             }
 
-            let (tx, rx) = oneshot::channel();
-            state.change_listeners.push(tx);
-            drop(state);
-            rx.recv().await.ok();
+            state.wait().await;
         }
     }
 
+    /// CANCEL SAFE
     async fn read_block(&self, handle: &BlockHandle) -> Result<Arc<DataBlock>> {
-        let mut file = self.file.lock().await;
-        DataBlock::read(&mut file, &self.file_footer, handle).await
+        DataBlock::read(&self.file, &self.file_footer, handle).await
     }
 }
 
@@ -461,9 +476,6 @@ struct DataBlockCacheState {
     /// TODO: Refactor so that we delete blocks in LRU order.
     unused_blocks: HashSet<(usize, u64)>,
 
-    // Ideally have a linked list so that we can quickly un-delete a
-    change_listeners: Vec<oneshot::Sender<()>>,
-
     /// Number of bytes used by all blocks in loaded_blocks.
     loaded_size: usize,
 
@@ -478,7 +490,7 @@ struct DataBlockCacheState {
 struct DataBlockPtr {
     cache_key: (usize, u64),
     inner: Option<Arc<DataBlock>>,
-    outer: Option<Arc<Mutex<DataBlockCacheState>>>,
+    outer: Option<Weak<AsyncVariable<DataBlockCacheState>>>,
 }
 
 impl Deref for DataBlockPtr {
@@ -493,10 +505,22 @@ impl Drop for DataBlockPtr {
     fn drop(&mut self) {
         let cache_key = self.cache_key;
         let inner = self.inner.take().unwrap();
-        let outer = self.outer.take().unwrap();
+        let outer = match self.outer.take().unwrap().upgrade() {
+            Some(v) => v,
+            None => {
+                // Nothing to clean up if the cache is deleted.
+                return;
+            }
+        };
+
         // NOTE: This must run till completion always
+        // TODO: Need to make this more efficient.
         executor::spawn(async move {
-            let mut outer_guard = outer.lock().await;
+            let mut outer_guard = match outer.lock().await {
+                Ok(v) => v.enter(),
+                Err(_) => return,
+            };
+
             let count = Arc::strong_count(&inner);
             drop(inner);
 
@@ -512,10 +536,10 @@ impl Drop for DataBlockPtr {
                 // TODO: Eventually schedule the minimum number of tasks depending the amount of
                 // memory freed and the amount requested by tasks (there may also be multiple
                 // tasks which all request the same block).
-                while let Some(sender) = outer_guard.change_listeners.pop() {
-                    sender.send(()).ok();
-                }
+                outer_guard.notify_all();
             }
+
+            outer_guard.exit();
         });
     }
 }

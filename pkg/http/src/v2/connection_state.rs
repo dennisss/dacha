@@ -7,7 +7,6 @@ use common::errors::Result;
 use common::hash::FastHasherBuilder;
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
 
 use crate::connection_event_listener::ConnectionEventListener;
 use crate::connection_event_listener::ConnectionShutdownDetails;

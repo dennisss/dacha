@@ -12,7 +12,7 @@ use crate::future::race;
 use crate::signals::*;
 use crate::spawn;
 
-static mut SHUTDOWN_STATE: Option<Mutex<ShutdownState>> = None;
+static mut SHUTDOWN_STATE: Option<std::sync::Mutex<ShutdownState>> = None;
 static SHUTDOWN_STATE_INIT: Once = Once::new();
 
 struct ShutdownState {
@@ -30,7 +30,7 @@ struct ShutdownState {
     completion_waiters: Vec<channel::Sender<()>>,
 }
 
-fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
+fn get_shutdown_state() -> &'static std::sync::Mutex<ShutdownState> {
     unsafe {
         SHUTDOWN_STATE_INIT.call_once(|| {
             let (sender, receiver) = channel::bounded(1);

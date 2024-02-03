@@ -12,10 +12,11 @@ use cluster_client::meta::GetClusterMetaTable;
 use common::errors::*;
 use crypto::random::RngExt;
 use datastore_meta_client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
-use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
-use executor::Eventually;
+use executor::lock;
+use executor::sync::AsyncMutex;
+use executor::sync::Eventually;
+use executor::{channel, lock_async};
 use file::{LocalPath, LocalPathBuf};
 use net::backoff::*;
 use nix::unistd::chown;
@@ -81,7 +82,7 @@ struct NodeShared {
 
     runtime: Arc<ContainerRuntime>,
     event_channel: (channel::Sender<NodeEvent>, channel::Receiver<NodeEvent>),
-    state: Mutex<NodeState>,
+    state: AsyncMutex<NodeState>,
 
     usb_context: usb::Context,
 
@@ -96,7 +97,7 @@ struct NodeShared {
     /// least since the last node reboot).
     ///
     /// TODO: Ensure monotonic timestamps even between node restarts.
-    last_event_timestamp: Mutex<u64>,
+    last_event_timestamp: AsyncMutex<u64>,
 
     /// Channel used to communicate that a state change has occured in a worker.
     /// This will trigger a potential update to the WorkerStateMetadata.
@@ -226,7 +227,7 @@ impl Node {
                 db,
                 blobs,
                 runtime,
-                state: Mutex::new(NodeState {
+                state: AsyncMutex::new(NodeState {
                     workers: vec![],
                     inner,
                 }),
@@ -234,7 +235,7 @@ impl Node {
                 last_timer_id: AtomicUsize::new(0),
                 usb_context,
                 meta_client: Eventually::new(),
-                last_event_timestamp: Mutex::new(last_event_timestamp),
+                last_event_timestamp: AsyncMutex::new(last_event_timestamp),
                 state_change_channel: channel::bounded(1),
             }),
         };
@@ -590,12 +591,11 @@ impl NodeInner {
                 // TODO: Eventually add a state before DONE for cleanup like deleting or backing
                 // up worker state before we lose track of it (this needs to persist across
                 // restarts for any local assets).
-                self.shared
-                    .state
-                    .lock()
-                    .await
-                    .workers
-                    .retain(|worker| worker.spec.name() != worker.spec.name());
+                lock!(state <= self.shared.state.lock().await?, {
+                    state
+                        .workers
+                        .retain(|worker| worker.spec.name() != worker.spec.name());
+                });
             } else {
                 self.stop_worker(worker.spec().name(), false).await?;
             }
@@ -609,150 +609,33 @@ impl NodeInner {
             let event = self.shared.event_channel.1.recv().await?;
             match event {
                 NodeEvent::ContainerStateChange { container_id } => {
-                    let mut state_guard = self.shared.state.lock().await;
-                    let state = &mut *state_guard;
-
-                    let worker_name =
-                        match state.inner.container_id_to_worker_name.get(&container_id) {
-                            Some(v) => v.clone(),
-                            None => {
-                                eprintln!(
-                                    "Container id is not associated with a worker: {}",
-                                    container_id
-                                );
-                                continue;
-                            }
-                        };
-
-                    let worker = state
-                        .workers
-                        .iter_mut()
-                        .find(|t| t.spec.name() == worker_name)
-                        .unwrap();
-
-                    let container_meta = self
-                        .shared
-                        .runtime
-                        .get_container(&container_id)
-                        .await
-                        .ok_or_else(|| err_msg("Faield to find container"))?;
-
-                    // Currently this is the only state change type implemented in the runtime.
-                    if container_meta.state() != ContainerState::Stopped {
-                        return Err(err_msg(
-                            "Expected state changes only with stopped containers",
-                        ));
-                    }
-
-                    self.shared.runtime.remove_container(&container_id).await?;
-
-                    let mut event = WorkerEvent::default();
-                    event.set_worker_name(worker.spec.name());
-                    event.set_worker_revision(worker.revision);
-                    event.set_container_id(&container_id);
-                    event
-                        .stopped_mut()
-                        .set_status(container_meta.status().clone());
-                    self.record_event(event).await?;
-
-                    // No longer running, so clear the container id
-                    worker.container_id = None;
-
-                    if worker.pending_update.is_some() {
-                        self.transition_worker_to_running(&mut state.inner, worker)
-                            .await?;
-                    } else {
-                        self.transition_worker_to_backoff(worker).await;
-                    }
+                    lock_async!(state <= self.shared.state.lock().await?, {
+                        self.handle_container_state_change_event(&container_id, &mut state)
+                            .await
+                    })?;
                 }
                 NodeEvent::StopTimeout {
                     worker_name,
                     timer_id: event_timer_id,
                 } => {
-                    // If the timer id matches the one in the current Stopped state, then we'll send
-                    // a SIGKILL
-
-                    let mut state = self.shared.state.lock().await;
-
-                    let worker = match state
-                        .workers
-                        .iter_mut()
-                        .find(|t| t.spec.name() == worker_name)
-                    {
-                        Some(t) => t,
-                        None => {
-                            // Most likely a race condition with the timer event being processed
-                            // after the worker was deleted.
-                            continue;
-                        }
-                    };
-
-                    let mut should_force_stop = false;
-                    if let WorkerState::Stopping { timer_id, .. } = &worker.state {
-                        if *timer_id == event_timer_id {
-                            should_force_stop = true;
-                        }
-                    }
-
-                    if should_force_stop {
-                        self.transition_worker_to_force_stopping(worker).await?;
-                    }
+                    lock_async!(state <= self.shared.state.lock().await?, {
+                        self.handle_stop_timeout(&worker_name, event_timer_id, &mut state)
+                            .await
+                    })?;
                 }
                 NodeEvent::BlobAvailable { blob_id } => {
-                    // When a blob is available, we want to check all pending workers to see if that
-                    // allows us to start running it.
-
-                    let mut state_guard = self.shared.state.lock().await;
-                    let state = &mut *state_guard;
-
-                    // We no longer need to be fetching the blob.
-                    state.inner.blob_fetchers.remove(&blob_id);
-
-                    for worker in &mut state.workers {
-                        if let WorkerState::Pending {
-                            missing_requirements,
-                        } = &mut worker.state
-                        {
-                            missing_requirements.blobs.remove(&blob_id);
-
-                            if missing_requirements.is_empty() {
-                                self.transition_worker_to_running(&mut state.inner, worker)
-                                    .await;
-                            }
-                        }
-                    }
+                    lock_async!(state <= self.shared.state.lock().await?, {
+                        self.handle_blob_available(&blob_id, &mut state).await
+                    })?;
                 }
                 NodeEvent::StartBackoffTimeout {
                     worker_name,
                     timer_id: event_timer_id,
                 } => {
-                    let mut state_guard = self.shared.state.lock().await;
-                    let state = &mut *state_guard;
-
-                    let worker = match state
-                        .workers
-                        .iter_mut()
-                        .find(|t| t.spec.name() == worker_name)
-                    {
-                        Some(t) => t,
-                        None => {
-                            // Most likely a race condition with the timer event being processed
-                            // after the worker was deleted.
-                            continue;
-                        }
-                    };
-
-                    let mut should_start = false;
-                    if let WorkerState::RestartBackoff { timer_id, .. } = &worker.state {
-                        if *timer_id == event_timer_id {
-                            should_start = true;
-                        }
-                    }
-
-                    if should_start {
-                        self.transition_worker_to_running(&mut state.inner, worker)
-                            .await;
-                    }
+                    lock_async!(state <= self.shared.state.lock().await?, {
+                        self.handle_start_backoff_timeout(&worker_name, event_timer_id, &mut state)
+                            .await
+                    })?;
                 }
                 NodeEvent::ContainerRuntimeEnded(result) => {
                     if result.is_ok() {
@@ -765,12 +648,166 @@ impl NodeInner {
         }
     }
 
+    async fn handle_container_state_change_event(
+        &self,
+        container_id: &str,
+        state: &mut NodeState,
+    ) -> Result<()> {
+        let worker_name = match state.inner.container_id_to_worker_name.get(container_id) {
+            Some(v) => v.clone(),
+            None => {
+                eprintln!(
+                    "Container id is not associated with a worker: {}",
+                    container_id
+                );
+                return Ok(());
+            }
+        };
+
+        let worker = state
+            .workers
+            .iter_mut()
+            .find(|t| t.spec.name() == worker_name)
+            .unwrap();
+
+        let container_meta = self
+            .shared
+            .runtime
+            .get_container(&container_id)
+            .await
+            .ok_or_else(|| err_msg("Failed to find container"))?;
+
+        // Currently this is the only state change type implemented in the runtime.
+        if container_meta.state() != ContainerState::Stopped {
+            return Err(err_msg(
+                "Expected state changes only with stopped containers",
+            ));
+        }
+
+        self.shared.runtime.remove_container(&container_id).await?;
+
+        let mut event = WorkerEvent::default();
+        event.set_worker_name(worker.spec.name());
+        event.set_worker_revision(worker.revision);
+        event.set_container_id(container_id);
+        event
+            .stopped_mut()
+            .set_status(container_meta.status().clone());
+        self.record_event(event).await?;
+
+        // No longer running, so clear the container id
+        worker.container_id = None;
+
+        if worker.pending_update.is_some() {
+            self.transition_worker_to_running(&mut state.inner, worker)
+                .await?;
+        } else {
+            self.transition_worker_to_backoff(worker).await;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_stop_timeout(
+        &self,
+        worker_name: &str,
+        event_timer_id: usize,
+        state: &mut NodeState,
+    ) -> Result<()> {
+        // If the timer id matches the one in the current Stopped state, then we'll send
+        // a SIGKILL
+
+        let worker = match state
+            .workers
+            .iter_mut()
+            .find(|t| t.spec.name() == worker_name)
+        {
+            Some(t) => t,
+            None => {
+                // Most likely a race condition with the timer event being processed
+                // after the worker was deleted.
+                return Ok(());
+            }
+        };
+
+        let mut should_force_stop = false;
+        if let WorkerState::Stopping { timer_id, .. } = &worker.state {
+            if *timer_id == event_timer_id {
+                should_force_stop = true;
+            }
+        }
+
+        if should_force_stop {
+            self.transition_worker_to_force_stopping(worker).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_blob_available(&self, blob_id: &str, state: &mut NodeState) -> Result<()> {
+        // When a blob is available, we want to check all pending workers to see if that
+        // allows us to start running it.
+
+        // We no longer need to be fetching the blob.
+        state.inner.blob_fetchers.remove(blob_id);
+
+        for worker in &mut state.workers {
+            if let WorkerState::Pending {
+                missing_requirements,
+            } = &mut worker.state
+            {
+                missing_requirements.blobs.remove(blob_id);
+
+                if missing_requirements.is_empty() {
+                    self.transition_worker_to_running(&mut state.inner, worker)
+                        .await;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_start_backoff_timeout(
+        &self,
+        worker_name: &str,
+        event_timer_id: usize,
+        state: &mut NodeState,
+    ) -> Result<()> {
+        let worker = match state
+            .workers
+            .iter_mut()
+            .find(|t| t.spec.name() == worker_name)
+        {
+            Some(t) => t,
+            None => {
+                // Most likely a race condition with the timer event being processed
+                // after the worker was deleted.
+                return Ok(());
+            }
+        };
+
+        let mut should_start = false;
+        if let WorkerState::RestartBackoff { timer_id, .. } = &worker.state {
+            if *timer_id == event_timer_id {
+                should_start = true;
+            }
+        }
+
+        if should_start {
+            self.transition_worker_to_running(&mut state.inner, worker)
+                .await;
+        }
+
+        Ok(())
+    }
+
     fn persistent_data_dir(&self) -> LocalPathBuf {
         LocalPath::new(self.shared.config.data_dir()).join("volume/per-worker")
     }
 
     async fn list_workers_impl(&self) -> Result<ListWorkersResponse> {
-        let state = self.shared.state.lock().await;
+        let state = self.shared.state.lock().await?.read_exclusive();
         let mut out = ListWorkersResponse::default();
         for worker in &state.workers {
             let mut proto = WorkerProto::default();
@@ -816,6 +853,8 @@ impl NodeInner {
     /// NOTE: If this function returns an Error, it should be considered fatal.
     /// Most partial worker specific failures should be done in
     /// transition_worker_to_running_impl.
+    ///
+    /// ALL FAILURES ARE FATAL
     async fn transition_worker_to_running(
         &self,
         state_inner: &mut NodeStateInner,
@@ -1000,11 +1039,10 @@ impl NodeInner {
                 WorkerSpec_VolumeSourceCase::Bundle(bundle) => {
                     let blob_id = self.select_bundle_blob(bundle)?;
 
-                    let blob_lease = match self.shared.blobs.read_lease(blob_id.as_str()).await {
+                    let blob_lease = match self.shared.blobs.read_lease(blob_id.as_str()) {
                         Ok(v) => v,
                         Err(ReadBlobError::BeingWritten) | Err(ReadBlobError::NotFound) => {
-                            self.start_fetching_blob(state_inner, blob_id.as_str())
-                                .await;
+                            self.start_fetching_blob(state_inner, blob_id.as_str());
                             missing_requirements.blobs.insert(blob_id.clone());
                             continue;
                         }
@@ -1207,7 +1245,7 @@ impl NodeInner {
         .into())
     }
 
-    async fn start_fetching_blob(&self, state_inner: &mut NodeStateInner, blob_id: &str) {
+    fn start_fetching_blob(&self, state_inner: &mut NodeStateInner, blob_id: &str) {
         // TODO: Limit max blob fetching parallelism.
         if !state_inner.blob_fetchers.contains_key(blob_id) {
             // TODO: Verify that fetchers are always cleaned up upon completion.
@@ -1334,7 +1372,7 @@ impl NodeInner {
         // This would mainly happen if the user recently uploaded the blob directly to
         // this server. TODO: Have the BlobStore object directly emit events to
         // the Node
-        if let Ok(_) = self.shared.blobs.read_lease(blob_id).await {
+        if let Ok(_) = self.shared.blobs.read_lease(blob_id) {
             return Ok(());
         }
 
@@ -1411,6 +1449,7 @@ impl NodeInner {
         Ok(())
     }
 
+    /// ALL ERRORS ARE FATAL
     async fn transition_worker_to_stopping(&self, worker: &mut Worker) -> Result<()> {
         let container_id = worker.container_id.as_ref().unwrap();
 
@@ -1455,6 +1494,7 @@ impl NodeInner {
         Ok(())
     }
 
+    /// ALL ERRORS ARE FATAL
     async fn transition_worker_to_force_stopping(&self, worker: &mut Worker) -> Result<()> {
         let container_id = worker.container_id.as_ref().unwrap();
 
@@ -1482,9 +1522,16 @@ impl NodeInner {
             return Err(rpc::Status::invalid_argument("Invalid worker name").into());
         }
 
-        let mut state_guard = self.shared.state.lock().await;
-        let state = &mut *state_guard;
+        lock_async!(state <= self.shared.state.lock().await?, {
+            self.start_worker_impl(request, &mut state).await
+        })
+    }
 
+    async fn start_worker_impl(
+        &self,
+        request: &StartWorkerRequest,
+        state: &mut NodeState,
+    ) -> Result<()> {
         let existing_worker = state
             .workers
             .iter_mut()
@@ -1564,9 +1611,17 @@ impl NodeInner {
 
     /// TODO: Should we have this compare to the revision of the worker?
     pub async fn stop_worker(&self, name: &str, force_stop: bool) -> Result<()> {
-        let mut state_guard = self.shared.state.lock().await;
-        let state = &mut *state_guard;
+        lock_async!(state <= self.shared.state.lock().await?, {
+            self.stop_worker_impl(name, force_stop, &mut state).await
+        })
+    }
 
+    async fn stop_worker_impl(
+        &self,
+        name: &str,
+        force_stop: bool,
+        state: &mut NodeState,
+    ) -> Result<()> {
         // NOTE: We can't return a not found error right now as this is used in the
         // node_registration code even when we don't know if the worker is present.
         let worker = match state.workers.iter_mut().find(|t| t.spec.name() == name) {
@@ -1632,10 +1687,10 @@ impl NodeInner {
     async fn record_event(&self, mut event: WorkerEvent) -> Result<()> {
         // eprintln!("Event: {:?}", event);
 
-        let mut time = self.shared.last_event_timestamp.lock().await;
-        *time = core::cmp::max(*time + 1, Self::current_system_timestamp());
-        event.set_timestamp(*time);
-        drop(time);
+        lock!(time <= self.shared.last_event_timestamp.lock().await?, {
+            *time = core::cmp::max(*time + 1, Self::current_system_timestamp());
+            event.set_timestamp(*time);
+        });
 
         workers_table::put_worker_event(self.shared.db.as_ref(), &event).await
     }
@@ -1643,6 +1698,7 @@ impl NodeInner {
 
 #[async_trait]
 impl ContainerNodeService for NodeInner {
+    /// CANCEL SAFE
     async fn Identity(
         &self,
         request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
@@ -1653,6 +1709,7 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn ListWorkers(
         &self,
         request: rpc::ServerRequest<ListWorkersRequest>,
@@ -1663,17 +1720,16 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn ReplicateBlob(
         &self,
         request: rpc::ServerRequest<ReplicateBlobRequest>,
         response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         // Start the replication
-        {
-            let mut state = self.shared.state.lock().await;
-            self.start_fetching_blob(&mut state.inner, request.blob_id())
-                .await;
-        }
+        lock!(state <= self.shared.state.lock().await?, {
+            self.start_fetching_blob(&mut state.inner, request.blob_id());
+        });
 
         // TODO: Block for the replication to succeed or permanently fail?
 
@@ -1685,12 +1741,17 @@ impl ContainerNodeService for NodeInner {
         request: rpc::ServerRequest<StartWorkerRequest>,
         response: &mut rpc::ServerResponse<StartWorkerResponse>,
     ) -> Result<()> {
+        // TODO: Instead send the request to the event loop thread to perform as any
+        // starting errors should kill the runtime as we will entire an invalid state.
+
         self.start_worker(&request.value).await
     }
 
     // TODO: When the Node closes, we should kill all workers that it has
 
-    // TODO: On the client side, we should make this retrable via seeking.
+    /// TODO: On the client side, we should make this retrable via seeking.
+    ///
+    /// CANCEL SAFE
     async fn GetLogs(
         &self,
         request: rpc::ServerRequest<LogRequest>,
@@ -1718,7 +1779,7 @@ impl ContainerNodeService for NodeInner {
             } else {
                 // Default behavior is to look up the currently running container.
 
-                let state = self.shared.state.lock().await;
+                let state = self.shared.state.lock().await?.read_exclusive();
                 let worker = state
                     .workers
                     .iter()
@@ -1776,6 +1837,7 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn WriteInput(
         &self,
         mut request: rpc::ServerStreamRequest<WriteInputRequest>,
@@ -1791,7 +1853,7 @@ impl ContainerNodeService for NodeInner {
             // id, then we can cache this value instead of looking it up every
             // time.
             let container_id = {
-                let state = self.shared.state.lock().await;
+                let state = self.shared.state.lock().await?.read_exclusive();
                 let worker = state
                     .workers
                     .iter()
@@ -1815,6 +1877,7 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn GetEvents(
         &self,
         request: rpc::ServerRequest<GetEventsRequest>,

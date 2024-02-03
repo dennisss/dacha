@@ -187,7 +187,7 @@ impl Executor {
 
         Self::stop_accepting_root_tasks(&shared);
 
-        if self.options.run_mode == ExecutorRunMode::StopAllTasks {
+        if self.options.run_mode == ExecutorRunMode::StopAllOperations {
             shared.io_uring.shutdown();
             shared.epoll.shutdown();
 
@@ -199,7 +199,7 @@ impl Executor {
             }
         }
 
-        if self.options.run_mode == ExecutorRunMode::StopAllTasks
+        if self.options.run_mode == ExecutorRunMode::StopAllOperations
             || self.options.run_mode == ExecutorRunMode::WaitForAllTasks
         {
             for thread in self.thread_pool {

@@ -62,9 +62,8 @@ impl Snapshot {
             // TODO: These tables can be ordered with a preference towards reading from the
             // last one.
             for entry in &self.version.levels[0].tables {
-                let guard = entry.table.lock().await;
-                let table = guard.as_ref().unwrap();
-                iters.push(Box::new(table.iter()));
+                let iter = entry.table().await.iter();
+                iters.push(Box::new(iter));
 
                 // println!("SNAPSHOT LEVEL 0 : {}", entry.entry.number);
             }

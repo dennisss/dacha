@@ -7,12 +7,13 @@ use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use common::io::{Readable, Writeable};
 use crypto::random::RngExt;
-use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
-use executor::Condvar;
+use executor::sync::AsyncMutex;
+use executor::sync::AsyncVariable;
+use executor::{channel, lock, lock_async};
 use net::backoff::*;
 use net::tcp::TcpStream;
 use parsing::ascii::AsciiString;
@@ -192,6 +193,7 @@ struct Shared {
 
     options: DirectClientOptions,
 
+    // TODO: Combine these all under one AsyncVariable?
     /// Overall state of this client.
     ///
     /// This should always be the value of next_overall_state() after all events
@@ -200,24 +202,24 @@ struct Shared {
     /// NOTE: You MUST lock received_events in order to update this value to
     /// avoid there being unprocessed events which haven't been incorporated
     /// from the processing_state.
-    overall_state: Condvar<ClientState>,
+    overall_state: AsyncVariable<ClientState>,
 
     /// Recently received events from connections or other places which have not
     /// yet been incorporated into processing_state.
-    received_events: Condvar<ReceivedEvents>,
+    received_events: AsyncVariable<ReceivedEvents>,
 
     /// State tracking all active connections and requests.
     ///
     /// This MUST be locked before overall_state/received_events if locking
     /// multiple objects.
-    processing_state: Mutex<State>,
+    processing_state: AsyncMutex<State>,
 
     event_listener: Arc<dyn ClientEventListener>,
 }
 
 #[derive(Default)]
 struct ReceivedEvents {
-    connection_events: HashMap<usize, ConnectionEvents>,
+    connection_events: HashMap<usize, ConnectionEvents, FastHasherBuilder>,
 
     /// Set of connections which have recently finished turning up.
     /// The entry may be None if a failure occured while connectinf.
@@ -334,9 +336,9 @@ impl DirectClient {
             shared: Arc::new(Shared {
                 endpoint,
                 options,
-                overall_state: Condvar::new(ClientState::Idle),
-                received_events: Condvar::new(ReceivedEvents::default()),
-                processing_state: Mutex::new(State {
+                overall_state: AsyncVariable::new(ClientState::Idle),
+                received_events: AsyncVariable::new(ReceivedEvents::default()),
+                processing_state: AsyncMutex::new(State {
                     running: true,
                     shutting_down: false,
                     failing: false,
@@ -351,15 +353,22 @@ impl DirectClient {
     }
 
     pub async fn shutdown(&self) {
-        let mut state = self.shared.processing_state.lock().await;
-        state.shutting_down = true;
-        drop(state);
+        lock!(
+            state <= self.shared.processing_state.lock().await.unwrap(),
+            {
+                state.shutting_down = true;
+            }
+        );
 
-        self.shared.received_events.lock().await.notify_all();
+        let mut events = self.shared.received_events.lock().await.unwrap().enter();
+        events.notify_all();
+        events.exit();
     }
 
     /// Main loop of the client. This should be called in a dedicated task by
     /// the creater of the DirectClient.
+    ///
+    /// TODO: Must ensure that this doesn't stop before all requests are done.
     pub fn run(&self) -> impl Future<Output = ()> {
         let shared = self.shared.clone();
         return async move { DirectClientRunner::new(shared).run().await };
@@ -368,6 +377,7 @@ impl DirectClient {
 
 #[async_trait]
 impl ClientInterface for DirectClient {
+    // TODO: Must make this cancel safe.
     async fn request(
         &self,
         mut request: Request,
@@ -392,7 +402,13 @@ impl ClientInterface for DirectClient {
             })
         }
 
-        let mut state = self.shared.processing_state.lock().await;
+        let state = self
+            .shared
+            .processing_state
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive();
 
         if !state.running
             || state.shutting_down
@@ -408,34 +424,50 @@ impl ClientInterface for DirectClient {
 
         let (response_sender, response_receiver) = new_response_channel();
 
-        state.unassigned_requests.push_back(ClientLocalRequest {
-            request,
-            request_context,
-            response_sender,
-        });
-
-        // Notify the runner thread to take a look (and possibly shut down the queue).
         {
-            let mut events = self.shared.received_events.lock().await;
+            let events_permit = self.shared.received_events.lock().await?;
+            let overall_state_permit = self.shared.overall_state.lock().await?;
+
+            let mut state = state.upgrade().enter();
+            let mut events = events_permit.enter();
+
+            // NOTE: All of the below logic must be syncronous to ensure that the request is
+            // atomically added without cancellations.
+
+            state.unassigned_requests.push_back(ClientLocalRequest {
+                request,
+                request_context,
+                response_sender,
+            });
+
+            // Notify the runner thread to take a look (and possibly shut down the queue).
             events.wakeup = true;
 
             if state.unassigned_requests.len() >= self.shared.options.max_outstanding_requests {
-                let mut overall_state = self.shared.overall_state.lock().await;
-                *overall_state = ClientState::Failure;
-                overall_state.notify_all();
+                lock!(overall_state <= overall_state_permit, {
+                    *overall_state = ClientState::Failure;
+                    overall_state.notify_all();
+                });
                 self.shared.event_listener.handle_client_state_change();
             }
 
             events.notify_all();
-        }
 
-        drop(state);
+            events.exit();
+            state.exit();
+        }
 
         response_receiver.recv().await
     }
 
     async fn current_state(&self) -> ClientState {
-        *self.shared.overall_state.lock().await
+        *self
+            .shared
+            .overall_state
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive()
     }
 }
 
@@ -494,20 +526,25 @@ impl DirectClientRunner {
         let shared = self.shared.clone();
 
         loop {
-            let mut state = shared.processing_state.lock().await;
+            let mut state = shared.processing_state.lock().await.unwrap().enter();
 
             {
-                let mut events = shared.received_events.lock().await;
+                let mut events = shared.received_events.lock().await.unwrap().enter();
                 self.process_events(&mut state, &mut events);
 
                 let next_state = self.next_overall_state(&mut state);
 
-                let mut overall_state = self.shared.overall_state.lock().await;
+                let mut overall_state = self.shared.overall_state.lock().await.unwrap().enter();
                 if next_state != *overall_state {
                     *overall_state = next_state;
                     overall_state.notify_all();
+                    overall_state.exit();
                     self.shared.event_listener.handle_client_state_change();
+                } else {
+                    overall_state.exit();
                 }
+
+                events.exit();
             }
 
             // When shutting down, wait for all connections to finish running.
@@ -527,7 +564,7 @@ impl DirectClientRunner {
                     }
                 }
 
-                drop(state);
+                state.exit();
                 executor::sleep(Duration::from_millis(500)).await;
                 continue;
             }
@@ -544,7 +581,7 @@ impl DirectClientRunner {
             // Wait for something to happen.
             // TODO: Have a timeout on this to handle idleness and so on..
             {
-                let events = shared.received_events.lock().await;
+                let events = shared.received_events.lock().await.unwrap().enter();
                 if !events.is_empty() {
                     continue;
                 }
@@ -552,15 +589,20 @@ impl DirectClientRunner {
                 // It's possible that all our changes to connections/requests
                 {
                     let next_state = self.next_overall_state(&mut state);
-                    let mut overall_state = self.shared.overall_state.lock().await;
-                    if next_state != *overall_state {
-                        *overall_state = next_state;
-                        overall_state.notify_all();
-                        self.shared.event_listener.handle_client_state_change();
-                    }
+
+                    lock!(
+                        overall_state <= self.shared.overall_state.lock().await.unwrap(),
+                        {
+                            if next_state != *overall_state {
+                                *overall_state = next_state;
+                                overall_state.notify_all();
+                                self.shared.event_listener.handle_client_state_change();
+                            }
+                        }
+                    );
                 }
 
-                drop(state);
+                state.exit();
 
                 let wait_time = {
                     let now = Instant::now();
@@ -572,12 +614,13 @@ impl DirectClientRunner {
                 }
                 .min(Duration::from_secs(10));
 
-                executor::timeout(wait_time, events.wait(())).await;
+                // TODO: Replace with the
+                executor::timeout(wait_time, events.wait()).await;
             }
         }
 
-        {
-            let mut state = self.shared.processing_state.lock().await;
+        let state_permit = self.shared.processing_state.lock().await.unwrap();
+        lock_async!(state <= state_permit, {
             state.running = false;
 
             while let Some(request) = state.unassigned_requests.pop_front() {
@@ -591,7 +634,7 @@ impl DirectClientRunner {
                     .into()))
                     .await;
             }
-        }
+        });
     }
 
     fn set_next_eventful_time(&mut self, time: Instant) {
@@ -1006,9 +1049,10 @@ impl DirectClientRunner {
             end_time - start_time
         );
 
-        let mut events = shared.received_events.lock().await;
+        let mut events = shared.received_events.lock().await.unwrap().enter();
         events.connection_opened.push((connection_id, value));
         events.notify_all();
+        events.exit();
     }
 
     /// NOTE: Must be called with a lock on the connection pool to ensure that
@@ -1024,6 +1068,8 @@ impl DirectClientRunner {
         raw_stream.set_nodelay(true)?;
 
         let (mut reader, mut writer) = raw_stream.split();
+
+        reader = Box::new(crate::buffered_reader::BufferedReader::new(reader));
 
         let mut start_http2 = shared.options.force_http2;
 
@@ -1169,7 +1215,7 @@ impl DirectClientRunner {
         if let Some(client_shared) = client_shared.upgrade() {
             // NOTE: The shutdown event should always be called before this to trigger the
             // transition to a failing state.
-            let mut events = client_shared.received_events.lock().await;
+            let mut events = client_shared.received_events.lock().await.unwrap().enter();
             events
                 .connection_events
                 .entry(connection_id)
@@ -1177,6 +1223,7 @@ impl DirectClientRunner {
                 .closed = true;
 
             events.notify_all();
+            events.exit();
         }
     }
 
@@ -1199,46 +1246,53 @@ impl DirectClientRunner {
                     }
                 };
 
-                let mut state = client.processing_state.lock().await;
+                let time = lock_async!(state <= client.processing_state.lock().await.unwrap(), {
+                    let conn = match state.connection_pool.get_mut(&connection_id) {
+                        Some(v) => v,
+                        None => return None,
+                    };
 
-                let conn = match state.connection_pool.get_mut(&connection_id) {
-                    Some(v) => v,
+                    let conn_v2 = match &conn.instance {
+                        ConnectionInstance::V1(_) => return None,
+                        ConnectionInstance::V2(v) => v,
+                    };
+
+                    let now = SystemTime::now();
+
+                    let time = if let Some(pending_ping) = &conn.pending_ping {
+                        if now >= ping_expiration_time {
+                            conn_v2.shutdown(false).await;
+                            return None;
+                        } else {
+                            ping_expiration_time.duration_since(now).unwrap()
+                        }
+                    } else {
+                        let (_, last_received) = conn_v2.last_byte_times().await.unwrap();
+
+                        let next_ping_time = core::cmp::max(last_received, last_ping_time)
+                            + client.options.heartbeat.ping_interval;
+
+                        if now >= next_ping_time {
+                            last_ping_time = now;
+                            ping_expiration_time =
+                                next_ping_time + client.options.heartbeat.ping_timeout;
+
+                            let data = crypto::random::clocked_rng().uniform();
+                            conn.pending_ping = Some(data);
+                            conn_v2.ping(data).await;
+
+                            client.options.heartbeat.ping_timeout
+                        } else {
+                            next_ping_time.duration_since(now).unwrap()
+                        }
+                    };
+
+                    Some(time)
+                });
+
+                match time {
+                    Some(t) => t,
                     None => return,
-                };
-
-                let conn_v2 = match &conn.instance {
-                    ConnectionInstance::V1(_) => return,
-                    ConnectionInstance::V2(v) => v,
-                };
-
-                let now = SystemTime::now();
-
-                if let Some(pending_ping) = &conn.pending_ping {
-                    if now >= ping_expiration_time {
-                        conn_v2.shutdown(false).await;
-                        return;
-                    } else {
-                        ping_expiration_time.duration_since(now).unwrap()
-                    }
-                } else {
-                    let (_, last_received) = conn_v2.last_byte_times().await;
-
-                    let next_ping_time = core::cmp::max(last_received, last_ping_time)
-                        + client.options.heartbeat.ping_interval;
-
-                    if now >= next_ping_time {
-                        last_ping_time = now;
-                        ping_expiration_time =
-                            next_ping_time + client.options.heartbeat.ping_timeout;
-
-                        let data = crypto::random::clocked_rng().uniform();
-                        conn.pending_ping = Some(data);
-                        conn_v2.ping(data).await;
-
-                        client.options.heartbeat.ping_timeout
-                    } else {
-                        next_ping_time.duration_since(now).unwrap()
-                    }
                 }
             };
 
@@ -1349,19 +1403,20 @@ struct ConnectionListener {
 impl ConnectionEventListener for ConnectionListener {
     async fn handle_request_completed(&self) {
         if let Some(shared) = self.shared.upgrade() {
-            let mut events = shared.received_events.lock().await;
+            let mut events = shared.received_events.lock().await.unwrap().enter();
             events
                 .connection_events
                 .entry(self.connection_id)
                 .or_default()
                 .num_completed_requests += 1;
             events.notify_all();
+            events.exit();
         }
     }
 
     async fn handle_connection_shutdown(&self, details: ConnectionShutdownDetails) {
         if let Some(shared) = self.shared.upgrade() {
-            let mut events = shared.received_events.lock().await;
+            let mut events = shared.received_events.lock().await.unwrap().enter();
 
             // TODO: Allow the value of this to change back to false if future connections
             // yield a different outcome (especially if we eventually see an http2
@@ -1384,14 +1439,18 @@ impl ConnectionEventListener for ConnectionListener {
             if !details.graceful || (!details.local && shared.options.remote_shutdown_is_failure) {
                 entry.failed = true;
 
-                let mut overall_state = shared.overall_state.lock().await;
-                *overall_state = ClientState::Failure;
-                overall_state.notify_all();
-                drop(overall_state);
+                lock!(
+                    overall_state <= shared.overall_state.lock().await.unwrap(),
+                    {
+                        *overall_state = ClientState::Failure;
+                        overall_state.notify_all();
+                    }
+                );
                 shared.event_listener.handle_client_state_change();
             }
 
             events.notify_all();
+            events.exit();
         }
     }
 
@@ -1408,16 +1467,16 @@ impl ConnectionEventListener for ConnectionListener {
             }
         };
 
-        let mut state = client.processing_state.lock().await;
+        lock!(state <= client.processing_state.lock().await.unwrap(), {
+            let conn = match state.connection_pool.get_mut(&self.connection_id) {
+                Some(v) => v,
+                None => return,
+            };
 
-        let conn = match state.connection_pool.get_mut(&self.connection_id) {
-            Some(v) => v,
-            None => return,
-        };
-
-        if conn.pending_ping == Some(opaque_data) {
-            conn.pending_ping = None;
-        }
+            if conn.pending_ping == Some(opaque_data) {
+                conn.pending_ping = None;
+            }
+        });
     }
 }
 

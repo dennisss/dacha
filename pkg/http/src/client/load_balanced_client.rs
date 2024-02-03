@@ -6,14 +6,14 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use common::errors::*;
-use common::hash::SumHasherBuilder;
+use common::hash::{FastHasherBuilder, SumHasherBuilder};
 use common::vec_hash_set::VecHashSet;
 use crypto::hasher::Hasher;
 use crypto::random::{RngExt, SharedRngExt};
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
-use executor::Condvar;
+use executor::lock;
+use executor::sync::AsyncVariable;
 use net::backoff::*;
 
 use crate::client::client_interface::*;
@@ -153,7 +153,7 @@ struct Shared {
     resolver: Arc<dyn Resolver>,
 
     options: LoadBalancedClientOptions,
-    state: Condvar<State>,
+    state: AsyncVariable<State>,
 
     /// Event queue used to notify the main worker thread other
     /// LoadBalancedClient to handle.
@@ -170,7 +170,7 @@ enum Event {
 
 struct State {
     /// Set of backends to which we connected to (indexed by monotonic id).
-    backends: HashMap<usize, Backend>,
+    backends: HashMap<usize, Backend, FastHasherBuilder>,
     last_backend_id: usize,
 
     /// Current state of the backend resolver.
@@ -237,8 +237,8 @@ impl LoadBalancedClient {
                 client_id,
                 resolver,
                 options,
-                state: Condvar::new(State {
-                    backends: HashMap::new(),
+                state: AsyncVariable::new(State {
+                    backends: HashMap::with_hasher(FastHasherBuilder::default()),
                     last_backend_id: 0,
                     // backends_by_endpoint: HashMap::with_hasher(SumHasherBuilder::default()),
                     resolver_state: ClientState::Idle,
@@ -250,14 +250,9 @@ impl LoadBalancedClient {
     }
 
     pub async fn run(self) {
-        let event_receiver = self
-            .shared
-            .state
-            .lock()
-            .await
-            .event_receiver
-            .take()
-            .unwrap();
+        let event_receiver = lock!(state <= self.shared.state.lock().await.unwrap(), {
+            state.event_receiver.take().unwrap()
+        });
 
         let mut resolve_backoff =
             ExponentialBackoff::new(self.shared.options.resolver_backoff.clone());
@@ -335,7 +330,7 @@ impl LoadBalancedClient {
                 resolved_result = Some(self.shared.resolver.resolve().await);
             }
 
-            let mut state = self.shared.state.lock().await;
+            let mut state = self.shared.state.lock().await.unwrap().enter();
 
             if let Some(resolved_result) = resolved_result {
                 match resolved_result {
@@ -532,7 +527,7 @@ impl LoadBalancedClient {
             }
 
             state.notify_all();
-            drop(state);
+            state.exit();
         }
     }
 
@@ -543,7 +538,7 @@ impl LoadBalancedClient {
     ) {
         f.await;
         if let Some(shared) = shared.upgrade() {
-            let mut state = shared.state.lock().await;
+            let mut state = shared.state.lock().await.unwrap().enter();
             if let Some(backend) = state.backends.remove(&backend_id) {
                 if !backend.shutting_down {
                     eprintln!("DirectClient fails before shut down");
@@ -553,6 +548,7 @@ impl LoadBalancedClient {
             }
 
             state.notify_all();
+            state.exit();
         }
     }
 
@@ -604,7 +600,7 @@ impl ClientInterface for LoadBalancedClient {
 
         let client;
         loop {
-            let state = self.shared.state.lock().await;
+            let state = self.shared.state.lock().await?.read_exclusive();
 
             if state.backends.is_empty() {
                 if state.resolver_state == ClientState::Idle {
@@ -628,7 +624,7 @@ impl ClientInterface for LoadBalancedClient {
                     .into());
                 }
 
-                state.wait(()).await;
+                state.wait().await;
                 continue;
             }
 
@@ -708,7 +704,7 @@ impl ClientInterface for LoadBalancedClient {
                     .into());
                 }
 
-                state.wait(()).await;
+                state.wait().await;
                 continue;
             }
 

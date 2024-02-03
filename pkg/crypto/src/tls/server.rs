@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use common::io::{Readable, SharedWriteable, Writeable};
+use common::io::{SharedReadable, SharedWriteable, Writeable};
 
 use crate::random::secure_random_bytes;
 use crate::tls::application_stream::ApplicationStream;
@@ -25,7 +25,7 @@ pub struct Server {}
 
 impl Server {
     pub async fn connect(
-        reader: Box<dyn Readable + Sync>,
+        reader: Box<dyn SharedReadable>,
         writer: Box<dyn SharedWriteable>,
         options: &ServerOptions,
     ) -> Result<ApplicationStream> {
@@ -44,7 +44,7 @@ struct ServerHandshakeExecutor<'a> {
 
 impl<'a> ServerHandshakeExecutor<'a> {
     pub async fn create(
-        reader: Box<dyn Readable + Sync>,
+        reader: Box<dyn SharedReadable>,
         writer: Box<dyn SharedWriteable>,
         options: &'a ServerOptions,
     ) -> Result<ServerHandshakeExecutor<'a>> {

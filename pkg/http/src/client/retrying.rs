@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 
 use common::{bytes::Bytes, errors::*};
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use net::backoff::*;
 use parsing::ascii::AsciiString;
 
@@ -75,14 +76,14 @@ TODO: Add a test case attempting to connect to an unreachable port on the loal m
 pub struct SimpleClient {
     options: SimpleClientOptions,
     /// TODO: Clean up clients if they haven't been used in a while.
-    clients: Mutex<HashMap<String, Arc<dyn ClientInterface>>>,
+    clients: AsyncMutex<HashMap<String, Arc<dyn ClientInterface>>>,
 }
 
 impl SimpleClient {
     pub fn new(options: SimpleClientOptions) -> Self {
         Self {
             options,
-            clients: Mutex::new(HashMap::new()),
+            clients: AsyncMutex::new(HashMap::new()),
         }
     }
 
@@ -153,11 +154,11 @@ impl SimpleClient {
     }
 
     async fn get_client(&self, request_head: &RequestHead) -> Result<Arc<dyn ClientInterface>> {
-        let mut clients = self.clients.lock().await;
-
         if request_head.uri.scheme.is_none() || request_head.uri.authority.is_none() {
             return Err(err_msg("No schema/authority specified for request."));
         }
+
+        let clients = self.clients.lock().await?.read_exclusive();
 
         let host_uri = crate::uri::Uri {
             scheme: request_head.uri.scheme.clone(),
@@ -169,12 +170,16 @@ impl SimpleClient {
 
         let key = host_uri.to_string()?;
 
-        if !clients.contains_key(&key) {
-            let client = Client::create(ClientOptions::from_uri(&host_uri)?).await?;
-            clients.insert(key.clone(), Arc::new(client));
+        if let Some(client) = clients.get(&key) {
+            return Ok(client.clone());
         }
 
-        Ok(clients.get(&key).unwrap().clone())
+        let client = Arc::new(Client::create(ClientOptions::from_uri(&host_uri)?).await?);
+        lock!(clients <= clients.upgrade(), {
+            clients.insert(key, client.clone());
+        });
+
+        Ok(client)
     }
 
     async fn request_once(

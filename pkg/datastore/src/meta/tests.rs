@@ -1,11 +1,11 @@
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
+use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
 use executor::child_task::ChildTask;
 use file::temp::TempDir;
 use protobuf::text::ParseTextProto;
 use raft::proto::RouteLabel;
 
-use super::client::{MetastoreClient, MetastoreClientInterface};
 use crate::meta::test_store::TestMetastore;
 use crate::proto::KeyValueEntry;
 

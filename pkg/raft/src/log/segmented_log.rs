@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use common::errors::*;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
-use executor::Condvar;
+use executor::lock;
+use executor::sync::{AsyncMutex, AsyncVariable};
 use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 use sstable::log_writer::LogFlushSubscriber;
@@ -61,7 +61,7 @@ struct Shared {
     dir: LocalPathBuf,
 
     options: SegmentedLogOptions,
-    state: Condvar<SegmentedLogState>,
+    state: AsyncVariable<SegmentedLogState>,
 }
 
 struct SegmentedLogState {
@@ -257,7 +257,7 @@ impl SegmentedLog {
         let shared = Arc::new(Shared {
             dir,
             options,
-            state: Condvar::new(state),
+            state: AsyncVariable::new(state),
         });
 
         let thread = ChildTask::spawn(Self::flusher_thread(shared.clone()));
@@ -319,9 +319,10 @@ impl SegmentedLog {
 
     async fn flusher_thread(shared: Arc<Shared>) {
         if let Err(e) = Self::flusher_thread_impl(shared.clone()).await {
-            let mut state = shared.state.lock().await;
-            state.flush_error.set(e);
-            state.notify_all();
+            lock!(state <= shared.state.lock().await.unwrap(), {
+                state.flush_error.set(e);
+                state.notify_all();
+            });
         }
     }
 
@@ -331,7 +332,7 @@ impl SegmentedLog {
             let mut new_log_number = None;
             let mut pending_flusher = None;
 
-            let mut guard = shared.state.lock().await;
+            let mut guard = shared.state.lock().await?.enter();
             let state: &mut SegmentedLogState = &mut guard;
 
             let mut i = 0;
@@ -392,7 +393,7 @@ impl SegmentedLog {
 
             // If we have nothing to do, wait for something to happen
             if logs_to_discard.is_empty() && new_log_number.is_none() {
-                let state_change = guard.wait(());
+                let state_change = guard.wait();
 
                 race!(
                     state_change,
@@ -404,7 +405,7 @@ impl SegmentedLog {
                 continue;
             }
 
-            drop(guard);
+            guard.exit();
 
             // Below we do slow work while the state isn't locked.
 
@@ -415,7 +416,7 @@ impl SegmentedLog {
                     RecordWriter::create_new(shared.dir.join(Self::log_file_name(log_number)))
                         .await?;
 
-                let mut state = shared.state.lock().await;
+                let mut state = shared.state.lock().await?.enter();
 
                 let mut header = SegmentedLogRecord::default();
                 header.set_prev(state.last_position.clone());
@@ -432,7 +433,7 @@ impl SegmentedLog {
                 });
 
                 state.notify_all();
-                drop(state);
+                state.exit();
             }
 
             for segment in logs_to_discard {
@@ -470,21 +471,49 @@ impl SegmentedLog {
 #[async_trait]
 impl Log for SegmentedLog {
     async fn term(&self, index: LogIndex) -> Option<Term> {
-        self.shared.state.lock().await.memory_log.term(index)
+        self.shared
+            .state
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive()
+            .memory_log
+            .term(index)
     }
 
     async fn prev(&self) -> LogPosition {
         // NOTE: We may have more entries on disk, but we currently only support using
         // the ones that are still in memory.
-        self.shared.state.lock().await.memory_log.prev()
+        self.shared
+            .state
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive()
+            .memory_log
+            .prev()
     }
 
     async fn last_index(&self) -> LogIndex {
-        self.shared.state.lock().await.memory_log.last_index()
+        self.shared
+            .state
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive()
+            .memory_log
+            .last_index()
     }
 
     async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
-        self.shared.state.lock().await.memory_log.entry(index)
+        self.shared
+            .state
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive()
+            .memory_log
+            .entry(index)
     }
 
     async fn entries(
@@ -496,6 +525,8 @@ impl Log for SegmentedLog {
             .state
             .lock()
             .await
+            .unwrap()
+            .read_exclusive()
             .memory_log
             .entries(start_index, end_index)
     }
@@ -504,7 +535,7 @@ impl Log for SegmentedLog {
         // Acquire the state blocking until we have a segment that is small enough to
         // handle more writes.
         let mut state = {
-            let mut state = self.shared.state.lock().await;
+            let mut state = self.shared.state.lock().await?.enter();
 
             loop {
                 let last_segment = state.segments.back_mut().unwrap();
@@ -514,8 +545,8 @@ impl Log for SegmentedLog {
                     && last_segment.open.as_mut().unwrap().writer.current_size()
                         >= self.shared.options.max_segment_size
                 {
-                    state.wait(()).await;
-                    state = self.shared.state.lock().await;
+                    state.wait().await;
+                    state = self.shared.state.lock().await?.enter();
                     continue;
                 }
 
@@ -541,6 +572,7 @@ impl Log for SegmentedLog {
         // We may need to roll over to a new log file if the current one is now too big.
         // TODO: Filter these notifications if we aren't close to the limit.
         state.notify_all();
+        state.exit();
 
         Ok(())
     }
@@ -550,7 +582,7 @@ impl Log for SegmentedLog {
         // need to support discontinuities in log indexes as we may receive a state
         // machine snapshot.
 
-        let mut state = self.shared.state.lock().await;
+        let mut state = self.shared.state.lock().await?.enter();
 
         // Find the first segment that we want to keep.
         //
@@ -639,29 +671,30 @@ impl Log for SegmentedLog {
         }
 
         state.notify_all();
+        state.exit();
 
         Ok(())
     }
 
     async fn last_flushed(&self) -> LogSequence {
-        let state = self.shared.state.lock().await;
+        let state = self.shared.state.lock().await.unwrap().read_exclusive();
         state.last_flushed.clone()
     }
 
-    // TODO: Need this to asyncronously flush the writer.
     async fn wait_for_flush(&self) -> Result<()> {
         loop {
-            let mut state = self.shared.state.lock().await;
+            let mut state = self.shared.state.lock().await?.enter();
             state.flush_error.get()?;
 
             let next_observation = Some((state.memory_log.prev(), state.last_flushed.clone()));
 
             if state.last_observation == next_observation {
-                state.wait(()).await;
+                state.wait().await;
                 continue;
             }
 
             state.last_observation = next_observation;
+            state.exit();
             break;
         }
 

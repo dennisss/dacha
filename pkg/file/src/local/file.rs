@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 use alloc::ffi::CString;
 
 use common::errors::*;
-use common::io::{Readable, Seekable, Writeable};
+use common::io::{IoError, IoErrorKind, Readable, Seekable, Writeable};
 pub use executor::SyncRange;
 use executor::{FileHandle, FromErrno, RemapErrno};
 use sys::{Errno, OpenFileDescriptor};
@@ -250,6 +250,27 @@ impl LocalFile {
             }
 
             return Err(FileError::from_errno(e).unwrap_or_else(|| e.into()));
+        }
+
+        Ok(())
+    }
+
+    pub async fn read_exact_at(&self, mut offset: u64, mut output: &mut [u8]) -> Result<()> {
+        let mut num_read = 0;
+        while output.len() > 0 {
+            match self.file.read_at(offset, output).await {
+                Ok(0) => {
+                    return Err(IoError::new(IoErrorKind::UnexpectedEof { num_read }, "").into());
+                }
+                Ok(n) => {
+                    num_read += n;
+                    offset += n as u64;
+                    output = &mut output[n..];
+                }
+                Err(error) => {
+                    return Err(error);
+                }
+            }
         }
 
         Ok(())

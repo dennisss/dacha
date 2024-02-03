@@ -479,7 +479,7 @@ pub trait Readable: Send + Unpin {
     }
 }
 
-pub trait SharedReadable = Readable + 'static;
+pub trait SharedReadable = Readable + Sync + 'static;
 
 #[async_trait]
 impl<R: Readable> Readable for Borrowed<R> {

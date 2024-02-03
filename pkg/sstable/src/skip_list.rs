@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use executor::sync::RwLock;
+use executor::sync::AsyncRwLock;
 
 pub struct SkipList {
     first_node: Arc<Node<T>>,
@@ -8,7 +8,7 @@ pub struct SkipList {
 
 struct Node<T> {
     value: T,
-    next: RwLock<Vec<Arc<Node<T>>>>,
+    next: AsyncRwLock<Vec<Arc<Node<T>>>>,
 }
 
 impl<T: Default> SkipList<T> {
@@ -285,7 +285,7 @@ struct Node<T> {
     /// A special value of None is reserved for the very first element in the
     /// list which is strictly 'less than' all other possible values of T.
     value: Arc<T>,
-    state: RwLock<NodeState<T>>,
+    state: AsyncRwLock<NodeState<T>>,
 }
 
 impl<T> Node<T> {
@@ -297,7 +297,7 @@ impl<T> Node<T> {
     ) -> Self {
         Self {
             value,
-            state: RwLock::new(NodeState {
+            state: AsyncRwLock::new(NodeState {
                 next,
                 next_hops,
                 child,

@@ -1,5 +1,5 @@
 use core::future::Future;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::f32::consts::E;
 use std::ops::DerefMut;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,7 +12,8 @@ use common::io::Writeable;
 use crypto::random::SharedRng;
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::RwLock;
+use executor::lock;
+use executor::sync::{AsyncMutex, AsyncRwLock};
 use file::sync::SyncedPath;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
@@ -134,18 +135,18 @@ pub struct EmbeddedDB {
     shared: Arc<EmbeddedDBShared>,
 
     compaction_thread: Option<ChildTask>,
-
-    /// Used to notify the compaction thread that something interesting happened
-    /// that may require compaction.
-    compaction_notifier: channel::Sender<()>,
 }
 
 struct EmbeddedDBShared {
     options: Arc<EmbeddedDBOptions>,
     dir: Arc<FilePaths>,
-    state: RwLock<EmbeddedDBState>,
+    state: AsyncRwLock<EmbeddedDBState>,
     flushed_channel: (channel::Sender<()>, channel::Receiver<()>),
     compaction_waterline: AtomicU64,
+
+    /// Used to notify the compaction thread that something interesting happened
+    /// that may require compaction.
+    compaction_notifier: channel::Sender<()>,
 }
 
 struct EmbeddedDBState {
@@ -325,7 +326,7 @@ impl EmbeddedDB {
             options: options.clone(),
             dir,
             flushed_channel: channel::bounded(1),
-            state: RwLock::new(EmbeddedDBState {
+            state: AsyncRwLock::new(EmbeddedDBState {
                 closing: false,
                 log,
                 log_last_sequence: version_set.last_sequence(),
@@ -335,6 +336,7 @@ impl EmbeddedDB {
                 compaction_callbacks: vec![],
             }),
             compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
+            compaction_notifier,
         });
 
         let compaction_thread = ChildTask::spawn(Self::compaction_thread(
@@ -344,7 +346,6 @@ impl EmbeddedDB {
         ));
 
         Ok(Self {
-            compaction_notifier,
             compaction_thread: Some(compaction_thread),
             lock_file,
             identity: Some(identity),
@@ -460,7 +461,7 @@ impl EmbeddedDB {
             options: options.clone(),
             dir,
             flushed_channel: channel::bounded(1),
-            state: RwLock::new(EmbeddedDBState {
+            state: AsyncRwLock::new(EmbeddedDBState {
                 closing: false,
                 log,
                 log_last_sequence,
@@ -470,6 +471,7 @@ impl EmbeddedDB {
                 compaction_callbacks: vec![],
             }),
             compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
+            compaction_notifier,
         });
 
         let compaction_thread = {
@@ -489,7 +491,6 @@ impl EmbeddedDB {
         Ok(Self {
             lock_file,
             identity,
-            compaction_notifier,
             compaction_thread,
             shared,
         })
@@ -501,12 +502,11 @@ impl EmbeddedDB {
 
         // TODO: Should stop new compactions from starting and wait for any existing
         // operations to finish.
-        {
-            let mut state = self.shared.state.write().await;
+        lock!(state <= self.shared.state.write().await?, {
             state.closing = true;
-        }
+        });
 
-        let _ = self.compaction_notifier.try_send(());
+        let _ = self.shared.compaction_notifier.try_send(());
 
         if let Some(thread) = self.compaction_thread {
             thread.join().await;
@@ -524,13 +524,13 @@ impl EmbeddedDB {
     /// NOTE: This is only guranteed to be correct for writes applied with this
     /// library (not guranteed to be compatible with LevelDB/RocksDB behavior).
     pub async fn last_flushed_sequence(&self) -> u64 {
-        let state = self.shared.state.read().await;
+        let state = self.shared.state.read().await.unwrap();
         state.version_set.last_sequence()
     }
 
     /// Returns the sequence of the last write to this database.
     pub async fn last_sequence(&self) -> u64 {
-        let state = self.shared.state.read().await;
+        let state = self.shared.state.read().await.unwrap();
         state.log_last_sequence
     }
 
@@ -556,12 +556,11 @@ impl EmbeddedDB {
     pub async fn wait_for_compaction(&self) -> Result<()> {
         let (sender, receiver) = channel::bounded(1);
 
-        {
-            let mut state = self.shared.state.write().await;
+        lock!(state <= self.shared.state.write().await?, {
             state.compaction_callbacks.push(sender);
-        }
+        });
 
-        let _ = self.compaction_notifier.try_send(());
+        let _ = self.shared.compaction_notifier.try_send(());
 
         receiver.recv().await?;
         Ok(())
@@ -621,7 +620,7 @@ impl EmbeddedDB {
                 }
             }
 
-            let state = shared.state.read().await;
+            let state = shared.state.read().await?;
 
             if state.closing {
                 return Ok(());
@@ -664,19 +663,19 @@ impl EmbeddedDB {
                     manifest.flush().await?;
                 }
 
-                let mut state = shared.state.write().await;
+                lock!(state <= shared.state.write().await?, {
+                    let mut table = Arc::new(MemTable::new(key_comparator.clone()));
+                    std::mem::swap(&mut table, &mut state.mutable_table);
+                    state.immutable_table = Some(ImmutableTable {
+                        table,
+                        last_sequence: state.log_last_sequence,
+                    });
 
-                let mut table = Arc::new(MemTable::new(key_comparator.clone()));
-                std::mem::swap(&mut table, &mut state.mutable_table);
-                state.immutable_table = Some(ImmutableTable {
-                    table,
-                    last_sequence: state.log_last_sequence,
+                    if !shared.options.disable_wal {
+                        state.version_set.apply_new_edit(version_edit, vec![]);
+                        state.log = new_log;
+                    }
                 });
-
-                if !shared.options.disable_wal {
-                    state.version_set.apply_new_edit(version_edit, vec![]);
-                    state.log = new_log;
-                }
 
                 continue;
             }
@@ -742,14 +741,10 @@ impl EmbeddedDB {
                     file::remove_file(shared.dir.log(num)).await?;
                 }
 
-                let mut state_guard = shared.state.write().await;
-
-                state_guard.immutable_table = None;
-                state_guard
-                    .version_set
-                    .apply_new_edit(version_edit, new_tables);
-
-                drop(state_guard);
+                lock!(state <= shared.state.write().await?, {
+                    state.immutable_table = None;
+                    state.version_set.apply_new_edit(version_edit, new_tables);
+                });
 
                 let _ = shared.flushed_channel.0.try_send(());
 
@@ -788,9 +783,8 @@ impl EmbeddedDB {
 
                     println!("- DELETE: {}", entry.entry.number);
 
-                    let table_guard = entry.table.lock().await;
-                    let table = table_guard.as_ref().unwrap();
-                    iters.push(Box::new(table.iter()));
+                    let iter = entry.table().await.iter();
+                    iters.push(Box::new(iter));
                 }
 
                 // TOOD: A few optimizations of this that we can do:
@@ -806,9 +800,8 @@ impl EmbeddedDB {
 
                     println!("- DELETE2: {}", entry.entry.number);
 
-                    let table_guard = entry.table.lock().await;
-                    let table = table_guard.as_ref().unwrap();
-                    iters.push(Box::new(table.iter()));
+                    let iter = entry.table().await.iter();
+                    iters.push(Box::new(iter));
                 }
 
                 let iterator = Box::new(MergeIterator::new(
@@ -849,14 +842,13 @@ impl EmbeddedDB {
                     }
                 }
 
-                // TODO: Re-lock and apply all of the version edits
-                let mut state_guard = shared.state.write().await;
-
-                // NOTE: Becuase this may drop some table entries from the current version, this
-                // may trigger some files to get released once they are dropped.
-                state_guard
-                    .version_set
-                    .apply_new_edit(version_edit, new_tables);
+                lock!(state_guard <= shared.state.write().await?, {
+                    // NOTE: Becuase this may drop some table entries from the current version, this
+                    // may trigger some files to get released once they are dropped.
+                    state_guard
+                        .version_set
+                        .apply_new_edit(version_edit, new_tables);
+                });
 
                 continue;
             }
@@ -869,7 +861,7 @@ impl EmbeddedDB {
             if manifest.current_size() >= shared.options.max_manifest_file_size {
                 drop(state);
 
-                let mut state_guard = shared.state.write().await;
+                let mut state_guard = shared.state.write().await?.enter();
 
                 let new_manifest_num = state_guard.version_set.next_file_number();
                 {
@@ -878,8 +870,9 @@ impl EmbeddedDB {
                     state_guard.version_set.apply_new_edit(edit, vec![]);
                 }
 
-                drop(state_guard);
-                let state = shared.state.read().await;
+                state_guard.exit();
+
+                let state = shared.state.read().await?;
 
                 let new_manifest_path = shared.dir.manifest(new_manifest_num);
 
@@ -907,14 +900,13 @@ impl EmbeddedDB {
                 continue;
             }
 
-            // TODO: Also check the manifest size to see if we should switch manifests.
-
             if state.compaction_callbacks.len() > 0 {
                 drop(state);
-                let mut state = shared.state.write().await;
-                while let Some(sender) = state.compaction_callbacks.pop() {
-                    let _ = sender.try_send(());
-                }
+                lock!(state <= shared.state.write().await?, {
+                    while let Some(sender) = state.compaction_callbacks.pop() {
+                        let _ = sender.try_send(());
+                    }
+                });
             }
 
             made_progress = false;
@@ -1063,8 +1055,10 @@ impl EmbeddedDB {
         Ok(new_tables)
     }
 
+    /// CANCEL SAFE
     pub async fn snapshot(&self) -> Snapshot {
-        let state = self.shared.state.read().await;
+        // TODO: Remove this unwrap.
+        let state = self.shared.state.read().await.unwrap();
 
         // TODO: Make this an inline vector with up to 2 elements.
         let mut memtables = vec![state.mutable_table.clone()];
@@ -1083,8 +1077,10 @@ impl EmbeddedDB {
 
     /// Creates a point in time backup of the on-disk state of the database
     /// excluding any WALs.
+    ///
+    /// CANCEL SAFE
     pub async fn backup(&self) -> Result<Backup> {
-        let state = self.shared.state.read().await;
+        let state = self.shared.state.read().await?;
 
         let version = state.version_set.latest_version().clone();
 
@@ -1149,7 +1145,9 @@ impl EmbeddedDB {
     ///
     /// TODO: Also note that we shouldn't increment the last_sequence until the
     /// write is successful.
-    pub async fn write(&self, batch: &mut WriteBatch) -> Result<()> {
+    ///
+    /// CANCEL SAFE
+    pub async fn write(&self, batch: &WriteBatch) -> Result<()> {
         if self.shared.options.read_only {
             return Err(err_msg("Database opened as read only"));
         }
@@ -1158,51 +1156,63 @@ impl EmbeddedDB {
             return Err(err_msg("Writing an empty batch"));
         }
 
-        // NOTE: We currently MUST acquire a write log to ensure that there aren't any
-        // concurrent writes to the immutable memtable.
-        let mut state = self.shared.state.write().await;
 
-        if batch.sequence() != 0 {
-            if batch.sequence() <= state.log_last_sequence {
-                return Err(err_msg("Batch has custom non-monotonic sequence"));
+        let mut batch = batch.clone();
+
+        let shared = self.shared.clone();
+
+        // Run in a separate task to make this cancel safe.
+        executor::spawn(async move {
+            // NOTE: We currently MUST acquire a write log to ensure that there aren't any
+            // concurrent writes to the immutable memtable.
+            let mut state = shared.state.write().await?.enter();
+
+            if batch.sequence() != 0 {
+                if batch.sequence() <= state.log_last_sequence {
+                    return Err(err_msg("Batch has custom non-monotonic sequence"));
+                }
+            } else {
+                batch.set_sequence(state.log_last_sequence + 1);
             }
-        } else {
-            batch.set_sequence(state.log_last_sequence + 1);
-        }
 
-        state.log_last_sequence = batch.sequence();
+            state.log_last_sequence = batch.sequence();
 
-        // TODO: Reads should still be allowed while this is occuring.
-        if let Some(log) = &mut state.log {
-            log.append(&batch.as_bytes()).await?;
-            log.flush().await?;
-        }
+            // TODO: Reads should still be allowed while this is occuring.
+            if let Some(log) = &mut state.log {
+                log.append(&batch.as_bytes()).await?;
+                // TODO: Need to batch writes from multiple users here.
+                log.flush().await?;
+            }
 
-        batch.iter()?.apply(&state.mutable_table).await?;
+            batch.iter()?.apply(&state.mutable_table).await?;
 
-        // TODO: Dedup this logic with above.
-        let should_compact = state.mutable_table.size() >= self.shared.options.write_buffer_size
-            && !state.immutable_table.is_some();
+            // TODO: Dedup this logic with above.
+            let should_compact = state.mutable_table.size() >= shared.options.write_buffer_size
+                && !state.immutable_table.is_some();
 
-        drop(state);
+            // NOTE: If anything fails before here, we will poison the state.
+            state.exit();
 
-        if should_compact && !self.shared.options.manual_compactions_only {
-            let _ = self.compaction_notifier.try_send(());
-        }
+            if should_compact && !shared.options.manual_compactions_only {
+                let _ = shared.compaction_notifier.try_send(());
+            }
 
-        Ok(())
+            Ok(())
+        })
+        .join()
+        .await
     }
 
     pub async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
         let mut batch = WriteBatch::new();
         batch.put(key, value);
 
-        self.write(&mut batch).await
+        self.write(&batch).await
     }
 
     pub async fn delete(&self, key: &[u8]) -> Result<()> {
         let mut batch = WriteBatch::new();
         batch.delete(key);
-        self.write(&mut batch).await
+        self.write(&batch).await
     }
 }

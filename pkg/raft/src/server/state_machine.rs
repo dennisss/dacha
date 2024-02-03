@@ -1,5 +1,5 @@
 use common::errors::*;
-use common::io::Readable;
+use common::io::SharedReadable;
 
 use crate::proto::*;
 
@@ -97,5 +97,6 @@ pub struct StateMachineSnapshot {
     /// This can only be traversed once. If an error is encountered while
     /// reading from this in StateMachine::restore(), the restore should be
     /// reliably cancelled.
-    pub data: Box<dyn Readable + Sync + 'static>,
+    pub data: Box<dyn SharedReadable>,
+    // TODO: Provide an estimate of how big the snapshot is for progress tracking purposes.
 }

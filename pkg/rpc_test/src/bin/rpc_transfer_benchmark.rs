@@ -19,7 +19,7 @@ use rpc_test::proto::adder::{AddRequest, AdderIntoService, AdderStub};
 use rpc_test::AdderImpl;
 use rpc_util::{AddHealthEndpoints, AddReflection};
 
-const BLOCK_SIZE: usize = 128 * 1024;
+const BLOCK_SIZE: usize = 4 * 1024;
 
 const TARGET_BYTES: usize = 1 * 1024 * 1024;
 
@@ -64,10 +64,10 @@ async fn main() -> Result<()> {
             break;
         }
 
-        // let res = res_stream.recv().await;
-        // if !res.is_some() {
-        //     break;
-        // }
+        let res = res_stream.recv().await;
+        if !res.is_some() {
+            break;
+        }
     }
 
     let end = Instant::now();

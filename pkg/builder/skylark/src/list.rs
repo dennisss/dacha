@@ -10,7 +10,7 @@ use crate::value::*;
 use crate::value_attributes;
 
 pub struct ListValue {
-    state: Mutex<ListValueState>,
+    state: std::sync::Mutex<ListValueState>,
 }
 
 struct ListValueState {

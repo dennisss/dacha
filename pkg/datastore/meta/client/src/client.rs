@@ -8,7 +8,8 @@ use common::bytes::Bytes;
 use common::errors::*;
 use datastore_proto::db::meta::*;
 use executor::child_task::ChildTask;
-use executor::sync::{Mutex, MutexGuard};
+use executor::sync::{AsyncMutex, AsyncMutexGuard, AsyncMutexPermit};
+use executor::{lock, lock_async};
 use net::ip::SocketAddr;
 use raft_client::proto::RouteLabel;
 
@@ -125,10 +126,11 @@ impl MetastoreClient {
         Ok(request_context)
     }
 
+    /// CANCEL SAFE
     async fn get_impl(
         &self,
         key: &[u8],
-        transaction_state: Option<&mut MetastoreTransactionState>,
+        transaction_state: Option<AsyncMutexPermit<'_, MetastoreTransactionState>>,
     ) -> Result<Option<Vec<u8>>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
@@ -139,9 +141,11 @@ impl MetastoreClient {
         request.keys_mut().set_start_key(start_key.as_ref());
         request.keys_mut().set_end_key(end_key.as_ref());
 
-        if let Some(transaction_state) = transaction_state {
-            request.set_read_index(transaction_state.read_index);
-            transaction_state.reads.push(request.keys().clone());
+        if let Some(transaction_state_permit) = transaction_state {
+            lock!(transaction_state <= transaction_state_permit, {
+                request.set_read_index(transaction_state.read_index);
+                transaction_state.reads.push(request.keys().clone());
+            });
         }
 
         let mut response = stub.Read(&request_context, &request).await;
@@ -165,11 +169,13 @@ impl MetastoreClient {
     }
 
     /// Lists all files in a directory (along with their contents.)
+    ///
+    /// CANCEL-SAFE
     async fn get_range_impl(
         &self,
         start_key: &[u8],
         end_key: &[u8],
-        transaction_state: Option<&mut MetastoreTransactionState>,
+        transaction_state_permit: Option<AsyncMutexPermit<'_, MetastoreTransactionState>>,
     ) -> Result<Vec<KeyValueEntry>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
@@ -180,9 +186,11 @@ impl MetastoreClient {
         request.keys_mut().set_end_key(end_key);
 
         // TODO: Deduplicate this code.
-        if let Some(transaction_state) = transaction_state {
-            request.set_read_index(transaction_state.read_index);
-            transaction_state.reads.push(request.keys().clone());
+        if let Some(transaction_state_permit) = transaction_state_permit {
+            lock!(transaction_state <= transaction_state_permit, {
+                request.set_read_index(transaction_state.read_index);
+                transaction_state.reads.push(request.keys().clone());
+            });
         }
 
         let mut out = vec![];
@@ -240,7 +248,7 @@ impl MetastoreClient {
         Ok(MetastoreTransaction {
             class: MetastoreTransactionClass::TopLevel {
                 client: self,
-                state: Mutex::new(MetastoreTransactionState {
+                state: AsyncMutex::new(MetastoreTransactionState {
                     read_index: res.read_index(),
                     reads: Vec::new(),
                     writes: BTreeMap::new(),
@@ -285,7 +293,7 @@ impl MetastoreClient {
     }
 }
 
-/// Interface for interacting with the metastore's key-value file system.
+//// Interface for interacting with the metastore's key-value file system.
 #[async_trait]
 pub trait MetastoreClientInterface: Send + Sync {
     /// Looks up a single value from the metastore.
@@ -342,13 +350,16 @@ struct MetastoreTransactionState {
 enum MetastoreTransactionClass<'a> {
     TopLevel {
         client: &'a MetastoreClient,
-        state: Mutex<MetastoreTransactionState>,
+        state: AsyncMutex<MetastoreTransactionState>,
     },
     /// A transaction that was started inside of another transaction. This is
     /// just a reference to the top level transaction.
+    ///
+    /// Committing a nested transaction is a no-op as it is instead committed
+    /// later as part of the root transaction.
     Nested {
         client: &'a MetastoreClient,
-        state: &'a Mutex<MetastoreTransactionState>,
+        state: &'a AsyncMutex<MetastoreTransactionState>,
     },
 }
 
@@ -379,23 +390,30 @@ impl<'a> MetastoreClientInterface for MetastoreTransaction<'a> {
 impl<'a> MetastoreTransaction<'a> {
     pub async fn read_index(&self) -> u64 {
         let (_, state) = self.get_top_level().await;
-        state.read_index
+        state.read_exclusive().read_index
     }
 
     async fn get_top_level<'b>(
         &'b self,
     ) -> (
         &'b MetastoreClient,
-        MutexGuard<'b, MetastoreTransactionState>,
+        AsyncMutexPermit<'b, MetastoreTransactionState>,
     ) {
         match &self.class {
-            MetastoreTransactionClass::TopLevel { client, state } => (*client, state.lock().await),
-            MetastoreTransactionClass::Nested { client, state } => (*client, state.lock().await),
+            MetastoreTransactionClass::TopLevel { client, state } => {
+                (*client, state.lock().await.unwrap())
+            }
+            MetastoreTransactionClass::Nested { client, state } => {
+                (*client, state.lock().await.unwrap())
+            }
         }
     }
 
+    /// CANCEL SAFE
     async fn get_impl(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let (client, mut state) = self.get_top_level().await;
+        let (client, state_permit) = self.get_top_level().await;
+
+        let state = state_permit.read_exclusive();
 
         if let Some(op) = state.writes.get(key) {
             match op.typ_case() {
@@ -409,11 +427,26 @@ impl<'a> MetastoreTransaction<'a> {
             }
         }
 
-        client.get_impl(key, Some(&mut state)).await
+        client.get_impl(key, Some(state.upgrade())).await
     }
 
+    /// CANCEL SAFE
     async fn get_range_impl(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
-        let (client, mut state) = self.get_top_level().await;
+        let (client, state_permit) = self.get_top_level().await;
+
+        self.get_range_with_lock(start_key, end_key, client, state_permit)
+            .await
+    }
+
+    /// CANCEL SAFE
+    async fn get_range_with_lock(
+        &self,
+        start_key: &[u8],
+        end_key: &[u8],
+        client: &MetastoreClient,
+        state_permit: AsyncMutexPermit<'_, MetastoreTransactionState>,
+    ) -> Result<Vec<KeyValueEntry>> {
+        let state = state_permit.read_exclusive();
 
         let written_values = {
             let mut out = vec![];
@@ -442,7 +475,7 @@ impl<'a> MetastoreTransaction<'a> {
         // NOTE: These will always be returned by the server in sorted order.
         // TODO: Support caching this.
         let snapshot_values = client
-            .get_range_impl(start_key, end_key, Some(&mut state))
+            .get_range_impl(start_key, end_key, Some(state.upgrade()))
             .await?;
 
         // Merge preferring the new written_values
@@ -457,20 +490,28 @@ impl<'a> MetastoreTransaction<'a> {
     }
 
     async fn put_impl(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let (_, mut state) = self.get_top_level().await;
-        let mut op = Operation::default();
-        op.set_key(key);
-        op.set_put(value);
-        state.writes.insert(key.into(), op);
+        let (_, state_permit) = self.get_top_level().await;
+
+        lock!(state <= state_permit, {
+            let mut op = Operation::default();
+            op.set_key(key);
+            op.set_put(value);
+            state.writes.insert(key.into(), op);
+        });
+
         Ok(())
     }
 
     async fn delete_impl(&self, key: &[u8]) -> Result<()> {
-        let (_, mut state) = self.get_top_level().await;
-        let mut op = Operation::default();
-        op.set_key(key);
-        op.set_delete(true);
-        state.writes.insert(key.into(), op);
+        let (_, state_permit) = self.get_top_level().await;
+
+        lock!(state <= state_permit, {
+            let mut op = Operation::default();
+            op.set_key(key);
+            op.set_delete(true);
+            state.writes.insert(key.into(), op);
+        });
+
         Ok(())
     }
 
@@ -498,28 +539,31 @@ impl<'a> MetastoreTransaction<'a> {
             return Ok(());
         }
 
-        let (client, mut state) = self.get_top_level().await;
+        let (client, state_permit) = self.get_top_level().await;
 
-        if state.writes.is_empty() {
-            return Ok(());
-        }
+        lock_async!(state <= state_permit, {
+            if state.writes.is_empty() {
+                return Ok(());
+            }
 
-        let mut request = ExecuteRequest::default();
-        request.transaction_mut().set_read_index(state.read_index);
+            let mut request = ExecuteRequest::default();
+            request.transaction_mut().set_read_index(state.read_index);
 
-        for read in &state.reads {
-            request.transaction_mut().add_reads(read.clone());
-        }
+            for read in &state.reads {
+                request.transaction_mut().add_reads(read.clone());
+            }
 
-        // NOTE: The keys should have already been added to each operation.
-        for (_, op) in state.writes.iter() {
-            request.transaction_mut().add_writes(op.clone());
-        }
+            // NOTE: The keys should have already been added to each operation.
+            for (_, op) in state.writes.iter() {
+                request.transaction_mut().add_writes(op.clone());
+            }
 
-        let stub = KeyValueStoreStub::new(client.channel.clone());
-        let request_context = client.default_request_context()?;
-        stub.Execute(&request_context, &request).await.result?;
-        Ok(())
+            let stub = KeyValueStoreStub::new(client.channel.clone());
+            let request_context = client.default_request_context()?;
+            stub.Execute(&request_context, &request).await.result?;
+
+            Ok(())
+        })
     }
 }
 

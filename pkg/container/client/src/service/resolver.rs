@@ -6,7 +6,8 @@ use std::time::Duration;
 use common::errors::*;
 use datastore_meta_client::MetastoreClient;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use http::ResolvedEndpoint;
 use net::ip::SocketAddr;
 
@@ -54,7 +55,7 @@ pub struct ServiceResolver {
 struct Shared {
     meta_client: Arc<ClusterMetaClient>,
     service_address: ServiceAddress,
-    state: Mutex<State>,
+    state: AsyncMutex<State>,
 }
 
 struct State {
@@ -104,7 +105,7 @@ impl ServiceResolver {
         let shared = Arc::new(Shared {
             meta_client,
             service_address,
-            state: Mutex::new(State {
+            state: AsyncMutex::new(State {
                 resolved: vec![],
                 listeners: vec![],
             }),
@@ -178,9 +179,7 @@ impl ServiceResolver {
             }
         }
 
-        {
-            let mut state = shared.state.lock().await;
-
+        lock!(state <= shared.state.lock().await?, {
             state.resolved = endpoints;
 
             let mut i = 0;
@@ -192,7 +191,7 @@ impl ServiceResolver {
 
                 i += 1;
             }
-        }
+        });
 
         Ok(())
     }
@@ -269,11 +268,19 @@ impl http::Resolver for ServiceResolver {
         // the LoadBalancedClient backoff logic to help retry communicating with cluster
         // metadata.
 
-        Ok(self.shared.state.lock().await.resolved.clone())
+        Ok(self
+            .shared
+            .state
+            .lock()
+            .await?
+            .read_exclusive()
+            .resolved
+            .clone())
     }
 
     async fn add_change_listener(&self, listener: http::ResolverChangeListener) {
-        let mut state = self.shared.state.lock().await;
-        state.listeners.push(listener);
+        lock!(state <= self.shared.state.lock().await.unwrap(), {
+            state.listeners.push(listener);
+        });
     }
 }

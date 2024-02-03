@@ -12,8 +12,8 @@ use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::channel::oneshot;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
-use executor::Condvar;
+use executor::lock;
+use executor::sync::{AsyncMutex, AsyncVariable};
 use protobuf::Message;
 use raft_client::server::channel_factory::ChannelFactory;
 
@@ -106,7 +106,7 @@ pub struct ServerShared<R> {
     /// As stated in the initial metadata used to create the server
     pub identity: ServerIdentity,
 
-    pub(crate) state: Mutex<ServerState<R>>,
+    pub(crate) state: AsyncMutex<ServerState<R>>,
 
     /// Factory used for creating stubs to other servers.
     pub channel_factory: Arc<dyn ChannelFactory>,
@@ -119,13 +119,13 @@ pub struct ServerShared<R> {
 
     /// Index of the last applied entry in the latest configuration state
     /// machine snapshot flushed to disk.
-    pub config_last_flushed: Condvar<LogIndex, LogIndex>,
+    pub config_last_flushed: AsyncVariable<LogIndex>,
 
     /// Holds the index of the log index most recently persisted to disk
     /// This is eventually consistent with the index in the log itself
     /// NOTE: This is safe to always have a term for as it should always be in
     /// the log
-    pub log_last_flushed: Condvar<LogSequence, LogSequence>,
+    pub log_last_flushed: AsyncVariable<LogSequence>,
 
     /// Holds the value of the index in the local log that has been committed.
     ///
@@ -136,14 +136,14 @@ pub struct ServerShared<R> {
     /// that it is always sent new entries to apply XXX: This is not
     /// guranteed to have a well known term unless we start recording the
     /// commit_term in the metadata for the initial value
-    pub commit_index: Condvar<LogPosition, LogPosition>,
+    pub commit_index: AsyncVariable<LogPosition>,
 
     /// Last log index applied to the state machine
     /// This should only ever be modified by the separate applier thread
-    pub last_applied: Condvar<LogIndex, LogIndex>,
+    pub last_applied: AsyncVariable<LogIndex>,
 
     /// Latest value of lease_start() observed in the consensus module.
-    pub lease_start: Condvar<Option<Instant>, Instant>,
+    pub lease_start: AsyncVariable<Option<Instant>>,
 }
 
 /// All the mutable state for the server that you hold a lock in order to look
@@ -215,7 +215,7 @@ impl<R: Send + 'static> ServerShared<R> {
     /// all complete (or one fails).
     pub async fn run(self: Arc<Self>) -> Result<()> {
         let (state_changed, meta_changed, meta_file, snapshot_receiver) = {
-            let mut state = self.state.lock().await;
+            let mut state = self.state.lock().await?.enter();
 
             // If the application required a lot of initialization, a long time may have
             // passed since the raft::Server instance was instantiated. To avoid instantly
@@ -226,9 +226,9 @@ impl<R: Send + 'static> ServerShared<R> {
             // called.
             state.inst.reset_follower(Instant::now());
 
-            (
-                // If these errors out, then it means that we tried to start the server more than
-                // once
+            let v = (
+                // If these errors out, then it means that we tried to start the server more
+                // than once
                 state
                     .state_receiver
                     .take()
@@ -245,7 +245,10 @@ impl<R: Send + 'static> ServerShared<R> {
                     .snapshot_receiver
                     .take()
                     .ok_or_else(|| err_msg("Install snapshot receiver already taken"))?,
-            )
+            );
+
+            state.exit();
+            v
         };
 
         /*
@@ -288,7 +291,7 @@ impl<R: Send + 'static> ServerShared<R> {
             // TODO: For a single node, we should almost never need to cycle
             // println!("Run cycler");
 
-            let next_cycle = self.run_tick(Self::run_cycler_tick, ()).await;
+            let next_cycle = self.run_tick(Self::run_cycler_tick).await;
 
             // TODO: Currently issue being that this gets run every single time
             // something gets comitted (even though that usually doesn't really
@@ -301,7 +304,7 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
-    fn run_cycler_tick(state: &mut ServerState<R>, tick: &mut Tick, _: ()) -> Instant {
+    fn run_cycler_tick(state: &mut ServerState<R>, tick: &mut Tick) -> Instant {
         state.inst.cycle(tick);
 
         // NOTE: We take it so that the finish_tick doesn't re-trigger
@@ -355,7 +358,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
         loop {
             {
-                let state = self.state.lock().await;
+                let state = self.state.lock().await?.enter();
 
                 let mut now = Instant::now();
 
@@ -395,7 +398,7 @@ impl<R: Send + 'static> ServerShared<R> {
                 }
 
                 if !flush_now {
-                    drop(state);
+                    state.exit();
                     executor::timeout(Duration::from_secs(1), meta_changed.wait()).await;
                     continue;
                 }
@@ -407,29 +410,27 @@ impl<R: Send + 'static> ServerShared<R> {
                 server_metadata.set_meta(state.inst.meta().clone());
                 server_metadata.set_config(state.inst.config_snapshot().to_proto());
 
-                drop(state);
+                state.exit();
 
                 // TODO: Steal the reference to the meta_file so that we don't need to lock the
                 // state to save to it.
                 meta_file.store(&server_metadata.serialize()?).await?;
 
                 {
-                    let mut v = self.config_last_flushed.lock().await;
+                    let mut v = self.config_last_flushed.lock().await?.enter();
                     *v = server_metadata.config().last_applied();
                     v.notify_all();
+                    v.exit();
                 }
 
                 last_time = None;
                 last_proto = Some(server_metadata.clone());
 
-                self.run_tick(
-                    |state, tick, _| {
-                        state
-                            .inst
-                            .persisted_metadata(server_metadata.meta().clone(), tick);
-                    },
-                    (),
-                )
+                self.run_tick(move |state, tick| {
+                    state
+                        .inst
+                        .persisted_metadata(server_metadata.meta().clone(), tick);
+                })
                 .await;
 
                 // Limit max rate.
@@ -468,13 +469,15 @@ impl<R: Send + 'static> ServerShared<R> {
 
         // TODO: Also want to update 'prev' by running discard() on the
 
-        let mut mi = self.log_last_flushed.lock().await;
+        let mut mi = self.log_last_flushed.lock().await.unwrap().enter();
         if *mi == cur {
+            mi.exit();
             return;
         }
 
         *mi = cur;
         mi.notify_all();
+        mi.exit();
 
         // TODO: It is annoying that this is in this function
         // On the leader, a change in the match index may cause the number
@@ -483,12 +486,9 @@ impl<R: Send + 'static> ServerShared<R> {
         // nearly immediately as no external requests need to be waited on
         // in that case
 
-        self.run_tick(
-            |state, tick, _| {
-                state.inst.log_flushed(cur, tick);
-            },
-            (),
-        )
+        self.run_tick(move |state, tick| {
+            state.inst.log_flushed(cur, tick);
+        })
         .await;
     }
 
@@ -519,13 +519,13 @@ impl<R: Send + 'static> ServerShared<R> {
         listeners.add(async {
             let mut last = 0.into();
             loop {
-                let ci = self.commit_index.lock().await;
+                let ci = self.commit_index.lock().await.unwrap().read_exclusive();
                 if ci.index() != last {
                     last = ci.index();
                     event_sender.notify();
                 }
 
-                ci.wait(LogPosition::default()).await;
+                ci.wait().await;
             }
         });
 
@@ -551,13 +551,18 @@ impl<R: Send + 'static> ServerShared<R> {
         listeners.add(async {
             let mut last = 0.into();
             loop {
-                let next_index = self.config_last_flushed.lock().await;
+                let next_index = self
+                    .config_last_flushed
+                    .lock()
+                    .await
+                    .unwrap()
+                    .read_exclusive();
                 if *next_index != last {
                     last = *next_index;
                     event_sender.notify();
                 }
 
-                next_index.wait(LogIndex::default()).await;
+                next_index.wait().await;
             }
         });
 
@@ -586,13 +591,16 @@ impl<R: Send + 'static> ServerShared<R> {
     /// we don't want to allow this replica to be used for any follower
     /// reads during the restore.
     async fn run_apply_snapshot(self: &Arc<Self>) -> Result<()> {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().await?.enter();
 
         let mut snapshot_state = IncomingSnapshotState::None;
         core::mem::swap(&mut snapshot_state, &mut state.snapshot_state);
 
         let snapshot = match snapshot_state {
-            IncomingSnapshotState::None => return Ok(()),
+            IncomingSnapshotState::None => {
+                state.exit();
+                return Ok(());
+            }
             IncomingSnapshotState::Pending(snapshot) => {
                 // TODO: Re-set this whenever we leave this function.
                 state.snapshot_state = IncomingSnapshotState::Installing;
@@ -603,7 +611,7 @@ impl<R: Send + 'static> ServerShared<R> {
             }
         };
 
-        drop(state);
+        state.exit();
 
         let last_applied = snapshot.snapshot.last_applied.clone();
 
@@ -612,7 +620,9 @@ impl<R: Send + 'static> ServerShared<R> {
         if !success {
             let _ = snapshot.callback.send(false);
 
-            self.state.lock().await.snapshot_state = IncomingSnapshotState::None;
+            lock!(state <= self.state.lock().await?, {
+                state.snapshot_state = IncomingSnapshotState::None;
+            });
             return Ok(());
         }
 
@@ -636,24 +646,23 @@ impl<R: Send + 'static> ServerShared<R> {
 
         // TODO: Need to run this in other places where the log is discarded as well.
         let prev = self.log.prev().await;
-        self.run_tick(
-            |state, tick, prev| {
-                state.inst.log_discarded(prev);
-            },
-            prev,
-        )
+        self.run_tick(move |state, tick| {
+            state.inst.log_discarded(prev);
+        })
         .await;
 
         // Update last_applied
-        {
-            let mut guard = self.last_applied.lock().await;
+        lock!(guard <= self.last_applied.lock().await?, {
             if last_applied > *guard {
                 *guard = last_applied;
                 guard.notify_all();
             }
-        }
+        });
 
-        self.state.lock().await.snapshot_state = IncomingSnapshotState::None;
+        lock!(state <= self.state.lock().await?, {
+            state.snapshot_state = IncomingSnapshotState::None;
+        });
+
         let _ = snapshot.callback.send(true);
         Ok(())
     }
@@ -662,16 +671,25 @@ impl<R: Send + 'static> ServerShared<R> {
         self: &Arc<Self>,
         callbacks: &mut LinkedList<(LogPosition, oneshot::Sender<Option<R>>)>,
     ) -> Result<()> {
-        let commit_index = self.commit_index.lock().await.index().clone();
-        let mut last_applied = *self.last_applied.lock().await;
+        let commit_index = self
+            .commit_index
+            .lock()
+            .await?
+            .read_exclusive()
+            .index()
+            .clone();
+        let mut last_applied = *self.last_applied.lock().await?.read_exclusive();
+
+        // TODO: How to make sure that callbacks are eventually called if a leader loses
+        // all connections to remote servers and needs has no progress in the state
+        // machine.
 
         // Take ownership of all pending callbacks (as long as a callback is appended to
         // the list before the commit_index variable is incremented, this should always
         // see them)
-        {
-            let mut state = self.state.lock().await;
+        lock!(state <= self.state.lock().await?, {
             callbacks.append(&mut state.callbacks);
-        }
+        });
 
         // TODO: Suppose we have the item in our log but it gets truncated,
         // then in this case, callbacks will all be blocked until a new
@@ -765,13 +783,12 @@ impl<R: Send + 'static> ServerShared<R> {
         }
 
         // Update last_applied
-        {
-            let mut guard = self.last_applied.lock().await;
+        lock!(guard <= self.last_applied.lock().await?, {
             if last_applied > *guard {
                 *guard = last_applied;
                 guard.notify_all();
             }
-        }
+        });
 
         Ok(())
     }
@@ -784,10 +801,13 @@ impl<R: Send + 'static> ServerShared<R> {
     /// Discards log entries which have been persisted to a snapshot.
     async fn run_apply_discard(self: &Arc<Self>) -> Result<()> {
         let mut last_flushed = self.state_machine.last_flushed().await;
-        let commit_index = self.commit_index.lock().await.index();
+        let commit_index = self.commit_index.lock().await?.read_exclusive().index();
 
         // Verify the config state machine is also sufficiently flushed.
-        last_flushed = core::cmp::min(last_flushed, *self.config_last_flushed.lock().await);
+        last_flushed = core::cmp::min(
+            last_flushed,
+            *self.config_last_flushed.lock().await?.read_exclusive(),
+        );
 
         // Wait until we verify that all the entries in the log are commited.
         // (else the log may contain the wrong term)
@@ -805,50 +825,72 @@ impl<R: Send + 'static> ServerShared<R> {
         self.log.discard(pos).await?;
 
         let prev = self.log.prev().await;
-        self.run_tick(
-            |state, tick, prev| {
-                state.inst.log_discarded(prev);
-            },
-            prev,
-        )
+        self.run_tick(move |state, tick| {
+            state.inst.log_discarded(prev);
+        })
         .await;
 
         Ok(())
     }
 
-    pub(crate) async fn run_tick<O: 'static, F, C>(self: &Arc<Self>, f: F, captured: C) -> O
+    /// Executes a mutation to the ConsensusModule and applies any requested
+    /// side effects.
+    ///
+    /// The user provided function 'f' should run a mutation on the
+    /// ConsensusModule instance using the provided tick instance to record any
+    /// desired side effects to be applied. run_tick (finish_tick internally)
+    /// are responsible for actually acting on those side effects.
+    ///
+    /// CANCEL SAFE
+    pub(crate) async fn run_tick<O: Send + 'static, F: Send + 'static>(self: &Arc<Self>, f: F) -> O
     where
-        F: for<'a, 'b> FnOnce(&'a mut ServerState<R>, &'b mut Tick, C) -> O,
+        F: for<'a, 'b> FnOnce(&'a mut ServerState<R>, &'b mut Tick) -> O,
     {
-        let mut state = self.state.lock().await;
+        let this = self.clone();
 
-        let initial_term = state.inst.meta().current_term();
+        // Run in a detached task to ensure that all side effects are fully applied.
+        //
+        // For correctness the most important part is that if new entries are appended
+        // in the ConsensusModule, they must also get applied immediately to the main
+        // log (else there will be discontinuities with future appends).
+        executor::spawn(async move {
+            let mut state = this.state.lock().await.unwrap().enter();
 
-        // NOTE: Tick must be created after the state is locked to gurantee
-        // monotonic time always
-        // XXX: We can reuse the same tick object many times if we really want
-        // to
-        let mut tick = Tick::empty();
+            let initial_term = state.inst.meta().current_term();
 
-        let out: O = f(&mut state, &mut tick, captured);
+            // NOTE: Tick must be created after the state is locked to gurantee
+            // monotonic time always
+            // XXX: We can reuse the same tick object many times if we really want
+            // to
+            let mut tick = Tick::empty();
 
-        // TODO: This is in the critical path and MUST NOT be cancelled at the task
-        // level.
+            let out: O = f(&mut state, &mut tick);
 
-        // In the case of a failure here, we want to attempt to backoff or
-        // demote ourselves from leadership
-        // NOTE: We can survive short term disk failures as long as we know that
-        // there is metadata that has not been sent
-        // Also splitting up
-        if let Err(e) = self.finish_tick(initial_term, &mut state, tick).await {
-            // This should poison the state guard that we still hold and thus
-            // prevent any more progress from occuring
-            // TODO: Eventually we can decompose exactly what failed and defer
-            // work to future retries
-            panic!("Tick failed to finish: {:?}", e);
-        }
+            // TODO: This is in the critical path and MUST NOT be cancelled at the task
+            // level.
 
-        out
+            // In the case of a failure here, we want to attempt to backoff or
+            // demote ourselves from leadership
+            // NOTE: We can survive short term disk failures as long as we know that
+            // there is metadata that has not been sent
+            // Also splitting up
+            if let Err(e) = this.finish_tick(initial_term, &mut state, tick).await {
+                // This should poison the state guard that we still hold and thus
+                // prevent any more progress from occuring
+                // TODO: Eventually we can decompose exactly what failed and defer
+                // work to future retries
+                panic!("Tick failed to finish: {:?}", e);
+            }
+
+            // Note that the state will be intentionally poisoned if anything above fails
+            // (we can't allow further mutations to the state if we fail to append some
+            // entries to the log).
+            state.exit();
+
+            out
+        })
+        .join()
+        .await
     }
 
     // TODO: If this fails, we may need to stop the server (silently ignoring
@@ -904,15 +946,15 @@ impl<R: Send + 'static> ServerShared<R> {
         }
 
         let lease_start = state.inst.lease_start();
-        {
-            // TODO: Do this without holding the ServerState lock.
-            // but we do need to ensure that it converges towards the final value.
-            let mut guard = self.lease_start.lock().await;
+
+        // TODO: Do this without holding the ServerState lock.
+        // but we do need to ensure that it converges towards the final value.
+        lock!(guard <= self.lease_start.lock().await?, {
             if *guard != lease_start {
                 *guard = lease_start;
                 guard.notify_all();
             }
-        }
+        });
 
         // TODO: In most cases it is not necessary to persist the config unless
         // we are doing a compaction, but we should schedule a task to ensure
@@ -953,6 +995,9 @@ impl<R: Send + 'static> ServerShared<R> {
         Ok(())
     }
 
+    /// Starts a task that is scoped to the current Raft term.
+    ///
+    /// If the term changes, then the task will be cancelled.
     fn spawn_term_task<Fut: 'static + std::future::Future<Output = ()> + Send>(
         self: &Arc<Self>,
         state: &mut ServerState<R>,
@@ -968,8 +1013,14 @@ impl<R: Send + 'static> ServerShared<R> {
             ChildTask::spawn(async move {
                 future.await;
 
-                let mut state = shared.state.lock().await;
-                state.term_tasks.remove(&id);
+                let state_permit = match shared.state.lock().await {
+                    Ok(v) => v,
+                    Err(e) => return,
+                };
+
+                lock!(state <= state_permit, {
+                    state.term_tasks.remove(&id);
+                });
             }),
         );
     }
@@ -1004,14 +1055,14 @@ impl<R: Send + 'static> ServerShared<R> {
             }
         };
 
-        let mut ci = self.commit_index.lock().await;
-
-        // NOTE '<' should be sufficent here as the commit index should never go
-        // backwards
-        if *ci != latest {
-            *ci = latest;
-            ci.notify_all();
-        }
+        lock!(ci <= self.commit_index.lock().await.unwrap(), {
+            // NOTE '<' should be sufficent here as the commit index should never go
+            // backwards
+            if *ci != latest {
+                *ci = latest;
+                ci.notify_all();
+            }
+        });
     }
 
     /// Sends all requests
@@ -1137,17 +1188,14 @@ impl<R: Send + 'static> ServerShared<R> {
             .dispatch_request_vote_impl(to_id, is_pre_vote, req)
             .await;
 
-        self.run_tick(
-            |state, tick, _| match res {
-                Ok(resp) => {
-                    state
-                        .inst
-                        .request_vote_callback(to_id, request_id, is_pre_vote, resp, tick)
-                }
-                Err(e) => eprintln!("RequestVote error: {}", e),
-            },
-            (),
-        )
+        self.run_tick(move |state, tick| match res {
+            Ok(resp) => {
+                state
+                    .inst
+                    .request_vote_callback(to_id, request_id, is_pre_vote, resp, tick)
+            }
+            Err(e) => eprintln!("RequestVote error: {}", e),
+        })
         .await;
     }
 
@@ -1198,10 +1246,9 @@ impl<R: Send + 'static> ServerShared<R> {
             }
         };
 
-        self.run_tick(
-            |state, tick, _| state.inst.heartbeat_callback(to_id, request_id, res, tick),
-            (),
-        )
+        self.run_tick(move |state, tick| {
+            state.inst.heartbeat_callback(to_id, request_id, res, tick)
+        })
         .await;
     }
 
@@ -1233,28 +1280,25 @@ impl<R: Send + 'static> ServerShared<R> {
         // TODO: Get rid of the clone.
         let res = self.dispatch_append_entries_impl(to_id, req.clone()).await;
 
-        self.run_tick(
-            |state, tick, _| {
-                match res {
-                    Ok(resp) => {
-                        // NOTE: Here we assume that this request send everything up
-                        // to and including last_log_index
-                        // ^ Alternatively, we could have just looked at the request
-                        // object that we have in order to determine this
-                        state
-                            .inst
-                            .append_entries_callback(to_id, request_id, resp, tick);
-                    }
-                    Err(e) => {
-                        eprintln!("AppendEntries failure: {} ", e);
-                        state
-                            .inst
-                            .append_entries_noresponse(to_id, request_id, tick);
-                    }
+        self.run_tick(move |state, tick| {
+            match res {
+                Ok(resp) => {
+                    // NOTE: Here we assume that this request send everything up
+                    // to and including last_log_index
+                    // ^ Alternatively, we could have just looked at the request
+                    // object that we have in order to determine this
+                    state
+                        .inst
+                        .append_entries_callback(to_id, request_id, resp, tick);
                 }
-            },
-            (),
-        )
+                Err(e) => {
+                    eprintln!("AppendEntries failure: {} ", e);
+                    state
+                        .inst
+                        .append_entries_noresponse(to_id, request_id, tick);
+                }
+            }
+        })
         .await;
 
         // TODO: In the case of a timeout or other error, we would still like
@@ -1285,14 +1329,11 @@ impl<R: Send + 'static> ServerShared<R> {
         to_id: ServerId,
         request_id: RequestId,
     ) {
-        self.run_tick(
-            |state, tick, _| {
-                state
-                    .inst
-                    .append_entries_noresponse(to_id, request_id, tick);
-            },
-            (),
-        )
+        self.run_tick(move |state, tick| {
+            state
+                .inst
+                .append_entries_noresponse(to_id, request_id, tick);
+        })
         .await;
     }
 
@@ -1303,34 +1344,30 @@ impl<R: Send + 'static> ServerShared<R> {
     ) {
         eprintln!("Installing a snapshot to server id {:?}", to_id.value());
 
+        let req = req.clone();
+
         let res = executor::timeout(
             INSTALL_SNAPSHOT_CLIENT_TIMEOUT,
-            self.dispatch_install_snapshot_impl(to_id, req),
+            self.dispatch_install_snapshot_impl(to_id, &req),
         )
         .await;
 
-        self.run_tick(
-            |state, tick, res| match res {
-                Ok(Ok((res, last_applied_index))) => {
-                    println!("Install snapshot successful! {:?}", res);
-                    state.inst.install_snapshot_callback(
-                        to_id,
-                        req,
-                        &res,
-                        last_applied_index,
-                        tick,
-                    );
-                }
-                Ok(Err(err)) | Err(err) => {
-                    eprintln!("Failed to install snapshot: {}", err);
-                    state.inst.install_snapshot_noresponse(to_id, req, tick);
-                }
-            },
-            res,
-        )
+        self.run_tick(move |state, tick| match res {
+            Ok(Ok((res, last_applied_index))) => {
+                println!("Install snapshot successful! {:?}", res);
+                state
+                    .inst
+                    .install_snapshot_callback(to_id, &req, &res, last_applied_index, tick);
+            }
+            Ok(Err(err)) | Err(err) => {
+                eprintln!("Failed to install snapshot: {}", err);
+                state.inst.install_snapshot_noresponse(to_id, &req, tick);
+            }
+        })
         .await;
     }
 
+    /// CANCEL SAFE
     async fn dispatch_install_snapshot_impl(
         &self,
         to_id: ServerId,
@@ -1386,8 +1423,9 @@ impl<R: Send + 'static> ServerShared<R> {
         Ok((res, snapshot.last_applied.clone()))
     }
 
+    /// CANCEL SAFE
     async fn get_client(&self, server_id: ServerId) -> Result<Arc<ServerClient>> {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().await?.read_exclusive();
         if let Some(client) = state.clients.get(&server_id) {
             return Ok(client.clone());
         }
@@ -1401,13 +1439,20 @@ impl<R: Send + 'static> ServerShared<R> {
 
         let stub = Arc::new(ConsensusStub::new(channel));
         let client = Arc::new(ServerClient::new(stub, request_context));
-        state.clients.insert(server_id, client.clone());
+
+        lock!(state <= state.upgrade(), {
+            state.clients.insert(server_id, client.clone());
+        });
+
         Ok(client)
     }
 
-    // TODO: Can we more generically implement as waiting on a Constraint driven
-    // by a Condition which can block for a specific value
-    // TODO: Cleanup and try to deduplicate with Proposal polling
+    /// TODO: Can we more generically implement as waiting on a Constraint
+    /// driven by a Condition which can block for a specific value
+    ///
+    /// TODO: Cleanup and try to deduplicate with Proposal polling
+    ///
+    /// CANCEL SAFE
     pub async fn wait_for_match<T: 'static>(&self, mut c: FlushConstraint<T>) -> Result<T>
     where
         T: Send,
@@ -1415,7 +1460,7 @@ impl<R: Send + 'static> ServerShared<R> {
         loop {
             let log = self.log.as_ref();
             let (c_next, fut) = {
-                let mi = self.log_last_flushed.lock().await;
+                let mi = self.log_last_flushed.lock().await?.read_exclusive();
 
                 // TODO: I don't think yields sufficient atomic gurantees
                 let (c, pos) = match c.poll(log).await {
@@ -1426,7 +1471,7 @@ impl<R: Send + 'static> ServerShared<R> {
                     ConstraintPoll::Pending(v) => v,
                 };
 
-                (c, mi.wait(pos))
+                (c, mi.wait())
             };
 
             c = c_next;
@@ -1446,20 +1491,17 @@ impl<R: Send + 'static> ServerShared<R> {
     /// its term. Otherwise, if our local log contains many more entries than
     /// the leader, we must wait for a real non-noop command to come in before
     /// this unblocks.
+    ///
+    /// CANCEL SAFE
     pub async fn wait_for_commit(&self, pos: LogPosition) {
         loop {
-            let waiter = {
-                let c = self.commit_index.lock().await;
+            let c = self.commit_index.lock().await.unwrap().read_exclusive();
 
-                if c.term().value() > pos.term().value() || c.index().value() >= pos.index().value()
-                {
-                    return;
-                }
+            if c.term().value() > pos.term().value() || c.index().value() >= pos.index().value() {
+                return;
+            }
 
-                c.wait(LogPosition::zero())
-            };
-
-            waiter.await;
+            c.wait().await;
         }
     }
 
@@ -1469,18 +1511,16 @@ impl<R: Send + 'static> ServerShared<R> {
     /// NOTE: You should always first wait for an item to be comitted before
     /// waiting for it to get applied (otherwise if the leader gets demoted,
     /// then the wrong position may get applied)
+    ///
+    /// CANCEL SAFE
     pub async fn wait_for_applied(&self, index: LogIndex) {
         loop {
-            let waiter = {
-                let app = self.last_applied.lock().await;
-                if *app >= index {
-                    return;
-                }
+            let app = self.last_applied.lock().await.unwrap().read_exclusive();
+            if *app >= index {
+                return;
+            }
 
-                app.wait(index)
-            };
-
-            waiter.await;
+            app.wait().await;
         }
     }
 }

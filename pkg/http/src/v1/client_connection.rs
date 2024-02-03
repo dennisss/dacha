@@ -4,9 +4,9 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use common::errors::*;
-use common::io::{Readable, Writeable};
-use executor::channel;
-use executor::sync::Mutex;
+use common::io::{Readable, SharedReadable, Writeable};
+use executor::sync::AsyncMutex;
+use executor::{channel, lock};
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
@@ -73,7 +73,7 @@ impl ClientConnection {
             shared: Arc::new(ClientConnectionShared {
                 event_sender,
                 return_channel: channel::unbounded(),
-                state: Mutex::new(ClientConnectionState {
+                state: AsyncMutex::new(ClientConnectionState {
                     event_receiver: Some(event_receiver),
                     event_listener: None,
                 }),
@@ -85,15 +85,16 @@ impl ClientConnection {
         &self,
         event_listener: Box<dyn ConnectionEventListener>,
     ) -> Result<()> {
-        let mut state = self.shared.state.lock().await;
-        if state.event_listener.is_some() {
-            return Err(err_msg(
-                "Can not only set listeners before start of main connection thread",
-            ));
-        }
+        lock!(state <= self.shared.state.lock().await?, {
+            if state.event_listener.is_some() {
+                return Err(err_msg(
+                    "Can not only set listeners before start of main connection thread",
+                ));
+            }
 
-        state.event_listener = Some(event_listener);
-        Ok(())
+            state.event_listener = Some(event_listener);
+            Ok(())
+        })
     }
 
     /// Requests that the connection is closed soon.
@@ -109,7 +110,7 @@ impl ClientConnection {
 
     pub fn run(
         &self,
-        reader: Box<dyn Readable>,
+        reader: Box<dyn SharedReadable>,
         writer: Box<dyn Writeable>,
     ) -> impl std::future::Future<Output = Result<()>> {
         self.shared.clone().run(reader, writer)
@@ -167,7 +168,7 @@ struct ClientConnectionShared {
         channel::Receiver<Result<ReturnedBody>>,
     ),
 
-    state: Mutex<ClientConnectionState>,
+    state: AsyncMutex<ClientConnectionState>,
 }
 
 struct ClientConnectionState {
@@ -193,19 +194,20 @@ impl ClientConnectionShared {
 
     async fn run(
         self: Arc<Self>,
-        reader: Box<dyn Readable>,
+        reader: Box<dyn SharedReadable>,
         writer: Box<dyn Writeable>,
     ) -> Result<()> {
         let mut event_receiver = {
-            self.state
-                .lock()
-                .await
-                .event_receiver
-                .take()
-                .ok_or_else(|| err_msg("Can not run the connection once"))?
+            lock!(
+                state <= self.state.lock().await?,
+                state.event_receiver.take()
+            )
+            .ok_or_else(|| err_msg("Can not run the connection once"))?
         };
 
-        let external_listener = self.state.lock().await.event_listener.take();
+        let external_listener = lock!(state <= self.state.lock().await?, {
+            state.event_listener.take()
+        });
 
         let mut http1_rejected_persistence = false;
 
@@ -265,7 +267,7 @@ impl ClientConnectionShared {
     // read/write in a while).
     async fn run_inner(
         self: Arc<Self>,
-        reader: Box<dyn Readable>,
+        reader: Box<dyn SharedReadable>,
         mut writer: Box<dyn Writeable>,
         event_receiver: &mut channel::Receiver<ClientConnectionRequest>,
         external_listener: &Option<Box<dyn ConnectionEventListener>>,

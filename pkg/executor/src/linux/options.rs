@@ -31,7 +31,7 @@ pub enum ExecutorRunMode {
     ///
     /// After the I/O operations are cancelled, this behaves similarly to
     /// WaitForAllTasks.
-    StopAllTasks,
+    StopAllOperations,
 }
 
 impl Default for ExecutorRunMode {

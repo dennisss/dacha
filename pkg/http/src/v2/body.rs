@@ -6,7 +6,8 @@ use common::errors::*;
 use common::io::{IoError, IoErrorKind, Readable};
 use common::InRange;
 use executor::channel;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
@@ -41,7 +42,7 @@ pub struct OutgoingStreamBodyPoller {
     /// Id of the stream with which this
     stream_id: StreamId,
 
-    stream_state: Arc<Mutex<StreamState>>,
+    stream_state: Arc<AsyncMutex<StreamState>>,
 
     /// Used to send ConnectionEvent::StreamWrite events to let the writer
     /// thread know that more data is available for writing to
@@ -57,7 +58,7 @@ pub struct OutgoingStreamBodyPoller {
 impl OutgoingStreamBodyPoller {
     pub fn new(
         stream_id: StreamId,
-        stream_state: Arc<Mutex<StreamState>>,
+        stream_state: Arc<AsyncMutex<StreamState>>,
         connection_event_sender: channel::Sender<ConnectionEvent>,
         write_available_receiver: channel::Receiver<()>,
     ) -> Self {
@@ -88,8 +89,10 @@ impl OutgoingStreamBodyPoller {
         // TODO: Fro unary responses, can we batch all the stuff needed to generate the
         // request.
 
+        // TODO: Calls to '.resize' in this function take a while to run.
+
         loop {
-            let stream = self.stream_state.lock().await;
+            let stream = self.stream_state.lock().await?.read_exclusive();
 
             // Stop if the stream was reset.
             if stream.error.is_some() {
@@ -119,8 +122,7 @@ impl OutgoingStreamBodyPoller {
                 }
 
                 // Re-lock the stream and copy the read data.
-                {
-                    let mut stream = self.stream_state.lock().await;
+                lock!(stream <= self.stream_state.lock().await?, {
                     let start = stream.sending_buffer.len();
                     if start == 0 {
                         std::mem::swap(&mut buffer, &mut stream.sending_buffer);
@@ -128,7 +130,7 @@ impl OutgoingStreamBodyPoller {
                         stream.sending_buffer.resize(start + n, 0);
                         stream.sending_buffer[start..].copy_from_slice(&buffer);
                     }
-                }
+                });
 
                 // Notify the writer thread that we now have more data that can be sent.
                 let r = self
@@ -153,9 +155,10 @@ impl OutgoingStreamBodyPoller {
         // Checking trailers
         {
             let trailers = body.trailers().await?;
-            let mut stream_state = self.stream_state.lock().await;
-            stream_state.sending_trailers = trailers;
-            stream_state.sending_end = true;
+            lock!(stream_state <= self.stream_state.lock().await?, {
+                stream_state.sending_trailers = trailers;
+                stream_state.sending_end = true;
+            });
         }
 
         // Let the ConnectionWriter know that we completed generating the
@@ -185,7 +188,7 @@ impl OutgoingStreamBodyPoller {
 pub struct IncomingStreamBody {
     stream_id: StreamId,
 
-    stream_state: Arc<Mutex<StreamState>>,
+    stream_state: Arc<AsyncMutex<StreamState>>,
 
     /// Used by the body to notify the connection that data has been read.
     /// This means that the connection can let the other side know that more
@@ -213,7 +216,7 @@ pub struct IncomingStreamBody {
 impl IncomingStreamBody {
     pub fn new(
         stream_id: StreamId,
-        stream_state: Arc<Mutex<StreamState>>,
+        stream_state: Arc<AsyncMutex<StreamState>>,
         connection_event_sender: channel::Sender<ConnectionEvent>,
         read_available_receiver: channel::Receiver<()>,
     ) -> Self {
@@ -261,14 +264,16 @@ impl Body for IncomingStreamBody {
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {
-        let mut stream_state = self.stream_state.lock().await;
-        if !stream_state.received_end {
-            return Err(err_msg("Haven't read entire stream yet"));
-        }
+        lock!(stream_state <= self.stream_state.lock().await?, {
+            if !stream_state.received_end {
+                return Err(err_msg("Haven't read entire stream yet"));
+            }
 
-        // NOTE: Currently if this is called twice, it will return None the
-        // second time.
-        Ok(stream_state.received_trailers.take())
+            // NOTE: Currently if this is called twice, it will return None the
+            // second time.
+            let trailers = stream_state.received_trailers.take();
+            Ok(trailers)
+        })
     }
 }
 
@@ -283,7 +288,7 @@ impl Readable for IncomingStreamBody {
 
         // TODO: Error out if this has to loop more than twice.
         while !buf.is_empty() {
-            let mut stream_state = self.stream_state.lock().await;
+            let mut stream_state = self.stream_state.lock().await?.enter();
 
             // TODO: If we received a complete response, we should still allow reading it
             // out. (but we should make sure that we correctly update flow control in this
@@ -292,7 +297,9 @@ impl Readable for IncomingStreamBody {
             // Per HTTP2 spec, a server is allowed to fully write a response and just send a
             // RST_STREAM instead of reading out the request body.
             if let Some(e) = &stream_state.error {
-                return Err(e.clone().into());
+                let e = e.clone();
+                stream_state.exit();
+                return Err(e.into());
             }
 
             if !stream_state.received_buffer.is_empty() {
@@ -323,22 +330,23 @@ impl Readable for IncomingStreamBody {
                 // stream ids
                 let _ = self
                     .connection_event_sender
-                    .send(ConnectionEvent::StreamRead {
+                    .try_send(ConnectionEvent::StreamRead {
                         stream_id: self.stream_id,
                         count: n,
-                    })
-                    .await;
+                    });
 
                 nread += n;
 
                 // Stop as soon as we read any data
+                stream_state.exit();
                 break;
             } else if stream_state.received_end {
+                stream_state.exit();
                 break;
             }
 
             // Unlock all resources.
-            drop(stream_state);
+            stream_state.exit();
 
             // Wait for a change in the reader buffer.
             // If this fails, then that means that we haven't received all data yet, but the

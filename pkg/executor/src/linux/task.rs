@@ -46,7 +46,7 @@ impl Task {
 pub(super) struct TaskEntry {
     pub id: TaskId,
 
-    pub state: Mutex<TaskState>,
+    pub state: std::sync::Mutex<TaskState>,
 
     /// Back-reference to the executor in which this task is located.
     pub executor_shared: Arc<ExecutorShared>,

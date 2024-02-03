@@ -4,7 +4,6 @@ use common::bytes::Bytes;
 use common::errors::*;
 use executor::channel::spsc;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
 
 use crate::channel::Channel;
 use crate::client_types::{ClientRequestContext, ClientStreamingRequest, ClientStreamingResponse};

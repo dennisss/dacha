@@ -46,7 +46,6 @@ use common::errors::*;
 use common::io::Readable;
 use executor::channel::spsc;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
 
 use crate::media_type::RPCMediaProtocol;
 use crate::media_type::RPCMediaSerialization;

@@ -5,7 +5,6 @@ use std::{convert::TryFrom, sync::Arc};
 
 use common::errors::*;
 use executor::channel::queue::ConcurrentQueue;
-use executor::sync::Mutex;
 use google_auth::*;
 use http::uri::Uri;
 use http::{AffinityContext, AffinityKey, AffinityKeyCache};

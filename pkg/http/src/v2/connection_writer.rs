@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use common::errors::*;
 use common::io::{IoError, IoErrorKind, Readable, Writeable};
 use executor::child_task::ChildTask;
+use executor::lock_async;
 
 use crate::hpack;
 use crate::proto::v2::*;
@@ -63,7 +64,7 @@ impl ConnectionWriter {
         let connection_event_receiver;
 
         {
-            let mut state = self.shared.state.lock().await;
+            let mut state = self.shared.state.lock().await?.enter();
 
             connection_event_receiver = state
                 .connection_event_receiver
@@ -79,7 +80,7 @@ impl ConnectionWriter {
                 self.shared.clone(),
             )));
             remote_settings_known = state.remote_settings_known;
-            drop(state);
+            state.exit();
 
             // Write out the initial settings frame.
             let mut frame = vec![];
@@ -100,7 +101,7 @@ impl ConnectionWriter {
         // NOTE: This is shared across all streams on the connection.
         // TODO: COnsiderate this with the above lock.
         let mut local_header_encoder = {
-            let state = self.shared.state.lock().await;
+            let state = self.shared.state.lock().await?.read_exclusive();
             hpack::Encoder::new(state.remote_settings[SettingId::HEADER_TABLE_SIZE] as usize)
         };
         local_header_encoder.set_local_max_size(self.shared.options.max_local_encoder_table_size);
@@ -156,7 +157,7 @@ impl ConnectionWriter {
                     // than killing the whole thread.
                     // ^ We also need to let any listeners know that the request was dropped.
 
-                    let mut connection_state = self.shared.state.lock().await;
+                    let mut connection_state = self.shared.state.lock().await?.enter();
 
                     // Checking that we are able to send a stream.
                     let remote_stream_limit = std::cmp::min(
@@ -164,6 +165,7 @@ impl ConnectionWriter {
                         self.shared.options.max_outgoing_streams as u32,
                     );
                     if connection_state.local_stream_count >= remote_stream_limit as usize {
+                        connection_state.exit();
                         continue;
                     }
 
@@ -184,6 +186,7 @@ impl ConnectionWriter {
                         if let Some(v) = ret {
                             v
                         } else {
+                            connection_state.exit();
                             continue;
                         }
                     };
@@ -237,8 +240,10 @@ impl ConnectionWriter {
                             false
                         } else {
                             // TODO: Lock and mark as locally closed?
-                            let mut stream_state = stream.state.lock().await;
+                            let mut stream_state = stream.state.lock().await?.enter();
                             stream_state.sending_end = true;
+                            stream_state.exit();
+
                             stream.sending_end_flushed = true;
 
                             true
@@ -253,7 +258,7 @@ impl ConnectionWriter {
 
                     connection_state.last_user_byte_sent_time = now;
 
-                    drop(connection_state);
+                    connection_state.exit();
 
                     // We are now done setting up the stream.
                     // Now we should just send the request to the other side.
@@ -290,7 +295,7 @@ impl ConnectionWriter {
                     .await?;
                 }
                 ConnectionEvent::CancelRequest { stream_id } => {
-                    let mut connection_state = self.shared.state.lock().await;
+                    let mut connection_state = self.shared.state.lock().await?.enter();
                     self.shared
                         .finish_stream(
                             &mut connection_state,
@@ -301,20 +306,22 @@ impl ConnectionWriter {
                                 local: true,
                             }),
                         )
-                        .await;
+                        .await?;
+                    connection_state.exit();
                 }
                 ConnectionEvent::SendPushPromise { request, response } => {}
                 ConnectionEvent::SendResponse {
                     stream_id,
                     mut response,
                 } => {
-                    let mut connection_state = self.shared.state.lock().await;
+                    let mut connection_state = self.shared.state.lock().await?.enter();
 
                     let stream = match connection_state.streams.get_mut(&stream_id) {
                         Some(s) => s,
                         None => {
                             // Most likely the stream or connection was killed before we were able
                             // to send the response. Ok to ignore.
+                            connection_state.exit();
                             continue;
                         }
                     };
@@ -341,9 +348,10 @@ impl ConnectionWriter {
                             false
                         } else {
                             // Mark as locally closed.
-                            let mut stream_state = stream.state.lock().await;
+                            let mut stream_state = stream.state.lock().await?.enter();
                             stream_state.sending_end = true;
                             stream.sending_end_flushed = true;
+                            stream_state.exit();
 
                             true
                         }
@@ -354,7 +362,7 @@ impl ConnectionWriter {
 
                     connection_state.last_user_byte_sent_time = now;
 
-                    drop(connection_state);
+                    connection_state.exit();
 
                     // TODO: Verify that whenever we start encoding headers, we definately send them
                     let header_block =
@@ -380,13 +388,17 @@ impl ConnectionWriter {
                     let mut should_close = close_with.is_some();
 
                     let last_stream_id = {
-                        let connection_state = self.shared.state.lock().await;
+                        let connection_state = self.shared.state.lock().await?.enter();
 
                         // NOTE: It is illegal to send a Closing event unless you mark the
                         // shutting_down state as non-No.
                         assert!(connection_state.shutting_down.is_some());
 
-                        connection_state.upper_received_stream_id
+                        let id = connection_state.upper_received_stream_id;
+
+                        connection_state.exit();
+
+                        id
                     };
 
                     if let Some(error) = send_goaway {
@@ -410,7 +422,7 @@ impl ConnectionWriter {
                         // different as we always set close_with when decreasing the
                         // upper_received_stream_id
 
-                        let connection_state = self.shared.state.lock().await;
+                        let connection_state = self.shared.state.lock().await?.enter();
 
                         if connection_state.streams.is_empty()
                             && connection_state.upper_received_stream_id
@@ -418,15 +430,19 @@ impl ConnectionWriter {
                         {
                             should_close = true;
                         }
+
+                        connection_state.exit();
                     } else {
                         // In the client, we will close the connection as soon as all streams have
                         // finished running.
 
-                        let connection_state = self.shared.state.lock().await;
+                        let connection_state = self.shared.state.lock().await?.enter();
 
                         if connection_state.streams.is_empty() {
                             should_close = true;
                         }
+
+                        connection_state.exit();
                     }
 
                     if should_close {
@@ -463,7 +479,13 @@ impl ConnectionWriter {
                 ConnectionEvent::StreamRead { stream_id, count } => {
                     // NOTE: The stream level flow control is already updated in the
                     // IncomingStreamBody.
-                    self.shared.state.lock().await.local_connection_window += count as WindowSize;
+                    self.shared
+                        .state
+                        .apply(|s| s.local_connection_window += count as WindowSize)
+                        .await?;
+
+                    // TODO: Only send these if there is a meaningfully large change in the window
+                    // size to report.
 
                     // When we have read received data we'll send an update to the remote endpoint
                     // of our progress. TODO: Ideally batch these so that
@@ -479,16 +501,16 @@ impl ConnectionWriter {
                     writer.write_all(&out).await?;
                 }
                 ConnectionEvent::StreamReaderCancelled { stream_id } => {
-                    let mut connection_state_guard = self.shared.state.lock().await;
-                    let mut connection_state = &mut *connection_state_guard;
+                    let mut connection_state = self.shared.state.lock().await?.enter();
                     self.shared
                         .handle_stream_reader_closed(&mut connection_state, stream_id)
-                        .await;
+                        .await?;
+                    connection_state.exit();
                 }
                 // Write event:
                 // - Happens on either remote flow control updates or
                 ConnectionEvent::StreamWrite { .. } => {
-                    let mut connection_state_guard = self.shared.state.lock().await;
+                    let mut connection_state_guard = self.shared.state.lock().await?.enter();
                     let connection_state = &mut *connection_state_guard;
 
                     // TODO: Consider limiting this if we think it is too large.
@@ -500,6 +522,7 @@ impl ConnectionWriter {
                     // TODO: Ensure that whenever we receive window updates, we retry sending
                     // something.
                     if connection_state.remote_connection_window <= 0 {
+                        connection_state_guard.exit();
                         continue;
                     }
 
@@ -508,7 +531,7 @@ impl ConnectionWriter {
                             continue;
                         }
 
-                        let mut stream_state = stream.state.lock().await;
+                        let mut stream_state = stream.state.lock().await?.enter();
 
                         let min_window = std::cmp::min(
                             connection_state.remote_connection_window,
@@ -524,6 +547,7 @@ impl ConnectionWriter {
                         let n = std::cmp::min(n_raw, max_remote_frame_size as usize);
 
                         if n == 0 && !stream_state.sending_end {
+                            stream_state.exit();
                             continue;
                         }
 
@@ -552,6 +576,7 @@ impl ConnectionWriter {
                             stream.is_closed(&stream_state),
                         ));
 
+                        stream_state.exit();
                         break;
                     }
 
@@ -571,11 +596,11 @@ impl ConnectionWriter {
                         if stream_closed {
                             self.shared
                                 .finish_stream(connection_state, stream_id, None)
-                                .await;
+                                .await?;
                         }
 
                         // Ensure all locks are dropped before we perform a blocking write.
-                        drop(connection_state_guard);
+                        connection_state_guard.exit();
 
                         if frame_data.len() > 0 || (trailers.is_none()) {
                             let frame = frame_utils::new_data_frame(
@@ -610,6 +635,8 @@ impl ConnectionWriter {
                         // TODO: Immediately retry as we may have more data to
                         // send? The main caveat is that
                         // we should prioritze
+                    } else {
+                        connection_state_guard.exit();
                     }
                 }
                 ConnectionEvent::StreamWriteFailure {
@@ -621,11 +648,11 @@ impl ConnectionWriter {
                         ..
                     }) = internal_error.downcast_ref()
                     {
-                        let mut connection_state_guard = self.shared.state.lock().await;
-                        let mut connection_state = &mut *connection_state_guard;
-                        self.shared
-                            .handle_stream_writer_closed(&mut connection_state, stream_id)
-                            .await;
+                        lock_async!(connection_state <= self.shared.state.lock().await?, {
+                            self.shared
+                                .handle_stream_writer_closed(&mut connection_state, stream_id)
+                                .await
+                        })?;
 
                         continue;
                     }
@@ -639,10 +666,11 @@ impl ConnectionWriter {
                         local: true,
                     };
 
-                    let mut connection_state = self.shared.state.lock().await;
+                    let mut connection_state = self.shared.state.lock().await?.enter();
                     self.shared
                         .finish_stream(&mut connection_state, stream_id, Some(proto_error))
-                        .await;
+                        .await?;
+                    connection_state.exit();
                 }
             }
         }
@@ -661,8 +689,9 @@ impl ConnectionWriter {
             local: true,
         };
 
-        let mut connection_state = shared.state.lock().await;
+        let mut connection_state = shared.state.lock().await.unwrap().enter();
         if let ShuttingDownState::Complete = connection_state.shutting_down {
+            connection_state.exit();
             return;
         }
 
@@ -680,6 +709,6 @@ impl ConnectionWriter {
                 close_with: Some(Err(error.into())),
             });
 
-        drop(connection_state);
+        connection_state.exit();
     }
 }

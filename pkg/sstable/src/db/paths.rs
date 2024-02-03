@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::DerefMut;
-use std::sync::Mutex;
 
 use common::errors::*;
 use common::io::Readable;
@@ -17,7 +16,7 @@ pub struct FilePaths {
     /// before we opened the database.
     existing_files: HashMap<FileId, LocalPathBuf>,
 
-    used_existing_files: Mutex<HashSet<FileId>>,
+    used_existing_files: std::sync::Mutex<HashSet<FileId>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -61,7 +60,7 @@ impl FilePaths {
         Ok(Self {
             root_dir: root_dir.to_owned(),
             existing_files,
-            used_existing_files: Mutex::new(HashSet::new()),
+            used_existing_files: std::sync::Mutex::new(HashSet::new()),
         })
     }
 

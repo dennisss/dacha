@@ -4,13 +4,6 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::borrow::Borrow;
-use protobuf_core::extension::ExtensionTag;
-use protobuf_core::tokenizer::serialize_str_lit;
-use protobuf_core::MessagePtr;
-use protobuf_core::MessageReflection;
-use protobuf_core::WireResult;
-use protobuf_descriptor::EnumDescriptorProto;
-use protobuf_descriptor::EnumValueDescriptorProto;
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Mutex;
@@ -18,7 +11,15 @@ use std::sync::RwLock;
 use std::{collections::HashMap, sync::Arc};
 
 use common::errors::*;
+use executor::sync::{AsyncMutex, AsyncMutexPermit};
 use file::{LocalPath, LocalPathBuf};
+use protobuf_core::extension::ExtensionTag;
+use protobuf_core::tokenizer::serialize_str_lit;
+use protobuf_core::MessagePtr;
+use protobuf_core::MessageReflection;
+use protobuf_core::WireResult;
+use protobuf_descriptor::EnumDescriptorProto;
+use protobuf_descriptor::EnumValueDescriptorProto;
 // use protobuf_builtins::google::protobuf::Any;
 use protobuf_core::reflection::Reflect;
 use protobuf_core::reflection::ReflectionMut;
@@ -84,7 +85,7 @@ struct DescriptorPoolShared {
     options: DescriptorPoolOptions,
 
     /// Lock that must be help if preparing to mutate 'state'.
-    writer_lock: executor::sync::Mutex<()>,
+    writer_lock: AsyncMutex<()>,
 
     state: RwLock<DescriptorPoolState>,
 }
@@ -104,7 +105,7 @@ struct DescriptorPoolState {
 /// - This struct queues up all the types/symbols that will be added before
 ///   adding them based on dependency rules in finish_write().
 struct PendingWrite<'a> {
-    guard: executor::sync::MutexGuard<'a, ()>,
+    guard: AsyncMutexPermit<'a, ()>,
     next_file_index: u32,
     new_types: Vec<(TypeName, TypeDescriptorInner)>,
     new_files: Vec<Arc<FileDescriptorInner>>,
@@ -138,7 +139,7 @@ impl DescriptorPool {
         Self {
             shared: Arc::new(DescriptorPoolShared {
                 options,
-                writer_lock: executor::sync::Mutex::new(()),
+                writer_lock: AsyncMutex::new(()),
                 state: RwLock::new(DescriptorPoolState {
                     files: HashMap::new(),
                     types: HashMap::new(),
@@ -334,7 +335,7 @@ impl DescriptorPool {
 
     /// Starts a new write/mutation to the descriptor pool.
     async fn begin_write(&self) -> PendingWrite {
-        let guard = self.shared.writer_lock.lock().await;
+        let guard = self.shared.writer_lock.lock().await.unwrap();
 
         let next_file_index = self.shared.state.read().unwrap().files.len() as u32;
 

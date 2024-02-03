@@ -166,7 +166,7 @@ pub async fn put_worker_event(db: &EmbeddedDB, event: &WorkerEvent) -> Result<()
         batch.put(&time_key, &value);
     }
 
-    db.write(&mut batch).await?;
+    db.write(&batch).await?;
 
     Ok(())
 }

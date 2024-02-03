@@ -7,8 +7,8 @@ use common::errors::*;
 use common::io::Writeable;
 use executor::channel::oneshot;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
-use executor::Condvar;
+use executor::lock;
+use executor::sync::{AsyncMutex, AsyncVariable};
 use raft_client::server::channel_factory::ChannelFactory;
 
 use crate::atomic::*;
@@ -290,25 +290,25 @@ impl<R: Send + 'static> Server<R> {
 
         let shared = Arc::new(ServerShared {
             identity: ServerIdentity::new(meta.group_id(), meta.id()),
-            state: Mutex::new(state),
+            state: AsyncMutex::new(state),
             channel_factory,
             log,
             state_machine,
 
             // NOTE: these will be initialized below
-            log_last_flushed: Condvar::new(LogSequence::zero()),
-            commit_index: Condvar::new(LogPosition::zero()),
+            log_last_flushed: AsyncVariable::new(LogSequence::zero()),
+            commit_index: AsyncVariable::new(LogPosition::zero()),
 
-            last_applied: Condvar::new(last_applied),
-            lease_start: Condvar::new(None),
+            last_applied: AsyncVariable::new(last_applied),
+            lease_start: AsyncVariable::new(None),
 
             // TODO: Initialize this.
-            config_last_flushed: Condvar::new(LogIndex::default()),
+            config_last_flushed: AsyncVariable::new(LogIndex::default()),
         });
 
         // TODO: Instead run this stuff during the first run() cycle.
         ServerShared::update_log_last_flushed(&shared).await;
-        let state = shared.state.lock().await;
+        let state = shared.state.lock().await?.read_exclusive();
         ServerShared::update_commit_index(&shared, &state).await;
         drop(state);
 
@@ -317,6 +317,9 @@ impl<R: Send + 'static> Server<R> {
 
     // TODO: Propagate a shutdown token.
     // NOTE: If we also give it a state machine, we can do that for people too
+    //
+    // TODO: Ensure not cancelled if in something like a TaskResultBundle. This must
+    // outlive the state in order to avoid poisoning the state on cancellation.
     pub async fn run(self) -> Result<()> {
         self.shared.run().await
     }
@@ -349,8 +352,22 @@ impl<R: Send + 'static> Server<R> {
     }
 
     pub async fn leader_hint(&self) -> NotLeaderError {
-        let state = self.shared.state.lock().await;
+        let state = self.shared.state.lock().await.unwrap().read_exclusive();
         state.inst.leader_hint()
+    }
+
+    /// Verifies that we are currently the leader of the raft group and returns
+    /// our reigning term.
+    ///
+    /// WARNING: This information may become immediately stale. You should use
+    /// other methods like begin_read() and execute_after_read() if you need
+    /// transactional guarantees.
+    ///
+    /// CANCEL SAFE
+    pub async fn currently_leader(&self) -> Result<Term, NotLeaderError> {
+        lock!(state <= self.shared.state.lock().await.unwrap(), {
+            Ok(state.inst.read_index(Instant::now())?.term())
+        })
     }
 
     /// Blocks until the local state machine contains at least all committed
@@ -360,12 +377,20 @@ impl<R: Send + 'static> Server<R> {
     /// from the state machine.
     ///
     /// NOTE: This will only succeed on the current leader.
-    pub async fn begin_read(
-        &self,
-        optimistic: bool,
-    ) -> std::result::Result<ReadIndex, NotLeaderError> {
+    ///
+    /// CANCEL SAFE
+    pub async fn begin_read(&self, optimistic: bool) -> Result<ReadIndex, NotLeaderError> {
         let read_index = {
-            let state = self.shared.state.lock().await;
+            let state = match self.shared.state.lock().await {
+                Ok(v) => v.read_exclusive(),
+                Err(_) => {
+                    return Err(NotLeaderError {
+                        term: 0.into(),
+                        leader_hint: None,
+                    })
+                }
+            };
+
             let time = Instant::now();
             state.inst.read_index(time)?
         };
@@ -373,19 +398,23 @@ impl<R: Send + 'static> Server<R> {
         // Trigger heartbeat to run
         // TODO: Batch this for non-critical requests.
         if !optimistic {
-            self.shared
-                .run_tick(
-                    |state, tick, _| {
+            // run_tick executed in a separate task to make begin_read() cancel safe.
+            let shared = self.shared.clone();
+            let child_task = executor::spawn(async move {
+                shared
+                    .run_tick(|state, tick| {
                         state.inst.schedule_heartbeat(tick);
-                    },
-                    (),
-                )
-                .await;
+                    })
+                    .await;
+            });
+
+            child_task.join().await;
         }
 
         let log_index;
         loop {
-            let state = self.shared.state.lock().await;
+            // TODO: Just return an error if the state is poisoned.
+            let state = self.shared.state.lock().await.unwrap().read_exclusive();
             let res = state.inst.resolve_read_index(&read_index, optimistic);
             drop(state);
 
@@ -401,12 +430,18 @@ impl<R: Send + 'static> Server<R> {
                     self.shared.wait_for_commit(pos).await;
                 }
                 Err(ReadIndexError::WaitForLease(time)) => {
-                    let lease_guard = self.shared.lease_start.lock().await;
+                    let lease_guard = self
+                        .shared
+                        .lease_start
+                        .lock()
+                        .await
+                        .unwrap()
+                        .read_exclusive();
                     if lease_guard.is_none() || lease_guard.unwrap() >= time {
                         continue;
                     }
 
-                    lease_guard.wait(time).await;
+                    lease_guard.wait().await;
                 }
             }
         }
@@ -432,26 +467,29 @@ impl<R: Send + 'static> Server<R> {
     /// NOTE: If we are the leader and we lose contact with our followers or if
     /// we are executing via a connection to a leader that we lose, then we
     /// should trigger all pending callbacks to fail because of timeout
+    ///
+    /// CANCEL SAFE
     pub async fn execute(
         &self,
         entry: LogEntryData,
-    ) -> std::result::Result<PendingExecution<R>, NotLeaderError> {
+    ) -> Result<PendingExecution<R>, NotLeaderError> {
         self.execute_after_read(entry, None).await
     }
 
-    // NOTE: We assume that this read has come from Self::begin_read() so it has
-    // already been at least optimistically resolved, so checking that the term
-    // hasn't changed since the read started should be good enough.
+    /// NOTE: We assume that this read has come from Self::begin_read() so it
+    /// has already been at least optimistically resolved, so checking that
+    /// the term hasn't changed since the read started should be good
+    /// enough.
+    ///
+    /// CANCEL SAFE
     pub async fn execute_after_read(
         &self,
         entry: LogEntryData,
         read_index: Option<ReadIndex>,
-    ) -> std::result::Result<PendingExecution<R>, NotLeaderError> {
-        let res = ServerShared::run_tick(
-            &self.shared,
-            move |s, t, _| Self::execute_tick(s, t, entry, read_index),
-            (),
-        )
+    ) -> Result<PendingExecution<R>, NotLeaderError> {
+        let res = ServerShared::run_tick(&self.shared, move |s, t| {
+            Self::execute_tick(s, t, entry, read_index)
+        })
         .await;
 
         let (proposal, rx) = match res {
@@ -473,8 +511,8 @@ impl<R: Send + 'static> Server<R> {
         tick: &mut Tick,
         entry: LogEntryData,
         read_index: Option<ReadIndex>,
-    ) -> std::result::Result<(LogPosition, oneshot::Receiver<Option<R>>), ProposeError> {
-        let proposal = state.inst.propose_entry(&entry, read_index, tick)?;
+    ) -> Result<(LogPosition, oneshot::Receiver<Option<R>>), ProposeError> {
+        let proposal = state.inst.propose_entry(entry, read_index, tick)?;
 
         // If we were successful, add a callback.
         // TODO: Optimize away the callbacks in the case that R=() or we are performing
@@ -484,9 +522,10 @@ impl<R: Send + 'static> Server<R> {
         Ok((proposal, rx))
     }
 
-    pub async fn current_status(&self) -> Status {
-        let state = self.shared.state.lock().await;
-        state.inst.current_status()
+    /// CANCEL SAFE
+    pub async fn current_status(&self) -> Result<Status> {
+        let state = self.shared.state.lock().await?.read_exclusive();
+        Ok(state.inst.current_status())
     }
 }
 
@@ -494,6 +533,7 @@ impl<R: Send + 'static> Server<R> {
 
 #[async_trait]
 impl<R: Send + 'static> ConsensusService for Server<R> {
+    /// CANCEL SAFE
     async fn PreVote(
         &self,
         req: rpc::ServerRequest<RequestVoteRequest>,
@@ -503,11 +543,14 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .identity
             .check_incoming_request_context(&req.context, &mut res.context)?;
 
-        let state = self.shared.state.lock().await;
-        res.value = state.inst.pre_vote(&req, Instant::now());
+        lock!(state <= self.shared.state.lock().await?, {
+            res.value = state.inst.pre_vote(&req, Instant::now());
+        });
+
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn RequestVote(
         &self,
         req: rpc::ServerRequest<RequestVoteRequest>,
@@ -517,17 +560,16 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .identity
             .check_incoming_request_context(&req.context, &mut res.context)?;
 
-        let res_raw = ServerShared::run_tick(
-            &self.shared,
-            |state, tick, req| state.inst.request_vote(req, tick),
-            &req.value,
-        )
+        let res_raw = ServerShared::run_tick(&self.shared, move |state, tick| {
+            state.inst.request_vote(&req.value, tick)
+        })
         .await;
         // TODO: This is wrong as we we no longer flush metadata immediately.
         res.value = res_raw.persisted();
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn Heartbeat(
         &self,
         req: rpc::ServerRequest<HeartbeatRequest>,
@@ -537,16 +579,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .identity
             .check_incoming_request_context(&req.context, &mut res.context)?;
 
-        res.value = ServerShared::run_tick(
-            &self.shared,
-            |state, tick, req| state.inst.heartbeat(req, tick),
-            &req.value,
-        )
+        res.value = ServerShared::run_tick(&self.shared, move |state, tick| {
+            state.inst.heartbeat(&req.value, tick)
+        })
         .await?;
 
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn AppendEntries(
         &self,
         mut req_stream: rpc::ServerStreamRequest<AppendEntriesRequest>,
@@ -557,11 +598,10 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .check_incoming_request_context(req_stream.context(), res_stream.context())?;
 
         while let Some(req) = req_stream.recv().await? {
-            let c = ServerShared::run_tick(
-                &self.shared,
-                |state, tick, _| state.inst.append_entries(&req, tick),
-                (),
-            )
+            let timeout_now = req.timeout_now();
+            let c = ServerShared::run_tick(&self.shared, move |state, tick| {
+                state.inst.append_entries(&req, tick)
+            })
             .await?;
 
             // Once the match constraint is satisfied, this will send back a
@@ -572,7 +612,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
             res_stream.send(res).await?;
 
-            if req.timeout_now() {
+            if timeout_now {
                 // TODO: Perform the timeout.
             }
         }
@@ -580,6 +620,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn TimeoutNow(
         &self,
         req: rpc::ServerRequest<TimeoutNow>,
@@ -589,15 +630,14 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .identity
             .check_incoming_request_context(&req.context, &mut res.context)?;
 
-        ServerShared::run_tick(
-            &self.shared,
-            |state, tick, _| state.inst.timeout_now(&req.value, tick),
-            (),
-        )
+        ServerShared::run_tick(&self.shared, move |state, tick| {
+            state.inst.timeout_now(&req.value, tick)
+        })
         .await?;
         Ok(())
     }
 
+    /// CANCEL SAFE
     async fn InstallSnapshot(
         &self,
         mut req: rpc::ServerStreamRequest<InstallSnapshotRequest>,
@@ -612,123 +652,126 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             )
         })?;
 
-        // TODO: Make sure that this counts as a heartbeat from the leader.
-        let r = ServerShared::run_tick(
-            &self.shared,
-            |state, tick, req| state.inst.install_snapshot(&first_request, tick),
-            &first_request,
-        )
-        .await;
-
-        // Exit early if the term mismatches.
-        if !r.accepted() {
-            res.value = r;
-            return Ok(());
+        // Don't accept snapshots which don't advance our state machine forward.
+        if first_request.last_applied().index() <= self.shared.state_machine.last_flushed().await {
+            return Err(rpc::Status::invalid_argument(
+                "Installing snapshot that is a subset of the existing state machine",
+            )
+            .into());
         }
 
-        // TODO: Also check this before accepting the snapshot as the new one.
-        // Tricky due to the chance of concurrent operations.
-        if first_request.last_applied().index() > self.shared.state_machine.last_flushed().await {
-            let (mut pipe_writer, pipe_reader) = common::pipe::pipe();
+        // TODO: Make sure that this counts as a heartbeat from the leader.
+        let (first_request, r) = ServerShared::run_tick(&self.shared, move |state, tick| {
+            let r = state.inst.install_snapshot(&first_request, tick);
+            (first_request, r)
+        })
+        .await;
 
-            let (callback_sender, callback_receiver) = oneshot::channel();
-            let snapshot = IncomingStateMachineSnapshot {
-                snapshot: StateMachineSnapshot {
-                    data: Box::new(pipe_reader),
-                    last_applied: first_request.last_applied().index(),
-                },
-                last_applied: first_request.last_applied().clone(),
-                callback: callback_sender,
+        res.value = r?;
+
+        let (mut pipe_writer, pipe_reader) = common::pipe::pipe();
+
+        let (callback_sender, callback_receiver) = oneshot::channel();
+        let snapshot = IncomingStateMachineSnapshot {
+            snapshot: StateMachineSnapshot {
+                data: Box::new(pipe_reader),
+                last_applied: first_request.last_applied().index(),
+            },
+            last_applied: first_request.last_applied().clone(),
+            callback: callback_sender,
+        };
+
+        // Tell the applier thread to start intaking the snapshot.
+        lock!(state <= self.shared.state.lock().await?, {
+            let already_in_progress = {
+                if let IncomingSnapshotState::None = &state.snapshot_state {
+                    false
+                } else {
+                    true
+                }
             };
 
-            // Tell the applier thread to start intaking the snapshot.
-            {
-                let mut state = self.shared.state.lock().await;
-                let already_in_progress = {
-                    if let IncomingSnapshotState::None = &state.snapshot_state {
-                        false
-                    } else {
-                        true
+            if already_in_progress {
+                return Err(rpc::Status::unavailable(
+                    "Another snapshot is currently being installed",
+                ));
+            }
+
+            state.snapshot_state = IncomingSnapshotState::Pending(snapshot);
+            state.snapshot_sender.notify();
+
+            Ok(())
+        })?;
+
+        // TODO: We should time this out after 30 seconds (timeouts should forward
+        // errors through the pipe).
+        /*
+        TODO: Consider having a separate 'DataTransfer' RPC Service for generic chunked transfers that we'd initialize with an async callback.
+        */
+        let data_reader = ChildTask::spawn(async move {
+            if let Err(_) = pipe_writer.write_all(first_request.data()).await {
+                // Errors writing to the pipe imply that the data is no longer needed by the
+                // restorer.
+                return;
+            }
+
+            let mut last_request = first_request;
+            last_request.clear_data();
+
+            while !last_request.done() {
+                let next_request = req.recv().await.and_then(|v| {
+                    v.ok_or_else(|| {
+                        rpc::Status::invalid_argument(
+                            "Didn't receive all parts of the InstallSnapshot body",
+                        )
+                        .into()
+                    })
+                });
+
+                let next_request = match next_request {
+                    Ok(v) => v,
+                    Err(e) => {
+                        pipe_writer.close(Err(e)).await;
+                        return;
                     }
                 };
 
-                if already_in_progress {
-                    return Err(rpc::Status::unavailable(
-                        "Another snapshot is currently being installed",
-                    )
-                    .into());
-                }
+                // TODO: Check the returned index.
 
-                state.snapshot_state = IncomingSnapshotState::Pending(snapshot);
-                state.snapshot_sender.notify();
-            }
-
-            // TODO: We should time this out after 30 seconds (timeouts should forward
-            // errors through the pipe).
-            /*
-            TODO: Consider having a separate 'DataTransfer' RPC Service for generic chunked transfers that we'd initialize with an async callback.
-            */
-            let data_reader = ChildTask::spawn(async move {
-                if let Err(_) = pipe_writer.write_all(first_request.data()).await {
+                if let Err(_) = pipe_writer.write_all(next_request.data()).await {
                     // Errors writing to the pipe imply that the data is no longer needed by the
                     // restorer.
                     return;
                 }
 
-                let mut last_request = first_request;
+                last_request = next_request;
                 last_request.clear_data();
+            }
 
-                while !last_request.done() {
-                    let next_request = req.recv().await.and_then(|v| {
-                        v.ok_or_else(|| {
-                            rpc::Status::invalid_argument(
-                                "Didn't receive all parts of the InstallSnapshot body",
-                            )
-                            .into()
-                        })
-                    });
+            pipe_writer.close(Ok(())).await;
+        });
 
-                    let next_request = match next_request {
-                        Ok(v) => v,
-                        Err(e) => {
-                            pipe_writer.close(Err(e)).await;
-                            return;
-                        }
-                    };
-
-                    // TODO: Check the returned index.
-
-                    if let Err(_) = pipe_writer.write_all(next_request.data()).await {
-                        // Errors writing to the pipe imply that the data is no longer needed by the
-                        // restorer.
-                        return;
-                    }
-
-                    last_request = next_request;
-                    last_request.clear_data();
+        match callback_receiver.recv().await {
+            Ok(accepted) => {
+                if !accepted {
+                    return Err(rpc::Status::internal("Failure while restoring snapshot").into());
                 }
-
-                pipe_writer.close(Ok(())).await;
-            });
-
-            match callback_receiver.recv().await {
-                Ok(v) => {
-                    res.value.set_accepted(v);
-                }
-                Err(_) => {
-                    // This may happen if there is a non-recoverable I/O failure while restoring so
-                    // the whole server needs to shut down.
-                    return Err(rpc::Status::aborted("InstallSnapshot stopped abruptly").into());
-                }
+            }
+            Err(_) => {
+                // This may happen if there is a non-recoverable I/O failure while restoring so
+                // the whole server needs to shut down.
+                return Err(rpc::Status::aborted("InstallSnapshot stopped abruptly").into());
             }
         }
 
         Ok(())
     }
 
-    // TODO: This may become a ClientService method only? (although it is still
-    // sufficiently internal that we don't want just any old client to be using
-    // this)
+    /// TODO: This may become a ClientService method only? (although it is still
+    /// sufficiently internal that we don't want just any old client to be using
+    /// this)
+    ///
+    /// CANCEL SAFE
     async fn Propose(
         &self,
         req: rpc::ServerRequest<ProposeRequest>,
@@ -740,20 +783,11 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         let (data, should_wait) = (req.data(), req.wait());
 
-        let r = ServerShared::run_tick(
-            &self.shared,
-            |state, tick, _| state.inst.propose_entry(data, None, tick),
-            (),
-        )
-        .await;
+        let r = self.execute(data.clone()).await;
 
-        let shared = self.shared.clone();
-
-        // Ideally cascade down to a result and an error type
-
-        let proposed_position = match r {
-            Ok(prop) => prop,
-            Err(ProposeError::NotLeader(NotLeaderError { term, leader_hint })) => {
+        let pending_exec = match r {
+            Ok(v) => v,
+            Err(NotLeaderError { term, leader_hint }) => {
                 let err = res.error_mut().not_leader_mut();
                 if let Some(hint) = leader_hint {
                     err.set_leader_hint(hint);
@@ -761,43 +795,27 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
                 return Ok(());
             }
-            _ => {
-                println!("propose result: {:?}", r);
-                return Err(err_msg("Not implemented"));
-            }
         };
 
+        res.set_proposal(pending_exec.proposal.clone());
+
         if !should_wait {
-            res.set_proposal(proposed_position);
             return Ok(());
         }
 
-        // TODO: Must ensure that wait_for_commit responses immediately if
-        // it is already comitted
-        self.shared.wait_for_commit(proposed_position.clone()).await;
-
-        let state = shared.state.lock().await;
-        let r = state.inst.proposal_status(&proposed_position);
-
-        match r {
-            ProposalStatus::Commited => {
-                res.set_proposal(proposed_position);
-                Ok(())
-            }
-            ProposalStatus::Failed => Err(err_msg("Proposal failed")),
-            _ => {
-                println!("GOT BACK {:?}", res.value);
-                Err(err_msg("Proposal indeterminant"))
-            }
+        match pending_exec.wait().await {
+            PendingExecutionResult::Committed { .. } => Ok(()),
+            PendingExecutionResult::Cancelled => Err(err_msg("Proposal failed")),
         }
     }
 
+    /// CANCEL SAFE
     async fn CurrentStatus(
         &self,
         req: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         res: &mut rpc::ServerResponse<Status>,
     ) -> Result<()> {
-        res.value = self.current_status().await;
+        res.value = self.current_status().await?;
         Ok(())
     }
 }

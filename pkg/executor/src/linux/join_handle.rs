@@ -58,6 +58,8 @@ impl<T> JoinHandle<T> {
         }
     }
 
+    /// NOTE: The task will stay detached if waiter of the join() is cancelled.
+    ///
     /// TODO: If we disallow direct cancellation of a task, then we can gurantee
     /// that it always finishes without cancellation here.
     pub async fn join(mut self) -> T {

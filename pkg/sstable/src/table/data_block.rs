@@ -37,7 +37,7 @@ impl DataBlock {
     /// TODO: For the index, we don't need the Arc as we will immediately cast
     /// to a different format.
     pub async fn read(
-        file: &mut LocalFile,
+        file: &LocalFile,
         footer: &Footer,
         handle: &BlockHandle,
     ) -> Result<Arc<Self>> {

@@ -12,7 +12,7 @@ use crate::value_attributes;
 /// TODO: Move of the logic for this into a generic OrderedHashMap class.
 #[derive(Default)]
 pub struct DictValue {
-    state: Mutex<DictValueState>,
+    state: std::sync::Mutex<DictValueState>,
 }
 
 #[derive(Default)]
@@ -322,7 +322,7 @@ pub enum DictIteratorMode {
 
 pub struct DictIteratorValue {
     inst: ObjectWeak<dyn Value>,
-    next_index: Mutex<Option<usize>>,
+    next_index: std::sync::Mutex<Option<usize>>,
 }
 
 impl DictIteratorValue {

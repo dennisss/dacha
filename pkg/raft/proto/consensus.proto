@@ -367,10 +367,6 @@ message InstallSnapshotResponse {
 	// Current term of the server receiving the snapshot.
 	// REQUIRED
 	Term term = 1;
-
-	// Whether or not we successfully accepted and installed the snapshot.
-	// REQUIRED
-	bool accepted = 2;
 }
 
 message Status {

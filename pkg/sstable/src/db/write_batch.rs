@@ -156,6 +156,7 @@ pub fn serialize_write_batch(sequence: u64, writes: &[Write], out: &mut Vec<u8>)
 
 // TODO: Ensure that all changes in a WriteBatch touch distinct keys. Otherwise
 // we can't apply all of the writes with the same sequence.
+#[derive(Clone)]
 pub struct WriteBatch {
     data: Vec<u8>,
 }

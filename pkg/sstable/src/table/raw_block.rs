@@ -43,11 +43,10 @@ enum_def!(CompressionType u8 =>
 );
 
 impl RawBlock {
-    pub async fn read(file: &mut LocalFile, footer: &Footer, handle: &BlockHandle) -> Result<Self> {
+    pub async fn read(file: &LocalFile, footer: &Footer, handle: &BlockHandle) -> Result<Self> {
         let mut buf = vec![];
-        file.seek(handle.offset);
         buf.resize((handle.size as usize) + BLOCK_TRAILER_SIZE, 0);
-        file.read_exact(&mut buf).await?;
+        file.read_exact_at(handle.offset, &mut buf).await?;
 
         // min_size!(buf, BLOCK_TRAILER_SIZE);
         let trailer_start = buf.len() - BLOCK_TRAILER_SIZE;

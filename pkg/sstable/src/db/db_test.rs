@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use common::bytes::Bytes;
 use common::errors::*;
-use common::futures::StreamExt;
 use common::io::Writeable;
 use file::temp::TempDir;
 
@@ -476,13 +475,13 @@ async fn embedded_db_large_range_test() -> Result<()> {
             batch.put(key.as_bytes(), if i % 2 == 0 { b"even" } else { b"odd" });
 
             if batch.count() >= 100 {
-                db.write(&mut batch).await?;
+                db.write(&batch).await?;
                 batch.clear();
             }
         }
 
         if batch.count() > 0 {
-            db.write(&mut batch).await?;
+            db.write(&batch).await?;
         }
 
         db.wait_for_compaction().await?;

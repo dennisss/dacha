@@ -49,7 +49,7 @@ struct ObjectPoolShared<O: Object + ?Sized> {
     /// NOTE: This is always set to true when the state is locked and never
     /// returns to false.
     frozen: AtomicBool,
-    state: Mutex<ObjectPoolState<O>>,
+    state: std::sync::Mutex<ObjectPoolState<O>>,
 }
 
 struct ObjectPoolState<O: Object + ?Sized> {

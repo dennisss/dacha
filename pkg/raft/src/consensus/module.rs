@@ -647,14 +647,14 @@ impl ConsensusModule {
         let mut e = LogEntryData::default();
         e.set_command(data);
 
-        self.propose_entry(&e, None, out)
+        self.propose_entry(e, None, out)
     }
 
     pub fn propose_noop(&mut self, out: &mut Tick) -> ProposeResult {
         let mut e = LogEntryData::default();
         e.set_noop(true);
 
-        self.propose_entry(&e, None, out)
+        self.propose_entry(e, None, out)
     }
 
     // How this will work, in general, wait for an AddServer RPC,
@@ -740,7 +740,7 @@ impl ConsensusModule {
     /// specific forms of this function (e.g. ConsensusModule::propose_command).
     pub fn propose_entry(
         &mut self,
-        data: &LogEntryData,
+        data: LogEntryData,
         read_index: Option<ReadIndex>,
         out: &mut Tick,
     ) -> ProposeResult {
@@ -821,7 +821,7 @@ impl ConsensusModule {
             let mut e = LogEntry::default();
             e.pos_mut().set_term(term);
             e.pos_mut().set_index(index);
-            e.set_data(data.clone()); // TODO: Optimize this copy.
+            e.set_data(data);
 
             // As soon as a configuration change lands in the log, we will use it
             // immediately XXX: Here the commit index won't really help optimize
@@ -1142,7 +1142,7 @@ impl ConsensusModule {
                         let mut data = LogEntryData::default();
                         data.config_mut().set_AddMember(id.clone());
 
-                        let res = self.propose_entry(&data, None, tick).unwrap();
+                        let res = self.propose_entry(data, None, tick).unwrap();
                         println!(
                             "Promoting server {} to member at index {}",
                             id.value(),
@@ -2666,7 +2666,7 @@ impl ConsensusModule {
         &mut self,
         first_request: &InstallSnapshotRequest,
         tick: &mut Tick,
-    ) -> InstallSnapshotResponse {
+    ) -> Result<InstallSnapshotResponse, rpc::Status> {
         self.observe_term(first_request.term(), tick);
 
         let mut res = InstallSnapshotResponse::default();
@@ -2674,16 +2674,18 @@ impl ConsensusModule {
 
         // Early reject requests from stale leaders.
         if first_request.term() != self.meta().current_term() {
-            res.set_accepted(false);
-            return res;
+            return Err(rpc::Status::failed_precondition(
+                "Received an InstallSnapshot request is from an old term.",
+            ));
         }
 
         // We will discard the log up to 'first_request.last_applied', but because both
         // state machines must always be ahead of the log, the config state machine must
         // be ahead of the user state machine.
         if first_request.last_applied().index() > first_request.last_config().last_applied() {
-            res.set_accepted(false);
-            return res;
+            return Err(rpc::Status::failed_precondition(
+                "InstallSnapshot user state machine is behind the config state machine.",
+            ));
         }
 
         if self.config.last_applied < first_request.last_config().last_applied() {
@@ -2691,8 +2693,7 @@ impl ConsensusModule {
             tick.write_config();
         }
 
-        res.set_accepted(true);
-        res
+        Ok(res)
     }
 
     /// To be called by the user once we get a successful response back from an
@@ -2702,6 +2703,25 @@ impl ConsensusModule {
         to_id: ServerId,
         request: &InstallSnapshotRequest,
         response: &InstallSnapshotResponse,
+        last_applied_index: LogIndex,
+        tick: &mut Tick,
+    ) {
+        self.install_snapshot_callback_impl(
+            to_id,
+            request,
+            response,
+            true,
+            last_applied_index,
+            tick,
+        );
+    }
+
+    fn install_snapshot_callback_impl(
+        &mut self,
+        to_id: ServerId,
+        request: &InstallSnapshotRequest,
+        response: &InstallSnapshotResponse,
+        successful: bool,
         last_applied_index: LogIndex,
         tick: &mut Tick,
     ) {
@@ -2738,19 +2758,12 @@ impl ConsensusModule {
         };
 
         // If the snapshot wasn't accepted, then we will re-poll the
-        if !response.accepted() {
+        if !successful {
             follower.next_index = self.log_meta.last().position.index();
             follower.mode = ConsensusFollowerMode::Pesimistic;
             self.cycle(tick);
             return;
         }
-
-        // The snapshot should only not be accepted if the term changed since the
-        // snapshot started.
-        //
-        // Otherwise, we'd entire an infinite loop of trying to install a snapshot as we
-        // have no backoff when !response.accepted.
-        assert!(response.accepted());
 
         follower.next_index = last_applied_index + 1;
         follower.match_index = last_applied_index;
@@ -2769,12 +2782,12 @@ impl ConsensusModule {
     ) {
         let mut res = InstallSnapshotResponse::default();
         res.set_term(self.meta.current_term());
-        res.set_accepted(false);
 
-        self.install_snapshot_callback(
+        self.install_snapshot_callback_impl(
             to_id,
             request,
             &res,
+            false,
             self.log_meta.last().position.index(),
             tick,
         );
@@ -3356,4 +3369,14 @@ mod tests {
     - Verify that duplicate request vote requests in the same term produce the same result.
     - Verify that a receiving a second RequestVote from a server after we have already granted a vote.
     */
+
+    /*
+    Another test case:
+    - Suppose Server A is leader and proposes log entry N
+        but Server A needs to step down before replicating N
+    - Then Server B comes to power
+        - B will only have log entries up to N-1 locally.
+        - It should commit a no-op entry at index N so that Server A's log get's truncated.
+
+     */
 }

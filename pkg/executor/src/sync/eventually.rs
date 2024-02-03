@@ -2,7 +2,7 @@
 
 use common::errors::*;
 
-use crate::Condvar;
+use crate::sync::AsyncVariable;
 
 /// A value which is initially null, but will eventually be initially and
 /// available.
@@ -11,40 +11,44 @@ use crate::Condvar;
 /// - Once a value is set, is is never changed (can't be replaced and is
 ///   immutable).
 pub struct Eventually<T> {
-    value: Condvar<Option<T>>,
+    value: AsyncVariable<Option<T>>,
 }
 
 impl<T> Eventually<T> {
     pub fn new() -> Self {
         Self {
-            value: Condvar::new(None),
+            value: AsyncVariable::new(None),
         }
     }
 
     /// NOTE: Will fail if the value has already been set.
     pub async fn set(&self, v: T) -> Result<()> {
-        let mut value = self.value.lock().await;
+        let mut value = self.value.lock().await?.enter();
         if value.is_some() {
+            value.exit();
             return Err(err_msg("Value already set"));
         }
 
         *value = Some(v);
         value.notify_all();
+        value.exit();
         Ok(())
     }
 
     pub async fn get<'a>(&'a self) -> &'a T {
         loop {
-            let value = self.value.lock().await;
+            let value = self.value.lock().await.unwrap().enter();
             if let Some(v) = value.as_ref() {
-                return unsafe { std::mem::transmute(v) };
+                let ret = unsafe { std::mem::transmute(v) };
+                value.exit();
+                return ret;
             }
 
-            value.wait(()).await;
+            value.wait().await;
         }
     }
 
     pub async fn has_value(&self) -> bool {
-        self.value.lock().await.is_some()
+        self.value.lock().await.unwrap().read_exclusive().is_some()
     }
 }

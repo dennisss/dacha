@@ -1,7 +1,8 @@
 use std::{convert::TryFrom, sync::Arc};
 
-use executor::channel;
-use executor::sync::Mutex;
+use common::errors::Result;
+use executor::sync::{AsyncMutex, PoisonError};
+use executor::{channel, lock_async};
 
 use crate::proto::v2::*;
 use crate::request::Request;
@@ -20,7 +21,7 @@ pub const CONNECTION_PREFACE_BODY: &[u8] = b"SM\r\n\r\n";
 pub(super) struct ConnectionShared {
     pub is_server: bool,
 
-    pub state: Mutex<ConnectionState>,
+    pub state: AsyncMutex<ConnectionState>,
 
     // TODO: We may want to keep around a timer for the last time we closed a stream so that if we
     /// Handler for producing responses to incoming requests.
@@ -55,61 +56,73 @@ impl ConnectionShared {
         &self,
         connection_state: &mut ConnectionState,
         stream_id: StreamId,
-    ) {
+    ) -> Result<(), PoisonError> {
         let mut stream = match connection_state.streams.get_mut(&stream_id) {
             Some(s) => s,
-            _ => return,
+            _ => return Ok(()),
         };
 
-        let mut stream_state = stream.state.lock().await;
-        stream_state.reader_cancelled = true;
+        let is_closed = lock_async!(stream_state <= stream.state.lock().await?, {
+            stream_state.reader_cancelled = true;
 
-        if stream.is_closed(&stream_state) {
-            drop(stream_state);
-            self.finish_stream(connection_state, stream_id, None).await;
-            return;
+            if stream.is_closed(&stream_state) {
+                return true;
+            }
+
+            // We aren't able to close the stream yet, but we should clear any remaining
+            // received data and allow the remote side to send more.
+
+            // TODO: Dedup this with finish_stream.
+            if stream_state.received_buffer.len() > 0 {
+                self.connection_event_sender
+                    .send(ConnectionEvent::StreamRead {
+                        stream_id,
+                        count: stream_state.received_buffer.len(),
+                    })
+                    .await;
+            }
+
+            stream_state.received_buffer.clear();
+
+            false
+        });
+
+        if is_closed {
+            self.finish_stream(connection_state, stream_id, None)
+                .await?;
         }
 
-        // We aren't able to close the stream yet, but we should clear any remaining
-        // received data and allow the remote side to send more.
-
-        // TODO: Dedup this with finish_stream.
-        if stream_state.received_buffer.len() > 0 {
-            self.connection_event_sender
-                .send(ConnectionEvent::StreamRead {
-                    stream_id,
-                    count: stream_state.received_buffer.len(),
-                })
-                .await;
-        }
-
-        stream_state.received_buffer.clear();
+        Ok(())
     }
 
     pub async fn handle_stream_writer_closed(
         &self,
         connection_state: &mut ConnectionState,
         stream_id: StreamId,
-    ) {
+    ) -> Result<(), PoisonError> {
         let mut stream = match connection_state.streams.get_mut(&stream_id) {
             Some(s) => s,
-            _ => return,
+            _ => return Ok(()),
         };
 
-        let mut stream_state = stream.state.lock().await;
-        stream_state.writer_cancelled = true;
+        let is_closed = lock_async!(stream_state <= stream.state.lock().await?, {
+            stream_state.writer_cancelled = true;
 
-        // Clean up any unsent data.
-        // NOTE: We don't update window sizes until data is removed from this buffer so
-        // we don't need to worry about updating that.
-        stream_state.sending_buffer.clear();
-        stream_state.sending_trailers.take();
+            // Clean up any unsent data.
+            // NOTE: We don't update window sizes until data is removed from this buffer so
+            // we don't need to worry about updating that.
+            stream_state.sending_buffer.clear();
+            stream_state.sending_trailers.take();
 
-        if stream.is_closed(&stream_state) {
-            drop(stream_state);
-            self.finish_stream(connection_state, stream_id, None).await;
-            return;
+            stream.is_closed(&stream_state)
+        });
+
+        if is_closed {
+            self.finish_stream(connection_state, stream_id, None)
+                .await?;
         }
+
+        Ok(())
     }
 
     /// Performs cleanup on a stream which is done being used.
@@ -123,7 +136,7 @@ impl ConnectionShared {
         connection_state: &mut ConnectionState,
         stream_id: StreamId,
         additional_error: Option<ProtocolErrorV2>,
-    ) {
+    ) -> Result<(), PoisonError> {
         // TODO: Verify that there are no cyclic references to Arc<StreamState>
         // (otherwise the stream state may never get freed)
         let mut stream = match connection_state.streams.remove(&stream_id) {
@@ -137,19 +150,16 @@ impl ConnectionShared {
                     if error.local {
                         let _ = self
                             .connection_event_sender
-                            .send(ConnectionEvent::ResetStream {
-                                stream_id,
-                                error: error,
-                            })
+                            .send(ConnectionEvent::ResetStream { stream_id, error })
                             .await;
                     }
                 }
 
-                return;
+                return Ok(());
             }
         };
 
-        let mut stream_state = stream.state.lock().await;
+        let mut stream_state = stream.state.lock().await?.enter();
 
         if let Some(error) = additional_error {
             if stream_state.error.is_none() {
@@ -262,6 +272,9 @@ impl ConnectionShared {
         } else {
             connection_state.remote_stream_count -= 1;
         }
+
+        stream_state.exit();
+        Ok(())
     }
 
     /// Constructs a new stream object along with coupled readers/writers for
@@ -287,7 +300,7 @@ impl ConnectionShared {
             outgoing_response_handler: None,
             processing_tasks: vec![],
             sending_end_flushed: false,
-            state: Arc::new(Mutex::new(StreamState {
+            state: Arc::new(AsyncMutex::new(StreamState {
                 // weight: 16, // Default weight
                 // dependency: 0,
                 error: None,

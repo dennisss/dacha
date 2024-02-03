@@ -1,7 +1,8 @@
 use std::time::SystemTime;
 
 use common::errors::*;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use parsing::ascii::AsciiString;
 
 use crate::constants::*;
@@ -18,19 +19,19 @@ pub struct Credential {
 
 pub struct AuthorizationProvider<R> {
     refresher: R,
-    cached_credential: Mutex<Option<Credential>>,
+    cached_credential: AsyncMutex<Option<Credential>>,
 }
 
 impl<R: AuthorizationRefresher> AuthorizationProvider<R> {
     pub fn new(refresher: R) -> Self {
         Self {
             refresher,
-            cached_credential: Mutex::new(None),
+            cached_credential: AsyncMutex::new(None),
         }
     }
 
     pub async fn get_authorization_value(&self) -> Result<AsciiString> {
-        let mut cached_cred = self.cached_credential.lock().await;
+        let mut cached_cred = self.cached_credential.lock().await?.read_exclusive();
 
         let now = SystemTime::now();
 
@@ -45,7 +46,9 @@ impl<R: AuthorizationRefresher> AuthorizationProvider<R> {
         let cred = self.refresher.refresh_authorization_value().await?;
         let ret = cred.authorization_value.clone();
 
-        *cached_cred = Some(cred);
+        lock!(c <= cached_cred.upgrade(), {
+            *c = Some(cred);
+        });
 
         Ok(ret)
     }

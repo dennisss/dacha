@@ -6,7 +6,7 @@ use std::sync::Arc;
 use common::algorithms::lower_bound_by;
 use common::errors::*;
 use executor::channel;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 
 use crate::db::paths::FilePaths;
 use crate::db::version_edit::NewFileEntry;
@@ -315,12 +315,14 @@ impl VersionSet {
         // TODO: Parallelize me.
         for level in &self.latest_version.levels {
             for entry in &level.tables {
-                let mut table = entry.table.lock().await;
+                let mut table = entry.table.lock().await?.enter();
                 if table.is_none() {
                     *table = Some(Arc::new(
                         SSTable::open(dir.table(entry.entry.number), options.clone()).await?,
                     ));
                 }
+
+                table.exit();
             }
         }
 
@@ -534,7 +536,7 @@ pub struct Level {
 pub struct LevelTableEntry {
     /// Opened table reference. May be None if we have too many files open and
     /// had to close a table.
-    pub table: Mutex<Option<Arc<SSTable>>>,
+    table: AsyncMutex<Option<Arc<SSTable>>>,
 
     pub entry: NewFileEntry,
 
@@ -551,6 +553,17 @@ impl Drop for LevelTableEntry {
 }
 
 impl LevelTableEntry {
+    pub async fn table(&self) -> Arc<SSTable> {
+        self.table
+            .lock()
+            .await
+            .unwrap()
+            .read_exclusive()
+            .as_ref()
+            .unwrap()
+            .clone()
+    }
+
     pub fn key_range(&self) -> KeyRangeRef {
         KeyRangeRef {
             smallest: &self.entry.smallest_key,
@@ -601,7 +614,7 @@ impl Version {
 
         if entry.level == 0 {
             self.levels[0].tables.push(Arc::new(LevelTableEntry {
-                table: Mutex::new(table),
+                table: AsyncMutex::new(table),
                 entry,
                 release_callback: Some(release_callback),
             }));
@@ -620,7 +633,7 @@ impl Version {
         level.tables.insert(
             idx,
             Arc::new(LevelTableEntry {
-                table: Mutex::new(table),
+                table: AsyncMutex::new(table),
                 entry,
                 release_callback: Some(release_callback),
             }),

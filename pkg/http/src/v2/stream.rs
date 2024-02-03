@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 
 use crate::hpack;
 use crate::method::Method;
@@ -21,7 +21,7 @@ use crate::v2::types::*;
 /// Stream objects are owned by the ConnectionState object.  
 pub struct Stream {
     /// Internal state variables used by multiple threads.
-    pub state: Arc<Mutex<StreamState>>,
+    pub state: Arc<AsyncMutex<StreamState>>,
 
     /// Used to let the IncomingStreamBody know that data is available to be
     /// read.

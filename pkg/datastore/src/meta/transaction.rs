@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
 use common::bytes::Bytes;
+use common::const_default::ConstDefault;
 use common::errors::*;
 use datastore_meta_client::key_utils::*;
-use executor::channel;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
+use executor::{channel, lock, lock_async};
 use raft::proto::LogEntryData;
 use raft::ReadIndex;
 use raft::{proto::LogPosition, proto::Term, LogIndex, PendingExecutionResult};
@@ -19,14 +20,51 @@ use crate::proto::*;
 
 const MAX_KEYS_PER_TRANSACTION: usize = 100;
 
+/// Executes and tracks multi-key transactions being executed on the key value
+/// store. This enables parallel execution of transactions with non-conflicting
+/// effects.
+///
+/// The TransactionManager runs on the leader of the Raft group and will error
+/// out if that is not the case. For correctness, we require that the all writes
+/// since the start of this leader's term go through the TransactionManager.
+///
+/// A transaction is executed as follows:
+///
+/// 1. Acquire in-memory term scoped locks for all read/modified key ranges.
+///
+/// 2. Must minimally (using begin_read(optimistic=true)):
+///   - Verify that the leader is done committing any log entries that were
+///     added before the start of the leader's current term.
+///   - Using the current commit_index on the leader, wait for the state machine
+///     to reach at least this point and snapshot it.
+///
+/// 3. Check that our in-memory locks are still valid (term is the same as the
+/// read index).
+///
+/// 4. Verify that none of the reads in the transaction have changed since the
+/// read_index of the transaction.
+///   - Can be done with the snapshot in step 2 as we guarantee that there will
+///     be no more parallel writes to these keys that aren't already committed
+///     because we hold in-memory locks (on the leader who is the only one that
+///     can modify them) to prevent that.
+///
+/// 5. Execute the mutation on the Raft module (passing in the read index from
+/// #2 to guarantee we are still the leader).
+///
+/// 6. Wait for the mutation to fully commit (or get overriden by something else
+/// at the same index).
+///
+/// 7. Release our locks (if they haven't been released already due to the term
+/// changing).
+///   - Note that these must be released before returning to the user to ensure
+///     that
 pub struct TransactionManager {
-    state: Arc<Mutex<TransactionManagerState>>,
+    state: Arc<AsyncMutex<TransactionManagerState>>,
 }
 
 struct TransactionManagerState {
-    term: Option<Term>,
+    term: Term,
 
-    // TODO: If we go to a new term, we can clear this
     /// Writes that have been appended to our local log but haven't been
     /// comitted yet. This is a map from internal key to the log index at
     /// which will be comitted.
@@ -35,12 +73,17 @@ struct TransactionManagerState {
 
 #[derive(Clone, Default)]
 struct TransactionLock {
+    /// Number of TransactionLockHolder instances that exist and are using this
+    /// lock.
     num_references: usize,
 
     mode: TransactionLockMode,
 
     /// List of thread callbacks which are waiting for this lock to be dropped.
     /// TODO: Limit the max length of this.
+    ///
+    /// TODO: Switch this to use an Arc<> like mechanism for tracking references
+    /// to this.
     waiters: Vec<channel::Sender<()>>,
 }
 
@@ -59,46 +102,27 @@ impl Default for TransactionLockMode {
 }
 
 ///
-struct TransactionLockHolder {
-    data: Option<TransactionLockHolderData>,
-}
-
-struct TransactionLockHolderData {
+struct TransactionLockHolder<'a> {
     term: Term,
     locks: KeyRanges<TransactionLockMode>,
-    manager_state: Weak<Mutex<TransactionManagerState>>,
+    manager_state: &'a AsyncMutex<TransactionManagerState>,
 }
 
-impl Drop for TransactionLockHolder {
-    fn drop(&mut self) {
-        if let Some(data) = self.data.take() {
-            executor::spawn(Self::release_impl(data));
-        }
-    }
-}
-
-impl TransactionLockHolder {
-    /// NOTE: This must be executed in a task which is guranteed to be
-    /// continously polled.
-    async fn release(&mut self) {
-        if let Some(data) = self.data.take() {
-            Self::release_impl(data).await;
-        }
-    }
-
-    async fn release_impl(data: TransactionLockHolderData) {
-        let state_ref = match data.manager_state.upgrade() {
-            Some(v) => v,
-            None => return,
+impl<'a> TransactionLockHolder<'a> {
+    /// NOT CANCEL SAFE
+    async fn release(mut self) {
+        let mut state = match self.manager_state.lock().await {
+            Ok(v) => v.enter(),
+            // If poisoned, then there is nothing to free.
+            Err(_) => return,
         };
 
-        let mut state = state_ref.lock().await;
-
-        if state.term != Some(data.term) {
+        if state.term != self.term {
+            state.exit();
             return;
         }
 
-        for item in data.locks.iter() {
+        for item in self.locks.iter() {
             state
                 .locks
                 .range(item.start_key.clone(), item.end_key.clone(), |lock| {
@@ -106,44 +130,63 @@ impl TransactionLockHolder {
                     lock.num_references > 0
                 });
         }
+
+        state.exit();
     }
 }
 
 impl TransactionManager {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(Mutex::new(TransactionManagerState {
-                term: None,
+            state: Arc::new(AsyncMutex::new(TransactionManagerState {
+                term: Term::DEFAULT,
                 locks: KeyRanges::new(),
             })),
         }
     }
 
+    /// CANCEL SAFE
     pub async fn execute(
         &self,
-        transaction: &Transaction,
+        transaction: Transaction,
         node: Arc<raft::Node<()>>,
-        state_machine: &EmbeddedDBStateMachine,
+        state_machine: Arc<EmbeddedDBStateMachine>,
     ) -> Result<LogIndex> {
-        let required_locks = Self::get_required_locks(transaction)?;
-        let write_batch = Self::create_write_batch(transaction)?;
+        // Spawn in a detached task to make the outer function cancel safe.
+        executor::spawn(Self::execute_inner(
+            self.state.clone(),
+            transaction,
+            node,
+            state_machine,
+        ))
+        .join()
+        .await
+    }
+
+    /// Actual implementation of execute(). Must not be interrupted during
+    /// execution.
+    ///
+    /// NOT CANCEL SAFE
+    async fn execute_inner(
+        manager_state: Arc<AsyncMutex<TransactionManagerState>>,
+        transaction: Transaction,
+        node: Arc<raft::Node<()>>,
+        state_machine: Arc<EmbeddedDBStateMachine>,
+    ) -> Result<LogIndex> {
+        let required_locks = Self::get_required_locks(&transaction)?;
+        let write_batch = Self::create_write_batch(&transaction)?;
 
         // TODO: Automatically rewrite non-permanent errors.
 
         // TODO: Limit the number of keys in a request
         // Ideally <1000
 
-        let mut state = self.state.lock().await;
+        let term = node.server().currently_leader().await?;
 
-        // TODO: Instead, we must minimally ensure that all log entries before the
-        // current term have been applied to the state machine.
-        // (currently this will block for recent entries that are still locked to be
-        // applied which is expensive.)
-        let read_index = node.server().begin_read(true).await?;
-
-        let lock_result = self.acquire_locks(&mut state, read_index.term(), required_locks);
-
-        drop(state);
+        // Step 1
+        let lock_result = lock!(state <= manager_state.lock().await?, {
+            Self::acquire_locks(&manager_state, &mut *state, term, required_locks)
+        });
 
         let lock_holder = match lock_result {
             Ok(v) => v,
@@ -156,10 +199,40 @@ impl TransactionManager {
             }
         };
 
+        let result =
+            Self::execute_with_locks(transaction, node, state_machine, &lock_holder, write_batch)
+                .await;
+
+        // Step 7
+        lock_holder.release().await;
+
+        result
+    }
+
+    /// Performs the execution while holding locks on all keys involved.
+    async fn execute_with_locks(
+        transaction: Transaction,
+        node: Arc<raft::Node<()>>,
+        state_machine: Arc<EmbeddedDBStateMachine>,
+        lock_holder: &TransactionLockHolder<'_>,
+        mut write_batch: WriteBatch,
+    ) -> Result<LogIndex> {
+        // Step 2
+        let read_index = node.server().begin_read(true).await?;
+
+        // Step 3
+        if read_index.term() != lock_holder.term {
+            return Err(rpc::Status::failed_precondition(
+                "Locks lost due to leadership change since transaction start.",
+            )
+            .into());
+        }
+
+        // Step 4
         if !transaction.reads().is_empty() {
             // Read against the latest version of the database.
             let snapshot = state_machine.snapshot().await;
-            if !Self::verify_reads(transaction, &snapshot, read_index.index()).await? {
+            if !Self::verify_reads(&transaction, &snapshot, read_index.index()).await? {
                 return Err(rpc::Status::failed_precondition(
                     "Changes have occured since the read index",
                 )
@@ -167,40 +240,10 @@ impl TransactionManager {
             }
         }
 
-        let (sender, receiver) = channel::bounded(1);
-
-        // Wrap the final execution logic in a separate thread.
-        // For correctness we can't have that logic partially execute to ensure that
-        // locks are released.
-        executor::spawn(Self::execute_task(
-            node,
-            lock_holder,
-            read_index,
-            write_batch,
-            sender,
-        ));
-
-        let log_index = receiver.recv().await??;
-        Ok(log_index)
-    }
-
-    // NOTE: Nothing in here should fail so there should be no issue with the locks
-    // being released when the lock_holder is dropped while we are unsure if the
-    // write has completed.
-    async fn execute_task(
-        node: Arc<raft::Node<()>>,
-        mut lock_holder: TransactionLockHolder,
-        read_index: ReadIndex,
-        mut write_batch: WriteBatch,
-        callback: channel::Sender<Result<LogIndex>>,
-    ) {
         // Add the transaction time.
         // NOTE: We don't currently make gurantees that transaction times are monotonic
         // and it may be much earlier than the time at which the transaction is actually
         // committed if the system is in the middle of a network partition.
-        //
-        // TODO: To mitigate this, we should have raft demote ourselves if we lose
-        // contact to a majority of replicas.
         let time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -210,32 +253,24 @@ impl TransactionManager {
         let mut entry = LogEntryData::default();
         entry.set_command(write_batch.as_bytes());
 
-        let pending_execution = match node
+        // Step 5
+        let pending_execution = node
             .server()
             .execute_after_read(entry, Some(read_index))
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                lock_holder.release().await;
-                let _ = callback.send(Err(e.into())).await;
-                return;
-            }
-        };
+            .await?;
 
-        // NOTE: This will wait for the change to also be applied to the state
-        // machine.
+        // Step 6
+        //
+        // TODO: This will wait for the change to also be applied to the state
+        // machine which is not strictly needed.
         let commited_index = match pending_execution.wait().await {
             PendingExecutionResult::Committed { log_index, .. } => log_index,
             PendingExecutionResult::Cancelled => {
-                lock_holder.release().await;
-                let _ = callback.send(Err(err_msg("Cancelled"))).await;
-                return;
+                return Err(rpc::Status::failed_precondition("message").into());
             }
         };
 
-        lock_holder.release().await;
-        let _ = callback.send(Ok(commited_index)).await;
+        Ok(commited_index)
     }
 
     /// Derives the set of all locks needed to execute the given transaction.
@@ -303,7 +338,7 @@ impl TransactionManager {
     /// Atomically acquires all of the requested locks.
     /// In other words locking is all or nothing.
     ///
-    /// NOTE: This function MUST NOT become async.
+    /// NOT CANCEL SAFE
     ///
     /// Returns: None iff we were able to acquire all locks. Otherwise Some
     /// channel which will be closed once the first conflict is resolved.
@@ -311,21 +346,18 @@ impl TransactionManager {
     /// TODO: Return a RAII object to monitor the eventual return of the locks
     /// (under the same term).
     #[must_use]
-    fn acquire_locks(
-        &self,
+    fn acquire_locks<'a>(
+        state_ref: &'a AsyncMutex<TransactionManagerState>,
         state: &mut TransactionManagerState,
         term: Term,
         locks: KeyRanges<TransactionLockMode>,
-    ) -> std::result::Result<TransactionLockHolder, channel::Receiver<()>> {
-        // TODO: If we don't acquire a read_index, is this still valid?
-        let last_term = state.term.get_or_insert(term.clone()).value();
-        if last_term < term.value() {
+    ) -> Result<TransactionLockHolder<'a>, channel::Receiver<()>> {
+        if term > state.term {
             state.locks.clear();
-            state.term = Some(term.clone());
-        } else if last_term > term.value() {
-            // This should never happen as we acquire a read_index under the same lock as
-            // acquiring locks.
-            panic!();
+            state.term = term.clone();
+        } else if term < state.term {
+            // Means that we immediately lost leadership after starting the transaction.
+            return Err(channel::bounded(1).1);
         }
 
         let mut conflict = None;
@@ -394,24 +426,25 @@ impl TransactionManager {
         }
 
         Ok(TransactionLockHolder {
-            data: Some(TransactionLockHolderData {
-                term,
-                locks,
-                manager_state: Arc::downgrade(&self.state),
-            }),
+            term,
+            locks,
+            manager_state: state_ref,
         })
     }
 
+    /// CANCEL SAFE
     #[must_use]
     async fn verify_reads(
         transaction: &Transaction,
         snapshot: &Snapshot,
-        read_index: LogIndex,
+        latest_commited_index: LogIndex,
     ) -> Result<bool> {
         // TODO: Change the iterator to have a lower bound on the sequence (as that way
         // we can skip reaidng from disk).
-        if transaction.read_index() > read_index.value() {
-            return Err(rpc::Status::invalid_argument("Reading in the future").into());
+        if transaction.read_index() > latest_commited_index.value() {
+            return Err(
+                rpc::Status::invalid_argument("Transaction read_index is in the future").into(),
+            );
         }
 
         if transaction.read_index() == snapshot.last_sequence() {
@@ -442,28 +475,3 @@ impl TransactionManager {
         Ok(true)
     }
 }
-
-/*
-General idea:
-
-- [Lock]
-- Start a linearizable read.
-    - Maybe clear the locks list if we are in a new term.
-- Acquire reader/writer locks
-- [Unlock]
-
-Check all reads
-Execute with the aforementioned lock index
-
-[Re-lock and release all held locks] (or at least 1 ref count of each of them.).
-
-- Get a snapshot
-- Check all reads
-    => This may hit the disk.
-- Lock all writes
-- Acquire the next log index
-- [Unlock]
-- Block until the execution is done
-- [Re-acquire lock and clean up our locks if we are still their holder]
-
-*/

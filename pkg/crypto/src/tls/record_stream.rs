@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-use common::io::{Readable, SharedWriteable, Writeable};
+use common::io::{SharedReadable, SharedWriteable, Writeable};
 
 use crate::tls::alert::*;
 use crate::tls::handshake::*;
@@ -27,7 +27,7 @@ pub enum Message {
 // reader and writer halves  of the connection.
 
 pub struct RecordReader {
-    reader: Box<dyn Readable + Sync>,
+    reader: Box<dyn SharedReadable>,
 
     is_server: bool,
 
@@ -51,7 +51,7 @@ pub struct RecordReader {
 }
 
 impl RecordReader {
-    pub fn new(reader: Box<dyn Readable + Sync>, is_server: bool) -> Self {
+    pub fn new(reader: Box<dyn SharedReadable>, is_server: bool) -> Self {
         Self {
             reader,
             is_server,

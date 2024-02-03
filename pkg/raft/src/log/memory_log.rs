@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use common::errors::*;
-use executor::sync::Mutex;
-use executor::Condvar;
+use executor::lock;
+use executor::sync::{AsyncMutex, AsyncVariable};
 
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
@@ -169,15 +169,15 @@ impl MemoryLogSync {
 /// - Most other log implementations should be implemented as a MemoryLog with
 ///   persistence added.
 pub struct MemoryLog {
-    state: Mutex<MemoryLogSync>,
-    changed: Condvar<bool>,
+    state: AsyncMutex<MemoryLogSync>,
+    changed: AsyncVariable<bool>,
 }
 
 impl MemoryLog {
     pub fn new() -> Self {
         MemoryLog {
-            state: Mutex::new(MemoryLogSync::new()),
-            changed: Condvar::new(false),
+            state: AsyncMutex::new(MemoryLogSync::new()),
+            changed: AsyncVariable::new(false),
         }
     }
 }
@@ -185,22 +185,22 @@ impl MemoryLog {
 #[async_trait]
 impl Log for MemoryLog {
     async fn prev(&self) -> LogPosition {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.prev()
     }
 
     async fn term(&self, index: LogIndex) -> Option<Term> {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.term(index)
     }
 
     async fn last_index(&self) -> LogIndex {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.last_index()
     }
 
     async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.entry(index)
     }
 
@@ -209,35 +209,39 @@ impl Log for MemoryLog {
         start_index: LogIndex,
         end_index: LogIndex,
     ) -> Option<(Vec<Arc<LogEntry>>, LogSequence)> {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.entries(start_index, end_index)
     }
 
     async fn append(&self, entry: LogEntry, sequence: LogSequence) -> Result<()> {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().await?.enter();
 
         state.append(entry, sequence)?;
 
-        {
-            let mut changed = self.changed.lock().await;
+        lock!(changed <= self.changed.lock().await?, {
             *changed = true;
             changed.notify_all();
-        }
+        });
+
+        state.exit();
 
         Ok(())
     }
 
     /// TODO: Fix this.
     async fn discard(&self, pos: LogPosition) -> Result<()> {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().await?.enter();
 
         state.discard(pos)?;
 
         {
-            let mut changed = self.changed.lock().await;
+            let mut changed = self.changed.lock().await?.enter();
             *changed = true;
             changed.notify_all();
+            changed.exit();
         }
+
+        state.exit();
 
         Ok(())
     }
@@ -245,19 +249,20 @@ impl Log for MemoryLog {
     async fn last_flushed(&self) -> LogSequence {
         // This doesn't support flushing so we fake it and assume that everything
         // immediately gets flushed.
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.log.back().map(|v| v.1).unwrap_or(LogSequence::zero())
     }
 
     async fn wait_for_flush(&self) -> Result<()> {
         loop {
-            let mut changed = self.changed.lock().await;
+            let mut changed = self.changed.lock().await?.enter();
             if !*changed {
-                changed.wait(()).await;
+                changed.wait().await;
                 continue;
             }
 
             *changed = false;
+            changed.exit();
             break;
         }
 

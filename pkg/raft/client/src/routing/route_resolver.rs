@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use base_error::*;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use http::uri::Authority;
 use net::ip::SocketAddr;
 
@@ -19,7 +20,7 @@ struct Shared {
     route_store: RouteStore,
     group_id: GroupId,
     server_id: Option<ServerId>,
-    listeners: Mutex<Vec<http::ResolverChangeListener>>,
+    listeners: AsyncMutex<Vec<http::ResolverChangeListener>>,
 }
 
 impl RouteResolver {
@@ -28,7 +29,7 @@ impl RouteResolver {
             route_store,
             group_id,
             server_id,
-            listeners: Mutex::new(vec![]),
+            listeners: AsyncMutex::new(vec![]),
         });
 
         let waiter = ChildTask::spawn(Self::change_waiter(shared.clone()));
@@ -40,19 +41,17 @@ impl RouteResolver {
         loop {
             let route_store = shared.route_store.lock().await;
 
-            let mut listeners = shared.listeners.lock().await;
+            lock!(listeners <= shared.listeners.lock().await.unwrap(), {
+                let mut i = 0;
+                while i < listeners.len() {
+                    if !(listeners[i])() {
+                        let _ = listeners.swap_remove(i);
+                        continue;
+                    }
 
-            let mut i = 0;
-            while i < listeners.len() {
-                if !(listeners[i])() {
-                    let _ = listeners.swap_remove(i);
-                    continue;
+                    i += 1;
                 }
-
-                i += 1;
-            }
-
-            drop(listeners);
+            });
 
             route_store.wait().await;
         }
@@ -104,7 +103,8 @@ impl http::Resolver for RouteResolver {
     }
 
     async fn add_change_listener(&self, listener: http::ResolverChangeListener) {
-        let mut listeners = self.shared.listeners.lock().await;
-        listeners.push(listener);
+        lock!(listeners <= self.shared.listeners.lock().await.unwrap(), {
+            listeners.push(listener);
+        });
     }
 }

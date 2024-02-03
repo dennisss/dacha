@@ -9,11 +9,11 @@ use common::errors::*;
 use common::io::Writeable;
 use crypto::random::SharedRng;
 use executor::bundle::TaskResultBundle;
-use executor::channel;
 use executor::child_task::ChildTask;
 use executor::signals::*;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 use executor::JoinHandle;
+use executor::{channel, lock, lock_async};
 use file::{LocalFile, LocalPath, LocalPathBuf};
 use sys::{WaitOptions, WaitStatus};
 
@@ -61,13 +61,13 @@ pub struct ContainerRuntime {
     /// State associated with all started containers.
     /// Entries are only removed from this set when the user calls
     /// remove_container().
-    containers: Mutex<Vec<Container>>,
+    containers: AsyncMutex<Vec<Container>>,
 
     ///
     ///
     /// TODO: Convert to HashSet based listeners as we never need to deliver a
     /// single container id if there already is an enqueued event for it.
-    event_listeners: Mutex<Vec<channel::Sender<String>>>,
+    event_listeners: AsyncMutex<Vec<channel::Sender<String>>>,
 }
 
 struct Container {
@@ -83,7 +83,7 @@ struct Container {
     pid: sys::pid_t,
 
     /// If this container was
-    stdin: Mutex<Option<LocalFile>>,
+    stdin: Arc<AsyncMutex<Option<LocalFile>>>,
 
     // TODO: Make sure this is cleaned up
     waiter_task: Option<JoinHandle<()>>,
@@ -135,8 +135,8 @@ impl ContainerRuntime {
         Ok(Arc::new(Self {
             run_dir: run_dir.as_ref().to_owned(),
             cgroup_dir: LocalPathBuf::from(cgroup_dir),
-            containers: Mutex::new(vec![]),
-            event_listeners: Mutex::new(vec![]),
+            containers: AsyncMutex::new(vec![]),
+            event_listeners: AsyncMutex::new(vec![]),
         }))
     }
 
@@ -156,6 +156,7 @@ impl ContainerRuntime {
         bundle.join().await
     }
 
+    // TODO: Refactor to use the lock macros.
     async fn run_waitpid(self: Arc<Self>) -> Result<()> {
         let mut sigchld_receiver = register_signal_handler(Signal::SIGCHLD)?;
 
@@ -180,7 +181,7 @@ impl ContainerRuntime {
                     }
                 };
 
-                let containers = self.containers.lock().await;
+                let containers = self.containers.lock().await?.enter();
 
                 match e {
                     WaitStatus::Exited {
@@ -215,9 +216,12 @@ impl ContainerRuntime {
                     }
                     WaitStatus::Continued { .. } => {}
                     WaitStatus::NoStatus => {
+                        containers.exit();
                         break;
                     }
                 }
+
+                containers.exit();
             }
         }
     }
@@ -225,13 +229,13 @@ impl ContainerRuntime {
     /// Task for periodically monitoring cgroup resource usage.
     async fn run_cgroup_monitor(self: Arc<Self>) -> Result<()> {
         loop {
-            {
-                let mut containers = self.containers.lock().await;
-
+            lock_async!(containers <= self.containers.lock().await?, {
                 for container in &mut containers[..] {
                     container.cgroup.collect_measurement().await?;
                 }
-            }
+
+                Result::<(), Error>::Ok(())
+            })?;
 
             executor::sleep(Duration::from_secs(1)).await?;
         }
@@ -244,25 +248,30 @@ impl ContainerRuntime {
     ///
     /// Returns a receiver which will receive a container id once the associated
     /// container is stopped.
+    ///
+    /// CANCEL SAFE
     pub async fn add_event_listener(&self) -> channel::Receiver<String> {
         let (sender, receiver) = channel::unbounded();
 
-        let mut listeners = self.event_listeners.lock().await;
-        listeners.push(sender);
+        lock!(listeners <= self.event_listeners.lock().await.unwrap(), {
+            listeners.push(sender);
+        });
 
         receiver
     }
 
+    /// CANCEL SAFE
     pub async fn get_container(&self, container_id: &str) -> Option<ContainerMetadata> {
-        let containers = self.containers.lock().await;
+        let containers = self.containers.lock().await.unwrap().read_exclusive();
         containers
             .iter()
             .find(|c| c.metadata.id() == container_id)
             .map(|c| c.metadata())
     }
 
+    /// CANCEL SAFE
     pub async fn list_containers(&self) -> Vec<ContainerMetadata> {
-        let containers = self.containers.lock().await;
+        let containers = self.containers.lock().await.unwrap().read_exclusive();
 
         let mut output = vec![];
         output.reserve_exact(containers.len());
@@ -277,23 +286,25 @@ impl ContainerRuntime {
     /// This is only allowed for containers which are currently stopped.
     ///
     /// NOTE: Artifacts such as logs in the file system will NOT be deleted.
+    ///
+    /// CANCEL SAFE
     pub async fn remove_container(&self, container_id: &str) -> Result<()> {
-        let mut containers = self.containers.lock().await;
+        lock!(containers <= self.containers.lock().await?, {
+            let container_index = containers
+                .iter()
+                .enumerate()
+                .find(|(_, c)| c.metadata.id() == container_id)
+                .ok_or_else(|| err_msg("Container being removed was not found"))?
+                .0;
 
-        let container_index = containers
-            .iter()
-            .enumerate()
-            .find(|(_, c)| c.metadata.id() == container_id)
-            .ok_or_else(|| err_msg("Container being removed was not found"))?
-            .0;
+            if containers[container_index].metadata.state() != ContainerState::Stopped {
+                return Err(err_msg("Not allowed to remove a running container"));
+            }
 
-        if containers[container_index].metadata.state() != ContainerState::Stopped {
-            return Err(err_msg("Not allowed to remove a running container"));
-        }
+            containers.swap_remove(container_index);
 
-        containers.swap_remove(container_index);
-
-        Ok(())
+            Ok(())
+        })
     }
 
     /*
@@ -312,6 +323,8 @@ impl ContainerRuntime {
     ///
     /// TODO: If this fails it may leave the container runtime in an invalid
     /// state.
+    ///
+    /// NOT CANCEL SAFE
     pub async fn start_container(
         self: &Arc<Self>,
         container_config: &ContainerConfig,
@@ -339,7 +352,7 @@ impl ContainerRuntime {
         // into a new PID namespace ('unshare()' requires an extra fork for
         // that)
 
-        let mut stdin = Mutex::new(None);
+        let mut stdin = Arc::new(AsyncMutex::new(None));
         let mut output_streams = vec![];
         let mut file_mapping = FileMapping::default();
 
@@ -393,7 +406,7 @@ impl ContainerRuntime {
         // SIGCHLD and then unmask it after the job has been added to the list.
         // That trick won't work in our case though as we could be running the
         // waitpid() loop in a separate thread.
-        let mut containers = self.containers.lock().await;
+        let mut containers_permit = self.containers.lock().await?;
 
         // TODO: implement the waiter strategy and create a new uid_map and gid_map and
         // disallow adding groups.
@@ -437,20 +450,21 @@ impl ContainerRuntime {
         meta.set_id(container_id.clone());
         meta.set_state(ContainerState::Creating);
 
-        containers.push(Container {
-            metadata: meta,
-            directory: container_dir.to_owned(),
-            cgroup,
-            pid,
-            // TODO: Revert to always being a non-Option type so that it can be cancelled easily.
-            waiter_task: None,
-            event_sender,
-            stdin: Mutex::new(None),
+        lock!(containers <= containers_permit, {
+            containers.push(Container {
+                metadata: meta,
+                directory: container_dir.to_owned(),
+                cgroup,
+                pid,
+                // TODO: Revert to always being a non-Option type so that it can be cancelled
+                // easily.
+                waiter_task: None,
+                event_sender,
+                stdin: Arc::new(AsyncMutex::new(None)),
+            });
         });
 
         // Arc::new(Mutex::new(stdin_write.open()?.into()))
-
-        drop(containers);
 
         // Drop in the parent process.
         drop(file_mapping);
@@ -483,7 +497,7 @@ impl ContainerRuntime {
 
             output_streams = vec![(LogStream::STDOUT, terminal_file.into())];
 
-            stdin = Mutex::new(Some(terminal_file_2.into()));
+            stdin = Arc::new(AsyncMutex::new(Some(terminal_file_2.into())));
         }
 
         // TIOCSWINSZ
@@ -501,18 +515,18 @@ impl ContainerRuntime {
                 event_receiver,
             }));
 
-            let mut containers = self.containers.lock().await;
+            lock!(containers <= self.containers.lock().await?, {
+                // TODO: Remove the unwrap. If it is removed, then that means that we probably
+                // need to close files, etc.
+                let mut container = containers
+                    .iter_mut()
+                    .find(|c| c.metadata.id() == container_id)
+                    .unwrap();
 
-            // TODO: Remove the unwrap. If it is removed, then that means that we probably
-            // need to close files, etc.
-            let mut container = containers
-                .iter_mut()
-                .find(|c| c.metadata.id() == container_id)
-                .unwrap();
-
-            container.metadata.set_state(ContainerState::Running);
-            container.stdin = stdin;
-            container.waiter_task = Some(waiter_task);
+                container.metadata.set_state(ContainerState::Running);
+                container.stdin = stdin;
+                container.waiter_task = Some(waiter_task);
+            });
         }
 
         socket_p.notify(FINISHED_SETUP_BYTE)?;
@@ -520,10 +534,12 @@ impl ContainerRuntime {
         Ok(container_id)
     }
 
-    // TODO: Verify that this doesn't fail if the container has already been stopped
-    // as this may be a race condition.
+    /// TODO: Verify that this doesn't fail if the container has already been
+    /// stopped as this may be a race condition.
+    ///
+    /// CANCEL SAFE
     pub async fn kill_container(&self, container_id: &str, signal: sys::Signal) -> Result<()> {
-        let containers = self.containers.lock().await;
+        let containers = self.containers.lock().await?.read_exclusive();
         let container = match containers.iter().find(|c| c.metadata.id() == container_id) {
             Some(c) => c,
             None => {
@@ -539,6 +555,7 @@ impl ContainerRuntime {
         Ok(())
     }
 
+    /// CANCEL SAFE
     pub async fn open_log(&self, container_id: &str) -> Result<FileLogReader> {
         let container_dir = self.run_dir.join(container_id);
 
@@ -546,7 +563,7 @@ impl ContainerRuntime {
         // indicate that to the user (e.g. if no end of stream entries are present in
         // the log file, it should return an end of stream indicator anyway).
         let is_running = {
-            let containers = self.containers.lock().await;
+            let containers = self.containers.lock().await?.read_exclusive();
             containers
                 .iter()
                 .find(|c| c.metadata.id() == container_id)
@@ -570,26 +587,27 @@ impl ContainerRuntime {
         FileLogReader::open(&log_path).await
     }
 
+    /// NOT CANCEL SAFE
     pub async fn write_to_stdin(&self, container_id: &str, data: &[u8]) -> Result<()> {
-        let containers = self.containers.lock().await;
+        let containers = self.containers.lock().await?.read_exclusive();
         let container = containers
             .iter()
             .find(|c| c.metadata.id() == container_id)
             .ok_or_else(|| err_msg("Container not found"))?;
 
-        let mut file = container
-            .stdin
-            .lock()
-            .await
-            .take()
-            .ok_or_else(|| err_msg("Container has no stdin"))?;
+        let file = container.stdin.clone();
 
         drop(containers);
 
-        // TODO: Need locking to ensure that we only have one writer of this.
+        lock_async!(file_guard <= file.lock().await?, {
+            let file = file_guard
+                .as_mut()
+                .ok_or_else(|| err_msg("Container does not have stdin setup"))?;
 
-        file.write_all(data).await?;
-        file.flush().await?; // async_std internally buffers writes.
+            file.write_all(data).await?;
+            file.flush().await?;
+            Result::<(), Error>::Ok(())
+        })?;
 
         Ok(())
     }
@@ -610,6 +628,7 @@ impl ContainerRuntime {
         }
     }
 
+    /// NOT CANCEL SAFE
     async fn container_waiter_inner(self: Arc<Self>, input: ContainerWaiter) -> Result<()> {
         let log_writer = Arc::new(FileLogWriter::create(&input.container_dir.join("log")).await?);
 
@@ -632,17 +651,17 @@ impl ContainerRuntime {
 
         let container_id = input.container_id.as_str();
 
-        let mut containers = self.containers.lock().await;
-        let container = containers
-            .iter_mut()
-            .find(|c| c.metadata.id() == container_id)
-            .unwrap();
+        lock!(containers <= self.containers.lock().await?, {
+            let container = containers
+                .iter_mut()
+                .find(|c| c.metadata.id() == container_id)
+                .unwrap();
 
-        container.metadata.set_state(ContainerState::Stopped);
-        container.metadata.set_status(status);
+            container.metadata.set_state(ContainerState::Stopped);
+            container.metadata.set_status(status);
+        });
 
-        {
-            let mut listeners = self.event_listeners.lock().await;
+        lock_async!(listeners <= self.event_listeners.lock().await?, {
             let mut i = 0;
             while i < listeners.len() {
                 if let Err(_) = listeners[i].send(container_id.to_string()).await {
@@ -651,7 +670,7 @@ impl ContainerRuntime {
                     i += 1;
                 }
             }
-        }
+        });
 
         Ok(())
     }

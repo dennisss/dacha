@@ -59,13 +59,36 @@ impl FileHandle {
         self.read_vectored(&buffers).await
     }
 
+    // TODO: Start requiring mutatable references to the &[IoSliceMut]?
     pub async fn read_vectored(&mut self, output: &[IoSliceMut<'_>]) -> Result<usize> {
         let mut zero = 0;
         let mut offset = self.offset.as_mut().unwrap_or(&mut zero);
 
+        let n = Self::read_vectored_at_impl(&self.fd, *offset, output).await?;
+
+        *offset += n as u64;
+
+        Ok(n)
+    }
+
+    pub async fn read_at(&self, offset: u64, output: &mut [u8]) -> Result<usize> {
+        // TODO: Only up to 2^32 bytes can be read in one operation right?
+        let buffers = [IoSliceMut::new(output)];
+        Self::read_vectored_at_impl(&self.fd, offset, &buffers).await
+    }
+
+    pub async fn read_vectored_at(&self, offset: u64, output: &[IoSliceMut<'_>]) -> Result<usize> {
+        Self::read_vectored_at_impl(&self.fd, offset, output).await
+    }
+
+    async fn read_vectored_at_impl(
+        fd: &Arc<OpenFileDescriptor>,
+        offset: u64,
+        output: &[IoSliceMut<'_>],
+    ) -> Result<usize> {
         let op = ExecutorOperation::submit(IoUringOp::ReadV {
-            fd: **self.fd,
-            offset: *offset,
+            fd: ***fd,
+            offset,
             buffers: output,
             flags: RWFlags::empty(),
         })
@@ -73,8 +96,6 @@ impl FileHandle {
 
         let res = op.wait().await?;
         let n = res.readv_result().remap_errno::<IoError>()?;
-
-        *offset += n as u64;
 
         Ok(n)
     }

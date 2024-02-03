@@ -7,7 +7,8 @@ use std::time::SystemTime;
 
 use common::errors::*;
 use common::io::Readable;
-use executor::sync::Mutex;
+use executor::lock_async;
+use executor::sync::AsyncMutex;
 use file::LocalFile;
 use file::LocalPath;
 use protobuf::{Message, StaticMessage};
@@ -52,14 +53,14 @@ pub struct FileLogWriterOptions {
 ///
 /// The log is internally an ordered list of LogEntry proto records.
 pub struct FileLogWriter {
-    log: Mutex<RecordWriter>,
+    log: AsyncMutex<RecordWriter>,
 }
 
 impl FileLogWriter {
     /// Creates a new writer which will write to the file located at 'path'.
     pub async fn create(path: &LocalPath) -> Result<Self> {
         Ok(Self {
-            log: Mutex::new(RecordWriter::create_new(path).await?),
+            log: AsyncMutex::new(RecordWriter::create_new(path).await?),
         })
     }
 
@@ -77,7 +78,7 @@ impl FileLogWriter {
 }
 
 struct FileLogStreamWriter<'a> {
-    log: &'a Mutex<RecordWriter>,
+    log: &'a AsyncMutex<RecordWriter>,
     stream: LogStream,
 }
 
@@ -134,7 +135,9 @@ impl<'a> FileLogStreamWriter<'a> {
 
             buffer_size = remaining_size;
 
-            self.log.lock().await.flush().await?;
+            // TODO: Don't need this to fsync. Just need to make it far enough into the OS
+            // for other users to be able to read it.
+            lock_async!(log <= self.log.lock().await?, { log.flush().await })?;
         }
 
         // Always write a final entry with any remaining data to mark that the stream
@@ -142,7 +145,7 @@ impl<'a> FileLogStreamWriter<'a> {
         let time = SystemTime::now();
         let line = &buffer[0..buffer_size];
         self.write_line(line, time, true).await?;
-        self.log.lock().await.flush().await?;
+        lock_async!(log <= self.log.lock().await?, { log.flush().await })?;
 
         Ok(())
     }
@@ -155,7 +158,9 @@ impl<'a> FileLogStreamWriter<'a> {
         log_entry.value_mut().extend_from_slice(line);
 
         let mut log = self.log.lock().await;
-        log.append(&log_entry.serialize()?).await?;
+        lock_async!(log <= self.log.lock().await?, {
+            log.append(&log_entry.serialize()?).await
+        })?;
 
         Ok(())
     }

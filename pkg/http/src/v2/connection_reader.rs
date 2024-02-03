@@ -7,6 +7,7 @@ use common::io::IoError;
 use common::io::IoErrorKind;
 use common::io::Readable;
 use executor::child_task::ChildTask;
+use executor::lock_async;
 
 use crate::hpack;
 use crate::proto::v2::*;
@@ -80,12 +81,14 @@ impl ConnectionReader {
         // Mark that we will never receive any more stream ids.
         // This will be sent to the remote endpoint in any GOAWAYs that we send.
         {
-            let mut connection_state = self.shared.state.lock().await;
+            let mut connection_state = self.shared.state.lock().await.unwrap().enter();
             connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
 
             connection_state
                 .set_shutting_down(ShuttingDownState::Complete)
                 .await;
+
+            connection_state.exit();
         }
 
         match result {
@@ -220,16 +223,16 @@ impl ConnectionReader {
 
         // Used to decode remotely created headers received on the connection.
         // NOTE: This is shared across all streams on the connection.
-        let mut remote_header_decoder;
+        let mut remote_header_decoder: hpack::Decoder;
 
-        let mut max_frame_size;
-        let mut max_header_list_size;
+        let mut max_frame_size: u32;
+        let mut max_header_list_size: u32;
 
         // Loading the above two variables from local settings.
         // NOTE: Because settings only change when they are acknowledged on this thread,
         // these are straight forward to keep in sync.
         {
-            let state = self.shared.state.lock().await;
+            let state = self.shared.state.lock().await?.read_exclusive();
             remote_header_decoder =
                 hpack::Decoder::new(state.local_settings[SettingId::HEADER_TABLE_SIZE] as usize);
             max_frame_size = state.local_settings[SettingId::MAX_FRAME_SIZE];
@@ -287,7 +290,7 @@ impl ConnectionReader {
             {
                 let now = SystemTime::now();
 
-                let mut state = self.shared.state.lock().await;
+                let mut state = self.shared.state.lock().await?.enter();
 
                 let mut idle = {
                     if frame_header.stream_id == 0 {
@@ -310,6 +313,7 @@ impl ConnectionReader {
                     && frame_header.typ != FrameType::HEADERS
                     && frame_header.typ != FrameType::PRIORITY
                 {
+                    state.exit();
                     return Err(ProtocolErrorV2 {
                         code: ErrorCode::PROTOCOL_ERROR,
                         message: "Received unallowed frame type for idle stream",
@@ -321,6 +325,8 @@ impl ConnectionReader {
                 if frame_header.typ == FrameType::HEADERS || frame_header.typ == FrameType::DATA {
                     state.last_user_byte_received_time = now;
                 }
+
+                state.exit();
             }
 
             // Validate frame size based on procedure in RFC 7540: Section 4.2.
@@ -339,7 +345,7 @@ impl ConnectionReader {
                     }
                     .into());
                 } else {
-                    let mut connection_state = self.shared.state.lock().await;
+                    let mut connection_state = self.shared.state.lock().await?.enter();
 
                     self.shared
                         .finish_stream(
@@ -351,14 +357,16 @@ impl ConnectionReader {
                                 local: true,
                             }),
                         )
-                        .await;
+                        .await?;
+
+                    connection_state.exit();
                 }
 
                 // Skip over this frame's payload by just reading into a waste buffer until we
                 // reach the end of the packet.
                 let mut num_remaining = frame_header.length as usize;
                 while num_remaining > 0 {
-                    let mut buf = [0u8; 512];
+                    let mut buf = [0u8; 4096];
 
                     let max_to_read = std::cmp::min(num_remaining, buf.len());
                     let n = reader.read(&mut buf[0..max_to_read]).await?;
@@ -423,125 +431,15 @@ impl ConnectionReader {
                     // flow control (so we may want to tell the remote endpoint that more data is
                     // available)
 
-                    let mut connection_state = self.shared.state.lock().await;
-                    if connection_state.local_connection_window
-                        < (frame_header.length as WindowSize)
-                    {
-                        return Err(ProtocolErrorV2 {
-                            code: ErrorCode::FLOW_CONTROL_ERROR,
-                            message: "Exceeded connection level window",
-                            local: true,
-                        }
-                        .into());
-                    }
-
-                    // Update the local connection level window. This occurs even if the frame
-                    // fails later down to ensure that it stays in sync with the remote endpoint.
-                    connection_state.local_connection_window += frame_header.length as WindowSize;
-
-                    let stream = match self
-                        .find_received_stream(frame_header.stream_id, &mut connection_state)?
-                    {
-                        StreamEntry::Open(s) => s,
-                        StreamEntry::New => {
-                            // TODO: Normalize this error.
-                            return Err(ProtocolErrorV2 {
-                                code: ErrorCode::FLOW_CONTROL_ERROR,
-                                message: "Recieved unallowed frame for idle stream",
-                                local: true,
-                            }
-                            .into());
-                        }
-                        StreamEntry::Closed => {
-                            // According to Section 6.1, we must send a STREAM_CLOSED if receiving
-                            // a DATA frame on a non-"open" or "half-closed (local)" stream.
-                            //
-                            // This handles "closed"/"idle" cases. Other states will be checked in
-                            // stream.receive_data().
-                            //
-                            // TODO: If we recently sent a RST_STREAM on this id since the last ping
-                            // was acknowledged, don't both sending a RST_STREAM and just ignore the
-                            // packets.
-                            let _ = self
-                                .shared
-                                .connection_event_sender
-                                .send(ConnectionEvent::ResetStream {
-                                    stream_id: frame_header.stream_id,
-                                    error: ProtocolErrorV2 {
-                                        code: ErrorCode::STREAM_CLOSED,
-                                        message: "Received data on a closed stream",
-                                        local: true,
-                                    },
-                                })
-                                .await;
-
-                            if frame_header.length != 0 {
-                                let _ = self
-                                    .shared
-                                    .connection_event_sender
-                                    .send(ConnectionEvent::StreamRead {
-                                        stream_id: 0,
-                                        count: (frame_header.length as usize),
-                                    })
-                                    .await;
-                            }
-
-                            continue;
-                        }
-                    };
-
-                    let mut stream_state = stream.state.lock().await;
-
-                    let extra_flow_controlled_bytes =
-                        (frame_header.length as usize) - data_frame.data.len();
-
-                    // TODO: Must refactor this and everything else to include padding in all the
-                    // flow control calculations.
-                    stream.receive_data(
-                        &data_frame.data,
-                        extra_flow_controlled_bytes,
-                        data_flags.end_stream,
-                        &mut stream_state,
-                    );
-                    // TODO: Have a smarter way to determine if the frame was rejected (e.g. based
-                    // on the return value of receive_data).
-                    if stream_state.error.is_some() || stream_state.reader_cancelled {
-                        // Data frame was rejected.
-                        // We can allow the other endpoint to send more.
-                        if frame_header.length != 0 {
-                            let _ = self
-                                .shared
-                                .connection_event_sender
-                                .send(ConnectionEvent::StreamRead {
-                                    stream_id: 0,
-                                    count: (frame_header.length as usize),
-                                })
-                                .await;
-                        }
-                    } else {
-                        // We discard the all the payload except the inner data, so we can given
-                        // back flow control quota for any padding in the frame.
-                        if extra_flow_controlled_bytes != 0 {
-                            let _ = self
-                                .shared
-                                .connection_event_sender
-                                .send(ConnectionEvent::StreamRead {
-                                    stream_id: 0,
-                                    count: extra_flow_controlled_bytes,
-                                })
-                                .await;
-                        }
-                    }
-
-                    let stream_closed = stream.is_closed(&stream_state);
-                    drop(stream_state);
-                    drop(stream);
-
-                    if stream_closed {
-                        self.shared
-                            .finish_stream(&mut connection_state, frame_header.stream_id, None)
-                            .await;
-                    }
+                    lock_async!(connection_state <= self.shared.state.lock().await?, {
+                        self.receive_data_packet(
+                            &frame_header,
+                            data_flags,
+                            data_frame,
+                            &mut connection_state,
+                        )
+                        .await
+                    })?;
                 }
                 FrameType::HEADERS => {
                     // NOTE: We don't check the stream_id until the full block is received in
@@ -619,13 +517,14 @@ impl ConnectionReader {
 
                     let priority_frame = PriorityFramePayload::parse_complete(&payload)?;
 
-                    let mut connection_state = self.shared.state.lock().await;
-                    self.set_priority(
-                        frame_header.stream_id,
-                        &priority_frame,
-                        &mut connection_state,
-                    )
-                    .await?;
+                    lock_async!(connection_state <= self.shared.state.lock().await?, {
+                        self.set_priority(
+                            frame_header.stream_id,
+                            &priority_frame,
+                            &mut connection_state,
+                        )
+                        .await
+                    })?;
                 }
                 FrameType::RST_STREAM => {
                     if frame_header.stream_id == 0 {
@@ -648,32 +547,37 @@ impl ConnectionReader {
 
                     let rst_stream_frame = RstStreamFramePayload::parse_complete(&payload)?;
 
-                    let mut connection_state = self.shared.state.lock().await;
+                    let r: Result<()> =
+                        lock_async!(connection_state <= self.shared.state.lock().await?, {
+                            if (self.shared.is_local_stream_id(frame_header.stream_id)
+                                && frame_header.stream_id > connection_state.last_sent_stream_id)
+                                || (self.shared.is_remote_stream_id(frame_header.stream_id)
+                                    && frame_header.stream_id
+                                        > connection_state.last_received_stream_id)
+                            {
+                                return Err(ProtocolErrorV2 {
+                                    code: ErrorCode::PROTOCOL_ERROR,
+                                    message: "Received RST_STREAM for idle stream",
+                                    local: true,
+                                }
+                                .into());
+                            }
 
-                    if (self.shared.is_local_stream_id(frame_header.stream_id)
-                        && frame_header.stream_id > connection_state.last_sent_stream_id)
-                        || (self.shared.is_remote_stream_id(frame_header.stream_id)
-                            && frame_header.stream_id > connection_state.last_received_stream_id)
-                    {
-                        return Err(ProtocolErrorV2 {
-                            code: ErrorCode::PROTOCOL_ERROR,
-                            message: "Received RST_STREAM for idle stream",
-                            local: true,
-                        }
-                        .into());
-                    }
+                            self.shared
+                                .finish_stream(
+                                    &mut connection_state,
+                                    frame_header.stream_id,
+                                    Some(ProtocolErrorV2 {
+                                        code: rst_stream_frame.error_code,
+                                        message: "Received RST_STREAM from remote endpoint",
+                                        local: false,
+                                    }),
+                                )
+                                .await?;
 
-                    self.shared
-                        .finish_stream(
-                            &mut connection_state,
-                            frame_header.stream_id,
-                            Some(ProtocolErrorV2 {
-                                code: rst_stream_frame.error_code,
-                                message: "Received RST_STREAM from remote endpoint",
-                                local: false,
-                            }),
-                        )
-                        .await;
+                            Ok(())
+                        });
+                    r?;
                 }
                 FrameType::SETTINGS => {
                     if frame_header.stream_id != 0 {
@@ -695,109 +599,21 @@ impl ConnectionReader {
                     }
 
                     let settings_flags = SettingsFrameFlags::parse_complete(&[frame_header.flags])?;
-                    // TODO: This seems to fial?
                     let settings_frame = SettingsFramePayload::parse_complete(&payload)?;
 
-                    let mut connection_state = self.shared.state.lock().await;
-
-                    if settings_flags.ack {
-                        if frame_header.length != 0 {
-                            return Err(ProtocolErrorV2 {
-                                code: ErrorCode::FRAME_SIZE_ERROR,
-                                message: "Received SETTINGS ACK with non-zero length",
-                                local: true,
-                            }
-                            .into());
-                        }
-
-                        if let Some(waiter) = connection_state.local_settings_ack_waiter.take() {
-                            // Stop waiting
-                            drop(waiter);
-                        } else {
-                            return Err(ProtocolErrorV2 {
-                                code: ErrorCode::PROTOCOL_ERROR,
-                                message:
-                                    "Received SETTINGS ACK while no settings where pending ACK",
-                                local: true,
-                            }
-                            .into());
-                        }
-
-                        // TODO: Apply any other state changes that are needed.
-                        connection_state.local_settings =
-                            connection_state.local_pending_settings.clone();
-
-                        // TODO: Group together all of these variables which need to be synced to
-                        // the settings.
-                        remote_header_decoder.set_protocol_max_size(
-                            connection_state.local_settings[SettingId::HEADER_TABLE_SIZE] as usize,
-                        );
-                        max_frame_size = connection_state.local_settings[SettingId::MAX_FRAME_SIZE];
-                        max_header_list_size =
-                            connection_state.local_settings[SettingId::MAX_HEADER_LIST_SIZE];
-
-                        // TODO: Adjust flow control window.
-                    } else {
-                        received_remote_settings = true;
-
-                        let mut header_table_size = None;
-
-                        // Apply the settings.
-                        for param in settings_frame.parameters {
-                            let old_value = connection_state
-                                .remote_settings
-                                .set(param.id, param.value)?;
-
-                            if param.id == SettingId::HEADER_TABLE_SIZE {
-                                // NOTE: This will be applied on the writer thread as it needs to
-                                // ACK'ed in lock step
-                                // with any usages of the header encoder.
-                                header_table_size = Some(param.value);
-                            } else if param.id == SettingId::INITIAL_WINDOW_SIZE {
-                                // NOTE: Changes to this parameter DO NOT update the connection
-                                // window.
-
-                                // NOTE: As we validate that this parameter is always < 2^32,
-                                // this should never overflow.
-                                let window_diff = (param.value as WindowSize)
-                                    - (old_value.unwrap_or(0) as WindowSize);
-
-                                for (stream_id, stream) in &connection_state.streams {
-                                    if stream.sending_end_flushed {
-                                        continue;
-                                    }
-
-                                    let mut stream_state = stream.state.lock().await;
-
-                                    stream_state.remote_window = stream_state.remote_window.checked_add(
-                                        window_diff).ok_or_else(|| Error::from(ProtocolErrorV2 {
-                                            code: ErrorCode::FLOW_CONTROL_ERROR,
-                                            message: "Change in INITIAL_WINDOW_SIZE cause a window to overflow",
-                                            local: true
-                                        }))?;
-
-                                    // The window size change may have make it possible for more
-                                    // data to be send.
-                                    let _ = stream.write_available_notifier.try_send(());
-                                }
-
-                                // Force a re-check of whether or not more data can be sent.
-                                // TODO: Prevent updating this parameter many times in the same
-                                // receive settings block.
-                                let _ = self
-                                    .shared
-                                    .connection_event_sender
-                                    .send(ConnectionEvent::StreamWrite { stream_id: 0 })
-                                    .await;
-                            }
-                        }
-
-                        let _ = self
-                            .shared
-                            .connection_event_sender
-                            .send(ConnectionEvent::AcknowledgeSettings { header_table_size })
-                            .await;
-                    }
+                    lock_async!(connection_state <= self.shared.state.lock().await?, {
+                        self.receive_settings_frame(
+                            &frame_header,
+                            settings_flags,
+                            settings_frame,
+                            &mut connection_state,
+                            &mut remote_header_decoder,
+                            &mut max_frame_size,
+                            &mut max_header_list_size,
+                            &mut received_remote_settings,
+                        )
+                        .await
+                    })?;
                 }
                 FrameType::PING => {
                     if frame_header.stream_id != 0 {
@@ -822,8 +638,7 @@ impl ConnectionReader {
                     let ping_frame = PingFramePayload::parse_complete(&payload)?;
 
                     // TODO: Ideally expose the listener without a state lock.
-                    {
-                        let state = self.shared.state.lock().await;
+                    lock_async!(state <= self.shared.state.lock().await?, {
                         if let Some(listener) = &state.event_listener {
                             listener
                                 .handle_ping_response(
@@ -832,7 +647,7 @@ impl ConnectionReader {
                                 )
                                 .await;
                         }
-                    }
+                    });
 
                     if !ping_flags.ack {
                         // TODO: Block if too many pings in a short period of time.
@@ -877,111 +692,13 @@ impl ConnectionReader {
 
                     // TODO: Limit the size of the opaque data
 
-                    let mut connection_state = self.shared.state.lock().await;
+                    let should_stop =
+                        lock_async!(connection_state <= self.shared.state.lock().await?, {
+                            self.receive_goaway_frame(&goaway_frame, &mut connection_state)
+                                .await
+                        })?;
 
-                    // TODO: We need to be much more consistent about always setting this.
-                    // TODO: We need to uphold the gurantee that while this is None, an incoming
-                    // request is guranteed to be processed.
-                    // TODO: Verify that once this is set, we won't generate any new streams.
-
-                    // TODO: Let's now only do this if we have a non-NO_ERROR frame.
-                    // connection_state.error = Some(ProtocolErrorV2 {
-                    //     code: goaway_frame.error_code,
-                    //     message: "Remote GOAWAY received", // TODO: Read the opaque message from
-                    // the remote packet.     local: true
-                    // });
-
-                    // TODO: Check that it is monotonically lower than before.
-                    connection_state.upper_sent_stream_id = goaway_frame.last_stream_id;
-
-                    let refused_error = ProtocolErrorV2 {
-                        code: ErrorCode::REFUSED_STREAM,
-                        message: "Connection shutting down",
-                        local: false,
-                    };
-
-                    let mut stream_ids_to_finish = vec![];
-                    for (stream_id, stream) in &connection_state.streams {
-                        // TODO: Only applies to locally initialized streams?
-                        if self.shared.is_local_stream_id(*stream_id)
-                            && *stream_id > goaway_frame.last_stream_id
-                        {
-                            // Reset the stream with a 'retryable' error.
-                            // Main challenge is deadling with locks.
-                            stream_ids_to_finish.push(*stream_id);
-                        }
-                    }
-
-                    for stream_id in stream_ids_to_finish {
-                        self.shared
-                            .finish_stream(
-                                &mut connection_state,
-                                stream_id,
-                                Some(refused_error.clone()),
-                            )
-                            .await;
-                    }
-
-                    // This code is only relevant on the client side.
-                    // As soon as we receive a remote GOAWAY, we can cancel all unsent requests.
-                    while let Some(req) = connection_state.pending_requests.pop_front() {
-                        req.response_sender
-                            .send(Err(refused_error.clone().into()))
-                            .await;
-                    }
-
-                    if goaway_frame.error_code == ErrorCode::NO_ERROR {
-                        // Graceful shutdown.
-                        // TODO: Check this implementation.
-
-                        if !connection_state.shutting_down.is_some() {
-                            connection_state
-                                .set_shutting_down(ShuttingDownState::GracefulRemote)
-                                .await;
-                        }
-
-                        // Check with the writer thread if it wants to stop the connection now.
-                        let _ = self
-                            .shared
-                            .connection_event_sender
-                            .send(ConnectionEvent::Closing {
-                                send_goaway: None,
-                                close_with: None,
-                            })
-                            .await;
-
-                        // TODO: Set connection_state.shuttind_down and maybe
-                        // send a CLOSED notification as
-                        // we may want to stop now.
-
-                        // TODO: Even if we receive an error, we can still
-                        // perform this right?
-                    } else {
-                        // Need to reset all the streams!
-
-                        // Need to return an error but shouldn't ask the writer thread to repeat it.
-
-                        // Via the CLOSING, we should propagate the error.
-
-                        connection_state
-                            .set_shutting_down(ShuttingDownState::Complete)
-                            .await;
-                        let _ = self
-                            .shared
-                            .connection_event_sender
-                            .send(ConnectionEvent::Closing {
-                                send_goaway: None,
-                                close_with: Some(Err(ProtocolErrorV2 {
-                                    code: goaway_frame.error_code,
-                                    message: "Remote GOAWAY received",
-                                    // TODO: Support returning the raw message
-                                    // message: Self::debug_data_to_string(&goaway_frame.
-                                    // additional_debug_data),
-                                    local: false,
-                                }
-                                .into())),
-                            })
-                            .await;
+                    if should_stop {
                         return Ok(());
                     }
                 }
@@ -1000,82 +717,14 @@ impl ConnectionReader {
 
                     let window_update_frame = WindowUpdateFramePayload::parse_complete(&payload)?;
 
-                    let mut connection_state = self.shared.state.lock().await;
-
-                    if window_update_frame.window_size_increment == 0 {
-                        let error = ProtocolErrorV2 {
-                            code: ErrorCode::PROTOCOL_ERROR,
-                            message: "Received WINDOW_UPDATE with invalid 0 increment",
-                            local: true,
-                        };
-
-                        if frame_header.stream_id == 0 {
-                            return Err(error.into());
-                        }
-
-                        // TODO: Send the RST_STREAM even if the stream is unknown?
-
-                        self.shared
-                            .finish_stream(
-                                &mut connection_state,
-                                frame_header.stream_id,
-                                Some(error),
-                            )
-                            .await;
-
-                        continue;
-                    }
-
-                    if frame_header.stream_id == 0 {
-                        connection_state.remote_connection_window = connection_state
-                            .remote_connection_window
-                            .checked_add(window_update_frame.window_size_increment as WindowSize)
-                            .ok_or_else(|| ProtocolErrorV2 {
-                                code: ErrorCode::FLOW_CONTROL_ERROR,
-                                message: "Overflow in connection flow control window size",
-                                local: true,
-                            })?;
-                    } else if let Some(stream) =
-                        connection_state.streams.get(&frame_header.stream_id)
-                    {
-                        let mut stream_state = stream.state.lock().await;
-
-                        // TODO: Make this just a stream error?
-                        match stream_state
-                            .remote_window
-                            .checked_add(window_update_frame.window_size_increment as WindowSize)
-                        {
-                            Some(v) => {
-                                stream.set_remote_window(&mut stream_state, v);
-                            }
-                            None => {
-                                stream_state.error = Some(ProtocolErrorV2 {
-                                    code: ErrorCode::FLOW_CONTROL_ERROR,
-                                    message: "Overflow in stream flow control window size",
-                                    local: true,
-                                });
-
-                                drop(stream_state);
-                                self.shared
-                                    .finish_stream(
-                                        &mut connection_state,
-                                        frame_header.stream_id,
-                                        None,
-                                    )
-                                    .await;
-                            }
-                        };
-                    }
-
-                    // Check again if there is any data available for writing now that the window
-                    // has been updated.
-                    let _ = self
-                        .shared
-                        .connection_event_sender
-                        .send(ConnectionEvent::StreamWrite {
-                            stream_id: frame_header.stream_id,
-                        })
-                        .await;
+                    lock_async!(connection_state <= self.shared.state.lock().await?, {
+                        self.receive_window_update_frame(
+                            &frame_header,
+                            window_update_frame,
+                            &mut connection_state,
+                        )
+                        .await
+                    })?;
                 }
                 FrameType::CONTINUATION => {
                     let mut received_headers = match pending_header.take() {
@@ -1121,6 +770,440 @@ impl ConnectionReader {
         }
     }
 
+    async fn receive_data_packet(
+        &self,
+        frame_header: &FrameHeader,
+        data_flags: DataFrameFlags,
+        data_frame: DataFramePayload,
+        connection_state: &mut ConnectionState,
+    ) -> Result<()> {
+        if connection_state.local_connection_window < (frame_header.length as WindowSize) {
+            return Err(ProtocolErrorV2 {
+                code: ErrorCode::FLOW_CONTROL_ERROR,
+                message: "Exceeded connection level window",
+                local: true,
+            }
+            .into());
+        }
+
+        // Update the local connection level window. This occurs even if the frame
+        // fails later down to ensure that it stays in sync with the remote endpoint.
+        connection_state.local_connection_window += frame_header.length as WindowSize;
+
+        let stream = match self.find_received_stream(frame_header.stream_id, connection_state)? {
+            StreamEntry::Open(s) => s,
+            StreamEntry::New => {
+                // TODO: Normalize this error.
+                return Err(ProtocolErrorV2 {
+                    code: ErrorCode::FLOW_CONTROL_ERROR,
+                    message: "Recieved unallowed frame for idle stream",
+                    local: true,
+                }
+                .into());
+            }
+            StreamEntry::Closed => {
+                /*
+                TODO: Check this against the RFC. We should probably allow a grace period before sending this in case
+
+                */
+
+                // According to Section 6.1, we must send a STREAM_CLOSED if receiving
+                // a DATA frame on a non-"open" or "half-closed (local)" stream.
+                //
+                // This handles "closed"/"idle" cases. Other states will be checked in
+                // stream.receive_data().
+                //
+                // TODO: If we recently sent a RST_STREAM on this id since the last ping
+                // was acknowledged, don't both sending a RST_STREAM and just ignore the
+                // packets.
+                let _ = self
+                    .shared
+                    .connection_event_sender
+                    .send(ConnectionEvent::ResetStream {
+                        stream_id: frame_header.stream_id,
+                        error: ProtocolErrorV2 {
+                            code: ErrorCode::STREAM_CLOSED,
+                            message: "Received data on a closed stream",
+                            local: true,
+                        },
+                    })
+                    .await;
+
+                if frame_header.length != 0 {
+                    let _ = self
+                        .shared
+                        .connection_event_sender
+                        .send(ConnectionEvent::StreamRead {
+                            stream_id: 0,
+                            count: (frame_header.length as usize),
+                        })
+                        .await;
+                }
+
+                return Ok(());
+            }
+        };
+
+        let is_closed = lock_async!(stream_state <= stream.state.lock().await?, {
+            let extra_flow_controlled_bytes =
+                (frame_header.length as usize) - data_frame.data.len();
+
+            // TODO: Must refactor this and everything else to include padding in all the
+            // flow control calculations.
+            stream.receive_data(
+                &data_frame.data,
+                extra_flow_controlled_bytes,
+                data_flags.end_stream,
+                &mut stream_state,
+            );
+            // TODO: Have a smarter way to determine if the frame was rejected (e.g. based
+            // on the return value of receive_data).
+            if stream_state.error.is_some() || stream_state.reader_cancelled {
+                // Data frame was rejected.
+                // We can allow the other endpoint to send more.
+                if frame_header.length != 0 {
+                    let _ = self
+                        .shared
+                        .connection_event_sender
+                        .send(ConnectionEvent::StreamRead {
+                            stream_id: 0,
+                            count: (frame_header.length as usize),
+                        })
+                        .await;
+                }
+            } else {
+                // We discard the all the payload except the inner data, so we can given
+                // back flow control quota for any padding in the frame.
+                if extra_flow_controlled_bytes != 0 {
+                    let _ = self
+                        .shared
+                        .connection_event_sender
+                        .send(ConnectionEvent::StreamRead {
+                            stream_id: 0,
+                            count: extra_flow_controlled_bytes,
+                        })
+                        .await;
+                }
+            }
+
+            stream.is_closed(&stream_state)
+        });
+
+        if is_closed {
+            self.shared
+                .finish_stream(connection_state, frame_header.stream_id, None)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn receive_settings_frame(
+        &self,
+        frame_header: &FrameHeader,
+        settings_flags: SettingsFrameFlags,
+        settings_frame: SettingsFramePayload,
+        connection_state: &mut ConnectionState,
+        remote_header_decoder: &mut hpack::Decoder,
+        max_frame_size: &mut u32,
+        max_header_list_size: &mut u32,
+        received_remote_settings: &mut bool,
+    ) -> Result<()> {
+        if settings_flags.ack {
+            if frame_header.length != 0 {
+                return Err(ProtocolErrorV2 {
+                    code: ErrorCode::FRAME_SIZE_ERROR,
+                    message: "Received SETTINGS ACK with non-zero length",
+                    local: true,
+                }
+                .into());
+            }
+
+            if let Some(waiter) = connection_state.local_settings_ack_waiter.take() {
+                // Stop waiting
+                drop(waiter);
+            } else {
+                return Err(ProtocolErrorV2 {
+                    code: ErrorCode::PROTOCOL_ERROR,
+                    message: "Received SETTINGS ACK while no settings where pending ACK",
+                    local: true,
+                }
+                .into());
+            }
+
+            // TODO: Apply any other state changes that are needed.
+            connection_state.local_settings = connection_state.local_pending_settings.clone();
+
+            // TODO: Group together all of these variables which need to be synced to
+            // the settings.
+            remote_header_decoder.set_protocol_max_size(
+                connection_state.local_settings[SettingId::HEADER_TABLE_SIZE] as usize,
+            );
+            *max_frame_size = connection_state.local_settings[SettingId::MAX_FRAME_SIZE];
+            *max_header_list_size =
+                connection_state.local_settings[SettingId::MAX_HEADER_LIST_SIZE];
+
+            // TODO: Adjust flow control window.
+        } else {
+            *received_remote_settings = true;
+
+            let mut header_table_size = None;
+
+            // Apply the settings.
+            for param in settings_frame.parameters {
+                let old_value = connection_state
+                    .remote_settings
+                    .set(param.id, param.value)?;
+
+                if param.id == SettingId::HEADER_TABLE_SIZE {
+                    // NOTE: This will be applied on the writer thread as it needs to
+                    // ACK'ed in lock step
+                    // with any usages of the header encoder.
+                    header_table_size = Some(param.value);
+                } else if param.id == SettingId::INITIAL_WINDOW_SIZE {
+                    // NOTE: Changes to this parameter DO NOT update the connection
+                    // window.
+
+                    // NOTE: As we validate that this parameter is always < 2^32,
+                    // this should never overflow.
+                    let window_diff =
+                        (param.value as WindowSize) - (old_value.unwrap_or(0) as WindowSize);
+
+                    for (stream_id, stream) in &connection_state.streams {
+                        if stream.sending_end_flushed {
+                            continue;
+                        }
+
+                        let r: Result<()> =
+                            lock_async!(stream_state <= stream.state.lock().await?, {
+                                stream_state.remote_window = stream_state
+                                    .remote_window
+                                    .checked_add(window_diff)
+                                    .ok_or_else(|| {
+                                        ProtocolErrorV2 {
+                                    code: ErrorCode::FLOW_CONTROL_ERROR,
+                                    message:
+                                        "Change in INITIAL_WINDOW_SIZE cause a window to overflow",
+                                    local: true,
+                                }
+                                    })?;
+                                Ok(())
+                            });
+                        r?;
+
+                        // The window size change may have make it possible for more
+                        // data to be send.
+                        let _ = stream.write_available_notifier.try_send(());
+                    }
+
+                    // Force a re-check of whether or not more data can be sent.
+                    // TODO: Prevent updating this parameter many times in the same
+                    // receive settings block.
+                    let _ = self
+                        .shared
+                        .connection_event_sender
+                        .send(ConnectionEvent::StreamWrite { stream_id: 0 })
+                        .await;
+                }
+            }
+
+            let _ = self
+                .shared
+                .connection_event_sender
+                .send(ConnectionEvent::AcknowledgeSettings { header_table_size })
+                .await;
+        }
+
+        Ok(())
+    }
+
+    /// Returns whether or not to terminate earlier.
+    async fn receive_goaway_frame(
+        &self,
+        goaway_frame: &GoawayFramePayload,
+        connection_state: &mut ConnectionState,
+    ) -> Result<bool> {
+        // TODO: We need to be much more consistent about always setting this.
+        // TODO: We need to uphold the gurantee that while this is None, an incoming
+        // request is guranteed to be processed.
+        // TODO: Verify that once this is set, we won't generate any new streams.
+
+        // TODO: Let's now only do this if we have a non-NO_ERROR frame.
+        // connection_state.error = Some(ProtocolErrorV2 {
+        //     code: goaway_frame.error_code,
+        //     message: "Remote GOAWAY received", // TODO: Read the opaque message from
+        // the remote packet.     local: true
+        // });
+
+        // TODO: Check that it is monotonically lower than before.
+        connection_state.upper_sent_stream_id = goaway_frame.last_stream_id;
+
+        let refused_error = ProtocolErrorV2 {
+            code: ErrorCode::REFUSED_STREAM,
+            message: "Connection shutting down",
+            local: false,
+        };
+
+        let mut stream_ids_to_finish = vec![];
+        for (stream_id, stream) in &connection_state.streams {
+            // TODO: Only applies to locally initialized streams?
+            if self.shared.is_local_stream_id(*stream_id)
+                && *stream_id > goaway_frame.last_stream_id
+            {
+                // Reset the stream with a 'retryable' error.
+                // Main challenge is deadling with locks.
+                stream_ids_to_finish.push(*stream_id);
+            }
+        }
+
+        for stream_id in stream_ids_to_finish {
+            self.shared
+                .finish_stream(connection_state, stream_id, Some(refused_error.clone()))
+                .await?;
+        }
+
+        // This code is only relevant on the client side.
+        // As soon as we receive a remote GOAWAY, we can cancel all unsent requests.
+        while let Some(req) = connection_state.pending_requests.pop_front() {
+            req.response_sender
+                .send(Err(refused_error.clone().into()))
+                .await;
+        }
+
+        if goaway_frame.error_code == ErrorCode::NO_ERROR {
+            // Graceful shutdown.
+            // TODO: Check this implementation.
+
+            if !connection_state.shutting_down.is_some() {
+                connection_state
+                    .set_shutting_down(ShuttingDownState::GracefulRemote)
+                    .await;
+            }
+
+            // Check with the writer thread if it wants to stop the connection now.
+            let _ = self
+                .shared
+                .connection_event_sender
+                .send(ConnectionEvent::Closing {
+                    send_goaway: None,
+                    close_with: None,
+                })
+                .await;
+
+            // TODO: Set connection_state.shuttind_down and maybe
+            // send a CLOSED notification as
+            // we may want to stop now.
+
+            // TODO: Even if we receive an error, we can still
+            // perform this right?
+
+            Ok(false)
+        } else {
+            // Need to reset all the streams!
+
+            // Need to return an error but shouldn't ask the writer thread to repeat it.
+
+            // Via the CLOSING, we should propagate the error.
+
+            connection_state
+                .set_shutting_down(ShuttingDownState::Complete)
+                .await;
+            let _ = self
+                .shared
+                .connection_event_sender
+                .send(ConnectionEvent::Closing {
+                    send_goaway: None,
+                    close_with: Some(Err(ProtocolErrorV2 {
+                        code: goaway_frame.error_code,
+                        message: "Remote GOAWAY received",
+                        // TODO: Support returning the raw message
+                        // message: Self::debug_data_to_string(&goaway_frame.
+                        // additional_debug_data),
+                        local: false,
+                    }
+                    .into())),
+                })
+                .await;
+            Ok(true)
+        }
+    }
+
+    async fn receive_window_update_frame(
+        &self,
+        frame_header: &FrameHeader,
+        window_update_frame: WindowUpdateFramePayload,
+        connection_state: &mut ConnectionState,
+    ) -> Result<()> {
+        if window_update_frame.window_size_increment == 0 {
+            let error = ProtocolErrorV2 {
+                code: ErrorCode::PROTOCOL_ERROR,
+                message: "Received WINDOW_UPDATE with invalid 0 increment",
+                local: true,
+            };
+
+            if frame_header.stream_id == 0 {
+                return Err(error.into());
+            }
+
+            // TODO: Send the RST_STREAM even if the stream is unknown?
+
+            self.shared
+                .finish_stream(connection_state, frame_header.stream_id, Some(error))
+                .await?;
+
+            return Ok(());
+        }
+
+        if frame_header.stream_id == 0 {
+            connection_state.remote_connection_window = connection_state
+                .remote_connection_window
+                .checked_add(window_update_frame.window_size_increment as WindowSize)
+                .ok_or_else(|| ProtocolErrorV2 {
+                    code: ErrorCode::FLOW_CONTROL_ERROR,
+                    message: "Overflow in connection flow control window size",
+                    local: true,
+                })?;
+        } else if let Some(stream) = connection_state.streams.get(&frame_header.stream_id) {
+            let should_close = lock_async!(stream_state <= stream.state.lock().await?, {
+                match stream_state
+                    .remote_window
+                    .checked_add(window_update_frame.window_size_increment as WindowSize)
+                {
+                    Some(v) => {
+                        stream.set_remote_window(&mut stream_state, v);
+                        false
+                    }
+                    None => {
+                        stream_state.error = Some(ProtocolErrorV2 {
+                            code: ErrorCode::FLOW_CONTROL_ERROR,
+                            message: "Overflow in stream flow control window size",
+                            local: true,
+                        });
+                        true
+                    }
+                }
+            });
+
+            if should_close {
+                self.shared
+                    .finish_stream(connection_state, frame_header.stream_id, None)
+                    .await?;
+            }
+        }
+
+        // Check again if there is any data available for writing now that the window
+        // has been updated.
+        let _ = self
+            .shared
+            .connection_event_sender
+            .send(ConnectionEvent::StreamWrite {
+                stream_id: frame_header.stream_id,
+            })
+            .await;
+
+        Ok(())
+    }
+
     fn debug_data_to_string(data: &[u8]) -> String {
         let mut s = String::new();
         for b in data {
@@ -1152,7 +1235,10 @@ impl ConnectionReader {
                 local: true,
             })?;
 
-        let mut connection_state = self.shared.state.lock().await;
+        let mut connection_state = self.shared.state.lock().await?.enter();
+
+        // TODO: Most of these internal functions may return valid errors that should
+        // still allow exiting the state normally.
 
         match received_headers.typ {
             ReceivedHeadersType::RegularHeaders {
@@ -1188,6 +1274,7 @@ impl ConnectionReader {
             }
             ReceivedHeadersType::PushPromise { promised_stream_id } => {
                 if self.shared.is_server {
+                    connection_state.exit();
                     return Err(ProtocolErrorV2 {
                         code: ErrorCode::PROTOCOL_ERROR,
                         message: "Client should not be sending PUSH_PROMISE frames",
@@ -1200,9 +1287,13 @@ impl ConnectionReader {
 
                 // TODO: Implement prioritization using the correct parent stream.
 
+                connection_state.exit();
+
                 return Err(err_msg("Push promise not yet implemented"));
             }
         }
+
+        connection_state.exit();
 
         Ok(())
     }
@@ -1274,7 +1365,7 @@ impl ConnectionReader {
                 let (mut stream, incoming_body, outgoing_body) =
                     self.shared.new_stream(&connection_state, stream_id);
 
-                let mut stream_state = stream.state.lock().await;
+                let mut stream_state = stream.state.lock().await?.enter();
 
                 if let Some(request) =
                     stream.receive_request(headers, end_stream, incoming_body, &mut stream_state)
@@ -1289,27 +1380,27 @@ impl ConnectionReader {
                 }
 
                 let stream_closed = stream.is_closed(&stream_state);
-                drop(stream_state);
+                stream_state.exit();
 
                 connection_state.streams.insert(stream_id, stream);
 
                 if stream_closed {
                     self.shared
                         .finish_stream(connection_state, stream_id, None)
-                        .await;
+                        .await?;
                 }
             }
             // Receiving the client's trailers for an existing request.
             StreamEntry::Open(stream) => {
-                let mut stream_state = stream.state.lock().await;
+                let mut stream_state = stream.state.lock().await?.enter();
 
                 stream.receive_trailers(headers, end_stream, &mut stream_state);
 
                 if stream.is_closed(&stream_state) {
-                    drop(stream_state);
+                    stream_state.exit();
                     self.shared
                         .finish_stream(connection_state, stream_id, None)
-                        .await;
+                        .await?;
                 }
             }
             StreamEntry::Closed => {
@@ -1349,36 +1440,37 @@ impl ConnectionReader {
             }
             // Either receiving a response head or trailers from the server.
             StreamEntry::Open(stream) => {
-                let mut stream_state = stream.state.lock().await;
+                let incoming_response_handler = stream.incoming_response_handler.take();
 
-                if let Some((request_method, response_sender, incoming_body)) =
-                    stream.incoming_response_handler.take()
-                {
-                    if let Some(response) = stream.receive_response(
-                        request_method,
-                        headers,
-                        end_stream,
-                        incoming_body,
-                        &mut stream_state,
-                    ) {
-                        response_sender.send(Ok(response)).await;
+                let is_closed = lock_async!(stream_state <= stream.state.lock().await?, {
+                    if let Some((request_method, response_sender, incoming_body)) =
+                        incoming_response_handler
+                    {
+                        if let Some(response) = stream.receive_response(
+                            request_method,
+                            headers,
+                            end_stream,
+                            incoming_body,
+                            &mut stream_state,
+                        ) {
+                            response_sender.send(Ok(response)).await;
+                        } else {
+                            // TODO: Use the stream error.
+                            // TODO: When will this ever fail?
+                            response_sender.send(Err(err_msg("Failed"))).await;
+                        }
                     } else {
-                        // TODO: Use the stream error.
-                        // TODO: When will this ever fail?
-                        response_sender.send(Err(err_msg("Failed"))).await;
+                        // Otherwise we just received trailers.
+                        stream.receive_trailers(headers, end_stream, &mut *stream_state);
                     }
-                } else {
-                    // Otherwise we just received trailers.
-                    stream.receive_trailers(headers, end_stream, &mut *stream_state);
-                }
 
-                let stream_closed = stream.is_closed(&stream_state);
-                drop(stream_state);
+                    stream.is_closed(&stream_state)
+                });
 
-                if stream_closed {
+                if is_closed {
                     self.shared
                         .finish_stream(connection_state, stream_id, None)
-                        .await;
+                        .await?;
                 }
             }
             StreamEntry::Closed => {
@@ -1468,7 +1560,7 @@ impl ConnectionReader {
                         local: true,
                     }),
                 )
-                .await;
+                .await?;
         }
 
         // TODO: Implement prioritization logic here.

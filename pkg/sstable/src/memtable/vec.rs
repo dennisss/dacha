@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use executor::sync::RwLock;
+use executor::lock;
+use executor::sync::AsyncRwLock;
 
 use crate::iterable::{Iterable, KeyValueEntry};
 use crate::table::comparator::KeyComparator;
@@ -28,7 +29,7 @@ pub struct VecMemTable {
 
 struct VecMemTableState {
     comparator: Arc<dyn KeyComparator>,
-    data: RwLock<Vec<KeyValueEntry>>,
+    data: AsyncRwLock<Vec<KeyValueEntry>>,
 }
 
 impl VecMemTable {
@@ -36,26 +37,27 @@ impl VecMemTable {
         Self {
             state: Arc::new(VecMemTableState {
                 comparator,
-                data: RwLock::new(vec![]),
+                data: AsyncRwLock::new(vec![]),
             }),
         }
     }
 
     pub async fn insert(&self, key: Vec<u8>, value: Vec<u8>) {
-        let mut data = self.state.data.write().await;
+        lock!(data <= self.state.data.write().await.unwrap(), {
+            let index =
+                common::algorithms::lower_bound_by(data.as_ref(), &key[..], |entry, key| {
+                    self.state.comparator.compare(&entry.key, key).is_ge()
+                })
+                .unwrap_or(data.len());
 
-        let index = common::algorithms::lower_bound_by(data.as_ref(), &key[..], |entry, key| {
-            self.state.comparator.compare(&entry.key, key).is_ge()
-        })
-        .unwrap_or(data.len());
-
-        data.insert(
-            index,
-            KeyValueEntry {
-                key: key.into(),
-                value: value.into(),
-            },
-        );
+            data.insert(
+                index,
+                KeyValueEntry {
+                    key: key.into(),
+                    value: value.into(),
+                },
+            );
+        });
     }
 
     pub fn iter(&self) -> VecMemTableIterator {
@@ -69,7 +71,7 @@ impl VecMemTable {
     }
 
     pub async fn key_range(&self) -> Option<(Bytes, Bytes)> {
-        let data = self.state.data.read().await;
+        let data = self.state.data.read().await.unwrap();
         if data.is_empty() {
             return None;
         }
@@ -100,7 +102,7 @@ pub struct VecMemTableIterator {
 #[async_trait]
 impl Iterable<KeyValueEntry> for VecMemTableIterator {
     async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
-        let data = self.table_state.data.read().await;
+        let data = self.table_state.data.read().await.unwrap();
         if data.is_empty() {
             return Ok(None);
         }

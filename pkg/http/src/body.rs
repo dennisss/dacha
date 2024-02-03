@@ -17,7 +17,7 @@ use crate::reader::*;
 pub type BoxFutureResult<'a, T> = Pin<Box<dyn FutureResult<T> + Send + 'a>>;
 
 #[async_trait]
-pub trait Body: Readable {
+pub trait Body: Readable + Sync {
     /// Returns the total length in bytes of the body payload. Will return None
     /// if the length is unknown without reading the entire body.
     ///
@@ -48,7 +48,7 @@ pub trait Body: Readable {
 }
 
 #[async_trait]
-impl<T: 'static + AsRef<[u8]> + Send + Unpin> Body for Cursor<T> {
+impl<T: 'static + AsRef<[u8]> + Send + Sync + Unpin> Body for Cursor<T> {
     fn len(&self) -> Option<usize> {
         Some(self.get_ref().as_ref().len())
     }
@@ -64,7 +64,7 @@ pub fn EmptyBody() -> Box<dyn Body> {
 }
 
 /// Creates a body from a precomputed blob of data.
-pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Unpin>(data: T) -> Box<dyn Body> {
+pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Sync + Unpin>(data: T) -> Box<dyn Body> {
     Box::new(Cursor::new(data))
 }
 

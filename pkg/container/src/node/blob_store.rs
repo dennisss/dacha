@@ -9,7 +9,8 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::SyncMutex;
 use file::{LocalFile, LocalFileOpenOptions, LocalPathBuf};
 use sstable::EmbeddedDB;
 
@@ -52,6 +53,18 @@ pub enum NewBlobError {
 
 /// Service for reading/writing blobs stored on the local disk and backed by the
 /// OS file system implementation.
+///
+/// Notes on implementation correctness:
+/// - Blob presence is stored across the data file system, embedded db instance,
+///   and an in-memory view of the current list of available blobs.
+///   - We guarantee that the in-memory view only marks blobs as existing if the
+///     blobs have been completely persisted to the other two durable storage
+///     locations.
+///   - But, blobs partially written to durable storage may not show up in the
+///     in-memory view.
+/// - We internally use a BlobLease to 'asyncronously' lock blobs. In order for
+///   a user to be able to perform a read and a write operation, the BlobLease
+///   must clear exclusive locks before returning to the caller.
 #[derive(Clone)]
 pub struct BlobStore {
     shared: Arc<Shared>,
@@ -71,7 +84,7 @@ struct Shared {
     /// Local database used for storing blob metadata.
     db: Arc<EmbeddedDB>,
 
-    state: Mutex<State>,
+    state: SyncMutex<State>,
 }
 
 struct State {
@@ -115,11 +128,15 @@ impl BlobStore {
             })
             .collect::<HashMap<_, _>>();
 
+        // TODO: Add a directory lock.
+
+        // TODO: Perform initial clean up of any partially written blobs.
+
         Ok(Self {
             shared: Arc::new(Shared {
                 dir,
                 db,
-                state: Mutex::new(State { blobs }),
+                state: SyncMutex::new(State { blobs }),
             }),
         })
     }
@@ -127,34 +144,37 @@ impl BlobStore {
     /// Looks up a blob in storage and acquires a reader lock/lease on it.
     /// While the returned lease is alive, the caller can read the contents of
     /// the blob.
-    pub async fn read_lease(&self, blob_id: &str) -> std::result::Result<BlobLease, ReadBlobError> {
-        let mut state = self.shared.state.lock().await;
-        let blob = match state.blobs.get_mut(blob_id) {
-            Some(v) => v,
-            None => {
-                return Err(ReadBlobError::NotFound);
-            }
-        };
+    ///
+    /// CANCEL SAFE
+    pub fn read_lease(&self, blob_id: &str) -> Result<BlobLease, ReadBlobError> {
+        self.shared
+            .state
+            .apply(|state| {
+                let blob = match state.blobs.get_mut(blob_id) {
+                    Some(v) => v,
+                    None => {
+                        return Err(ReadBlobError::NotFound);
+                    }
+                };
 
-        if blob.exclusive_lock {
-            return Err(ReadBlobError::BeingWritten);
-        }
+                if blob.exclusive_lock {
+                    return Err(ReadBlobError::BeingWritten);
+                }
 
-        blob.ref_count += 1;
+                blob.ref_count += 1;
 
-        Ok(BlobLease {
-            shared: self.shared.clone(),
-            spec: blob.spec.clone(),
-        })
+                Ok(BlobLease {
+                    shared: self.shared.clone(),
+                    spec: blob.spec.clone(),
+                })
+            })
+            .unwrap()
     }
 
     /// Gets a writer instance for inserting a new non-existent blob into
     /// storage. While the writer is live, no other readers/writers will
     /// exist for this blob.
-    pub async fn new_writer(
-        &self,
-        spec: &BlobSpec,
-    ) -> Result<std::result::Result<BlobWriter, NewBlobError>> {
+    pub async fn new_writer(&self, spec: &BlobSpec) -> Result<Result<BlobWriter, NewBlobError>> {
         if spec.id().len() > BLOB_ID_MAX_LENGTH || !BLOB_ID_PATTERN.test(spec.id()) {
             return Ok(Err(NewBlobError::InvalidBlobId));
         }
@@ -165,14 +185,13 @@ impl BlobStore {
 
         let blob_id = spec.id();
 
-        let lease = {
-            let mut state = self.shared.state.lock().await;
+        let r = self.shared.state.apply(|state| {
             if let Some(existing_entry) = state.blobs.get(blob_id) {
                 if existing_entry.exclusive_lock {
-                    return Ok(Err(NewBlobError::BeingWritten));
+                    return Err(NewBlobError::BeingWritten);
                 }
 
-                return Ok(Err(NewBlobError::AlreadyExists));
+                return Err(NewBlobError::AlreadyExists);
             }
 
             state.blobs.insert(
@@ -185,10 +204,15 @@ impl BlobStore {
                 },
             );
 
-            BlobLease {
+            Ok(BlobLease {
                 spec: spec.clone(),
                 shared: self.shared.clone(),
-            }
+            })
+        })?;
+
+        let lease = match r {
+            Ok(v) => v,
+            Err(e) => return Ok(Err(e)),
         };
 
         // Create the blob dir.
@@ -256,6 +280,8 @@ impl BlobStore {
     }
 
     /// Implementation of the Download RPC.
+    ///
+    /// CANCEL SAFE
     async fn download_impl<'a>(
         &self,
         request: rpc::ServerRequest<BlobDownloadRequest>,
@@ -263,7 +289,7 @@ impl BlobStore {
     ) -> Result<()> {
         let blob_id = request.blob_id();
 
-        let lease = match self.read_lease(blob_id).await {
+        let lease = match self.read_lease(blob_id) {
             Ok(v) => v,
             Err(ReadBlobError::BeingWritten) => {
                 return Err(
@@ -304,17 +330,18 @@ impl BlobStore {
 
     /// Implementation of the Delete RPC.
     async fn delete_impl(&self, blob_id: &str) -> Result<()> {
-        let lease = {
-            let mut state = self.shared.state.lock().await;
+        let lease = self.shared.state.apply(|state| {
             let blob = match state.blobs.get_mut(blob_id) {
                 Some(v) => v,
                 None => {
-                    return Err(rpc::Status::not_found("No blob with the given id").into());
+                    return Err(rpc::Status::not_found("No blob with the given id"));
                 }
             };
 
             if blob.ref_count != 0 {
-                return Err(rpc::Status::failed_precondition("Can't delete an in-use blob").into());
+                return Err(rpc::Status::failed_precondition(
+                    "Can't delete an in-use blob",
+                ));
             }
 
             // We should never have non-existent blobs in the map that aren't exclusively
@@ -325,11 +352,11 @@ impl BlobStore {
             blob.ref_count = 1;
             blob.exists = false;
 
-            BlobLease {
+            Ok(BlobLease {
                 shared: self.shared.clone(),
                 spec: blob.spec.clone(),
-            }
-        };
+            })
+        })??;
 
         delete_blob_spec(self.shared.db.as_ref(), blob_id).await?;
 
@@ -360,16 +387,18 @@ impl Drop for BlobLease {
         let blob_id = self.spec.id().to_string();
 
         // NOTE: Must run uninterupted until completion.
-        executor::spawn(async move {
-            let mut state = shared.state.lock().await;
-            let entry = state.blobs.get_mut(&blob_id).unwrap();
-            entry.ref_count -= 1;
-            entry.exclusive_lock = false;
+        self.shared
+            .state
+            .apply(|state| {
+                let entry = state.blobs.get_mut(&blob_id).unwrap();
+                entry.ref_count -= 1;
+                entry.exclusive_lock = false;
 
-            if !entry.exists {
-                state.blobs.remove(&blob_id);
-            }
-        });
+                if !entry.exists {
+                    state.blobs.remove(&blob_id);
+                }
+            })
+            .unwrap();
     }
 }
 
@@ -455,11 +484,14 @@ impl BlobWriter {
 
         put_blob_spec(self.lease.shared.db.as_ref(), self.lease.spec().clone()).await?;
 
-        {
-            let mut state = self.lease.shared.state.lock().await;
-            let mut entry = state.blobs.get_mut(self.lease.spec().id()).unwrap();
-            entry.exists = true;
-        }
+        self.lease
+            .shared
+            .state
+            .apply(|state| {
+                let mut entry = state.blobs.get_mut(self.lease.spec().id()).unwrap();
+                entry.exists = true;
+            })
+            .unwrap();
 
         drop(self.lease);
 
@@ -469,19 +501,21 @@ impl BlobWriter {
 
 #[async_trait]
 impl BlobStoreService for BlobStore {
+    /// CANCEL SAFE
     async fn List(
         &self,
         request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         response: &mut rpc::ServerResponse<BlobListResponse>,
     ) -> Result<()> {
-        let state = self.shared.state.lock().await;
-        for entry in state.blobs.values() {
-            if !entry.exists {
-                continue;
-            }
+        self.shared.state.apply(|state| {
+            for entry in state.blobs.values() {
+                if !entry.exists {
+                    continue;
+                }
 
-            response.value.add_blob(entry.spec.clone());
-        }
+                response.value.add_blob(entry.spec.clone());
+            }
+        })?;
 
         Ok(())
     }
@@ -494,6 +528,7 @@ impl BlobStoreService for BlobStore {
         self.upload_impl(request, response).await
     }
 
+    /// CANCEL SAFE
     async fn Download(
         &self,
         request: rpc::ServerRequest<BlobDownloadRequest>,

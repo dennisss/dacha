@@ -54,6 +54,16 @@ impl core::hash::Hasher for FastHasher {
     fn write_u64(&mut self, i: u64) {
         self.total = unsafe { core::arch::x86_64::_mm_crc32_u64(self.total, i) };
     }
+
+    #[cfg(target_pointer_width = "32")]
+    fn write_usize(&mut self, i: usize) {
+        self.write_u32(i as u32);
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    fn write_usize(&mut self, i: usize) {
+        self.write_u64(i as u64);
+    }
 }
 
 #[derive(Default, Clone)]

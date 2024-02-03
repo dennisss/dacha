@@ -48,9 +48,8 @@ impl Iterable<KeyValueEntry> for LevelIterator {
                         return Ok(None);
                     }
 
-                    let table = tables[self.next_table_index].table.lock().await;
+                    let iter = tables[self.next_table_index].table().await.iter();
 
-                    let iter = table.as_ref().unwrap().iter();
                     self.next_table_index += 1;
 
                     iter
@@ -76,8 +75,8 @@ impl Iterable<KeyValueEntry> for LevelIterator {
         });
 
         if let Some(idx) = table_idx {
-            let table = tables[idx].table.lock().await;
-            let mut iter = table.as_ref().unwrap().iter();
+            let mut iter = tables[idx].table().await.iter();
+
             iter.seek(key).await?;
 
             self.next_table_index = idx + 1;

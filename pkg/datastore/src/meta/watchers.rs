@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use executor::channel;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
+use executor::{channel, lock};
 
 use crate::proto::WatchResponse;
 
 pub struct Watchers {
-    state: Arc<Mutex<WatchersState>>,
+    state: Arc<AsyncMutex<WatchersState>>,
 }
 
 struct WatchersState {
@@ -28,30 +28,34 @@ struct WatcherEntry {
 impl Watchers {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(Mutex::new(WatchersState {
+            state: Arc::new(AsyncMutex::new(WatchersState {
                 prefix_watchers: vec![],
                 last_id: 0,
             })),
         }
     }
 
+    /// CANCEL SAFE
     pub async fn register(&self, prefix: &[u8]) -> WatcherRegistration {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().await.unwrap().read_exclusive();
 
         let id = state.last_id + 1;
-        state.last_id = id;
-
         let (sender, receiver) = channel::unbounded();
 
-        let entry = WatcherEntry {
-            key_prefix: Bytes::from(prefix),
-            id,
-            sender,
-        };
+        lock!(state <= state.upgrade(), {
+            state.last_id = id;
 
-        // NOTE: These two lines must happen atomically to ensure that the entry is
-        // always cleaned up.
-        state.prefix_watchers.push(entry);
+            let entry = WatcherEntry {
+                key_prefix: Bytes::from(prefix),
+                id,
+                sender,
+            };
+
+            // NOTE: These two lines must happen atomically to ensure that the entry is
+            // always cleaned up.
+            state.prefix_watchers.push(entry);
+        });
+
         WatcherRegistration {
             state: self.state.clone(),
             id,
@@ -59,9 +63,8 @@ impl Watchers {
         }
     }
 
-    // TODO: Call this.
     pub async fn broadcast(&self, change: &WatchResponse) {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().enter();
         for watcher in &state.prefix_watchers {
             let mut filtered_response = WatchResponse::default();
             for entry in change.entries() {
@@ -75,11 +78,13 @@ impl Watchers {
                 let _ = watcher.sender.send(filtered_response).await;
             }
         }
+
+        state.exit();
     }
 }
 
 pub struct WatcherRegistration {
-    state: Arc<Mutex<WatchersState>>,
+    state: Arc<AsyncMutex<WatchersState>>,
     id: usize,
     receiver: channel::Receiver<WatchResponse>,
 }
@@ -89,13 +94,15 @@ impl Drop for WatcherRegistration {
         let state = self.state.clone();
         let id = self.id;
         executor::spawn(async move {
-            let mut state = state.lock().await;
+            let mut state = state.lock().await.unwrap().enter();
             for i in 0..state.prefix_watchers.len() {
                 if state.prefix_watchers[i].id == id {
                     state.prefix_watchers.swap_remove(i);
                     break;
                 }
             }
+
+            state.exit();
         });
     }
 }
