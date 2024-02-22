@@ -1,0 +1,268 @@
+(kicad_symbol_lib (version 20220914) (generator kicad_symbol_editor)
+  (symbol "CD-HD2004" (pin_names (offset 0.254)) (in_bom yes) (on_board yes)
+    (property "Reference" "U" (at 20.32 7.62 0)
+      (effects (font (size 1.524 1.524)))
+    )
+    (property "Value" "CD-HD2004" (at 20.32 5.08 0)
+      (effects (font (size 1.524 1.524)))
+    )
+    (property "Footprint" "SON4_CD-HD2004_BRN" (at 20.32 3.556 0)
+      (effects (font (size 1.524 1.524)) hide)
+    )
+    (property "Datasheet" "" (at 0 0 0)
+      (effects (font (size 1.524 1.524)))
+    )
+    (property "ki_locked" "" (at 0 0 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "ki_fp_filters" "SON4_CD-HD2004_BRN SON4_CD-HD2004_BRN-M SON4_CD-HD2004_BRN-L" (at 0 0 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (symbol "CD-HD2004_1_1"
+      (polyline
+        (pts
+          (xy 7.62 -12.7)
+          (xy 33.02 -12.7)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 7.62 -10.16)
+          (xy 33.02 -10.16)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 7.62 0)
+          (xy 33.02 0)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 7.62 2.54)
+          (xy 7.62 -12.7)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 15.24 0)
+          (xy 25.4 -10.16)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 16.51 -7.62)
+          (xy 17.78 -8.89)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 16.51 -7.62)
+          (xy 19.05 -6.35)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.05 -11.43)
+          (xy 21.59 -10.16)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.05 -8.89)
+          (xy 19.05 -11.43)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.05 -8.89)
+          (xy 21.59 -10.16)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.05 -6.35)
+          (xy 17.78 -8.89)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.05 0)
+          (xy 21.59 -1.27)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.05 0)
+          (xy 21.59 1.27)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.05 1.27)
+          (xy 19.05 -1.27)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 19.685 -5.715)
+          (xy 15.24 -10.16)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 20.955 -4.445)
+          (xy 25.4 0)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 21.59 -8.89)
+          (xy 21.59 -11.43)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 21.59 -6.35)
+          (xy 24.13 -7.62)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 21.59 1.27)
+          (xy 21.59 -1.27)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 22.86 -8.89)
+          (xy 21.59 -6.35)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 22.86 -8.89)
+          (xy 24.13 -7.62)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 33.02 -12.7)
+          (xy 33.02 2.54)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 33.02 2.54)
+          (xy 7.62 2.54)
+        )
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (polyline
+        (pts
+          (xy 16.51 -7.62)
+          (xy 17.78 -8.89)
+          (xy 19.05 -6.35)
+          (xy 16.51 -7.62)
+        )
+        (stroke (width 0) (type solid))
+        (fill (type outline))
+      )
+      (polyline
+        (pts
+          (xy 19.05 -8.89)
+          (xy 19.05 -11.43)
+          (xy 21.59 -10.16)
+          (xy 19.05 -8.89)
+        )
+        (stroke (width 0) (type solid))
+        (fill (type outline))
+      )
+      (polyline
+        (pts
+          (xy 19.05 0)
+          (xy 21.59 1.27)
+          (xy 21.59 -1.27)
+          (xy 19.05 0)
+        )
+        (stroke (width 0) (type solid))
+        (fill (type outline))
+      )
+      (polyline
+        (pts
+          (xy 21.59 -6.35)
+          (xy 22.86 -8.89)
+          (xy 24.13 -7.62)
+          (xy 21.59 -6.35)
+        )
+        (stroke (width 0) (type solid))
+        (fill (type outline))
+      )
+      (arc (start 19.685 -5.715) (mid 20.955 -5.715) (end 20.955 -4.445)
+        (stroke (width 0.127) (type solid))
+        (fill (type none))
+      )
+      (pin unspecified line (at 0 0 0) (length 7.62)
+        (name "1" (effects (font (size 1.4986 1.4986))))
+        (number "1" (effects (font (size 1.4986 1.4986))))
+      )
+      (pin unspecified line (at 40.64 0 180) (length 7.62)
+        (name "2" (effects (font (size 1.4986 1.4986))))
+        (number "2" (effects (font (size 1.4986 1.4986))))
+      )
+      (pin unspecified line (at 40.64 -10.16 180) (length 7.62)
+        (name "3" (effects (font (size 1.4986 1.4986))))
+        (number "3" (effects (font (size 1.4986 1.4986))))
+      )
+      (pin unspecified line (at 0 -10.16 0) (length 7.62)
+        (name "4" (effects (font (size 1.4986 1.4986))))
+        (number "4" (effects (font (size 1.4986 1.4986))))
+      )
+    )
+  )
+)

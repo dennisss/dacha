@@ -183,7 +183,17 @@ impl ArgType for bool {
     fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
         match raw_arg {
             RawArgValue::Bool(v) => Ok(v),
-            RawArgValue::String(_) => Err(err_msg("Expected bool, got string")),
+            RawArgValue::String(v) => {
+                let lower = v.as_str().to_ascii_lowercase();
+                if lower == "true" {
+                    return Ok(true);
+                }
+                if lower == "false" {
+                    return Ok(false);
+                }
+
+                Err(err_msg("Expected bool, got string"))
+            }
         }
     }
 }

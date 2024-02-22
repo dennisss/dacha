@@ -33,6 +33,7 @@ members = [
 	"pkg/rpc",
 	"pkg/rpc_test",
 	"pkg/image",
+	"pkg/image/tools",
 	"third_party/pkix",
 	"pkg/sstable",
 	"pkg/graphics",

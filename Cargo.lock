@@ -1412,6 +1412,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "image_tools"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "common",
+ "compression",
+ "executor",
+ "file",
+ "graphics",
+ "image",
+ "macros",
+ "math",
+ "parsing",
+ "reflection",
+]
+
+[[package]]
 name = "impl_ops"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

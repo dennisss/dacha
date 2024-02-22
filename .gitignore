@@ -35,6 +35,8 @@ _autosave*.sch
 *-cache.lib
 *-rescue.dcm
 *-rescue.lib
+*.kicad_sch.lck
+*.kicad_pcb.lck
 
 # Exported KiCad/CAM stuff
 *.nc

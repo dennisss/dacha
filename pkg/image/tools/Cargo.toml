@@ -1,0 +1,17 @@
+[package]
+name = "image_tools"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+compression = { path = "../../compression" }
+math = { path = "../../math" }
+macros = { path = "../../macros" }
+reflection = { path = "../../reflection" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+image = { path = "../" }
+graphics = { path = "../../graphics" }

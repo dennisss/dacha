@@ -64,6 +64,11 @@ fn dequantize(inputs: &mut [i16], table: &DefineQuantizationTable) {
 pub struct JPEG {
     // TODO: May also be up to 12 bits of precision.
     pub image: Image<u8>,
+
+    pub unknown_segments: Vec<(u8, Vec<u8>)>,
+
+    /// Extra data after the end of the image which wasn't parsed.
+    pub trailer_data: Vec<u8>,
 }
 
 /// For a single component of an image, contains currently accumulated data.
@@ -165,9 +170,13 @@ impl JPEG {
         // TODO: Support non-3 channel modes
         let mut pixels = vec![];
 
+        let mut unknown_segments = vec![];
+
         loop {
             let mut marker = parse_next!(next, take_exact(2));
-            assert_eq!(marker[0], 0xff);
+            if marker[0] != 0xff {
+                return Err(err_msg("Invalid JPEG marker start byte"));
+            }
 
             if marker[1] == END_OF_IMAGE {
                 // NOTE: Some valid images have extra data at the end.
@@ -182,9 +191,11 @@ impl JPEG {
 
             // TODO: Must error out if we see unknown markers that aren't APPx markers.
 
+            // let mut app0 = None;
+
             match marker[1] {
                 APP0 => {
-                    let seg = App0Segment::parse(inner)?;
+                    let app0 = Some(App0Segment::parse(inner)?);
                     // println!("{:?}", seg);
                 }
                 DAC => {
@@ -459,8 +470,23 @@ impl JPEG {
                     assert_eq!(cursor.position() as usize, encoded.unwrap().len());
                 }
                 _ => {
-                    println!("Unknown marker: {:x?}", marker);
-                    println!("size: {}", size);
+                    let is_app_segment = marker[1] >= 0xE0 && marker[1] <= 0xEF;
+                    let is_comment = marker[1] == 0xFE;
+
+                    // We need to be conservative about what we skip to avoid skipping data that
+                    // might be critical to correctly decoding the image.
+                    let safe_to_ignore = is_app_segment || is_comment;
+
+                    if !safe_to_ignore {
+                        return Err(format_err!(
+                            "Unknown critical JPEG segment with marker: {:x?}",
+                            marker
+                        ));
+                    }
+
+                    unknown_segments.push((marker[1], inner.to_vec()));
+                    // println!("Unknown marker: {:x?}", marker);
+                    // println!("size: {}", size);
                 }
             };
         }
@@ -479,10 +505,13 @@ impl JPEG {
         };
 
         Ok(JPEG {
+            // app0,
             image: Image {
                 array: arr,
                 colorspace: Colorspace::RGB,
             },
+            unknown_segments,
+            trailer_data: next.to_vec(),
         })
     }
 

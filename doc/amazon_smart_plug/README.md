@@ -1,7 +1,7 @@
 
 
 - Relay for switching the load
-
+    - HF3FA
 - 5V Power for WiFi model
     - Input protection using temperature fuse + 10 ohm resistor. 
     - Then AC goes into a full bridge rectifier IC

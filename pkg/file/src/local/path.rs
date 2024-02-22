@@ -534,6 +534,7 @@ mod tests {
                 "/../",
                 &[LocalPathSegment::Root, LocalPathSegment::ParentDir],
             ),
+            ("hello", &[LocalPathSegment::File("hello")]),
             (
                 "/../hello",
                 &[
