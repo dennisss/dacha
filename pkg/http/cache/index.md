@@ -1,4 +1,9 @@
-# Public Web HTTP Cache
+# HTTP Cache
+
+File structure:
+
+- `./metadata/`
+- `./blobs/`
 
 
 

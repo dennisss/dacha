@@ -1,29 +1,77 @@
-# Custom TKL Keyboard
+# Mechanical Keyboard
+
+This directory contains the designs 
 
 ## Features
 
-- 87 keys
-- Wireless shutoff switch
-    - When toggled, the keyboard will only communicate via a USB data connection.
+- 87 keys TKL layout
+- Per-key RGB LED and keyboard side illumination
+- Either wireless (battery powered) or USB operation
+- Hot swap key switch sockets
+- OLED display
 
-## V2 Wishlist
+## Versions
 
+### R2
+
+WIP
+
+Wishlist
+
+- Add revision numbers to the PCB and 3d printed parts.
+- Add a reset button for USB reprogramming.
+- Check whether the USB diode is getting too hot.
 - USB Hub
 - Integrate the coulomb counter onto the board
 - Verify TC2030 header is standard
-- Ditch the rocker switch
 - Accelerometer
 - Round the PCB corners so that there is more space to round the 3d printed case
 - Have an even number of PCB holes on the left and right side of center to make it easier to use 2-piece 3d-printed cases.
 - Fix the exact vertical position of the LED hole
 - Move the debug header to the bottom of the board.
-
-(299.16875 + 327.74375) / 2 - (12.8 / 2)- 0.45*3
-
-On the other side, the dongle needs an EEPROM to support deduping packets eventually
-- Suppose we have one side start sending packets with index 'i', but then the other the 
-
 - Using the OLED, support changing the current radio channel being used.
+- Profile the initial ISR of the batteries
+- Support turning off charging
+
+### R1
+
+First manufactured board. Doesn't have a revision number printed on the board.
+
+General board assembly goes as follows:
+
+1. Hold down the PCBs (only them middle one in the picture is being assembled): ![](board-r1/images/holddown.jpg)
+1. Apply solder paste through a stencil: ![](board-r1/images/solderpaste.jpg)
+1. Place all SMD components: ![](board-r1/images/pnp.jpg)
+1. Re-flow all the components
+    - Verify none of the NRF52 pins are bridging.
+1. Hand solder: 
+    - Re-solder every hot swap socket with more solder to prevent the solder joints from breaking.
+        - Be sure the PCB is flat while doing this to prevent any arcing/bending in the PCB
+    - Attach the through hole USB connector, switch, and OLED
+    - Attach the battery JST connector. It is recommended to hold down the JST connector using super glue.
+1. Apply apply the 'patches' listed later down.
+1. Attach foam pads to each key and attach stabiliizers: ![](board-r1/images/stabs-and-foam.jpg)
+1. 3D print the case (4 pieces + 2 side diffusers)
+1. Prepare the bottom of the case:
+    - Add battery wiring: ![](board-r1/images/battery-connection.jpg)
+    - Insert foam into any empty voids: ![](board-r1/images/bottom-foam.jpg)
+1. Add rubber pads to the bottom of the keyboard (outside of the case).
+1. Fully assemble the keyboard: ![](board-r1/images/all-white.jpg)
+    - TODO: Document the screw sizes/lengths to use
+1. Final product will look something like this: ![](board-r1/images/colored-finished.jpg)
+
+The following patches are required to get it working:
+
+- Patch 1: KEY_X_REGISTER_ENABLE needs to be disconnected from 3V3 and connected to GND to enable the shift registers.
+    - Part 1: ![](board-r1/images/patch1-part1.jpg)
+    - Part 2: ![](board-r1/images/patch1-part2.jpg)
+- Patch 2: Pins 2 and 3 on Q2 (the transistor that toggles LED power) need to be flipped.
+    - Image: ![](board-r1/images/patch2.jpg)
+- Patch 3: LED_SERIAL needs to be level shifted up to 5V (LED_VDD). Otherwise the logic level won't be high enough to be readable by the LEDs.
+    - Image: ![](board-r1/images/patch3.jpg)
+
+
+
 
 ## Dimensions
 
@@ -33,19 +81,12 @@ On the other side, the dongle needs an EEPROM to support deduping packets eventu
     - If 1U is 19.05mm
     - Total Key Width: 18.25U = 347.6625mm
     - Total Key Height: 6.5U = 123.82500mm
-
 - Center stabilizer rectangle requires 11.2mm by 7mm holes
-
 - OLED Dimensions
     - Outer: 38.2mm by 12.2mm
     - Center of pins is ~1.5mm from left side of PCB
     - Center of first pin is ~2.25mm from top of bottom of PCB
     - Display is inset by 5mm from left or right of PCB
-
-To be on, Gate must be < Source
-- Normally gate is 5V
-    - Source is slightly lower.
-    - When active, 
 
 ## Firmware
 
@@ -100,7 +141,6 @@ Stores:
 - Wireless encryption counters
 - Battery discharge counter
 
-
 ## Board
 
 In KiCad the origin is at `(100, 100)` which corresponds to the top-left corner of the keyboard's **case** (PCB starts at `(101, 101)`).
@@ -109,10 +149,6 @@ The key matrix is structured as 6 rows of 16 key columns with 88 keys actually c
 - Shift registers output a voltage to each of the 16 columns
 - This flows through each switch and it's diode.
 - MCU reads key state through individual pins for each of the 6 rows.
-
-- 1N4148
-- Kailh Switch Hot Swap Socket
-- Durock V2 Stabilizers - Clear Gold Plated PCB Screw-in
 
 
 ### Power Consumption
@@ -143,9 +179,27 @@ So total idle power consumption is ~300uA
 
 ### Component Selection
 
+**Key Caps**
+
+- The white keys are 'Glorious GPBT Keycaps' in 'Artic White' color.
+- Colored keys are [HK Gaming PBT KEycaps in Chalk color](https://www.amazon.com/gp/product/B08156NG7K)
+
+**Per-key Diode**
+
+- 1N4148
+
+**Hot Swap Sockets**
+
+- Kailh Switch Hot Swap Socket
+
+**Key Stabilizers**
+
+- Durock V2 Stabilizers - Clear Gold Plated PCB Screw-in
+
 **NRF52 DCC to DEC4 Filtering**
 
-- These recommendations are derived from the NRF52 product specification reference circuitry.
+These recommendations are derived from the NRF52 product specification reference circuitry:
+
 - L1: 15nF: High frequency chip inductor (+/-10%) (Footprint: 0603) (Min Footprint: 0402)
 - L2: 10uH: Chip inductor, IDC, min 50mA (+/-20%) (Footprint: 0603)
 - C5: 1uF: Capacitor, X7R, min 6V rating (+/-10%) (Footprint: 0603)
@@ -272,3 +326,5 @@ TODOs:
     - https://www.reddit.com/r/MechanicalKeyboards/wiki/keycap_guides#wiki_key_spacing
 
 - https://github.com/ebastler/kicad-keyboard-parts.pretty    
+
+- https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/measuring-lithium-battery-voltage-with-nrf52

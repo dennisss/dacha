@@ -9,7 +9,11 @@ pub trait FromErrno {
 impl FromErrno for IoError {
     fn from_errno(errno: Errno) -> Option<Error> {
         match errno {
-            Errno::EIO | Errno::ECONNABORTED | Errno::ECONNREFUSED | Errno::ECANCELED => Some(
+            Errno::EIO
+            | Errno::ECONNRESET
+            | Errno::ECONNABORTED
+            | Errno::ECONNREFUSED
+            | Errno::ECANCELED => Some(
                 IoError::new(IoErrorKind::Aborted, "")
                     .with_source(errno.into())
                     .into(),

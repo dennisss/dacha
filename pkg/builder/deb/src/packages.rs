@@ -5,7 +5,7 @@ use common::errors::*;
 use crate::{ControlFile, ControlFileStanza};
 
 pub struct PackagesFile {
-    values: HashMap<String, Package>,
+    values: HashMap<String, Vec<Package>>,
 }
 
 impl PackagesFile {
@@ -18,23 +18,32 @@ impl PackagesFile {
             let pkg = Package { stanza };
 
             let name = pkg.name()?;
+            let version = pkg.version()?;
+
+            // NOTE: There may be multiple packages at different versions or architectures.
+            values
+                .entry(name.to_string())
+                .or_insert_with(|| vec![])
+                .push(pkg);
+
+            // let key = (name.to_string(), version.to_string());
 
             // TODO: Use a key of (name, arch, version, )
             // ^ There is also a special "all" which shouldn't conflict with it.
-            // Repositories are allowed to contain multiple packages with the same name at
-            // different
-            if values.contains_key(name) {
-                return Err(format_err!("Duplicate package named: {}", name));
-            }
+            // Repositories are allowed to contain multiple packages with the
+            // same name at different versions.
+            // if values.contains_key(&key) {
+            //     return Err(format_err!("Duplicate package named: {}", name));
+            // }
 
-            values.insert(name.to_string(), pkg);
+            // values.insert(key, pkg);
         }
 
         Ok(Self { values })
     }
 
     pub fn packages(&self) -> impl Iterator<Item = &Package> {
-        self.values.values()
+        self.values.values().map(|v| v.iter()).flatten()
     }
 }
 
@@ -57,6 +66,10 @@ impl Package {
 
     pub fn filename(&self) -> Result<&str> {
         self.get_mandatory_field("Filename")
+    }
+
+    pub fn version(&self) -> Result<&str> {
+        self.get_mandatory_field("Version")
     }
 
     pub fn size(&self) -> Result<usize> {

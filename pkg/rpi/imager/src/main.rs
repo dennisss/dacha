@@ -182,8 +182,6 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         }
     }
 
-    // TODO: Open disk with O_DIRECT and O_EXCL
-
     const BUFFER_SIZE: usize = 4096 * 16; // 64 KiB
 
     println!("Opening disk...");

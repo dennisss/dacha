@@ -580,6 +580,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cnc_tools"
+version = "0.1.0"
+dependencies = [
+ "base_args",
+ "base_error",
+ "common",
+ "executor",
+ "file",
+ "gcode",
+ "macros",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -930,6 +943,7 @@ dependencies = [
  "base_radix",
  "base_units",
  "common",
+ "compression",
  "crypto",
  "executor",
  "file",
@@ -1023,6 +1037,7 @@ dependencies = [
 name = "file"
 version = "0.1.0"
 dependencies = [
+ "automata",
  "common",
  "executor",
  "macros",
@@ -1136,6 +1151,17 @@ dependencies = [
  "proc-macro-hack",
  "proc-macro-nested",
  "slab",
+]
+
+[[package]]
+name = "gcode"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "macros",
+ "math",
+ "regexp_macros",
 ]
 
 [[package]]
@@ -1389,6 +1415,34 @@ dependencies = [
  "reflection",
  "regexp_macros",
  "sys",
+]
+
+[[package]]
+name = "http_cache"
+version = "0.1.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "crypto",
+ "datastore_meta_client",
+ "executor",
+ "file",
+ "http",
+ "http_cache_proto",
+ "macros",
+ "parsing",
+ "protobuf",
+ "sstable",
+]
+
+[[package]]
+name = "http_cache_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
 ]
 
 [[package]]
@@ -2392,6 +2446,22 @@ dependencies = [
  "macros",
  "parsing",
  "parsing_compiler",
+ "sys",
+]
+
+[[package]]
+name = "rpi_imager"
+version = "0.0.0"
+dependencies = [
+ "base_radix",
+ "base_units",
+ "common",
+ "crypto",
+ "executor",
+ "file",
+ "macros",
+ "parsing",
+ "storage",
  "sys",
 ]
 

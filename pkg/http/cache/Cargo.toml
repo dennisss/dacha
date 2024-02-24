@@ -1,0 +1,23 @@
+[package]
+name = "http_cache"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+http_cache_proto = { path = "./proto" }
+base_radix = { path = "../../base/radix" }
+common = { path = "../../common" }
+crypto = { path = "../../crypto" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+sstable = { path = "../../sstable" }
+protobuf = { path = "../../protobuf" }
+http = { path = ".." }
+datastore_meta_client = { path = "../../datastore/meta/client" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

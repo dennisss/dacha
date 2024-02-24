@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+message RequestCacheEntry {
+    uint64 timestamp_millis = 1;
+
+    RequestProto request = 2;
+
+    ResponseProto response = 3;
+}
+
+message RequestProto {
+    string method = 1;
+    string url = 2;
+    repeated HeaderProto headers = 3;
+}
+
+message ResponseProto {
+    uint32 status_code = 1;
+    repeated HeaderProto headers = 2;
+    bytes body_sha256 = 3;
+}
+
+message HeaderProto {
+    string name = 1;
+    string value = 2;
+}

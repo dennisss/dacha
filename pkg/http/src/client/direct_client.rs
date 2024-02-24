@@ -551,6 +551,7 @@ impl DirectClientRunner {
             // TODO: What about requests still being started during the suht down.
             if state.shutting_down {
                 if state.connection_pool.is_empty() {
+                    state.exit();
                     break;
                 }
 
@@ -581,8 +582,15 @@ impl DirectClientRunner {
             // Wait for something to happen.
             // TODO: Have a timeout on this to handle idleness and so on..
             {
-                let events = shared.received_events.lock().await.unwrap().enter();
+                let events = shared
+                    .received_events
+                    .lock()
+                    .await
+                    .unwrap()
+                    .read_exclusive();
+
                 if !events.is_empty() {
+                    state.exit();
                     continue;
                 }
 

@@ -113,7 +113,14 @@ pub struct StaticFileBody {
     length: usize,
 }
 
-impl StaticFileBody {}
+impl StaticFileBody {
+    pub async fn open(path: &LocalPath) -> Result<Self> {
+        let file = LocalFile::open(path)?;
+        let length = file.metadata().await?.len() as usize;
+
+        Ok(Self { file, length })
+    }
+}
 
 #[async_trait]
 impl Body for StaticFileBody {

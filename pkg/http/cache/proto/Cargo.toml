@@ -1,0 +1,20 @@
+[package]
+name = "http_cache_proto"
+version = "0.0.0"
+edition = "2018"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+common = { path = "../../../common" }
+protobuf = { path = "../../../protobuf" }
+macros = { path = "../../../macros" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../../protobuf/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc", "common/std", "protobuf/std"]
+alloc = ["common/alloc", "protobuf/alloc"]

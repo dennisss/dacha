@@ -49,7 +49,7 @@ structs {
 
 enums {
     name: "MASHControl"
-    endian: LITTLE_ENDIAN
+    endian: BIG_ENDIAN
     type { primitive: U8 }
     values { name: "IntegerDivision" value: 0 }
     values { name: "OneStage" value: 1 }
@@ -59,7 +59,7 @@ enums {
 
 enums {
     name: "ClockSource"
-    endian: LITTLE_ENDIAN
+    endian: BIG_ENDIAN  # Sort of little endian, but doesn't matter 
     type { primitive: U8 }
     values { name: "GND" value: 0 }
     values { name: "Oscillator" value: 1 }

@@ -33,10 +33,9 @@ _autosave*.sch
 # Netlists are derived purely from the schematic
 *.net
 *-cache.lib
-*-rescue.dcm
-*-rescue.lib
 *.kicad_sch.lck
 *.kicad_pcb.lck
+*#auto_saved_files#
 
 # Exported KiCad/CAM stuff
 *.nc

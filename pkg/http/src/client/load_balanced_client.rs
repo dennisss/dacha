@@ -206,6 +206,8 @@ struct Backend {
     key: BackendKey,
 
     client: DirectClient,
+
+    // TODO: Make sure this doesn't get cancelled but instead we wait for it to finish.
     task: ChildTask,
 
     /// If true, then we've initiated a client-side shutdown of this backend

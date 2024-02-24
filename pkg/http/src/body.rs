@@ -274,6 +274,10 @@ impl Body for TransformBody {
         self.body.inner_reader().len()
     }
 
+    fn has_trailers(&self) -> bool {
+        self.body.inner_reader().has_trailers()
+    }
+
     async fn trailers(&mut self) -> Result<Option<Headers>> {
         self.body.inner_reader_mut().trailers().await
     }
@@ -290,6 +294,10 @@ impl Readable for TransformBody {
 impl Body for Borrowed<Box<dyn Body>> {
     fn len(&self) -> Option<usize> {
         self.deref().len()
+    }
+
+    fn has_trailers(&self) -> bool {
+        self.deref().has_trailers()
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {

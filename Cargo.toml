@@ -30,6 +30,8 @@ members = [
 	"pkg/protobuf/json/proto",
 	"pkg/automata",
 	"pkg/http",
+	"pkg/http/cache",
+	"pkg/http/cache/proto",
 	"pkg/rpc",
 	"pkg/rpc_test",
 	"pkg/image",
@@ -55,7 +57,7 @@ members = [
 	"pkg/format/json",
 	"pkg/peripheral",
 	# "pkg/rpi",
-	# "pkg/rpi/imager",
+	"pkg/rpi/imager",
 	# "pkg/home_hub",
 	"pkg/usb",
 	"pkg/container",
@@ -93,6 +95,8 @@ members = [
 	# "pkg/api/hue",
 	"pkg/standing_desk",
 	"pkg/cnc",
+	"pkg/cnc/gcode",
+	"pkg/cnc/tools",
 	"pkg/testing",
 	"pkg/perf",
 	"pkg/perf_util",
@@ -148,9 +152,17 @@ members = [
 opt-level = 3
 debug = false
 
+[profile.dev.package.executor]
+opt-level = 3
+debug = true
+
 [profile.dev.package.http]
 opt-level = 3
-debug = false
+debug = true
+
+[profile.dev.package.rpc]
+opt-level = 3
+debug = true
 
 # Also very expensive
 [profile.dev.package.compression]

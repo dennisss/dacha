@@ -33,7 +33,7 @@ impl VolumeLocalFileTable {
             }
 
             path_to_id.insert(file.path().to_string(), file.id());
-            file_by_id.insert(file.id(), file.clone());
+            file_by_id.insert(file.id(), file.as_ref().clone());
         }
 
         Ok(Self {

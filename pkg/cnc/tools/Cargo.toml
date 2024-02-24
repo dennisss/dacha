@@ -1,0 +1,13 @@
+[package]
+name = "cnc_tools"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+macros = { path = "../../macros" }
+base_args = { path = "../../base/args" }
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+gcode = { path = "../gcode" }
