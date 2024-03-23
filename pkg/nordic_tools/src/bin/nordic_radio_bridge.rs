@@ -7,6 +7,7 @@ extern crate common;
 extern crate macros;
 
 use common::errors::*;
+use executor_multitask::RootResource;
 
 #[derive(Args)]
 struct Args {
@@ -25,17 +26,15 @@ async fn main() -> Result<()> {
     let bridge =
         nordic_tools::radio_bridge::RadioBridge::create(&args.state_object_name, &args.usb).await?;
 
-    let mut task_bundle = executor::bundle::TaskResultBundle::new();
+    let service = RootResource::new();
 
-    // TODO:
-    let mut rpc_server = rpc::Http2Server::new();
-    rpc_server.set_shutdown_token(executor::signals::new_shutdown_token());
+    let mut rpc_server = rpc::Http2Server::new(Some(args.rpc_port.value()));
     bridge.add_services(&mut rpc_server)?;
-    task_bundle
-        .add("rpc::Server", rpc_server.run(args.rpc_port.value()))
-        .add("RadioBridge", bridge.run());
+    service.register_dependency(rpc_server.start()).await;
 
-    task_bundle.join().await?;
+    service
+        .spawn_interruptable("RadioBridge", bridge.run())
+        .await;
 
-    Ok(())
+    service.wait().await
 }

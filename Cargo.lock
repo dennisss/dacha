@@ -536,6 +536,7 @@ dependencies = [
  "datastore_meta_client",
  "datastore_proto",
  "executor",
+ "executor_multitask",
  "failure",
  "file",
  "http",
@@ -664,6 +665,7 @@ dependencies = [
  "datastore",
  "datastore_meta_client",
  "executor",
+ "executor_multitask",
  "failure",
  "file",
  "http",
@@ -873,6 +875,7 @@ dependencies = [
  "datastore_meta_client",
  "datastore_proto",
  "executor",
+ "executor_multitask",
  "file",
  "http",
  "macros",
@@ -915,6 +918,7 @@ dependencies = [
  "common",
  "datastore_proto",
  "executor",
+ "executor_multitask",
  "http",
  "net",
  "protobuf_builtins",
@@ -998,6 +1002,17 @@ dependencies = [
  "base_error",
  "common",
  "failure",
+ "macros",
+ "sys",
+]
+
+[[package]]
+name = "executor_multitask"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "common",
+ "executor",
  "macros",
  "sys",
 ]
@@ -1406,6 +1421,7 @@ dependencies = [
  "compression",
  "crypto",
  "executor",
+ "executor_multitask",
  "failure",
  "file",
  "macros",
@@ -1832,6 +1848,7 @@ dependencies = [
  "common",
  "crypto",
  "executor",
+ "executor_multitask",
  "http",
  "macros",
  "nordic_proto",
@@ -2022,19 +2039,6 @@ dependencies = [
  "protobuf",
  "protobuf_builtins",
  "sys",
-]
-
-[[package]]
-name = "peripheral"
-version = "0.1.0"
-dependencies = [
- "common",
- "crypto",
- "lazy_static",
- "libc",
- "nix 0.21.0",
- "parsing",
- "rpi",
 ]
 
 [[package]]
@@ -2296,6 +2300,7 @@ dependencies = [
  "common",
  "crypto",
  "executor",
+ "executor_multitask",
  "failure",
  "file",
  "http",
@@ -2320,6 +2325,7 @@ dependencies = [
  "common",
  "crypto",
  "executor",
+ "executor_multitask",
  "file",
  "http",
  "net",
@@ -2394,6 +2400,7 @@ dependencies = [
  "common",
  "compression",
  "executor",
+ "executor_multitask",
  "failure",
  "http",
  "macros",
@@ -2412,6 +2419,7 @@ dependencies = [
  "cluster_client",
  "common",
  "executor",
+ "executor_multitask",
  "file",
  "http",
  "macros",
@@ -2447,6 +2455,44 @@ dependencies = [
  "parsing",
  "parsing_compiler",
  "sys",
+]
+
+[[package]]
+name = "rpi_controller"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "json",
+ "macros",
+ "parsing",
+ "peripherals",
+ "peripherals_devices",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_json",
+ "rpc",
+ "rpc_util",
+ "rpi",
+ "rpi_controller_proto",
+ "sys",
+ "web",
+]
+
+[[package]]
+name = "rpi_controller_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
 ]
 
 [[package]]
@@ -2528,7 +2574,6 @@ dependencies = [
  "macros",
  "math",
  "parsing",
- "peripheral",
  "protobuf",
  "protobuf_compiler",
  "rpc",
@@ -2600,6 +2645,7 @@ dependencies = [
  "compression",
  "crypto",
  "executor",
+ "executor_multitask",
  "file",
  "macros",
  "math",
@@ -2969,6 +3015,7 @@ dependencies = [
  "automata",
  "common",
  "executor",
+ "executor_multitask",
  "file",
  "http",
  "json",

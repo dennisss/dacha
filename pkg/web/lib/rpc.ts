@@ -1,5 +1,34 @@
 import { encode_utf8, decode_utf8, encode_be_u32, decode_be_u32, decode_header_block } from "pkg/web/lib/encoding";
 
+export class Status {
+    code: number;
+    message?: string;
+
+    constructor(code: number, message?: string) {
+        this.code = code;
+        this.message = message;
+    }
+
+    ok(): boolean {
+        return this.code === 0;
+    }
+
+    toString(): String {
+        return "[" + this.code.toString() + "]" + (this.message ? ": " + this.message : "");
+    }
+}
+
+function status_from_headers(headers: any): Status {
+    let code = parseInt(headers.get("grpc-status"));
+    if (Number.isNaN(code)) {
+        throw new Error("RPC returned invalid status");
+    }
+
+    let message = headers.get("grpc-message");
+
+    return new Status(code, message);
+}
+
 export class Channel {
     _address: string;
 
@@ -9,7 +38,7 @@ export class Channel {
 
     async call(
         service_name: String, method_name: String, request: any
-    ): Promise<{ responses: any[], trailers: Map<String, String> }> {
+    ): Promise<{ status: any, responses: any[], trailers: Map<String, String> }> {
         let request_data = encode_utf8(JSON.stringify(request));
 
         let request_buf = new Uint8Array(1 + 4 + request_data.length);
@@ -21,15 +50,17 @@ export class Channel {
         }
 
         let res = await fetch(`${this._address}/${service_name}/${method_name}`, {
+            mode: "cors",
             method: "POST",
-            cache: "no-cache",
             headers: {
                 "Content-Type": "application/grpc-web+json"
             },
-            body: request_buf
+            body: request_buf,
+            credentials: "omit",
+            // NOTE: Disabling caching on the client side will also break caching of pre-flight requests.
+            // cache: "no-cache",
         });
 
-        console.log(res);
         // Valid gRPC responses should always have a 200 http cod. 
         if (!res.ok) {
             throw new Error("RPC returned non-ok status code");
@@ -75,11 +106,27 @@ export class Channel {
             throw new Error("Unused data at end of RPC response");
         }
 
-        if (trailers === null) {
-            throw new Error("RPC response did not end in trailers");
+        // TODO: Also extract any header metadata.
+
+        let status;
+        if (res.headers.has("grpc-status")) {
+            if (buffer.length !== 0) {
+                throw new Error("Received a non-empty body in Trailers-Only mode");
+            }
+
+            // TODO: Need to remove the grpc status headers from head metadata.
+            status = status_from_headers(res.headers);
+        } else {
+            if (trailers === null) {
+                throw new Error("RPC response did not end in trailers");
+            }
+
+            // TODO: Need to remove the grpc status headers from the trailers object.
+            status = status_from_headers(trailers);
         }
 
         return {
+            status,
             responses,
             trailers
         };

@@ -49,6 +49,11 @@ async fn handle_request(mut req: http::Request) -> http::Response {
 #[executor_main]
 async fn main() -> Result<()> {
     let handler = http::HttpFn(handle_request);
-    let server = Server::new(handler, http::ServerOptions::default());
-    server.run(8888).await
+
+    let mut options = http::ServerOptions::default();
+    options.port = Some(8888);
+
+    let server = Server::new(handler, options);
+
+    executor_multitask::wait_for_main_resource(server.start()).await
 }

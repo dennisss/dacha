@@ -17,6 +17,7 @@ macros = { path = "../macros" }
 net = { path = "../net" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 executor = { path = "../executor" }
+executor_multitask = { path = "../executor/multitask" }
 file = { path = "../file" }
 crypto = { path = "../crypto" }
 base_radix = { path = "../base/radix" }

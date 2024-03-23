@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package rpi;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
+
+message ControllerProto {
+    ControllerConfig config = 1;
+    ControllerState state = 2;
+}
+
+message ControllerConfig {
+    repeated EntityData entities = 1;
+}
+
+message EntityData {
+    string id = 1;
+    google.protobuf.Any value = 2;
+}
+
+message ControllerState {
+    repeated EntityData entities = 1;
+}
+
+message DummyEntityConfig {
+    google.protobuf.Any initial_state = 1;
+}
+
+message TemperatureSensorConfig {}
+
+message TemperatureSensorState {
+    float temperature = 1;
+}
+
+message FanConfig {
+    // Raspberry Pi BCM pin number on which the fan's PWM is connected.
+    uint32 pwm_pin = 2;
+
+    // Whether or not the PWM signal should be inverted (100% duty cycle
+    // actually means 0% fan speed).
+    bool pwm_inverted = 3;
+
+    uint32 tachometer_pin = 4;
+}
+
+message FanState {
+    // Current requested speed of the fan from 0 to 1.
+    // Only writeable if auto == false.
+    float target_speed = 2;
+
+    // Speed of the fan in RPM as measured via the tachometer input pin.
+    uint32 measured_rpm = 3;
+}
+
+message WS2812StripConfig {
+    uint32 serial_pin = 2;
+
+    uint32 num_leds = 3;
+}
+
+message WS2812StripState {
+    // NOTE: LEDs will be off/black when not specified in a period that is active at the
+    // current point in time. 
+    repeated WS2812StripPeriod periods = 2;
+}
+
+message WS2812StripPeriod {
+    // Start time of this period (in milliseconds since epoch).
+    uint64 start_time = 1;
+
+    // End time of this period (in miliseconds since epoch).
+    uint64 end_time = 2;
+    
+    // 24-bit colors to display during this time period. One color per LED in the strip. 
+    repeated uint32 color = 3;
+}
+
+
+message LEDConfig {
+    uint32 pin = 2;
+}
+
+message FanCurveConfig {
+    // TODO: Also add sampling/filtering settings.
+
+    // List of control points which define the relationship between the input temperature and output
+    // fan speed.
+    // 
+    // - Should be sorted in ascending order of 'temperature'.
+    // - Intermediate values are linearly interpolated.
+    repeated FanCurvePoint points = 1;
+
+    // Fans controlled by this curve.
+    repeated string fan_ids = 2; 
+
+    string temperature_id = 3;
+}
+
+message FanCurvePoint {
+    float temp = 1;
+    float speed = 2; // TODO: This gets serialized as 0.20000000298023224
+}
+
+message FanCurveState {
+    // If true, then the corresponding fan curve will actively try to drive the fan
+    bool enabled = 1;
+}
+
+
+service Controller {
+    rpc Read (google.protobuf.Empty) returns (ControllerProto);
+
+    rpc Write (ControllerState) returns (google.protobuf.Empty);
+}

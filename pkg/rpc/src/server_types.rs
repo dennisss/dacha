@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
@@ -9,6 +10,13 @@ use protobuf_json::{MessageJsonParser, MessageJsonSerialize};
 use crate::media_type::{RPCMediaSerialization, RPCMediaType};
 use crate::message::MessageReader;
 use crate::metadata::*;
+
+#[derive(Default)]
+pub struct ServerCodecOptions {
+    pub json_serializer: protobuf_json::SerializerOptions,
+
+    pub json_parser: protobuf_json::ParserOptions,
+}
 
 /// Server-side view of information related to this request.
 pub struct ServerRequestContext {
@@ -51,6 +59,7 @@ impl<T: protobuf::StaticMessage> AsRef<T> for ServerRequest<T> {
 pub struct ServerStreamRequest<T> {
     request_body: Box<dyn Body>,
     request_type: RPCMediaType,
+    codec_options: Arc<ServerCodecOptions>,
     context: ServerRequestContext,
     phantom_t: PhantomData<T>,
 }
@@ -59,11 +68,13 @@ impl ServerStreamRequest<()> {
     pub(crate) fn new(
         request_body: Box<dyn Body>,
         request_type: RPCMediaType,
+        codec_options: Arc<ServerCodecOptions>,
         context: ServerRequestContext,
     ) -> Self {
         Self {
             request_body,
             request_type,
+            codec_options,
             context,
             phantom_t: PhantomData,
         }
@@ -73,6 +84,7 @@ impl ServerStreamRequest<()> {
         ServerStreamRequest {
             request_body: self.request_body,
             request_type: self.request_type,
+            codec_options: self.codec_options,
             context: self.context,
             phantom_t: PhantomData,
         }
@@ -135,15 +147,9 @@ impl<T: protobuf::StaticMessage + Default> ServerStreamRequest<T> {
             if let Some(data) = data {
                 let value = match self.request_type.serialization {
                     RPCMediaSerialization::Proto => T::parse(&data).map_err(|e| Error::from(e)),
-                    RPCMediaSerialization::JSON => {
-                        let options = protobuf_json::ParserOptions {
-                            ignore_unknown_fields: true,
-                        };
-
-                        std::str::from_utf8(data.as_ref())
-                            .map_err(|e| Error::from(e))
-                            .and_then(|s| T::parse_json(s, &options))
-                    }
+                    RPCMediaSerialization::JSON => std::str::from_utf8(data.as_ref())
+                        .map_err(|e| Error::from(e))
+                        .and_then(|s| T::parse_json(s, &self.codec_options.json_parser)),
                 }
                 .map_err(|_| crate::Status::internal("Failed to parse request proto."))?;
 
@@ -195,6 +201,8 @@ pub struct ServerStreamResponse<'a, T> {
 
     pub(crate) response_type: RPCMediaType,
 
+    pub(crate) codec_options: Arc<ServerCodecOptions>,
+
     /// Whether or not we have sent the head of the request yet.
     pub(crate) head_sent: &'a mut bool,
 
@@ -207,6 +215,7 @@ impl<'a> ServerStreamResponse<'a, ()> {
         ServerStreamResponse {
             context: self.context,
             response_type: self.response_type,
+            codec_options: self.codec_options,
             head_sent: self.head_sent,
             sender: self.sender,
             phantom_t: PhantomData,
@@ -287,7 +296,9 @@ impl<'a, T: protobuf::StaticMessage> ServerStreamResponse<'a, T> {
     pub async fn send(&mut self, message: T) -> Result<()> {
         let data = match self.response_type.serialization {
             RPCMediaSerialization::Proto => message.serialize()?,
-            RPCMediaSerialization::JSON => Vec::from(message.serialize_json()),
+            RPCMediaSerialization::JSON => {
+                Vec::from(message.serialize_json(&self.codec_options.json_serializer)?)
+            }
         };
         self.send_bytes(data.into()).await
     }

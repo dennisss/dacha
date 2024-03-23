@@ -1,6 +1,7 @@
 [Unit]
 Description=Cluster Node Runtime
-After=network.target
+After=network.target time-sync.target
+Wants=time-sync.target
 StartLimitIntervalSec=0
 
 [Service]

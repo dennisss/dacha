@@ -80,8 +80,8 @@ pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
     let mut buffer = [0u8; 8192];
 
     loop {
-        let mut rest =
-            unsafe { sys::getdents64(dir.as_raw_fd(), &mut buffer) }.remap_errno::<FileError>()?;
+        let mut rest = unsafe { sys::getdents64(dir.as_raw_fd(), &mut buffer) }
+            .remap_errno::<FileError, _>(|| String::new())?;
         if rest.is_empty() {
             break;
         }

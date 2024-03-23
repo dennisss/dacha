@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     */
 
     let handler = http::static_file_handler::StaticFileHandler::new(
-        file::project_dir().join("doc/pi_rack/board-latest/bom"),
+        file::project_dir().join("doc/pi_rack/images/"),
     );
     // let handler = http::HttpFn(handle_request);
 
@@ -72,6 +72,10 @@ async fn main() -> Result<()> {
     secp256 is still very slow :(
     */
 
+    let mut options = http::ServerOptions::default();
+    options.port = Some(8000);
+
+    /*
     let certificate_file = file::read(project_path!("testdata/certificates/server.crt"))
         .await?
         .into();
@@ -79,17 +83,17 @@ async fn main() -> Result<()> {
         .await?
         .into();
 
-    let mut options = http::ServerOptions::default();
-
     let mut tls_options =
         crypto::tls::ServerOptions::recommended(certificate_file, private_key_file)?;
     tls_options.certificate_request = Some(crypto::tls::CertificateRequestOptions {
         root_certificate_registry: crypto::tls::CertificateRegistrySource::PublicRoots,
         trust_remote_certificate: true,
     });
+    */
 
     // options.tls = Some(tls_options);
 
     let server = http::Server::new(handler, options);
-    server.run(8000).await
+
+    executor_multitask::wait_for_main_resource(server.start()).await
 }

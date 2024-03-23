@@ -5,6 +5,8 @@ Raspberry Pi 4:
 Code examples:
 - https://elinux.org/RPi_GPIO_Code_Samples#Direct_register_access
 -
+
+TODO: Verify that mutations to shared registers (with modify_register) don't happen concurrently
 */
 
 use std::sync::Arc;
@@ -16,6 +18,7 @@ use crate::memory::{MemoryBlock, GPIO_PERIPHERAL_OFFSET, GPIO_PERIPHERAL_SIZE};
 const NUM_GPIO_PINS: usize = 58;
 
 const REGISTER_SIZE: usize = std::mem::size_of::<u32>();
+const REGISTER_BITS: usize = 32;
 
 // lazy_static! {
 //     static ref GPIO_SINGLETON: Result<GPIO> = {
@@ -93,14 +96,7 @@ impl GPIOPin {
 
     pub fn read(&self) -> bool {
         // Offset to GPLEV0
-        let mut offset = 0x34;
-        offset += (self.number / 32) * REGISTER_SIZE;
-
-        let bit_offset = self.number % 32;
-
-        let reg = self.mem.read_register(offset);
-
-        ((reg >> bit_offset) & 1) != 0
+        self.read_pin_bits(0x34, 1) != 0
     }
 
     pub fn set_resistor(&mut self, resistor: Resistor) -> &mut Self {
@@ -120,16 +116,74 @@ impl GPIOPin {
     }
 
     pub fn get_resistor(&self) -> Resistor {
-        let mut offset = 0xe4;
-        offset += (self.number / 16) * REGISTER_SIZE;
+        let bits = self.read_pin_bits(0xe4, 2);
+        Resistor::from_value(bits).unwrap()
+    }
 
-        let bit_offset = (self.number % 16) * 2;
+    // NOTE: Attempting to to monitor gpio events directly will crash raspbian.
+    /*
+    pub fn event_detected(&self) -> bool {
+        // Offset to GPEDS0. GPEDS1 is at 0x44
+        // 1-bit per pin
+        self.read_pin_bits(0x40, 1) != 0
+    }
+
+    pub fn clear_event_detected(&mut self) {
+        let mut offset = 0x40;
+        offset += (self.number / 32) * REGISTER_SIZE;
+
+        let bit_offset = self.number % 32;
+
+        // Writing a 1 clears the bit.
+        self.mem.write_register(offset, 1 << bit_offset);
+    }
+
+    /// Configures the complete set of events that should be monitored for this
+    /// pin.
+    pub fn watch_events(&mut self, events: EventType) {
+        let has_val = |e: EventType| {
+            if events.contains(e) {
+                1
+            } else {
+                0
+            }
+        };
+
+        // GPREN0 / GPREN1
+        self.modify_pin_bits(0x4c, 1, has_val(EventType::RISING_EDGE));
+
+        // GPFEN0 / GPFEN1
+        self.modify_pin_bits(0x58, 1, has_val(EventType::FALLING_EDGE));
+
+        // GPHEN0 / GPHEN1
+        self.modify_pin_bits(0x64, 1, has_val(EventType::HIGH));
+
+        // GPLEN0 / GPLEN1
+        self.modify_pin_bits(0x70, 1, has_val(EventType::HIGH));
+    }
+    */
+
+    fn read_pin_bits(&self, mut offset: usize, bits_per_pin: usize) -> u32 {
+        offset += ((self.number * bits_per_pin) / REGISTER_BITS) * REGISTER_SIZE;
+
+        let bit_offset = (self.number * bits_per_pin) % REGISTER_BITS;
+        let mask = (1 << bits_per_pin) - 1;
 
         let reg = self.mem.read_register(offset);
 
-        let bits = (reg >> bit_offset) & 0b11;
+        (reg >> bit_offset) & mask
+    }
 
-        Resistor::from_value(bits).unwrap()
+    fn modify_pin_bits(&mut self, mut offset: usize, bits_per_pin: usize, value: u32) {
+        offset += ((self.number * bits_per_pin) / REGISTER_BITS) * REGISTER_SIZE;
+
+        let bit_offset = (self.number * bits_per_pin) % REGISTER_BITS;
+        let mask = (1 << bits_per_pin) - 1;
+        let shifted_mask = mask << bit_offset;
+
+        self.mem.modify_register(offset, |v| {
+            (v & !shifted_mask) | ((value << bit_offset) & shifted_mask)
+        });
     }
 }
 
@@ -150,3 +204,10 @@ enum_def!(Resistor u32 =>
     PullDown = 0b10,
     Reserved = 0b11
 );
+
+define_bit_flags!(EventType u8 {
+    RISING_EDGE = 1 << 0,
+    FALLING_EDGE = 1 << 1,
+    HIGH = 1 << 2,
+    LOW = 1 << 3
+});

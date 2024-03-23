@@ -75,7 +75,7 @@ impl BuildTarget for ProtoData {
         file.merge_to(
             &mut proto,
             &ParseTextProtoOptions {
-                extension_handler: Some(&descriptor_pool),
+                message_factory: Some(&descriptor_pool),
             },
         )
         .with_context(|e| format_err!("While merging file {}: {}", self.attrs.src(), e))?;

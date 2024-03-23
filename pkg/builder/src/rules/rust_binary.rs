@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use common::errors::*;
+use file::LocalPath;
 
 use crate::proto::*;
 use crate::rule::BuildRule;
@@ -36,12 +37,10 @@ impl BuildTarget for RustBinary {
         // let mut target = context.config.rust_binary().clone();
         // target.merge_from(&raw_target)?;
 
-        // NOTE: We assume that the name of the rust package is the same as the name of
-        // the directory in which the BUILD file is located.
-        let package_name = context.package_dir.file_name().unwrap();
+        let package_name = get_package_name(&context.package_dir).await?;
 
         let bin_name = if self.attrs.name() == "main" {
-            package_name
+            package_name.as_str()
         } else if !self.attrs.bin().is_empty() {
             self.attrs.bin()
         } else {
@@ -67,7 +66,7 @@ impl BuildTarget for RustBinary {
 
         cmd.arg("build")
             .arg("--package")
-            .arg(package_name)
+            .arg(&package_name)
             .arg("--bin")
             .arg(bin_name)
             .arg("--target-dir")
@@ -149,4 +148,27 @@ impl BuildTarget for RustBinary {
 
         Ok(outputs)
     }
+}
+
+async fn get_package_name(package_dir: &LocalPath) -> Result<String> {
+    let cargo_toml = file::read_to_string(package_dir.join("Cargo.toml")).await?;
+
+    let mut in_package_section = false;
+
+    for line in cargo_toml.lines() {
+        if line.starts_with("[") {
+            in_package_section = line == "[package]";
+        }
+
+        if in_package_section {
+            if let Some(name) = line
+                .strip_prefix("name = \"")
+                .and_then(|s| s.strip_suffix("\""))
+            {
+                return Ok(name.to_string());
+            }
+        }
+    }
+
+    Err(err_msg("Failed to find package name in Cargo.toml file"))
 }

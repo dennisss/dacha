@@ -57,6 +57,7 @@ pub trait MaxCountExtension {
 
 impl MaxCountExtension for protobuf_descriptor::google::protobuf::FieldOptions {
     fn max_count(&self) -> protobuf_core::WireResult<ExtensionRef<u32>> {
+        use common::any::AsAny;
         use protobuf_core::ExtensionRef;
 
         let v = self
@@ -70,17 +71,16 @@ impl MaxCountExtension for protobuf_descriptor::google::protobuf::FieldOptions {
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
             ExtensionRef::Owned(v) => match v {
-                Value::Singular(SingularValue::UInt32(v)) => {
-                    // TODO: Need custom logic here for messages.
-                    ExtensionRef::Owned(v)
-                }
+                Value::Singular(SingularValue::UInt32(v)) => ExtensionRef::Owned(v),
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
-            _ => todo!(),
+            // Should never be returned by get_dynamic().
+            ExtensionRef::Boxed(v) => todo!(),
         })
     }
 
     fn max_count_mut(&mut self) -> protobuf_core::WireResult<&mut u32> {
+        use common::any::AsAny;
         use protobuf_core::{RepeatedValues, SingularValue, Value};
 
         let v = self
@@ -121,6 +121,7 @@ pub trait MaxLengthExtension {
 
 impl MaxLengthExtension for protobuf_descriptor::google::protobuf::FieldOptions {
     fn max_length(&self) -> protobuf_core::WireResult<ExtensionRef<u32>> {
+        use common::any::AsAny;
         use protobuf_core::ExtensionRef;
 
         let v = self
@@ -134,17 +135,16 @@ impl MaxLengthExtension for protobuf_descriptor::google::protobuf::FieldOptions 
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
             ExtensionRef::Owned(v) => match v {
-                Value::Singular(SingularValue::UInt32(v)) => {
-                    // TODO: Need custom logic here for messages.
-                    ExtensionRef::Owned(v)
-                }
+                Value::Singular(SingularValue::UInt32(v)) => ExtensionRef::Owned(v),
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
-            _ => todo!(),
+            // Should never be returned by get_dynamic().
+            ExtensionRef::Boxed(v) => todo!(),
         })
     }
 
     fn max_length_mut(&mut self) -> protobuf_core::WireResult<&mut u32> {
+        use common::any::AsAny;
         use protobuf_core::{RepeatedValues, SingularValue, Value};
 
         let v = self
@@ -185,6 +185,7 @@ pub trait UnorderedSetExtension {
 
 impl UnorderedSetExtension for protobuf_descriptor::google::protobuf::FieldOptions {
     fn unordered_set(&self) -> protobuf_core::WireResult<ExtensionRef<bool>> {
+        use common::any::AsAny;
         use protobuf_core::ExtensionRef;
 
         let v = self
@@ -198,17 +199,16 @@ impl UnorderedSetExtension for protobuf_descriptor::google::protobuf::FieldOptio
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
             ExtensionRef::Owned(v) => match v {
-                Value::Singular(SingularValue::Bool(v)) => {
-                    // TODO: Need custom logic here for messages.
-                    ExtensionRef::Owned(v)
-                }
+                Value::Singular(SingularValue::Bool(v)) => ExtensionRef::Owned(v),
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
-            _ => todo!(),
+            // Should never be returned by get_dynamic().
+            ExtensionRef::Boxed(v) => todo!(),
         })
     }
 
     fn unordered_set_mut(&mut self) -> protobuf_core::WireResult<&mut bool> {
+        use common::any::AsAny;
         use protobuf_core::{RepeatedValues, SingularValue, Value};
 
         let v = self
@@ -249,6 +249,7 @@ pub trait TypedNumExtension {
 
 impl TypedNumExtension for protobuf_descriptor::google::protobuf::MessageOptions {
     fn typed_num(&self) -> protobuf_core::WireResult<ExtensionRef<bool>> {
+        use common::any::AsAny;
         use protobuf_core::ExtensionRef;
 
         let v = self
@@ -262,17 +263,16 @@ impl TypedNumExtension for protobuf_descriptor::google::protobuf::MessageOptions
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
             ExtensionRef::Owned(v) => match v {
-                Value::Singular(SingularValue::Bool(v)) => {
-                    // TODO: Need custom logic here for messages.
-                    ExtensionRef::Owned(v)
-                }
+                Value::Singular(SingularValue::Bool(v)) => ExtensionRef::Owned(v),
                 _ => return Err(protobuf_core::WireError::BadDescriptor),
             },
-            _ => todo!(),
+            // Should never be returned by get_dynamic().
+            ExtensionRef::Boxed(v) => todo!(),
         })
     }
 
     fn typed_num_mut(&mut self) -> protobuf_core::WireResult<&mut bool> {
+        use common::any::AsAny;
         use protobuf_core::{RepeatedValues, SingularValue, Value};
 
         let v = self

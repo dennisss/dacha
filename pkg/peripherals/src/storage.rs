@@ -5,7 +5,7 @@ use common::errors::*;
 use common::fixed::vec::FixedVec;
 use crypto::checksum::crc16::crc16_incremental_lut;
 use crypto::hasher::Hasher;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 
 use crate::eeprom::EEPROM;
 
@@ -44,7 +44,7 @@ impl core::fmt::Display for BlockStorageError {
 }
 
 pub struct BlockStorage<E> {
-    state: Mutex<BlockStorageState<E>>,
+    state: AsyncMutex<BlockStorageState<E>>,
 }
 
 struct BlockStorageState<E> {
@@ -60,7 +60,7 @@ impl<E: EEPROM> BlockStorage<E> {
         let mut page_buffer = [0u8; PAGE_SIZE];
 
         Self {
-            state: Mutex::new(BlockStorageState {
+            state: AsyncMutex::new(BlockStorageState {
                 eeprom,
                 page_buffer,
             }),
@@ -76,7 +76,7 @@ impl<E: EEPROM> BlockStorage<E> {
     pub async fn open<'a>(&'a self, id: u32, max_length: usize) -> Result<BlockHandle<'a, E>> {
         const NUM_BUFFERS_PER_BLOCK: usize = 2;
 
-        let mut state_guard = self.state.lock().await;
+        let mut state_guard = self.state.lock().await?.enter();
         let state = &mut *state_guard;
 
         state.eeprom.read(0, &mut state.page_buffer).await?;
@@ -124,6 +124,8 @@ impl<E: EEPROM> BlockStorage<E> {
         dir.add_entry(entry);
         dir.finish();
         state.eeprom.write(0, &state.page_buffer).await?;
+
+        state_guard.exit();
 
         Ok(BlockHandle {
             storage: self,
@@ -265,7 +267,7 @@ impl<'a, E: EEPROM> BlockHandle<'a, E> {
     ///
     /// NOTE: 'data' MUST be large enough to store the max_length of the
     pub async fn read(&mut self, data: &mut [u8]) -> Result<usize> {
-        let mut state = self.storage.state.lock().await;
+        let mut state = self.storage.state.lock().await?.enter();
 
         let mut blocks = FixedVec::<(BlockHeader, u16, usize), 2>::new();
 
@@ -334,10 +336,12 @@ impl<'a, E: EEPROM> BlockHandle<'a, E> {
             }
 
             self.last_counter = Some(header.write_count);
+            state.exit();
             return Ok(data_length);
         }
 
         self.last_counter = Some(0);
+        state.exit();
 
         Err(BlockStorageError::NoValidData.into())
     }
@@ -356,7 +360,7 @@ impl<'a, E: EEPROM> BlockHandle<'a, E> {
         let mut crc_state = CRC_INITIAL_STATE;
         let mut crc_written = false;
 
-        let mut state_guard = self.storage.state.lock().await;
+        let mut state_guard = self.storage.state.lock().await?.enter();
         let state = &mut *state_guard;
 
         // NOTE: If the write requires fewer pages than are allocated for the buffer,
@@ -397,6 +401,7 @@ impl<'a, E: EEPROM> BlockHandle<'a, E> {
         }
 
         self.last_counter = Some(counter);
+        state_guard.exit();
 
         Ok(())
     }

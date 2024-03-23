@@ -30,7 +30,7 @@ mod tests {
         m.set_s("Hello world");
         m.set_data(vec![0, 0, 1, 0, 0]);
 
-        let serialized = m.serialize_json();
+        let serialized = m.serialize_json(&SerializerOptions::default());
 
         assert_eq!(
             r#"{"integer":123,"flag":true,"data":"AAABAAA","ids":[10,20,30],"s":"Hello world"}"#,

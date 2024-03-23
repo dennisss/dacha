@@ -122,7 +122,7 @@ pub struct Streamer {
 
 impl Streamer {
     /// Input: # of frames
-    /// Output: Stream of CameraModuleRequest
+    /// Output: Stream of CameraModuleRequest (raw frames)
     async fn camera_infeed_task(
         mut camera: CameraModule,
         output: channel::Sender<CameraModuleRequest>,
@@ -135,7 +135,7 @@ impl Streamer {
         Ok(())
     }
 
-    /// Input: Stream of CameraModuleRequest
+    /// Input: Stream of CameraModuleRequest (raw frames)
     /// Output: Stream of ()
     async fn encoder_infeed_task(
         encoder: Arc<H264Encoder>,
@@ -275,11 +275,13 @@ async fn record_camera() -> Result<()> {
     let (request_sender, request_receiver) = channel::unbounded();
     let (encoded_sender, encoded_receiver) = channel::unbounded();
 
+    // Captures frames and sends them out via the 'request' channel.
     bundle.add(
-        "EncoderInfeed",
+        "CameraInfeed",
         Streamer::camera_infeed_task(camera, request_sender),
     );
 
+    //
     bundle.add(
         "EncoderInfeed",
         Streamer::encoder_infeed_task(encoder.clone(), stream_id, request_receiver, encoded_sender),

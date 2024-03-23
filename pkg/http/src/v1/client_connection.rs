@@ -321,7 +321,7 @@ impl ClientConnectionShared {
                 }
                 Err(e) => {
                     // TODO: Consolidate these lines.
-                    println!("Failed to parse message\n{}", e);
+                    println!("[http::Client] Failed to parse message\n{}", e);
                     return Err(err_msg("Invalid message received"));
                 }
             };

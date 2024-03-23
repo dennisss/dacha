@@ -1,0 +1,25 @@
+[package]
+name = "rpi_controller"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+sys = { path = "../../sys" }
+file = { path = "../../file" }
+rpi = { path = "../" }
+peripherals = { path = "../../peripherals" }
+peripherals_devices = { path = "../../peripherals/devices" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+protobuf = { path = "../../protobuf" }
+protobuf_json = { path = "../../protobuf/json" }
+rpc = { path = "../../rpc" }
+http = { path = "../../http" }
+rpc_util = { path = "../../rpc_util" }
+web = { path = "../../web" }
+json = { path = "../../format/json" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+rpi_controller_proto = { path = "./proto" }

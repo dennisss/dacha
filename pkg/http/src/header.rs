@@ -17,6 +17,8 @@ pub const CONTENT_ENCODING: &'static str = "Content-Encoding";
 
 pub const CONTENT_TYPE: &'static str = "Content-Type";
 
+pub const CACHE_CONTROL: &'static str = "Cache-Control";
+
 pub const DATE: &'static str = "Date";
 
 pub const HOST: &'static str = "Host";
@@ -47,8 +49,14 @@ const TRANSPORT_LEVEL_HEADERS: &'static [&'static str] = &[
     TRAILERS,
 ];
 
-const CONTENT_LEVEL_HEADERS: &'static [&'static str] =
-    &[DATE, CONTENT_ENCODING, CONTENT_RANGE, ETAG, CONTENT_TYPE];
+const CONTENT_LEVEL_HEADERS: &'static [&'static str] = &[
+    DATE,
+    CONTENT_ENCODING,
+    CONTENT_RANGE,
+    ETAG,
+    CONTENT_TYPE,
+    CACHE_CONTROL,
+];
 
 #[derive(Debug, Clone)]
 pub struct Header {

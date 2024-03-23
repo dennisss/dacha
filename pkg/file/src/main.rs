@@ -2,7 +2,7 @@
 extern crate macros;
 
 use common::{errors::*, io::Readable};
-use file::{LocalFile, LocalPath, LocalPathBuf};
+use file::{FileErrorKind, LocalFile, LocalPath, LocalPathBuf};
 
 #[derive(Args)]
 struct Args {
@@ -43,7 +43,7 @@ async fn run_copy_command(cmd: CopyCommand) -> Result<()> {
     // TODO: Dedup with file::copy_all and file::copy
 
     if file::exists(&cmd.to).await? {
-        return Err(file::FileError::AlreadyExists.into());
+        return Err(file::FileError::new(FileErrorKind::AlreadyExists, "").into());
     }
 
     let mut relative_paths = vec![];

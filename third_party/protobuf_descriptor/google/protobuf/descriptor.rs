@@ -77,6 +77,10 @@ impl FileDescriptorSet {
 }
 
 impl protobuf_core::StaticMessage for FileDescriptorSet {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FileDescriptorSet"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -538,6 +542,10 @@ impl FileDescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for FileDescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FileDescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -874,6 +882,10 @@ impl DescriptorProto_ExtensionRange {
 }
 
 impl protobuf_core::StaticMessage for DescriptorProto_ExtensionRange {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -1062,6 +1074,10 @@ impl DescriptorProto_ReservedRange {
 }
 
 impl protobuf_core::StaticMessage for DescriptorProto_ReservedRange {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -1490,6 +1506,10 @@ impl DescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for DescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.DescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -1903,6 +1923,10 @@ impl ExtensionRangeOptions_Declaration {
 }
 
 impl protobuf_core::StaticMessage for ExtensionRangeOptions_Declaration {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.ExtensionRangeOptions.Declaration"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -2187,6 +2211,10 @@ impl ExtensionRangeOptions {
 }
 
 impl protobuf_core::StaticMessage for ExtensionRangeOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.ExtensionRangeOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -2789,6 +2817,10 @@ impl FieldDescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for FieldDescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FieldDescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -3070,6 +3102,10 @@ impl OneofDescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for OneofDescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.OneofDescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -3248,6 +3284,10 @@ impl EnumDescriptorProto_EnumReservedRange {
 }
 
 impl protobuf_core::StaticMessage for EnumDescriptorProto_EnumReservedRange {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -3524,6 +3564,10 @@ impl EnumDescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for EnumDescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.EnumDescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -3764,6 +3808,10 @@ impl EnumValueDescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for EnumValueDescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.EnumValueDescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -3989,6 +4037,10 @@ impl ServiceDescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for ServiceDescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.ServiceDescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -4262,6 +4314,10 @@ impl MethodDescriptorProto {
 }
 
 impl protobuf_core::StaticMessage for MethodDescriptorProto {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.MethodDescriptorProto"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -4992,6 +5048,10 @@ impl FileOptions {
 }
 
 impl protobuf_core::StaticMessage for FileOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FileOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -5513,6 +5573,10 @@ impl MessageOptions {
 }
 
 impl protobuf_core::StaticMessage for MessageOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.MessageOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -6093,6 +6157,10 @@ impl FieldOptions_EditionDefault {
 }
 
 impl protobuf_core::StaticMessage for FieldOptions_EditionDefault {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FieldOptions.EditionDefault"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -6527,6 +6595,10 @@ impl FieldOptions {
 }
 
 impl protobuf_core::StaticMessage for FieldOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FieldOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -6849,6 +6921,10 @@ impl OneofOptions {
 }
 
 impl protobuf_core::StaticMessage for OneofOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.OneofOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -7108,6 +7184,10 @@ impl EnumOptions {
 }
 
 impl protobuf_core::StaticMessage for EnumOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.EnumOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -7380,6 +7460,10 @@ impl EnumValueOptions {
 }
 
 impl protobuf_core::StaticMessage for EnumValueOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.EnumValueOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -7618,6 +7702,10 @@ impl ServiceOptions {
 }
 
 impl protobuf_core::StaticMessage for ServiceOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.ServiceOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -7947,6 +8035,10 @@ impl MethodOptions {
 }
 
 impl protobuf_core::StaticMessage for MethodOptions {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.MethodOptions"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -8148,6 +8240,10 @@ impl UninterpretedOption_NamePart {
 }
 
 impl protobuf_core::StaticMessage for UninterpretedOption_NamePart {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -8451,6 +8547,10 @@ impl UninterpretedOption {
 }
 
 impl protobuf_core::StaticMessage for UninterpretedOption {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.UninterpretedOption"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -9149,6 +9249,10 @@ impl FeatureSet {
 }
 
 impl protobuf_core::StaticMessage for FeatureSet {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FeatureSet"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -9365,6 +9469,10 @@ impl FeatureSetDefaults_FeatureSetEditionDefault {
 }
 
 impl protobuf_core::StaticMessage for FeatureSetDefaults_FeatureSetEditionDefault {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -9584,6 +9692,10 @@ impl FeatureSetDefaults {
 }
 
 impl protobuf_core::StaticMessage for FeatureSetDefaults {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.FeatureSetDefaults"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -9866,6 +9978,10 @@ impl SourceCodeInfo_Location {
 }
 
 impl protobuf_core::StaticMessage for SourceCodeInfo_Location {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.SourceCodeInfo.Location"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -10076,6 +10192,10 @@ impl SourceCodeInfo {
 }
 
 impl protobuf_core::StaticMessage for SourceCodeInfo {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.SourceCodeInfo"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -10390,6 +10510,10 @@ impl GeneratedCodeInfo_Annotation {
 }
 
 impl protobuf_core::StaticMessage for GeneratedCodeInfo_Annotation {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8
@@ -10596,6 +10720,10 @@ impl GeneratedCodeInfo {
 }
 
 impl protobuf_core::StaticMessage for GeneratedCodeInfo {
+    fn static_type_url() -> &'static str {
+        "type.googleapis.com/google.protobuf.GeneratedCodeInfo"
+    }
+
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR_0F2934D003718DD8

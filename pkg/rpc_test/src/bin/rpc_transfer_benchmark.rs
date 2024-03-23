@@ -23,26 +23,22 @@ const BLOCK_SIZE: usize = 4 * 1024;
 
 const TARGET_BYTES: usize = 1 * 1024 * 1024;
 
-async fn server_fn() -> Result<()> {
-    let adder = AdderImpl::create(None).await?;
-
-    let mut server = rpc::Http2Server::new();
-    let service = adder.into_service();
-    server.add_service(service)?;
-    server.add_reflection()?;
-    server.add_healthz()?;
-    server.set_shutdown_token(executor::signals::new_shutdown_token());
-    server.run(8000).await
-}
-
 #[executor_main]
 async fn main() -> Result<()> {
-    let server_thread = ChildTask::spawn(async move {
-        server_fn().await.unwrap();
-    });
+    let server = {
+        let adder = AdderImpl::create(None).await?;
+
+        let mut server = rpc::Http2Server::new(Some(8000));
+        let service = adder.into_service();
+        server.add_service(service)?;
+        server.add_reflection()?;
+        server.add_healthz()?;
+        server.start()
+    };
 
     let channel = Arc::new(rpc::Http2Channel::create("http://127.0.0.1:8000").await?);
 
+    // TODO: Have a proper health check on the channel.
     executor::sleep(Duration::from_millis(100)).await?;
 
     let stub = AdderStub::new(channel);

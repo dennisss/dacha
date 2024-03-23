@@ -13,7 +13,7 @@ worker {
     cwd: "/volumes/dacha"
     args: [
         # TODO: Pre-validate that this file exists in the bundle
-        "/volumes/dacha/built/pkg/rpi_controller/rpi_controller",
+        "/volumes/dacha/built/pkg/rpi/controller/rpi_controller",
         "--rpc_port=rpc",
         "--web_port=web",
         "--fan_pwm_pin=18",
@@ -24,7 +24,7 @@ worker {
     volumes: [
         {
             name: "dacha"
-            build_target: "//pkg/rpi_controller:bundle"
+            build_target: "//pkg/rpi/controller:bundle"
         }
     ]
 

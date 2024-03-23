@@ -10,7 +10,8 @@
     const_maybe_uninit_uninit_array,
     slice_take,
     allocator_api,
-    slice_ptr_get
+    slice_ptr_get,
+    stdsimd
 )]
 #![no_std]
 

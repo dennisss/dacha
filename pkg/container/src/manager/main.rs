@@ -3,6 +3,7 @@ use std::sync::Arc;
 use cluster_client::meta::client::ClusterMetaClient;
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
+use executor_multitask::RootResource;
 use rpc_util::{AddReflection, NamedPortArg};
 
 use crate::manager::manager::Manager;
@@ -21,21 +22,20 @@ pub async fn main() -> Result<()> {
 async fn main_with_port(port: u16) -> Result<()> {
     // TODO: In order to shut down, the manager should release any locks it has.
 
-    let client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+    let service = RootResource::new();
 
-    let mut bundle = TaskResultBundle::new();
+    let client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+    service.register_dependency(client.clone()).await;
 
     let manager = Manager::new(client, Arc::new(crypto::random::global_rng()));
+    service
+        .spawn_interruptable("Manager::run", manager.clone().run())
+        .await;
 
-    bundle.add("Manager::run()", manager.clone().run());
-
-    let mut server = rpc::Http2Server::new();
+    let mut server = rpc::Http2Server::new(Some(port));
     server.add_service(manager.into_service())?;
     server.add_reflection()?;
-    server.set_shutdown_token(executor::signals::new_shutdown_token());
-    bundle.add("Manager::serve", server.run(port));
+    service.register_dependency(server.start()).await;
 
-    bundle.join().await?;
-
-    Ok(())
+    service.wait().await
 }

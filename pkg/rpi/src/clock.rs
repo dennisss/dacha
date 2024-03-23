@@ -18,6 +18,7 @@ pub struct ClockManager {
 }
 
 impl ClockManager {
+    // TODO: We need to open exclusive access to this peripheral.
     pub fn open() -> Result<Self> {
         let mem = MemoryBlock::open_peripheral(
             CLOCK_MANAGER_PERIPHERAL_OFFSET,

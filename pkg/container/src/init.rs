@@ -174,7 +174,7 @@ impl MainProcess {
                 }
             } else {
                 if signal == sys::Signal::SIGINT {
-                    if got_sigint {
+                    if got_sigint && self.options.raise_second_sigint {
                         println!("Killing...");
                         signal = sys::Signal::SIGKILL;
                     }

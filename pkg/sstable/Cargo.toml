@@ -14,6 +14,7 @@ protobuf = { path = "../protobuf" }
 parsing = { path = "../parsing" }
 file = { path = "../file" }
 executor = { path = "../executor" }
+executor_multitask = { path = "../executor/multitask" }
 base_radix = { path = "../base/radix" }
 
 [features]

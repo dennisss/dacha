@@ -1,5 +1,5 @@
 use common::errors::*;
-use peripherals::i2c::I2CDevice;
+use peripherals::i2c::{I2CHostController, I2CHostDevice};
 
 /*
 Speed 100kHz to 400kHz I2c
@@ -18,23 +18,27 @@ const TEMPERATURE_OFFSET: u8 = 0x11;
 const DAYS_PER_MONTH: [u8; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 pub struct DS3231 {
-    i2c: I2CDevice,
+    i2c: I2CHostDevice,
 }
 
 impl DS3231 {
-    pub fn open(i2c: I2CDevice) -> Self {
-        Self { i2c }
+    pub const I2C_ADDRESS: u8 = 0b1101000;
+
+    pub fn open(i2c: &I2CHostController) -> Self {
+        Self {
+            i2c: i2c.device(Self::I2C_ADDRESS),
+        }
     }
 
     // TODO: First clear status bit and then start the oscillator?
 
     /// NOTE: Until the write_time() function is called at least once for this
     /// device, the time returned by this function is undefined.
-    pub fn read_time(&mut self) -> Result<DS3231Time> {
-        self.i2c.write(DEVICE_ADDRESS, &[CURRENT_TIME_OFFSET])?;
+    pub async fn read_time(&mut self) -> Result<DS3231Time> {
+        self.i2c.write(&[CURRENT_TIME_OFFSET]).await?;
 
         let mut data = [0u8; CURRENT_TIME_SIZE];
-        self.i2c.read(DEVICE_ADDRESS, &mut data)?;
+        self.i2c.read(&mut data).await?;
 
         Ok(DS3231Time { data })
     }
@@ -45,21 +49,21 @@ impl DS3231 {
     /// edge immediately after the seconds byte is written. In other words,
     /// after the time is written, the device will next increment the time in ~1
     /// second.
-    pub fn write_time(&mut self, time: &DS3231Time) -> Result<()> {
+    pub async fn write_time(&mut self, time: &DS3231Time) -> Result<()> {
         let mut full_data = [0u8; CURRENT_TIME_SIZE + 1];
         full_data[0] = CURRENT_TIME_OFFSET;
         full_data[1..].copy_from_slice(&time.data);
 
-        self.i2c.write(DEVICE_ADDRESS, &full_data)
+        self.i2c.write(&full_data).await
     }
 
     // Will return 0 during startup and will be updated every 64 seconds.
     // Returned with a resolution of 0.25 degrees celsius.
-    pub fn read_temperature(&mut self) -> Result<f32> {
-        self.i2c.write(DEVICE_ADDRESS, &[TEMPERATURE_OFFSET])?;
+    pub async fn read_temperature(&mut self) -> Result<f32> {
+        self.i2c.write(&[TEMPERATURE_OFFSET]).await?;
 
         let mut data = [0u8; 2];
-        self.i2c.read(DEVICE_ADDRESS, &mut data)?;
+        self.i2c.read(&mut data).await?;
 
         // Temperature in 0.25 degree increments. May be negative.
         let num = i16::from_be_bytes(data) >> 6;

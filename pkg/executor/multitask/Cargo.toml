@@ -1,0 +1,11 @@
+[package]
+name = "executor_multitask"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+sys = { path = "../../sys" }
+macros = { path = "../../macros" }
+executor = { path = ".." }

@@ -33,6 +33,8 @@ alternative solution is to /sys/class/pwm/pwmchip0
 
 */
 
+use std::time::Duration;
+
 use common::errors::*;
 use file::{LocalPath, LocalPathBuf};
 
@@ -158,6 +160,9 @@ impl SysPWM {
         file::write(&export_path, format!("{}\n", pin_spec.channel))
             .await
             .ok();
+
+        // Wait for exporting to compelte.
+        executor::sleep(Duration::from_millis(100)).await;
 
         let channel_dir = LocalPath::new(SYS_PWM_DIR).join(format!("pwm{}", pin_spec.channel));
         if !file::exists(&channel_dir).await? {

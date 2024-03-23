@@ -3,6 +3,7 @@ use std::os::unix::prelude::FromRawFd;
 use std::time::Duration;
 
 use base_error::*;
+use executor_multitask::{ServiceResource, TaskResource};
 use failure::ResultExt;
 use net::ip::{IPAddress, SocketAddr};
 use net::udp::{UdpBindOptions, UdpSocket};
@@ -54,14 +55,13 @@ impl DiscoveryMulticast {
         })
     }
 
-    pub async fn run(self) -> Result<()> {
-        let cancel_token = executor::signals::new_shutdown_token();
+    pub fn start(self) -> impl ServiceResource {
+        TaskResource::spawn_interruptable("DiscoveryMulticast", self.run())
+    }
 
-        executor::future::race(
-            executor::future::map(cancel_token.wait_for_cancellation(), |_| Ok(())),
-            executor::future::race(self.run_client(), self.run_server()),
-        )
-        .await
+    /// CANCEL SAFE
+    async fn run(self) -> Result<()> {
+        executor::future::race(self.run_client(), self.run_server()).await
     }
 
     /// Periodically broadcasts our local identity to all other peers.

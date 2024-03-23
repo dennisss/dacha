@@ -2,7 +2,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use common::errors::*;
-use peripherals::i2c::I2CDevice;
+use peripherals::i2c::{I2CHostController, I2CHostDevice};
 
 const DEVICE_ADDRESS: u8 = 0x58;
 
@@ -33,29 +33,31 @@ pub struct AirQuality {
 }
 
 pub struct SGP30 {
-    device: I2CDevice,
+    device: I2CHostDevice,
 }
 
 impl SGP30 {
-    pub fn open(device: I2CDevice) -> Self {
-        Self { device }
+    pub fn open(controller: &I2CHostController) -> Self {
+        Self {
+            device: controller.device(DEVICE_ADDRESS),
+        }
     }
 
-    pub fn init_air_quality(&mut self) -> Result<()> {
-        self.device.write(DEVICE_ADDRESS, &[0x20, 0x03])?;
+    pub async fn init_air_quality(&mut self) -> Result<()> {
+        self.device.write(&[0x20, 0x03]).await?;
 
         sleep(Duration::from_millis(10));
 
         Ok(())
     }
 
-    pub fn measure_air_quality(&mut self) -> Result<AirQuality> {
-        self.device.write(DEVICE_ADDRESS, &[0x20, 0x08])?;
+    pub async fn measure_air_quality(&mut self) -> Result<AirQuality> {
+        self.device.write(&[0x20, 0x08]).await?;
 
         sleep(Duration::from_millis(12));
 
         let mut data = [0u8; 2 * PACKED_WORD_LEN];
-        self.device.read(DEVICE_ADDRESS, &mut data)?;
+        self.device.read(&mut data).await?;
 
         let mut out = [0u8; 2 * WORD_LEN];
         Self::unpack_response(&data, &mut out)?;
@@ -66,13 +68,13 @@ impl SGP30 {
         })
     }
 
-    pub fn get_baseline(&mut self) -> Result<AirQuality> {
-        self.device.write(DEVICE_ADDRESS, &[0x20, 0x15])?;
+    pub async fn get_baseline(&mut self) -> Result<AirQuality> {
+        self.device.write(&[0x20, 0x15]).await?;
 
         sleep(Duration::from_millis(12));
 
         let mut data = [0u8; 2 * PACKED_WORD_LEN];
-        self.device.read(DEVICE_ADDRESS, &mut data)?;
+        self.device.read(&mut data).await?;
 
         let mut out = [0u8; 2 * WORD_LEN];
         Self::unpack_response(&data, &mut out)?;
@@ -83,7 +85,7 @@ impl SGP30 {
         })
     }
 
-    pub fn set_baseline(&mut self, baseline: &AirQuality) -> Result<()> {
+    pub async fn set_baseline(&mut self, baseline: &AirQuality) -> Result<()> {
         let mut data = [0u8; 8];
         data[0] = 0x20;
         data[1] = 0x1e;
@@ -96,17 +98,17 @@ impl SGP30 {
         *word = baseline.tvoc_ppb.to_be_bytes();
         data[7] = crc8(word);
 
-        self.device.write(DEVICE_ADDRESS, &data)?;
+        self.device.write(&data).await?;
 
         sleep(Duration::from_millis(10));
         Ok(())
     }
 
-    pub fn get_feature_set_version(&mut self) -> Result<[u8; 2]> {
-        self.device.write(DEVICE_ADDRESS, &[0x20, 0x2f])?;
+    pub async fn get_feature_set_version(&mut self) -> Result<[u8; 2]> {
+        self.device.write(&[0x20, 0x2f]).await?;
 
         let mut data = [0u8; 1 * PACKED_WORD_LEN];
-        self.device.read(DEVICE_ADDRESS, &mut data)?;
+        self.device.read(&mut data).await?;
 
         let mut out = [0u8; 1 * WORD_LEN];
         Self::unpack_response(&data, &mut out)?;
@@ -114,12 +116,12 @@ impl SGP30 {
         Ok(out)
     }
 
-    pub fn get_serial(&mut self) -> Result<[u8; 6]> {
-        self.device.write(DEVICE_ADDRESS, &[0x36, 0x82])?;
+    pub async fn get_serial(&mut self) -> Result<[u8; 6]> {
+        self.device.write(&[0x36, 0x82]).await?;
         sleep(Duration::from_micros(500)); // t_idle = 0.5ms
 
         let mut data = [0u8; 3 * PACKED_WORD_LEN];
-        self.device.read(DEVICE_ADDRESS, &mut data)?;
+        self.device.read(&mut data).await?;
 
         let mut out = [0u8; 3 * WORD_LEN];
         Self::unpack_response(&data, &mut out)?;

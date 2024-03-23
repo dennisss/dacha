@@ -11,6 +11,7 @@ protobuf = { path = "../../protobuf" }
 crypto = { path = "../../crypto" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
 executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 net = { path = "../../net" }
 base_radix = { path = "../../base/radix" }

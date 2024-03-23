@@ -7,7 +7,8 @@
     wrapping_int_impl,
     asm,
     let_chains,
-    drain_filter
+    drain_filter,
+    stdsimd
 )]
 #![no_std]
 

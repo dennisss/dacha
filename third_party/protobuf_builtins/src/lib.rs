@@ -66,3 +66,15 @@ impl Any {
         Ok(())
     }
 }
+
+pub trait ToAnyProto {
+    fn to_any_proto(&self) -> Result<Any>;
+}
+
+impl<M: protobuf_core::Message> ToAnyProto for M {
+    fn to_any_proto(&self) -> Result<Any> {
+        let mut any = Any::default();
+        any.pack_from(self)?;
+        Ok(any)
+    }
+}

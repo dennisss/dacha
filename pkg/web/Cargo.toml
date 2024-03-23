@@ -17,3 +17,4 @@ rpc_test = { path = "../rpc_test" }
 json = { path = "../format/json" }
 file = { path = "../file" }
 executor = { path = "../executor" }
+executor_multitask = { path = "../executor/multitask" }

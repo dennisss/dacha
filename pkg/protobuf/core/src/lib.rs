@@ -28,6 +28,8 @@ pub mod extension;
 #[cfg(feature = "alloc")]
 mod merge;
 mod message;
+#[cfg(feature = "std")]
+pub mod message_factory;
 #[cfg(feature = "alloc")]
 pub mod reflection;
 #[cfg(feature = "std")]

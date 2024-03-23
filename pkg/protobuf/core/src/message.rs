@@ -21,6 +21,8 @@ pub trait StaticMessageTraits = Message + Default;
 /// Message whose definition is well known to the binary.
 /// Usually these will be declared with code generation.
 pub trait StaticMessage: StaticMessageTraits {
+    fn static_type_url() -> &'static str;
+
     #[cfg(feature = "alloc")]
     fn file_descriptor() -> &'static StaticFileDescriptor
     where

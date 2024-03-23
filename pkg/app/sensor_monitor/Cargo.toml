@@ -5,7 +5,6 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../../common" }
-peripheral = { path = "../../peripheral" }
 http = { path = "../../http" }
 parsing = { path = "../../parsing" }
 sstable = { path = "../../sstable" }

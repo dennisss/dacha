@@ -11,8 +11,10 @@ use core::ops::Deref;
 use common::errors::*;
 use parsing::*;
 
+use crate::message_factory::MessageFactory;
 use crate::reflection::{MessageReflection, Reflection, ReflectionMut};
 use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit, whitespace};
+use crate::FieldNumber;
 use crate::Message;
 
 //
@@ -238,6 +240,11 @@ impl TextMessage {
         message: &mut dyn MessageReflection,
         options: &ParseTextProtoOptions,
     ) -> Result<()> {
+        // TODO: Figure out if there is a better way to make this directly depend on the
+        // type iur
+        const ANY_TYPE_URL_FIELD_NUM: FieldNumber = 1; // Any::TYPE_URL_FIELD_NUM
+        const ANY_VALUE_FIELD_NUM: FieldNumber = 2; // Any::VALUE_FIELD_NUM
+
         for field in &self.fields {
             match &field.name {
                 TextFieldName::Regular(name) => {
@@ -248,17 +255,34 @@ impl TextMessage {
                     field.value.apply(reflect, options)?;
                 }
                 TextFieldName::Extension(path) => {
-                    if let Some(handler) = options.extension_handler {
-                        handler.parse_text_extension(
-                            path.as_str(),
-                            TextExtension {
-                                value: &field.value,
-                                options,
-                            },
-                            message,
-                        )?;
+                    if message.type_url() != "type.googleapis.com/google.protobuf.Any" {
+                        return Err(err_msg("Only Any proto text extensions are supported."));
+                    }
+
+                    let message_factory = options.message_factory.clone().ok_or_else(|| {
+                        err_msg("Can not parse Any textprotos without a message factory")
+                    })?;
+
+                    let mut inner_message = message_factory
+                        .new_message(path.as_str())
+                        .ok_or_else(|| format_err!("Unknown message type: {}", path))?;
+                    field
+                        .value
+                        .apply(ReflectionMut::Message(inner_message.as_mut()), options)?;
+
+                    if let Some(ReflectionMut::String(v)) =
+                        message.field_by_number_mut(ANY_TYPE_URL_FIELD_NUM)
+                    {
+                        *v = inner_message.type_url().to_string();
                     } else {
-                        return Err(err_msg("Extensions not supported"));
+                        return Err(err_msg("Failed to find type_url field of Any proto"));
+                    }
+
+                    if let Some(ReflectionMut::Bytes(v)) =
+                        message.field_by_number_mut(ANY_VALUE_FIELD_NUM)
+                    {
+                        v.clear();
+                        v.extend_from_slice(&inner_message.serialize()?);
                     }
                 }
             };
@@ -521,7 +545,8 @@ impl TextValue {
 
 #[derive(Default)]
 pub struct ParseTextProtoOptions<'a> {
-    pub extension_handler: Option<&'a dyn TextMessageExtensionHandler>,
+    /// Message factory used to instantiate protos inside of Any protos.
+    pub message_factory: Option<&'a dyn MessageFactory>,
 }
 
 /// Parses a text proto string into its raw components
@@ -767,26 +792,6 @@ local_field: 10
 ```
 
 */
-
-pub struct TextExtension<'a> {
-    value: &'a TextValue,
-    options: &'a ParseTextProtoOptions<'a>,
-}
-
-impl<'a> TextExtension<'a> {
-    pub fn parse_to(&self, value: ReflectionMut) -> Result<()> {
-        self.value.apply(value, self.options)
-    }
-}
-
-pub trait TextMessageExtensionHandler {
-    fn parse_text_extension(
-        &self,
-        extension_path: &str,
-        extension: TextExtension,
-        message: &mut dyn MessageReflection,
-    ) -> Result<()>;
-}
 
 #[cfg(test)]
 mod tests {

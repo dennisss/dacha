@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use common::errors::*;
 use executor::ExecutorOperation;
 use executor::RemapErrno;
@@ -46,11 +48,11 @@ impl UdpSocket {
     }
 
     pub async fn bind_with_options(addr: SocketAddr, options: &UdpBindOptions) -> Result<Self> {
-        let addr = Into::<sys::SocketAddr>::into(addr);
+        let sys_addr = Into::<sys::SocketAddr>::into(addr.clone());
 
         unsafe {
             let fd = sys::socket(
-                addr.family(),
+                sys_addr.family(),
                 sys::SocketType::SOCK_DGRAM,
                 sys::SocketFlags::SOCK_CLOEXEC,
                 sys::SocketProtocol::UDP,
@@ -64,7 +66,9 @@ impl UdpSocket {
                 set_reuse_addr(&fd, options.reuse_port)?;
             }
 
-            sys::bind(&fd, &addr).remap_errno::<NetworkError>()?;
+            sys::bind(&fd, &sys_addr).remap_errno::<NetworkError, _>(|| {
+                format!("sys::bind failed for address: {:?}", addr)
+            })?;
 
             Ok(Self { fd })
         }
@@ -86,7 +90,7 @@ impl UdpSocket {
             .wait()
             .await?
             .sendmsg_result()
-            .remap_errno::<NetworkError>()?;
+            .remap_errno::<NetworkError, _>(|| String::new())?;
         Ok(n)
     }
 
@@ -110,7 +114,7 @@ impl UdpSocket {
             op.wait()
                 .await?
                 .recvmsg_result()
-                .remap_errno::<NetworkError>()?
+                .remap_errno::<NetworkError, _>(|| String::new())?
         };
 
         let addr = header

@@ -10,6 +10,7 @@ use datastore_proto::db::meta::*;
 use executor::child_task::ChildTask;
 use executor::sync::{AsyncMutex, AsyncMutexGuard, AsyncMutexPermit};
 use executor::{lock, lock_async};
+use executor_multitask::{impl_resource_passthrough, ServiceResourceGroup};
 use net::ip::SocketAddr;
 use raft_client::proto::RouteLabel;
 
@@ -27,9 +28,10 @@ pub struct MetastoreClient {
 
     channel: Arc<dyn rpc::Channel>,
 
-    /// Background thread which maintains
-    background_thread: Option<ChildTask>,
+    resources: ServiceResourceGroup,
 }
+
+impl_resource_passthrough!(MetastoreClient, resources);
 
 /*
 Doing discovery in a GCP instance
@@ -51,6 +53,8 @@ impl MetastoreClient {
     pub async fn create(labels: &[RouteLabel]) -> Result<Self> {
         let route_store = raft_client::RouteStore::new(labels);
 
+        let resources = ServiceResourceGroup::new("MetastoreClient");
+
         /// TODO: With this approach, it may take us up to 2 seconds (the
         /// broadcast interval) to find a server.
         ///
@@ -63,10 +67,9 @@ impl MetastoreClient {
         ///       long as all needed services are cached.
         /// - If running in a unit test, the facttory
         let discovery = raft_client::DiscoveryMulticast::create(route_store.clone()).await?;
-
-        let background_thread = ChildTask::spawn(async move {
-            eprintln!("DiscoveryClient exited: {:?}", discovery.run().await);
-        });
+        resources
+            .register_dependency(Arc::new(discovery.start()))
+            .await;
 
         // TODO: In the resolver, also subscribe to one of the server's CurrentStatus.
         // Whenever the set of members changes, use that info to prune the routes we
@@ -78,7 +81,7 @@ impl MetastoreClient {
         // leader if needed.
         let channel = channel_factory.create_any().await?;
 
-        Self::create_impl(channel, Some(background_thread)).await
+        Self::create_impl(channel, resources).await
     }
 
     /// Directly connect to a metastore instance.
@@ -92,12 +95,12 @@ impl MetastoreClient {
             rpc::Http2Channel::create(format!("http://{}", addr.to_string()).as_str()).await?,
         );
 
-        Self::create_impl(channel, None).await
+        Self::create_impl(channel, ServiceResourceGroup::new("MetastoreClient")).await
     }
 
     async fn create_impl(
         channel: Arc<dyn rpc::Channel>,
-        background_thread: Option<ChildTask>,
+        resources: ServiceResourceGroup,
     ) -> Result<Self> {
         let client_id = {
             let stub = ClientManagementStub::new(channel.clone());
@@ -110,10 +113,12 @@ impl MetastoreClient {
             res.result?.client_id().to_string()
         };
 
+        // TODO: Should also add the channel to the resource group.
+
         Ok(Self {
             client_id,
             channel,
-            background_thread,
+            resources,
         })
     }
 

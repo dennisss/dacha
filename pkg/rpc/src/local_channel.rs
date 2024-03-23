@@ -51,6 +51,7 @@ impl LocalChannel {
                 protocol: RPCMediaProtocol::Default,
                 serialization: RPCMediaSerialization::Proto,
             },
+            handler.codec_options.clone(),
             server_request_context,
         );
 

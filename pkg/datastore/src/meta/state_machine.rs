@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use common::errors::*;
+use executor::cancellation::AlreadyCancelledToken;
 use executor::lock_async;
 use executor::sync::AsyncMutex;
 use executor::sync::AsyncRwLock;
+use executor_multitask::ServiceResource;
 use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 use raft::atomic::BlobFile;
@@ -244,8 +246,10 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
             core::mem::swap(&mut *db, &mut new_db);
             db.exit();
 
-            // TODO: Use some form of abrupt cancellation of this.
-            new_db.close().await?;
+            new_db
+                .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
+                .await;
+            new_db.wait_for_termination().await?;
         }
 
         let old_number = current.0.current_snapshot();

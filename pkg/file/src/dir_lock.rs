@@ -4,7 +4,7 @@ use std::borrow::ToOwned;
 
 use common::errors::*;
 
-use crate::{FileError, LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
+use crate::{FileError, FileErrorKind, LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
 // TODO: Better error passthrough?
 
@@ -65,8 +65,10 @@ impl DirLock {
         // Acquire the exclusive lock
 
         if let Err(e) = lockfile.try_lock_exclusive() {
-            if let Some(FileError::LockContention) = e.downcast_ref() {
-                return Err(DirLockError.into());
+            if let Some(e) = e.downcast_ref::<FileError>() {
+                if e.kind == FileErrorKind::LockContention {
+                    return Err(DirLockError.into());
+                }
             }
 
             return Err(e);

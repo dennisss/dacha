@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use common::errors::*;
+use executor_multitask::RootResource;
 use file::{project_path, LocalPath};
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
@@ -328,27 +329,24 @@ async fn run(
     // a case-by-base basis.
     umask(Mode::from_bits_truncate(0o077));
 
-    let mut task_bundle = executor::bundle::TaskResultBundle::new();
+    let service = RootResource::new();
 
     let node = Node::create(&context, &config).await?;
 
     // TODO: Implement shutdown for this.
-    task_bundle.add("cluster::Node", node.run());
+    service
+        .spawn_interruptable("cluster::Node", node.run())
+        .await;
 
-    let mut server = rpc::Http2Server::new();
+    let mut server = rpc::Http2Server::new(Some(config.service_port() as u16));
     node.add_services(&mut server)?;
     server.add_reflection()?;
-    server.set_shutdown_token(executor::signals::new_shutdown_token());
 
     // TODO: Some of these tasks should be marked as non-blocking so should just be
     // cancelled but not necessary blocked till completion.
-    task_bundle.add("rpc::Server", server.run(config.service_port() as u16));
+    service.register_dependency(server.start()).await;
 
-    // TODO: Join the task.
-
-    task_bundle.join().await?;
-
-    Ok(())
+    service.wait().await
 }
 
 fn newcgroup(pid: sys::pid_t, dir: &str) -> Result<()> {

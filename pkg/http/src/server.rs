@@ -9,12 +9,14 @@ use std::time::Duration;
 
 use common::errors::*;
 use common::io::*;
+use executor::cancellation::AlreadyCancelledToken;
 use executor::cancellation::CancellationToken;
 use executor::channel;
 use executor::sync::AsyncMutex;
 use executor::sync::PoisonError;
 use executor::JoinHandle;
 use executor::{lock, lock_async};
+use executor_multitask::*;
 use net::ip::IPAddress;
 use net::tcp::TcpListener;
 use net::tcp::TcpStream;
@@ -46,6 +48,14 @@ Some more server protections needed:
 
 #[derive(Clone)]
 pub struct ServerOptions {
+    /// What to call this server. Used in resource health tracking reports.
+    pub name: String,
+
+    /// Which port to listen to for requests.
+    ///
+    /// If not set, then a random port will be selected.
+    pub port: Option<u16>,
+
     // TODO: We should make sure that the client uses the "https" scheme
     /// If present, use these options to connect with SSL/TLS. Otherwise, we'll
     /// send requests over plain text.
@@ -72,6 +82,8 @@ impl Default for ServerOptions {
         let connection_options_v2 = v2::ConnectionOptions::default();
 
         Self {
+            name: "HttpServer".to_string(),
+            port: None,
             tls: None,
             force_http2: false,
             connection_options_v2: connection_options_v2.clone(),
@@ -81,16 +93,10 @@ impl Default for ServerOptions {
     }
 }
 
-// TODO: Start shutdown when dropped?
-
 /// Receives HTTP requests and parses them.
 /// Passes the request to a handler which can produce a response.
 pub struct Server {
     shared: Arc<ServerShared>,
-
-    shutdown_token: Option<Box<dyn CancellationToken>>,
-
-    shutdown_timer: Option<JoinHandle<()>>,
 }
 
 struct ServerShared {
@@ -110,6 +116,10 @@ struct ServerShared {
     connection_pool_empty_channel: (channel::Sender<()>, channel::Receiver<()>),
 
     shutting_down: AtomicBool,
+
+    resource_state: ServiceResourceReportTracker,
+
+    cancellation_tokens: CancellationTokenSet,
 }
 
 // TODO: We could possibly improve performance if instead of maintaining a
@@ -145,13 +155,16 @@ enum ServerConnectionV2Input {
 }
 
 pub struct BoundServer {
-    server: Server,
+    shared: Arc<ServerShared>,
     listener: TcpListener,
 }
 
 impl BoundServer {
-    pub async fn run(self) -> Result<()> {
-        Server::run_impl(self).await
+    pub fn start(self) -> ServerResource {
+        executor::spawn(Server::run_impl(self.shared.clone(), Some(self.listener)));
+        ServerResource {
+            shared: self.shared,
+        }
     }
 
     pub fn local_addr(&self) -> Result<net::ip::SocketAddr> {
@@ -159,14 +172,35 @@ impl BoundServer {
     }
 }
 
-impl Drop for Server {
+/// Server instance once it has started connection listening threads.
+pub struct ServerResource {
+    shared: Arc<ServerShared>,
+}
+
+#[async_trait]
+impl ServiceResource for ServerResource {
+    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+        self.shared
+            .cancellation_tokens
+            .add_cancellation_token(token)
+            .await
+    }
+
+    async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
+        self.shared.resource_state.subscribe()
+    }
+}
+
+// TODO: Standardize this.
+impl Drop for ServerResource {
     fn drop(&mut self) {
-        if !self.shutdown_timer.is_some() {
-            let shared = self.shared.clone();
-            // TODO: If all connections die earlier than this timeout, then we should
-            // support cleaning up this timeout.
-            executor::spawn(Self::run_shutdown_timer(shared));
-        }
+        let shared = self.shared.clone();
+        executor::spawn(async move {
+            shared
+                .cancellation_tokens
+                .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
+                .await
+        });
     }
 }
 
@@ -179,6 +213,13 @@ impl Server {
             }
         }
 
+        let resource_state = ServiceResourceReportTracker::new(ServiceResourceReport {
+            resource_name: options.name.clone(),
+            self_state: ServiceResourceState::Loading,
+            self_message: None,
+            dependencies: vec![],
+        });
+
         Self {
             shared: Arc::new(ServerShared {
                 handler: Box::new(handler),
@@ -189,14 +230,16 @@ impl Server {
                 }),
                 connection_pool_empty_channel: channel::bounded(1),
                 shutting_down: AtomicBool::new(false),
+                resource_state,
+                cancellation_tokens: CancellationTokenSet::default(),
             }),
-            shutdown_token: None,
-            shutdown_timer: None,
         }
     }
 
-    pub fn set_shutdown_token(&mut self, token: Box<dyn CancellationToken>) {
-        self.shutdown_token = Some(token);
+    /// TODO: Use a weak pointer?
+    async fn run_shutdown_timer(shared: Arc<ServerShared>) {
+        executor::sleep(shared.options.graceful_shutdown_timeout).await;
+        Self::shutdown_impl(&shared, false).await;
     }
 
     /// Start the shutdown of the server.
@@ -223,22 +266,8 @@ impl Server {
     /// TODO: Currently this is always called with graceful.
     ///
     /// NOT CANCEL SAFE
-    async fn shutdown(&mut self, graceful: bool) {
-        Self::shutdown_impl(&self.shared, graceful).await;
-
-        if graceful && !self.shutdown_timer.is_some() {
-            let shared = self.shared.clone();
-            self.shutdown_timer = Some(executor::spawn(Self::run_shutdown_timer(shared)));
-        }
-    }
-
-    /// TODO: Use a weak pointer?
-    async fn run_shutdown_timer(shared: Arc<ServerShared>) {
-        executor::sleep(shared.options.graceful_shutdown_timeout).await;
-        Self::shutdown_impl(&shared, false).await;
-    }
-
-    // TODO: Verify everyone is using the return value of this.
+    ///
+    /// TODO: Verify everyone is using the return value of this.
     async fn shutdown_impl(shared: &ServerShared, graceful: bool) -> Result<(), PoisonError> {
         // TODO: Spawn in this in a separate task so that it can't be interrupted.
         lock_async!(connection_pool <= shared.connection_pool.lock().await?, {
@@ -271,6 +300,7 @@ impl Server {
             }
         }
 
+        // Abrupt cancellation of HTTPv1 connections since there is no other option.
         for cancel_id in cancel_ids {
             let conn = connection_pool.connections.remove(&cancel_id).unwrap();
             conn.task_handle.cancel().await;
@@ -284,32 +314,70 @@ impl Server {
     // TODO: Ideally we'd support using some alternative connection (e.g. a
     // TlsServer)
 
-    pub async fn bind(mut self, port: u16) -> Result<BoundServer> {
-        // Bind all all interfaces.
-        // TODO: Have an explicit keep-alive period at the TCP level and also eventualyl
-        // close the connection.
-        let mut listener = TcpListener::bind(format!("0.0.0.0:{}", port).parse()?).await?;
+    pub async fn bind(mut self) -> Result<BoundServer> {
+        let listener = Self::create_listener(&self.shared).await?;
 
         Ok(BoundServer {
-            server: self,
+            shared: self.shared,
             listener,
         })
     }
 
-    /// Starts listening on the given port and processes new connections until
-    /// the server is shut down.
-    pub async fn run(mut self, port: u16) -> Result<()> {
-        Self::run_impl(self.bind(port).await?).await
+    async fn create_listener(shared: &ServerShared) -> Result<TcpListener> {
+        // Bind all all interfaces.
+        // TODO: Have an explicit keep-alive period at the TCP level and also eventualyl
+        // close the connection.
+        TcpListener::bind(format!("0.0.0.0:{}", shared.options.port.unwrap_or(0)).parse()?).await
     }
 
-    async fn run_impl(bound_server: BoundServer) -> Result<()> {
-        let mut this = bound_server.server;
-        let mut listener = bound_server.listener;
+    /// Starts listening on the given port and processes new connections until
+    /// the server is shut down.
+    pub fn start(mut self) -> ServerResource {
+        executor::spawn(Self::run_impl(self.shared.clone(), None));
+        ServerResource {
+            shared: self.shared,
+        }
+    }
+
+    async fn run_impl(shared: Arc<ServerShared>, listener: Option<TcpListener>) {
+        let r = Self::run_impl_inner(&shared, listener).await;
+
+        match r {
+            Ok(()) => {
+                shared
+                    .resource_state
+                    .update_self(ServiceResourceState::Done, None)
+                    .await;
+            }
+            Err(e) => {
+                shared
+                    .resource_state
+                    .update_self(ServiceResourceState::PermanentFailure, Some(e.to_string()))
+                    .await
+            }
+        }
+    }
+
+    async fn run_impl_inner(
+        shared: &Arc<ServerShared>,
+        listener: Option<TcpListener>,
+    ) -> Result<()> {
+        let mut listener = match listener {
+            Some(v) => v,
+            None => Self::create_listener(&shared).await?,
+        };
+
+        shared
+            .resource_state
+            .update_self(ServiceResourceState::Ready, None)
+            .await;
 
         enum Event {
             NextStream(Result<TcpStream>),
             Shutdown,
         }
+
+        let mut shutdown_timer = None;
 
         loop {
             let next_stream =
@@ -318,16 +386,12 @@ impl Server {
                 });
 
             let event = {
-                if let Some(shutdown_token) = &this.shutdown_token {
-                    let shutdown_event =
-                        executor::future::map(shutdown_token.wait_for_cancellation(), |_| {
-                            Event::Shutdown
-                        });
+                let shutdown_event = executor::future::map(
+                    shared.cancellation_tokens.wait_for_cancellation(),
+                    |_| Event::Shutdown,
+                );
 
-                    executor::future::race(next_stream, shutdown_event).await
-                } else {
-                    next_stream.await
-                }
+                executor::future::race(next_stream, shutdown_event).await
             };
 
             match event {
@@ -335,44 +399,43 @@ impl Server {
                     let mut s = stream?;
                     s.set_nodelay(true)?;
 
-                    lock!(
-                        connection_pool <= this.shared.connection_pool.lock().await?,
-                        {
-                            if connection_pool.connections.len()
-                                > this.shared.options.max_num_connections
-                            {
-                                eprintln!("[http::Server] Dropping external connection");
-                                drop(s);
-                                return;
-                            }
-
-                            // TODO: Support over usize # of connections by wrapping and checking if
-                            // the id is already in the hashmap.
-                            let connection_id = connection_pool.last_id + 1;
-                            connection_pool.last_id = connection_id;
-
-                            let task_handle = executor::spawn(Self::handle_stream(
-                                this.shared.clone(),
-                                connection_id,
-                                s,
-                            ));
-
-                            connection_pool.connections.insert(
-                                connection_id,
-                                ServerConnection {
-                                    task_handle,
-                                    mode: ServerConnectionMode::Unknown,
-                                },
-                            );
+                    lock!(connection_pool <= shared.connection_pool.lock().await?, {
+                        if connection_pool.connections.len() > shared.options.max_num_connections {
+                            eprintln!("[http::Server] Dropping external connection");
+                            drop(s);
+                            return;
                         }
-                    );
+
+                        // TODO: Support over usize # of connections by wrapping and checking if
+                        // the id is already in the hashmap.
+                        let connection_id = connection_pool.last_id + 1;
+                        connection_pool.last_id = connection_id;
+
+                        let task_handle =
+                            executor::spawn(Self::handle_stream(shared.clone(), connection_id, s));
+
+                        connection_pool.connections.insert(
+                            connection_id,
+                            ServerConnection {
+                                task_handle,
+                                mode: ServerConnectionMode::Unknown,
+                            },
+                        );
+                    });
                 }
                 Event::Shutdown => {
-                    this.shutdown(true).await;
+                    Self::shutdown_impl(&shared, true).await?;
+                    shutdown_timer =
+                        Some(executor::spawn(Self::run_shutdown_timer(shared.clone())));
                     break;
                 }
             }
         }
+
+        shared
+            .resource_state
+            .update_self(ServiceResourceState::Stopping, None)
+            .await;
 
         // TODO: Verify that when we stop accepting connections, any active connections
         // stay active.
@@ -380,16 +443,15 @@ impl Server {
 
         // Wait for all connections to die.
         loop {
-            let done = lock!(
-                connection_pool <= this.shared.connection_pool.lock().await?,
-                { connection_pool.connections.is_empty() }
-            );
+            let done = lock!(connection_pool <= shared.connection_pool.lock().await?, {
+                connection_pool.connections.is_empty()
+            });
 
             if done {
                 break;
             }
 
-            let _ = this.shared.connection_pool_empty_channel.1.recv().await;
+            let _ = shared.connection_pool_empty_channel.1.recv().await;
         }
 
         // TODO: Block until all tasks spawned within this server's context are done
@@ -530,7 +592,7 @@ impl Server {
                 }
                 Err(e) => {
                     // TODO: Switch to returning protocol errors.
-                    println!("Failed to parse message\n{}", e);
+                    println!("[http::Server] Failed to parse message\n{}", e);
                     write_stream
                         .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
                         .await?;

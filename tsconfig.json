@@ -1,5 +1,6 @@
 {
 	"compilerOptions": {
+		"jsx": "react",
 		"module": "commonjs",
 		"moduleResolution": "node",
 		"target": "es2017",
@@ -14,7 +15,15 @@
 		"strictNullChecks": true,
 		"outDir": "./dist/",
 		"importHelpers": true,
-		"declaration": true
+		"declaration": true,
+		"baseUrl": ".",
+		"rootDir": ".",
+		"paths": {
+			"*": [
+				"*",
+				"node_modules/*",
+			]
+		}
 	},
 	"include": [
 		"pkg/**/*"

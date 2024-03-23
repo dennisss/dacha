@@ -36,6 +36,12 @@ impl<T> AsyncVariable<T> {
     }
 }
 
+impl<T: Default> Default for AsyncVariable<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 impl<T> AsyncVariableInner<T> {
     fn wait(mut guard: AsyncMutexGuard<'_, Self>) -> impl Future<Output = ()> {
         let (tx, rx) = oneshot::channel();

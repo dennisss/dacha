@@ -6,9 +6,9 @@ use std::sync::Arc;
 use common::bytes::Bytes;
 use common::errors::*;
 use datastore_meta_client::constants::*;
-use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::child_task::ChildTask;
+use executor_multitask::RootResource;
 use file::dir_lock::DirLock;
 use file::LocalPathBuf;
 use protobuf::Message;
@@ -370,23 +370,14 @@ pub async fn run(config: MetastoreConfig) -> Result<()> {
     }
 
     let dir = DirLock::open(&config.dir).await?;
+
+    // TODO: Add a resource dependency on this. Should be stopped after the RPC
+    // server
     let state_machine = Arc::new(EmbeddedDBStateMachine::open(&config.dir).await?);
 
-    let mut task_bundle = TaskResultBundle::new();
+    let service = RootResource::new();
 
-    let mut rpc_server = rpc::Http2Server::new();
-
-    rpc_server.set_shutdown_token(executor::signals::new_shutdown_token());
-
-    let mut node = raft::Node::create(raft::NodeOptions {
-        dir,
-        init_port: config.init_port,
-        bootstrap: config.bootstrap,
-        seed_list: vec![], // Will just find everyone via multi-cast
-        state_machine: state_machine.clone(),
-        route_labels: config.route_labels.clone(),
-    })
-    .await?;
+    let mut rpc_server = rpc::Http2Server::new(Some(config.service_port));
 
     let local_address = http::uri::Authority {
         user: None,
@@ -395,9 +386,21 @@ pub async fn run(config: MetastoreConfig) -> Result<()> {
     }
     .to_string()?;
 
-    task_bundle.add("raft::Node", node.run(&mut rpc_server, &local_address)?);
+    let node = Arc::new(
+        raft::Node::create(raft::NodeOptions {
+            dir,
+            init_port: config.init_port,
+            bootstrap: config.bootstrap,
+            seed_list: vec![], // Will just find everyone via multi-cast
+            state_machine: state_machine.clone(),
+            route_labels: config.route_labels.clone(),
+            rpc_server: &mut rpc_server,
+            rpc_server_address: local_address,
+        })
+        .await?,
+    );
 
-    let node = Arc::new(node);
+    service.register_dependency(node.clone()).await;
 
     let instance = Metastore {
         shared: Arc::new(Shared {
@@ -426,9 +429,7 @@ pub async fn run(config: MetastoreConfig) -> Result<()> {
     rpc_server.add_reflection()?;
     rpc_server.add_profilez()?;
 
-    task_bundle.add("rpc::Server", rpc_server.run(config.service_port));
+    service.register_dependency(rpc_server.start()).await;
 
-    task_bundle.join().await?;
-
-    Ok(())
+    service.wait().await
 }

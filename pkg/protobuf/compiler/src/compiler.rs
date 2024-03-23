@@ -1534,6 +1534,10 @@ impl Compiler {
         lines.add(format!(
             r#"
             impl {runtime_pkg}::StaticMessage for {name} {{
+                fn static_type_url() -> &'static str {{
+                    "{type_url}"
+                }} 
+
                 #[cfg(feature = "std")]
                 fn file_descriptor() -> &'static {runtime_pkg}::StaticFileDescriptor {{
                     &FILE_DESCRIPTOR_{file_id}
@@ -1543,6 +1547,7 @@ impl Compiler {
             name = fullname,
             runtime_pkg = self.options.runtime_package,
             file_id = self.file_id,
+            type_url = msg.type_url(),
         ));
 
         lines.add(format!(
@@ -2330,6 +2335,41 @@ impl Compiler {
         }
 
         lines.nl();
+
+        lines.add("}");
+        lines.nl();
+
+        lines.add("#[async_trait]");
+        lines.add(format!(
+            "impl<T: {name}Service> {name}Service for ::std::sync::Arc<T> {{",
+            name = service.proto().name()
+        ));
+
+        // TODO: deduplicate this with above.
+        for method in service.methods() {
+            let req_type = self
+                .resolve(method.proto().input_type(), service.name())
+                .expect(&format!("Failed to find {}", method.proto().input_type()));
+            let res_type = self
+                .resolve(method.proto().output_type(), service.name())
+                .expect(&format!("Failed to find {}", method.proto().output_type()));
+
+            // TODO: Must resolve the typename.
+            // TODO: I don't need to make the response '&mut' if I am giving a stream.
+            lines.add(format!(
+                "\tasync fn {rpc_name}(&self, request: {rpc_package}::Server{req_stream}Request<{req_type}>,
+                                       response: &mut {rpc_package}::Server{res_stream}Response<{res_type}>) -> Result<()> {{
+                                        let v: &T = self.as_ref();
+                                        v.{rpc_name}(request, response).await
+                                       }}",
+                rpc_package = self.options.rpc_package,
+                rpc_name = method.proto().name(),
+                req_type = req_type.typename,
+                req_stream = if method.proto().client_streaming() { "Stream" } else { "" },
+                res_type = res_type.typename,
+                res_stream = if method.proto().server_streaming() { "Stream" } else { "" },
+            ));
+        }
 
         lines.add("}");
         lines.nl();

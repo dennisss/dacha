@@ -1,21 +1,26 @@
 //!
 
 /*
-cross build --target aarch64-unknown-linux-gnu --release --bin i2c
+cargo build --target aarch64-unknown-linux-gnu --release --bin i2c
 
-scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/i2c cluster-user@10.1.0.112:~
+scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/i2c cluster-user@10.1.0.120:~
 
 ssh -i ~/.ssh/id_cluster cluster-user@10.1.0.112
 
 
+let bus = peripherals::i2c::I2CDevice::open(&args.bus)?;
+
+
 ./i2c scan --bus=/dev/i2c-1
+=> For the Pi Rack R5 one
+
 */
 
 #[macro_use]
 extern crate macros;
 
 use common::errors::*;
-use peripherals::i2c::I2CDevice;
+use peripherals::i2c::I2CHostController;
 use peripherals_devices::ds3231::*;
 use peripherals_devices::sgp30::SGP30;
 use peripherals_devices::trust_m::TrustM;
@@ -48,7 +53,7 @@ enum Command {
     DS3231,
 }
 
-fn run_scan(mut bus: I2CDevice) -> Result<()> {
+fn run_scan(mut bus: I2CHostController) -> Result<()> {
     for i in 0..8 {
         let mut line = format!("{}_:", i);
 
@@ -73,15 +78,17 @@ fn run_scan(mut bus: I2CDevice) -> Result<()> {
     Ok(())
 }
 
-fn run_trust_m(bus: I2CDevice) -> Result<()> {
+fn run_trust_m(bus: I2CHostController) -> Result<()> {
     let mut dev = TrustM::open(bus)?;
+
+    dev.read_coprocessor_uid()?;
 
     // dev.get_random()?;
 
     Ok(())
 }
 
-fn run_sgp30(bus: I2CDevice) -> Result<()> {
+fn run_sgp30(bus: I2CHostController) -> Result<()> {
     let mut dev = SGP30::open(bus);
 
     let serial = dev.get_serial()?;
@@ -106,7 +113,7 @@ fn run_sgp30(bus: I2CDevice) -> Result<()> {
     Ok(())
 }
 
-fn run_ds3231(bus: I2CDevice) -> Result<()> {
+fn run_ds3231(bus: I2CHostController) -> Result<()> {
     let mut clock = DS3231::open(bus);
 
     println!("Temp: {}", clock.read_temperature()?);
@@ -124,7 +131,7 @@ fn run_ds3231(bus: I2CDevice) -> Result<()> {
 fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
-    let bus = peripherals::i2c::I2CDevice::open(&args.bus)?;
+    let bus = peripherals::i2c::I2CHostController::open(&args.bus)?;
 
     match args.command {
         Command::Scan => run_scan(bus)?,

@@ -11,6 +11,7 @@ use common::io::Readable;
 use executor::cancellation::CancellationToken;
 use executor::channel::spsc;
 use executor::child_task::ChildTask;
+use executor_multitask::ServiceResource;
 use http::header::*;
 use http::status_code::*;
 use http::Body;
@@ -26,25 +27,28 @@ use crate::service::Service;
 use crate::status::*;
 use crate::Channel;
 
+type StartCallback = Box<dyn FnOnce(Arc<dyn ServiceResource>) + Send + Sync + 'static>;
+
 /// RPC server implemented on top of an HTTP2 server.
 pub struct Http2Server {
     handler: Http2RequestHandler,
-    shutdown_token: Option<Box<dyn CancellationToken>>,
-    start_callbacks: Vec<Box<dyn Fn() + Send + Sync + 'static>>,
+    start_callbacks: Vec<StartCallback>,
     allow_http1: bool,
+    port: Option<u16>,
 }
 
 impl Http2Server {
-    pub fn new() -> Self {
+    pub fn new(port: Option<u16>) -> Self {
         Self {
             handler: Http2RequestHandler {
                 request_handlers: HashMap::new(),
                 services: HashMap::new(),
+                codec_options: Arc::new(ServerCodecOptions::default()),
                 enable_cors: false,
             },
-            shutdown_token: None,
             start_callbacks: vec![],
             allow_http1: false,
+            port,
         }
     }
 
@@ -76,16 +80,14 @@ impl Http2Server {
         Ok(())
     }
 
-    /// Adds a callback which will be executed when the RPC server is ready to
-    /// accept connections.
-    pub fn add_start_callback<F: Fn() + Send + Sync + 'static>(&mut self, callback: F) {
+    /// Adds a callback which will be executed when the RPC server has started
+    /// loading.
+    pub fn add_start_callback<F: FnOnce(Arc<dyn ServiceResource>) + Send + Sync + 'static>(
+        &mut self,
+        callback: F,
+    ) {
         self.start_callbacks.push(Box::new(callback));
     }
-
-    pub fn set_shutdown_token(&mut self, token: Box<dyn CancellationToken>) {
-        self.shutdown_token = Some(token);
-    }
-
     pub fn enable_cors(&mut self) {
         self.handler.enable_cors = true;
     }
@@ -94,42 +96,48 @@ impl Http2Server {
         self.allow_http1 = true;
     }
 
+    pub fn codec_options_mut(&mut self) -> &mut ServerCodecOptions {
+        Arc::get_mut(&mut self.handler.codec_options).unwrap()
+    }
+
     pub fn services(&self) -> impl Iterator<Item = &dyn Service> {
         self.handler.services.iter().map(|(_, v)| v.as_ref())
     }
 
-    /// TODO: Mabe just return an http::BoundServer
-    pub fn bind(mut self, port: u16) -> impl Future<Output = Result<BoundHttp2Server>> {
+    fn to_inner_server(self) -> (http::Server, Vec<StartCallback>) {
         let mut options = http::ServerOptions::default();
         options.force_http2 = !self.allow_http1;
-
-        let mut server = http::Server::new(self.handler, options);
-        if let Some(token) = self.shutdown_token.take() {
-            server.set_shutdown_token(token);
-        }
-
-        while let Some(callback) = self.start_callbacks.pop() {
-            callback();
-        }
-
-        async move {
-            let bound_http_server = server.bind(port).await?;
-            Ok(BoundHttp2Server { bound_http_server })
-        }
+        options.port = self.port;
+        options.name = "rpc::Http2Server".to_string();
+        (
+            http::Server::new(self.handler, options),
+            self.start_callbacks,
+        )
     }
 
-    pub fn run(mut self, port: u16) -> impl Future<Output = Result<()>> + 'static {
-        let fut = self.bind(port);
+    pub async fn bind(self) -> Result<BoundHttp2Server> {
+        let (server, start_callbacks) = self.to_inner_server();
+        let bound_http_server = server.bind().await?;
+        Ok(BoundHttp2Server {
+            bound_http_server,
+            start_callbacks,
+        })
+    }
 
-        async move {
-            let bound_server = fut.await?;
-            bound_server.bound_http_server.run().await
+    pub fn start(self) -> Arc<dyn ServiceResource> {
+        let (server, start_callbacks) = self.to_inner_server();
+        let r = Arc::new(server.start());
+        for c in start_callbacks {
+            c(r.clone())
         }
+
+        r
     }
 }
 
 pub struct BoundHttp2Server {
     bound_http_server: http::BoundServer,
+    start_callbacks: Vec<StartCallback>,
 }
 
 impl BoundHttp2Server {
@@ -137,8 +145,13 @@ impl BoundHttp2Server {
         self.bound_http_server.local_addr()
     }
 
-    pub async fn run(self) -> Result<()> {
-        self.bound_http_server.run().await
+    pub fn start(self) -> Arc<dyn ServiceResource> {
+        let r = Arc::new(self.bound_http_server.start());
+        for c in self.start_callbacks {
+            c(r.clone())
+        }
+
+        r
     }
 }
 
@@ -151,6 +164,8 @@ pub(crate) struct Http2RequestHandler {
 
     services: HashMap<String, Arc<dyn Service>>,
 
+    pub(crate) codec_options: Arc<ServerCodecOptions>,
+
     enable_cors: bool,
 }
 
@@ -162,6 +177,7 @@ impl Http2RequestHandler {
         Self {
             request_handlers: HashMap::new(),
             enable_cors,
+            codec_options: Arc::new(ServerCodecOptions::default()),
             services,
         }
     }
@@ -179,6 +195,7 @@ impl Http2RequestHandler {
         if self.enable_cors && request.head.method == http::Method::OPTIONS {
             return http::ResponseBuilder::new()
                 .status(http::status_code::NO_CONTENT)
+                .header(CACHE_CONTROL, "max-age=600")
                 .build()
                 .unwrap();
         }
@@ -250,7 +267,12 @@ impl Http2RequestHandler {
 
         let service_name = path_parts[1];
         let method_name = path_parts[2];
-        let request = ServerStreamRequest::new(request.body, request_type, request_context);
+        let request = ServerStreamRequest::new(
+            request.body,
+            request_type,
+            self.codec_options.clone(),
+            request_context,
+        );
 
         let response = self
             .handle_parsed_request(service_name, method_name, request, response_type)
@@ -305,6 +327,7 @@ impl Http2RequestHandler {
             request,
             response_sender,
             response_type.clone(),
+            self.codec_options.clone(),
         ));
 
         let mut response_builder = http::ResponseBuilder::new()
@@ -337,6 +360,7 @@ impl Http2RequestHandler {
                     .trailer_metadata
                     .append_to_headers(response_builder.headers())?;
 
+                // TODO: THis needs to reable to the 'web' type
                 ResponseBody::append_result_to_headers(result, &mut response_builder.headers());
 
                 // Immediately indicate that there will be no more data.
@@ -375,6 +399,7 @@ impl Http2RequestHandler {
         request: ServerStreamRequest<()>,
         mut response_sender: spsc::Sender<ServerStreamResponseEvent>,
         response_type: RPCMediaType,
+        codec_options: Arc<ServerCodecOptions>,
     ) {
         let mut response_context = ServerResponseContext::default();
 
@@ -384,6 +409,7 @@ impl Http2RequestHandler {
             phantom_t: PhantomData,
             context: &mut response_context,
             response_type,
+            codec_options,
             head_sent: &mut head_sent,
             sender: &mut response_sender,
         };
@@ -471,6 +497,14 @@ impl http::ServerHandler for Http2RequestHandler {
         if self.enable_cors {
             http::cors::allow_all_requests(&mut res);
         }
+
+        if !res.head.headers.has(CACHE_CONTROL) {
+            res.head
+                .headers
+                .raw_headers
+                .push(Header::new(CACHE_CONTROL.into(), "no-cache".into()));
+        }
+
         res
     }
 }

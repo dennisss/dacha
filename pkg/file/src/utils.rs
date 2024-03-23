@@ -9,8 +9,8 @@ use executor::RemapErrno;
 use sys::Errno;
 
 use crate::{
-    read_dir, FileError, FileType, LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf,
-    Metadata, Permissions,
+    read_dir, FileError, FileErrorKind, FileType, LocalFile, LocalFileOpenOptions, LocalPath,
+    LocalPathBuf, Metadata, Permissions,
 };
 
 pub async fn read<P: AsRef<LocalPath>>(path: P) -> Result<Vec<u8>> {
@@ -30,7 +30,9 @@ pub async fn read_to_string<P: AsRef<LocalPath>>(path: P) -> Result<String> {
 
 pub fn current_dir() -> Result<LocalPathBuf> {
     let mut buffer = vec![0u8; 1024];
-    let n = unsafe { sys::getcwd(&mut buffer).remap_errno::<FileError>()? };
+    let n = unsafe {
+        sys::getcwd(&mut buffer).remap_errno::<FileError, _>(|| "getcwd() failed".into())?
+    };
 
     if n > buffer.len() || n < 1 || buffer[n - 1] != 0 {
         return Err(err_msg("Expected null terminator in cwd"))?;
@@ -48,7 +50,7 @@ pub fn readlink<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
 
     let path = CString::new(path.as_ref().as_str())?;
     let n = unsafe { sys::readlink(path.as_ptr() as *const u8, &mut buffer) }
-        .remap_errno::<FileError>()?;
+        .remap_errno::<FileError, _>(|| String::new())?;
 
     let s = String::from_utf8(buffer[..n].to_vec())?;
 
@@ -79,14 +81,16 @@ pub async fn metadata(path: &LocalPath) -> Result<Metadata> {
 pub fn metadata_sync(path: &LocalPath) -> Result<Metadata> {
     let path = CString::new(path.as_str())?;
     let mut stat = sys::bindings::stat::default();
-    unsafe { sys::stat(path.as_ptr() as *const u8, &mut stat) }.remap_errno::<FileError>()?;
+    unsafe { sys::stat(path.as_ptr() as *const u8, &mut stat) }
+        .remap_errno::<FileError, _>(|| String::new())?;
     Ok(Metadata { inner: stat })
 }
 
 pub async fn symlink_metadata(path: &LocalPath) -> Result<Metadata> {
     let path = CString::new(path.as_str())?;
     let mut stat = sys::bindings::stat::default();
-    unsafe { sys::lstat(path.as_ptr() as *const u8, &mut stat) }.remap_errno::<FileError>()?;
+    unsafe { sys::lstat(path.as_ptr() as *const u8, &mut stat) }
+        .remap_errno::<FileError, _>(|| String::new())?;
     Ok(Metadata { inner: stat })
 }
 
@@ -102,8 +106,10 @@ pub async fn symlink<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(old: P, new: P2)
 /// operation specific error variants.
 pub fn because_file_doesnt_exist(error: &Error) -> bool {
     if let Some(err) = error.downcast_ref::<FileError>() {
-        match err {
-            FileError::NotFound | FileError::NotADirectory | FileError::InvalidPath => true,
+        match err.kind {
+            FileErrorKind::NotFound | FileErrorKind::NotADirectory | FileErrorKind::InvalidPath => {
+                true
+            }
             _ => false,
         }
     } else {
@@ -133,7 +139,10 @@ pub fn exists_sync<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
 
 pub async fn create_dir(path: &LocalPath) -> Result<()> {
     let path = CString::new(path.as_str())?;
-    unsafe { sys::mkdir(path.as_ptr() as *const u8, 0o777).remap_errno::<FileError>()? }
+    unsafe {
+        sys::mkdir(path.as_ptr() as *const u8, 0o777)
+            .remap_errno::<FileError, _>(|| String::new())?
+    }
     Ok(())
 }
 
@@ -163,7 +172,10 @@ pub async fn create_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
 
 pub async fn set_permissions(path: &LocalPath, perms: Permissions) -> Result<()> {
     let path = CString::new(path.as_str())?;
-    unsafe { sys::chmod(path.as_ptr() as *const u8, perms.mode).remap_errno::<FileError>()? }
+    unsafe {
+        sys::chmod(path.as_ptr() as *const u8, perms.mode)
+            .remap_errno::<FileError, _>(|| String::new())?
+    }
     Ok(())
 }
 
@@ -199,7 +211,9 @@ pub async fn remove_dir<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     let path = path.as_ref();
     let path = CString::new(path.as_str())?;
 
-    unsafe { sys::rmdir(path.as_ptr() as *const u8).remap_errno::<FileError>()? };
+    unsafe {
+        sys::rmdir(path.as_ptr() as *const u8).remap_errno::<FileError, _>(|| String::new())?
+    };
     Ok(())
 }
 
@@ -207,7 +221,9 @@ pub async fn remove_file<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     let path = path.as_ref();
     let path = CString::new(path.as_str())?;
 
-    unsafe { sys::unlink(path.as_ptr() as *const u8).remap_errno::<FileError>()? };
+    unsafe {
+        sys::unlink(path.as_ptr() as *const u8).remap_errno::<FileError, _>(|| String::new())?
+    };
     Ok(())
 }
 
@@ -216,7 +232,10 @@ pub fn chown<P: AsRef<LocalPath>>(path: P, uid: sys::Uid, gid: sys::Gid) -> Resu
     let path = path.as_ref();
     let path = CString::new(path.as_str())?;
 
-    unsafe { sys::chown(path.as_ptr() as *const u8, uid, gid).remap_errno::<FileError>()? };
+    unsafe {
+        sys::chown(path.as_ptr() as *const u8, uid, gid)
+            .remap_errno::<FileError, _>(|| String::new())?
+    };
     Ok(())
 }
 
@@ -235,7 +254,7 @@ pub async fn remove_dir_all_with_options(path: &LocalPath, only_remove_dirs: boo
 
     let meta = symlink_metadata(path).await?;
     if !meta.is_dir() {
-        return Err(FileError::NotADirectory.into());
+        return Err(FileError::new(FileErrorKind::NotADirectory, "").into());
     }
 
     // List of which directories we will next process. The boolean indicates whether
@@ -279,7 +298,8 @@ pub async fn rename<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) 
     let from = CString::new(from.as_ref().as_str())?;
     let to = CString::new(to.as_ref().as_str())?;
 
-    unsafe { sys::rename(from.as_ptr(), to.as_ptr()) }.remap_errno::<FileError>()?;
+    unsafe { sys::rename(from.as_ptr(), to.as_ptr()) }
+        .remap_errno::<FileError, _>(|| String::new())?;
 
     Ok(())
 }
@@ -292,7 +312,7 @@ pub async fn copy_all<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2
     let to = to.as_ref();
 
     if crate::exists(to).await? {
-        return Err(FileError::AlreadyExists.into());
+        return Err(FileError::new(FileErrorKind::AlreadyExists, "").into());
     }
 
     let mut relative_paths = vec![];

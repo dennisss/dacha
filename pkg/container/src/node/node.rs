@@ -139,9 +139,6 @@ enum NodeEvent {
     /// running a worker has changed in state.
     ContainerStateChange { container_id: String },
 
-    /// TODO: Remove this and use a TaskResultBundle instead.
-    ContainerRuntimeEnded(Result<()>),
-
     ///
     /// Triggered by the blob fetcher task.
     BlobAvailable { blob_id: String },
@@ -291,13 +288,7 @@ impl NodeInner {
         // This task runs the internal container runtime.
         task_bundle.add("cluster::ContainerRuntime::run", {
             let runtime = self.shared.runtime.clone();
-            let sender = self.shared.event_channel.0.clone();
-
-            async move {
-                let result = runtime.run().await;
-                let _ = sender.send(NodeEvent::ContainerRuntimeEnded(result)).await;
-                Ok(())
-            }
+            runtime.run()
         });
 
         // This task forwards container events from the container runtime to the node
@@ -636,13 +627,6 @@ impl NodeInner {
                         self.handle_start_backoff_timeout(&worker_name, event_timer_id, &mut state)
                             .await
                     })?;
-                }
-                NodeEvent::ContainerRuntimeEnded(result) => {
-                    if result.is_ok() {
-                        return Err(err_msg("Container runtime ended early"));
-                    }
-
-                    return result;
                 }
             }
         }

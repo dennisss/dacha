@@ -13,6 +13,7 @@ http = { path = "../http" }
 cluster_client = { path = "../container/client" }
 file = { path = "../file" }
 executor = { path = "../executor" }
+executor_multitask = { path = "../executor/multitask" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf/compiler" }

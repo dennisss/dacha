@@ -10,7 +10,7 @@
 */
 
 use common::errors::*;
-use peripherals::i2c::I2CDevice;
+use peripherals::i2c::I2CHostController;
 
 fn compute_checksum(data: &[u8]) -> u8 {
     let mut sum = 0;
@@ -37,20 +37,20 @@ fn push_checksum(data: &mut Vec<u8>) {
 // CHK' computed using 0x50 virtual host address.
 
 pub struct DDCDevice {
-    i2c: I2CDevice,
+    i2c: I2CHostController,
 }
 
 impl DDCDevice {
     pub fn open(path: &str) -> Result<Self> {
-        let i2c = I2CDevice::open(path)?;
+        let i2c = I2CHostController::open(path)?;
         Ok(Self { i2c })
     }
 
-    pub fn read_edid(&mut self) -> Result<()> {
-        self.i2c.write(0x60 >> 1, &[0])?;
+    pub async fn read_edid(&mut self) -> Result<()> {
+        self.i2c.write(0x60 >> 1, &[0]).await?;
 
         let mut data = vec![0; 256];
-        self.i2c.read(0x50, &mut data)?;
+        self.i2c.read(0x50, &mut data).await?;
 
         println!("EXTENSION FLAG: {:?}", data[125]);
 
@@ -60,7 +60,7 @@ impl DDCDevice {
         Ok(())
     }
 
-    pub fn get_capabilities(&mut self) -> Result<String> {
+    pub async fn get_capabilities(&mut self) -> Result<String> {
         let mut full_data = vec![];
 
         let mut offset: u16 = 0;
@@ -72,13 +72,13 @@ impl DDCDevice {
             let mut req = vec![0x6E, 0x51, 0x83, 0xF3];
             req.extend_from_slice(&offset.to_be_bytes());
             req.push(compute_checksum(&req));
-            self.i2c.write(req[0] >> 1, &req[1..])?;
+            self.i2c.write(req[0] >> 1, &req[1..]).await?;
 
             std::thread::sleep(std::time::Duration::from_millis(50));
 
             let mut resp = [0u8; 32 + 7];
             resp[0] = 0x6E; // TODO: Check this!!
-            self.i2c.read(resp[0] >> 1, &mut resp[1..])?;
+            self.i2c.read(resp[0] >> 1, &mut resp[1..]).await?;
 
             // resp[1] is the source address
             resp[1] = 0x50;
@@ -129,16 +129,16 @@ impl DDCDevice {
         Ok(ret)
     }
 
-    pub fn get_vcp_feature(&mut self, code: u8) -> Result<Feature> {
+    pub async fn get_vcp_feature(&mut self, code: u8) -> Result<Feature> {
         let mut req = vec![0x6E, 0x51, 0x82, 0x01, code];
         req.push(compute_checksum(&req));
-        self.i2c.write(req[0] >> 1, &req[1..])?;
+        self.i2c.write(req[0] >> 1, &req[1..]).await?;
 
         std::thread::sleep(std::time::Duration::from_millis(40));
 
         let mut resp = [0u8; 12];
         resp[0] = 0x6E;
-        self.i2c.read(resp[0] >> 1, &mut resp[1..])?;
+        self.i2c.read(resp[0] >> 1, &mut resp[1..]).await?;
 
         resp[1] = 0x50;
 
@@ -189,11 +189,11 @@ impl DDCDevice {
         })
     }
 
-    pub fn set_vcp_feature(&mut self, code: u8, value: u16) -> Result<()> {
+    pub async fn set_vcp_feature(&mut self, code: u8, value: u16) -> Result<()> {
         let mut req = vec![0x6E, 0x51, 0x84, 0x03, code];
         req.extend_from_slice(&value.to_be_bytes());
         req.push(compute_checksum(&req));
-        self.i2c.write(req[0] >> 1, &req[1..])?;
+        self.i2c.write(req[0] >> 1, &req[1..]).await?;
 
         std::thread::sleep(std::time::Duration::from_millis(50));
 

@@ -1,4 +1,6 @@
 
+TODO: Eventually get rid of this crate and move to 'peripherals'
+
 
 Air Quality
 

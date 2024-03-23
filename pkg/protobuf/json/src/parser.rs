@@ -1,7 +1,13 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use common::errors::*;
+use protobuf::message_factory::MessageFactory;
 use protobuf::reflection::Reflect;
 use protobuf::reflection::ReflectionMut;
 use protobuf::EnumValue;
+use protobuf::FieldNumber;
+use protobuf::MessageReflection;
 
 // TODO: Support field names that are translated to lowerCamelCase
 // TODO: We should just sanitize in the protobuf compiler that all field names
@@ -32,6 +38,10 @@ macro_rules! integer_parser {
 #[derive(Default)]
 pub struct ParserOptions {
     pub ignore_unknown_fields: bool,
+
+    /// Message factory to use for resolving Any protos which are inlined with
+    /// '@type' object notation.
+    pub message_factory: Option<Arc<dyn MessageFactory>>,
 }
 
 pub trait MessageJsonParser {
@@ -44,12 +54,16 @@ impl<M: Reflect + Default> MessageJsonParser for M {
     fn parse_json(value: &str, options: &ParserOptions) -> Result<Self> {
         let value = json::parse(value)?;
         let mut inst = M::default();
-        apply_json_value_to_reflection(inst.reflect_mut(), &value)?;
+        apply_json_value_to_reflection(inst.reflect_mut(), &value, options)?;
         Ok(inst)
     }
 }
 
-fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Result<()> {
+fn apply_json_value_to_reflection(
+    r: ReflectionMut,
+    value: &json::Value,
+    options: &ParserOptions,
+) -> Result<()> {
     match r {
         ReflectionMut::F32(r) => {
             let double = get_f64(value)?;
@@ -108,7 +122,7 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
             };
 
             for value in arr {
-                apply_json_value_to_reflection(r.reflect_add(), value)?;
+                apply_json_value_to_reflection(r.reflect_add(), value, options)?;
             }
         }
         ReflectionMut::Message(r) => {
@@ -117,18 +131,11 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
                 _ => return Err(err_msg("Expected message to be encoded as an object")),
             };
 
-            for (key, value) in obj.iter() {
-                let num = r
-                    .field_number_by_name(key.as_str())
-                    .ok_or_else(|| format_err!("Unknown message field named: {}", key))?;
-
-                if let json::Value::Null = value {
-                    continue;
-                }
-
-                let r = r.field_by_number_mut(num).unwrap();
-                apply_json_value_to_reflection(r, value)?;
+            if maybe_parse_any_proto(r, obj, options)? {
+                return Ok(());
             }
+
+            parse_message(r, obj, options, false)?;
         }
         ReflectionMut::Enum(r) => {
             match value {
@@ -152,6 +159,78 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
         }
         ReflectionMut::Set(_) => todo!(),
     };
+
+    Ok(())
+}
+
+fn maybe_parse_any_proto(
+    r: &mut dyn MessageReflection,
+    obj: &HashMap<String, json::Value>,
+    options: &ParserOptions,
+) -> Result<bool> {
+    const ANY_TYPE_URL_FIELD_NUM: FieldNumber = 1; // Any::TYPE_URL_FIELD_NUM
+    const ANY_VALUE_FIELD_NUM: FieldNumber = 2; // Any::VALUE_FIELD_NUM
+
+    if r.type_url() != "type.googleapis.com/google.protobuf.Any" {
+        return Ok(false);
+    }
+
+    let type_url = match obj.get("@type") {
+        Some(json::Value::String(s)) => s,
+        _ => return Err(err_msg("Any proto missing @type string")),
+    };
+
+    let message_factory = options
+        .message_factory
+        .clone()
+        .ok_or_else(|| err_msg("Need a MessageFactory to parse Any protos"))?;
+
+    let mut inner_message = message_factory
+        .new_message(type_url.as_str())
+        .ok_or_else(|| format_err!("Unknown message with type_url: {}", type_url))?;
+    parse_message(inner_message.as_mut(), obj, options, true)?;
+
+    // Merge back into the base object.
+
+    let type_url_field = match r.field_by_number_mut(ANY_TYPE_URL_FIELD_NUM) {
+        Some(ReflectionMut::String(s)) => s,
+        _ => return Err(err_msg("Failed to get type_url field")),
+    };
+
+    *type_url_field = type_url.clone();
+
+    let value_field = match r.field_by_number_mut(ANY_VALUE_FIELD_NUM) {
+        Some(ReflectionMut::Bytes(v)) => v,
+        _ => return Err(err_msg("Failed to get value field")),
+    };
+
+    value_field.extend_from_slice(&inner_message.serialize()?);
+
+    Ok(true)
+}
+
+fn parse_message(
+    r: &mut dyn MessageReflection,
+    obj: &HashMap<String, json::Value>,
+    options: &ParserOptions,
+    skip_type_url: bool,
+) -> Result<()> {
+    for (key, value) in obj.iter() {
+        if skip_type_url && key == "@type" {
+            continue;
+        }
+
+        let num = r
+            .field_number_by_name(key.as_str())
+            .ok_or_else(|| format_err!("Unknown message field named: {}", key))?;
+
+        if let json::Value::Null = value {
+            continue;
+        }
+
+        let r = r.field_by_number_mut(num).unwrap();
+        apply_json_value_to_reflection(r, value, options)?;
+    }
 
     Ok(())
 }

@@ -1,8 +1,8 @@
 // Utilities for
 
-#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::Once;
 
@@ -91,7 +91,7 @@ impl Drop for ShutdownToken {
 
 #[async_trait]
 impl CancellationToken for ShutdownToken {
-    fn is_cancelled(&self) -> bool {
+    async fn is_cancelled(&self) -> bool {
         self.receiver.is_closed()
     }
 
@@ -105,14 +105,14 @@ impl CancellationToken for ShutdownToken {
 /// clean up and stop running.
 ///
 /// NOTE: There is one global shutdown state for the entire program.
-pub fn new_shutdown_token() -> Box<dyn CancellationToken> {
+pub fn new_shutdown_token() -> Arc<dyn CancellationToken> {
     let receiver = {
         let mut shutdown_state = get_shutdown_state().lock().unwrap();
         shutdown_state.num_tokens += 1;
         shutdown_state.receiver.clone()
     };
 
-    Box::new(ShutdownToken { receiver })
+    Arc::new(ShutdownToken { receiver })
 }
 
 /// Explicitly indicate that the application is shutting down. Once triggered,

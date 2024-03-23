@@ -4,6 +4,7 @@ use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::ffi::CString;
 
+use alloc::string::String;
 use common::errors::*;
 use common::io::{IoError, IoErrorKind, Readable, Seekable, Writeable};
 pub use executor::SyncRange;
@@ -11,7 +12,7 @@ use executor::{FileHandle, FromErrno, RemapErrno};
 use sys::{Errno, OpenFileDescriptor};
 
 use crate::local::path::LocalPath;
-use crate::{FileError, LocalPathBuf, Metadata, Permissions};
+use crate::{FileError, FileErrorKind, LocalPathBuf, Metadata, Permissions};
 pub struct LocalFileOpenOptions {
     read: bool,
     write: bool,
@@ -133,8 +134,12 @@ impl LocalFile {
         // TODO: When implementing openat,
 
         if path.as_str().is_empty() {
-            return Err(FileError::NotFound.into());
+            return Err(
+                FileError::new(FileErrorKind::NotFound, "Attempted to open an empty path").into(),
+            );
         }
+
+        let error_message = || format!("Failed to open local file at path: {}", path.as_str());
 
         // Make absolute so that it's easier to find the directory.
         let path = {
@@ -186,7 +191,7 @@ impl LocalFile {
 
                 let dir_fd = sys::OpenFileDescriptor::new(
                     unsafe { sys::open(dir_cpath.as_ptr(), sys::O_DIRECTORY, 0) }
-                        .remap_errno::<FileError>()?,
+                        .remap_errno::<FileError, _>(error_message)?,
                 );
 
                 // TODO: Make these to InvalidPath errors.
@@ -200,7 +205,7 @@ impl LocalFile {
                         options.mode as u16,
                     )
                 }
-                .remap_errno::<FileError>()?;
+                .remap_errno::<FileError, _>(error_message)?;
 
                 // Here we assume that if the sync fails, the file system will revert back to
                 // the previous state before the file was created. So if this fails, we won't
@@ -210,6 +215,7 @@ impl LocalFile {
                 //
                 // TODO: For this to be correct, we will also need to fsync while using mkdirat.
                 if options.sync_on_flush {
+                    // TODO: Remap this error?
                     unsafe { sys::fsync(dir_fd.as_raw_fd()) }?;
                 }
 
@@ -218,7 +224,7 @@ impl LocalFile {
                 // This should only happen for opening "/"
                 let cpath = CString::new(path.as_str())?;
                 unsafe { sys::open(cpath.as_ptr(), flags, options.mode as u16) }
-                    .remap_errno::<FileError>()?
+                    .remap_errno::<FileError, _>(error_message)?
             }
         };
 
@@ -237,7 +243,8 @@ impl LocalFile {
 
     pub async fn metadata(&self) -> Result<Metadata> {
         let mut stat = sys::bindings::stat::default();
-        unsafe { sys::fstat(self.as_raw_fd(), &mut stat) }.remap_errno::<FileError>()?;
+        unsafe { sys::fstat(self.as_raw_fd(), &mut stat) }
+            .remap_errno::<FileError, _>(|| String::new())?;
         Ok(Metadata { inner: stat })
     }
 
@@ -245,11 +252,13 @@ impl LocalFile {
     /// locked.
     pub fn try_lock_exclusive(&self) -> Result<()> {
         if let Err(e) = unsafe { sys::flock(self.as_raw_fd(), sys::LockOperation::LOCK_EX, true) } {
+            let message = format!("Failed to acquire exclusive lock on {}", self.path.as_str());
+
             if e == Errno::EAGAIN {
-                return Err(FileError::LockContention.into());
+                return Err(FileError::new(FileErrorKind::LockContention, &message).into());
             }
 
-            return Err(FileError::from_errno(e).unwrap_or_else(|| e.into()));
+            return Err(FileError::from_errno(e, &message).unwrap_or_else(|| e.into()));
         }
 
         Ok(())
@@ -287,7 +296,7 @@ impl LocalFile {
         self.file
             .sync(data_sync, range)
             .await
-            .remap_errno::<FileError>()
+            .remap_errno::<FileError, _>(|| String::new())
     }
 
     pub async fn sync_data(&self) -> Result<()> {
@@ -299,7 +308,10 @@ impl LocalFile {
     }
 
     pub async fn set_len(&mut self, new_size: u64) -> Result<()> {
-        unsafe { sys::ftruncate(self.as_raw_fd(), new_size).remap_errno::<FileError>()? }
+        unsafe {
+            sys::ftruncate(self.as_raw_fd(), new_size)
+                .remap_errno::<FileError, _>(|| String::new())?
+        }
         Ok(())
     }
 
@@ -316,7 +328,10 @@ impl LocalFile {
     }
 
     pub async fn set_permissions(&mut self, perms: Permissions) -> Result<()> {
-        unsafe { sys::fchmod(self.as_raw_fd(), perms.mode).remap_errno::<FileError>()? }
+        unsafe {
+            sys::fchmod(self.as_raw_fd(), perms.mode)
+                .remap_errno::<FileError, _>(|| String::new())?
+        }
         Ok(())
     }
 

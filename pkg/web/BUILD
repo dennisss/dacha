@@ -9,6 +9,7 @@ filegroup(
     srcs = [
         "index.html",
         "//node_modules/bootstrap/dist/css/bootstrap.min.css",
-        "//third_party/noto_sans/font_normal.ttf"
+        "//third_party/noto_sans/font_normal.ttf",
+        "//third_party/noto_sans/font_mono_normal.ttf",
     ]
 )

@@ -16,8 +16,9 @@ use std::time::{Duration, Instant};
 
 use common::errors::*;
 use common::io::Writeable;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
 use executor::{channel, child_task::ChildTask};
+use executor::{lock, lock_async};
 use file::{LocalFile, LocalFileOpenOptions};
 use http::v2::ProtocolErrorV2;
 use proto::adder::*;
@@ -25,10 +26,10 @@ use proto::adder::*;
 const ADDER_REQUEST_ID: &'static str = "adder-request-id";
 
 pub struct AdderImpl {
-    log_file: Option<Mutex<LocalFile>>,
+    log_file: Option<AsyncMutex<LocalFile>>,
     event_listener: Option<channel::Sender<AdderEvent>>,
-    stats: Arc<Mutex<AdderStats>>,
-    busy_loop: Mutex<Option<ChildTask>>,
+    stats: Arc<AsyncMutex<AdderStats>>,
+    busy_loop: AsyncMutex<Option<ChildTask>>,
 }
 
 /// Event emitted while processing a adder request.
@@ -71,14 +72,14 @@ impl AdderStats {
 struct AdderInterceptor {
     event_receiver: channel::Receiver<AdderEvent>,
 
-    stats: Arc<Mutex<AdderStats>>,
+    stats: Arc<AsyncMutex<AdderStats>>,
 }
 
 impl AdderImpl {
     pub async fn create(request_log: Option<&str>) -> Result<Self> {
         let log_file = {
             if let Some(path) = request_log {
-                Some(Mutex::new(LocalFile::open_with_options(
+                Some(AsyncMutex::new(LocalFile::open_with_options(
                     &path,
                     LocalFileOpenOptions::new().append(true).create(true),
                 )?))
@@ -90,39 +91,38 @@ impl AdderImpl {
         Ok(Self {
             log_file,
             event_listener: None,
-            stats: Arc::new(Mutex::new(AdderStats::default())),
-            busy_loop: Mutex::new(None),
+            stats: Arc::new(AsyncMutex::new(AdderStats::default())),
+            busy_loop: AsyncMutex::new(None),
         })
     }
 
     async fn handle_request(&self, req: &AddRequest, res: &mut AddResponse) -> Result<()> {
-        {
-            let mut stats = self.stats.lock().await;
+        lock!(stats <= self.stats.lock().await?, {
             res.set_message_index(stats.messages_received as i32);
             stats.messages_received += 1;
-        }
+        });
 
         let z = req.x() + req.y();
         res.set_z(z);
 
         if let Some(mut file) = self.log_file.as_ref() {
-            let mut file = file.lock().await;
-
-            file.write_all(format!("{} + {} = {}\n", req.x(), req.y(), z).as_bytes())
-                .await?;
-            file.flush().await?;
+            lock_async!(file <= file.lock().await?, {
+                file.write_all(format!("{} + {} = {}\n", req.x(), req.y(), z).as_bytes())
+                    .await?;
+                file.flush().await?;
+                Result::<()>::Ok(())
+            })?;
         }
 
         {
-            let have_token = {
-                let mut guard = self.stats.lock().await;
+            let have_token = lock!(guard <= self.stats.lock().await?, {
                 if guard.unavailable_tokens > 0 {
                     guard.unavailable_tokens -= 1;
                     true
                 } else {
                     false
                 }
-            };
+            });
 
             if have_token {
                 return Err(rpc::Status::unavailable("Service received too many requests").into());
@@ -139,7 +139,8 @@ impl AdderImpl {
     async fn handle_busy_loop(&self, request: &BusyLoopRequest) -> Result<()> {
         let cpu_usage = request.cpu_usage();
 
-        *self.busy_loop.lock().await = Some(ChildTask::spawn(async move {
+        let mut busy_loop = self.busy_loop.lock().await?.enter();
+        *busy_loop = Some(ChildTask::spawn(async move {
             loop {
                 let time = Instant::now();
                 let usage_end = time + Duration::from_millis((100.0 * cpu_usage) as u64);
@@ -169,6 +170,7 @@ impl AdderImpl {
                 executor::sleep(cycle_end - usage_end).await;
             }
         }));
+        busy_loop.exit();
 
         Ok(())
     }
@@ -181,7 +183,9 @@ impl AdderService for AdderImpl {
         request: rpc::ServerRequest<AddRequest>,
         response: &mut rpc::ServerResponse<AddResponse>,
     ) -> Result<()> {
-        self.stats.lock().await.requests_received += 1;
+        lock!(stats <= self.stats.lock().await?, {
+            stats.requests_received += 1;
+        });
 
         self.handle_request(request.as_ref(), response.as_mut())
             .await
@@ -229,7 +233,9 @@ impl AdderService for AdderImpl {
         mut request: rpc::ServerStreamRequest<AddRequest>,
         response: &mut rpc::ServerStreamResponse<AddResponse>,
     ) -> Result<()> {
-        self.stats.lock().await.requests_received += 1;
+        lock!(stats <= self.stats.lock().await?, {
+            stats.requests_received += 1;
+        });
 
         loop {
             match request.recv().await {
@@ -578,7 +584,9 @@ mod tests {
     ) -> Result<()> {
         // Non-idempotent unary request can't be retried.
         {
-            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset().unavailable_tokens = 1;
+            });
 
             let mut req = AddRequest::default();
             req.set_x(1);
@@ -595,14 +603,17 @@ mod tests {
                 rpc::StatusCode::Unavailable
             );
 
-            let stats = interceptor.stats.lock().await;
-            assert_eq!(stats.unavailable_tokens, 0);
-            assert_eq!(stats.requests_received, 1);
+            lock!(stats <= interceptor.stats.lock().await?, {
+                assert_eq!(stats.unavailable_tokens, 0);
+                assert_eq!(stats.requests_received, 1);
+            });
         }
 
         // Non-idempotent streaming request can't be retried
         {
-            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset().unavailable_tokens = 1;
+            });
 
             let mut req = AddRequest::default();
             req.set_x(1);
@@ -625,14 +636,17 @@ mod tests {
                 rpc::StatusCode::Unavailable
             );
 
-            let stats = interceptor.stats.lock().await;
-            assert_eq!(stats.unavailable_tokens, 0);
-            assert_eq!(stats.requests_received, 1);
+            lock!(stats <= interceptor.stats.lock().await?, {
+                assert_eq!(stats.unavailable_tokens, 0);
+                assert_eq!(stats.requests_received, 1);
+            });
         }
 
         // Immediately returned Unavailable error (Trailers-only). (Idempotent Unary)
         {
-            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset().unavailable_tokens = 1;
+            });
 
             let mut req = AddRequest::default();
             req.set_x(1);
@@ -645,15 +659,18 @@ mod tests {
 
             assert_eq!(res.result?.z(), 2);
 
-            let stats = interceptor.stats.lock().await;
-            assert_eq!(stats.unavailable_tokens, 0);
-            assert_eq!(stats.requests_received, 2);
+            lock!(stats <= interceptor.stats.lock().await?, {
+                assert_eq!(stats.unavailable_tokens, 0);
+                assert_eq!(stats.requests_received, 2);
+            });
         }
 
         // Immediately returned Unavailable error (Trailers-only). (Idempotent
         // Streaming)
         {
-            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset().unavailable_tokens = 1;
+            });
 
             let mut ctx = rpc::ClientRequestContext::default();
             ctx.idempotent = true;
@@ -669,7 +686,9 @@ mod tests {
             // Wait for first request to be sent.
             executor::sleep(Duration::from_millis(10)).await;
 
-            assert!(interceptor.stats.lock().await.requests_received >= 1);
+            lock!(stats <= interceptor.stats.lock().await?, {
+                assert!(stats.requests_received >= 1);
+            });
 
             req.set_x(2);
             assert!(req_stream.send(&req).await);
@@ -688,12 +707,13 @@ mod tests {
             assert_eq!(res_stream.recv().await, None);
             res_stream.finish().await?;
 
-            let stats = interceptor.stats.lock().await;
-            assert_eq!(stats.unavailable_tokens, 0);
-            assert_eq!(stats.requests_received, 2);
+            lock!(stats <= interceptor.stats.lock().await?, {
+                assert_eq!(stats.unavailable_tokens, 0);
+                assert_eq!(stats.requests_received, 2);
 
-            // 1 in the first attempt and then 2 (replaying both) in the second attempt.
-            assert_eq!(stats.messages_received, 3);
+                // 1 in the first attempt and then 2 (replaying both) in the second attempt.
+                assert_eq!(stats.messages_received, 3);
+            });
         }
 
         // By default can't retry streaming response after one good response is
@@ -807,7 +827,7 @@ mod tests {
                 rpc::StatusCode::Internal
             );
 
-            let mut stats = interceptor.stats.lock().await;
+            let mut stats = interceptor.stats.lock().await?;
             assert_eq!(stats.unavailable_tokens, 37);
             assert_eq!(stats.requests_received, 3);
             stats.reset();

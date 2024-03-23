@@ -1,11 +1,19 @@
+use std::string::String;
+
+use alloc::string::ToString;
 use common::{errors::*, io::IoError};
 use executor::FromErrno;
 use sys::Errno;
 
 /// Errors that occur during file operations.
 #[error]
-#[derive(PartialEq)]
-pub enum FileError {
+pub struct FileError {
+    pub kind: FileErrorKind,
+    pub message: String,
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum FileErrorKind {
     /// While trying to find a file, the location in which we are searching is
     /// valid but we could not find the file.
     NotFound,
@@ -32,24 +40,32 @@ pub enum FileError {
     OutOfDiskSpace,
 }
 
+impl FileError {
+    pub fn new(kind: FileErrorKind, message: &str) -> Self {
+        Self {
+            kind,
+            message: message.to_string(),
+        }
+    }
+}
+
 impl FromErrno for FileError {
-    fn from_errno(errno: Errno) -> Option<Error> {
-        if let Some(err) = IoError::from_errno(errno) {
+    fn from_errno(errno: Errno, message: &str) -> Option<Error> {
+        if let Some(err) = IoError::from_errno(errno, message) {
             return Some(err);
         }
 
-        Some(
-            match errno {
-                Errno::ENOENT => FileError::NotFound,
-                Errno::EEXIST => FileError::AlreadyExists,
-                Errno::EPERM => FileError::PermissionDenied,
-                Errno::EDQUOT => FileError::OutOfQuota,
-                Errno::ENOSPC => FileError::OutOfDiskSpace,
-                Errno::ENOTDIR => FileError::NotADirectory,
-                Errno::ENAMETOOLONG | Errno::EINVAL => FileError::InvalidPath,
-                _ => return None,
-            }
-            .into(),
-        )
+        let kind = match errno {
+            Errno::ENOENT => FileErrorKind::NotFound,
+            Errno::EEXIST => FileErrorKind::AlreadyExists,
+            Errno::EPERM => FileErrorKind::PermissionDenied,
+            Errno::EDQUOT => FileErrorKind::OutOfQuota,
+            Errno::ENOSPC => FileErrorKind::OutOfDiskSpace,
+            Errno::ENOTDIR => FileErrorKind::NotADirectory,
+            Errno::ENAMETOOLONG | Errno::EINVAL => FileErrorKind::InvalidPath,
+            _ => return None,
+        };
+
+        Some(FileError::new(kind, message).into())
     }
 }

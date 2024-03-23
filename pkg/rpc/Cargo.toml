@@ -16,6 +16,7 @@ failure = "0.1.8"
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 protobuf_json = { path = "../protobuf/json" }
 executor = { path = "../executor" }
+executor_multitask = { path = "../executor/multitask" }
 net = { path = "../net" }
 
 [features]

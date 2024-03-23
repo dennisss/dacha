@@ -1059,49 +1059,22 @@ impl DescriptorPool {
     }
 }
 
-impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
-    fn parse_text_extension(
-        &self,
-        extension_path: &str,
-        extension: protobuf_core::text::TextExtension,
-        message: &mut dyn protobuf_core::MessageReflection,
-    ) -> Result<()> {
-        // TODO: Figure out if there is a better way to make this directly depend on the
-        // type iur
-        const ANY_TYPE_URL_FIELD_NUM: FieldNumber = 1; // Any::TYPE_URL_FIELD_NUM
-        const ANY_VALUE_FIELD_NUM: FieldNumber = 2; // Any::VALUE_FIELD_NUM
+impl protobuf_core::message_factory::MessageFactory for DescriptorPool {
+    fn new_message(&self, type_url: &str) -> Option<Box<dyn MessageReflection>> {
+        let path = match type_url.strip_prefix(protobuf_core::TYPE_URL_PREFIX) {
+            Some(v) => v,
+            None => return None,
+        };
 
-        // This is Message::type_url(&Any::default())
-        if message.type_url() == "type.googleapis.com/google.protobuf.Any" {
-            if let Some(path) = extension_path.strip_prefix(protobuf_core::TYPE_URL_PREFIX) {
-                let desc = self
-                    .find_relative_type("", path)
-                    .and_then(|d| d.to_message())
-                    .ok_or_else(|| format_err!("Unknown message with type: {}", path))?;
+        let desc = match self
+            .find_relative_type("", path)
+            .and_then(|d| d.to_message())
+        {
+            Some(v) => v,
+            None => return None,
+        };
 
-                let mut inner_message = crate::message::DynamicMessage::new(desc);
-                extension.parse_to(inner_message.reflect_mut())?;
-
-                if let Some(ReflectionMut::String(v)) =
-                    message.field_by_number_mut(ANY_TYPE_URL_FIELD_NUM)
-                {
-                    *v = inner_message.type_url().to_string();
-                } else {
-                    return Err(err_msg("Failed to find type_url field of Any proto"));
-                }
-
-                if let Some(ReflectionMut::Bytes(v)) =
-                    message.field_by_number_mut(ANY_VALUE_FIELD_NUM)
-                {
-                    v.clear();
-                    inner_message.serialize_to(v)?;
-                }
-
-                return Ok(());
-            }
-        }
-
-        Err(err_msg("Dynamic extensions not supported"))
+        Some(Box::new(crate::message::DynamicMessage::new(desc)))
     }
 }
 

@@ -3,6 +3,7 @@ use core::ops::{Deref, DerefMut};
 use common::errors::*;
 use datastore_meta_client::MetastoreClient;
 use datastore_meta_client::MetastoreClientInterface;
+use executor_multitask::impl_resource_passthrough;
 use protobuf_builtins::google::protobuf::Any;
 use raft_client::proto::RouteLabel;
 
@@ -15,6 +16,8 @@ pub struct ClusterMetaClient {
     zone: String,
     inner: MetastoreClient,
 }
+
+impl_resource_passthrough!(ClusterMetaClient, inner);
 
 impl ClusterMetaClient {
     pub async fn create(zone: &str) -> Result<Self> {

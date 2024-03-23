@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::string::String;
 
 use common::errors::*;
 use common::io::{Readable, SharedWriteable, Writeable};
@@ -60,7 +61,9 @@ impl TcpListener {
         .await?;
 
         let res = op.wait().await?;
-        let fd = res.accept_result().remap_errno::<NetworkError>()?;
+        let fd = res
+            .accept_result()
+            .remap_errno::<NetworkError, _>(|| String::new())?;
 
         Ok(TcpStream {
             mode: sys::ShutdownHow::ReadWrite,
@@ -116,7 +119,8 @@ impl TcpStream {
         .await?;
 
         let res = op.wait().await?;
-        res.connect_result().remap_errno::<NetworkError>()?;
+        res.connect_result()
+            .remap_errno::<NetworkError, _>(|| String::new())?;
 
         Ok(Self {
             mode: sys::ShutdownHow::ReadWrite,

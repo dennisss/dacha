@@ -16,6 +16,7 @@ protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 libc = "0.2"
 failure = "0.1.8"
 executor = { path = "../executor" }
+executor_multitask = { path = "../executor/multitask" }
 file = { path = "../file" }
 net = { path = "../net" }
 base_radix = { path = "../base/radix" }

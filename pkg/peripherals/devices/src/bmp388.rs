@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use common::errors::*;
 use parsing::binary::{be_i8, le_i16, le_u16, le_u24};
-use peripherals::i2c::I2CDevice;
+use peripherals::i2c::{I2CHostController, I2CHostDevice};
 
 const DEVICE_ADDRESS: u8 = 0x77;
 const CALIBRATION_START_OFFSET: u8 = 0x31;
@@ -40,15 +40,17 @@ Recommended for in-door
 */
 
 pub struct BMP388 {
-    device: I2CDevice,
+    device: I2CHostDevice,
     calibration_data: BMP388CalibrationData,
 }
 
 impl BMP388 {
-    pub fn open(mut device: I2CDevice) -> Result<Self> {
+    pub async fn open(host: I2CHostController) -> Result<Self> {
+        let mut device = host.device(DEVICE_ADDRESS);
+
         let mut cal = [0u8; CALIBRATION_SIZE];
-        device.write(DEVICE_ADDRESS, &[CALIBRATION_START_OFFSET])?;
-        device.read(DEVICE_ADDRESS, &mut cal)?;
+        device.write(&[CALIBRATION_START_OFFSET]).await?;
+        device.read(&mut cal).await?;
 
         let mut input = &cal[..];
         let nvm_par_t1 = parse_next!(input, le_u16);
@@ -87,10 +89,10 @@ impl BMP388 {
         println!("Calibration: {:?}", calibration_data);
 
         // Oversampling: 16x pressure, 2x temperature.
-        device.write(DEVICE_ADDRESS, &[OSC, 0b100 | (0b001 << 3)])?;
+        device.write(&[OSC, 0b100 | (0b001 << 3)]).await?;
 
         // IIR coefficient
-        device.write(DEVICE_ADDRESS, &[CONFIG, 0b100 << 1])?;
+        device.write(&[CONFIG, 0b100 << 1]).await?;
 
         Ok(Self {
             device,
@@ -98,12 +100,13 @@ impl BMP388 {
         })
     }
 
-    pub fn measure(&mut self) -> Result<Measurement> {
+    pub async fn measure(&mut self) -> Result<Measurement> {
         const PRES_EN: u8 = 1 << 0;
         const TEMP_EN: u8 = 1 << 1;
         const FORCED_MODE: u8 = 0b01 << 4;
         self.device
-            .write(DEVICE_ADDRESS, &[PWR_CTRL, PRES_EN | TEMP_EN | FORCED_MODE])?;
+            .write(&[PWR_CTRL, PRES_EN | TEMP_EN | FORCED_MODE])
+            .await?;
 
         // 234 + press_en * (392 + 2^osr_p * 2000) + temp_en * (313 + 2^osr_t * 2000)
         // 234 + (392 + 16 * 2000) + (313 + 2 * 2000)
@@ -112,9 +115,9 @@ impl BMP388 {
         // TODO: Calculate this time period based on the formula in the datasheet.
         sleep(Duration::from_millis(40));
 
-        self.device.write(DEVICE_ADDRESS, &[PWR_CTRL])?;
+        self.device.write(&[PWR_CTRL]).await?;
         let mut pwr_ctrl = [0u8; 1];
-        self.device.read(DEVICE_ADDRESS, &mut pwr_ctrl)?;
+        self.device.read(&mut pwr_ctrl).await?;
 
         // Verify that the device has returned to sleep mode.
         // TODO: Check the STATUS register instead?
@@ -123,8 +126,8 @@ impl BMP388 {
         }
 
         let mut status = [0u8; 1];
-        self.device.write(DEVICE_ADDRESS, &[0x03])?;
-        self.device.read(DEVICE_ADDRESS, &mut status)?;
+        self.device.write(&[0x03]).await?;
+        self.device.read(&mut status).await?;
 
         if ((status[0] & (1 << 6)) == 0) || ((status[0] & (1 << 5)) == 0) {
             return Err(err_msg("Temperature/pressure not ready"));
@@ -132,8 +135,8 @@ impl BMP388 {
 
         // 24-bit pressure value followed by 24-bit temperature value.
         let mut data = [0u8; 6];
-        self.device.write(DEVICE_ADDRESS, &[0x04])?;
-        self.device.read(DEVICE_ADDRESS, &mut data)?;
+        self.device.write(&[0x04]).await?;
+        self.device.read(&mut data).await?;
 
         let raw_pres = le_u24(&data[0..3]).unwrap().0;
         let raw_temp = le_u24(&data[3..]).unwrap().0;

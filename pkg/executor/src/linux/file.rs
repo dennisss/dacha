@@ -4,6 +4,7 @@ use core::task::{Context, Poll};
 use std::ffi::CString;
 use std::sync::Arc;
 
+use alloc::string::String;
 use base_error::*;
 use common::io::IoError;
 use sys::{
@@ -95,7 +96,9 @@ impl FileHandle {
         .await?;
 
         let res = op.wait().await?;
-        let n = res.readv_result().remap_errno::<IoError>()?;
+        let n = res
+            .readv_result()
+            .remap_errno::<IoError, _>(|| String::new())?;
 
         Ok(n)
     }
@@ -126,7 +129,9 @@ impl FileHandle {
         .await?;
 
         let res = op.wait().await?;
-        let n = res.writev_result().remap_errno::<IoError>()?;
+        let n = res
+            .writev_result()
+            .remap_errno::<IoError, _>(|| String::new())?;
         Ok(n)
     }
 

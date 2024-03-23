@@ -4,7 +4,7 @@ use crypto::random::SharedRng;
 /// Generates a new random radio address.
 ///
 /// This address must be:
-/// - 4 byes in length
+/// - 4 bytes in length
 /// - Have no zero bytes.
 /// - Not contain the radio pre-amble bytes (0x55 or 0xAA)
 pub async fn generate_radio_address() -> Result<Vec<u8>> {

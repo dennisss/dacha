@@ -44,3 +44,9 @@ impl<T> SyncMutex<T> {
         Ok(ret)
     }
 }
+
+impl<T: Default> Default for SyncMutex<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}

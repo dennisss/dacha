@@ -1,6 +1,5 @@
 use common::errors::*;
 use common::futures::try_join;
-use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::child_task::ChildTask;
 

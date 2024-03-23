@@ -40,13 +40,13 @@ async fn main() -> Result<()> {
 
     let adder = AdderImpl::create(args.request_log.as_ref().map(|s| s.as_str())).await?;
 
-    let mut server = rpc::Http2Server::new();
+    let mut server = rpc::Http2Server::new(Some(args.port.value()));
     let service = adder.into_service();
     server.add_service(service)?;
     server.add_reflection()?;
     server.add_healthz()?;
-    server.set_shutdown_token(executor::signals::new_shutdown_token());
 
     println!("Starting on port {}", args.port.value());
-    server.run(args.port.value()).await
+
+    executor_multitask::wait_for_main_resource(server.start()).await
 }

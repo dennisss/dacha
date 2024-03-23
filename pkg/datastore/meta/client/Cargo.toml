@@ -11,6 +11,7 @@ net = { path = "../../../net" }
 raft_client = { path = "../../../raft/client" }
 protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
 executor = { path = "../../../executor" }
+executor_multitask = { path = "../../../executor/multitask" }
 datastore_proto = { path = "../../proto" }
 
 [features]
