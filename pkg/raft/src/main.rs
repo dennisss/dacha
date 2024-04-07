@@ -22,6 +22,7 @@ use common::errors::*;
 use common::errors::*;
 use common::futures::future::*;
 use common::futures::prelude::*;
+use executor_multitask::RootResource;
 use file::dir_lock::DirLock;
 use file::LocalPathBuf;
 use protobuf::Message;
@@ -79,7 +80,7 @@ use redis::resp::*;
 */
 
 struct RaftRedisServer {
-    node: raft::Node<KeyValueReturn>,
+    node: Arc<raft::Node<KeyValueReturn>>,
     state_machine: Arc<MemoryKVStateMachine>,
 }
 
@@ -232,39 +233,43 @@ async fn main() -> Result<()> {
     // one atomic unit that is initially loaded
     let state_machine = Arc::new(MemoryKVStateMachine::new());
 
-    let mut tasks = executor::bundle::TaskResultBundle::new();
+    let mut service = RootResource::new();
 
-    let mut node = Node::create(NodeOptions {
-        dir: lock,
-        init_port: 4000,
-        bootstrap: args.bootstrap,
-        seed_list,
-        state_machine: state_machine.clone(),
-        route_labels: vec![],
-    })
-    .await?;
+    let raft_port = 4000; // + node.id().value();
+    let client_port = 5000; // + node.id().value();
 
-    let raft_port = 4000 + node.id().value();
-    let client_port = 5000 + node.id().value();
+    let mut rpc_server = rpc::Http2Server::new(Some(raft_port as u16));
+    let rpc_server_address = format!("127.0.0.1:{}", raft_port);
 
-    let mut rpc_server = rpc::Http2Server::new();
-
-    tasks.add(
-        "raft::Node",
-        node.run(&mut rpc_server, &format!("127.0.0.1:{}", raft_port))?,
+    let mut node = Arc::new(
+        Node::create(NodeOptions {
+            dir: lock,
+            init_port: 4000,
+            bootstrap: args.bootstrap,
+            seed_list,
+            state_machine: state_machine.clone(),
+            route_labels: vec![],
+            rpc_server: &mut rpc_server,
+            rpc_server_address,
+        })
+        .await?,
     );
+
+    service.register_dependency(node.clone()).await;
 
     let client_server = Arc::new(redis::server::Server::new(RaftRedisServer {
         node,
         state_machine: state_machine.clone(),
     }));
 
-    tasks
-        .add("rpc::Server", rpc_server.run(raft_port as u16))
-        .add(
+    service.register_dependency(rpc_server.start()).await;
+
+    service
+        .spawn_interruptable(
             "redis::Server",
             redis::server::Server::run(client_server.clone(), client_port as u16),
-        );
+        )
+        .await;
 
-    tasks.join().await
+    service.wait().await
 }

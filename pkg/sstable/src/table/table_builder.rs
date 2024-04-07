@@ -19,6 +19,8 @@ use crate::table::filter_policy::FilterPolicy;
 use crate::table::footer::*;
 use crate::table::raw_block::CompressionType;
 use crate::table::table::METAINDEX_PROPERTIES_KEY;
+use crate::table::table_properties::*;
+use crate::table::TableProperties;
 
 #[derive(Clone, Defaultable)]
 pub struct SSTableBuilderOptions {
@@ -124,6 +126,8 @@ pub struct SSTableBuilder {
     index_block_builder: DataBlockBuilder,
     filter_block_builder: Option<FilterBlockBuilder>,
     data_block_builder: DataBlockBuilder,
+
+    properties: TableProperties,
     properties_block_builder: UnsortedDataBlockBuilder,
 
     /// If set, that a data block was written to the file but hasn't been added
@@ -167,6 +171,7 @@ impl SSTableBuilder {
             index_block_builder: DataBlockBuilder::new(false, 1),
             filter_block_builder,
             data_block_builder,
+            properties: TableProperties::default(),
             properties_block_builder: UnsortedDataBlockBuilder::new(false, 1),
             pending_data_block: None,
         })
@@ -294,7 +299,11 @@ impl SSTableBuilder {
         Ok(())
     }
 
-    pub fn add_property(&mut self, key: &str, value: &[u8]) {
+    pub fn properties_mut(&mut self) -> &mut TableProperties {
+        &mut self.properties
+    }
+
+    pub fn add_custom_property(&mut self, key: &str, value: &[u8]) {
         self.properties_block_builder
             .add(key.as_bytes().to_vec(), value.to_vec());
     }
@@ -328,6 +337,10 @@ impl SSTableBuilder {
                 .into_bytes(),
                 handle.serialized(),
             );
+        }
+
+        for (key, value) in serialize_table_properties(&self.properties).await? {
+            self.add_custom_property(&key, &value);
         }
 
         if !self.properties_block_builder.is_empty() {

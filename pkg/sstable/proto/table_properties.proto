@@ -1,0 +1,92 @@
+
+syntax = "proto3";
+
+package sstable;
+
+import "pkg/protobuf/compiler/proto/extensions.proto";
+
+
+// Metadata and statistics associated with a table.
+//
+// - Values are stored either as strings or varint values for integers.
+// - All values are stored with field presence to tell if a value is missing (since many of
+//   these are risky to silently set to efault values.)
+message TableProperties {
+
+    // Sum of the uncompressed byte size of all data keys in the table.
+    optional uint64 raw_key_size = 2 [(dacha.key) = "rocksdb.raw.key.size"];
+
+    // Sum of the uncompressed byte size of all data values in the table.
+    optional uint64 raw_value_size = 3 [(dacha.key) = "rocksdb.raw.value.size"];
+
+    // Total number of data rows in this table (including deleted or stale
+    // ones).
+    optional uint64 num_entries = 4 [(dacha.key) = "rocksdb.num.entries"];
+
+    // Number of entries storing the explicit deletion of the key.
+    optional uint64 num_deletions = 5 [(dacha.key) = "rocksdb.deleted.keys"];
+
+    // Number of data rows which are stored in this table, but don't have the
+    // latest sequence for the same user key in the table.
+    optional uint64 num_stale_entries = 6 [(dacha.key) = "dacha.num_stale_entries"];
+
+    // Sum of the uncompressed byte size of all data values in stale entries.
+    optional uint64 stale_value_size = 7 [(dacha.key) = "dacha.stale_value_size"];
+
+    // Compaction waterline value at which all stale values in this table can be compacted.
+    // This corresponds to the latest sequence of any user_key stored in this table which has
+    // stale entries.
+    optional uint64 stale_clear_waterline = 31 [(dacha.key) = "dacha.stale_clear_waterline"];
+
+    ///////////////////////////////////////////////////////////
+    // The rest of these properties are not currently implemented.
+    ///////////////////////////////////////////////////////////
+
+    optional uint64 data_size = 1 [(dacha.key) = "rocksdb.data.size"];
+
+    optional uint64 index_size = 8 [(dacha.key) = "rocksdb.index.size"];
+
+    optional uint64 index_partitions = 9 [(dacha.key) = "rocksdb.index.partitions"];
+
+    optional uint64 top_level_index_size = 10 [(dacha.key) = "rocksdb.top-level.index.size"];
+
+    optional uint64 index_key_is_user_key = 11 [(dacha.key) = "rocksdb.index.key.is.user.key"];
+
+    optional uint64 index_value_is_delta_encoded = 12 [(dacha.key) = "rocksdb.index.value.is.delta.encoded"];
+
+    optional uint64 filter_size = 13 [(dacha.key) = "rocksdb.filter.size"];
+
+    optional uint64 num_data_blocks = 14 [(dacha.key) = "rocksdb.num.data.blocks"];
+
+    optional uint64 num_merge_operands = 15 [(dacha.key) = "rocksdb.merge.operands"];
+
+    optional uint64 num_range_deletions = 16 [(dacha.key) = "rocksdb.num.range-deletions"];
+
+    optional uint64 format_version = 17 [(dacha.key) = "rocksdb.format.version"];
+
+    optional uint64 fixed_key_len = 18 [(dacha.key) = "rocksdb.fixed.key.length"];
+
+    optional uint64 column_family_id = 19 [(dacha.key) = "rocksdb.column.family.id"];
+
+    optional uint64 creation_time = 20 [(dacha.key) = "rocksdb.creation.time"];
+
+    optional uint64 oldest_key_time = 21 [(dacha.key) = "rocksdb.oldest.key.time"];
+
+    optional uint64 file_creation_time = 22 [(dacha.key) = "rocksdb.file.creation.time"];
+
+    optional string column_family_name = 23 [(dacha.key) = "rocksdb.column.family.name"];
+
+    optional string filter_policy_name = 24 [(dacha.key) = "rocksdb.filter.policy"];
+
+    optional string comparator_name = 25 [(dacha.key) = "rocksdb.comparator"];
+
+    optional string merge_operator_name = 26 [(dacha.key) = "rocksdb.merge.operator"];
+
+    optional string prefix_extractor_name = 27 [(dacha.key) = "rocksdb.prefix.extractor.name"];
+
+    optional string property_collectors_names = 28 [(dacha.key) = "rocksdb.property.collectors"];
+
+    optional string compression_name = 29 [(dacha.key) = "rocksdb.compression"];
+
+    optional string compression_options = 30 [(dacha.key) = "rocksdb.compression_options"];
+}

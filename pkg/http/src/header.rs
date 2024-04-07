@@ -33,6 +33,8 @@ pub const TRAILERS: &'static str = "Trailers";
 
 pub const ETAG: &'static str = "ETag";
 
+pub const RANGE: &'static str = "Range";
+
 /// List of headers which are relevant to maintaining the connection at the HTTP
 /// transport layer.
 ///

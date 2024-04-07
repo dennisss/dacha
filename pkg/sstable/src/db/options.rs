@@ -39,6 +39,11 @@ pub struct EmbeddedDBOptions {
     #[default(64*1024*1024)]
     pub write_buffer_size: usize,
 
+    /// The highest level at which we will store a new SSTable resulting from a
+    /// memtable flush.
+    #[default(2)]
+    pub max_memtable_level: usize,
+
     /// After we have accumulated this many files in level 0, we will trigger
     /// compaction into level 1.
     #[default(4)]
@@ -108,9 +113,33 @@ pub struct EmbeddedDBOptions {
     pub disable_wal: bool,
 
     /// If given a non-zero value N, we will not garbage collect any mutations
-    /// with a sequence number >= N. This includes both Put and Delete
+    /// with a sequence number > N. This includes both Put and Delete
     /// mutations.
-    pub initial_compaction_waterline: u64,
+    ///
+    /// NOTE: This option can NOT be turned off or on. It must stay the same
+    /// since database initialization.
+    ///
+    /// - If a key has a real non-deleted value, the latest value entry will
+    ///   never be deleted.
+    /// - Stale puts/delete entries (those do not have the latest sequence for a
+    ///   given user key) will only be compacted if the next newest put/delete
+    ///   entry is also below the compaction_waterline.
+    ///   - This is to prevent an old entry from immediately being compacted as
+    ///     soon as a newer entry is added.
+    ///
+    /// WARNING: It is the caller's responsible to verify that only
+    /// non-compacted sequence ranges are used when querying a database with
+    /// this enabled.
+    pub enable_compaction_waterline: bool,
+
+    /// What fraction (from 0 to 1) of entries in a table need to be stale and
+    /// compactable for us to consider re-generating the table in-place.
+    ///
+    /// This is mainly relevant when using a initial_compaction_waterline > 0
+    /// since otherwise stale entries are immediately dropped when writing to
+    /// disk.
+    #[default(0.5)]
+    pub stale_compaction_threshold: f32,
 }
 
 impl EmbeddedDBOptions {

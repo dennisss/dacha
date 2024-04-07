@@ -721,6 +721,27 @@ impl Compiler {
         })
     }
 
+    /// Determines whether or not a field should be stored inside of an
+    /// Option<...>.
+    fn use_option(&self, field: &FieldDescriptor) -> Result<bool> {
+        if field.proto().has_oneof_index()
+            || (field.proto().label() != FieldDescriptorProto_Label::LABEL_OPTIONAL
+                && field.proto().label() != FieldDescriptorProto_Label::LABEL_REQUIRED)
+        {
+            return Ok(false);
+        }
+
+        if self.file.syntax() == Syntax::Proto3 {
+            if field.proto().proto3_optional() {
+                return Ok(true);
+            }
+
+            Ok(!self.is_primitive(&field)?)
+        } else {
+            Ok(true)
+        }
+    }
+
     fn is_message(&self, field: &FieldDescriptor) -> Result<bool> {
         if field.proto().has_type_name() {
             let typ = field.find_type().expect(&format!(
@@ -816,10 +837,10 @@ impl Compiler {
                 s += &format!("Vec<{}>", &typ);
             }
         } else {
-            if self.is_primitive(field)? && self.file.syntax() == Syntax::Proto3 {
-                s += &typ;
-            } else {
+            if self.use_option(field)? {
                 s += &format!("Option<{}>", typ);
+            } else {
+                s += &typ;
             }
         }
 
@@ -953,8 +974,7 @@ impl Compiler {
         let oneof_option = true; // !(is_primitive && self.proto.syntax == Syntax::Proto3);
 
         // TODO: Messages should always have options?
-        let use_option =
-            !((is_primitive && self.file.syntax() == Syntax::Proto3) || oneof.is_some());
+        let use_option = self.use_option(field)? && oneof.is_none();
 
         // field()
         if self.is_unordered_set(field)? {
@@ -1600,7 +1620,7 @@ impl Compiler {
             let name = self.field_name(&field);
             let is_repeated = field.proto().label() == FieldDescriptorProto_Label::LABEL_REPEATED;
 
-            let use_option = !(self.is_primitive(&field)? && self.file.syntax() == Syntax::Proto3);
+            let use_option = self.use_option(&field)?;
 
             let is_message = self.is_message(&field)?;
 
@@ -1646,7 +1666,7 @@ impl Compiler {
                 );
             } else if is_repeated {
                 let mut value = "v?".to_string();
-                if is_message && use_option {
+                if is_message && !self.is_primitive(&field)? {
                     value = format!("MessagePtr::new({})", value);
                 }
 
@@ -1772,8 +1792,7 @@ impl Compiler {
                 _ => false,
             };
 
-            let use_option = !(self.is_primitive(&field)? && self.file.syntax() == Syntax::Proto3)
-                && !is_repeated;
+            let use_option = self.use_option(&field)?;
 
             // TODO: We no longer need the special cases for repeated values here.
             let serialize_method = {

@@ -25,7 +25,7 @@ use protobuf_core::wire::*;
 use protobuf_core::reflection::*;
 
 pub static FILE_DESCRIPTOR_635CB7D60B6984D8: protobuf_core::StaticFileDescriptor = protobuf_core::StaticFileDescriptor {
-                proto: b"\x0a\x2cpkg\x2fprotobuf\x2fcompiler\x2fproto\x2fextensions\x2eproto\x12\x05dacha\x1a\x20google\x2fprotobuf\x2fdescriptor\x2eproto\x3a2\x0a\x09max\x5fcount\x18\xc1\x3e\x20\x01\x28\x0d\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a3\x0a\x0amax\x5flength\x18\xc2\x3e\x20\x01\x28\x0d\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a6\x0a\x0dunordered\x5fset\x18\xc3\x3e\x20\x01\x28\x08\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a4\x0a\x09typed\x5fnum\x18\xc4\x3e\x20\x01\x28\x08\x12\x1egoogle\x2eprotobuf\x2eMessageOptionsB\x00B\x00b\x06proto2",
+                proto: b"\x0a\x2cpkg\x2fprotobuf\x2fcompiler\x2fproto\x2fextensions\x2eproto\x12\x05dacha\x1a\x20google\x2fprotobuf\x2fdescriptor\x2eproto\x3a2\x0a\x09max\x5fcount\x18\xc1\x3e\x20\x01\x28\x0d\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a3\x0a\x0amax\x5flength\x18\xc2\x3e\x20\x01\x28\x0d\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a6\x0a\x0dunordered\x5fset\x18\xc3\x3e\x20\x01\x28\x08\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a\x2c\x0a\x03key\x18\xc4\x3e\x20\x01\x28\x09\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a4\x0a\x09typed\x5fnum\x18\xc4\x3e\x20\x01\x28\x08\x12\x1egoogle\x2eprotobuf\x2eMessageOptionsB\x00B\x00b\x06proto2",
                 dependencies: &[// google/protobuf/descriptor.proto
 &protobuf_descriptor::google::protobuf::FILE_DESCRIPTOR_0F2934D003718DD8,
 ]
@@ -218,6 +218,70 @@ impl UnorderedSetExtension for protobuf_descriptor::google::protobuf::FieldOptio
 
         Ok(match v {
             Value::Singular(SingularValue::Bool(v)) => v,
+            _ => return Err(protobuf_core::WireError::BadDescriptor),
+        })
+    }
+}
+
+struct KEY_EXTENSION_TAG {}
+
+impl protobuf_core::ExtensionTag for KEY_EXTENSION_TAG {
+    fn extension_number(&self) -> protobuf_core::ExtensionNumberType {
+        8004
+    }
+
+    fn extension_name(&self) -> protobuf_core::StringPtr {
+        protobuf_core::StringPtr::Static("dacha.key")
+    }
+
+    fn default_extension_value(&self) -> protobuf_core::Value {
+        use protobuf_core::SingularValue;
+        protobuf_core::Value::new(SingularValue::String(String::new()), false)
+    }
+}
+
+pub trait KeyExtension {
+    // TODO: Add has_ accessor and clear_accessors
+
+    fn key(&self) -> protobuf_core::WireResult<ExtensionRef<String>>;
+    fn key_mut(&mut self) -> protobuf_core::WireResult<&mut String>;
+}
+
+impl KeyExtension for protobuf_descriptor::google::protobuf::FieldOptions {
+    fn key(&self) -> protobuf_core::WireResult<ExtensionRef<String>> {
+        use common::any::AsAny;
+        use protobuf_core::ExtensionRef;
+
+        let v = self
+            .extensions()
+            .ok_or(protobuf_core::WireError::BadDescriptor)?
+            .get_dynamic(&KEY_EXTENSION_TAG {})?;
+
+        Ok(match v {
+            ExtensionRef::Pointer(v) => match v {
+                Value::Singular(SingularValue::String(v)) => ExtensionRef::Pointer(v),
+                _ => return Err(protobuf_core::WireError::BadDescriptor),
+            },
+            ExtensionRef::Owned(v) => match v {
+                Value::Singular(SingularValue::String(v)) => ExtensionRef::Owned(v),
+                _ => return Err(protobuf_core::WireError::BadDescriptor),
+            },
+            // Should never be returned by get_dynamic().
+            ExtensionRef::Boxed(v) => todo!(),
+        })
+    }
+
+    fn key_mut(&mut self) -> protobuf_core::WireResult<&mut String> {
+        use common::any::AsAny;
+        use protobuf_core::{RepeatedValues, SingularValue, Value};
+
+        let v = self
+            .extensions_mut()
+            .ok_or(protobuf_core::WireError::BadDescriptor)?
+            .get_dynamic_mut(&KEY_EXTENSION_TAG {})?;
+
+        Ok(match v {
+            Value::Singular(SingularValue::String(v)) => v,
             _ => return Err(protobuf_core::WireError::BadDescriptor),
         })
     }

@@ -90,12 +90,12 @@ impl Executor {
         // running a future that needs to park itself for I/O operation cancellation.
         let io_uring_thread = {
             let shared = shared.clone();
-            Self::spawn_thread(move || Self::io_uring_thread_fn(shared))
+            Self::spawn_thread("exec::io_uring", move || Self::io_uring_thread_fn(shared))?
         };
 
         let epoll_thread = {
             let shared = shared.clone();
-            Self::spawn_thread(move || Self::epoll_thread_fn(shared))
+            Self::spawn_thread("exec::epoll", move || Self::epoll_thread_fn(shared))?
         };
 
         let num_threads = match options.thread_pool_size.clone() {
@@ -105,7 +105,10 @@ impl Executor {
 
         for i in 0..num_threads {
             let shared = shared.clone();
-            thread_pool.push(Self::spawn_thread(move || Self::thread_fn(shared)));
+            thread_pool.push(Self::spawn_thread(
+                &format!("exec::pool_{}", i),
+                move || Self::thread_fn(shared),
+            )?);
         }
 
         Ok(Self {
@@ -226,16 +229,22 @@ impl Executor {
         shared.pending_queue_condvar.notify_all();
     }
 
-    fn spawn_thread<F: FnOnce() + Sync + Send + 'static>(f: F) -> JoinHandle<()> {
+    fn spawn_thread<F: FnOnce() + Sync + Send + 'static>(
+        name: &str,
+        f: F,
+    ) -> Result<JoinHandle<()>> {
         // Wrap all executor threads in an abort.
         // This is so that if a single task panics, we notice this in the form of the
         // whole process ending. Otherwise we may end up in a situation where we are
         // blocked waiting for threads to finish.
-        spawn(|| {
-            let mut aborter = AbortOnDrop::new();
-            f();
-            aborter.stop_abort();
-        })
+        std::thread::Builder::new()
+            .name(name.into())
+            .spawn(|| {
+                let mut aborter = AbortOnDrop::new();
+                f();
+                aborter.stop_abort();
+            })
+            .map_err(|e| Error::from(e))
     }
 
     /// Runs until all tasks spawned in the executor have finished running.

@@ -6,14 +6,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use common::algorithms::lower_bound_by;
+use common::async_std::channel::RecvError;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Writeable;
 use crypto::random::SharedRng;
+use executor::cancellation::CancellationToken;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::{AsyncMutex, AsyncRwLock};
+use executor_multitask::{
+    CancellationTokenSet, ServiceResource, ServiceResourceSubscriber, TaskResource,
+};
 use file::sync::SyncedPath;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
@@ -34,6 +39,7 @@ use crate::table::table_builder::{SSTableBuilder, SSTableBuilderOptions, SSTable
 use super::backup::Backup;
 use super::paths::FilePaths;
 use super::snapshot::Snapshot;
+use crate::table::TableProperties;
 
 // TODO: See https://github.com/google/leveldb/blob/c784d63b931d07895833fb80185b10d44ad63cce/db/filename.cc#L78 for all owned files
 
@@ -134,7 +140,7 @@ pub struct EmbeddedDB {
     identity: Option<String>,
     shared: Arc<EmbeddedDBShared>,
 
-    compaction_thread: Option<ChildTask>,
+    compaction_thread: TaskResource,
 }
 
 struct EmbeddedDBShared {
@@ -142,7 +148,10 @@ struct EmbeddedDBShared {
     dir: Arc<FilePaths>,
     state: AsyncRwLock<EmbeddedDBState>,
     flushed_channel: (channel::Sender<()>, channel::Receiver<()>),
-    compaction_waterline: AtomicU64,
+
+    /// Next value for the compaction_waterline requested by the user. This will
+    /// eventually be stored on disk by the compaction thread.
+    next_compaction_waterline: AtomicU64,
 
     /// Used to notify the compaction thread that something interesting happened
     /// that may require compaction.
@@ -150,11 +159,6 @@ struct EmbeddedDBShared {
 }
 
 struct EmbeddedDBState {
-    /// If true, then the database is no longer available for reads and writes.
-    /// In this state, background compaction threads should hurry up and finish
-    /// what they are doing so that we can close the database gracefully.
-    closing: bool,
-
     /// Current log being used to write new changes before they are compacted
     /// into a table.
     ///
@@ -184,6 +188,17 @@ struct EmbeddedDBState {
 struct ImmutableTable {
     table: Arc<MemTable>,
     last_sequence: u64,
+}
+
+#[async_trait]
+impl ServiceResource for EmbeddedDB {
+    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+        self.compaction_thread.add_cancellation_token(token).await
+    }
+
+    async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
+        self.compaction_thread.new_resource_subscriber().await
+    }
 }
 
 impl EmbeddedDB {
@@ -280,6 +295,12 @@ impl EmbeddedDB {
             version_set.apply_new_edit(edit, vec![]);
         }
 
+        if options.enable_compaction_waterline {
+            let mut edit = VersionEdit::default();
+            edit.compaction_waterline = Some(0);
+            version_set.apply_new_edit(edit, vec![]);
+        }
+
         let manifest_path = dir.manifest(manifest_num);
 
         let mut manifest = RecordWriter::create_new(manifest_path).await?;
@@ -327,7 +348,6 @@ impl EmbeddedDB {
             dir,
             flushed_channel: channel::bounded(1),
             state: AsyncRwLock::new(EmbeddedDBState {
-                closing: false,
                 log,
                 log_last_sequence: version_set.last_sequence(),
                 mutable_table,
@@ -335,18 +355,17 @@ impl EmbeddedDB {
                 version_set,
                 compaction_callbacks: vec![],
             }),
-            compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
+            next_compaction_waterline: AtomicU64::new(0),
             compaction_notifier,
         });
 
-        let compaction_thread = ChildTask::spawn(Self::compaction_thread(
-            shared.clone(),
-            manifest,
-            compaction_receiver,
-        ));
+        let shared2 = shared.clone();
+        let compaction_thread = TaskResource::spawn("EmbeddedDB::compaction_thread", |token| {
+            Self::compaction_thread(shared2, manifest, compaction_receiver, token)
+        });
 
         Ok(Self {
-            compaction_thread: Some(compaction_thread),
+            compaction_thread,
             lock_file,
             identity: Some(identity),
             shared,
@@ -450,6 +469,11 @@ impl EmbeddedDB {
 
         dir.cleanup_unused_files().await?;
 
+        let compaction_waterline = version_set.compaction_waterline().unwrap_or(0);
+        if version_set.compaction_waterline().is_some() != options.enable_compaction_waterline {
+            return Err(err_msg("Can not change the enable_compaction_waterline setting after opening the database."));
+        }
+
         // TODO: Look up all files in the directory and delete any not-referenced
         // by the current log.
         // ^ We should do this in the VersionSet recovery code
@@ -462,7 +486,6 @@ impl EmbeddedDB {
             dir,
             flushed_channel: channel::bounded(1),
             state: AsyncRwLock::new(EmbeddedDBState {
-                closing: false,
                 log,
                 log_last_sequence,
                 mutable_table,
@@ -470,21 +493,20 @@ impl EmbeddedDB {
                 version_set,
                 compaction_callbacks: vec![],
             }),
-            compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
+            next_compaction_waterline: AtomicU64::new(compaction_waterline),
             compaction_notifier,
         });
 
         let compaction_thread = {
             if shared.options.read_only {
-                None
+                TaskResource::spawn_interruptable("<noop>", executor::futures::pending())
             } else {
                 let manifest = manifest_reader.into_writer(true).await?.unwrap();
 
-                Some(ChildTask::spawn(Self::compaction_thread(
-                    shared.clone(),
-                    manifest,
-                    compaction_receiver,
-                )))
+                let shared2 = shared.clone();
+                TaskResource::spawn("EmbeddedDB::compaction_thread", |token| {
+                    Self::compaction_thread(shared2, manifest, compaction_receiver, token)
+                })
             }
         };
 
@@ -494,28 +516,6 @@ impl EmbeddedDB {
             compaction_thread,
             shared,
         })
-    }
-
-    pub async fn close(self) -> Result<()> {
-        // TODO: Closing should either block or fail if there still exists try
-        // references to any internal memory.
-
-        // TODO: Should stop new compactions from starting and wait for any existing
-        // operations to finish.
-        lock!(state <= self.shared.state.write().await?, {
-            state.closing = true;
-        });
-
-        let _ = self.shared.compaction_notifier.try_send(());
-
-        if let Some(thread) = self.compaction_thread {
-            thread.join().await;
-        }
-
-        // Notify anyone waiting for a flush.
-        let _ = self.shared.flushed_channel.0.try_send(());
-
-        Ok(())
     }
 
     /// Returns the sequence of the last write which has been flushed to a table
@@ -571,38 +571,37 @@ impl EmbeddedDB {
     ///   level 0.
     /// - When individual levels exceed their predefined size limits, merges
     ///   tables and moves them down a level.
-    async fn compaction_thread(
-        shared: Arc<EmbeddedDBShared>,
-        manifest: RecordWriter,
-        receiver: CompactionReceiver,
-    ) {
-        if let Err(e) = Self::compaction_thread_inner(shared, manifest, receiver).await {
-            eprintln!("EmbeddedDB compaction error: {}", e);
-            // TODO: Trigger server shutdown and halt all writes to the
-            // memtable?
-        }
-    }
-
+    ///
     /// TODO: File removals generally don't need to be synced to disk (although
     /// we should sync them before we discard manifest entries referencing
     /// them).
-    async fn compaction_thread_inner(
+    async fn compaction_thread(
         shared: Arc<EmbeddedDBShared>,
         mut manifest: RecordWriter,
         receiver: CompactionReceiver,
+        cancellation_token: Arc<dyn CancellationToken>,
     ) -> Result<()> {
         let key_comparator = shared.options.table_options.comparator.clone();
 
         let mut made_progress = true;
 
-        let cancellation_token = executor::signals::new_shutdown_token();
-        while !cancellation_token.is_cancelled() {
-            // Wait for something interesting interesting to happen.
-            if made_progress {
-                // Whenever we make any progress in the previous iteration, we
-                // will try a second time.
-            } else if receiver.receiver.recv().await.is_err() {
-                return Ok(());
+        while !cancellation_token.is_cancelled().await {
+            // If we made any progress in the previous iteration, immediately try to do more
+            // work.
+            //
+            // Else, wait for something to happen that would require us to re-check for
+            // compaction opportunities.
+            if !made_progress {
+                let res: Result<(), ()> = race!(
+                    executor::future::map(receiver.receiver.recv(), |r: Result<(), RecvError>| r
+                        .map_err(|_| ())),
+                    executor::future::map(cancellation_token.wait_for_cancellation(), |_| Err(()))
+                )
+                .await;
+
+                if res.is_err() {
+                    break;
+                }
             }
 
             {
@@ -615,18 +614,47 @@ impl EmbeddedDB {
                 }
 
                 for file_num in nums_to_delete {
-                    println!("Deleting table number {}", file_num);
                     file::remove_file(shared.dir.table(file_num)).await?;
                 }
             }
 
             let state = shared.state.read().await?;
 
-            if state.closing {
-                return Ok(());
-            }
-
             made_progress = true;
+
+            // Update the compaction waterline in the version
+            // TODO: The manifest write can be batched with any table compactions that occur
+            // in the same loop.
+            let mut compaction_waterline = None;
+            if shared.options.enable_compaction_waterline {
+                let next_compaction_waterline =
+                    shared.next_compaction_waterline.load(Ordering::SeqCst);
+
+                let last_compaction_waterline = {
+                    let state = shared.state.read().await?;
+                    state.version_set.compaction_waterline().unwrap()
+                };
+
+                if next_compaction_waterline > last_compaction_waterline {
+                    let mut version_edit = VersionEdit::default();
+                    version_edit.compaction_waterline = Some(next_compaction_waterline);
+
+                    drop(state);
+
+                    let mut out = vec![];
+                    version_edit.serialize(&mut out)?;
+                    manifest.append(&out).await?;
+                    manifest.flush().await?;
+
+                    lock!(state <= shared.state.write().await?, {
+                        state.version_set.apply_new_edit(version_edit, vec![]);
+                    });
+
+                    continue;
+                }
+
+                compaction_waterline = Some(next_compaction_waterline);
+            }
 
             // Check if we've hit the size limit for the mutable memtable.
             //
@@ -723,6 +751,7 @@ impl EmbeddedDB {
                     &mut version_edit,
                     target_file_size,
                     selected_level.level as u32,
+                    compaction_waterline,
                 )
                 .await?;
 
@@ -754,12 +783,22 @@ impl EmbeddedDB {
                 continue;
             }
 
+            let mut compaction_spec = state.version_set.select_tables_to_compaction();
+            if compaction_spec.is_none() && shared.options.enable_compaction_waterline {
+                let compaction_waterline = compaction_waterline.unwrap();
+
+                compaction_spec = state
+                    .version_set
+                    .select_stale_table_to_compact(compaction_waterline)
+                    .await;
+            }
+
             // This handles all level i -> level j compactions.
-            if let Some(compaction) = state.version_set.select_tables_to_compaction() {
-                println!(
-                    "COMPACTION: {} -> {}",
-                    compaction.level, compaction.next_level
-                );
+            if let Some(compaction) = compaction_spec {
+                // println!(
+                //     "COMPACTION: {} -> {}",
+                //     compaction.level, compaction.next_level
+                // );
 
                 // TODO: Implement trivial compaction of just moving files from one level to the
                 // next if there is no overlap in the new level.
@@ -775,30 +814,23 @@ impl EmbeddedDB {
                 version_edit.next_file_number = Some(state.version_set.next_file_number());
 
                 // TODO: If this is not level 0, then we can optimize this with a LevelIterator.
-                for entry in compaction.tables {
-                    version_edit.deleted_files.push(DeletedFileEntry {
-                        level: entry.entry.level,
-                        number: entry.entry.number,
-                    });
-
-                    println!("- DELETE: {}", entry.entry.number);
-
-                    let iter = entry.table().await.iter();
-                    iters.push(Box::new(iter));
-                }
-
+                //
                 // TOOD: A few optimizations of this that we can do:
                 // - Use LevelIterator so that we don't have to open multiple levels in the
                 //   level at the same time.
                 // - Use binary search to find the start of the overlapping tables and exit
                 //   early once the overlapping is done.
-                for entry in compaction.next_level_tables {
+                for entry in compaction
+                    .tables
+                    .iter()
+                    .chain(compaction.next_level_tables.iter())
+                {
                     version_edit.deleted_files.push(DeletedFileEntry {
                         level: entry.entry.level,
                         number: entry.entry.number,
                     });
 
-                    println!("- DELETE2: {}", entry.entry.number);
+                    // println!("- DELETE: {}", entry.entry.number);
 
                     let iter = entry.table().await.iter();
                     iters.push(Box::new(iter));
@@ -825,6 +857,7 @@ impl EmbeddedDB {
                     &mut version_edit,
                     target_file_size,
                     1,
+                    compaction_waterline,
                 )
                 .await?;
 
@@ -912,6 +945,9 @@ impl EmbeddedDB {
             made_progress = false;
         }
 
+        // Notify any waiting for a flush that the db has closed.
+        let _ = shared.flushed_channel.0.try_send(());
+
         Ok(())
 
         /*
@@ -941,6 +977,7 @@ impl EmbeddedDB {
         version_edit: &mut VersionEdit,
         target_file_size: u64,
         level: u32,
+        compaction_waterline: Option<u64>,
     ) -> Result<Vec<SSTable>> {
         struct CurrentTable {
             builder: SSTableBuilder,
@@ -951,29 +988,59 @@ impl EmbeddedDB {
             number: u64,
         }
 
-        // TODO: Ideally we would measure how much data is uncompacted and the
-        let compaction_waterline = shared.compaction_waterline.load(Ordering::SeqCst);
+        let compaction_waterline = compaction_waterline.unwrap_or(u64::MAX);
 
         let mut current_table = None;
 
         let mut last_user_key = None;
+        let mut first_seq = 0;
+
+        let mut last_entry_below_waterline = false;
 
         while let Some(entry) = iterator.next().await? {
             let ikey = InternalKey::parse(&entry.key)?;
             // TODO: Re-use the entry.user_key reference.
             let user_key = entry.key.slice(0..ikey.user_key.len());
 
-            let compaction_guard =
-                compaction_waterline > 0 && ikey.sequence >= compaction_waterline;
+            /*
+            Compaction Filter Algorithm:
+            - While looping through entries for the same user_key in descending sequence order:
+                - If sequence > compaction_waterline, unconditionally keep the entry.
+                - Else
+                    - if the entry is the first entry with 'sequence <= compaction_waterline'
+                        - If type == Deletion && remove_deleted
+                            Skip the entry
+                        - Else
+                            Keep the entry
+                    - Else
+                        Skip the entry
+            */
 
-            // We will only store the value with the highest sequence per unique user key.
-            if Some(&user_key) == last_user_key.as_ref() && !compaction_guard {
-                continue;
+            let is_stale = Some(&user_key) == last_user_key.as_ref();
+            if !is_stale {
+                // Resetting state when encountering a new user_key.
+                last_entry_below_waterline = false;
+                last_user_key = Some(user_key.clone());
+                first_seq = ikey.sequence;
             }
 
-            last_user_key = Some(user_key.clone());
-            if remove_deleted && ikey.typ == ValueType::Deletion && !compaction_guard {
-                continue;
+            if ikey.sequence > compaction_waterline {
+                // Keep
+            } else {
+                let first_below_waterline = !last_entry_below_waterline;
+                last_entry_below_waterline = true;
+
+                if first_below_waterline {
+                    if remove_deleted && ikey.typ == ValueType::Deletion {
+                        // Skip
+                        continue;
+                    }
+
+                    // Keep
+                } else {
+                    // Skip
+                    continue;
+                }
             }
 
             let mut table = match current_table.take() {
@@ -998,6 +1065,28 @@ impl EmbeddedDB {
                     }
                 }
             };
+
+            // NOTE: All the properties are always updated to ensure they have field
+            // presence.
+            let props = table.builder.properties_mut();
+            props.set_raw_key_size(props.raw_key_size() + entry.key.len() as u64);
+            props.set_raw_value_size(props.raw_value_size() + entry.value.len() as u64);
+            props.set_num_entries(props.num_entries() + 1);
+            props.set_num_deletions(
+                props.num_deletions() + bool_to_num!(ikey.typ == ValueType::Deletion),
+            );
+            props.set_num_stale_entries(props.num_stale_entries() + bool_to_num!(is_stale));
+            props.set_stale_value_size(
+                props.stale_value_size() + bool_to_num!(is_stale) * (entry.value.len() as u64),
+            );
+
+            // Next compaction should wait until entries with stale entries are completely
+            // below the waterline.
+            if is_stale && first_seq > props.stale_clear_waterline() {
+                props.set_stale_clear_waterline(first_seq);
+            } else if !props.has_stale_clear_waterline() {
+                props.set_stale_clear_waterline(0u64);
+            }
 
             table.builder.add(&entry.key, &entry.value).await?;
             table.smallest_seq = std::cmp::min(ikey.sequence, table.smallest_seq);
@@ -1070,6 +1159,7 @@ impl EmbeddedDB {
         Snapshot {
             options: self.shared.options.clone(),
             last_sequence: state.log_last_sequence,
+            compaction_waterline: state.version_set.compaction_waterline(),
             memtables,
             version: state.version_set.latest_version().clone(),
         }
@@ -1214,5 +1304,41 @@ impl EmbeddedDB {
         let mut batch = WriteBatch::new();
         batch.delete(key);
         self.write(&batch).await
+    }
+
+    /// Updates the current compaction waterline in the database.
+    ///
+    /// - The new waterline value will be used in new db snapshots though
+    ///   existing ones won't be effected.
+    /// - Note that the waterline is only allowed to go up, and attempts to
+    ///   decrease it will be ignored.
+    ///
+    /// See enable_compaction_waterline for the semantics of this.
+    ///
+    /// WARNING: Each update requires a disk write so this shouldn't be called
+    /// too frequently.
+    pub fn update_compaction_waterline(&self, value: u64) -> Result<()> {
+        if !self.shared.options.enable_compaction_waterline {
+            return Err(err_msg("enable_compaction_waterline is not enabled"));
+        }
+
+        loop {
+            let old_value = self.shared.next_compaction_waterline.load(Ordering::SeqCst);
+
+            if value <= old_value {
+                return Ok(());
+            }
+
+            if self
+                .shared
+                .next_compaction_waterline
+                .compare_exchange(old_value, value, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                continue;
+            }
+
+            let _ = self.shared.compaction_notifier.try_send(());
+        }
     }
 }

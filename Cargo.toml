@@ -38,6 +38,7 @@ members = [
 	"pkg/image/tools",
 	"third_party/pkix",
 	"pkg/sstable",
+	"pkg/sstable/proto",
 	"pkg/graphics",
 	# "pkg/peripherals/devices/stadia_controller",
 	"pkg/peripherals/devices/stream_deck",

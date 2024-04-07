@@ -25,6 +25,8 @@ pub struct LevelIterator {
 
 impl LevelIterator {
     pub fn new(version: Arc<Version>, level_index: usize, options: Arc<EmbeddedDBOptions>) -> Self {
+        assert_ne!(level_index, 0);
+
         Self {
             version,
             options,

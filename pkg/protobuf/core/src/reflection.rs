@@ -281,7 +281,6 @@ pub trait SingularFieldReflectionProto3 {
     fn reflect_field_mut_proto3(&mut self) -> ReflectionMut;
 }
 
-// This should only apply to embedded messages in Proto3.
 impl<T: Reflect + Default> SingularFieldReflectionProto3 for Option<T> {
     fn reflect_field_proto3(&self) -> Option<Reflection> {
         self.as_ref().map(|v| v.reflect())

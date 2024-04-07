@@ -681,7 +681,7 @@ mod tests {
         // nodes there are in the subtree. So we can query how many nodes are to the
         // left or right of any node.
 
-        let mut tree = AVLTree::<usize, usize, OrdComparator>::new(OrdComparator {});
+        let mut tree = AVLTree::<usize, usize, OrdComparator>::new(OrdComparator::default());
 
         tree.insert_with_attribute(10, 1);
         tree.insert_with_attribute(20, 1);

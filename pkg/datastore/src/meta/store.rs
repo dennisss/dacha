@@ -147,6 +147,12 @@ impl Metastore {
 
         let mut iter_options = SnapshotIteratorOptions::default();
         if request.read_index() > 0 {
+            if request.read_index() < snapshot.compaction_waterline().unwrap() {
+                return Err(
+                    rpc::Status::failed_precondition("Request's read_index is too old.").into(),
+                );
+            }
+
             iter_options.last_sequence = Some(request.read_index());
         }
 
@@ -371,11 +377,12 @@ pub async fn run(config: MetastoreConfig) -> Result<()> {
 
     let dir = DirLock::open(&config.dir).await?;
 
+    let service = RootResource::new();
+
     // TODO: Add a resource dependency on this. Should be stopped after the RPC
     // server
     let state_machine = Arc::new(EmbeddedDBStateMachine::open(&config.dir).await?);
-
-    let service = RootResource::new();
+    service.register_dependency(state_machine.clone()).await;
 
     let mut rpc_server = rpc::Http2Server::new(Some(config.service_port));
 

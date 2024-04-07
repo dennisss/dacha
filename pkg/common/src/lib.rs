@@ -284,6 +284,17 @@ pub fn zeros(count: usize) -> &'static [u8] {
 }
 
 #[macro_export]
+macro_rules! bool_to_num {
+    ($e:expr) => {
+        if $e {
+            1
+        } else {
+            0
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! tup {
     (($a:ident, $b:ident) = $e:expr) => {{
         let tmp = $e;

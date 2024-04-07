@@ -286,6 +286,8 @@ impl<R: Send + 'static> ServerShared<R> {
 
     /// Runs the idle loop for managing the server and maintaining leadership,
     /// etc. in the case that no other events occur to drive the server
+    ///
+    /// CANCEL SAFE
     async fn run_cycler(self: Arc<ServerShared<R>>, state_changed: ChangeReceiver) -> Result<()> {
         loop {
             // TODO: For a single node, we should almost never need to cycle
@@ -444,6 +446,8 @@ impl<R: Send + 'static> ServerShared<R> {
     /// This is responsible for pushing changes to the last_flushed variable.
     ///
     /// TODO: Merge this with the applier thread?
+    ///
+    /// CANCEL SAFE
     async fn run_matcher(self: Arc<ServerShared<R>>) -> Result<()> {
         // TODO: Must explicitly run in a separate thread until we can make disk
         // flushing a non-blocking operation

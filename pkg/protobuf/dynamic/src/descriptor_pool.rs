@@ -1057,19 +1057,21 @@ impl DescriptorPool {
 
         None
     }
-}
 
-impl protobuf_core::message_factory::MessageFactory for DescriptorPool {
-    fn new_message(&self, type_url: &str) -> Option<Box<dyn MessageReflection>> {
+    pub fn find_by_type_url(&self, type_url: &str) -> Option<MessageDescriptor> {
         let path = match type_url.strip_prefix(protobuf_core::TYPE_URL_PREFIX) {
             Some(v) => v,
             None => return None,
         };
 
-        let desc = match self
-            .find_relative_type("", path)
+        self.find_relative_type("", path)
             .and_then(|d| d.to_message())
-        {
+    }
+}
+
+impl protobuf_core::message_factory::MessageFactory for DescriptorPool {
+    fn new_message(&self, type_url: &str) -> Option<Box<dyn MessageReflection>> {
+        let desc = match self.find_by_type_url(type_url) {
             Some(v) => v,
             None => return None,
         };

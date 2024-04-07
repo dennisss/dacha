@@ -10,7 +10,8 @@ use common::futures::stream::{Stream, StreamExt};
 use common::futures::{Future, FutureExt};
 use common::io::{IoError, Readable, Sinkable, StreamExt2, Streamable, StreamableExt, Writeable};
 use executor::channel;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use net::tcp::{TcpListener, TcpStream};
 use net::udp::UdpSocket;
 
@@ -110,7 +111,7 @@ enum CommandResult {
 
 pub struct Server<T: 'static> {
     service: T,
-    state: Mutex<ServerState>,
+    state: AsyncMutex<ServerState>,
 }
 
 struct ServerState {
@@ -118,7 +119,7 @@ struct ServerState {
 
     // TODO: Possibly use Slabs for the clients list
     /// All clients connected to this server
-    clients: HashMap<ClientId, Arc<Mutex<ServerClient>>>,
+    clients: HashMap<ClientId, Arc<AsyncMutex<ServerClient>>>,
 
     /// Listing of all clients in each channel
     channels: HashMap<ChannelName, HashSet<ClientId>>,
@@ -236,7 +237,7 @@ where
     pub fn new(service: T) -> Self {
         Server {
             service,
-            state: Mutex::new(ServerState {
+            state: AsyncMutex::new(ServerState {
                 last_id: 0,
                 clients: HashMap::new(),
                 channels: HashMap::new(),
@@ -259,19 +260,19 @@ where
     /// Returns the number of clients that were notified
     /// TODO: from_id is trivially not necessary as a publisher should never be
     /// in a subscriber mode
-    pub async fn publish(&self, channel: ChannelName, obj: &RESPObject) -> usize {
-        let state = self.state.lock().await;
+    pub async fn publish(&self, channel: ChannelName, obj: &RESPObject) -> Result<usize> {
+        let state = self.state.lock().await?.read_exclusive();
 
         let client_ids = match state.channels.get(&channel) {
             Some(arr) => arr,
-            None => return 0,
+            None => return Ok(0),
         };
 
         let mut futs = vec![];
 
         for id in client_ids.iter() {
             let mut client = match state.clients.get(id) {
-                Some(c) => c.lock().await,
+                Some(c) => c.lock().await?.read_exclusive(),
                 None => continue, // Inconsistent map
             };
 
@@ -283,9 +284,11 @@ where
             futs.push(async move { sender.send((channel.into(), obj)).await });
         }
 
+        drop(state);
+
         let num = futs.len();
         common::futures::future::join_all(futs).await;
-        num
+        Ok(num)
     }
 
     async fn handle_connection(inst: Arc<Self>, mut sock: TcpStream) {
@@ -294,13 +297,11 @@ where
 
         let (tx, rx) = channel::bounded::<(RESPString, RESPObject)>(16);
 
-        let client = {
-            let mut server_state = inst.state.lock().await;
-
+        let client = lock!(server_state <= inst.state.lock().await.unwrap(), {
             server_state.last_id += 1;
             let id = server_state.last_id;
 
-            let client = Arc::new(Mutex::new(ServerClient {
+            let client = Arc::new(AsyncMutex::new(ServerClient {
                 id,
                 channels: HashSet::new(),
                 sender: tx,
@@ -311,7 +312,7 @@ where
             println!("Start conn {}", id);
 
             client
-        };
+        });
 
         let (reader, writer) = sock.split();
 
@@ -343,7 +344,7 @@ where
     /// client has been initialized, but before it has been cleaned up.
     async fn handle_connection_body(
         inst: &Arc<Self>,
-        client: &Arc<Mutex<ServerClient>>,
+        client: &Arc<AsyncMutex<ServerClient>>,
         reader: Box<dyn Readable>,
         writer: Box<dyn Writeable>,
         rx: channel::Receiver<(RESPString, RESPObject)>,
@@ -469,9 +470,8 @@ where
 
     // Any box<Stream>
 
-    async fn cleanup_client(inst: Arc<Self>, client: Arc<Mutex<ServerClient>>) -> Result<()> {
-        let (id, channels) = {
-            let client = client.lock().await;
+    async fn cleanup_client(inst: Arc<Self>, client: Arc<AsyncMutex<ServerClient>>) -> Result<()> {
+        let (id, channels) = lock!(client <= client.lock().await?, {
             (
                 client.id,
                 client
@@ -480,21 +480,22 @@ where
                     .map(|s| RESPString::from(s.clone()))
                     .collect::<Vec<_>>(),
             )
-        };
+        });
 
         // TODO: Check all are successful
         //        let mut stream = Self::run_command_unsubscribe(&inst, &client,
         // &channels).await;        while let Some(_) = stream.next().await {}
 
         Self::run_command_unsubscribe(&inst, &client, &channels)
-            .await
+            .await?
             .collect::<Vec<_>>()
             .await;
 
         // TODO: Make sure that this always happens regardless of errors
         // Now that all channels are unsubscribed, we can remove the client compltely
-        let mut state = inst.state.lock().await;
-        state.clients.remove(&id);
+        lock!(state <= inst.state.lock().await?, {
+            state.clients.remove(&id);
+        });
 
         println!("Client disconnected!");
 
@@ -506,7 +507,7 @@ where
     /// though)
     async fn run_command(
         inst: &Arc<Self>,
-        client: &Arc<Mutex<ServerClient>>,
+        client: &Arc<AsyncMutex<ServerClient>>,
         is_push: bool,
         cmd: RESPCommand,
     ) -> Result<CommandResult> {
@@ -559,11 +560,11 @@ where
             }
             "SUBSCRIBE" => {
                 return_as_ok!(arity(2, MAX_ARG));
-                Push(Self::run_command_subscribe(inst, client, &cmd[1..]).await)
+                Push(Self::run_command_subscribe(inst, client, &cmd[1..]).await?)
             }
             "UNSUBSCRIBE" => {
                 return_as_ok!(arity(2, MAX_ARG));
-                Push(Self::run_command_unsubscribe(inst, client, &cmd[1..]).await)
+                Push(Self::run_command_unsubscribe(inst, client, &cmd[1..]).await?)
             }
             "PUBLISH" => {
                 return_as_ok!(arity(3, 3));
@@ -602,17 +603,20 @@ where
 
     async fn run_command_subscribe(
         inst: &Arc<Self>,
-        client: &Arc<Mutex<ServerClient>>,
+        client: &Arc<AsyncMutex<ServerClient>>,
         channels: &[RESPString],
-    ) -> CommandStream {
+    ) -> Result<CommandStream> {
         let inst = inst.clone();
         let client = client.clone();
 
         let res = {
-            let mut state = inst.state.lock().await;
-            let mut client = client.lock().await;
+            let state = inst.state.lock().await?;
+            let client = client.lock().await?;
 
-            channels
+            let mut state = state.enter();
+            let mut client = client.enter();
+
+            let res = channels
                 .iter()
                 .map(|c| {
                     let cur_subscribed = client.channels.contains(c.as_ref());
@@ -637,7 +641,12 @@ where
 
                     (c.clone(), client.channels.len(), changed)
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+
+            client.exit();
+            state.exit();
+
+            res
         };
 
         // TODO: These can be running in parallel.
@@ -651,22 +660,25 @@ where
             })
             .into_stream();
 
-        Box::pin(s)
+        Ok(Box::pin(s))
     }
 
     async fn run_command_unsubscribe(
         inst: &Arc<Self>,
-        client: &Arc<Mutex<ServerClient>>,
+        client: &Arc<AsyncMutex<ServerClient>>,
         channels: &[RESPString],
-    ) -> CommandStream {
+    ) -> Result<CommandStream> {
         let inst = inst.clone();
         let client = client.clone();
 
         let res = {
-            let mut state = inst.state.lock().await;
-            let mut client = client.lock().await;
+            let state = inst.state.lock().await?;
+            let client = client.lock().await?;
 
-            channels
+            let mut state = state.enter();
+            let mut client = client.enter();
+
+            let res = channels
                 .into_iter()
                 .map(|c| {
                     let cur_subscribed = client.channels.contains(c.as_ref());
@@ -692,7 +704,12 @@ where
 
                     (c.clone(), client.channels.len(), changed)
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+
+            client.exit();
+            state.exit();
+
+            res
         };
 
         let s = stream::iter(res)
@@ -705,13 +722,13 @@ where
             })
             .into_stream();
 
-        Box::pin(s)
+        Ok(Box::pin(s))
     }
 
     /// Executes the 'PUBLISH channel message' command.
     async fn run_command_publish(
         inst: &Arc<Self>,
-        client: &Arc<Mutex<ServerClient>>,
+        client: &Arc<AsyncMutex<ServerClient>>,
         channel: RESPString,
         message: RESPString,
     ) -> Result<RESPObject> {
@@ -719,7 +736,7 @@ where
 
         let obj = RESPObject::BulkString(message.into());
 
-        let num_local = inst.publish(channel.to_vec(), &obj).await;
+        let num_local = inst.publish(channel.to_vec(), &obj).await?;
         //            .map_err(|_| err_msg("Failed to publish message"))?;
 
         let num_remote = inst.service.publish(&channel, &obj).await?;

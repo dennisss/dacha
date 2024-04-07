@@ -293,7 +293,7 @@ impl<'a> WireFieldIter<'a> {
     fn next_impl(&mut self) -> WireResult<Option<WireFieldRef<'a>>> {
         while !self.input.is_empty() {
             let (tag, rest) = Tag::parse(self.input)?;
-            let span = &self.input[..(self.input.len() - rest.len())];
+            let initial_input = self.input;
             self.input = rest;
             let value = match tag.wire_type {
                 WireType::Varint => {
@@ -346,6 +346,8 @@ impl<'a> WireFieldIter<'a> {
                     return Err(WireError::InvalidWireType);
                 }
             };
+
+            let span = &initial_input[..(initial_input.len() - self.input.len())];
 
             return Ok(Some(WireFieldRef {
                 span,

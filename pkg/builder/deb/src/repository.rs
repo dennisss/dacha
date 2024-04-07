@@ -14,10 +14,11 @@ pub struct Repository {
     client: http::Client,
     root_path: LocalPathBuf,
     dists: HashMap<String, Distribution>,
+    cache_dir: LocalPathBuf,
 }
 
 impl Repository {
-    pub async fn create(root_url: Uri) -> Result<Self> {
+    pub async fn create(root_url: Uri, cache_dir: LocalPathBuf) -> Result<Self> {
         // TODO: Tune this to only use a single backend ip at a time
         // If there are multiple, only try one until it fails.
         let client = http::Client::create(root_url.clone()).await?;
@@ -26,14 +27,18 @@ impl Repository {
             client,
             root_path: root_url.path.as_str().into(),
             dists: HashMap::new(),
+            cache_dir,
         })
     }
 
     async fn get_file<P: AsRef<LocalPath>>(&self, path: P) -> Result<Vec<u8>> {
+        let path = path.as_ref();
         let request = http::RequestBuilder::new()
             .method(http::Method::GET)
             .path(self.root_path.join(path).as_str())
             .build()?;
+
+        println!("GET {:?}", self.root_path.join(path).as_str());
 
         let mut request_context = http::ClientRequestContext::default();
 
@@ -44,6 +49,9 @@ impl Repository {
 
         let mut out = vec![];
         response.body.read_to_end(&mut out).await?;
+
+        println!("=> Downloaded: {} bytes", out.len());
+
         Ok(out)
     }
 
@@ -54,14 +62,28 @@ impl Repository {
     pub async fn update(&mut self, distribution: &str, component: &str, arch: &str) -> Result<()> {
         let mut distribution = self.get_distribution(distribution).await?;
 
-        let packages_path = distribution
-            .path
-            .join(component)
-            .join(format!("binary-{}", arch))
-            .join("Packages");
+        let packages_file = {
+            let packages = format!("{}/binary-{}/Packages", component, arch);
+            let packages_gz = format!("{}.gz", packages);
 
-        // TODO: Optionally use the .gz version
-        let packages_file = PackagesFile::parse(&self.get_file(&packages_path).await?)?;
+            let data = {
+                if distribution.index_files.contains_key(&packages_gz) {
+                    let data = self.get_file(distribution.path.join(packages_gz)).await?;
+                    let mut uncompressed = vec![];
+
+                    compression::transform::transform_to_vec(
+                        compression::gzip::GzipDecoder::new(),
+                        &data,
+                        &mut uncompressed,
+                    )?;
+                    uncompressed
+                } else {
+                    self.get_file(distribution.path.join(packages)).await?
+                }
+            };
+
+            PackagesFile::parse(&data)?
+        };
 
         let mut total_size = 0;
         for pkg in packages_file.packages() {
@@ -104,7 +126,10 @@ impl Repository {
 pub struct Distribution {
     path: LocalPathBuf,
     release: ReleaseFile,
+
+    /// Indexed from self.release.sha256()
     index_files: BTreeMap<String, ReleaseFileEntry>,
+
     components: HashMap<String, PackagesFile>,
 }
 

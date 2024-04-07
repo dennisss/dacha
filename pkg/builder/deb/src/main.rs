@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use common::errors::*;
 use deb::ReleaseFile;
-use file::LocalPath;
+use file::{LocalPath, LocalPathBuf};
 use http::uri::Uri;
 use http::{ClientInterface, ClientRequestContext, RequestBuilder};
 
@@ -20,6 +20,13 @@ Some operations to support:
 
 - Given a reference to a repo, I may want to install a single package and all dependencies (that aren't already installed)
     - Must respect
+
+Repositories I want to cache:
+    deb http://deb.debian.org/debian RELEASE main contrib non-free non-free-firmware
+    deb http://deb.debian.org/debian-security/ RELEASE-security main contrib non-free non-free-firmware
+    deb http://deb.debian.org/debian RELEASE-updates main contrib non-free non-free-firmware
+
+    deb http://archive.raspberrypi.com/debian/ RELEASE main
 
 */
 
@@ -58,12 +65,32 @@ async fn main() -> Result<()> {
 
     let mut release = String::new();
     response.body.read_to_string(&mut release).await?;
+
+
+    /debian/dists/bullseye/main/binary-arm64/Packages
     */
+    let cache_dir = LocalPath::new("/nonexistent").to_owned();
 
-    let mut repo =
-        deb::Repository::create("http://archive.raspberrypi.org/debian/".parse::<Uri>()?)?;
+    {
+        let mut repo = deb::Repository::create(
+            "http://archive.raspberrypi.org/debian/".parse::<Uri>()?,
+            cache_dir.clone(),
+        )
+        .await?;
 
-    repo.update("bullseye", "main", "arm64").await?;
+        repo.update("bullseye", "main", "arm64").await?;
+    }
+
+    {
+        let mut repo = deb::Repository::create(
+            "http://deb.debian.org/debian".parse::<Uri>()?,
+            cache_dir.clone(),
+        )
+        .await?;
+
+        repo.update("bullseye", "main", "arm64").await?;
+        repo.update("bullseye", "contrib", "arm64").await?;
+    }
 
     /*
        let release = file::read_to_string(project_path!("third_party/raspbian/Release")).await?;

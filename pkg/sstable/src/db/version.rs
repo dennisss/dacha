@@ -19,10 +19,6 @@ use crate::EmbeddedDBOptions;
 /// TODO: Implement this.
 const MAX_NUM_LEVELS: usize = 7;
 
-/// The highest level at which we will store a new SSTable resulting from a
-/// memtable flush.
-const MAX_MEMTABLE_LEVEL: usize = 2;
-
 pub type FileReleasedCallback = Arc<dyn Fn(u64) + Send + Sync + 'static>;
 
 /// A set of versions.
@@ -51,6 +47,8 @@ pub struct VersionSet {
     /// Last sequence flushed to tables (excluding recent entries in the WAL).
     last_sequence: u64,
 
+    compaction_waterline: Option<u64>,
+
     release_callback: FileReleasedCallback,
 }
 
@@ -66,6 +64,7 @@ impl VersionSet {
             log_number: None,
             prev_log_number: None,
             last_sequence: 0,
+            compaction_waterline: None,
             release_callback,
         }
     }
@@ -88,6 +87,10 @@ impl VersionSet {
 
     pub fn last_sequence(&self) -> u64 {
         self.last_sequence
+    }
+
+    pub fn compaction_waterline(&self) -> Option<u64> {
+        self.compaction_waterline.clone()
     }
 
     /// Writes a complete snapshot of this object to the given log file.
@@ -113,6 +116,7 @@ impl VersionSet {
         }
         edit.last_sequence = Some(self.last_sequence);
         edit.comparator = Some(self.options.table_options.comparator.name().to_string());
+        edit.compaction_waterline = self.compaction_waterline.clone();
 
         for level in &self.latest_version.levels {
             for table in &level.tables {
@@ -206,6 +210,10 @@ impl VersionSet {
                 base_edit.next_file_number = Some(next_file_number);
             }
 
+            if let Some(num) = edit.compaction_waterline {
+                base_edit.compaction_waterline = Some(num);
+            }
+
             for file in edit.deleted_files {
                 if !version.remove(&file) {
                     return Err(err_msg("Failed to delete non-existent file"));
@@ -255,6 +263,7 @@ impl VersionSet {
             next_file_number,
             log_number: base_edit.log_number,
             prev_log_number: base_edit.prev_log_number,
+            compaction_waterline: base_edit.compaction_waterline,
             release_callback,
         })
     }
@@ -280,6 +289,10 @@ impl VersionSet {
             } else {
                 self.prev_log_number = Some(prev_log_number);
             }
+        }
+
+        if let Some(num) = version_edit.compaction_waterline {
+            self.compaction_waterline = Some(num);
         }
 
         if !version_edit.new_files.is_empty() || !version_edit.deleted_files.is_empty() {
@@ -360,13 +373,13 @@ impl VersionSet {
             }
         }
 
-        // In this case, self.latest_version.levels.len() < MAX_MEMTABLE_LEVEL
-        if !found_overlap && highest_level < MAX_MEMTABLE_LEVEL {
-            highest_level = MAX_MEMTABLE_LEVEL;
+        // In this case, self.latest_version.levels.len() < max_memtable_level
+        if !found_overlap && highest_level < self.options.max_memtable_level {
+            highest_level = self.options.max_memtable_level;
         }
 
         SelectedMemtableLevel {
-            level: std::cmp::min(MAX_MEMTABLE_LEVEL, highest_level),
+            level: std::cmp::min(self.options.max_memtable_level, highest_level),
             found_overlap,
         }
     }
@@ -406,8 +419,8 @@ impl VersionSet {
 
             // Find a random contiguous range of tables in this level which we can remove in
             // order to get us below the max_size.
-            // TODO: Need to also expand to any adjacent takes that contain a boundary user
-            // key.
+            // TODO: Need to also expand to any adjacent tables that contain a boundary user
+            // key (to avoid user keys being split between tables)
             let mut i = (crypto::random::clocked_rng().next_u32() as usize) % level.tables.len();
             let mut j = i;
             let mut new_total_size = level.total_size;
@@ -437,7 +450,8 @@ impl VersionSet {
 
         let next_level = level_num + 1;
 
-        // Find all tables in the next level that
+        // Find all tables in the next level that overlap with the tables selected in
+        // the prior layer.
         let mut next_level_tables: &[Arc<LevelTableEntry>] = &[];
         if next_level < self.latest_version.levels.len() {
             next_level_tables = &self.latest_version.levels[next_level].tables;
@@ -461,8 +475,22 @@ impl VersionSet {
             }
         }
 
+        let found_overlap = self.find_overlapping_tables(next_level + 1, key_range);
+
+        Some(CompactionSpec {
+            level: level_num,
+            tables,
+            next_level,
+            next_level_tables,
+            found_overlap,
+        })
+    }
+
+    fn find_overlapping_tables(&self, first_level: usize, key_range: KeyRangeRef<'_>) -> bool {
+        let comparator = self.options.table_options.comparator.as_ref();
+
         let mut found_overlap = false;
-        for i in (next_level + 1)..self.latest_version.levels.len() {
+        for i in first_level..self.latest_version.levels.len() {
             for table in &self.latest_version.levels[i].tables {
                 if table.key_range().overlaps_with(key_range, comparator) {
                     found_overlap = true;
@@ -475,12 +503,63 @@ impl VersionSet {
             }
         }
 
+        found_overlap
+    }
+
+    // TODO: Validate that tables compacted from this don't have any stale entries
+    // remaining post compaction.
+    pub async fn select_stale_table_to_compact<'a>(
+        &'a self,
+        compaction_waterline: u64,
+    ) -> Option<CompactionSpec<'a>> {
+        let mut found_tables = vec![];
+
+        // NOTE: We do not do compaction on level 0 since it is very volatile and it
+        // makes it harder to calculate 'found_overlap'.
+        for level_num in 1..self.latest_version.levels.len() {
+            let level = &self.latest_version.levels[level_num];
+
+            for table_i in 0..level.tables.len() {
+                let table_entry = &level.tables[table_i];
+                let table = table_entry.table().await;
+
+                assert!(table.properties().has_raw_value_size());
+                assert!(table.properties().has_num_entries());
+                assert!(table.properties().has_num_stale_entries());
+                assert!(table.properties().has_stale_value_size());
+                assert!(table.properties().has_stale_clear_waterline());
+
+                if compaction_waterline < table.properties().stale_clear_waterline() {
+                    continue;
+                }
+
+                let stale_fraction = (table.properties().num_stale_entries() as f32)
+                    / (table.properties().num_entries() as f32).max(
+                        (table.properties().stale_value_size() as f32)
+                            / (table.properties().raw_value_size() as f32),
+                    );
+
+                if stale_fraction < self.options.stale_compaction_threshold {
+                    continue;
+                }
+
+                found_tables.push((core::slice::from_ref(&level.tables[table_i]), level_num));
+            }
+        }
+
+        // TODO: Rank the compactions based on amount of expected savings.
+        if found_tables.is_empty() {
+            return None;
+        }
+
+        let (tables, level) = found_tables.pop().unwrap();
+
         Some(CompactionSpec {
-            level: level_num,
+            level,
             tables,
-            next_level,
-            next_level_tables,
-            found_overlap,
+            next_level: level,
+            next_level_tables: &[],
+            found_overlap: self.find_overlapping_tables(level + 1, tables[0].key_range()),
         })
     }
 }
@@ -497,6 +576,8 @@ pub struct CompactionSpec<'a> {
     pub next_level: usize,
     pub next_level_tables: &'a [Arc<LevelTableEntry>],
 
+    /// Whether or not any tables at a lower level than 'level' and 'next_level'
+    /// might have keys that overlap with these tables.
     pub found_overlap: bool,
 }
 

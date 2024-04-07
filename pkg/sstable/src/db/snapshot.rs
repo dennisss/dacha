@@ -24,6 +24,8 @@ pub struct Snapshot {
     /// any values with a higher sequence than this.
     pub(crate) last_sequence: u64,
 
+    pub(crate) compaction_waterline: Option<u64>,
+
     pub(crate) memtables: Vec<Arc<MemTable>>,
 
     pub(crate) version: Arc<Version>,
@@ -45,7 +47,14 @@ impl Snapshot {
             ));
         }
 
-        // TODO: Need checking against the compaction waterline.
+        if options.last_sequence.unwrap() < self.compaction_waterline.unwrap_or(0) {
+            return Err(err_msg(
+                "Requested sequence is below the compaction waterline so may have been compacted.",
+            ));
+        }
+
+        // TODO: Need checking against the compaction waterline (can also be used to set
+        // a lower bound).
         if let Some(first_sequence) = &options.first_sequence {
             if *first_sequence > self.last_sequence {
                 return Err(err_msg("first_sequence > last_sequence"));
@@ -93,6 +102,10 @@ impl Snapshot {
         self.last_sequence
     }
 
+    pub fn compaction_waterline(&self) -> Option<u64> {
+        self.compaction_waterline
+    }
+
     pub async fn get(&self, user_key: &[u8]) -> Result<Option<Bytes>> {
         if let Some(entry) = self.entry(user_key).await? {
             Ok(entry.value)
@@ -100,12 +113,6 @@ impl Snapshot {
             Ok(None)
         }
     }
-
-    // So when can we remove a tombstone:
-    // - When we know that
-
-    // I can't rely on any DB internals to determine if a transaction can finish as
-    // that would require all clocks to be in sync.
 
     pub async fn entry(&self, user_key: &[u8]) -> Result<Option<SnapshotKeyValueEntry>> {
         /*
@@ -153,6 +160,7 @@ pub struct SnapshotIteratorOptions {
 
 #[derive(Debug)]
 pub struct SnapshotKeyValueEntry {
+    /// User key associated with this entry.
     pub key: Bytes,
 
     /// If none, then this key is deleted
@@ -214,9 +222,15 @@ impl Iterable<SnapshotKeyValueEntry> for SnapshotIterator {
     }
 
     async fn seek(&mut self, key: &[u8]) -> Result<()> {
-        self.inner
-            .seek(&InternalKey::before(key).serialized())
-            .await?;
+        let inner_key = {
+            if let Some(last_sequence) = self.options.last_sequence.clone() {
+                InternalKey::before_with_sequence(key, last_sequence)
+            } else {
+                InternalKey::before(key)
+            }
+        };
+
+        self.inner.seek(&inner_key.serialized()).await?;
         self.last_user_key = None;
         Ok(())
     }

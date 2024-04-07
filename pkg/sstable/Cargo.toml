@@ -8,14 +8,15 @@ common = { path = "../common" }
 compression = { path = "../compression" }
 crypto = { path = "../crypto" }
 math = { path = "../math" }
-reflection = { path = "../reflection" }
 macros = { path = "../macros" }
 protobuf = { path = "../protobuf" }
+protobuf_compiler_proto = { path = "../protobuf/compiler/proto" }
 parsing = { path = "../parsing" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 executor_multitask = { path = "../executor/multitask" }
 base_radix = { path = "../base/radix" }
+sstable_proto = { path = "./proto" }
 
 [features]
 default = ["std"]

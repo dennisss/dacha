@@ -1,8 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Writeable;
+use executor::cancellation::AlreadyCancelledToken;
+use executor_multitask::ServiceResource;
 use file::temp::TempDir;
 
 use crate::db::write_batch::WriteBatch;
@@ -11,7 +14,7 @@ use crate::iterable::Iterable;
 use crate::table::CompressionType;
 use crate::{EmbeddedDB, EmbeddedDBOptions};
 
-use super::SnapshotIterator;
+use super::{SnapshotIterator, SnapshotIteratorOptions};
 
 struct TestDB {
     dir: TempDir,
@@ -21,9 +24,14 @@ struct TestDB {
 
 impl TestDB {
     async fn open() -> Result<Self> {
+        Self::open_with_extra_options(|_| {}).await
+    }
+
+    async fn open_with_extra_options<F: FnOnce(&mut EmbeddedDBOptions)>(f: F) -> Result<Self> {
         let dir = TempDir::create()?;
 
         let mut options = EmbeddedDBOptions::default();
+
         options.create_if_missing = true;
         options.error_if_exists = true;
         // Disable compression to make it easier to predict compactions.
@@ -49,6 +57,8 @@ impl TestDB {
         options.max_bytes_for_level_base = 20 * 1024; // 20KB
         options.max_bytes_for_level_multiplier = 2;
 
+        f(&mut options);
+
         let db = EmbeddedDB::open(dir.path(), options).await?;
         Ok(Self {
             dir,
@@ -63,7 +73,12 @@ impl TestDB {
         let mut options = EmbeddedDBOptions::default();
         options.read_only = true;
 
-        self.db.close().await?;
+        // Closing the old database.
+        self.db
+            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
+            .await;
+        self.db.wait_for_termination().await?;
+        drop(self.db);
 
         let db = EmbeddedDB::open(self.dir.path(), options).await?;
         Ok(Self {
@@ -553,6 +568,129 @@ async fn embedded_db_large_range_test() -> Result<()> {
 
         // TODO: Test point lookups.
     }
+
+    Ok(())
+}
+
+async fn list_keys_with_seq(db: &TestDB) -> Result<Vec<(Bytes, u64, bool)>> {
+    let mut options = SnapshotIteratorOptions::default();
+    options.return_all_versions = true;
+
+    let mut iter = db
+        .snapshot()
+        .await
+        .snapshot
+        .iter_with_options(options)
+        .await?;
+
+    let mut out = vec![];
+    while let Some(entry) = iter.next().await? {
+        out.push((entry.key, entry.sequence, entry.value.is_some()));
+    }
+
+    Ok(out)
+}
+
+#[testcase]
+async fn embedded_db_compaction_waterline_test() -> Result<()> {
+    let mut db = TestDB::open_with_extra_options(|options| {
+        options.write_buffer_size = 1024; // 1KiB
+        options.enable_compaction_waterline = true;
+
+        // Level 0 immediately goes into level 1.
+        options.level0_file_num_compaction_trigger = 1;
+        options.max_memtable_level = 1;
+
+        // Basically immediately compact away any staleness.
+        options.stale_compaction_threshold = 0.01;
+    })
+    .await?;
+
+    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), Some(0));
+
+    let mut value = vec![0u8; 256];
+
+    db.db.set(b"a", &value).await?; // seq 1
+    db.db.set(b"b", &value).await?; // seq 2
+    db.db.set(b"c", &value).await?; // seq 3
+    db.db.set(b"d", &value).await?; // seq 4
+
+    db.db.wait_for_compaction().await?;
+
+    assert_eq!(db.snapshot().await.snapshot.last_sequence(), 4);
+
+    assert!(sets_equal(
+        &db.dir_contents().await?,
+        &[
+            "CURRENT",
+            "LOCK",
+            "MANIFEST-000002",
+            "IDENTITY",
+            "000004.log",
+            "000005.sst",
+        ]
+    ));
+
+    assert_eq!(
+        list_keys_with_seq(&db).await?,
+        vec![
+            (b"a"[..].into(), 1, true),
+            (b"b"[..].into(), 2, true),
+            (b"c"[..].into(), 3, true),
+            (b"d"[..].into(), 4, true),
+        ]
+    );
+
+    db.db.set(b"a", &value).await?; // seq 5
+    db.db.set(b"c", &value).await?; // seq 6
+    db.db.set(b"a", &value).await?; // seq 7
+    db.db.set(b"a", &value).await?; // seq 8
+
+    db.db.wait_for_compaction().await?;
+
+    assert!(sets_equal(
+        &db.dir_contents().await?,
+        &[
+            "CURRENT",
+            "LOCK",
+            "MANIFEST-000002",
+            "IDENTITY",
+            "000006.log",
+            "000008.sst",
+        ]
+    ));
+
+    assert_eq!(
+        list_keys_with_seq(&db).await?,
+        vec![
+            (b"a"[..].into(), 8, true),
+            (b"a"[..].into(), 7, true),
+            (b"a"[..].into(), 5, true),
+            (b"a"[..].into(), 1, true),
+            (b"b"[..].into(), 2, true),
+            (b"c"[..].into(), 6, true),
+            (b"c"[..].into(), 3, true),
+            (b"d"[..].into(), 4, true),
+        ]
+    );
+
+    db.db.update_compaction_waterline(8)?;
+    // Immediately after updating it wont be changed yet since it must be flushed to
+    // disk
+    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), Some(0));
+
+    db.db.wait_for_compaction().await?;
+    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), Some(8));
+
+    assert_eq!(
+        list_keys_with_seq(&db).await?,
+        vec![
+            (b"a"[..].into(), 8, true),
+            (b"b"[..].into(), 2, true),
+            (b"c"[..].into(), 6, true),
+            (b"d"[..].into(), 4, true),
+        ]
+    );
 
     Ok(())
 }

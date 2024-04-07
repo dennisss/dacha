@@ -1,111 +1,137 @@
 // Wrapper around the RocksDB table properties object
-// See:
+//
+// Compatible with RocksDB properties. See:
 // https://github.com/facebook/rocksdb/blob/master/include/rocksdb/table_properties.h
 // The names of each property is defined here:
 // https://github.com/facebook/rocksdb/blob/50e470791dafb3db017f055f79323aef9a607e43/table/table_properties.cc
 
-use reflection::*;
+use std::collections::HashMap;
 
-/// TableProperties contains a bunch of read-only properties of its associated
-/// table.
-///
-/// TODO: Implement actually setting most of these values (and reading the old
-/// ones.)
-///
-/// u64's are encoded as varint64's
-///
-/// TODO: When serializing, only serialize the ones that we have set? (at least
-/// all those that don't have default values).
-/// TODO: Most of these are more abstract than a single table
-/// (i.e. num_deletions is also applicable when a table is used in the context
-/// of an embedded database).
-#[derive(Default, Reflect, Debug)]
-pub struct TableProperties {
-    #[tags(name = "rocksdb.data.size")]
-    data_size: u64,
+use common::errors::*;
+use parsing::complete;
+use protobuf::reflection::Reflection;
+use protobuf::wire::{parse_varint, serialize_varint};
+use protobuf::{reflection::ReflectionMut, FieldNumber, MessageReflection};
+use protobuf_compiler_proto::dacha::KeyExtension;
 
-    #[tags(name = "rocksdb.index.size")]
-    index_size: u64,
+use crate::table::TableProperties;
 
-    #[tags(name = "rocksdb.index.partitions")]
-    index_partitions: u64,
+pub async fn parse_table_properties(mut data: HashMap<String, Vec<u8>>) -> Result<TableProperties> {
+    let desc = protobuf::StaticDescriptorPool::global()
+        .get_descriptor::<TableProperties>()
+        .await?;
 
-    #[tags(name = "rocksdb.top-level.index.size")]
-    top_level_index_size: u64,
+    let mut props = TableProperties::default();
 
-    #[tags(name = "rocksdb.index.key.is.user.key")]
-    index_key_is_user_key: u64,
+    for field in desc.fields() {
+        let key = field.proto().options().key()?;
+        if key.is_empty() {
+            return Err(err_msg("TableProperties field has no key"));
+        }
 
-    #[tags(name = "rocksdb.index.value.is.delta.encoded")]
-    index_value_is_delta_encoded: u64,
+        let key_str: &String = &*key;
 
-    #[tags(name = "rocksdb.filter.size")]
-    filter_size: u64,
+        let value = {
+            if let Some(v) = data.remove(key_str) {
+                v
+            } else {
+                continue;
+            }
+        };
 
-    #[tags(name = "rocksdb.raw.key.size")]
-    raw_key_size: u64,
+        match props
+            .field_by_number_mut(field.proto().number() as FieldNumber)
+            .unwrap()
+        {
+            ReflectionMut::U64(v) => {
+                *v = complete(|input| parse_varint(input).map_err(|e| Error::from(e)))(&value)?.0
+                    as u64
+            }
+            ReflectionMut::String(v) => {
+                // TODO: Ensure that this is always utf-8
+                *v = String::from_utf8(value.to_vec())?;
+            }
+            _ => return Err(err_msg("Unsupported properties field type")),
+        }
+    }
 
-    #[tags(name = "rocksdb.raw.value.size")]
-    raw_value_size: u64,
+    Ok(props)
+}
 
-    #[tags(name = "rocksdb.num.data.blocks")]
-    num_data_blocks: u64,
+pub async fn serialize_table_properties(
+    props: &TableProperties,
+) -> Result<HashMap<String, Vec<u8>>> {
+    let desc = protobuf::StaticDescriptorPool::global()
+        .get_descriptor::<TableProperties>()
+        .await?;
 
-    #[tags(name = "rocksdb.num.entries")]
-    num_entries: u64,
+    let mut data = HashMap::default();
 
-    #[tags(name = "rocksdb.deleted.keys")]
-    num_deletions: u64,
+    for field in desc.fields() {
+        let key = field
+            .proto()
+            .options()
+            .key()
+            .map_err(|e| format_err!("Failed to get the key: {}", e))?;
+        if key.is_empty() {
+            return Err(err_msg("TableProperties field has no key"));
+        }
 
-    #[tags(name = "rocksdb.merge.operands")]
-    num_merge_operands: u64,
+        let value = match props.field_by_number(field.proto().number() as FieldNumber) {
+            Some(v) => v,
+            // No value present.
+            None => continue,
+        };
 
-    #[tags(name = "rocksdb.num.range-deletions")]
-    num_range_deletions: u64,
+        let mut serialized_value = vec![];
 
-    #[tags(name = "rocksdb.format.version")]
-    format_version: u64,
+        match value {
+            Reflection::U64(v) => {
+                serialize_varint(*v, &mut serialized_value)?;
+            }
+            Reflection::String(v) => {
+                serialized_value.extend_from_slice(v.as_bytes());
+            }
+            _ => return Err(err_msg("Unsupported properties field type")),
+        }
 
-    #[tags(name = "rocksdb.fixed.key.length")]
-    fixed_key_len: u64,
+        data.insert(key.clone(), serialized_value);
+    }
 
-    #[tags(name = "rocksdb.column.family.id")]
-    column_family_id: u64,
+    Ok(data)
+}
 
-    #[tags(name = "rocksdb.creation.time")]
-    creation_time: u64,
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    #[tags(name = "rocksdb.oldest.key.time")]
-    oldest_key_time: u64,
+    #[testcase]
+    async fn serialize_only_present_properties() -> Result<()> {
+        let mut props = TableProperties::default();
 
-    #[tags(name = "rocksdb.file.creation.time")]
-    file_creation_time: u64,
+        let serialized = serialize_table_properties(&props).await?;
+        assert_eq!(serialized, HashMap::default());
+        assert_eq!(parse_table_properties(serialized).await?, props);
 
-    #[tags(name = "rocksdb.column.family.name")]
-    column_family_name: String,
+        props.set_raw_key_size(0u64);
+        assert!(props.has_raw_key_size());
 
-    #[tags(name = "rocksdb.filter.policy")]
-    filter_policy_name: String,
+        let serialized = serialize_table_properties(&props).await?;
+        assert_eq!(serialized, map!("rocksdb.raw.key.size" => &[0u8][..]));
+        assert_eq!(parse_table_properties(serialized).await?, props);
 
-    #[tags(name = "rocksdb.comparator")]
-    comparator_name: String,
+        props.set_raw_value_size(22u64);
 
-    #[tags(name = "rocksdb.merge.operator")]
-    merge_operator_name: String,
+        let serialized = serialize_table_properties(&props).await?;
+        assert_eq!(
+            serialized,
+            map!(
+                "rocksdb.raw.key.size" => &[0u8][..],
+                "rocksdb.raw.value.size" => &[22u8][..]
+            )
+        );
+        assert_eq!(parse_table_properties(serialized).await?, props);
 
-    #[tags(name = "rocksdb.prefix.extractor.name")]
-    prefix_extractor_name: String,
-
-    #[tags(name = "rocksdb.property.collectors")]
-    property_collectors_names: String,
-
-    #[tags(name = "rocksdb.compression")]
-    compression_name: String,
-
-    #[tags(name = "rocksdb.compression_options")]
-    compression_options: String,
-    /* TODO: THere are some more here (including thw whole_key_filtering:
-     * https://github.com/facebook/rocksdb/blob/f059c7d9b96300091e07429a60f4ad55dac84859/table/block_based/block_based_table_builder.cc#L251 */
-
-    /* TODO: user_collected_properties, readable_properties, properties_offsets */
+        Ok(())
+    }
 }

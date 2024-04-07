@@ -3,6 +3,7 @@ use common::io::Readable;
 use file::{LocalFile, LocalPath, LocalPathBuf};
 
 use crate::body::*;
+use crate::headers::range::parse_range_header;
 use crate::request::Request;
 use crate::response::{Response, ResponseBuilder};
 use crate::server_handler::{ServerHandler, ServerRequestContext};
@@ -85,9 +86,10 @@ impl ServerHandler for StaticFileHandler {
                 .unwrap();
         }
 
-        let file = match LocalFile::open(&file_path) {
+        let mut file = match LocalFile::open(&file_path) {
             Ok(f) => f,
             Err(_) => {
+                // TODO: Log an error here.
                 return ResponseBuilder::new()
                     .status(status_code::INTERNAL_SERVER_ERROR)
                     .build()
@@ -95,22 +97,47 @@ impl ServerHandler for StaticFileHandler {
             }
         };
 
-        let body = StaticFileBody {
-            file,
-            length: metadata.len() as usize,
+        let mut response = ResponseBuilder::new()
+            .status(status_code::OK)
+            .header("Accept-Ranges", "bytes");
+
+        let range_header = match parse_range_header(&request.head.headers, metadata.len() as usize)
+        {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("Invalid Range header: {}", e);
+                return ResponseBuilder::new()
+                    .status(status_code::BAD_REQUEST)
+                    .build()
+                    .unwrap();
+            }
         };
 
-        ResponseBuilder::new()
-            .status(status_code::OK)
-            .body(Box::new(body))
-            .build()
-            .unwrap()
+        let mut range = (0, metadata.len() as usize);
+
+        if let Some((s, e)) = range_header.clone() {
+            response = response.status(status_code::PARTIAL_CONTENT).header(
+                "Content-Range",
+                format!("bytes {}-{}/{}", s, e, metadata.len()),
+            );
+            range = (s, e + 1);
+        }
+
+        file.seek(range.0 as u64);
+
+        let body = StaticFileBody { file, range };
+
+        response = response.body(Box::new(body));
+
+        response.build().unwrap()
     }
 }
 
 pub struct StaticFileBody {
+    // NOTE: The file should already be seeked to the start of the range when the StaticFileBody
+    // instance is created.
     file: LocalFile,
-    length: usize,
+    range: (usize, usize),
 }
 
 impl StaticFileBody {
@@ -118,14 +145,17 @@ impl StaticFileBody {
         let file = LocalFile::open(path)?;
         let length = file.metadata().await?.len() as usize;
 
-        Ok(Self { file, length })
+        Ok(Self {
+            file,
+            range: (0, length),
+        })
     }
 }
 
 #[async_trait]
 impl Body for StaticFileBody {
     fn len(&self) -> Option<usize> {
-        Some(self.length)
+        Some(self.range.1 - self.range.0)
     }
 
     async fn trailers(&mut self) -> Result<Option<crate::header::Headers>> {
@@ -137,7 +167,12 @@ impl Body for StaticFileBody {
 impl Readable for StaticFileBody {
     // TODO: If the file changed since reading it, return an error (if possible?)
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        // TODO: Keep as a u64
+        let pos = self.file.current_position() as usize;
+
+        let n = core::cmp::min(buf.len(), self.range.1 - pos);
+
         // TODO: Ensure that we are buffering based on file system chunk sizes.
-        Ok(self.file.read(buf).await?)
+        Ok(self.file.read(&mut buf[0..n]).await?)
     }
 }

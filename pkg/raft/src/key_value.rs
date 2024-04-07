@@ -4,7 +4,8 @@ use std::time::SystemTime;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use executor::sync::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use protobuf::{Message, StaticMessage};
 use raft::atomic::*;
 use raft::proto::*;
@@ -36,7 +37,7 @@ pub struct KeyValueData {
 /// style functionality including atomic (multi-)key operations and transactions
 /// NOTE: This does not
 pub struct MemoryKVStateMachine {
-    state: Mutex<State>,
+    state: AsyncMutex<State>,
 }
 
 struct State {
@@ -94,7 +95,7 @@ impl MemoryKVStateMachine {
 
     pub fn new() -> MemoryKVStateMachine {
         MemoryKVStateMachine {
-            state: Mutex::new(State {
+            state: AsyncMutex::new(State {
                 last_applied: 0.into(),
                 data: HashMap::new(),
             }),
@@ -102,7 +103,7 @@ impl MemoryKVStateMachine {
     }
 
     pub async fn get(&self, key: &[u8]) -> Option<Bytes> {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.data.get(key).map(|v| v.clone())
     }
 }
@@ -114,29 +115,31 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
     async fn apply(&self, index: LogIndex, data: &[u8]) -> Result<KeyValueReturn> {
         let ret = KeyValueOperation::parse(data)?;
 
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().await?.enter();
 
         // Could be split into a check phase and a run phase
         // Thus we can maintain transactions without lock
 
-        state.last_applied = index;
+        lock!(state <= self.state.lock().await?, {
+            state.last_applied = index;
 
-        match ret.typ_case() {
-            KeyValueOperationTypeCase::Set(op) => {
-                state
-                    .data
-                    .insert(op.key().to_owned(), Bytes::from(op.value()));
+            match ret.typ_case() {
+                KeyValueOperationTypeCase::Set(op) => {
+                    state
+                        .data
+                        .insert(op.key().to_owned(), Bytes::from(op.value()));
 
-                Ok(KeyValueReturn { success: true })
+                    Ok(KeyValueReturn { success: true })
+                }
+                KeyValueOperationTypeCase::Delete(op) => {
+                    let old = state.data.remove(op.key());
+                    Ok(KeyValueReturn {
+                        success: old.is_some(),
+                    })
+                }
+                KeyValueOperationTypeCase::NOT_SET => Err(err_msg("Unknown key-value operation")),
             }
-            KeyValueOperationTypeCase::Delete(op) => {
-                let old = state.data.remove(op.key());
-                Ok(KeyValueReturn {
-                    success: old.is_some(),
-                })
-            }
-            KeyValueOperationTypeCase::NOT_SET => Err(err_msg("Unknown key-value operation")),
-        }
+        })
     }
 
     async fn last_flushed(&self) -> LogIndex {
@@ -144,7 +147,7 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
     }
 
     async fn last_applied(&self) -> LogIndex {
-        let state = self.state.lock().await;
+        let state = self.state.lock().await.unwrap().read_exclusive();
         state.last_applied
     }
 

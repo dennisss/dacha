@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
 use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
@@ -37,6 +39,9 @@ impl TestMetastore {
         });
 
         let task = ChildTask::spawn(async move { fut.await.unwrap() });
+
+        // Wait for the leader election to finish.
+        executor::sleep(Duration::from_millis(400)).await?;
 
         Ok(Self {
             temp_dir,

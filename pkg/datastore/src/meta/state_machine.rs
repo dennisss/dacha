@@ -1,37 +1,34 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::errors::*;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::lock_async;
 use executor::sync::AsyncMutex;
 use executor::sync::AsyncRwLock;
+use executor_multitask::impl_resource_passthrough;
 use executor_multitask::ServiceResource;
+use executor_multitask::ServiceResourceGroup;
 use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 use raft::atomic::BlobFile;
+use sstable::db::SnapshotIterator;
+use sstable::db::SnapshotIteratorOptions;
 use sstable::db::{Backup, Snapshot, Write, WriteBatch};
 use sstable::iterable::Iterable;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
+use crate::meta::state_machine_db::EmbeddedDBStateMachineDatabase;
 use crate::meta::watchers::*;
 use crate::proto::*;
 
-/*
-Compaction strategy:
-- There will be a special metastore key which contains the waterline value
-    => It will be changed by executing a command on the state machine
-- The state machine will reject any mutation whose read_index is < the waterline
-
-Every 1 hour, the metastore background thread will try to find a log index which is more than 1 hour
-
-Other complexities:
-- If a key wasn't changed for a while, it may
-
-*/
+use super::table_key::TableKey;
 
 /*
 TODO: Rather than having synced path logic, we can maybe just always force syncing when opening files
 */
+
+const HISTORY_TTL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 /// Key-value state machine based on the EmbeddedDB implementation.
 ///
@@ -61,10 +58,14 @@ pub struct EmbeddedDBStateMachine {
     /// File used to mark
     current: AsyncMutex<(Current, BlobFile)>,
 
-    db: AsyncRwLock<EmbeddedDB>,
+    group: ServiceResourceGroup,
+
+    db: Arc<EmbeddedDBStateMachineDatabase>,
 
     watchers: Watchers,
 }
+
+impl_resource_passthrough!(EmbeddedDBStateMachine, group);
 
 impl EmbeddedDBStateMachine {
     pub async fn open(dir: &LocalPath) -> Result<Self> {
@@ -104,17 +105,17 @@ impl EmbeddedDBStateMachine {
         }
 
         let db_path = dir.join(format!("snapshot-{:04}", current.current_snapshot()));
+        let db = Self::open_db(&db_path).await?;
 
-        let mut db_options = EmbeddedDBOptions::default();
-        db_options.create_if_missing = true;
-        db_options.error_if_exists = false;
-        db_options.disable_wal = true;
-        db_options.initial_compaction_waterline = 1;
+        let db = Arc::new(EmbeddedDBStateMachineDatabase::create(db).await);
 
-        let db = EmbeddedDB::open(db_path, db_options).await?;
+        let group = ServiceResourceGroup::new("EmbeddedDBStateMachine");
+        group.register_dependency(db.clone()).await;
+        group.spawn_interruptable("waterline_updater", Self::waterline_updater(db.clone()));
 
         Ok(Self {
-            db: AsyncRwLock::new(db),
+            db,
+            group,
             dir: dir.to_owned(),
             current: AsyncMutex::new((current, current_file)),
             watchers: Watchers::new(),
@@ -126,12 +127,27 @@ impl EmbeddedDBStateMachine {
         db_options.create_if_missing = true;
         db_options.error_if_exists = false;
         db_options.disable_wal = true;
-        db_options.initial_compaction_waterline = 1;
+        db_options.enable_compaction_waterline = true;
 
         let db = EmbeddedDB::open(path, db_options).await?;
         Ok(db)
     }
 
+    /// Background thread which continously advances the compaction waterline in
+    /// the database to ensure that old data versions are eventually cleaned up.
+    ///
+    /// CANCEL SAFE
+    async fn waterline_updater(db: Arc<EmbeddedDBStateMachineDatabase>) -> Result<()> {
+        loop {
+            let seq = db.read().await?.snapshot().await.last_sequence();
+            executor::sleep(HISTORY_TTL).await?;
+            db.read().await?.update_compaction_waterline(seq)?;
+        }
+    }
+
+    /// WARNING: All users of this must ensure that they are not attemping to
+    /// read below the compaction waterline.
+    ///
     /// CANCEL SAFE
     pub async fn snapshot(&self) -> Snapshot {
         self.db.read().await.unwrap().snapshot().await
@@ -206,6 +222,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
 
         let (mut writer, reader) = common::pipe::pipe();
 
+        // TODO: If the reader is dropped, then we can cancel this.
         executor::spawn(async move {
             let res = backup.write_to(&mut writer).await;
             writer.close(res).await;
@@ -237,20 +254,8 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
             }
         }
 
-        // TODO: Initialize with the right waterline.
         let mut new_db = Self::open_db(&path).await?;
-
-        // Swap in the new database.
-        {
-            let mut db = self.db.write().await?.enter();
-            core::mem::swap(&mut *db, &mut new_db);
-            db.exit();
-
-            new_db
-                .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                .await;
-            new_db.wait_for_termination().await?;
-        }
+        self.db.swap_with(new_db).await?;
 
         let old_number = current.0.current_snapshot();
 

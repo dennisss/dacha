@@ -34,7 +34,10 @@ enum_def!(Tag u32 =>
     ColumnFamilyAdd = 201,
     ColumnFamilyDrop = 202,
     MaxColumnFamily = 203,
-    InAtomicGroup = 300
+    InAtomicGroup = 300,
+
+    // Custom tags
+    CompactionWaterline = 800
 );
 
 #[derive(Debug, Clone)]
@@ -89,6 +92,7 @@ pub struct VersionEdit {
     pub new_files: Vec<NewFileEntry>,
     pub deleted_files: Vec<DeletedFileEntry>,
     pub next_file_number: Option<u64>,
+    pub compaction_waterline: Option<u64>,
 }
 
 impl VersionEdit {
@@ -189,6 +193,10 @@ impl VersionEdit {
                         number: file_number,
                     });
                 }
+                Tag::CompactionWaterline => {
+                    let num = parse_next!(input, parse_varint) as u64;
+                    edit.compaction_waterline = Some(num);
+                }
                 _ => {
                     return Err(format_err!("Unsupported tag {:?}", record_id));
                 }
@@ -222,6 +230,11 @@ impl VersionEdit {
 
         if let Some(num) = &self.next_file_number {
             serialize_varint(Tag::NextFileNumber.to_value() as u64, out);
+            serialize_varint(*num, out);
+        }
+
+        if let Some(num) = &self.compaction_waterline {
+            serialize_varint(Tag::CompactionWaterline.to_value() as u64, out);
             serialize_varint(*num, out);
         }
 
@@ -273,14 +286,3 @@ impl VersionEdit {
         Ok(())
     }
 }
-
-/*
-
-Write Lock VersionEdit { comparator: None, log_number: Some(4), prev_log_number: Some(3), last_sequence: None, new_files: [], deleted_files: [], next_file_number: Some(5) }
-
-Write Flush VersionEdit { comparator: None, log_number: None, prev_log_number: Some(0), last_sequence: Some(9000), new_files: [NewFileEntry { level: 2, number: 5, file_size: 24063, smallest_key: [49, 48, 48, 48, 1, 1, 0, 0, 0, 0, 0, 0], largest_key: [52, 51, 48, 53, 1, 234, 12, 0, 0, 0, 0, 0], sequence_range: None }], deleted_files: [], next_file_number: Some(6) }
-
-Write Lock VersionEdit { comparator: None, log_number: Some(6), prev_log_number: Some(4), last_sequence: None, new_files: [], deleted_files: [], next_file_number: Some(7) }
-
-Write Flush VersionEdit { comparator: None, log_number: None, prev_log_number: Some(0), last_sequence: Some(9000), new_files: [NewFileEntry { level: 2, number: 7, file_size: 40700, smallest_key: [52, 51, 48, 54, 1, 235, 12, 0, 0, 0, 0, 0], largest_key: [57, 57, 57, 57, 1, 40, 35, 0, 0, 0, 0, 0], sequence_range: None }], deleted_files: [], next_file_number: Some(8) }
-*/

@@ -64,7 +64,9 @@ pub use value::*;
 pub use wire::{WireError, WireResult};
 
 pub struct StaticFileDescriptor {
+    /// Serialized FileDescriptorProto.
     pub proto: &'static [u8],
+
     pub dependencies: &'static [&'static StaticFileDescriptor],
 }
 

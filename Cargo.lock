@@ -2651,7 +2651,20 @@ dependencies = [
  "math",
  "parsing",
  "protobuf",
- "reflection",
+ "protobuf_compiler_proto",
+ "sstable_proto",
+]
+
+[[package]]
+name = "sstable_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
 ]
 
 [[package]]

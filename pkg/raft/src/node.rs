@@ -6,8 +6,12 @@ use common::futures::future::FutureExt;
 use common::futures::{pin_mut, select};
 use crypto::random;
 use crypto::random::RngExt;
-use executor::bundle::TaskResultBundle;
 use executor::channel;
+use executor::sync::Eventually;
+use executor_multitask::{
+    impl_resource_passthrough, RootResource, ServiceResource, ServiceResourceGroup,
+    ServiceResourceSubscriber,
+};
 use file::dir_lock::DirLock;
 use protobuf::{Message, StaticMessage};
 use raft_client::{
@@ -25,7 +29,7 @@ use crate::Log;
 /// Configuration for creating a SimpleServer instance.
 ///
 /// TODO: Support disabling listening to multi-cast messages.
-pub struct NodeOptions<R> {
+pub struct NodeOptions<'a, R> {
     /// Directory in which all server data is stored.
     /// TODO: We should clone a reference to the lock internally so that we can
     /// ensure that the directory isn't re-locked until we stop running all the
@@ -43,18 +47,17 @@ pub struct NodeOptions<R> {
     pub state_machine: Arc<dyn StateMachine<R> + Send + Sync + 'static>,
 
     pub route_labels: Vec<RouteLabel>,
-    /* pub task_bundle: &'a mut TaskResultBundle, */
 
-    /* /// NOTE: A single RPC server can only have one Node instance attached to
-     * /// it.
-     * pub rpc_server: &'a mut rpc::Http2Server, */
+    /// NOTE: A single RPC server can only have one Node instance attached to
+    /// it.
+    pub rpc_server: &'a mut rpc::Http2Server,
 
-    /* /// Address (ip + port) at which the 'rpc_server' will be available once it
-     * /// has been started.
-     * ///
-     * /// TODO: Consider instead making an accessor method on the Http2Server to
-     * /// retrieve this.S
-     * pub rpc_server_address: String, */
+    /// Address (ip + port) at which the 'rpc_server' will be available once it
+    /// has been started.
+    ///
+    /// TODO: Consider instead making an accessor method on the Http2Server to
+    /// retrieve this.S
+    pub rpc_server_address: String,
 }
 
 /// Simple implementation of a complete Raft based server instance.
@@ -112,34 +115,47 @@ pub struct Node<R> {
 
     server: Server<R>,
 
-    task_bundle: Option<TaskResultBundle>,
+    resources: ServiceResourceGroup,
 
     empty_log: bool,
+}
+
+#[async_trait]
+impl<R: 'static + Send> ServiceResource for Node<R> {
+    async fn add_cancellation_token(
+        &self,
+        token: ::std::sync::Arc<dyn executor::cancellation::CancellationToken>,
+    ) {
+        self.resources.add_cancellation_token(token).await
+    }
+
+    async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
+        self.resources.new_resource_subscriber().await
+    }
 }
 
 impl<R: 'static + Send> Node<R> {
     // Creates a new Node instance, attachs it to the server, and starts up
     // background tasks.
-    pub async fn create(options: NodeOptions<R>) -> Result<Node<R>> {
+    pub async fn create(options: NodeOptions<'_, R>) -> Result<Node<R>> {
         let route_store = RouteStore::new(&options.route_labels);
 
-        let mut task_bundle = TaskResultBundle::new();
+        let resources = ServiceResourceGroup::new("raft::Node");
 
         // Start network discovery.
-        // NOTE: Must happen before server initialization as new server initialization
-        // requires being able to discover existing servers.
-        // - Also needed for initial bootstrappign
+        // - This is required for bootstrapping.
+        // - Note that the route_store hasn't been initialized with our route yet, so it
+        //   is ok for this to be started before our RPC server is ready.
         {
             let discovery_multicast = DiscoveryMulticast::create(route_store.clone()).await?;
-            task_bundle.add("DiscoveryMulticast", async move {
-                discovery_multicast.run().await
-            });
+            resources
+                .register_dependency(Arc::new(discovery_multicast.start()))
+                .await;
 
             let discovery_client = DiscoveryClient::new(route_store.clone(), options.seed_list);
-            task_bundle.add("DiscoveryClient", async {
-                discovery_client.run().await;
-                Ok(())
-            });
+            resources
+                .spawn_interruptable("DiscoveryClient", discovery_client.run())
+                .await;
         }
 
         let meta_builder =
@@ -190,7 +206,7 @@ impl<R: 'static + Send> Node<R> {
                 } else {
                     let init_signal = ServerInit::wait_for_init(options.init_port).fuse();
                     let found_peer = raft_client::utils::find_peer_group_id(&route_store).fuse();
-                    let background_error = task_bundle.join().fuse();
+                    let background_error = resources.wait_for_termination().fuse();
 
                     pin_mut!(init_signal, found_peer, background_error);
 
@@ -256,12 +272,87 @@ impl<R: 'static + Send> Node<R> {
 
         let server = Server::new(channel_factory.clone(), initial_state).await?;
 
+        // Start the RPC server.
+        // NOTE: The server should be started before we start participating in the raft
+        // group.
+        options
+            .rpc_server
+            .add_service(DiscoveryServer::new(route_store.clone()).into_service())?;
+        options
+            .rpc_server
+            .add_service(server.clone().into_service())?;
+
+        let rpc_server_resource = Arc::new(Eventually::<Arc<dyn ServiceResource>>::new());
+
+        let rpc_server_resource2 = rpc_server_resource.clone();
+        options.rpc_server.add_start_callback(move |r| {
+            executor::spawn(async move { rpc_server_resource2.set(r).await });
+        });
+
+        let dir = Arc::new(options.dir);
+
+        {
+            let server = server.clone();
+            let route_store = route_store.clone();
+            let address = options.rpc_server_address.clone();
+            let dir_lock = dir.clone();
+            let rpc_server_resource = rpc_server_resource.clone();
+
+            resources
+                .spawn_interruptable("raft::Server::run", async move {
+                    // Wait for the server to be listening.
+                    let rpc_server_resource = rpc_server_resource.get().await;
+                    rpc_server_resource.wait_for_ready().await;
+
+                    // Setup the discovery server with our server identity.
+                    {
+                        let mut route_store = route_store.lock().await;
+
+                        let mut local_route = Route::default();
+                        local_route.set_group_id(server.identity().group_id);
+                        local_route.set_server_id(server.identity().server_id);
+                        local_route.set_addr(address);
+
+                        route_store.set_local_route(local_route);
+                    }
+
+                    server.run().await?;
+
+                    Ok(())
+                })
+                .await;
+        }
+
+        // TODO: Wait for one round of RPC seeding to elapse. THis will ensure that if
+        // we join a cluster, it will know about us.
+
+        // If our log is empty, then we are most likely not a member of the
+        // cluster yet
+        // So we must attempt to either add ourselves to the cluster or wait
+        // until the leader has populated our log with at least one entry
+        if empty_log {
+            let server = server.clone();
+            let rpc_server_resource = rpc_server_resource.clone();
+
+            // TODO: If we restart after already receigin this, then we may not need to join
+            // again.
+            resources
+                .spawn_interruptable("raft::Server::join_group", async move {
+                    // Wait for the rpc server to be listening.
+                    let rpc_server_resource = rpc_server_resource.get().await;
+                    rpc_server_resource.wait_for_ready().await;
+
+                    server.join_group().await
+                })
+                .await;
+        }
+
         Ok(Self {
-            dir: Arc::new(options.dir),
+            dir,
             route_store,
             channel_factory,
             server,
-            task_bundle: Some(task_bundle),
+            resources,
             empty_log,
         })
     }
@@ -276,79 +367,6 @@ impl<R: 'static + Send> Node<R> {
 
     pub fn channel_factory(&self) -> &RouteChannelFactory {
         &self.channel_factory
-    }
-
-    pub fn run(
-        &mut self,
-        rpc_server: &mut rpc::Http2Server,
-        address: &str,
-    ) -> Result<impl Future<Output = Result<()>> + 'static> {
-        let mut task_bundle = self
-            .task_bundle
-            .take()
-            .ok_or_else(|| err_msg("Node can only be run once"))?;
-
-        // Start the RPC server.
-        // NOTE: The server should be started before we start participating in the raft
-        // group.
-        rpc_server.add_service(DiscoveryServer::new(self.route_store.clone()).into_service())?;
-        rpc_server.add_service(self.server.clone().into_service())?;
-
-        let (started_sender, started_receiver) = channel::bounded(2);
-        rpc_server.add_start_callback(move || {
-            // Wkae up both threads.
-            for i in 0..2 {
-                let _ = started_sender.try_send(());
-            }
-        });
-
-        let route_store = self.route_store.clone();
-        let server = self.server.clone();
-
-        let started_receiver2 = started_receiver.clone();
-
-        let address = address.to_string();
-        let dir_lock = self.dir.clone();
-        task_bundle.add("raft::Server", async move {
-            // Wait for the server to be listening.
-            started_receiver.recv().await?;
-
-            // Setup the discovery server with our server identity.
-            {
-                let mut route_store = route_store.lock().await;
-
-                let mut local_route = Route::default();
-                local_route.set_group_id(server.identity().group_id);
-                local_route.set_server_id(server.identity().server_id);
-                local_route.set_addr(address);
-
-                route_store.set_local_route(local_route);
-            }
-
-            server.run().await?;
-
-            // TODO: Instead drop it once all threads are joined.
-            drop(dir_lock);
-            Ok(())
-        });
-
-        // TODO: Wait for one round of RPC seeding to elapse. THis will ensure that if
-        // we join a cluster, it will know about us.
-
-        // If our log is empty, then we are most likely not a member of the
-        // cluster yet
-        // So we must attempt to either add ourselves to the cluster or wait
-        // until the leader has populated our log with at least one entry
-        if self.empty_log {
-            let server = self.server.clone();
-
-            task_bundle.add("raft::Server::join_group", async move {
-                started_receiver2.recv().await?;
-                server.join_group().await
-            });
-        }
-
-        Ok(async move { task_bundle.join().await })
     }
 }
 
@@ -372,16 +390,25 @@ impl ServerInitService for ServerInit {
 
 impl ServerInit {
     async fn wait_for_init(port: u16) -> Result<()> {
+        let service = RootResource::new();
+
         let (sender, receiver) = channel::bounded(1);
 
-        let mut rpc_server = ::rpc::Http2Server::new();
+        let mut rpc_server = ::rpc::Http2Server::new(Some(port));
         rpc_server.add_service(Self { sender }.into_service())?;
         rpc_server.add_reflection()?;
+        service.register_dependency(rpc_server.start()).await;
 
-        executor::future::race(rpc_server.run(port), async move {
-            receiver.recv().await?;
-            Ok(())
-        })
+        executor::future::race(
+            async move {
+                service.wait().await?;
+                Err(err_msg("Shutdown before init"))
+            },
+            async move {
+                receiver.recv().await?;
+                Ok(())
+            },
+        )
         .await
     }
 }

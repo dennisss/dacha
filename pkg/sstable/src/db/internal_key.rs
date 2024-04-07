@@ -69,9 +69,13 @@ impl<'a> InternalKey<'a> {
     /// This is mainly used for seeking to the position immediately before a
     /// user key.
     pub fn before(user_key: &'a [u8]) -> Self {
+        Self::before_with_sequence(user_key, MAX_SEQUENCE)
+    }
+
+    pub fn before_with_sequence(user_key: &'a [u8], sequence: u64) -> Self {
         Self {
             user_key,
-            sequence: MAX_SEQUENCE,
+            sequence,
             typ: VALUE_FOR_SEEK,
         }
     }

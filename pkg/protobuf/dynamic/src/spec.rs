@@ -168,11 +168,15 @@ pub struct Field {
 }
 
 impl Field {
-    fn to_proto(&self, oneof_index: Option<usize>) -> pb::FieldDescriptorProto {
+    fn to_proto(&self, oneof_index: Option<usize>, syntax: Syntax) -> pb::FieldDescriptorProto {
         let mut proto = pb::FieldDescriptorProto::default();
         proto.set_name(&self.name);
         proto.set_number(self.num as i32);
         proto.set_label(self.label.to_proto());
+
+        if self.label == Label::Optional && syntax == Syntax::Proto3 {
+            proto.set_proto3_optional(true);
+        }
 
         match &self.typ {
             FieldType::Double => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_DOUBLE),
@@ -293,14 +297,14 @@ pub struct MessageDescriptor {
 }
 
 impl MessageDescriptor {
-    fn to_proto(&self) -> pb::DescriptorProto {
+    fn to_proto(&self, syntax: Syntax) -> pb::DescriptorProto {
         let mut proto = pb::DescriptorProto::default();
         proto.set_name(&self.name);
 
         for item in &self.body {
             match item {
                 MessageItem::Field(f) => {
-                    proto.add_field(f.to_proto(None));
+                    proto.add_field(f.to_proto(None, syntax));
                 }
                 MessageItem::Enum(e) => {
                     proto.add_enum_type(e.to_proto());
@@ -313,11 +317,11 @@ impl MessageDescriptor {
                     proto.add_oneof_decl(v);
 
                     for field in &o.fields {
-                        proto.add_field(field.to_proto(Some(idx)));
+                        proto.add_field(field.to_proto(Some(idx), syntax));
                     }
                 }
                 MessageItem::Message(m) => {
-                    proto.add_nested_type(m.to_proto());
+                    proto.add_nested_type(m.to_proto(syntax));
                 }
                 MessageItem::MapField(f) => {
                     let mut entry = pb::DescriptorProto::default();
@@ -331,7 +335,7 @@ impl MessageDescriptor {
                             num: 1, // TODO: Define this in some constants file
                             options: vec![],
                         }
-                        .to_proto(None),
+                        .to_proto(None, syntax),
                     );
                     entry.add_field(
                         Field {
@@ -341,7 +345,7 @@ impl MessageDescriptor {
                             num: 2, // TODO: Define this in some constants file
                             options: vec![],
                         }
-                        .to_proto(None),
+                        .to_proto(None, syntax),
                     );
 
                     proto.add_field(
@@ -352,7 +356,7 @@ impl MessageDescriptor {
                             num: f.num,
                             options: vec![],
                         }
-                        .to_proto(None),
+                        .to_proto(None, syntax),
                     );
 
                     proto.add_nested_type(entry);
@@ -374,7 +378,7 @@ impl MessageDescriptor {
                     proto.options_mut().add_uninterpreted_option(opt.to_proto());
                 }
                 MessageItem::Extend(v) => {
-                    for e in v.to_proto() {
+                    for e in v.to_proto(syntax) {
                         proto.add_extension(e);
                     }
                 }
@@ -426,13 +430,13 @@ pub struct Extend {
 }
 
 impl Extend {
-    fn to_proto(&self) -> Vec<pb::FieldDescriptorProto> {
+    fn to_proto(&self, syntax: Syntax) -> Vec<pb::FieldDescriptorProto> {
         let mut out = vec![];
 
         for item in &self.body {
             match item {
                 ExtendItem::Field(field) => {
-                    let mut proto = field.to_proto(None);
+                    let mut proto = field.to_proto(None, syntax);
                     proto.set_extendee(&self.typ);
                     out.push(proto);
                 }
@@ -558,13 +562,13 @@ impl Proto {
         for def in &self.definitions {
             match def {
                 TopLevelDef::Message(m) => {
-                    proto.add_message_type(m.to_proto());
+                    proto.add_message_type(m.to_proto(self.syntax));
                 }
                 TopLevelDef::Enum(e) => {
                     proto.add_enum_type(e.to_proto());
                 }
                 TopLevelDef::Extend(e) => {
-                    for e in e.to_proto() {
+                    for e in e.to_proto(self.syntax) {
                         proto.add_extension(e);
                     }
                 }

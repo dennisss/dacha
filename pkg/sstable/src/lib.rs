@@ -11,7 +11,6 @@ extern crate compression;
 extern crate crypto;
 extern crate math;
 extern crate protobuf;
-extern crate reflection;
 #[macro_use]
 extern crate file;
 
@@ -26,12 +25,6 @@ pub mod log_writer;
 pub mod table;
 
 /*
-    At each level, we will store a Vec<File> that we will binary search for
-    which
-
-*/
-
-/*
 Were will be use a SyncedFile?
 - Misc Files
     - CURRENT
@@ -44,13 +37,6 @@ Were will be use a SyncedFile?
 
 - Main challenges:
     - If we need to write many files (e.g. having multiple output files during a compaction, we should prefer to flush the directory just once.
-*/
-
-/*
-    We will have at most two MemTables
-    - One being flushed to disk and one
-
-    TODO: If a key was only ever in memory, we can delete it without
 */
 
 pub use db::{EmbeddedDB, EmbeddedDBOptions};

@@ -20,8 +20,6 @@ use executor::sync::AsyncVariable;
 use file::LocalFile;
 use file::LocalPath;
 use parsing::complete;
-use protobuf::wire::{parse_varint, serialize_varint};
-use reflection::*;
 
 use crate::iterable::Iterable;
 use crate::iterable::KeyValueEntry;
@@ -30,6 +28,7 @@ use crate::table::data_block::*;
 use crate::table::filter_policy::FilterPolicyRegistry;
 use crate::table::footer::*;
 use crate::table::table_properties::*;
+use crate::table::TableProperties;
 
 use super::comparator::KeyComparator;
 use super::filter_block::FilterBlock;
@@ -51,10 +50,10 @@ pub struct SSTableOpenOptions {
 // in the database.
 #[derive(Clone)]
 pub struct SSTable {
-    state: Arc<SSTableState>,
+    state: Arc<SSTableShared>,
 }
 
-struct SSTableState {
+struct SSTableShared {
     file: BlockCacheFile,
 
     index: IndexBlock,
@@ -112,14 +111,9 @@ impl SSTable {
             let name = std::str::from_utf8(row.key)?;
             let (handle, _) = parsing::complete(BlockHandle::parse)(row.value)?;
 
-            // THe properties struct is here: https://github.com/facebook/rocksdb/blob/6c2bf9e916db3dc7a43c70f3c0a482b8f7d54bdf/include/rocksdb/table_properties.h#L142
-
-            // NOTE: All properties are either strings or varint64
-            // Full list is here: https://github.com/facebook/rocksdb/blob/9bd5fce6e89fcb294a1d193f32f3e4bb2e41d994/table/meta_blocks.cc#L74
             if name == METAINDEX_PROPERTIES_KEY {
                 let block = DataBlock::read(&mut file, &footer, &handle).await?;
-                props = Self::parse_properties(block.block())?;
-                println!("{:?}", props);
+                props = Self::parse_properties(block.block()).await?;
                 continue;
             } else if let Some(filter_name) = name.strip_prefix("filter.") {
                 if filter.is_some() {
@@ -148,7 +142,7 @@ impl SSTable {
         }
 
         Ok(Self {
-            state: Arc::new(SSTableState {
+            state: Arc::new(SSTableShared {
                 file: options.block_cache.cache_file(file, footer).await,
                 index,
                 properties: props,
@@ -166,11 +160,15 @@ impl SSTable {
         }
     }
 
+    pub fn properties(&self) -> &TableProperties {
+        &self.state.properties
+    }
+
     fn num_blocks(&self) -> usize {
         self.state.index.block_handles.len()
     }
 
-    fn parse_properties(block: &DataBlockRef) -> Result<TableProperties> {
+    async fn parse_properties(block: &DataBlockRef<'_>) -> Result<TableProperties> {
         let mut pairs = HashMap::new();
 
         let mut iter = block.iter().rows();
@@ -182,41 +180,7 @@ impl SSTable {
             pairs.insert(key, value);
         }
 
-        let mut props = TableProperties::default();
-
-        for field_idx in 0..props.fields_len() {
-            let field = props.fields_index_mut(field_idx);
-
-            let name = if let Some(tag) = field.tags.iter().find(|t| t.key == "name") {
-                tag.value
-            } else {
-                continue;
-            };
-
-            let value = if let Some(v) = pairs.remove(name) {
-                v
-            } else {
-                continue;
-            };
-
-            match field.value {
-                ReflectValue::U64(v) => {
-                    *v = complete(|input| parse_varint(input).map_err(|e| Error::from(e)))(&value)?
-                        .0 as u64
-                }
-                ReflectValue::String(v) => {
-                    // TODO: Ensure that this is always utf-8
-                    *v = String::from_utf8(value.to_vec())?;
-                }
-                _ => return Err(err_msg("Unsupported properties field type")),
-            };
-        }
-
-        if !pairs.is_empty() {
-            println!("Unknown props: {:#?}", pairs);
-        }
-
-        Ok(props)
+        parse_table_properties(pairs).await
     }
 }
 
