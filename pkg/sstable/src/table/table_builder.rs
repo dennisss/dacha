@@ -185,6 +185,9 @@ impl SSTableBuilder {
             + (self.index_block_builder.current_size() as u64)
     }
 
+    /// Writes a block to the end of the table file.
+    ///
+    /// Returns the handle pointing to the start of the written block.
     async fn write_raw_block(&mut self, block_buffer: &mut Vec<u8>) -> Result<BlockHandle> {
         let compressed_data = match self.options.compression {
             // In the uncompressed case, we avoid copying over the data to a

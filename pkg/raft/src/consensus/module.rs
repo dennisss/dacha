@@ -460,10 +460,16 @@ impl ConsensusModule {
                     f.set_id(id.clone());
                     f.set_match_index(s.match_index);
                     f.set_synchronized(self.is_follower_synchronized(s));
+                    status.add_followers(f);
                 }
+
+                status.set_leader_hint(self.id);
             }
-            ConsensusState::Follower(_) => {
+            ConsensusState::Follower(s) => {
                 status.set_role(Status_Role::FOLLOWER);
+                if let Some(id) = s.last_leader_id {
+                    status.set_leader_hint(id);
+                }
             }
             ConsensusState::Candidate(_) => {
                 status.set_role(Status_Role::CANDIDATE);
@@ -808,9 +814,11 @@ impl ConsensusModule {
                     ConfigChangeTypeCase::AddLearner(id)
                     | ConfigChangeTypeCase::AddAspiring(id)
                     | ConfigChangeTypeCase::AddMember(id) => {
-                        leader_state
-                            .followers
-                            .insert(*id, ConsensusFollowerProgress::new(last_log_index));
+                        if !leader_state.followers.contains_key(id) {
+                            leader_state
+                                .followers
+                                .insert(*id, ConsensusFollowerProgress::new(last_log_index));
+                        }
                     }
                     ConfigChangeTypeCase::NOT_SET => {
                         return Err(ProposeError::RejectedConfigChange);
@@ -1128,8 +1136,6 @@ impl ConsensusModule {
                         if self.config.value.server_role(id) != Configuration_ServerRole::ASPIRING {
                             continue;
                         }
-
-                        println!("Success: {}", progress.successful_rounds);
 
                         if !self.is_follower_synchronized(progress) {
                             continue;

@@ -98,6 +98,8 @@ impl DataBlockBuilder {
         let mut packed = restarts.len() as u32;
         if hash_index.is_some() {
             packed |= 1 << 31;
+        } else {
+            assert!(packed & (1 << 31) == 0);
         }
 
         output.extend_from_slice(&packed.to_le_bytes());

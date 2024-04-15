@@ -18,11 +18,15 @@ extern crate macros;
 use common::args::list::CommaSeparated;
 use common::args::parse_args;
 use common::errors::*;
+use executor_multitask::RootResource;
 use file::LocalPathBuf;
 use rpc_util::NamedPortArg;
 
-use datastore::meta::store::{run, MetastoreConfig};
-use raft::proto::RouteLabel;
+use datastore::meta::{
+    store::{run, MetastoreOptions},
+    EmbeddedDBStateMachineOptions,
+};
+use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
 
 #[derive(Args)]
 struct Args {
@@ -47,12 +51,21 @@ async fn main() -> Result<()> {
         route_labels.push(l);
     }
 
-    run(MetastoreConfig {
-        dir: args.dir,
-        init_port: args.init_port.value(),
-        bootstrap: false,
-        service_port: args.port.value(),
-        route_labels,
-    })
-    .await
+    let root = RootResource::new();
+
+    root.register_dependency(
+        run(MetastoreOptions {
+            dir: args.dir,
+            init_port: args.init_port.value(),
+            bootstrap: false,
+            service_port: args.port.value(),
+            route_labels,
+            log: SegmentedLogOptions::default(),
+            state_machine: EmbeddedDBStateMachineOptions::default(),
+        })
+        .await?,
+    )
+    .await;
+
+    root.wait().await
 }

@@ -69,8 +69,10 @@ use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use crypto::sip::SipHasher;
 use datastore_meta_client::MetastoreClientInterface;
+use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor::JoinHandle;
+use executor_multitask::ServiceResource;
 use nix::{
     sys::termios::{tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags},
     unistd::isatty,
@@ -78,6 +80,7 @@ use nix::{
 use protobuf::text::parse_text_proto;
 use protobuf::text::ParseTextProto;
 use protobuf::Message;
+use raft::log::segmented_log::SegmentedLogOptions;
 use raft::proto::Configuration_ServerRole;
 use rpc::ClientRequestContext;
 
@@ -297,28 +300,25 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     // TODO: Much simpler to just have a top-level one
     let mut task_bundle = executor::bundle::TaskResultBundle::new();
 
-    // TODO: Use a one-shot channel?
-    let (metastore_sender, metastore_receiver) = executor::channel::bounded(1);
-
     let zone = node_meta.zone().to_string();
-    let metastore_task = ChildTask::spawn(async move {
-        let res = run_local_metastore(cmd.local_metastore_port, zone).await;
-        let _ = metastore_sender.send(res).await;
-    });
 
-    task_bundle.add("Metastore", async move {
-        metastore_receiver.recv().await.unwrap_or(Ok(()))
-    });
+    let metastore_resource = run_local_metastore(cmd.local_metastore_port, zone).await?;
 
     task_bundle.add(
         "Bootstrap",
-        run_bootstrap_inner(node, request_context, node_meta, node_id, metastore_task),
+        run_bootstrap_inner(
+            node,
+            request_context,
+            node_meta,
+            node_id,
+            metastore_resource,
+        ),
     );
 
     task_bundle.join().await
 }
 
-async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
+async fn run_local_metastore(port: u16, zone: String) -> Result<Arc<dyn ServiceResource>> {
     // TODO: Implement completely in memory.
     let local_metastore_dir = file::temp::TempDir::create()?;
 
@@ -330,12 +330,14 @@ async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
         zone
     ));
 
-    datastore::meta::store::run(datastore::meta::store::MetastoreConfig {
+    datastore::meta::store::run(datastore::meta::store::MetastoreOptions {
         dir: local_metastore_dir.path().to_owned(),
         init_port: 0,
         bootstrap: true,
         service_port: port,
         route_labels: vec![route_label],
+        log: SegmentedLogOptions::default(),
+        state_machine: EmbeddedDBStateMachineOptions::default(),
     })
     .await
 }
@@ -345,7 +347,7 @@ async fn run_bootstrap_inner(
     request_context: ClientRequestContext,
     node_meta: NodeMetadata,
     node_id: u64,
-    local_metastore_task: ChildTask,
+    local_metastore_resource: Arc<dyn ServiceResource>,
 ) -> Result<()> {
     // TODO: Given that we know the port of the local metastore, we can use that to
     // help find it.
@@ -440,7 +442,14 @@ async fn run_bootstrap_inner(
 
     println!("Removing local metastore replica");
     meta_client.inner().remove_server(local_server_id).await?;
-    drop(local_metastore_task);
+    {
+        local_metastore_resource
+            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
+            .await;
+        local_metastore_resource.wait_for_termination().await?;
+        drop(local_metastore_resource);
+    }
+
     loop {
         // Wait for the local server to no longer be the leader.
         let status = match meta_client.inner().current_status().await {

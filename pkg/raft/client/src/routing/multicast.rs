@@ -1,6 +1,6 @@
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::FromRawFd;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use base_error::*;
 use executor_multitask::{ServiceResource, TaskResource};
@@ -15,6 +15,8 @@ use crate::routing::route_store::*;
 /// Time in between attempts to send the current server's routing information to
 /// other peers.
 const BROADCAST_INTERVAL: Duration = Duration::from_secs(2);
+
+const CYCLE_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Unique addr/port pair used only by DiscoveryMulticast for transfering
 const MULTICAST_ADDR: IPAddress = IPAddress::V4([224, 0, 0, 28]);
@@ -56,7 +58,7 @@ impl DiscoveryMulticast {
     }
 
     pub fn start(self) -> impl ServiceResource {
-        TaskResource::spawn_interruptable("DiscoveryMulticast", self.run())
+        TaskResource::spawn_interruptable("raft::DiscoveryMulticast", self.run())
     }
 
     /// CANCEL SAFE
@@ -66,9 +68,36 @@ impl DiscoveryMulticast {
 
     /// Periodically broadcasts our local identity to all other peers.
     async fn run_client(&self) -> Result<()> {
+        // TODO: Send immediately if our local route has changed.
+
+        let mut last_send_time = None;
+        let mut last_local_route = None;
+
         loop {
-            self.run_client_once().await?;
-            executor::sleep(BROADCAST_INTERVAL).await;
+            let mut route_store = self.route_store.lock().await;
+
+            let now = SystemTime::now();
+
+            let a = route_store.serialize_local_only();
+
+            let time_elapsed = match last_send_time {
+                Some(t) => t + BROADCAST_INTERVAL <= now,
+                None => true,
+            };
+
+            let data_stale = last_local_route.as_ref() != route_store.local_route();
+            last_local_route = route_store.local_route().cloned();
+
+            if !a.routes().is_empty() && (time_elapsed || data_stale) {
+                drop(route_store);
+
+                self.send(&a).await?;
+
+                last_send_time = Some(SystemTime::now());
+                continue;
+            }
+
+            executor::timeout(CYCLE_INTERVAL, route_store.wait()).await;
         }
     }
 

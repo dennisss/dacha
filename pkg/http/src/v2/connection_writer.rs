@@ -212,7 +212,7 @@ impl ConnectionWriter {
 
                     let response_sender = {
                         let event_sender = self.shared.connection_event_sender.clone();
-                        response_sender.with_cancellation_callback(async move {
+                        response_sender.with_cancellation_callback(move || async move {
                             let _ = event_sender
                                 .send(ConnectionEvent::CancelRequest { stream_id })
                                 .await;
@@ -466,7 +466,10 @@ impl ConnectionWriter {
                     remote_settings_known = true;
                 }
                 ConnectionEvent::ResetStream { stream_id, error } => {
-                    println!("[http::v2] Sending RST_STREAM : {}", error);
+                    println!(
+                        "[http::v2] Sending RST_STREAM : (sid {}) {}",
+                        stream_id, error
+                    );
                     writer
                         .write_all(&frame_utils::new_rst_stream_frame(stream_id, error))
                         .await?;
@@ -539,17 +542,13 @@ impl ConnectionWriter {
                         );
 
                         if min_window < 0 {
+                            stream_state.exit();
                             continue;
                         }
 
                         let n_raw =
                             std::cmp::min(min_window as usize, stream_state.sending_buffer.len());
                         let n = std::cmp::min(n_raw, max_remote_frame_size as usize);
-
-                        if n == 0 && !stream_state.sending_end {
-                            stream_state.exit();
-                            continue;
-                        }
 
                         stream_state.remote_window -= n as WindowSize;
                         connection_state.remote_connection_window -= n as WindowSize;
@@ -563,15 +562,36 @@ impl ConnectionWriter {
                             frame_data
                         };
 
-                        let _ = stream.write_available_notifier.try_send(());
+                        if n > 0 {
+                            let _ = stream.write_available_notifier.try_send(());
+                        }
 
-                        stream.sending_end_flushed =
+                        let body_done =
                             stream_state.sending_end && stream_state.sending_buffer.is_empty();
+
+                        // Trailers we will send in the current iteration.
+                        // Note that we can only send trailers once all the buffered body data is
+                        // sent.
+                        let trailers_to_send = {
+                            if body_done {
+                                stream_state.sending_trailers.take()
+                            } else {
+                                None
+                            }
+                        };
+
+                        stream.sending_end_flushed = body_done;
+
+                        // Skip if there is no information to send to the other side.
+                        if n == 0 && !stream.sending_end_flushed {
+                            stream_state.exit();
+                            continue;
+                        }
 
                         next_frame = Some((
                             *stream_id,
                             frame_data,
-                            stream_state.sending_trailers.take(),
+                            trailers_to_send,
                             stream.sending_end_flushed,
                             stream.is_closed(&stream_state),
                         ));
@@ -612,7 +632,8 @@ impl ConnectionWriter {
                         }
 
                         if let Some(trailers) = trailers {
-                            // Write the trailers (will always had end_of_strema)
+                            // Write the trailers (will always had end_of_stream)
+                            assert!(end_stream);
                             let header_block =
                                 encode_trailers_block(&trailers, &mut local_header_encoder);
                             write_headers_block(

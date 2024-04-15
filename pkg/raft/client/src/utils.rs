@@ -4,7 +4,7 @@ use raft_proto::raft::GroupId;
 use crate::{proto::RouteLabel, RouteStore};
 
 /// Generate a unique set of route labels that are uniquely to be in use by
-/// anothe consensus instance.
+/// another consensus instance.
 ///
 /// This is mainly useful for ensuring that isolated test instances are used.
 pub async fn generate_unique_route_labels() -> Vec<RouteLabel> {

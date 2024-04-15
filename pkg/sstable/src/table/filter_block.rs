@@ -8,7 +8,7 @@ use std::sync::Arc;
 use common::errors::*;
 use file::LocalFile;
 
-use crate::encoding::u32_slice;
+use crate::encoding::UnalignedSlice;
 use crate::table::block_handle::BlockHandle;
 use crate::table::filter_policy::*;
 
@@ -46,9 +46,11 @@ pub struct FilterBlockRef<'a> {
     /// Buffer containing all filter sub-blocks. They are delimited by the
     /// offsets.
     filters: &'a [u8],
+
     /// Offset of each filter in the filters array.
     /// NOTE: These have been checked at parse time to be in range.
-    offsets: &'a [u32],
+    offsets: UnalignedSlice<'a, u32>,
+
     log_base: usize,
 }
 
@@ -71,7 +73,7 @@ impl<'a> FilterBlockRef<'a> {
                 return Err(err_msg("Misaligned offsets array"));
             }
 
-            u32_slice(buf)
+            unsafe { UnalignedSlice::from_bytes(buf) }
         };
 
         // The first filter should always start at the beginning of the block.
@@ -80,13 +82,13 @@ impl<'a> FilterBlockRef<'a> {
             if offsets_offset != 0 {
                 return Err(err_msg("Unknown data before offsets array"));
             }
-        } else if offsets[0] != 0 {
+        } else if offsets.get(0) != 0 {
             return Err(err_msg("First filter does not start at zero"));
         }
 
         // Check that all offsets are in range.
-        for off in offsets {
-            if (*off as usize) > offsets_offset {
+        for off in offsets.iter() {
+            if (off as usize) > offsets_offset {
                 return Err(err_msg("Out of range filter offset"));
             }
         }
@@ -116,8 +118,8 @@ impl<'a> FilterBlockRef<'a> {
             return true;
         }
 
-        let start_offset = self.offsets[filter_idx] as usize;
-        let end_offset = self.offsets[filter_idx + 1] as usize;
+        let start_offset = self.offsets.get(filter_idx) as usize;
+        let end_offset = self.offsets.get(filter_idx + 1) as usize;
 
         policy.key_may_match(key, &self.filters[start_offset..end_offset])
     }

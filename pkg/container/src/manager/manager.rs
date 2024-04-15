@@ -315,7 +315,7 @@ impl Manager {
         // TODO: Do not re-schedule drained workers if using distinct_nodes on the same
         // node until it is done being cleaned up.
         let mut drained_workers = existing_workers
-            .drain_filter(|worker| worker.drain())
+            .extract_if(|worker| worker.drain())
             .collect::<Vec<_>>();
 
         existing_workers.retain(|worker| !worker.drain());

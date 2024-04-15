@@ -36,7 +36,7 @@ impl Drop for TaskResource {
 
 impl TaskResource {
     pub fn spawn<
-        F: (FnOnce(Arc<dyn CancellationToken>) -> Fut) + Send + 'static,
+        F: FnOnce(Arc<dyn CancellationToken>) -> Fut,
         Fut: Future<Output = Result<()>> + Send + 'static,
     >(
         name: &str,
@@ -55,8 +55,9 @@ impl TaskResource {
         });
 
         let shared2 = shared.clone();
+        let future = func(shared2.cancellation_tokens.clone());
         executor::spawn(async move {
-            let r = func(shared2.cancellation_tokens.clone()).await;
+            let r = future.await;
 
             let mut message = None;
             let state = match r {

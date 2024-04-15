@@ -7,6 +7,7 @@ use std::time::Duration;
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use crypto::random::SharedRngExt;
+use executor_multitask::{impl_resource_passthrough, TaskResource};
 use net::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use parsing::ascii::AsciiString;
 
@@ -107,6 +108,7 @@ impl TryFrom<&str> for ClientOptions {
 /// so we should initiate the shutdown of internal connections.
 pub struct Client {
     shared: Shared,
+    resource: TaskResource,
 }
 
 struct Shared {
@@ -117,6 +119,8 @@ struct Shared {
 
     lb_client: LoadBalancedClient,
 }
+
+impl_resource_passthrough!(Client, resource);
 
 impl Client {
     /// Creates a new HTTP client connecting to the given host/port.
@@ -149,12 +153,11 @@ impl Client {
             options.backend_balancer.clone(),
         );
 
-        // TODO: eed to ensure that this eventually stops once everything is done
-        // running and all references to the client are closed.
-        executor::spawn(lb_client.clone().run());
+        let resource = TaskResource::spawn("http::Client", |token| lb_client.clone().run(token));
 
         Ok(Client {
             shared: Shared { options, lb_client },
+            resource,
         })
     }
 }

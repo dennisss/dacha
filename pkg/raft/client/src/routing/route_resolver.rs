@@ -84,7 +84,7 @@ impl http::Resolver for RouteResolver {
                 }
             };
 
-            let authority = route.addr().parse::<Authority>()?;
+            let authority = route.target().addr().parse::<Authority>()?;
             let ip = match &authority.host {
                 http::uri::Host::IP(ip) => ip.clone(),
                 _ => {

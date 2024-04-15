@@ -1,4 +1,4 @@
-#![feature(async_closure, drain_filter)]
+#![feature(async_closure, extract_if)]
 
 extern crate alloc;
 extern crate core;

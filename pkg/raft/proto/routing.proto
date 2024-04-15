@@ -14,12 +14,13 @@ message Route {
     // REQUIRED
     ServerId server_id = 2;
 
-    // Ip address and port at which this server can be contacted.
-    // e.g. "127.0.0.1:8000"
-    // TODO: Store in binary format.
+    // Address/protocol information on how to make connections via this route.
+    //
+    // NOTE: This is tested for equality to tell if a route is up to date so it should only be
+    // modified by the server that originally advertised it.
     //
     // REQUIRED
-    string addr = 3;
+    RouteTarget target = 3;
 
     // Last time this server was announced by the server that owns it (the one located at 'addr').
     // If a server doesn't announce the path to itself for a while, other servers may consider it
@@ -40,6 +41,9 @@ message Route {
     // NOTE: Regardless of the labels associated with a route, all distinct servers in a network
     // MUST have unique (group_id, server_id) pairs.
     repeated RouteLabel labels = 6;
+
+    // If true, this route points to the server that sent the announcement in which it is contained.
+    bool is_local_route = 7;
 }
 
 message RouteLabel {
@@ -50,12 +54,25 @@ message RouteLabel {
     bool optional = 2;
 }
 
+message RouteTarget {
+    // Ip address and port at which this server can be contacted.
+    // e.g. "127.0.0.1:8000"
+    // TODO: Store in binary format.
+    //
+    // REQUIRED
+    string addr = 1;    
+}
+
 // Thin-serializable state of the server
 // Other details like the group_id and from_id are separately managed
 message Announcement {
     // Emitted as a routes vector
     // Merged with the rest of our data
     repeated Route routes = 1;
+
+    // Time at which this announcement.
+    // REQUIRED
+    google.protobuf.Timestamp time = 2;
 }
 
 service Discovery {

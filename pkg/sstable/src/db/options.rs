@@ -13,7 +13,7 @@ use crate::table::table_builder::SSTableBuilderOptions;
 ///
 /// This is meant to be mostly compatible with RocksDB:
 /// https://github.com/facebook/rocksdb/blob/6ec6a4a9a49e506eff76aebd104d30be6a2d36cc/include/rocksdb/options.h#L348
-#[derive(Defaultable)]
+#[derive(Defaultable, Clone)]
 pub struct EmbeddedDBOptions {
     /// While opening, if no database exists yet, create a new empty one.
     ///

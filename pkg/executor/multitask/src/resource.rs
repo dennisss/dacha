@@ -1,6 +1,7 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 
-use common::errors::*;
+use common::{errors::*, line_builder::LineBuilder};
 use executor::{cancellation::CancellationToken, sync::SyncMutex};
 
 /*
@@ -44,6 +45,9 @@ pub(crate) async fn wait_for_termination(
         let report = subscriber.value().await;
         let (state, message) = report.overall_state_and_message();
 
+        // println!("===============");
+        // println!("{:?}", report);
+
         match state {
             ServiceResourceState::PermanentFailure => {
                 // TODO: It may be from an error message other than self
@@ -80,7 +84,7 @@ pub trait ServiceResourceSubscriber: 'static + Send + Sync {
     async fn value(&mut self) -> ServiceResourceReport;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ServiceResourceReport {
     pub resource_name: String,
     pub self_state: ServiceResourceState,
@@ -105,6 +109,30 @@ impl ServiceResourceReport {
         }
 
         (state, message)
+    }
+
+    fn to_string(&self, out: &mut LineBuilder) {
+        out.add(format!(
+            "- {}: {:?} {}",
+            self.resource_name,
+            self.self_state,
+            self.self_message.as_ref().unwrap_or(&String::new())
+        ));
+
+        out.indented(|out| {
+            for dep in &self.dependencies {
+                dep.to_string(out);
+            }
+        });
+    }
+}
+
+impl Debug for ServiceResourceReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut lines = LineBuilder::new();
+        self.to_string(&mut lines);
+
+        write!(f, "{}", lines.to_string())
     }
 }
 

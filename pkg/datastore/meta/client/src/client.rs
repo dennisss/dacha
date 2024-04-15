@@ -7,10 +7,11 @@ use common::async_fn::AsyncFn1;
 use common::bytes::Bytes;
 use common::errors::*;
 use datastore_proto::db::meta::*;
+use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor::sync::{AsyncMutex, AsyncMutexGuard, AsyncMutexPermit};
 use executor::{lock, lock_async};
-use executor_multitask::{impl_resource_passthrough, ServiceResourceGroup};
+use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup};
 use net::ip::SocketAddr;
 use raft_client::proto::RouteLabel;
 
@@ -99,9 +100,12 @@ impl MetastoreClient {
     }
 
     async fn create_impl(
-        channel: Arc<dyn rpc::Channel>,
+        channel: Arc<rpc::Http2Channel>,
         resources: ServiceResourceGroup,
     ) -> Result<Self> {
+        resources.register_dependency(channel.clone()).await;
+
+        // TODO: Make this asyncronous?
         let client_id = {
             let stub = ClientManagementStub::new(channel.clone());
 
@@ -113,13 +117,17 @@ impl MetastoreClient {
             res.result?.client_id().to_string()
         };
 
-        // TODO: Should also add the channel to the resource group.
-
         Ok(Self {
             client_id,
             channel,
             resources,
         })
+    }
+
+    pub async fn close(self) -> Result<()> {
+        self.add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
+            .await;
+        self.wait_for_termination().await
     }
 
     /// Request context to use if we are not running in a transaction.

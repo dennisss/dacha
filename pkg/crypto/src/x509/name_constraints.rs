@@ -50,7 +50,7 @@ impl NameConstraints {
         // Simplify the excluded_subtrees list by only including subtrees not already
         // restricted by permitted_subtrees.
         if let Some(subtrees) = &mut excluded_subtrees {
-            subtrees.drain_filter(|subtree| !self.is_allowed_dns_name(subtree));
+            subtrees.retain(|subtree| self.is_allowed_dns_name(subtree));
         }
 
         self.excluded_subtrees = excluded_subtrees;
@@ -125,7 +125,7 @@ impl NameConstraints {
     pub fn inherit(&mut self, parent_constraints: &NameConstraints) {
         if let Some(permitted) = &mut self.permitted_subtrees {
             // Remove anything not allowed in the parent.
-            permitted.drain_filter(|subtree| !parent_constraints.is_allowed_dns_name(subtree));
+            permitted.retain(|subtree| parent_constraints.is_allowed_dns_name(subtree));
         } else {
             self.permitted_subtrees = parent_constraints.permitted_subtrees.clone();
         }

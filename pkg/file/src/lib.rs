@@ -16,6 +16,7 @@ extern crate macros;
 pub mod allocate_soft;
 pub mod dir_lock;
 mod error;
+mod glob;
 mod local;
 mod project_path;
 mod stdio;
@@ -24,6 +25,7 @@ pub mod temp;
 mod utils;
 
 pub use error::*;
+pub use glob::*;
 pub use local::*;
 pub use project_path::*;
 pub use stdio::*;
@@ -334,8 +336,8 @@ mod tests {
     async fn opening_at_an_empty_path_fails() -> Result<()> {
         let res = LocalFile::open("");
         assert_eq!(
-            res.err().unwrap().downcast_ref::<FileError>(),
-            Some(&FileError::NotFound)
+            res.err().unwrap().downcast_ref::<FileError>().kind(),
+            Some(&FileErrorKind::NotFound)
         );
 
         // std::fs::File also should fail.

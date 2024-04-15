@@ -1,4 +1,4 @@
-#![feature(proc_macro_hygiene, decl_macro, generators, async_closure)]
+#![feature(proc_macro_hygiene, decl_macro, async_closure)]
 
 extern crate alloc;
 extern crate core;
@@ -19,6 +19,7 @@ extern crate macros;
 pub use raft_proto::raft as proto;
 
 pub mod atomic;
+mod check_well_known;
 mod consensus;
 mod leader_service;
 pub mod log;

@@ -24,12 +24,14 @@ pub struct MessageRequestBuffer {
     max_length: usize,
 
     /// Channel for receiving more data from the client
-    /// (ClientStreamingRequest).
+    /// (ClientStreamingRequest). This receives data when when
     ///
     /// If this needs to be locked, then it MUST be locked before 'received' is
     /// locked.
     request_receiver: AsyncMutex<spsc::Receiver<Result<Option<Bytes>>>>,
 
+    /// Data contained in this buffer.
+    ///
     /// MUST NOT be locked while blocking for an indefinite amount of time.
     received: AsyncMutex<MessageRequestBufferReceived>,
 }
@@ -95,13 +97,23 @@ impl MessageRequestBuffer {
         }
     }
 
-    // TODO: Cancellations of this future are potentially problematic as we may lose
-    // request bytes.
+    /// Reads from the buffer into 'buf'. The next position in the buffer to be
+    /// read is defined by 'cursor'.
+    ///
+    /// This function should be completely safe to cancel/retry in the future.
+    ///
+    /// CANCEL SAFE
     async fn read(&self, cursor: &mut BufferQueueCursor, mut buf: &mut [u8]) -> Result<usize> {
-        lock_async!(request_receiver <= self.request_receiver.lock().await?, {
-            self.read_with_receiver(&mut request_receiver, cursor, buf)
-                .await
-        })
+        let mut request_receiver = self.request_receiver.lock().await?.enter();
+
+        // This is safe because:
+        // - We only use wait() and try_recv().
+        // - The return value of try_recv() is never transferred across sync/async code
+        //   boundaries so will always be atomically processed.
+        unsafe { request_receiver.unpoison() };
+
+        self.read_with_receiver(&mut request_receiver, cursor, buf)
+            .await
     }
 
     async fn read_with_receiver(
@@ -151,7 +163,7 @@ impl MessageRequestBuffer {
 
                         let mut received = self.received.lock().await?.enter();
 
-                        // NOTE: All code after this point must be syncronous.
+                        // NOTE: All code after this point must be synchronous.
                         // Once we receive data, we must apply it to the state regardless of whether
                         // or not the task was cancelled. This is because we may have other
                         // concurrent attempts or future retries that may need that data.

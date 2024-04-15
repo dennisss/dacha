@@ -10,7 +10,9 @@ use common::errors::*;
 use common::io::IoError;
 use common::io::IoErrorKind;
 use common::io::Readable;
+use executor::cancellation::CancellationToken;
 use executor::channel::spsc;
+use executor_multitask::{ServiceResource, ServiceResourceSubscriber};
 use http::header::*;
 use http::headers::content_type::MediaType;
 use http::ClientInterface;
@@ -101,6 +103,18 @@ pub struct Http2Channel {
 struct Shared {
     client: http::Client,
     options: Http2ChannelOptions,
+}
+
+// Passthrough to self.shared.client
+#[async_trait]
+impl ServiceResource for Http2Channel {
+    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
+        self.shared.client.add_cancellation_token(token).await
+    }
+
+    async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
+        self.shared.client.new_resource_subscriber().await
+    }
 }
 
 impl Http2Channel {

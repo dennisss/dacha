@@ -28,7 +28,15 @@ use super::table_key::TableKey;
 TODO: Rather than having synced path logic, we can maybe just always force syncing when opening files
 */
 
-const HISTORY_TTL: Duration = Duration::from_secs(60 * 60); // 1 hour
+#[derive(Defaultable, Clone)]
+pub struct EmbeddedDBStateMachineOptions {
+    #[default(Duration::from_secs(60 * 60))] // 1 hour
+    pub history_ttl: Duration,
+
+    /// NOTE: Options related to how the database is opened shouldn't be
+    /// overriden.
+    pub db: EmbeddedDBOptions,
+}
 
 /// Key-value state machine based on the EmbeddedDB implementation.
 ///
@@ -55,6 +63,8 @@ pub struct EmbeddedDBStateMachine {
     /// Root data directory containing the individual snapshot sub-directories.
     dir: LocalPathBuf,
 
+    options: EmbeddedDBStateMachineOptions,
+
     /// File used to mark
     current: AsyncMutex<(Current, BlobFile)>,
 
@@ -68,7 +78,7 @@ pub struct EmbeddedDBStateMachine {
 impl_resource_passthrough!(EmbeddedDBStateMachine, group);
 
 impl EmbeddedDBStateMachine {
-    pub async fn open(dir: &LocalPath) -> Result<Self> {
+    pub async fn open(dir: &LocalPath, options: &EmbeddedDBStateMachineOptions) -> Result<Self> {
         // TODO: Add a LOCK file and ensure that all file I/Os require that the lock is
         // still held.
         // (can also remove the internal EmbeddedDB lock per snapshot)
@@ -105,16 +115,22 @@ impl EmbeddedDBStateMachine {
         }
 
         let db_path = dir.join(format!("snapshot-{:04}", current.current_snapshot()));
-        let db = Self::open_db(&db_path).await?;
+        let db = Self::open_db(&db_path, options).await?;
 
         let db = Arc::new(EmbeddedDBStateMachineDatabase::create(db).await);
 
         let group = ServiceResourceGroup::new("EmbeddedDBStateMachine");
         group.register_dependency(db.clone()).await;
-        group.spawn_interruptable("waterline_updater", Self::waterline_updater(db.clone()));
+        group
+            .spawn_interruptable(
+                "waterline_updater",
+                Self::waterline_updater(db.clone(), options.history_ttl),
+            )
+            .await;
 
         Ok(Self {
             db,
+            options: options.clone(),
             group,
             dir: dir.to_owned(),
             current: AsyncMutex::new((current, current_file)),
@@ -122,8 +138,11 @@ impl EmbeddedDBStateMachine {
         })
     }
 
-    async fn open_db(path: &LocalPath) -> Result<EmbeddedDB> {
-        let mut db_options = EmbeddedDBOptions::default();
+    async fn open_db(
+        path: &LocalPath,
+        options: &EmbeddedDBStateMachineOptions,
+    ) -> Result<EmbeddedDB> {
+        let mut db_options = options.db.clone();
         db_options.create_if_missing = true;
         db_options.error_if_exists = false;
         db_options.disable_wal = true;
@@ -137,10 +156,13 @@ impl EmbeddedDBStateMachine {
     /// the database to ensure that old data versions are eventually cleaned up.
     ///
     /// CANCEL SAFE
-    async fn waterline_updater(db: Arc<EmbeddedDBStateMachineDatabase>) -> Result<()> {
+    async fn waterline_updater(
+        db: Arc<EmbeddedDBStateMachineDatabase>,
+        history_ttl: Duration,
+    ) -> Result<()> {
         loop {
             let seq = db.read().await?.snapshot().await.last_sequence();
-            executor::sleep(HISTORY_TTL).await?;
+            executor::sleep(history_ttl).await?;
             db.read().await?.update_compaction_waterline(seq)?;
         }
     }
@@ -254,7 +276,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
             }
         }
 
-        let mut new_db = Self::open_db(&path).await?;
+        let mut new_db = Self::open_db(&path, &self.options).await?;
         self.db.swap_with(new_db).await?;
 
         let old_number = current.0.current_snapshot();

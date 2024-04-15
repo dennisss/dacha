@@ -12,6 +12,7 @@ use common::io::*;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::cancellation::CancellationToken;
 use executor::channel;
+use executor::child_task::ChildTask;
 use executor::sync::AsyncMutex;
 use executor::sync::PoisonError;
 use executor::JoinHandle;
@@ -237,9 +238,17 @@ impl Server {
     }
 
     /// TODO: Use a weak pointer?
+    ///
+    /// CANCEL SAFE
     async fn run_shutdown_timer(shared: Arc<ServerShared>) {
         executor::sleep(shared.options.graceful_shutdown_timeout).await;
-        Self::shutdown_impl(&shared, false).await;
+
+        // Spawning separately to make cancel safe.
+        executor::spawn(async move {
+            Self::shutdown_impl(&shared, false).await;
+        })
+        .join()
+        .await;
     }
 
     /// Start the shutdown of the server.
@@ -426,7 +435,7 @@ impl Server {
                 Event::Shutdown => {
                     Self::shutdown_impl(&shared, true).await?;
                     shutdown_timer =
-                        Some(executor::spawn(Self::run_shutdown_timer(shared.clone())));
+                        Some(ChildTask::spawn(Self::run_shutdown_timer(shared.clone())));
                     break;
                 }
             }

@@ -58,9 +58,7 @@ const INSTALL_SNAPSHOT_CLIENT_TIMEOUT: Duration = Duration::from_secs(40);
 
 const INSTALL_SNAPSHOT_SERVER_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Once a log entry has been committed for at least this amount of time, it
-/// will be eligible for being discarded from the log.
-const MAX_FLUSHED_LOG_ENTRY_AGE: Duration = Duration::from_secs(2);
+const METADATA_FLUSH_INTERVAL: Duration = Duration::from_secs(10);
 
 /*
 Also need to limit the max size of the log to prevent OOMing.
@@ -394,7 +392,7 @@ impl<R: Send + 'static> ServerShared<R> {
                 }
 
                 if let Some(last_time) = last_time {
-                    if now - last_time > Duration::from_secs(10) {
+                    if now - last_time > METADATA_FLUSH_INTERVAL {
                         flush_now = true;
                     }
                 }
@@ -805,13 +803,11 @@ impl<R: Send + 'static> ServerShared<R> {
     /// Discards log entries which have been persisted to a snapshot.
     async fn run_apply_discard(self: &Arc<Self>) -> Result<()> {
         let mut last_flushed = self.state_machine.last_flushed().await;
+        let config_last_flushed = *self.config_last_flushed.lock().await?.read_exclusive();
         let commit_index = self.commit_index.lock().await?.read_exclusive().index();
 
         // Verify the config state machine is also sufficiently flushed.
-        last_flushed = core::cmp::min(
-            last_flushed,
-            *self.config_last_flushed.lock().await?.read_exclusive(),
-        );
+        last_flushed = core::cmp::min(last_flushed, config_last_flushed);
 
         // Wait until we verify that all the entries in the log are commited.
         // (else the log may contain the wrong term)

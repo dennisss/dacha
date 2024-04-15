@@ -1,7 +1,6 @@
 #![feature(
     proc_macro_hygiene,
     decl_macro,
-    generators,
     trait_alias,
     core_intrinsics,
     concat_idents

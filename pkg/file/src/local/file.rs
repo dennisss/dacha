@@ -186,7 +186,9 @@ impl LocalFile {
 
         // TODO: We should also use this approach with mkdirat when creating files.
         let fd = {
-            if let Some(dir_path) = path.parent() && options.sync_on_flush {
+            if let Some(dir_path) = path.parent()
+                && options.sync_on_flush
+            {
                 let dir_cpath = CString::new(dir_path.as_str())?;
 
                 let dir_fd = sys::OpenFileDescriptor::new(
@@ -309,8 +311,13 @@ impl LocalFile {
 
     pub async fn set_len(&mut self, new_size: u64) -> Result<()> {
         unsafe {
-            sys::ftruncate(self.as_raw_fd(), new_size)
-                .remap_errno::<FileError, _>(|| String::new())?
+            sys::ftruncate(self.as_raw_fd(), new_size).remap_errno::<FileError, _>(|| {
+                format!(
+                    "Failed to run ftruncate({}) on path {}",
+                    new_size,
+                    self.path.as_str()
+                )
+            })?
         }
         Ok(())
     }

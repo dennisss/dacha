@@ -1392,12 +1392,12 @@ impl ConnectionReader {
             }
             // Receiving the client's trailers for an existing request.
             StreamEntry::Open(stream) => {
-                let mut stream_state = stream.state.lock().await?.enter();
+                let stream_closed = lock!(stream_state <= stream.state.lock().await?, {
+                    stream.receive_trailers(headers, end_stream, &mut stream_state);
+                    stream.is_closed(&stream_state)
+                });
 
-                stream.receive_trailers(headers, end_stream, &mut stream_state);
-
-                if stream.is_closed(&stream_state) {
-                    stream_state.exit();
+                if stream_closed {
                     self.shared
                         .finish_stream(connection_state, stream_id, None)
                         .await?;

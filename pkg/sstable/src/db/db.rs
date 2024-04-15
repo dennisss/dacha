@@ -17,7 +17,8 @@ use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::{AsyncMutex, AsyncRwLock};
 use executor_multitask::{
-    CancellationTokenSet, ServiceResource, ServiceResourceSubscriber, TaskResource,
+    impl_resource_passthrough, CancellationTokenSet, ServiceResource, ServiceResourceSubscriber,
+    TaskResource,
 };
 use file::sync::SyncedPath;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
@@ -190,16 +191,9 @@ struct ImmutableTable {
     last_sequence: u64,
 }
 
-#[async_trait]
-impl ServiceResource for EmbeddedDB {
-    async fn add_cancellation_token(&self, token: Arc<dyn CancellationToken>) {
-        self.compaction_thread.add_cancellation_token(token).await
-    }
-
-    async fn new_resource_subscriber(&self) -> Box<dyn ServiceResourceSubscriber> {
-        self.compaction_thread.new_resource_subscriber().await
-    }
 }
+
+impl_resource_passthrough!(EmbeddedDB, compaction_thread);
 
 impl EmbeddedDB {
     /// Opens an existing database or creates a new one.

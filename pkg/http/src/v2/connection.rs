@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 use std::{convert::TryFrom, sync::Arc};
 
 use common::chrono::prelude::*;
+use common::errors::*;
 use common::hash::FastHasherBuilder;
 use common::io::{IoError, IoErrorKind, Readable, Writeable};
-use common::{chrono::Duration, errors::*};
 use executor::child_task::ChildTask;
 use executor::sync::{AsyncMutex, PoisonError};
 use executor::{channel, lock_async};
@@ -257,7 +257,7 @@ impl Connection {
 
         // TODO: Deduplicate this code
         let event_sender = self.shared.connection_event_sender.clone();
-        let sender = sender.with_cancellation_callback(async move {
+        let sender = sender.with_cancellation_callback(move || async move {
             let _ = event_sender
                 .send(ConnectionEvent::CancelRequest {
                     stream_id: UPGRADE_STREAM_ID,
@@ -536,7 +536,7 @@ impl Connection {
         error: ProtocolErrorV2,
     ) {
         let mut connection_state = shared.state.lock().await.unwrap().enter();
-        Self::shutdown_with_error_impl_inner(shared, graceful, error, &mut connection_state);
+        Self::shutdown_with_error_impl_inner(shared, graceful, error, &mut connection_state).await;
         connection_state.exit();
     }
 
@@ -686,8 +686,6 @@ impl Connection {
         // TODO: Prioritize returning any error received from the ConnectionReader in a
         // GOAWAY packet (may still be in the event channel but not yet processed by the
         // writer).
-
-        let mut connection_state = shared.state.lock().await;
 
         lock_async!(connection_state <= shared.state.lock().await?, {
             // Well behaved peers SHOULD send a GOAWAY before closing the connection so

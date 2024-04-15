@@ -925,10 +925,10 @@ impl DirectClientRunner {
         let connection_id = self.last_connection_id + 1;
         self.last_connection_id = connection_id;
 
-        println!(
-            "[http::Client] Starting new connection with id {}",
-            connection_id
-        );
+        // println!(
+        //     "[http::Client] Starting new connection with id {}",
+        //     connection_id
+        // );
 
         self.connecting_tasks.insert(
             connection_id,
@@ -952,10 +952,10 @@ impl DirectClientRunner {
                 continue;
             }
 
-            println!(
-                "[http::Client] Shutting down idle connection: {}",
-                *connection_id
-            );
+            // println!(
+            //     "[http::Client] Shutting down idle connection: {}",
+            //     *connection_id
+            // );
 
             conn.shutting_down = true;
             match &conn.instance {
@@ -1032,11 +1032,14 @@ impl DirectClientRunner {
         let value = match entry {
             Ok(Ok(entry)) => Some(entry),
             Err(_) => {
-                eprintln!("[http::Client] Timed out while connecting");
+                // eprintln!("[http::Client] Timed out while connecting");
                 None
             }
             Ok(Err(e)) => {
-                eprintln!("[http::Client] Failure while connecting: {}", e);
+                // eprintln!(
+                //     "[http::Client] Failure while connecting to {:?}: {}",
+                //     shared.endpoint.address, e
+                // );
                 None
             }
         };
@@ -1051,11 +1054,12 @@ impl DirectClientRunner {
             None => "failure",
         };
 
-        println!(
-            "[http::Client] Connect {} took: {:?}",
-            connection_version,
-            end_time - start_time
-        );
+        // TODO: Combine with the previous message when there is a failure?
+        // println!(
+        //     "[http::Client] Connect {} took: {:?}",
+        //     connection_version,
+        //     end_time - start_time
+        // );
 
         let mut events = shared.received_events.lock().await.unwrap().enter();
         events.connection_opened.push((connection_id, value));

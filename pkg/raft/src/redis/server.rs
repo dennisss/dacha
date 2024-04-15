@@ -651,13 +651,17 @@ where
 
         // TODO: These can be running in parallel.
         let s = stream::iter(res)
-            .bind_then(inst, async move |inst, (c, client_count, changed)| {
-                if changed {
-                    inst.service.subscribe(c.clone()).await?;
-                }
+            .bind_then(
+                inst,
+                async move |inst: Arc<Server<T>>,
+                            (c, client_count, changed): (RESPString, usize, bool)| {
+                    if changed {
+                        inst.service.subscribe(c.clone()).await?;
+                    }
 
-                Ok(PushObject::Subscribe(c, client_count))
-            })
+                    Ok(PushObject::Subscribe(c, client_count))
+                },
+            )
             .into_stream();
 
         Ok(Box::pin(s))
@@ -713,13 +717,17 @@ where
         };
 
         let s = stream::iter(res)
-            .bind_then(inst, async move |inst, (c, client_count, changed)| {
-                if changed {
-                    inst.service.unsubscribe(c.clone()).await?;
-                }
+            .bind_then(
+                inst,
+                async move |inst: Arc<Server<T>>,
+                            (c, client_count, changed): (RESPString, usize, bool)| {
+                    if changed {
+                        inst.service.unsubscribe(c.clone()).await?;
+                    }
 
-                Ok(PushObject::Unsubscribe(c, client_count))
-            })
+                    Ok(PushObject::Unsubscribe(c, client_count))
+                },
+            )
             .into_stream();
 
         Ok(Box::pin(s))

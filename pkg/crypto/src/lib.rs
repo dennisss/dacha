@@ -6,9 +6,7 @@
     exclusive_range_pattern,
     wrapping_int_impl,
     asm,
-    let_chains,
-    drain_filter,
-    stdsimd
+    let_chains
 )]
 #![no_std]
 

@@ -10,6 +10,7 @@ use common::hash::{FastHasherBuilder, SumHasherBuilder};
 use common::vec_hash_set::VecHashSet;
 use crypto::hasher::Hasher;
 use crypto::random::{RngExt, SharedRngExt};
+use executor::cancellation::CancellationToken;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::lock;
@@ -166,12 +167,18 @@ struct Shared {
 enum Event {
     BackendStateChange,
     ResolverChange,
+    Cancelled,
 }
 
 struct State {
     /// Set of backends to which we connected to (indexed by monotonic id).
     backends: HashMap<usize, Backend, FastHasherBuilder>,
+
     last_backend_id: usize,
+
+    /// If true, the client is actively shutting down (due to the cancellation
+    /// token).
+    shutting_down: bool,
 
     /// Current state of the backend resolver.
     /// - Idle: Meaning we haven't yet resolved any backends (clean client)
@@ -242,7 +249,7 @@ impl LoadBalancedClient {
                 state: AsyncVariable::new(State {
                     backends: HashMap::with_hasher(FastHasherBuilder::default()),
                     last_backend_id: 0,
-                    // backends_by_endpoint: HashMap::with_hasher(SumHasherBuilder::default()),
+                    shutting_down: false,
                     resolver_state: ClientState::Idle,
                     event_receiver: Some(event_receiver),
                 }),
@@ -251,7 +258,8 @@ impl LoadBalancedClient {
         }
     }
 
-    pub async fn run(self) {
+    // NOT CANCEL SAFE
+    pub async fn run(self, cancellation_token: Arc<dyn CancellationToken>) -> Result<()> {
         let event_receiver = lock!(state <= self.shared.state.lock().await.unwrap(), {
             state.event_receiver.take().unwrap()
         });
@@ -278,7 +286,7 @@ impl LoadBalancedClient {
 
         let mut last_loop_time = None;
 
-        loop {
+        while !cancellation_token.is_cancelled().await {
             // Prevent too much churn due to backend state changes.
             if let Some(time) = last_loop_time {
                 let now = std::time::Instant::now();
@@ -287,6 +295,11 @@ impl LoadBalancedClient {
                 }
 
                 last_loop_time = Some(now);
+            }
+
+            // TODO: Merge into the above executor::sleep polling.
+            if cancellation_token.is_cancelled().await {
+                break;
             }
 
             let mut received_events = HashSet::new();
@@ -298,11 +311,21 @@ impl LoadBalancedClient {
 
             // Wait for something to happen.
             loop {
+                // TODO: This must race for something to happen.
                 let e = {
                     if received_events.is_empty() {
-                        match event_receiver.recv().await {
+                        let f = executor::future::race(
+                            async { event_receiver.recv().await },
+                            executor::future::map(
+                                cancellation_token.wait_for_cancellation(),
+                                |()| Ok(Event::Cancelled),
+                            ),
+                        );
+
+                        match f.await {
                             Ok(e) => e,
-                            Err(_) => return,
+                            // Should never happen since we hold a reference to the other side.
+                            Err(_) => panic!(),
                         }
                     } else {
                         match event_receiver.try_recv() {
@@ -315,6 +338,10 @@ impl LoadBalancedClient {
                 received_events.insert(e);
             }
 
+            if received_events.contains(&Event::Cancelled) {
+                break;
+            }
+
             let mut resolved_result = None;
             if received_events.contains(&Event::ResolverChange) {
                 match resolve_backoff.start_attempt() {
@@ -324,7 +351,7 @@ impl LoadBalancedClient {
                     }
                     ExponentialBackoffResult::Stop => {
                         eprintln!("LoadBalancedClient failed too many times.");
-                        return;
+                        panic!();
                     }
                 }
 
@@ -332,6 +359,8 @@ impl LoadBalancedClient {
                 resolved_result = Some(self.shared.resolver.resolve().await);
             }
 
+            // TODO: Verify everything after this is syncronous to ensure this whole
+            // function is cancel safe.
             let mut state = self.shared.state.lock().await.unwrap().enter();
 
             if let Some(resolved_result) = resolved_result {
@@ -495,10 +524,10 @@ impl LoadBalancedClient {
                     break;
                 }
 
-                println!(
-                    "[http::Client] Start new backend client: {} (#{})",
-                    endpoint_key.endpoint, endpoint_key.index
-                );
+                // println!(
+                //     "[http::Client] Start new backend client: {} (#{})",
+                //     endpoint_key.endpoint, endpoint_key.index
+                // );
 
                 let id = state.last_backend_id + 1;
                 state.last_backend_id = id;
@@ -531,6 +560,35 @@ impl LoadBalancedClient {
             state.notify_all();
             state.exit();
         }
+
+        // Shutdown.
+        self.perform_shutdown().await?;
+
+        Ok(())
+    }
+
+    async fn perform_shutdown(self) -> Result<()> {
+        let mut backends = lock!(state <= self.shared.state.lock().await?, {
+            state.shutting_down = true;
+            state.notify_all();
+
+            state.backends.drain().collect::<Vec<_>>()
+        });
+
+        for (_, backend) in &mut backends {
+            if backend.shutting_down {
+                continue;
+            }
+
+            backend.shutting_down = true;
+            backend.client.shutdown().await;
+        }
+
+        for (_, backend) in backends {
+            backend.task.join().await;
+        }
+
+        Ok(())
     }
 
     async fn run_backend_client<F: Future<Output = ()> + Send>(
@@ -539,22 +597,24 @@ impl LoadBalancedClient {
         f: F,
     ) {
         f.await;
-        if let Some(shared) = shared.upgrade() {
-            let mut state = shared.state.lock().await.unwrap().enter();
-            if let Some(backend) = state.backends.remove(&backend_id) {
-                if !backend.shutting_down {
-                    eprintln!("DirectClient fails before shut down");
-                }
-            } else {
-                eprintln!("Backend entry disappeared!");
-            }
 
+        // Deleting the backend entry after it is done running.
+
+        let shared = match shared.upgrade() {
+            Some(v) => v,
+            None => return,
+        };
+
+        let mut state = shared.state.lock().await.unwrap().enter();
+
+        // NOTE: If we are shutting down the entire client, then perform_shutdown()
+        // would have already removed all these entries.
+        if state.backends.remove(&backend_id).is_some() {
             state.notify_all();
-            state.exit();
         }
-    }
 
-    // async fn run_connection(shared: Weak<Shared>)
+        state.exit();
+    }
 }
 
 impl ClientEventListener for Shared {
@@ -604,6 +664,15 @@ impl ClientInterface for LoadBalancedClient {
         loop {
             let state = self.shared.state.lock().await?.read_exclusive();
 
+            if state.shutting_down {
+                return Err(crate::v2::ProtocolErrorV2 {
+                    code: crate::v2::ErrorCode::REFUSED_STREAM,
+                    message: "Client is shutting down".into(),
+                    local: true,
+                }
+                .into());
+            }
+
             if state.backends.is_empty() {
                 if state.resolver_state == ClientState::Idle {
                     // Ok to wait as we haven't finished one attempt for the
@@ -620,7 +689,7 @@ impl ClientInterface for LoadBalancedClient {
                 } else if state.resolver_state == ClientState::Ready {
                     return Err(crate::v2::ProtocolErrorV2 {
                         code: crate::v2::ErrorCode::REFUSED_STREAM,
-                        message: "All remote backends are failing".into(),
+                        message: "No remote backends available to serve the request.".into(),
                         local: true,
                     }
                     .into());

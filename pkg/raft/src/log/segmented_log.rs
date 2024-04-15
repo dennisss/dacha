@@ -578,10 +578,6 @@ impl Log for SegmentedLog {
     }
 
     async fn discard(&self, pos: LogPosition) -> Result<()> {
-        // TODO: Must support discarding beyond the end of the log. In particular, we
-        // need to support discontinuities in log indexes as we may receive a state
-        // machine snapshot.
-
         let mut state = self.shared.state.lock().await?.enter();
 
         // Find the first segment that we want to keep.
@@ -593,7 +589,7 @@ impl Log for SegmentedLog {
         //
         let mut first_to_keep = None;
         for (i, segment) in state.segments.iter().enumerate() {
-            let is_last = i == state.segments.len();
+            let is_last = i + 1 == state.segments.len();
 
             // Special case for the last segment: If the last segment is empty, but 'prev'
             // == 'pos', we will keep the segment as there is no point in discarding it.
@@ -633,11 +629,11 @@ impl Log for SegmentedLog {
             // empty.
             let first_log_index = state.segments[first_to_keep]
                 .index_range
-                .map(|(s, _)| s)
+                .map(|(s, _)| s - 1)
                 .unwrap_or(state.last_position.index());
 
             let mut prev = LogPosition::default();
-            prev.set_index(first_log_index - 1);
+            prev.set_index(first_log_index);
             prev.set_term(state.memory_log.term(prev.index()).unwrap());
 
             state.memory_log.discard(prev)?;
@@ -841,6 +837,98 @@ mod tests {
 
         // TODO: Re-open the log and verify that without any changes we eventually
         // report that all the contents are flushed to disk.
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn discard_with_last_log_empty() -> Result<()> {
+        let temp_dir = file::temp::TempDir::create()?;
+
+        let mut options = SegmentedLogOptions::default();
+        options.target_segment_size = 4096;
+        options.max_segment_size = 4096;
+
+        let log = SegmentedLog::open(temp_dir.path(), options).await?;
+
+        assert_eq!(
+            dir_contents(temp_dir.path()).await?,
+            vec!["00000001".to_string()]
+        );
+
+        assert_eq!(log.last_index().await.value(), 0);
+
+        log.discard(LogPosition::new(0, 0)).await?;
+        executor::sleep(Duration::from_millis(100)).await;
+
+        // Log #1 already was at the correct end position so there is not point in it
+        // getting discarded.
+        assert_eq!(
+            dir_contents(temp_dir.path()).await?,
+            vec!["00000001".to_string()]
+        );
+
+        assert_eq!(log.last_index().await.value(), 0);
+
+        let mut last_seq = LogSequence::zero();
+
+        // Append enough data to fully consume the first segment and make the second
+        // segment empty.
+        {
+            last_seq = last_seq.next();
+
+            let mut entry = LogEntry::default();
+            entry.pos_mut().set_term(1);
+            entry.pos_mut().set_index(1);
+            entry.data_mut().set_command(vec![0u8; 5000]);
+
+            log.append(entry.clone(), last_seq).await?;
+        }
+
+        executor::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            dir_contents(temp_dir.path()).await?,
+            vec!["00000001".to_string(), "00000002".to_string()]
+        );
+
+        // Discarding shouldn't do anything since the last log is in the right position
+        // and we retain one extra log before that.
+        log.discard(LogPosition::new(1, 1)).await?;
+        executor::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            dir_contents(temp_dir.path()).await?,
+            vec!["00000001".to_string(), "00000002".to_string()]
+        );
+
+        // Make a new third log that is empty.
+        {
+            last_seq = last_seq.next();
+
+            let mut entry = LogEntry::default();
+            entry.pos_mut().set_term(2);
+            entry.pos_mut().set_index(2);
+            entry.data_mut().set_command(vec![0u8; 5000]);
+
+            log.append(entry.clone(), last_seq).await?;
+        }
+
+        executor::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            dir_contents(temp_dir.path()).await?,
+            vec![
+                "00000001".to_string(),
+                "00000002".to_string(),
+                "00000003".to_string()
+            ]
+        );
+
+        // Discard can remove #1 now that we have one spare.
+        log.discard(LogPosition::new(2, 2)).await?;
+        executor::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            dir_contents(temp_dir.path()).await?,
+            vec!["00000002".to_string(), "00000003".to_string()]
+        );
 
         Ok(())
     }

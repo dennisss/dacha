@@ -70,9 +70,12 @@ impl ResponseSender {
 
     /// Adds a future to execute when the ResponseReceiver is dropped without a
     /// value being received from it.
-    pub fn with_cancellation_callback<Fut: Future<Output = ()> + Send + 'static>(
+    pub fn with_cancellation_callback<
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send,
+    >(
         self,
-        future: Fut,
+        f: F,
     ) -> ResponseSenderWithCancellation {
         let cancellation_receiver = self.cancellation_receiver;
 
@@ -80,7 +83,7 @@ impl ResponseSender {
             sender: self.sender,
             cancellation_task: ChildTask::spawn(async move {
                 let _ = cancellation_receiver.recv().await;
-                future.await
+                f().await
             }),
         }
     }
@@ -105,7 +108,10 @@ impl ResponseSenderWithCancellation {
 }
 
 pub struct ResponseReceiver {
+    /// Channel used to signal cancellation to the ResponseSender.
+    /// (signal is sent on drop)
     cancellation_sender: oneshot::Sender<()>,
+
     receiver: oneshot::Receiver<Result<Response>>,
 }
 

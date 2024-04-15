@@ -11,3 +11,5 @@ mod watchers;
 mod tests;
 
 pub use test_store::*;
+
+pub use state_machine::EmbeddedDBStateMachineOptions;

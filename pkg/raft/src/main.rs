@@ -2,7 +2,6 @@
     proc_macro_hygiene,
     decl_macro,
     type_alias_enum_variants,
-    generators,
     async_closure
 )]
 
@@ -26,6 +25,7 @@ use executor_multitask::RootResource;
 use file::dir_lock::DirLock;
 use file::LocalPathBuf;
 use protobuf::Message;
+use raft::log::segmented_log::SegmentedLogOptions;
 use raft::node::*;
 use raft::proto::*;
 use raft::server::server::{Server, ServerInitialState};
@@ -248,6 +248,7 @@ async fn main() -> Result<()> {
             bootstrap: args.bootstrap,
             seed_list,
             state_machine: state_machine.clone(),
+            log_options: SegmentedLogOptions::default(),
             route_labels: vec![],
             rpc_server: &mut rpc_server,
             rpc_server_address,

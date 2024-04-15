@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use common::errors::*;
 use common::futures::future::FutureExt;
@@ -14,6 +16,7 @@ use executor_multitask::{
 };
 use file::dir_lock::DirLock;
 use protobuf::{Message, StaticMessage};
+use raft_client::server::channel_factory::{self, ChannelFactory};
 use raft_client::{
     DiscoveryClient, DiscoveryMulticast, DiscoveryServer, RouteChannelFactory, RouteStore,
 };
@@ -45,6 +48,8 @@ pub struct NodeOptions<'a, R> {
 
     /// State machine instance to be used.
     pub state_machine: Arc<dyn StateMachine<R> + Send + Sync + 'static>,
+
+    pub log_options: SegmentedLogOptions,
 
     pub route_labels: Vec<RouteLabel>,
 
@@ -154,7 +159,7 @@ impl<R: 'static + Send> Node<R> {
 
             let discovery_client = DiscoveryClient::new(route_store.clone(), options.seed_list);
             resources
-                .spawn_interruptable("DiscoveryClient", discovery_client.run())
+                .spawn_interruptable("raft::DiscoveryClient", discovery_client.run())
                 .await;
         }
 
@@ -162,7 +167,7 @@ impl<R: 'static + Send> Node<R> {
             BlobFile::builder(&options.dir.path().join("METADATA".to_string())).await?;
         let log_path = options.dir.path().join("log".to_string());
 
-        let log = SegmentedLog::open(log_path, SegmentedLogOptions::default()).await?;
+        let log = SegmentedLog::open(log_path, options.log_options).await?;
 
         // ^ A known issue is that a bootstrapped node will currently not be
         // able to recover if it hasn't fully flushed its own log through the
@@ -311,7 +316,7 @@ impl<R: 'static + Send> Node<R> {
                         let mut local_route = Route::default();
                         local_route.set_group_id(server.identity().group_id);
                         local_route.set_server_id(server.identity().server_id);
-                        local_route.set_addr(address);
+                        local_route.target_mut().set_addr(address);
 
                         route_store.set_local_route(local_route);
                     }
@@ -333,6 +338,8 @@ impl<R: 'static + Send> Node<R> {
         if empty_log {
             let server = server.clone();
             let rpc_server_resource = rpc_server_resource.clone();
+            let route_store = route_store.clone();
+            let channel_factory = channel_factory.clone();
 
             // TODO: If we restart after already receigin this, then we may not need to join
             // again.
@@ -341,6 +348,15 @@ impl<R: 'static + Send> Node<R> {
                     // Wait for the rpc server to be listening.
                     let rpc_server_resource = rpc_server_resource.get().await;
                     rpc_server_resource.wait_for_ready().await;
+
+                    // As soon as we join the group, the leader will attempt to send us requests so
+                    // make sure that most nodes know who we are so that those requests don't fail.
+                    crate::check_well_known::check_if_well_known(
+                        route_store,
+                        channel_factory,
+                        server.identity().group_id,
+                    )
+                    .await?;
 
                     server.join_group().await
                 })

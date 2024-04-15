@@ -10,7 +10,7 @@ use file::LocalFile;
 use parsing::*;
 use protobuf::wire::{parse_varint, serialize_varint};
 
-use crate::encoding::u32_slice;
+use crate::encoding::UnalignedSlice;
 use crate::table::block_handle::BlockHandle;
 use crate::table::footer::Footer;
 use crate::table::raw_block::RawBlock;
@@ -79,7 +79,7 @@ pub struct DataBlockRef<'a> {
     hash_index: Option<&'a [u8]>,
 
     /// NOTE: The zero restart will always have an offset of 0.
-    restarts: &'a [u32],
+    restarts: UnalignedSlice<'a, u32>,
 }
 
 impl<'a> DataBlockRef<'a> {
@@ -117,10 +117,10 @@ impl<'a> DataBlockRef<'a> {
         let restarts = {
             let split = input.split_at(input.len() - 4 * num_restarts);
             input = split.0;
-            u32_slice(split.1)
+            unsafe { UnalignedSlice::from_bytes(split.1) }
         };
 
-        if restarts[0] != 0 {
+        if restarts.get(0) != 0 {
             return Err(err_msg(
                 "Expected blocks to always have a restart at offset 0",
             ));
@@ -219,15 +219,15 @@ impl<'a> DataBlockRef<'a> {
     fn restart_search(
         &self,
         key: &[u8],
-        restarts: &[u32],
+        restarts: UnalignedSlice<'_, u32>,
         comparator: &dyn KeyComparator,
     ) -> Result<usize> {
         if restarts.len() == 1 {
-            return Ok(restarts[0] as usize);
+            return Ok(restarts.get(0) as usize);
         }
 
         let mid_index = restarts.len() / 2;
-        let mid_offset = restarts[mid_index] as usize;
+        let mid_offset = restarts.get(mid_index) as usize;
         let (mid_entry, _) = DataBlockEntry::parse(&self.entries[mid_offset..])?;
         if mid_entry.shared_bytes != 0 {
             return Err(err_msg("Restart not valid"));
@@ -236,8 +236,10 @@ impl<'a> DataBlockRef<'a> {
         // TODO: Refactor to be non-recursive.
         match comparator.compare(key, mid_entry.key_delta) {
             Ordering::Equal => Ok(mid_offset as usize),
-            Ordering::Less => self.restart_search(key, &restarts[..mid_index], comparator),
-            Ordering::Greater => self.restart_search(key, &restarts[mid_index..], comparator),
+            Ordering::Less => self.restart_search(key, restarts.slice(0, mid_index), comparator),
+            Ordering::Greater => {
+                self.restart_search(key, restarts.slice(mid_index, restarts.len()), comparator)
+            }
         }
     }
 }

@@ -32,7 +32,7 @@ impl RouteChannelFactory {
 
     /// Creates an RPC channel which will contact any available cluster node
     /// (and may load balance different requests between any of them).
-    pub async fn create_any(&self) -> Result<Arc<dyn rpc::Channel>> {
+    pub async fn create_any(&self) -> Result<Arc<rpc::Http2Channel>> {
         Ok(Arc::new(
             rpc::Http2Channel::create(http::ClientOptions::from_resolver(Arc::new(
                 RouteResolver::create(self.route_store.clone(), self.group_id, None),

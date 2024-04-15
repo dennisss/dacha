@@ -1,7 +1,7 @@
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use file::{FileError, LocalPath, LocalPathBuf};
+use file::{FileError, FileErrorKind, LocalPath, LocalPathBuf};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -427,8 +427,10 @@ impl DeviceEntry {
         match file::read_to_string(self.sysfs_dir.join(key)).await {
             Ok(s) => Ok(Some(s.trim_end().to_string())),
             Err(e) => {
-                if let Some(FileError::NotFound) = e.downcast_ref() {
-                    return Ok(None);
+                if let Some(e) = e.downcast_ref::<FileError>() {
+                    if e.kind == FileErrorKind::NotFound {
+                        return Ok(None);
+                    }
                 }
 
                 Err(e.into())

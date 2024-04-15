@@ -8,6 +8,7 @@ pub trait KeyComparator: Send + Sync + 'static {
     fn compare(&self, a: &[u8], b: &[u8]) -> Ordering;
 
     /// Finds the shortest key such that start <= key < limit.
+    /// If start == limit, then start is returned.
     fn find_shortest_separator(&self, start: Vec<u8>, limit: &[u8]) -> Vec<u8>;
 
     /// Finds the shortest key >= the given key.
@@ -76,9 +77,8 @@ impl KeyComparator for BytewiseComparator {
     }
 
     fn find_shortest_separator(&self, mut start: Vec<u8>, limit: &[u8]) -> Vec<u8> {
-        debug_assert_eq!(self.compare(&start, limit), Ordering::Less);
-
-        // Find common prefix.
+        // Find a common prefix between start and limit.
+        // 'diff_index' will be the index of the first non-matching byte.
         let min_length = std::cmp::min(start.len(), limit.len());
         let mut diff_index = 0;
         while diff_index < min_length && start[diff_index] == limit[diff_index] {
@@ -91,6 +91,7 @@ impl KeyComparator for BytewiseComparator {
             return start;
         }
 
+        // Attempt to increment 'start' while staying '< limit'.
         for i in diff_index..min_length {
             if start[i] < 0xff && start[i] + 1 < limit[i] {
                 start[i] += 1;
@@ -99,7 +100,6 @@ impl KeyComparator for BytewiseComparator {
             }
         }
 
-        debug_assert_eq!(self.compare(&start, limit), Ordering::Less);
         start
     }
 

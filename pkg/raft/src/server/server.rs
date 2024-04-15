@@ -342,7 +342,7 @@ impl<R: Send + 'static> Server<R> {
         )
         .await?;
 
-        println!("call_propose response: {:?}", res);
+        // println!("call_propose response: {:?}", res);
 
         Ok(())
     }

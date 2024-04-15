@@ -8,11 +8,12 @@ use common::errors::*;
 use datastore_meta_client::constants::*;
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor_multitask::RootResource;
+use executor_multitask::{RootResource, ServiceResource, ServiceResourceGroup};
 use file::dir_lock::DirLock;
 use file::LocalPathBuf;
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
+use raft::log::segmented_log::SegmentedLogOptions;
 use raft::proto::RouteLabel;
 use raft::PendingExecutionResult;
 use raft::StateMachine;
@@ -49,7 +50,7 @@ Also, the channel factory doesn't do channel caching.
 
 // XXX: If I store the method name in the
 
-pub struct MetastoreConfig {
+pub struct MetastoreOptions {
     /// Path to the directory used to store all of the store's data (at least
     /// this machine's copy).
     pub dir: LocalPathBuf,
@@ -68,6 +69,10 @@ pub struct MetastoreConfig {
     pub service_port: u16,
 
     pub route_labels: Vec<RouteLabel>,
+
+    pub state_machine: EmbeddedDBStateMachineOptions,
+
+    pub log: SegmentedLogOptions,
 }
 
 #[derive(Clone)]
@@ -370,37 +375,40 @@ impl KeyValueStoreService for Metastore {
     }
 }
 
-pub async fn run(config: MetastoreConfig) -> Result<()> {
-    if !file::exists(&config.dir).await? {
-        file::create_dir(&config.dir).await?;
+pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> {
+    if !file::exists(&options.dir).await? {
+        file::create_dir(&options.dir).await?;
     }
 
-    let dir = DirLock::open(&config.dir).await?;
+    let dir = DirLock::open(&options.dir).await?;
 
-    let service = RootResource::new();
+    let service = Arc::new(ServiceResourceGroup::new("Metastore"));
 
     // TODO: Add a resource dependency on this. Should be stopped after the RPC
     // server
-    let state_machine = Arc::new(EmbeddedDBStateMachine::open(&config.dir).await?);
+    let state_machine =
+        Arc::new(EmbeddedDBStateMachine::open(&options.dir, &options.state_machine).await?);
     service.register_dependency(state_machine.clone()).await;
 
-    let mut rpc_server = rpc::Http2Server::new(Some(config.service_port));
+    let mut rpc_server = rpc::Http2Server::new(Some(options.service_port));
 
     let local_address = http::uri::Authority {
         user: None,
         host: http::uri::Host::IP(net::local_ip()?),
-        port: Some(config.service_port),
+        port: Some(options.service_port),
     }
     .to_string()?;
 
+    // TODO: Add the state machine as a dependency of the node.
     let node = Arc::new(
         raft::Node::create(raft::NodeOptions {
             dir,
-            init_port: config.init_port,
-            bootstrap: config.bootstrap,
+            init_port: options.init_port,
+            bootstrap: options.bootstrap,
             seed_list: vec![], // Will just find everyone via multi-cast
             state_machine: state_machine.clone(),
-            route_labels: config.route_labels.clone(),
+            log_options: options.log,
+            route_labels: options.route_labels.clone(),
             rpc_server: &mut rpc_server,
             rpc_server_address: local_address,
         })
@@ -438,5 +446,5 @@ pub async fn run(config: MetastoreConfig) -> Result<()> {
 
     service.register_dependency(rpc_server.start()).await;
 
-    service.wait().await
+    Ok(service)
 }
