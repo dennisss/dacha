@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::errors::*;
 use crypto::random::RngExt;
@@ -59,8 +60,24 @@ pub(super) async fn propose_entry(
     channel_factory: &dyn ChannelFactory,
     request: &ProposeRequest,
 ) -> Result<LogPosition> {
+    let mut backoff =
+        net::backoff::ExponentialBackoff::new(net::backoff::ExponentialBackoffOptions {
+            // Small base value since discovery should usually immediately propagate.
+            base_duration: Duration::from_millis(1),
+            jitter_duration: Duration::from_millis(4),
+            max_duration: Duration::from_secs(2),
+            cooldown_duration: Duration::from_secs(10),
+            max_num_attempts: 0,
+        });
+
     let mut suspected_leader_id = None;
     loop {
+        match backoff.start_attempt() {
+            net::backoff::ExponentialBackoffResult::Start => {}
+            net::backoff::ExponentialBackoffResult::StartAfter(t) => executor::sleep(t).await?,
+            net::backoff::ExponentialBackoffResult::Stop => todo!(),
+        }
+
         let leader_id = match suspected_leader_id.take() {
             Some(id) => id,
             None => {
@@ -74,7 +91,6 @@ pub(super) async fn propose_entry(
                     .collect::<Vec<_>>();
                 if known_ids.is_empty() {
                     println!("No servers discovered yet");
-                    executor::sleep(std::time::Duration::from_secs(2)).await;
                     continue;
                 }
 
@@ -97,18 +113,16 @@ pub(super) async fn propose_entry(
             Ok(v) => v,
             Err(e) => {
                 eprintln!("Failed to query server {}", e);
-                executor::sleep(std::time::Duration::from_secs(2)).await;
                 continue;
             }
         };
 
         if value.has_error() {
-            println!("Proposal failed: {:?}", value.error());
+            println!("Proposal attempt failed: {:?}", value.error());
             if value.error().not_leader().leader_hint().value() > 0 {
                 suspected_leader_id = Some(value.error().not_leader().leader_hint());
             }
 
-            executor::sleep(std::time::Duration::from_secs(2)).await;
             continue;
         }
 

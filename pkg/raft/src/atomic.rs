@@ -5,7 +5,7 @@ use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
-/// Amount of padding that we add to the file for the length and checksume bytes
+/// Amount of padding that we add to the file for the length and checksum bytes
 const PADDING: u64 = 8;
 
 const DISK_SECTOR_SIZE: u64 = 512;
@@ -101,10 +101,13 @@ impl BlobFile {
         })
     }
 
-    /// Overwrites the file with a new value (atomically of course)
+    /// Overwrites the file with a new value (atomically of course).
+    ///
+    /// NOTE: This intentionally requires mutable access to the BlobFile
+    /// instance since concurrent writes are not supported.
     ///
     /// TODO: Switch to using the SyncedPath system.
-    pub async fn store(&self, data: &[u8]) -> Result<()> {
+    pub async fn store(&mut self, data: &[u8]) -> Result<()> {
         let new_filesize = (data.len() as u64) + PADDING;
 
         // Performant case of usually only requiring one sector write to replace the
@@ -295,7 +298,7 @@ impl BlobFileBuilder {
 
         // File is larger than its valid contents (we will just truncate it)
         if buf.len() > checksum_end {
-            file.set_len(data_end as u64).await?;
+            file.set_len(checksum_end as u64).await?;
         }
 
         let bytes = Bytes::from(buf);
@@ -332,4 +335,53 @@ impl BlobFileBuilder {
 
         Ok(inst)
     }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use file::temp::TempDir;
+
+    use super::*;
+
+    #[testcase]
+    async fn blob_file_works() -> Result<()> {
+        let dir = TempDir::create()?;
+        let path = dir.path().join("file");
+
+        let blob = BlobFile::builder(&path)
+            .await?
+            .create(b"hello_world")
+            .await?;
+
+        drop(blob);
+
+        let (mut blob, data) = BlobFile::builder(&path).await?.open().await?;
+        assert_eq!(&data[..], &b"hello_world"[..]);
+
+        blob.store(b"new").await?;
+
+        drop(blob);
+
+        let (mut blob, data) = BlobFile::builder(&path).await?.open().await?;
+        assert_eq!(&data[..], &b"new"[..]);
+
+        let mut large_data = vec![0u8; 16000];
+        large_data[15000] = 0xAB;
+
+        blob.store(&large_data).await?;
+
+        drop(blob);
+
+        let (mut blob, data) = BlobFile::builder(&path).await?.open().await?;
+        assert_eq!(&data[..], &large_data[..]);
+
+        Ok(())
+    }
+
+    // TODO: Test large values that require renames.
+
+    // TODO: Test various failure cases.
+    // - Ideally fuzz test with random failures.
+    // - Also fuzz test with very large or small values.
 }

@@ -676,6 +676,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             snapshot: StateMachineSnapshot {
                 data: Box::new(pipe_reader),
                 last_applied: first_request.last_applied().index(),
+                approximate_size: first_request.approximate_size(),
             },
             last_applied: first_request.last_applied().clone(),
             callback: callback_sender,

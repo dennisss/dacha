@@ -674,12 +674,10 @@ impl ClientInterface for LoadBalancedClient {
             }
 
             if state.backends.is_empty() {
-                if state.resolver_state == ClientState::Idle {
+                if state.resolver_state == ClientState::Idle || request_context.wait_for_ready {
                     // Ok to wait as we haven't finished one attempt for the
                     // resolver yet.
-                } else if state.resolver_state == ClientState::Failure
-                    && !request_context.wait_for_ready
-                {
+                } else if state.resolver_state == ClientState::Failure {
                     return Err(crate::v2::ProtocolErrorV2 {
                         code: crate::v2::ErrorCode::REFUSED_STREAM,
                         message: "Failed to resolve any remote backends".into(),

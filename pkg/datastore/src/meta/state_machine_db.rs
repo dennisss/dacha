@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use executor::cancellation::{AlreadyCancelledToken, CancellationToken};
+use executor::cancellation::{
+    AlreadyCancelledToken, CancellationToken, EitherCancelledToken, TriggerableCancellationToken,
+};
 use executor::child_task::ChildTask;
 use executor::lock_async;
 use executor::sync::{AsyncMutex, AsyncRwLockReadGuard};
@@ -16,9 +18,15 @@ use sstable::EmbeddedDB;
 /// Wrapper around the EmbeddedDB instance used in the state machine which
 /// allows for swapping the database instance.
 pub struct EmbeddedDBStateMachineDatabase {
-    db: AsyncRwLock<(EmbeddedDB, Option<ChildTask>)>,
+    state: AsyncRwLock<State>,
     report: Arc<ServiceResourceReportTracker>,
     cancellation_tokens: Arc<CancellationTokenSet>,
+}
+
+struct State {
+    db: EmbeddedDB,
+    watcher: Option<ChildTask>,
+    db_canceller: Arc<TriggerableCancellationToken>,
 }
 
 #[async_trait]
@@ -35,7 +43,14 @@ impl ServiceResource for EmbeddedDBStateMachineDatabase {
 impl EmbeddedDBStateMachineDatabase {
     pub async fn create(db: EmbeddedDB) -> Self {
         let cancellation_tokens = Arc::new(CancellationTokenSet::default());
-        db.add_cancellation_token(cancellation_tokens.clone()).await;
+
+        // TODO: Dedup this.
+        let db_canceller = Arc::new(TriggerableCancellationToken::default());
+        db.add_cancellation_token(Arc::new(EitherCancelledToken::new(
+            db_canceller.clone(),
+            cancellation_tokens.clone(),
+        )))
+        .await;
 
         let mut sub = db.new_resource_subscriber().await;
 
@@ -45,7 +60,11 @@ impl EmbeddedDBStateMachineDatabase {
         let watcher = ChildTask::spawn(Self::subscriber_thread(sub, report.clone()));
 
         Self {
-            db: AsyncRwLock::new((db, Some(watcher))),
+            state: AsyncRwLock::new(State {
+                db,
+                watcher: Some(watcher),
+                db_canceller,
+            }),
             report,
             cancellation_tokens,
         }
@@ -65,25 +84,44 @@ impl EmbeddedDBStateMachineDatabase {
         &'a self,
     ) -> Result<EmbeddedDBStateMachineDatabaseReadLock<'a>, PoisonError> {
         Ok(EmbeddedDBStateMachineDatabaseReadLock {
-            inner: self.db.read().await?,
+            inner: self.state.read().await?,
         })
     }
 
     /// NOT CANCEL SAFE
-    pub async fn swap_with(&self, mut new_db: EmbeddedDB) -> Result<()> {
-        let mut guard = self.db.write().await?.enter();
+    pub async fn swap_with(&self, new_db: EmbeddedDB) -> Result<()> {
+        let mut guard = self.state.write().await?.enter();
 
-        let mut tuple = (new_db, None);
-        core::mem::swap(&mut tuple, &mut *guard);
+        // Create a new state consisting of the new db that we want to swap in.
+        let mut state = {
+            let db_canceller = Arc::new(TriggerableCancellationToken::default());
+            new_db
+                .add_cancellation_token(Arc::new(EitherCancelledToken::new(
+                    db_canceller.clone(),
+                    self.cancellation_tokens.clone(),
+                )))
+                .await;
+
+            State {
+                db: new_db,
+                watcher: None, // Started later.
+                db_canceller,
+            }
+        };
+
+        core::mem::swap(&mut state, &mut *guard);
+
+        // 'state' is now the old db state
+        // 'guard' is now the new db state.
 
         // Wait for the old subscriber_thread to finish.
-        tuple.1.take().unwrap().cancel().await;
+        state.watcher.take().unwrap().cancel().await;
 
         // Set up a new subscriber for the new database.
-        let mut sub = guard.0.new_resource_subscriber().await;
+        let mut sub = guard.db.new_resource_subscriber().await;
         let initial_report = sub.value().await;
         self.report.update(initial_report).await;
-        guard.1 = Some(ChildTask::spawn(Self::subscriber_thread(
+        guard.watcher = Some(ChildTask::spawn(Self::subscriber_thread(
             sub,
             self.report.clone(),
         )));
@@ -91,24 +129,21 @@ impl EmbeddedDBStateMachineDatabase {
         guard.exit();
 
         // Wait for the old database to finish running.
-        tuple
-            .0
-            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-            .await;
-        tuple.0.wait_for_termination().await?;
+        state.db_canceller.trigger().await;
+        state.db.wait_for_termination().await?;
 
         Ok(())
     }
 }
 
 pub struct EmbeddedDBStateMachineDatabaseReadLock<'a> {
-    inner: AsyncRwLockReadGuard<'a, (EmbeddedDB, Option<ChildTask>)>,
+    inner: AsyncRwLockReadGuard<'a, State>,
 }
 
 impl<'a> Deref for EmbeddedDBStateMachineDatabaseReadLock<'a> {
     type Target = EmbeddedDB;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner.0
+        &self.inner.db
     }
 }

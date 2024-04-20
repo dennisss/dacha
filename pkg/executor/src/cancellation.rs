@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use std::sync::Arc;
 
 use crate::{lock, sync::AsyncVariable};
 
@@ -55,4 +56,30 @@ impl CancellationToken for AlreadyCancelledToken {
     }
 
     async fn wait_for_cancellation(&self) {}
+}
+
+/// A cancellation token which is cancelled when either of two inner tokens are
+/// cancelled.
+pub struct EitherCancelledToken {
+    a: Arc<dyn CancellationToken>,
+    b: Arc<dyn CancellationToken>,
+}
+
+impl EitherCancelledToken {
+    pub fn new(a: Arc<dyn CancellationToken>, b: Arc<dyn CancellationToken>) -> Self {
+        Self { a, b }
+    }
+}
+
+#[async_trait]
+impl CancellationToken for EitherCancelledToken {
+    async fn is_cancelled(&self) -> bool {
+        self.a.is_cancelled().await || self.b.is_cancelled().await
+    }
+
+    async fn wait_for_cancellation(&self) {
+        let a = self.a.wait_for_cancellation();
+        let b = self.b.wait_for_cancellation();
+        crate::future::race(a, b).await
+    }
 }

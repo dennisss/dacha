@@ -241,6 +241,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
     async fn snapshot(&self) -> Result<Option<raft::StateMachineSnapshot>> {
         let backup = self.db.read().await?.backup().await?;
         let last_applied = backup.last_sequence().into();
+        let approximate_size = backup.approximate_size().await?;
 
         let (mut writer, reader) = common::pipe::pipe();
 
@@ -253,6 +254,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         Ok(Some(raft::StateMachineSnapshot {
             data: Box::new(reader),
             last_applied,
+            approximate_size,
         }))
     }
 
@@ -277,14 +279,21 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         }
 
         let mut new_db = Self::open_db(&path, &self.options).await?;
-        self.db.swap_with(new_db).await?;
 
         let old_number = current.0.current_snapshot();
 
+        // Note that we must write this before swapping out the DB instance since we
+        // don't want to pre-maturely advertise that we have an up to date state
+        // machine if it isn't durably committed to disk. Though either way, the state
+        // machine can't be mutated concurrently to this function since the current
+        // raft::Server implication will not perform concurrent apply() and restore()
+        // calls.
         lock_async!(current <= current.upgrade(), {
             current.0.set_current_snapshot(num);
             current.1.store(&current.0.serialize()?).await
         })?;
+
+        self.db.swap_with(new_db).await?;
 
         let old_path = self.dir.join(format!("snapshot-{:04}", old_number));
         file::remove_dir_all(&old_path).await?;

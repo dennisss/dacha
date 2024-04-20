@@ -74,9 +74,13 @@ impl ServerClient {
 
     async fn append_entries_runner_task(
         stub: Arc<ConsensusStub>,
-        request_context: rpc::ClientRequestContext,
+        mut request_context: rpc::ClientRequestContext,
         receiver: channel::Receiver<RequestWithCallback>,
     ) {
+        // Since we continuously restart the RPC, we should wait if the connection isn't
+        // ready.
+        request_context.http.wait_for_ready = true;
+
         loop {
             // let mut pending_response = vec![];
 

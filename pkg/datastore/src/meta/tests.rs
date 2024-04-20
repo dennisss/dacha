@@ -1,13 +1,21 @@
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
 use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
+use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
+use executor_multitask::ServiceResource;
 use file::temp::TempDir;
 use protobuf::text::ParseTextProto;
-use raft::proto::RouteLabel;
+use raft::proto::{Configuration_ServerRole, RouteLabel, Status};
+use rpc_util::AddProfilingEndpoints;
 
 use crate::meta::test_store::TestMetastore;
 use crate::proto::KeyValueEntry;
+
+use super::TestMetastoreCluster;
 
 #[testcase]
 async fn basic_pointwise_operations() -> Result<()> {
@@ -222,6 +230,384 @@ async fn transaction_key_range_test() -> Result<()> {
 
     // TODO: Test when the key ranges don't exactly line up (e.g. only a key keys in
     // each key range overlap).
+
+    Ok(())
+}
+
+#[testcase]
+async fn multi_node_test() -> Result<()> {
+    /*
+    TODO: Bigger E2E test:
+
+    - Start one node
+    - Write a bunch of keys (few enough that they are still all in the log)
+    - Stop the server and restart to verify that it can recover from just the log with no sstables.
+    - Add a second node (recovering just from log)
+        - Leveraging the ASPIRING mechanism
+        - Wait for the node to become a member
+    - Write many more keys (get the log to be partially discarded)
+    - Stop and restart both nodes to verify that we can restore from local snapshot on server startup
+    - Add a third node
+        - Should restore from a snapshot
+        - Wait for the node to become a member
+    - Simulate the second node being disconnected from the network
+    - Write many more keys and get some of the new keys to be discarded from the log
+    - Re-connect the second node
+        - Expect it to recover via a snapshot.
+    - Gracefully shutdown server 1 (the leader)
+        - Expect timeout now to make another server the leader quickly
+    - Bring back up server 1
+    - Kill/restart the current leader
+        - Verify that client operations can auto-retry during the downtime
+
+    TODO: Need to test waterline compaction
+
+
+    TODO: Periodically verify that all the state machines across the nodes are identical by performing follower reads on all nodes (will require the followers to give feedback in the response on what server id was used to generate each response)
+
+    TODO: Must also verify that during leader elections, clients are smart enough to wait/retry for a reasonable amount of time instead of erroring out (this counts reads and writes)
+
+    TODO: Test that even if InstallSnapshot returns an error (after succeeding), the ConsensusModule will still make forward progress by retrying via an AppendEntries request to pull the current state of the log.
+    */
+
+    let mut status_server = rpc::Http2Server::new(Some(8000));
+    status_server.add_profilez()?;
+    let status_server = status_server.start();
+
+    let cluster = TestMetastoreCluster::create().await?;
+
+    let mut node0 = cluster.start_node(0, true).await?;
+
+    let client0 = node0.create_client().await?;
+    client0.put(b"/a/1", b"hello").await?;
+    client0.put(b"/a/2", b"world").await?;
+
+    client0.close().await?;
+    node0.close().await?;
+
+    executor::sleep(Duration::from_millis(100)).await;
+
+    let node0 = cluster.start_node(0, false).await?;
+
+    // Wait to be re-elected
+    executor::sleep(Duration::from_millis(400)).await?;
+
+    let client0 = node0.create_client().await?;
+    assert_eq!(client0.get(b"/a/1").await?, Some(b"hello".to_vec()));
+    assert_eq!(client0.get(b"/a/2").await?, Some(b"world".to_vec()));
+
+    // TODO: Grab a read index here and verify that much later we can still read
+    // this data.
+
+    // Verify only one server initially
+    {
+        let mut expected_status = Status::default();
+        protobuf::text::parse_text_proto(
+            r#"
+            id { value: 1 }
+            role: LEADER
+            configuration {
+                servers: [
+                    {
+                        id { value: 1 }
+                        role: MEMBER
+                    }
+                ]
+            }
+            "#,
+            &mut expected_status,
+        )?;
+
+        let status = client0.current_status().await?;
+        assert_eq!(status.id(), expected_status.id());
+        assert_eq!(status.role(), expected_status.role());
+        assert_eq!(status.configuration(), expected_status.configuration());
+    }
+
+    let node1 = cluster.start_node(1, false).await?;
+
+    // Wait long enough for node #1 to be discovered and join the group but not too
+    // long that it has been promoted yet.
+    executor::sleep(Duration::from_millis(200)).await;
+
+    // Second server should start out as ASPIRING
+    {
+        let mut expected_status = Status::default();
+        protobuf::text::parse_text_proto(
+            r#"
+            id { value: 1 }
+            role: LEADER
+            configuration {
+                servers: [
+                    {
+                        id { value: 1 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 6 }
+                        role: ASPIRING
+                    }
+                ]
+            }
+            "#,
+            &mut expected_status,
+        )?;
+
+        let status = client0.current_status().await?;
+        assert_eq!(status.id(), expected_status.id());
+        assert_eq!(status.role(), expected_status.role());
+        assert_eq!(status.configuration(), expected_status.configuration());
+    }
+
+    assert!(node0
+        .dir_contents()
+        .await?
+        .contains(&"log/00000001".to_string()));
+    assert!(node1
+        .dir_contents()
+        .await?
+        .contains(&"log/00000001".to_string()));
+
+    let mut all_keys = vec![];
+    for i in 0..200 {
+        let mut data = vec![0u8; 20 * 1024];
+
+        let start = Instant::now();
+
+        let key = format!("/a/{}", i).into_bytes();
+        client0.put(&key, &data).await?;
+        all_keys.push(key);
+
+        let end = Instant::now();
+
+        println!("Key #{} took {:?}", i, end - start);
+
+        executor::sleep(Duration::from_millis(50)).await;
+    }
+
+    // Second server should be a MEMBER by this point
+    // TODO: Verify that this will happen regardless of whether or not we just wrote
+    // a bunch of keys.
+    {
+        let mut expected_status = Status::default();
+        protobuf::text::parse_text_proto(
+            r#"
+            id { value: 1 }
+            role: LEADER
+            configuration {
+                servers: [
+                    {
+                        id { value: 1 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 6 }
+                        role: MEMBER
+                    }
+                ]
+            }
+            "#,
+            &mut expected_status,
+        )?;
+
+        let status = client0.current_status().await?;
+        assert_eq!(status.id(), expected_status.id());
+        assert_eq!(status.role(), expected_status.role());
+        assert_eq!(status.configuration(), expected_status.configuration());
+    }
+
+    // Wait for discards to complete. Currently this takes a while since the config
+    // snapshot is only flushed every once in a while.
+    executor::sleep(Duration::from_secs(10)).await;
+
+    println!("{:?}", node0.dir_contents().await?);
+    println!("{:?}", node1.dir_contents().await?);
+
+    // Verify that the log has been truncated (re-starting a node or adding a new
+    // member will require restoring a snapshot).
+    assert!(!node0
+        .dir_contents()
+        .await?
+        .contains(&"log/00000001".to_string()));
+    assert!(!node1
+        .dir_contents()
+        .await?
+        .contains(&"log/00000001".to_string()));
+
+    client0.close().await?;
+
+    let client = cluster.create_client().await?;
+    // Wait for multicast updates to propagate to the client
+    executor::sleep(Duration::from_secs(3)).await?;
+
+    all_keys.sort();
+
+    {
+        let mut data = client.get_prefix(b"/").await?;
+        assert_eq!(data.len(), 200);
+        data.sort_by_key(|e| e.key().to_vec());
+        assert_eq!(
+            &data.iter().map(|e| e.key().to_vec()).collect::<Vec<_>>(),
+            &all_keys
+        );
+    }
+
+    // Close and re-open the nodes
+
+    node0.close().await?;
+    node1.close().await?;
+
+    let node0 = cluster.start_node(0, false).await?;
+    let node1 = cluster.start_node(1, false).await?;
+
+    // Wait for leader election.
+    executor::sleep(Duration::from_secs(1)).await;
+
+    // Waiting for new metadata to be propagated to the client instance.
+    // (multicast broadcasts every 2 seconds)
+    executor::sleep(Duration::from_secs(4)).await;
+
+    // Verify data is still intact after the restart.
+    //
+    // NOTE: We are re-using the same client as from before the restart of all the
+    // nodes to verify that client instances can eventually recover from full
+    // cluster restart (which will re-assign new addresses/ports to all the nodes).
+    {
+        let mut data = client.get_prefix(b"/").await?;
+        assert_eq!(data.len(), 200);
+        data.sort_by_key(|e| e.key().to_vec());
+        assert_eq!(
+            &data.iter().map(|e| e.key().to_vec()).collect::<Vec<_>>(),
+            &all_keys
+        );
+    }
+
+    // TODO: Check that node1 is now the leader (which should almost always be the
+    // case since it starts second)
+
+    let node2 = cluster.start_node(2, false).await?;
+
+    // Wait for third node to join
+    executor::sleep(Duration::from_millis(600)).await;
+
+    // Third server should start out as ASPIRING
+    {
+        let mut expected_status = Status::default();
+        protobuf::text::parse_text_proto(
+            r#"
+            id { value: 6 }
+            role: LEADER
+            configuration {
+                servers: [
+                    {
+                        id { value: 1 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 6 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 209 }
+                        role: ASPIRING
+                    }
+                ]
+            }
+            "#,
+            &mut expected_status,
+        )?;
+
+        let status = client.current_status().await?;
+        assert_eq!(status.id(), expected_status.id());
+        assert_eq!(status.role(), expected_status.role());
+        assert_eq!(status.configuration(), expected_status.configuration());
+    }
+
+    // Writes still working while promoting the member.
+    // TODO: Ideally do this sooner after start_node is called.
+    for i in 0..20 {
+        let key = format!("/a/{}", i).into_bytes();
+        client.put(&key, &[0]).await?;
+        executor::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Should of gotten a snapshot and become a member by now.
+    {
+        let mut expected_status = Status::default();
+        protobuf::text::parse_text_proto(
+            r#"
+            id { value: 6 }
+            role: LEADER
+            configuration {
+                servers: [
+                    {
+                        id { value: 1 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 6 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 209 }
+                        role: MEMBER
+                    }
+                ]
+            }
+            "#,
+            &mut expected_status,
+        )?;
+
+        let status = client.current_status().await?;
+        assert_eq!(status.id(), expected_status.id());
+        assert_eq!(status.role(), expected_status.role());
+        assert_eq!(status.configuration(), expected_status.configuration());
+    }
+
+    // Writes still working in the steady state with 3 nodes.
+    for i in 0..20 {
+        let key = format!("/a/{}", i).into_bytes();
+        client.put(&key, &[0]).await?;
+        executor::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Things still generally working.
+    {
+        let mut data = client.get_prefix(b"/").await?;
+        assert_eq!(data.len(), 200);
+        data.sort_by_key(|e| e.key().to_vec());
+        assert_eq!(
+            &data.iter().map(|e| e.key().to_vec()).collect::<Vec<_>>(),
+            &all_keys
+        );
+    }
+
+    node0.close().await?;
+
+    // Writes still working with only 2 of 3 nodes.
+    for i in 0..20 {
+        let key = format!("/a/{}", i).into_bytes();
+
+        let start = Instant::now();
+
+        // TODO: Make sure that calling this on a shutdown client immedialtey fails.
+        client.put(&key, &[i]).await?;
+        let end = Instant::now();
+
+        println!("Key #{} took {:?}", i, end - start);
+
+        executor::sleep(Duration::from_millis(100)).await;
+
+        let value = client.get(&key).await?;
+        assert_eq!(value, Some(vec![i]));
+
+        executor::sleep(Duration::from_millis(100)).await;
+    }
+
+    client.close().await?;
+
+    node1.close().await?;
+    node2.close().await?;
 
     Ok(())
 }

@@ -7,7 +7,7 @@ use common::io::IoError;
 use common::io::IoErrorKind;
 use common::io::Readable;
 use executor::child_task::ChildTask;
-use executor::lock_async;
+use executor::{lock, lock_async};
 
 use crate::hpack;
 use crate::proto::v2::*;

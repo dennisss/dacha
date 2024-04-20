@@ -128,7 +128,7 @@ impl Log for SimpleLog {
 
         self.mem.wait_for_flush().await?;
 
-        let s = self.snapshot.lock().await?.enter();
+        let mut s = self.snapshot.lock().await?.enter();
 
         // TODO: Must also serialize the start position. (although I'm not sure if I
         // need more than just the index?)

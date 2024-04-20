@@ -71,7 +71,8 @@ pub trait StateMachine<R> {
     /// compatible snapshot format).
     ///
     /// NOTE: It is illegal to call ::restore(::snapshot()) on a single state
-    /// machine instance.
+    /// machine instance. Also, apply() SHOULD NOT be called while restore() is
+    /// running.
     ///
     /// Returns whether or not the restore was successfully applied or not
     /// applied. A snapshot is 'applied' if we were able to advance last_flushed
@@ -98,5 +99,9 @@ pub struct StateMachineSnapshot {
     /// reading from this in StateMachine::restore(), the restore should be
     /// reliably cancelled.
     pub data: Box<dyn SharedReadable>,
-    // TODO: Provide an estimate of how big the snapshot is for progress tracking purposes.
+
+    /// Estimate of the size of the data contained in 'data'. This is an
+    /// estimate of the over the wire size of the backup (not the space needed
+    /// to store it on disk).
+    pub approximate_size: u64,
 }

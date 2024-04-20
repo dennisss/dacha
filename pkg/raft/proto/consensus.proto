@@ -360,6 +360,12 @@ message InstallSnapshotRequest {
 	// REQUIRED
 	bool done = 7;
 
+	// Approximate size of the entire snapshot.
+	//
+	// NOTE: This is only send with the first chunk/request.
+	// REQUIRED
+	uint64 approximate_size = 8;
+
 	reserved 5;
 }
 

@@ -639,8 +639,7 @@ impl DirectClientRunner {
                         local: true,
                         message: "DirectClient shutting down.".into(),
                     }
-                    .into()))
-                    .await;
+                    .into()));
             }
         });
     }
@@ -871,15 +870,12 @@ impl DirectClientRunner {
             {
                 let entry = state.unassigned_requests.remove(request_i).unwrap();
 
-                entry
-                    .response_sender
-                    .send(Err(crate::v2::ProtocolErrorV2 {
-                        code: crate::proto::v2::ErrorCode::REFUSED_STREAM,
-                        local: true,
-                        message: "Client not ready.".into(),
-                    }
-                    .into()))
-                    .await;
+                entry.response_sender.send(Err(crate::v2::ProtocolErrorV2 {
+                    code: crate::proto::v2::ErrorCode::REFUSED_STREAM,
+                    local: true,
+                    message: "Client not ready.".into(),
+                }
+                .into()));
                 continue;
             }
 
@@ -1074,7 +1070,7 @@ impl DirectClientRunner {
         connection_id: usize,
     ) -> Result<ConnectionEntry> {
         // Ways in which this can fail:
-        // - io::ErrorKind::ConnectionRefused: REached the server but it's not serving
+        // - io::ErrorKind::ConnectionRefused: Reached the server but it's not serving
         //   on the given port.
         let mut raw_stream = TcpStream::connect(shared.endpoint.address.clone()).await?;
         raw_stream.set_nodelay(true)?;
@@ -1273,6 +1269,9 @@ impl DirectClientRunner {
 
                     let time = if let Some(pending_ping) = &conn.pending_ping {
                         if now >= ping_expiration_time {
+                            eprintln!(
+                                "[http::Client] Pings timed out so shutting down connection."
+                            );
                             conn_v2.shutdown(false).await;
                             return None;
                         } else {
@@ -1326,7 +1325,7 @@ impl DirectClientRunner {
         let response_future = match self.start_requesting_inner(&mut conn, request).await {
             Ok(v) => v,
             Err(e) => {
-                response_sender.send(Err(e)).await;
+                response_sender.send(Err(e));
                 return;
             }
         };

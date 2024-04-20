@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use common::errors::*;
 use common::io::{IoError, IoErrorKind, Readable, Writeable};

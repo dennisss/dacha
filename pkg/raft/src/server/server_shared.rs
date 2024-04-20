@@ -351,7 +351,7 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn run_meta_writer(
         self: Arc<Self>,
         meta_changed: ChangeReceiver,
-        meta_file: BlobFile,
+        mut meta_file: BlobFile,
     ) -> Result<()> {
         let mut last_proto: Option<ServerMetadata> = None;
         let mut last_time = None;
@@ -1392,6 +1392,8 @@ impl<R: Send + 'static> ServerShared<R> {
         req.last_applied_mut().set_index(snapshot.last_applied);
         req.last_applied_mut().set_term(last_applied_term);
 
+        req.set_approximate_size(snapshot.approximate_size);
+
         let request_context = self.identity.new_outgoing_request_context(to_id)?;
         let mut call = client.stub().InstallSnapshot(&request_context).await;
 
@@ -1408,6 +1410,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
             req.clear_last_applied();
             req.clear_last_config();
+            req.clear_approximate_size();
 
             if n == 0 {
                 break;

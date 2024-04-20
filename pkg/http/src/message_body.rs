@@ -5,6 +5,7 @@ use std::sync::Arc;
 use common::borrowed::{Borrowed, BorrowedReturner};
 use common::errors::*;
 use common::io::Readable;
+use executor::channel::oneshot;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
@@ -74,8 +75,7 @@ pub async fn decode_response_body_v1(
     request_method: Method,
     res_head: &ResponseHead,
     reader: PatternReader,
-    return_handler: Arc<dyn BodyReturnHandler>,
-) -> Result<(Box<dyn Body>, bool)> {
+) -> Result<((Box<dyn Body>, BorrowedBodyReclaimer), bool)> {
     let (reader, reader_returner) = Borrowed::wrap(reader);
     let mut close_delimited = false;
 
@@ -153,7 +153,7 @@ pub async fn decode_response_body_v1(
     }()?;
 
     Ok((
-        wrap_created_body(body, reader_returner, return_handler, close_delimited).await,
+        wrap_created_body(body, reader_returner, close_delimited).await,
         close_delimited,
     ))
 }
@@ -203,8 +203,7 @@ pub fn encode_request_body_v1(req_head: &mut RequestHead, body: Box<dyn Body>) -
 pub async fn decode_request_body_v1(
     req_head: &RequestHead,
     reader: PatternReader,
-    return_handler: Arc<dyn BodyReturnHandler>,
-) -> Result<(Box<dyn Body>, bool)> {
+) -> Result<((Box<dyn Body>, BorrowedBodyReclaimer), bool)> {
     let (reader, reader_returner) = Borrowed::wrap(reader);
 
     let mut close_delimited = true;
@@ -255,7 +254,7 @@ pub async fn decode_request_body_v1(
     // Construct the returners/waiters.
 
     Ok((
-        wrap_created_body(body, reader_returner, return_handler, close_delimited).await,
+        wrap_created_body(body, reader_returner, close_delimited).await,
         close_delimited,
     ))
 }
@@ -263,51 +262,39 @@ pub async fn decode_request_body_v1(
 async fn wrap_created_body(
     body: Box<dyn Body>,
     reader_returner: BorrowedReturner<PatternReader>,
-    return_handler: Arc<dyn BodyReturnHandler>,
     close_delimited: bool,
-) -> Box<dyn Body> {
+) -> (Box<dyn Body>, BorrowedBodyReclaimer) {
     // TODO: Instead wrap the body so that when it returns a 0 or Error, we can
     // relinguish the underlying body. (this will usually be much quicker than
     // when we get back the entire body object)
 
+    let (sender, receiver) = oneshot::channel();
+
+    let returner = BorrowedBodyReclaimer { receiver };
+
     if body.len() == Some(0) {
         // Optimization for when the body is known to be empty:
         // In this case we don't need to wait for the body to be read.
-        return_handler
-            .handle_returned_body(Ok(ReturnedBody {
-                body: None,
-                reader_returner: Some(reader_returner),
-            }))
-            .await;
-        return body;
+        sender.send(Ok(ReturnedBody {
+            body: None,
+            reader_returner: Some(reader_returner),
+        }));
+
+        return (body, returner);
     }
 
-    Box::new(BorrowedBody::new(
-        body,
-        if close_delimited {
-            None
-        } else {
-            Some(reader_returner)
-        },
-        return_handler,
-    ))
-}
-
-/// An object which gains control over an HTTP1 body/socket once the
-/// request/response handler is done reading it (or an error occurs).
-#[async_trait]
-pub trait BodyReturnHandler: 'static + Send + Sync {
-    /// NOTE: Any blocking in this function will block the request/response
-    /// handler. This is intentional to ensure that the client/server instance
-    /// can mark the connection is failing before retries are performed.
-    async fn handle_returned_body(&self, body: Result<ReturnedBody>);
-}
-
-#[async_trait]
-impl BodyReturnHandler for executor::channel::Sender<Result<ReturnedBody>> {
-    async fn handle_returned_body(&self, body: Result<ReturnedBody>) {
-        let _ = self.try_send(body);
-    }
+    (
+        Box::new(BorrowedBody::new(
+            body,
+            if close_delimited {
+                None
+            } else {
+                Some(reader_returner)
+            },
+            sender,
+        )),
+        returner,
+    )
 }
 
 /// Wrapper around an incoming HTTP1 Body which is owned by the client/server
@@ -319,41 +306,41 @@ impl BodyReturnHandler for executor::channel::Sender<Result<ReturnedBody>> {
 /// requests/responses.
 pub struct BorrowedBody {
     inner: Option<BorrowedBodyInner>,
-    return_handler: Arc<dyn BodyReturnHandler>,
 }
 
 struct BorrowedBodyInner {
     body: Box<dyn Body>,
     reader_returner: Option<BorrowedReturner<PatternReader>>,
+    body_returner: oneshot::Sender<Result<ReturnedBody>>,
 }
 
 impl BorrowedBody {
     pub fn new(
         body: Box<dyn Body>,
         reader_returner: Option<BorrowedReturner<PatternReader>>,
-        return_handler: Arc<dyn BodyReturnHandler>,
+        body_returner: oneshot::Sender<Result<ReturnedBody>>,
     ) -> Self {
         Self {
             inner: Some(BorrowedBodyInner {
                 body,
                 reader_returner,
+                body_returner,
             }),
-            return_handler,
         }
     }
 
-    async fn call_handler(&mut self, error: Option<Error>) {
+    // TODO: THis is not cancel safe.
+    // TODO: Need a more robust borrowing pattern for this.
+    fn call_handler(&mut self, error: Option<Error>) {
         let inner = self.inner.take().unwrap();
 
-        self.return_handler
-            .handle_returned_body(match error {
-                Some(error) => Err(error),
-                None => Ok(ReturnedBody {
-                    body: Some(inner.body),
-                    reader_returner: inner.reader_returner,
-                }),
-            })
-            .await;
+        inner.body_returner.send(match error {
+            Some(error) => Err(error),
+            None => Ok(ReturnedBody {
+                body: Some(inner.body),
+                reader_returner: inner.reader_returner,
+            }),
+        });
     }
 }
 
@@ -361,15 +348,10 @@ impl Drop for BorrowedBody {
     fn drop(&mut self) {
         // TODO: Debup with call_handler.
         if let Some(inner) = self.inner.take() {
-            let return_handler = self.return_handler.clone();
-            executor::spawn(async move {
-                return_handler
-                    .handle_returned_body(Ok(ReturnedBody {
-                        body: Some(inner.body),
-                        reader_returner: inner.reader_returner,
-                    }))
-                    .await;
-            });
+            inner.body_returner.send(Ok(ReturnedBody {
+                body: Some(inner.body),
+                reader_returner: inner.reader_returner,
+            }));
         }
     }
 }
@@ -384,14 +366,12 @@ impl Readable for BorrowedBody {
 
         match inner.body.read(buf).await {
             Ok(v) => {
-                if v == 0 {
-                    self.call_handler(None).await;
-                }
-
+                // NOTE: We can't return the body when 'n == 0' since the body may still have
+                // trailers that need to be read.
                 Ok(v)
             }
             Err(e) => {
-                self.call_handler(Some(e)).await;
+                self.call_handler(Some(e));
                 Err(err_msg("Connection failed while reading body"))
             }
         }
@@ -412,18 +392,28 @@ impl Body for BorrowedBody {
         let inner = self
             .inner
             .as_mut()
-            .ok_or_else(|| err_msg("Reading body beyond completion"))?;
+            .ok_or_else(|| err_msg("Reading body beyond completion (while getting trailers)"))?;
 
         match inner.body.trailers().await {
-            Ok(v) => {
-                self.call_handler(None).await;
-                Ok(v)
-            }
+            Ok(v) => Ok(v),
             Err(e) => {
-                self.call_handler(Some(e)).await;
+                self.call_handler(Some(e));
                 Err(err_msg("Connection failed while reading trailers"))
             }
         }
+    }
+}
+
+/// Waits for a BorrowedBody to stop being used.
+pub struct BorrowedBodyReclaimer {
+    receiver: oneshot::Receiver<Result<ReturnedBody>>,
+}
+
+impl BorrowedBodyReclaimer {
+    pub async fn wait(self) -> Result<ReturnedBody> {
+        // NOTE: unwrap() should never fail since we always return the body on drop of
+        // the BorrowedBody.
+        self.receiver.recv().await.unwrap()
     }
 }
 

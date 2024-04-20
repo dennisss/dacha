@@ -360,7 +360,6 @@ impl Http2RequestHandler {
                     .trailer_metadata
                     .append_to_headers(response_builder.headers())?;
 
-                // TODO: THis needs to reable to the 'web' type
                 ResponseBody::append_result_to_headers(result, &mut response_builder.headers());
 
                 // Immediately indicate that there will be no more data.

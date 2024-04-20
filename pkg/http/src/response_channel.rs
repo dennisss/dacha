@@ -48,8 +48,7 @@ impl ResponseSender {
         self.sender.is_closed()
     }
 
-    #[must_use]
-    pub async fn send(self, value: Result<Response>) {
+    pub fn send(self, value: Result<Response>) {
         let _ = self.sender.send(value);
     }
 

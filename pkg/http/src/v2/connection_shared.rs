@@ -257,12 +257,6 @@ impl ConnectionShared {
 
         if self.is_local_stream_id(stream_id) {
             connection_state.local_stream_count -= 1;
-            if !connection_state.pending_requests.is_empty() {
-                // After removing a local stream, try to send any remaining queued requests.
-                let _ = self
-                    .connection_event_sender
-                    .try_send(ConnectionEvent::SendRequest);
-            }
 
             if !self.is_server {
                 if let Some(listener) = &connection_state.event_listener {

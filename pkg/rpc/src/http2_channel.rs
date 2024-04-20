@@ -319,7 +319,10 @@ impl Http2RequestSender {
                     };
 
                     if have_remaining_attempts {
-                        eprintln!("[rpc::Http2Channel] Retrying error {}", error);
+                        // eprintln!(
+                        //     "[rpc::Http2Channel] [{}] Retrying error {}",
+                        //     self.path, error
+                        // );
                         continue;
                     }
 

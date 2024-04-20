@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use common::io::{Readable, SharedReadable, Writeable};
+use executor::channel::oneshot;
 use executor::sync::AsyncMutex;
 use executor::{channel, lock};
 use parsing::ascii::AsciiString;
@@ -13,9 +14,7 @@ use parsing::opaque::OpaqueString;
 use crate::connection_event_listener::{ConnectionEventListener, ConnectionShutdownDetails};
 use crate::header::{Header, CONNECTION, HOST};
 use crate::message::{read_http_message, HttpStreamEvent, StartLine, MESSAGE_HEAD_BUFFER_OPTIONS};
-use crate::message_body::{
-    decode_response_body_v1, encode_request_body_v1, BodyReturnHandler, ReturnedBody,
-};
+use crate::message_body::{decode_response_body_v1, encode_request_body_v1, ReturnedBody};
 use crate::message_syntax::parse_http_message_head;
 use crate::reader::PatternReader;
 use crate::request::Request;
@@ -39,7 +38,7 @@ use crate::uri_syntax::serialize_authority;
 struct ClientConnectionRequest {
     request: Request,
     upgrading: bool,
-    response_handler: channel::Sender<Result<ClientConnectionResponse>>,
+    response_handler: oneshot::Sender<Result<ClientConnectionResponse>>,
 }
 
 /// Result returned to a client after making a single request on the conneciton.
@@ -127,7 +126,7 @@ impl ClientConnection {
         request: Request,
     ) -> Result<impl Future<Output = Result<ClientConnectionResponse>>> {
         // TODO: Convert this to a one-time channel.
-        let (sender, receiver) = channel::bounded(1);
+        let (sender, receiver) = oneshot::channel();
 
         // TODO: Lock the state and verify that the connection isn't already dead.
 
@@ -161,6 +160,7 @@ impl ClientConnection {
 }
 
 struct ClientConnectionShared {
+    /// Sender used to notify the main connection thread of new requests.
     event_sender: channel::Sender<ClientConnectionRequest>,
 
     return_channel: (
@@ -179,19 +179,6 @@ struct ClientConnectionState {
 }
 
 impl ClientConnectionShared {
-    /*
-        Creating a new client connection:
-        - If we know that the server supports HTTP2 (or we force it),
-            - Run an internal HTTP2 connection (pass all burden onto that)
-        - Else
-            - Run an 'OPTIONS *' request in order to attempt an upgrade to HTTP 2 (or maybe get some Alt-Svcs)
-            - If we upgraded, Do it!!!
-
-        - Future optimization:
-            - If we are sending a request as soon as the client is created, we can use that as the upgrade request
-                instead of the 'OPTION *' to avoid a
-    */
-
     async fn run(
         self: Arc<Self>,
         reader: Box<dyn SharedReadable>,
@@ -241,15 +228,14 @@ impl ClientConnectionShared {
 
         // Notify all unprocessed requests that they were not processed at all.
         while let Ok(request) = event_receiver.try_recv() {
-            let _ =
-                request
-                    .response_handler
-                    .try_send(Err(Error::from(crate::v2::ProtocolErrorV2 {
-                        code: crate::proto::v2::ErrorCode::REFUSED_STREAM,
-                        local: true,
-                        message: "Connection closed before request started.".into(),
-                    })
-                    .into()));
+            request
+                .response_handler
+                .send(Err(Error::from(crate::v2::ProtocolErrorV2 {
+                    code: crate::proto::v2::ErrorCode::REFUSED_STREAM,
+                    local: true,
+                    message: "Connection closed before request started.".into(),
+                })
+                .into()));
         }
 
         r
@@ -288,12 +274,17 @@ impl ClientConnectionShared {
                 }
             };
 
+            // Skip request early if the request was already cancelled.
+            if response_handler.is_closed() {
+                continue;
+            }
+
             let mut request_head = vec![];
             if let Err(e) = Self::prepare_outgoing_request(&mut request, &mut request_head) {
                 if let Some(l) = &external_listener {
                     l.handle_request_completed().await;
                 }
-                let _ = response_handler.try_send(Err(e));
+                response_handler.send(Err(e));
                 continue;
             }
 
@@ -352,7 +343,7 @@ impl ClientConnectionShared {
                 crate::headers::connection::can_connection_persist(&head.version, &head.headers)?;
 
             if head.status_code == SWITCHING_PROTOCOLS {
-                let _ = response_handler.try_send(Ok(ClientConnectionResponse::Upgrading {
+                response_handler.send(Ok(ClientConnectionResponse::Upgrading {
                     response_head: head,
                     reader: Box::new(reader),
                     writer,
@@ -360,13 +351,13 @@ impl ClientConnectionShared {
                 return Ok(());
             }
 
-            let (body, body_close_delimited) =
-                decode_response_body_v1(request.head.method, &head, reader, self.clone()).await?;
+            let ((body, body_reclaimer), body_close_delimited) =
+                decode_response_body_v1(request.head.method, &head, reader).await?;
 
             // TODO: Main issue with this is that we can't easily shut down the connection
             // because the client has a hold of the body (if the client doesn't read it we
             // can't close the body).
-            let _ = response_handler.try_send(Ok(ClientConnectionResponse::Regular {
+            response_handler.send(Ok(ClientConnectionResponse::Regular {
                 response: Response { head, body },
             }));
 
@@ -378,8 +369,7 @@ impl ClientConnectionShared {
                 // ^ And before this send the shutting_down event.
             }
 
-            //
-            let returned_body = self.return_channel.1.recv().await??;
+            let returned_body = body_reclaimer.wait().await?;
 
             if !persist_connection {
                 *http1_rejected_persistence = true;
@@ -430,10 +420,84 @@ impl ClientConnectionShared {
     }
 }
 
-#[async_trait]
-impl BodyReturnHandler for ClientConnectionShared {
-    async fn handle_returned_body(&self, body: Result<ReturnedBody>) {
-        self.event_sender.close();
-        let _ = self.return_channel.0.try_send(body);
+#[cfg(test)]
+mod tests {
+    use executor::child_task::ChildTask;
+
+    use crate::{BodyFromData, Method, RequestBuilder};
+
+    use super::*;
+
+    #[testcase]
+    async fn http1_client_connection_works() -> Result<()> {
+        let conn = Arc::new(ClientConnection::new());
+
+        let (client_sender, server_reciever) = common::pipe::pipe();
+        let (mut server_sender, client_receiver) = common::pipe::pipe();
+
+        server_sender
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nGOOD")
+            .await?;
+        server_sender
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nBAD!")
+            .await?;
+
+        let task = ChildTask::spawn(
+            conn.clone()
+                .run(Box::new(client_receiver), Box::new(client_sender)),
+        );
+
+        {
+            let mut resp = conn
+                .enqueue_request(
+                    RequestBuilder::new()
+                        .method(Method::GET)
+                        .uri("http://google.com/first")
+                        .body(BodyFromData("hello world"))
+                        .build()?,
+                )
+                .await?
+                .await?;
+
+            let mut resp = match resp {
+                ClientConnectionResponse::Regular { response } => response,
+                _ => panic!(),
+            };
+
+            let mut data = String::new();
+            resp.body.read_to_string(&mut data).await?;
+            assert_eq!(data, "GOOD");
+        }
+
+        {
+            let mut resp = conn
+                .enqueue_request(
+                    RequestBuilder::new()
+                        .method(Method::GET)
+                        .uri("http://google.com/second")
+                        .body(BodyFromData("another data"))
+                        .build()?,
+                )
+                .await?
+                .await?;
+
+            let mut resp = match resp {
+                ClientConnectionResponse::Regular { response } => response,
+                _ => panic!(),
+            };
+
+            let mut data = String::new();
+            resp.body.read_to_string(&mut data).await?;
+            assert_eq!(data, "BAD!");
+        }
+
+        // TODO: Test what data the server receives
+
+        // TODO: Test with non-persistent connections.
+
+        conn.shutdown();
+        task.join().await?;
+
+        Ok(())
     }
 }
