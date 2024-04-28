@@ -291,11 +291,7 @@ impl Builder {
 
                 let package = self
                     .rule_registry
-                    .evaluate_build_file(
-                        package_dir.as_str(),
-                        &build_file_data,
-                        context.config.clone(),
-                    )
+                    .evaluate_build_file(package_dir.as_str(), &build_file_data, &context)
                     .with_context(|e| format!("While parsing {:?}: {}", build_file_path, e))?;
 
                 self.packages.insert(package_key.clone(), package);
@@ -331,6 +327,8 @@ impl Builder {
             return Ok(Some(config.clone()));
         }
 
+        // TODO: Compile the config with a more generic config that isn't architecture
+        // dependent.
         let target_key = BuildTargetKey {
             label: label.clone(),
             config_label: Label::parse(NATIVE_CONFIG_LABEL)?,
@@ -404,8 +402,20 @@ impl Builder {
                 .get(&absolute_dep)
                 .ok_or_else(|| err_msg("Building target before dependencies complete"))?;
 
+            let config = self
+                .configs
+                .get(&absolute_dep.config_label)
+                .cloned()
+                .ok_or_else(|| err_msg("Build target config not generated"))?;
+
             // NOTE: Using the original key provided by the Target instance.
-            context.inputs.insert(dep.clone(), outputs.clone());
+            context.inputs.insert(
+                dep.clone(),
+                BuildTargetInput {
+                    target_outputs: outputs.clone(),
+                    config,
+                },
+            );
         }
 
         let outputs = target.build(&context).await?;

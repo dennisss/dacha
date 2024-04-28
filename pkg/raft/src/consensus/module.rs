@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -99,7 +99,24 @@ const SYNCHRONIZED_ROUNDS_THRESHOLD: usize = 4;
 
 // Maximum in-flight requests of one type (either Heartbeat or AppendEntries) to
 // followers.
-const MAX_IN_FLIGHT_REQUESTS: usize = 128;
+const MAX_IN_FLIGHT_REQUESTS: usize = 32;
+
+/// Maximum number of log entries we will send in one AppendEntriesRequest proto
+/// when the server is believed to be healthy.
+const MAX_ENTRIES_PER_LIVE_APPEND: usize = 32;
+
+/// Maximum number of log entries we will send per AppendEntriesRequest proto
+/// when the peer is believed to be unhealthy or slow.
+const MAX_ENTRIES_PER_PESSIMISTIC_APPEND: usize = 4;
+
+/// Minimum time between AppendEntries requests being sent out when a follower
+/// is in pessimistic mode.
+const MIN_PESSIMISTIC_APPEND_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Maximum size of an individual proposed command.
+/// - Applications should likely set smaller limits higher up in the stack.
+/// - Only checked on the leader since we never want failures on followers.
+const MAX_COMMAND_SIZE: usize = 4 * 1024 * 1024; // 4MiB
 
 // NOTE: This is basically the same type as a LogPosition (we might as well wrap
 // a LogPosition and make the contents of a proposal opaque to other programs
@@ -124,6 +141,8 @@ pub enum ProposeError {
 
     /// The given entry is an unparseable config state change
     RejectedConfigChange,
+
+    CommandTooLarge,
 }
 
 impl std::fmt::Display for ProposeError {
@@ -826,6 +845,12 @@ impl ConsensusModule {
                 };
             }
 
+            if let LogEntryDataTypeCase::Command(c) = data.typ_case() {
+                if c.len() >= MAX_COMMAND_SIZE {
+                    return Err(ProposeError::CommandTooLarge);
+                }
+            }
+
             let mut e = LogEntry::default();
             e.pos_mut().set_term(term);
             e.pos_mut().set_index(index);
@@ -1337,8 +1362,6 @@ impl ConsensusModule {
     // servers to beat at the same time and minimize serialization cost/context
     // switches per second
 
-    // TODO: Limit the max size of an AppendEntries request
-
     /// Sends out Heartbeat RPCs on a regular interval.
     ///
     /// Returns: Time when we will next want to run this function to send more
@@ -1454,13 +1477,13 @@ impl ConsensusModule {
         let leader_commit = self.meta.commit_index();
         let log_meta = &self.log_meta;
 
-        // TODO: Must limit the total size of the entries sent?
-        let last_log_index = log_meta.last().position.index();
-        let last_log_sequence = log_meta.last().sequence;
+        let leader_last_log_index = log_meta.last().position.index();
+        let leader_last_log_sequence = log_meta.last().sequence;
 
         // Map used to duduplicate messages that will end up being exactly the
         // same to different followers
-        let mut message_map: HashMap<LogIndex, ConsensusMessage> = HashMap::new();
+        // key is the index range [prev, last_in_request] of the message
+        let mut message_map: BTreeMap<(LogIndex, LogIndex), ConsensusMessage> = BTreeMap::new();
 
         // Ids of peers to which we need to send InstallSnapshot RPCs
         let mut install_snapshot_ids = vec![];
@@ -1468,9 +1491,13 @@ impl ConsensusModule {
         // Next time cycle() needs to be called to send more entries.
         let mut next_send_time = tick.time + APPEND_ENTRIES_INTERVAL;
 
-        for server in self.config.value.servers() {
+        let mut server_iter = self.config.value.servers().iter();
+        let mut cur_server = server_iter.next();
+
+        while let Some(server) = cur_server.clone() {
             // Don't send to ourselves (the leader)
             if server.id() == leader_id {
+                cur_server = server_iter.next();
                 continue;
             }
 
@@ -1481,15 +1508,18 @@ impl ConsensusModule {
             // here and make sure that we always rely on the config changes for this)
             let progress = {
                 if !state.followers.contains_key(&server.id()) {
-                    state
-                        .followers
-                        .insert(server.id(), ConsensusFollowerProgress::new(last_log_index));
+                    state.followers.insert(
+                        server.id(),
+                        ConsensusFollowerProgress::new(leader_last_log_index),
+                    );
                 }
 
                 state.followers.get_mut(&server.id()).unwrap()
             };
 
-            // Flow control.
+            let mut max_entries_per_request = MAX_ENTRIES_PER_LIVE_APPEND;
+
+            // Flow control max-in-flight.
             match progress.mode {
                 ConsensusFollowerMode::Live => {
                     // Good to send. Pipeline many requests.
@@ -1497,20 +1527,22 @@ impl ConsensusModule {
                 ConsensusFollowerMode::Pesimistic | ConsensusFollowerMode::CatchingUp => {
                     // Limit to one AppendEntries request at a time.
                     if progress.pending_append_requests.len() > 0 {
+                        cur_server = server_iter.next();
                         continue;
                     }
 
-                    // TODO: In both modes we should limit the number of entries
-                    // we sent up the next request
+                    max_entries_per_request = MAX_ENTRIES_PER_PESSIMISTIC_APPEND;
                 }
                 ConsensusFollowerMode::InstallingSnapshot => {
                     // No AppendEntries RPCs during InstallingSnapshot. Only Heartbeat RPCs will be
                     // sent.
+                    cur_server = server_iter.next();
                     continue;
                 }
             }
 
             if progress.pending_append_requests.len() >= MAX_IN_FLIGHT_REQUESTS {
+                cur_server = server_iter.next();
                 continue;
             }
 
@@ -1528,13 +1560,28 @@ impl ConsensusModule {
                     }
                 }).unwrap_or(true) ||
                 // Send if we have unsent log entries.
-                progress.next_index <= last_log_index ||
+                progress.next_index <= leader_last_log_index ||
                 // Send if the commit index has advanced
                 progress.last_commit_index_sent < leader_commit
             );
 
             if !need_another_request {
+                cur_server = server_iter.next();
                 continue;
+            }
+
+            // Flow control non-live requests since Pessimistic/CatchingUp states can easily
+            // get into infinite sending loops.
+            if progress.mode != ConsensusFollowerMode::Live {
+                if let Some(last_time) = progress.last_append_entries_sent {
+                    let next_allowed = last_time + MIN_PESSIMISTIC_APPEND_INTERVAL;
+
+                    if tick.time < next_allowed {
+                        next_send_time = core::cmp::min(next_allowed, next_send_time);
+                        cur_server = server_iter.next();
+                        continue;
+                    }
+                }
             }
 
             // Otherwise, we are definately going to make a request to it
@@ -1543,7 +1590,7 @@ impl ConsensusModule {
             progress.last_commit_index_sent = leader_commit;
 
             if progress.round_start.is_none() {
-                progress.round_start = Some((last_log_index, tick.time));
+                progress.round_start = Some((leader_last_log_index, tick.time));
             }
 
             // TODO: See the pipelining section of the thesis
@@ -1555,14 +1602,20 @@ impl ConsensusModule {
             // waiting for previous ones to suceed
             let prev_log_index = progress.next_index - 1;
 
-            // Currently all of the messages send all entries through the end of the log.
+            // TODO: Round down the first number slightly to try and keep more followers
+            // aligned (with getting the exact same message).
+            let last_log_index = core::cmp::min(
+                prev_log_index + ((1 + max_entries_per_request) as u64),
+                leader_last_log_index,
+            );
+
             progress.next_index = last_log_index + 1;
 
             let request_id;
 
             // If we are already sending a request for this log index, re-use the existing
             // request.
-            if let Some(msg) = message_map.get_mut(&prev_log_index) {
+            if let Some(msg) = message_map.get_mut(&(prev_log_index, last_log_index)) {
                 msg.to.push(server.id());
                 request_id = msg.request_id;
             } else {
@@ -1581,6 +1634,10 @@ impl ConsensusModule {
                     }
                 };
 
+                // NOTE: If we were able to lookup the prev_log_index, then this should always
+                // be successful.
+                let last_log_sequence = self.log_meta.lookup(last_log_index).unwrap().sequence;
+
                 request_id = self.last_request_id + 1;
                 self.last_request_id = request_id;
 
@@ -1591,7 +1648,7 @@ impl ConsensusModule {
                 request.set_leader_commit(leader_commit);
 
                 message_map.insert(
-                    prev_log_index,
+                    (prev_log_index, last_log_index),
                     ConsensusMessage {
                         request_id,
                         to: vec![server.id()],
@@ -1609,8 +1666,7 @@ impl ConsensusModule {
                 PendingAppendEntries {
                     start_time: tick.time.clone(),
                     prev_log_index,
-                    // TODO: Don't trust this without also tracking the sequence?
-                    last_index_sent: last_log_index,
+                    last_index_sent: leader_last_log_index,
                 },
             );
         }
@@ -2147,6 +2203,12 @@ impl ConsensusModule {
         // Update lease if the request was successful.
         if response.is_some() {
             progress.lease_start = core::cmp::max(progress.lease_start, Some(heartbeat_start_time));
+        } else {
+            // Heartbeat failures imply that AppendEntries requests will
+            // probably also fail.
+            if progress.mode == ConsensusFollowerMode::Live {
+                progress.mode = ConsensusFollowerMode::Pesimistic;
+            }
         }
 
         self.cycle(tick);

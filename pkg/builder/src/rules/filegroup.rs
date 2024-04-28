@@ -3,6 +3,7 @@ use common::errors::*;
 use crate::proto::*;
 use crate::rule::*;
 use crate::target::*;
+use crate::BuildConfigTarget;
 
 pub struct FileGroup {
     attrs: FileGroupAttrs,
@@ -13,7 +14,7 @@ impl BuildRule for FileGroup {
 
     type Target = Self;
 
-    fn evaluate(attributes: Self::Attributes, config: &BuildConfig) -> Result<Self::Target> {
+    fn evaluate(attributes: Self::Attributes, context: &BuildConfigTarget) -> Result<Self::Target> {
         Ok(Self { attrs: attributes })
     }
 }

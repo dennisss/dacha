@@ -35,3 +35,10 @@ pub const WORKER_NAME_ENV_VAR: &'static str = "CLUSTER_WORKER";
 /// or a proxy. This should always contain an ip address host as it can't detect
 /// on the meta store for resolving the address.
 pub const META_STORE_ADDR_ENV_VAR: &'static str = "CLUSTER_META_STORE";
+
+/// Environment variable containing a comma separated list of seed server
+/// addresses that can be used to find the cluster's Metastore instance.
+///
+/// This is set by the Node runtime and used internally by the
+/// ClusterMetaClient.
+pub const META_STORE_SEEDS_ENV_VAR: &'static str = "CLUSTER_META_SEEDS";

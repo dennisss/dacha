@@ -290,6 +290,8 @@ impl Readable for MessageRequestBody {
         // NOTE: If the read future is dropped we will be in an undefined state so this
         // body can't be polled again.
 
+        // TODO: Think about how we can do this without the attempt_alive thing
+
         enum Event {
             AttemptCancelled,
             ReadDone(Result<usize>),

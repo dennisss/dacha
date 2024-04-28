@@ -84,7 +84,7 @@ impl TestMetastoreCluster {
 
     /// Creates a client which connects to all the nodes in this cluster.
     pub async fn create_client(&self) -> Result<MetastoreClient> {
-        MetastoreClient::create(&self.shared.route_labels).await
+        MetastoreClient::create(&self.shared.route_labels, &[]).await
     }
 }
 

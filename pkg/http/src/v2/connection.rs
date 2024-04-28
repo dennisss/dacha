@@ -362,7 +362,24 @@ impl Connection {
         // NOTE: It is not necessary to check upper_sent_stream_id because if that is
         // not MAX_STREAM_ID, then that would imply that we sent or received a
         // GOAWAY which would set this field.
-        !connection_state.shutting_down.is_some()
+        if connection_state.shutting_down.is_some() {
+            return false;
+        }
+
+        // Do not accept the request if we think we can immediately sent it.
+        //
+        // TODO: Dedup this remote_stream_limit code.
+        let remote_stream_limit = std::cmp::min(
+            connection_state.remote_settings[SettingId::MAX_CONCURRENT_STREAMS],
+            self.shared.options.max_outgoing_streams as u32,
+        );
+        if connection_state.local_stream_count + connection_state.pending_requests.len()
+            >= remote_stream_limit as usize
+        {
+            return false;
+        }
+
+        true
     }
 
     pub async fn num_outstanding_streams(&self) -> usize {
@@ -418,11 +435,18 @@ impl Connection {
 
             // TODO: Ensure this limit isn't hit before the DirectClient marks itself as
             // full.
-            if connection_state.pending_requests.len() >= self.shared.options.max_enqueued_requests
+            //
+            // TODO: Dedup this remote_stream_limit code.
+            let remote_stream_limit = std::cmp::min(
+                connection_state.remote_settings[SettingId::MAX_CONCURRENT_STREAMS],
+                self.shared.options.max_outgoing_streams as u32,
+            );
+            if connection_state.local_stream_count + connection_state.pending_requests.len()
+                >= remote_stream_limit as usize
             {
                 return Err(ProtocolErrorV2 {
                     code: ErrorCode::REFUSED_STREAM,
-                    message: "Hit max_enqueued_requests limit on this connection",
+                    message: "Hit outgoing stream limit on this connection",
                     local: true,
                 });
             }
@@ -744,14 +768,12 @@ impl Connection {
                 connection_state.streams.clear();
 
                 while let Some(req) = connection_state.pending_requests.pop_front() {
-                    req.response_sender
-                        .send(Err(ProtocolErrorV2 {
-                            code: ErrorCode::REFUSED_STREAM,
-                            message: "Connection shutting down",
-                            local: true,
-                        }
-                        .into()))
-                        .await;
+                    req.response_sender.send(Err(ProtocolErrorV2 {
+                        code: ErrorCode::REFUSED_STREAM,
+                        message: "Connection shutting down",
+                        local: true,
+                    }
+                    .into()));
                 }
             }
         });
@@ -927,6 +949,10 @@ mod tests {
 
     /*
     Test cases to write:
+    - If we make a request to a server for a large response, then we cancel the request
+        - The client should send a RST_STREAM to the server
+        - The client should ignore any extra packets received for some amount of time on that stream.
+
     - Send request with empty body to server and receive returned body.
     - Send request with empty body and receive empty body.
     - reader_closed

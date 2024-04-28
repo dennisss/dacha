@@ -11,7 +11,7 @@ worker {
     ports {
         name: "rpc"
         type: TCP
-        protocol: GRPC_HTTP
+        protocol: [HTTP, GRPC]
     }
 
     volumes: [

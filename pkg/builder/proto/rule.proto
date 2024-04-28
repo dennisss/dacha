@@ -14,6 +14,11 @@ import "google/protobuf/any.proto";
 //     google.protobuf.Any attributes = 2;
 // }
 
+message GroupAttrs {
+    string name = 1;
+    repeated string deps = 2;
+}
+
 message RustBinaryAttrs {
     string name = 1;
     repeated string deps = 2;

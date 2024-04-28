@@ -5,6 +5,7 @@ use crate::label::Label;
 use crate::proto::*;
 use crate::rule::*;
 use crate::target::*;
+use crate::BuildConfigTarget;
 
 pub struct LocalBinary {
     attrs: LocalBinaryAttrs,
@@ -15,7 +16,7 @@ impl BuildRule for LocalBinary {
 
     type Target = Self;
 
-    fn evaluate(attributes: Self::Attributes, config: &BuildConfig) -> Result<Self::Target> {
+    fn evaluate(attributes: Self::Attributes, context: &BuildConfigTarget) -> Result<Self::Target> {
         Ok(Self { attrs: attributes })
     }
 }
@@ -46,7 +47,7 @@ impl BuildTarget for LocalBinary {
         let mut outputs = BuildTargetOutputs::default();
 
         for (_, dep) in &context.inputs {
-            for (src, file) in &dep.output_files {
+            for (src, file) in &dep.target_outputs.output_files {
                 let bin_name = LocalPath::new(src.as_str())
                     .file_name()
                     .ok_or_else(|| err_msg("Could not resolve file name for local binary"))?;

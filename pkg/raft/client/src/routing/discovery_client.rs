@@ -14,6 +14,16 @@ const SERVER_POLL_RATE: Duration = Duration::from_millis(2000);
 /// Interval at which to re-check if any servers should be re-polled.
 const CYCLE_PERIOD: Duration = Duration::from_millis(1000);
 
+#[derive(Default, Clone)]
+pub struct DiscoveryClientOptions {
+    pub seeds: Vec<String>,
+
+    /// If true, we will send non-empty advertisements to all seed servers and
+    /// additionally we will periodically poll all known servers in the
+    /// RouteStore.
+    pub active_broadcaster: bool,
+}
+
 /// Most basic mode of discover service based on an initial list of server
 /// addresses. We assume that each server listed equally represents the entire
 /// cluster
@@ -32,19 +42,26 @@ const CYCLE_PERIOD: Duration = Duration::from_millis(1000);
 ///   presense of failed seed servers)
 pub struct DiscoveryClient {
     route_store: RouteStore,
-    seeds: Vec<String>,
+    options: DiscoveryClientOptions,
 }
 
 // TODO: Consider holding onto the list of seed servers in the long term (less
 // periodically refresh our list with them) In this way, we may not even need a
 // gossip protocol if we assume that we have a set of
 
-// TODO: Refactor this so that the seed list is a list of authorities rather
-// than a list of uris.
-
 impl DiscoveryClient {
-    pub fn new(route_store: RouteStore, seeds: Vec<String>) -> Self {
-        Self { route_store, seeds }
+    pub async fn create(route_store: RouteStore, options: DiscoveryClientOptions) -> Self {
+        if !options.seeds.is_empty() {
+            route_store
+                .lock()
+                .await
+                .set_initializer_state(RouteInitializerState::Initializing);
+        }
+
+        Self {
+            route_store,
+            options,
+        }
     }
 
     pub async fn run(self) -> Result<()> {
@@ -57,6 +74,7 @@ impl DiscoveryClient {
         }
 
         let mut states: HashMap<String, AddrState> = HashMap::new();
+        let mut initialized = false;
 
         loop {
             // Select addresses to poll.
@@ -70,23 +88,29 @@ impl DiscoveryClient {
 
                 let mut selected_addrs = vec![];
 
-                // TODO: Make sure this doesn't get marked as a usage of the route.
-                let available_addrs = route_store
-                    .selected_routes()
-                    .map(|r| format!("http://{}", r.target().addr()))
-                    .chain(self.seeds.iter().cloned());
-
-                for addr in available_addrs {
+                let mut maybe_select_addr = |addr: String| {
                     // Rate limit individual attempts per address
                     if let Some(state) = states.get(&addr) {
                         new_states.insert(addr.clone(), state.clone());
 
                         if state.last_send_attempt + SERVER_POLL_RATE > now {
-                            continue;
+                            return;
                         }
                     }
 
                     selected_addrs.push(addr);
+                };
+
+                for addr in &self.options.seeds {
+                    maybe_select_addr(addr.clone());
+                }
+
+                if self.options.active_broadcaster {
+                    // TODO: Make sure this doesn't get marked as a usage of the route.
+                    for route in route_store.selected_routes() {
+                        let addr = format!("http://{}", route.target().addr());
+                        maybe_select_addr(addr);
+                    }
                 }
 
                 states = new_states;
@@ -103,7 +127,12 @@ impl DiscoveryClient {
                     continue;
                 }
 
-                (selected_addrs, route_store.serialize())
+                let mut announcement = Announcement::default();
+                if self.options.active_broadcaster {
+                    announcement = route_store.serialize();
+                }
+
+                (selected_addrs, announcement)
             };
 
             // Send to all addresses.
@@ -153,6 +182,16 @@ impl DiscoveryClient {
             let now = SystemTime::now();
             for addr in addrs {
                 states.get_mut(&addr).unwrap().last_send_attempt = now;
+            }
+
+            if !initialized {
+                initialized = true;
+                if !self.options.seeds.is_empty() {
+                    self.route_store
+                        .lock()
+                        .await
+                        .set_initializer_state(RouteInitializerState::Initialized);
+                }
             }
 
             // TODO: Also need backoff for addresses that are failing

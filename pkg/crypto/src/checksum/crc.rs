@@ -280,7 +280,11 @@ impl Hasher for CRC32CHasher {
 /// TODO: Consolidate all the places that use this.
 ///
 /// WARNING: The value of this may not be stable across machines or binaries.
-#[cfg(target_feature = "sse4.2")]
+///
+/// Not setting to SSE4.2 do to the sheer incompetance of cargo to correctly
+/// compile build scripts.
+/// #[cfg(target_feature = "sse4.2")]
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 pub fn crc32c_raw_oneshot(data: u32) -> u32 {
     unsafe { core::arch::x86_64::_mm_crc32_u32(0, data) }

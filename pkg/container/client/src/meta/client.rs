@@ -11,6 +11,8 @@ use crate::meta::constants::ZONE_ENV_VAR;
 use crate::meta::{ClusterMetaTable, GetClusterMetaTable};
 use crate::proto::ObjectMetadata;
 
+use super::constants::META_STORE_SEEDS_ENV_VAR;
+
 ///
 pub struct ClusterMetaClient {
     zone: String,
@@ -20,11 +22,11 @@ pub struct ClusterMetaClient {
 impl_resource_passthrough!(ClusterMetaClient, inner);
 
 impl ClusterMetaClient {
-    pub async fn create(zone: &str) -> Result<Self> {
+    pub async fn create(zone: &str, seeds: &[String]) -> Result<Self> {
         let mut label = RouteLabel::default();
         label.set_value(format!("{}={}", ZONE_ENV_VAR, zone));
 
-        let inner = MetastoreClient::create(std::slice::from_ref(&label)).await?;
+        let inner = MetastoreClient::create(std::slice::from_ref(&label), seeds).await?;
         Ok(Self {
             zone: zone.to_string(),
             inner,
@@ -38,7 +40,21 @@ impl ClusterMetaClient {
                 ZONE_ENV_VAR,
             )
         })?;
-        Self::create(&zone).await
+
+        let seeds = std::env::var(META_STORE_SEEDS_ENV_VAR)
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+
+        if seeds.is_empty() {
+            eprintln!(
+                "WARN: {} env var empty. Must fallback to multicast discovery.",
+                META_STORE_SEEDS_ENV_VAR
+            )
+        }
+
+        Self::create(&zone, &seeds).await
     }
 
     pub fn zone(&self) -> &str {

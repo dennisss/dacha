@@ -8,6 +8,7 @@
     asm,
     let_chains
 )]
+#![cfg_attr(all(target_arch = "aarch64"), feature(stdarch_arm_crc32))]
 #![no_std]
 
 #[cfg(feature = "std")]

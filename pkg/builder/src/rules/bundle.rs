@@ -8,10 +8,10 @@ use crate::label::Label;
 use crate::proto::*;
 use crate::rule::*;
 use crate::target::*;
+use crate::BuildConfigTarget;
 
 pub struct Bundle {
     attrs: BundleAttrs,
-    platform: Platform,
 }
 
 impl BuildRule for Bundle {
@@ -19,11 +19,8 @@ impl BuildRule for Bundle {
 
     type Target = Self;
 
-    fn evaluate(attributes: Self::Attributes, config: &BuildConfig) -> Result<Self::Target> {
-        Ok(Self {
-            attrs: attributes,
-            platform: config.platform().clone(),
-        })
+    fn evaluate(attributes: Self::Attributes, context: &BuildConfigTarget) -> Result<Self::Target> {
+        Ok(Self { attrs: attributes })
     }
 }
 
@@ -74,13 +71,17 @@ impl BuildTarget for Bundle {
             return Err(err_msg("Bundle must define at least one config"));
         }
 
+        if self.attrs.deps_len() == 0 {
+            return Err(err_msg("Bundle must define at least one dependency"));
+        }
+
         for config in self.attrs.configs() {
             // Temporary path to which we'll write the archive before we know the hash of
             // the file.
             let archive_path = bundle_dir.join("archive.tar");
             let mut out = compression::tar::Writer::open(&archive_path).await?;
 
-            // let mut combined_outputs = HashMap::new();
+            let mut variant = BundleVariant::default();
 
             for dep in self.attrs.deps() {
                 let input_key = BuildTargetKey {
@@ -93,10 +94,12 @@ impl BuildTarget for Bundle {
                     .get(&input_key)
                     .ok_or_else(|| err_msg("Missing input dependency"))?;
 
+                variant.set_platform(input.config.config.platform().clone());
+
                 // Add all files to the archive.
                 // NOTE: A current limitation is that because BuildResult only lists files,
                 // we don't preserve any directory metadata.
-                for (src, file) in &input.output_files {
+                for (src, file) in &input.target_outputs.output_files {
                     let options = AppendFileOptions {
                         root_dir: file.location.clone(),
                         output_dir: Some(src.into()),
@@ -138,8 +141,6 @@ impl BuildTarget for Bundle {
                 },
             );
 
-            let mut variant = BundleVariant::default();
-            variant.set_platform(self.platform.clone());
             variant.set_blob(blob_spec);
             bundle_spec.add_variants(variant);
         }

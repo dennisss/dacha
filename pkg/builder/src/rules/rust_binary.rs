@@ -4,10 +4,11 @@ use std::process::{Command, Stdio};
 use common::errors::*;
 use file::LocalPath;
 
-use crate::proto::*;
+use crate::label::Label;
 use crate::rule::BuildRule;
 use crate::target::*;
 use crate::utils::*;
+use crate::{proto::*, BuildConfigTarget};
 
 pub struct RustBinary {
     attrs: RustBinaryAttrs,
@@ -18,7 +19,7 @@ impl BuildRule for RustBinary {
 
     type Target = Self;
 
-    fn evaluate(attributes: Self::Attributes, config: &BuildConfig) -> Result<Self::Target> {
+    fn evaluate(attributes: Self::Attributes, context: &BuildConfigTarget) -> Result<Self::Target> {
         Ok(Self { attrs: attributes })
     }
 }

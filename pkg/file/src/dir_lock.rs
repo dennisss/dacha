@@ -54,13 +54,13 @@ impl DirLock {
         }
 
         let lockfile = LocalFile::open_with_options(
-            lockfile_path,
+            &lockfile_path,
             &LocalFileOpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true),
         )
-        .map_err(|_| err_msg("Failed to open the lockfile"))?;
+        .map_err(|_| format_err!("Failed to open the lockfile: {}", lockfile_path.as_str()))?;
 
         // Acquire the exclusive lock
 

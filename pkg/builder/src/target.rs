@@ -4,6 +4,7 @@ use std::hash::Hash;
 use common::errors::*;
 use file::LocalPathBuf;
 
+use crate::context::BuildConfigTarget;
 use crate::label::Label;
 
 #[async_trait]
@@ -25,7 +26,12 @@ pub struct BuildTargetContext {
     pub config_hash: String,
     pub workspace_dir: LocalPathBuf,
     pub package_dir: LocalPathBuf,
-    pub inputs: HashMap<BuildTargetKey, BuildTargetOutputs>,
+    pub inputs: HashMap<BuildTargetKey, BuildTargetInput>,
+}
+
+pub struct BuildTargetInput {
+    pub config: BuildConfigTarget,
+    pub target_outputs: BuildTargetOutputs,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -40,8 +46,8 @@ pub struct BuildTargetKey {
 
 #[derive(Debug, Clone, Default)]
 pub struct BuildTargetOutputs {
-    /// Filed produced by this target. This doesn't include any files linked as
-    /// dependencies.
+    /// Files produced by this target. This doesn't include any files linked as
+    /// dependencies unless the target explicitly forwarded them.
     ///
     /// The key is the canonical name of the file (a path relative to the
     /// workspace root).

@@ -64,6 +64,12 @@ impl BitVector {
         self.len = 0;
     }
 
+    pub fn set_all_zero(&mut self) {
+        for v in &mut self.data {
+            *v = 0;
+        }
+    }
+
     /// Appends a single bit to this vector.
     /// 'bit' must be 0 or 1
     pub fn push(&mut self, bit: u8) {
@@ -186,6 +192,11 @@ impl BitVector {
             data[i] = (lastb >> (8 - r)) << (8 - r);
         }
 
+        Self { data, len }
+    }
+
+    pub fn from_raw_vec(data: Vec<u8>) -> Self {
+        let len = 8 * data.len();
         Self { data, len }
     }
 

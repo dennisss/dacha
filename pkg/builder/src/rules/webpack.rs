@@ -5,9 +5,9 @@ use common::errors::*;
 use file::LocalPath;
 
 use crate::label::Label;
-use crate::proto::*;
 use crate::rule::*;
 use crate::target::*;
+use crate::{proto::*, BuildConfigTarget};
 
 pub struct Webpack {
     attrs: WebpackAttrs,
@@ -18,7 +18,7 @@ impl BuildRule for Webpack {
 
     type Target = Self;
 
-    fn evaluate(attributes: Self::Attributes, config: &BuildConfig) -> Result<Self::Target> {
+    fn evaluate(attributes: Self::Attributes, context: &BuildConfigTarget) -> Result<Self::Target> {
         Ok(Self { attrs: attributes })
     }
 }

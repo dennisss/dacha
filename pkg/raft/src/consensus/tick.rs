@@ -125,8 +125,10 @@ pub struct ConsensusMessage {
     pub body: ConsensusMessageBody,
 }
 
-// TODO: A message should be backed by a buffer such that it can be trivially
-// forwarded and owned some binary representation of itself
+/// A message / RPC request that needs to be sent to a remote server.
+///
+/// TODO: A message should be backed by a buffer such that it can be trivially
+/// forwarded and owned some binary representation of itself
 #[derive(Debug, PartialEq)]
 pub enum ConsensusMessageBody {
     PreVote(RequestVoteRequest),
@@ -141,6 +143,13 @@ pub enum ConsensusMessageBody {
     /// ConsensusModule::append_entries_callback or
     /// ConsensusModule::append_entries_noresponse if the request failed or
     /// timed out.
+    ///
+    /// NOTE: Unlike all message types which have some amount of rate limiting
+    /// in the ConsensusModule, AppendEntries requests will be emitted by the
+    /// ConsensusModule as soon as they are available so the sender of
+    /// AppendEntries requests must ensure there is proper backoff / retrying if
+    /// errors occur to avoid getting into an infinite loop trying to send
+    /// AppendEntries requests.
     AppendEntries {
         /// The partial request to send. The 'entries' field will be empty and
         /// needs to be populated by the ConsensusModule's caller.

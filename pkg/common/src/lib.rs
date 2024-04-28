@@ -12,6 +12,7 @@
     allocator_api,
     slice_ptr_get
 )]
+#![cfg_attr(all(target_arch = "aarch64"), feature(stdarch_arm_crc32))]
 #![no_std]
 
 #[cfg(feature = "std")]

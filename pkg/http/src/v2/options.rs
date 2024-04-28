@@ -41,23 +41,14 @@ pub struct ConnectionOptions {
     /// will abrutly close the connection.
     pub graceful_shutdown_timeout: Duration,
 
-    // TODO: Limit maximum number of incoming and outgoing pushes
-
-    // TODO: Limit the number of streams stored in the priority tree.
     /// Maximum number of locally initialized streams
     /// The actual number used will be:
     /// 'min(max_outgoing_stream, remote_settings.MAX_CONCURRENT_STREAMS)'
     pub max_outgoing_streams: usize,
+    // TODO: Limit maximum number of incoming and outgoing pushes
 
-    /// On a client, this will be the maximum number of requests that be queued
-    /// to send but haven't yet been sent due to max_outgoing_streams or
-    /// local processing delays.
-    ///
-    /// Once we hit this local, requests will be locally refused fast.
-    ///
-    /// The max number of in-memory requests in any state will be
-    /// 'max_enqueued_requests + max_outgoing_streams'.
-    pub max_enqueued_requests: usize,
+    // TODO: Limit the number of streams stored in the priority tree (may be larger than
+    // max_outgoing_streams if using the standard priority mechanism).
 }
 
 impl Default for ConnectionOptions {
@@ -79,7 +70,6 @@ impl Default for ConnectionOptions {
             settings_ack_timeout: Duration::from_secs(10),
             graceful_shutdown_timeout: Duration::from_secs(5),
             max_outgoing_streams: 100,
-            max_enqueued_requests: 100,
         }
     }
 }

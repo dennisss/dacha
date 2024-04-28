@@ -2,6 +2,7 @@
 use alloc::boxed::Box;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+use core::fmt::Debug;
 
 use common::list::Appendable;
 use common::{any::AsAny, errors::*};
@@ -100,12 +101,19 @@ impl core::fmt::Display for MessageSerializeError {
 
 /// A pointer to a Message. Used in message fields to support storing possibly
 /// recursive type usages.
-#[derive(Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, PartialEq)]
 pub struct MessagePtr<T: ?Sized> {
     #[cfg(feature = "alloc")]
     value: Box<T>,
     #[cfg(not(feature = "alloc"))]
     value: T,
+}
+
+impl<T: Debug> Debug for MessagePtr<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let v: &T = &self.value;
+        core::fmt::Debug::fmt(v, f)
+    }
 }
 
 impl<T> MessagePtr<T> {

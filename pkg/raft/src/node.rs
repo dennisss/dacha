@@ -18,7 +18,8 @@ use file::dir_lock::DirLock;
 use protobuf::{Message, StaticMessage};
 use raft_client::server::channel_factory::{self, ChannelFactory};
 use raft_client::{
-    DiscoveryClient, DiscoveryMulticast, DiscoveryServer, RouteChannelFactory, RouteStore,
+    DiscoveryClient, DiscoveryClientOptions, DiscoveryMulticast, DiscoveryServer,
+    RouteChannelFactory, RouteStore,
 };
 use rpc_util::AddReflection;
 
@@ -157,7 +158,14 @@ impl<R: 'static + Send> Node<R> {
                 .register_dependency(Arc::new(discovery_multicast.start()))
                 .await;
 
-            let discovery_client = DiscoveryClient::new(route_store.clone(), options.seed_list);
+            let discovery_client = DiscoveryClient::create(
+                route_store.clone(),
+                DiscoveryClientOptions {
+                    seeds: options.seed_list,
+                    active_broadcaster: true,
+                },
+            )
+            .await;
             resources
                 .spawn_interruptable("raft::DiscoveryClient", discovery_client.run())
                 .await;

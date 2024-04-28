@@ -29,12 +29,6 @@ message Route {
     // REQUIRED
     google.protobuf.Timestamp last_seen = 4;
 
-    // Last time this route was retrieved or was observed in an incoming
-    // request
-    //
-    // REQUIRED
-    google.protobuf.Timestamp last_used = 5;
-
     // Application specific labels that describe the server pointed to by this route.
     // These can be used as selectors for finding specific servers in a network.
     //
@@ -44,6 +38,8 @@ message Route {
 
     // If true, this route points to the server that sent the announcement in which it is contained.
     bool is_local_route = 7;
+
+    reserved 5;
 }
 
 message RouteLabel {

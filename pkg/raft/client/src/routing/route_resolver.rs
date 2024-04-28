@@ -9,7 +9,7 @@ use http::uri::Authority;
 use net::ip::SocketAddr;
 
 use crate::proto::*;
-use crate::routing::route_store::RouteStore;
+use crate::routing::route_store::{RouteInitializerState, RouteStore};
 
 pub struct RouteResolver {
     shared: Arc<Shared>,
@@ -61,7 +61,17 @@ impl RouteResolver {
 #[async_trait]
 impl http::Resolver for RouteResolver {
     async fn resolve(&self) -> Result<Vec<http::ResolvedEndpoint>> {
-        let mut route_store = self.shared.route_store.lock().await;
+        let mut route_store = {
+            // Wait for initial discover to conclude.
+
+            let mut guard = self.shared.route_store.lock().await;
+            while guard.initializer_state() == RouteInitializerState::Initializing {
+                guard.wait().await;
+                guard = self.shared.route_store.lock().await;
+            }
+
+            guard
+        };
 
         let mut server_ids = vec![];
         if let Some(id) = &self.shared.server_id {

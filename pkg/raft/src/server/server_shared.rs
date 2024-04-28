@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use executor::bundle::TaskBundle;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
@@ -51,6 +52,8 @@ TODO: Regarding HTTP2 tuning, we should ideally reserve some space in the flow c
 /// case of other servers leaving connections open for an infinite amount of
 /// time (so that we never run out of file descriptors)
 const REQUEST_TIMEOUT: u64 = 2000;
+
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Maximum amount of time we will wait for an InstallSnapshot request to
 /// response.
@@ -189,7 +192,9 @@ pub(crate) struct ServerState<R> {
 
     /// Long running tasks (e.g. outgoing RPCs) associated with the current
     /// term. These are stopped whenever the term advances.
-    pub term_tasks: HashMap<u64, ChildTask>,
+    ///
+    /// TODO: Switch to using a more standard task bundle implementation.
+    pub term_tasks: HashMap<u64, ChildTask, FastHasherBuilder>,
     pub last_task_id: u64,
 }
 
@@ -503,6 +508,9 @@ impl<R: Send + 'static> ServerShared<R> {
     ///
     /// NOTE: If this thing fails, we can still participate in raft but we can
     /// not perform snapshots or handle read/write queries
+    ///
+    /// TODO: This internally calls Log discard which isn't cancel safe so we
+    /// need to properly cancel this.
     async fn run_applier(
         self: Arc<ServerShared<R>>,
         snapshot_receiver: ChangeReceiver,
@@ -842,7 +850,10 @@ impl<R: Send + 'static> ServerShared<R> {
     /// are responsible for actually acting on those side effects.
     ///
     /// CANCEL SAFE
-    pub(crate) async fn run_tick<O: Send + 'static, F: Send + 'static>(self: &Arc<Self>, f: F) -> O
+    pub(crate) fn run_tick<O: Send + 'static, F: Send + 'static>(
+        self: &Arc<Self>,
+        f: F,
+    ) -> impl Future<Output = O> + Send + 'static
     where
         F: for<'a, 'b> FnOnce(&'a mut ServerState<R>, &'b mut Tick) -> O,
     {
@@ -890,7 +901,6 @@ impl<R: Send + 'static> ServerShared<R> {
             out
         })
         .join()
-        .await
     }
 
     // TODO: If this fails, we may need to stop the server (silently ignoring
@@ -990,7 +1000,9 @@ impl<R: Send + 'static> ServerShared<R> {
         // metadata so long as the metadata is flushed before it elects itself
         // as the leader (aka befoer it processes replies to RequestVote)
 
-        self.spawn_term_task(state, self.clone().dispatch_messages(tick.messages));
+        // NOTE: AppendEntries requests must be enqueued before the next tick to ensure
+        // that they are sent in order.
+        self.dispatch_messages(tick.messages, state).await;
 
         Ok(())
     }
@@ -1006,6 +1018,8 @@ impl<R: Send + 'static> ServerShared<R> {
         let id = state.last_task_id + 1;
         state.last_task_id = id;
 
+        // TODO: Let the 'Fut' borrow this so that we don't need it to have its own
+        // copy.
         let shared = self.clone();
 
         state.term_tasks.insert(
@@ -1065,127 +1079,132 @@ impl<R: Send + 'static> ServerShared<R> {
         });
     }
 
-    /// Sends all requests
-    fn dispatch_messages(
-        self: Arc<Self>,
-        messages: Vec<ConsensusMessage>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-        Box::pin(self.dispatch_messages_impl(messages))
-    }
-
     // TODO: Discard on module must run before the first tick to ensure we don't try
     // sending old values.
 
-    async fn dispatch_messages_impl(self: Arc<Self>, mut messages: Vec<ConsensusMessage>) {
+    /// Starts threads to send out all messages for a tick.
+    /// This blocks until the messages are queued but won't wait for them to
+    /// finish being sent.
+    async fn dispatch_messages(
+        self: &Arc<Self>,
+        messages: Vec<ConsensusMessage>,
+        state: &mut ServerState<R>,
+    ) {
         if messages.len() == 0 {
             return;
         }
 
-        let mut bundle = executor::bundle::TaskBundle::new();
+        for msg in messages {
+            let mut populated_append_entries_request = None;
 
-        for msg in &mut messages {
-            // Populate all the log entries.
-            if let ConsensusMessageBody::AppendEntries {
-                request,
-                last_log_index,
-                last_log_sequence,
-            } = &mut msg.body
-            {
-                if request.prev_log_index() != *last_log_index {
-                    let (entries, last_entry_sequence) = match self
-                        .log
-                        .entries(request.prev_log_index() + 1, *last_log_index)
-                        .await
-                    {
-                        Some(v) => v,
-                        None => {
-                            // This may happen if the log needed to be truncated by a new leader
-                            // than contacted us or if we just truncated
-                            // the log.
-                            eprintln!(
-                                "Adandoned AppendEntries for range [{}, {}], sequence: {:?}",
-                                request.prev_log_index().value() + 1,
-                                last_log_index.value(),
-                                *last_log_sequence
-                            );
-                            for to_id in msg.to.iter() {
-                                bundle.add(self.dispatch_append_entries_abandon(
-                                    to_id.clone(),
-                                    msg.request_id,
-                                ));
-                            }
-                            continue;
-                        }
-                    };
+            for to_id in msg.to.into_iter() {
+                // TODO: Make sure these errors always get logged somewhere.
+                let client = self.get_client(to_id, state).await;
 
-                    if last_entry_sequence != last_entry_sequence {
-                        eprintln!(
-                            "Adandoned AppendEntries due to inconsistent references for {:?}",
-                            *last_log_sequence
-                        );
-                    }
-
-                    for entry in entries {
-                        request.add_entries(entry.as_ref().clone());
-                    }
-                }
-            }
-
-            // TODO: Must enforce a backoff on any failures.
-            for to_id in msg.to.iter() {
-                match msg.body {
+                match &msg.body {
                     ConsensusMessageBody::Heartbeat(ref request) => {
-                        bundle.add(self.dispatch_heartbeat(to_id.clone(), msg.request_id, request));
+                        self.spawn_term_task(
+                            state,
+                            self.clone().dispatch_heartbeat(
+                                to_id,
+                                client,
+                                msg.request_id,
+                                request.clone(),
+                            ),
+                        );
                     }
                     ConsensusMessageBody::AppendEntries {
                         ref request,
                         ref last_log_index,
                         ref last_log_sequence,
                     } => {
-                        bundle.add(self.dispatch_append_entries(
-                            to_id.clone(),
-                            msg.request_id,
-                            request,
-                        ));
+                        if populated_append_entries_request.is_none() {
+                            populated_append_entries_request = Some(
+                                self.populate_append_entries_request(
+                                    request.clone(),
+                                    *last_log_index,
+                                    *last_log_sequence,
+                                )
+                                .await,
+                            );
+                        }
+
+                        let request = populated_append_entries_request.as_ref().unwrap().clone();
+
+                        let response: Pin<
+                            Box<
+                                dyn Future<Output = Result<AppendEntriesResponse>> + Send + 'static,
+                            >,
+                        > = match (request, client) {
+                            (Some(req), Ok(client)) => {
+                                Box::pin(client.enqueue_append_entries(req).await)
+                            }
+                            _ => Box::pin(async move {
+                                Err(err_msg("Failed to generate request/client"))
+                            }),
+                        };
+
+                        // TODO: Eventually move all of this to one thread so that responses are
+                        // processed in order. (to avoid unnessary disruption of some requests
+                        // occasionally fail)
+                        self.spawn_term_task(
+                            state,
+                            self.clone()
+                                .wait_for_append_entries(to_id, msg.request_id, response),
+                        );
                     }
                     ConsensusMessageBody::RequestVote(ref req) => {
-                        bundle.add(self.dispatch_request_vote(
-                            to_id.clone(),
-                            msg.request_id,
-                            false,
-                            &req,
-                        ));
+                        self.spawn_term_task(
+                            state,
+                            self.clone().dispatch_request_vote(
+                                to_id,
+                                client,
+                                msg.request_id,
+                                false,
+                                req.clone(),
+                            ),
+                        );
                     }
                     ConsensusMessageBody::PreVote(ref req) => {
-                        bundle.add(self.dispatch_request_vote(
-                            to_id.clone(),
-                            msg.request_id,
-                            true,
-                            &req,
-                        ));
+                        self.spawn_term_task(
+                            state,
+                            self.clone().dispatch_request_vote(
+                                to_id,
+                                client,
+                                msg.request_id,
+                                true,
+                                req.clone(),
+                            ),
+                        );
                     }
                     ConsensusMessageBody::InstallSnapshot(ref req) => {
-                        bundle.add(self.dispatch_install_snapshot(to_id.clone(), &req));
+                        self.spawn_term_task(
+                            state,
+                            self.clone().dispatch_install_snapshot(
+                                to_id.clone(),
+                                client,
+                                req.clone(),
+                            ),
+                        );
                     }
                 };
             }
         }
-
-        bundle.join().await
     }
 
     // TODO: We should chain on some promise holding one side of a channel
     // so that we can cancel this entire request later if we end up needing
     // to
     async fn dispatch_request_vote(
-        self: &Arc<Self>,
+        self: Arc<Self>,
         to_id: ServerId,
+        client: Result<Arc<ServerClient>>,
         request_id: RequestId,
         is_pre_vote: bool,
-        req: &RequestVoteRequest,
+        req: RequestVoteRequest,
     ) {
         let res = self
-            .dispatch_request_vote_impl(to_id, is_pre_vote, req)
+            .dispatch_request_vote_impl(to_id, client, is_pre_vote, &req)
             .await;
 
         self.run_tick(move |state, tick| match res {
@@ -1194,7 +1213,9 @@ impl<R: Send + 'static> ServerShared<R> {
                     .inst
                     .request_vote_callback(to_id, request_id, is_pre_vote, resp, tick)
             }
-            Err(e) => eprintln!("RequestVote error: {}", e),
+            Err(e) => {
+                // eprintln!("RequestVote error: {}", e)
+            }
         })
         .await;
     }
@@ -1202,10 +1223,11 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn dispatch_request_vote_impl(
         &self,
         to_id: ServerId,
+        client: Result<Arc<ServerClient>>,
         is_pre_vote: bool,
         req: &RequestVoteRequest,
     ) -> Result<RequestVoteResponse> {
-        let client = self.get_client(to_id).await?;
+        let client = client?;
 
         let request_context = self.identity.new_outgoing_request_context(to_id)?;
 
@@ -1233,17 +1255,15 @@ impl<R: Send + 'static> ServerShared<R> {
     }
 
     async fn dispatch_heartbeat(
-        self: &Arc<Self>,
+        self: Arc<Self>,
         to_id: ServerId,
+        client: Result<Arc<ServerClient>>,
         request_id: RequestId,
-        req: &HeartbeatRequest,
+        req: HeartbeatRequest,
     ) {
-        let res = match self.dispatch_heartbeat_impl(to_id, req).await {
+        let res = match self.dispatch_heartbeat_impl(to_id, client, &req).await {
             Ok(v) => Some(v),
-            Err(e) => {
-                eprintln!("Heartbeat error: {}", e);
-                None
-            }
+            Err(e) => None,
         };
 
         self.run_tick(move |state, tick| {
@@ -1255,14 +1275,15 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn dispatch_heartbeat_impl(
         &self,
         to_id: ServerId,
+        client: Result<Arc<ServerClient>>,
         req: &HeartbeatRequest,
     ) -> Result<HeartbeatResponse> {
-        let client = self.get_client(to_id).await?;
+        let client = client?;
 
         let request_context = self.identity.new_outgoing_request_context(to_id)?;
 
         let res = executor::timeout(
-            Duration::from_millis(REQUEST_TIMEOUT),
+            HEARTBEAT_TIMEOUT,
             client.stub().Heartbeat(&request_context, req),
         )
         .await?
@@ -1271,14 +1292,62 @@ impl<R: Send + 'static> ServerShared<R> {
         Ok(res)
     }
 
-    async fn dispatch_append_entries(
-        self: &Arc<Self>,
+    async fn populate_append_entries_request(
+        &self,
+        mut request: AppendEntriesRequest,
+        last_log_index: LogIndex,
+        last_log_sequence: LogSequence,
+    ) -> Option<AppendEntriesRequest> {
+        /// If the request is supposed to be empty, then we don't need to do
+        /// anything.
+        if request.prev_log_index() == last_log_index {
+            return Some(request);
+        }
+
+        assert!(request.entries().is_empty());
+
+        let (entries, last_entry_sequence) = match self
+            .log
+            .entries(request.prev_log_index() + 1, last_log_index)
+            .await
+        {
+            Some(v) => v,
+            None => {
+                // This may happen if the log needed to be truncated by a new leader
+                // than contacted us or if we just truncated
+                // the log.
+                eprintln!(
+                    "Adandoned AppendEntries for range [{}, {}], sequence: {:?}",
+                    request.prev_log_index().value() + 1,
+                    last_log_index.value(),
+                    last_log_sequence
+                );
+                return None;
+            }
+        };
+
+        if last_log_sequence != last_entry_sequence {
+            eprintln!(
+                "Adandoned AppendEntries due to inconsistent references for {:?}",
+                last_log_sequence
+            );
+            return None;
+        }
+
+        for entry in entries {
+            request.add_entries(entry.as_ref().clone());
+        }
+
+        Some(request)
+    }
+
+    async fn wait_for_append_entries(
+        self: Arc<Self>,
         to_id: ServerId,
         request_id: RequestId,
-        req: &AppendEntriesRequest,
+        res: Pin<Box<dyn Future<Output = Result<AppendEntriesResponse>> + Send + 'static>>,
     ) {
-        // TODO: Get rid of the clone.
-        let res = self.dispatch_append_entries_impl(to_id, req.clone()).await;
+        let res = res.await;
 
         self.run_tick(move |state, tick| {
             match res {
@@ -1292,7 +1361,7 @@ impl<R: Send + 'static> ServerShared<R> {
                         .append_entries_callback(to_id, request_id, resp, tick);
                 }
                 Err(e) => {
-                    eprintln!("AppendEntries failure: {} ", e);
+                    // eprintln!("AppendEntries failure: {} ", e);
                     state
                         .inst
                         .append_entries_noresponse(to_id, request_id, tick);
@@ -1303,25 +1372,6 @@ impl<R: Send + 'static> ServerShared<R> {
 
         // TODO: In the case of a timeout or other error, we would still like
         // to unblock this server from having a pending_request
-    }
-
-    // TODO: If a route doesn't exist, these will immediately fail.
-    async fn dispatch_append_entries_impl(
-        &self,
-        to_id: ServerId,
-        req: AppendEntriesRequest,
-    ) -> Result<AppendEntriesResponse> {
-        let client = self.get_client(to_id).await?;
-
-        // TODO: Move the timeout to the client instance.
-        // (a timeout of one entry will timeout any other pending requests as well)
-        let res = executor::timeout(
-            Duration::from_millis(REQUEST_TIMEOUT),
-            client.send_append_entries(req),
-        )
-        .await??;
-
-        Ok(res)
     }
 
     async fn dispatch_append_entries_abandon(
@@ -1338,9 +1388,10 @@ impl<R: Send + 'static> ServerShared<R> {
     }
 
     async fn dispatch_install_snapshot(
-        self: &Arc<Self>,
+        self: Arc<Self>,
         to_id: ServerId,
-        req: &InstallSnapshotRequest,
+        client: Result<Arc<ServerClient>>,
+        req: InstallSnapshotRequest,
     ) {
         eprintln!("Installing a snapshot to server id {:?}", to_id.value());
 
@@ -1348,7 +1399,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
         let res = executor::timeout(
             INSTALL_SNAPSHOT_CLIENT_TIMEOUT,
-            self.dispatch_install_snapshot_impl(to_id, &req),
+            self.dispatch_install_snapshot_impl(to_id, client, &req),
         )
         .await;
 
@@ -1371,8 +1422,11 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn dispatch_install_snapshot_impl(
         &self,
         to_id: ServerId,
+        client: Result<Arc<ServerClient>>,
         req: &InstallSnapshotRequest,
     ) -> Result<(InstallSnapshotResponse, LogIndex)> {
+        let client = client?;
+
         let mut req = req.clone();
 
         let mut snapshot = self
@@ -1380,8 +1434,6 @@ impl<R: Send + 'static> ServerShared<R> {
             .snapshot()
             .await?
             .ok_or_else(|| err_msg("No snapshot available to install"))?;
-
-        let client = self.get_client(to_id).await?;
 
         let last_applied_term = self
             .log
@@ -1426,9 +1478,12 @@ impl<R: Send + 'static> ServerShared<R> {
         Ok((res, snapshot.last_applied.clone()))
     }
 
-    /// CANCEL SAFE
-    async fn get_client(&self, server_id: ServerId) -> Result<Arc<ServerClient>> {
-        let mut state = self.state.lock().await?.read_exclusive();
+    /// NOT CANCEL SAFE
+    async fn get_client(
+        &self,
+        server_id: ServerId,
+        state: &mut ServerState<R>,
+    ) -> Result<Arc<ServerClient>> {
         if let Some(client) = state.clients.get(&server_id) {
             return Ok(client.clone());
         }
@@ -1443,9 +1498,7 @@ impl<R: Send + 'static> ServerShared<R> {
         let stub = Arc::new(ConsensusStub::new(channel));
         let client = Arc::new(ServerClient::new(stub, request_context));
 
-        lock!(state <= state.upgrade(), {
-            state.clients.insert(server_id, client.clone());
-        });
+        state.clients.insert(server_id, client.clone());
 
         Ok(client)
     }

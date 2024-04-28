@@ -151,151 +151,20 @@ impl ConnectionWriter {
             let now = SystemTime::now();
 
             match event {
-                // TODO: Instead alwas enqueue requests and always
                 ConnectionEvent::SendRequest => {
-                    // TODO: If anything in here fails, we should report it to the requester rather
-                    // than killing the whole thread.
-                    // ^ We also need to let any listeners know that the request was dropped.
-
-                    let mut connection_state = self.shared.state.lock().await?.enter();
-
-                    // Checking that we are able to send a stream.
-                    let remote_stream_limit = std::cmp::min(
-                        connection_state.remote_settings[SettingId::MAX_CONCURRENT_STREAMS],
-                        self.shared.options.max_outgoing_streams as u32,
-                    );
-                    if connection_state.local_stream_count >= remote_stream_limit as usize {
-                        connection_state.exit();
-                        continue;
-                    }
-
-                    // TODO: Take the request with the first non-cancelled response_handle
-                    let (mut request, response_sender) = {
-                        let mut ret = None;
-                        while let Some(req) = connection_state.pending_requests.pop_front() {
-                            // As an optimization, we'll skip requests that have their response
-                            // handlers cancelled early.
-                            if req.response_sender.is_closed() {
-                                continue;
-                            }
-
-                            ret = Some((req.request, req.response_sender));
-                            break;
-                        }
-
-                        if let Some(v) = ret {
-                            v
-                        } else {
-                            connection_state.exit();
-                            continue;
-                        }
-                    };
-
-                    let body = encode_request_body_v2(&mut request.head, request.body);
-
-                    // Generate a new stream id.
-                    let stream_id = {
-                        if connection_state.last_sent_stream_id == 0 {
-                            if self.shared.is_server {
-                                2
-                            } else {
-                                1
-                            }
-                        } else {
-                            connection_state.last_sent_stream_id + 2
-                        }
-                    };
-                    connection_state.last_sent_stream_id = stream_id;
-
-                    let (mut stream, incoming_body, outgoing_body) =
-                        self.shared.new_stream(&connection_state, stream_id);
-
-                    let response_sender = {
-                        let event_sender = self.shared.connection_event_sender.clone();
-                        response_sender.with_cancellation_callback(move || async move {
-                            let _ = event_sender
-                                .send(ConnectionEvent::CancelRequest { stream_id })
-                                .await;
-                        })
-                    };
-
-                    // The type of request will determine if we allow a response
-
-                    // Apply client request specific details to the stream's state.
-                    let local_end = {
-                        // TODO: If the response_handler is somehow dropped, then we
-                        stream.incoming_response_handler =
-                            Some((request.head.method, response_sender, incoming_body));
-
-                        // TODO: Deduplicate this logic with the other side.
-                        // TODO: Also ensure that the case of zero length bodies is optimized when
-                        // it comes to intermediate body compression layers.
-                        if let Some(body) = body {
-                            // NOTE: Because we are still blocking the writing thread later down in
-                            // this function, this won't trigger DATA
-                            // frames to be sent until the HEADERS frame will be sent.
-                            stream
-                                .processing_tasks
-                                .push(ChildTask::spawn(outgoing_body.run(body)));
-                            false
-                        } else {
-                            // TODO: Lock and mark as locally closed?
-                            let mut stream_state = stream.state.lock().await?.enter();
-                            stream_state.sending_end = true;
-                            stream_state.exit();
-
-                            stream.sending_end_flushed = true;
-
-                            true
-                        }
-                    };
-
-                    connection_state.local_stream_count += 1;
-                    connection_state.streams.insert(stream_id, stream);
-
-                    let max_remote_frame_size =
-                        connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
-
-                    connection_state.last_user_byte_sent_time = now;
-
-                    connection_state.exit();
-
-                    // We are now done setting up the stream.
-                    // Now we should just send the request to the other side.
-
-                    // TODO: Write a unit test to ensure that if there is a single malformed
-                    // request, the request still works.
-
-                    // TODO: Split this up into the request validation and header encoding
-                    // components so that we can return errors if it is invalid.
-                    let header_block =
-                        encode_request_headers_block(&request.head, &mut local_header_encoder)?;
-
-                    /*
-                    if header_block.len()
-                        > (connection_state.remote_settings[SettingId::MAX_HEADER_LIST_SIZE]
-                            as usize)
-                    {
-                        // Return an error to the request sender.
-
-                        // We also need to revert changes to the
-                        // local_header_encoder (instead it would probably be
-                        // easier to approximate the size of the header block
-                        // based on the raw size and add some overhead).
-                    }
-                    */
-
-                    write_headers_block(
-                        writer.as_mut(),
-                        stream_id,
-                        &header_block,
-                        local_end,
-                        max_remote_frame_size,
-                    )
-                    .await?;
+                    self.send_requests(now, &mut local_header_encoder, writer.as_mut())
+                        .await?;
                 }
                 ConnectionEvent::CancelRequest { stream_id } => {
                     let mut connection_state = self.shared.state.lock().await?.enter();
+
+                    // No need to cancel it if we already had some other reason why we locally
+                    // finished the stream. This will ensure we don't send out
+                    // unnecessary RST_STREAM packets to the other end.
+                    if !connection_state.streams.contains_key(&stream_id) {
+                        continue;
+                    }
+
                     self.shared
                         .finish_stream(
                             &mut connection_state,
@@ -336,6 +205,8 @@ impl ConnectionWriter {
                     let body =
                         encode_response_body_v2(request_method, &mut response.head, response.body);
 
+                    let mut stream_closed = false;
+
                     // TODO: Deduplicate with the regular code.
                     let local_end = {
                         if let Some(body) = body {
@@ -351,6 +222,9 @@ impl ConnectionWriter {
                             let mut stream_state = stream.state.lock().await?.enter();
                             stream_state.sending_end = true;
                             stream.sending_end_flushed = true;
+
+                            stream_closed = stream.is_closed(&mut stream_state);
+
                             stream_state.exit();
 
                             true
@@ -361,6 +235,12 @@ impl ConnectionWriter {
                         connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
 
                     connection_state.last_user_byte_sent_time = now;
+
+                    if stream_closed {
+                        self.shared
+                            .finish_stream(&mut connection_state, stream_id, None)
+                            .await?;
+                    }
 
                     connection_state.exit();
 
@@ -695,6 +575,169 @@ impl ConnectionWriter {
                 }
             }
         }
+    }
+
+    /// Creates new streams for all pending_requests and sends the initial
+    /// headers to the remote peer.
+    async fn send_requests(
+        &self,
+        now: SystemTime,
+        local_header_encoder: &mut hpack::Encoder,
+        writer: &mut dyn Writeable,
+    ) -> Result<()> {
+        loop {
+            // TODO: If anything in here fails, we should report it to the requester rather
+            // than killing the whole thread.
+            // ^ We also need to let any listeners know that the request was dropped.
+
+            let mut connection_state = self.shared.state.lock().await?.enter();
+
+            let remote_stream_limit = std::cmp::min(
+                connection_state.remote_settings[SettingId::MAX_CONCURRENT_STREAMS],
+                self.shared.options.max_outgoing_streams as u32,
+            );
+
+            // Pop a pending request to send next.
+            let (mut request, response_sender) = {
+                let mut ret = None;
+                while let Some(req) = connection_state.pending_requests.pop_front() {
+                    // As an optimization, we'll skip requests that have their response
+                    // handlers cancelled early.
+                    if req.response_sender.is_closed() {
+                        continue;
+                    }
+
+                    // Reject if we would exceed the stream limit.
+                    // This may happen if the remote server changed its settings since we enqueued
+                    // the request.
+                    if connection_state.local_stream_count >= remote_stream_limit as usize {
+                        // TODO: Report to listeners that the request has ended.
+
+                        req.response_sender.send(Err(ProtocolErrorV2 {
+                            code: ErrorCode::REFUSED_STREAM,
+                            message: "Hit outgoing stream limit on this connection",
+                            local: true,
+                        }
+                        .into()));
+                        continue;
+                    }
+
+                    ret = Some((req.request, req.response_sender));
+                    break;
+                }
+
+                if let Some(v) = ret {
+                    v
+                } else {
+                    connection_state.exit();
+                    break;
+                }
+            };
+
+            let body = encode_request_body_v2(&mut request.head, request.body);
+
+            // Generate a new stream id.
+            let stream_id = {
+                if connection_state.last_sent_stream_id == 0 {
+                    if self.shared.is_server {
+                        2
+                    } else {
+                        1
+                    }
+                } else {
+                    connection_state.last_sent_stream_id + 2
+                }
+            };
+            connection_state.last_sent_stream_id = stream_id;
+
+            let (mut stream, incoming_body, outgoing_body) =
+                self.shared.new_stream(&connection_state, stream_id);
+
+            let response_sender = {
+                let event_sender = self.shared.connection_event_sender.clone();
+                response_sender.with_cancellation_callback(move || async move {
+                    let _ = event_sender
+                        .send(ConnectionEvent::CancelRequest { stream_id })
+                        .await;
+                })
+            };
+
+            // The type of request will determine if we allow a response
+
+            // Apply client request specific details to the stream's state.
+            let local_end = {
+                // TODO: If the response_handler is somehow dropped, then we
+                stream.incoming_response_handler =
+                    Some((request.head.method, response_sender, incoming_body));
+
+                // TODO: Deduplicate this logic with the other side.
+                // TODO: Also ensure that the case of zero length bodies is optimized when
+                // it comes to intermediate body compression layers.
+                if let Some(body) = body {
+                    // NOTE: Because we are still blocking the writing thread later down in
+                    // this function, this won't trigger DATA
+                    // frames to be sent until the HEADERS frame will be sent.
+                    stream
+                        .processing_tasks
+                        .push(ChildTask::spawn(outgoing_body.run(body)));
+                    false
+                } else {
+                    // TODO: Lock and mark as locally closed?
+                    let mut stream_state = stream.state.lock().await?.enter();
+                    stream_state.sending_end = true;
+                    stream_state.exit();
+
+                    stream.sending_end_flushed = true;
+
+                    true
+                }
+            };
+
+            connection_state.local_stream_count += 1;
+            connection_state.streams.insert(stream_id, stream);
+
+            let max_remote_frame_size =
+                connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
+
+            connection_state.last_user_byte_sent_time = now;
+
+            connection_state.exit();
+
+            // We are now done setting up the stream.
+            // Now we should just send the request to the other side.
+
+            // TODO: Write a unit test to ensure that if there is a single malformed
+            // request, the request still works.
+
+            // TODO: Split this up into the request validation and header encoding
+            // components so that we can return errors if it is invalid.
+            let header_block = encode_request_headers_block(&request.head, local_header_encoder)?;
+
+            /*
+            if header_block.len()
+                > (connection_state.remote_settings[SettingId::MAX_HEADER_LIST_SIZE]
+                    as usize)
+            {
+                // Return an error to the request sender.
+
+                // We also need to revert changes to the
+                // local_header_encoder (instead it would probably be
+                // easier to approximate the size of the header block
+                // based on the raw size and add some overhead).
+            }
+            */
+
+            write_headers_block(
+                writer,
+                stream_id,
+                &header_block,
+                local_end,
+                max_remote_frame_size,
+            )
+            .await?;
+        }
+
+        Ok(())
     }
 
     /// NOTE: The task running this can only be cancelled if a ConnectionState

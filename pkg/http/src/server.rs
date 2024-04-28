@@ -737,12 +737,8 @@ impl Server {
                 &request_head.headers,
             )?;
 
-            let (body_sender, body_returner) = channel::unbounded();
-
-            let (body, body_close_delimited) =
-                match decode_request_body_v1(&request_head, read_stream, Arc::new(body_sender))
-                    .await
-                {
+            let ((body, body_reclaimer), body_close_delimited) =
+                match decode_request_body_v1(&request_head, read_stream).await {
                     Ok(pair) => pair,
                     Err(e) => {
                         println!("{}", e);
@@ -781,7 +777,7 @@ impl Server {
                 }
 
                 let reader = DeferredReadable::wrap(async move {
-                    let body = body_returner.recv().await??;
+                    let body = body_reclaimer.wait().await?;
                     body.wait()
                         .await?
                         // NOTE: This error should never occur if body_close_delimited was correct.
@@ -847,7 +843,7 @@ impl Server {
                 write_body(body.as_mut(), write_stream.as_mut()).await?;
             }
 
-            let returned_body = body_returner.recv().await??;
+            let returned_body = body_reclaimer.wait().await?;
 
             if !persist_connection {
                 break;

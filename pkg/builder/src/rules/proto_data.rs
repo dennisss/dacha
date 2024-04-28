@@ -4,9 +4,10 @@ use file::LocalPath;
 use protobuf::{text::*, Message};
 use protobuf::{DescriptorPool, DescriptorPoolOptions, DynamicMessage};
 
-use crate::proto::*;
+use crate::label::Label;
 use crate::rule::*;
 use crate::target::*;
+use crate::{proto::*, BuildConfigTarget};
 
 pub struct ProtoData {
     attrs: ProtoDataAttrs,
@@ -17,7 +18,7 @@ impl BuildRule for ProtoData {
 
     type Target = Self;
 
-    fn evaluate(attributes: Self::Attributes, config: &BuildConfig) -> Result<Self::Target> {
+    fn evaluate(attributes: Self::Attributes, context: &BuildConfigTarget) -> Result<Self::Target> {
         Ok(Self { attrs: attributes })
     }
 }

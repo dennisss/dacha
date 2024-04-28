@@ -22,7 +22,7 @@ mod tests {
 
     // Helper for running a program through an executor.
     fn run(prog: &[Instruction], inputs: &[u8]) -> Option<Vec<Option<usize>>> {
-        let mut exec = Executor::new(prog);
+        let mut exec = Executor::new(ReferencedProgram::new(prog));
         exec.run(inputs, 0).map(|v| v.list)
     }
 

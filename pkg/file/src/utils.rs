@@ -79,18 +79,18 @@ pub async fn metadata(path: &LocalPath) -> Result<Metadata> {
 }
 
 pub fn metadata_sync(path: &LocalPath) -> Result<Metadata> {
-    let path = CString::new(path.as_str())?;
+    let cpath = CString::new(path.as_str())?;
     let mut stat = sys::bindings::stat::default();
-    unsafe { sys::stat(path.as_ptr() as *const u8, &mut stat) }
-        .remap_errno::<FileError, _>(|| String::new())?;
+    unsafe { sys::stat(cpath.as_ptr() as *const u8, &mut stat) }
+        .remap_errno::<FileError, _>(|| format!("stat(\"{}\") failed", path.as_str()))?;
     Ok(Metadata { inner: stat })
 }
 
 pub async fn symlink_metadata(path: &LocalPath) -> Result<Metadata> {
-    let path = CString::new(path.as_str())?;
+    let cpath = CString::new(path.as_str())?;
     let mut stat = sys::bindings::stat::default();
-    unsafe { sys::lstat(path.as_ptr() as *const u8, &mut stat) }
-        .remap_errno::<FileError, _>(|| String::new())?;
+    unsafe { sys::lstat(cpath.as_ptr() as *const u8, &mut stat) }
+        .remap_errno::<FileError, _>(|| format!("lstat(\"{}\") failed", path.as_str()))?;
     Ok(Metadata { inner: stat })
 }
 
@@ -295,11 +295,16 @@ pub async fn remove_dir_all_with_options(path: &LocalPath, only_remove_dirs: boo
 
 /// Moves the file currently located at 'from' to 'to'
 pub async fn rename<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) -> Result<()> {
-    let from = CString::new(from.as_ref().as_str())?;
-    let to = CString::new(to.as_ref().as_str())?;
+    let cfrom = CString::new(from.as_ref().as_str())?;
+    let cto = CString::new(to.as_ref().as_str())?;
 
-    unsafe { sys::rename(from.as_ptr(), to.as_ptr()) }
-        .remap_errno::<FileError, _>(|| String::new())?;
+    unsafe { sys::rename(cfrom.as_ptr(), cto.as_ptr()) }.remap_errno::<FileError, _>(|| {
+        format!(
+            "rename(\"{}\", \"{}\") failed",
+            from.as_ref().as_str(),
+            to.as_ref().as_str()
+        )
+    })?;
 
     Ok(())
 }

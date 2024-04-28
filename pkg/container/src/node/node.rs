@@ -54,7 +54,7 @@ pub struct NodeContext {
     /// Address at which the node can be reached by other nodes.
     /// This should contain the port on which the Node service will be started.
     ///
-    /// e.g. 'http://10.1.0.123:10400'
+    /// e.g. '10.1.0.123:10400'
     pub local_address: String,
 }
 
@@ -370,7 +370,7 @@ impl NodeInner {
 
         let meta_client = {
             if !self.shared.meta_client.has_value().await {
-                let meta_client = ClusterMetaClient::create(zone).await?;
+                let meta_client = ClusterMetaClient::create(zone, &[]).await?;
                 self.shared.meta_client.set(meta_client).await?;
             }
 
@@ -991,6 +991,24 @@ impl NodeInner {
                 ZONE_ENV_VAR,
                 self.shared.config.zone()
             ));
+
+            // NOTE: Assuming the metastore didn't die, there should be valid seeds
+            // available for regular workers (those that don't start at node startup) since
+            // we check with the metastore before starting them.
+            if self.shared.meta_client.has_value().await {
+                let client = self.shared.meta_client.get().await;
+
+                // TODO: If there are many servers that are healthy, then we probably need some
+                // randomization before truncation.
+                let mut addrs = client.inner().known_servers().await;
+                addrs.truncate(3);
+
+                container_config.process_mut().add_env(format!(
+                    "{}={}",
+                    META_STORE_SEEDS_ENV_VAR,
+                    addrs.join(",")
+                ));
+            }
         }
 
         container_config.process_mut().set_cwd(worker.spec.cwd());

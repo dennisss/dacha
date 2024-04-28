@@ -259,7 +259,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
     }
 
     async fn restore(&self, data: raft::StateMachineSnapshot) -> Result<bool> {
-        let mut current = self.current.lock().await?.read_exclusive();
+        let mut current = self.current.lock().await?.enter();
 
         // TODO: Validate the last_applied isn't regressing.
 
@@ -274,6 +274,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
             Err(e) => {
                 eprintln!("Failed to restore snapshot to {:?}. Error: {}", path, e);
                 file::remove_dir_all(&path).await?;
+                current.exit();
                 return Ok(false);
             }
         }
@@ -288,15 +289,16 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         // machine can't be mutated concurrently to this function since the current
         // raft::Server implication will not perform concurrent apply() and restore()
         // calls.
-        lock_async!(current <= current.upgrade(), {
-            current.0.set_current_snapshot(num);
-            current.1.store(&current.0.serialize()?).await
-        })?;
+        current.0.set_current_snapshot(num);
+        let value = current.0.serialize()?;
+        current.1.store(&value).await?;
 
         self.db.swap_with(new_db).await?;
 
         let old_path = self.dir.join(format!("snapshot-{:04}", old_number));
         file::remove_dir_all(&old_path).await?;
+
+        current.exit();
 
         Ok(true)
     }

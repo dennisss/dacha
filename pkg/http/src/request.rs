@@ -238,6 +238,8 @@ fn simple_path_parser(path: &[u8]) -> Option<(AsciiString, Option<AsciiString>)>
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
 
     #[test]
@@ -292,5 +294,24 @@ mod tests {
         );
 
         println!("SIZE: {}", REQUEST_PATH.estimated_memory_usage());
+    }
+
+    #[test]
+    fn path_parse_benchmark() {
+        println!("SIZE: {}", REQUEST_PATH.estimated_memory_usage());
+
+        let path = b"/db.meta.KeyValueStore/Execute";
+
+        let start = Instant::now();
+        let mut x = 0;
+        for _ in 0..10000 {
+            let (v, _) = simple_path_parser(path).unwrap();
+            x += v.as_str().len();
+        }
+
+        let end = Instant::now();
+
+        println!("{}", x);
+        println!("Time: {:?}", end - start);
     }
 }

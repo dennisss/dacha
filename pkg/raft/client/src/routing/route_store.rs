@@ -12,6 +12,25 @@ use crate::proto::*;
 /// it).
 const ROUTE_EXPIRATION_DURATION: Duration = Duration::from_secs(10);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RouteInitializerState {
+    /// No processes are currently working to populate the route store with
+    /// initial data.
+    NoInitializers = 0,
+
+    /// At least one process is currently working to get a complete set of
+    /// routing information.
+    ///
+    /// The expectation is that the process(s) will soon (within a bounded
+    /// amount of time) switch the state to Initialized (either due to a success
+    /// or timeout/failure).
+    Initializing = 1,
+
+    /// At least one route discovery round has fully completed so we believe
+    /// that the RouteStore contains a complete picture of the cluster.
+    Initialized = 2,
+}
+
 /// Container of all server-to-server routing information known by the local
 /// server.
 #[derive(Clone)]
@@ -27,6 +46,8 @@ struct State {
 
     /// NOTE: These never change after the constructor.
     labels: Vec<RouteLabel>,
+
+    initializers: RouteInitializerState,
 }
 
 struct PeerState {
@@ -45,6 +66,7 @@ impl RouteStore {
                 peers: HashMap::new(),
                 local_route: None,
                 labels: labels.to_vec(),
+                initializers: RouteInitializerState::NoInitializers,
             })),
         }
     }
@@ -84,6 +106,19 @@ impl<'a> RouteStoreGuard<'a> {
         }
 
         self.state.notify_all();
+    }
+
+    pub fn set_initializer_state(&mut self, state: RouteInitializerState) {
+        let new_value = core::cmp::max(self.state.initializers, state);
+
+        if new_value != self.state.initializers {
+            self.state.initializers = new_value;
+            self.state.notify_all();
+        }
+    }
+
+    pub fn initializer_state(&self) -> RouteInitializerState {
+        self.state.initializers
     }
 
     fn should_select_route(&self, route: &Route) -> bool {
@@ -284,31 +319,4 @@ impl<'a> RouteStoreGuard<'a> {
     pub async fn wait(self) {
         self.state.wait().await
     }
-
-    // pub fn apply(&mut self, an: &Announcement) {
-    //     // TODO: Possibly some consideration for a minimum last_used time if
-    //     // the route would just get immediately garbage collected upon being
-    //     // added
-
-    //     for r in an.routes().iter() {
-    //         // If we are a server, never add ourselves to our list
-    //         if let Some(ref desc) = self.identity {
-    //             if desc.id() == r.desc().id() {
-    //                 continue;
-    //             }
-    //         }
-
-    //         // Add this route if it doesn't already exist or is newer than our
-    //         // old entry
-    //         let insert = if let Some(old) = self.routes.get(&r.desc().id()) {
-    //             SystemTime::from(old.last_used()) <
-    // SystemTime::from(r.last_used())         } else {
-    //             true
-    //         };
-
-    //         if insert {
-    //             self.routes.insert(r.desc().id().clone(), r.clone());
-    //         }
-    //     }
-    // }
 }

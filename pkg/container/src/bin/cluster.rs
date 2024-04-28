@@ -337,7 +337,7 @@ async fn run_local_metastore(port: u16, zone: String) -> Result<Arc<dyn ServiceR
         service_port: port,
         route_labels: vec![route_label],
         log: SegmentedLogOptions::default(),
-        state_machine: EmbeddedDBStateMachineOptions::default(),
+        state_machine: datastore::meta::EmbeddedDBStateMachineOptions::default(),
     })
     .await
 }
@@ -351,7 +351,7 @@ async fn run_bootstrap_inner(
 ) -> Result<()> {
     // TODO: Given that we know the port of the local metastore, we can use that to
     // help find it.
-    let meta_client = Arc::new(ClusterMetaClient::create(node_meta.zone()).await?);
+    let meta_client = Arc::new(ClusterMetaClient::create(node_meta.zone(), &[]).await?);
 
     // Id of the local metastore server which is being used just for bootstrapping
     // the server.

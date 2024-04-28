@@ -1065,9 +1065,7 @@ impl ConnectionReader {
         // This code is only relevant on the client side.
         // As soon as we receive a remote GOAWAY, we can cancel all unsent requests.
         while let Some(req) = connection_state.pending_requests.pop_front() {
-            req.response_sender
-                .send(Err(refused_error.clone().into()))
-                .await;
+            req.response_sender.send(Err(refused_error.clone().into()));
         }
 
         if goaway_frame.error_code == ErrorCode::NO_ERROR {

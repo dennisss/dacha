@@ -7,15 +7,16 @@ use common::failure::ResultExt;
 use protobuf::{Message, MessageReflection, StaticMessage};
 use protobuf_builtins::google::protobuf::Any;
 
-use crate::package::*;
+use crate::label::Label;
 use crate::proto::*;
 use crate::target::BuildTarget;
+use crate::{package::*, BuildConfigTarget};
 
 pub trait BuildRule {
     type Attributes;
     type Target;
 
-    fn evaluate(attributes: Self::Attributes, config: &BuildConfig) -> Result<Self::Target>;
+    fn evaluate(attributes: Self::Attributes, context: &BuildConfigTarget) -> Result<Self::Target>;
 }
 
 #[derive(Default)]
@@ -24,11 +25,12 @@ pub struct BuildRuleRegistry {
 }
 
 type BuildRuleFunction =
-    fn(&mut skylark::FunctionCallContext, &BuildConfig) -> Result<Arc<dyn BuildTarget>>;
+    fn(&mut skylark::FunctionCallContext, &BuildConfigTarget) -> Result<Arc<dyn BuildTarget>>;
 
 impl BuildRuleRegistry {
     pub fn standard_rules() -> Result<Self> {
         let mut inst = BuildRuleRegistry::default();
+        inst.register::<crate::rules::group::GroupRule>("group")?;
         inst.register::<crate::rules::filegroup::FileGroup>("filegroup")?;
         inst.register::<crate::rules::rust_binary::RustBinary>("rust_binary")?;
         inst.register::<crate::rules::webpack::Webpack>("webpack")?;
@@ -62,7 +64,7 @@ impl BuildRuleRegistry {
 
     fn rule_function<R: BuildRule>(
         ctx: &mut skylark::FunctionCallContext,
-        config: &BuildConfig,
+        context: &BuildConfigTarget,
     ) -> Result<Arc<dyn BuildTarget>>
     where
         R::Attributes: StaticMessage,
@@ -73,7 +75,7 @@ impl BuildRuleRegistry {
 
         let mut attributes = R::Attributes::default();
 
-        for defaults in config.rule_defaults() {
+        for defaults in context.config.rule_defaults() {
             if defaults.type_url() == attributes.type_url() {
                 attributes = defaults
                     .unpack()?
@@ -84,7 +86,7 @@ impl BuildRuleRegistry {
 
         ctx.args_iter()?.to_proto(&mut attributes)?;
 
-        let target = R::evaluate(attributes, config)?;
+        let target = R::evaluate(attributes, context)?;
 
         Ok(Arc::new(target))
     }
@@ -93,7 +95,7 @@ impl BuildRuleRegistry {
         &self,
         source_path: &str,
         source: &str,
-        config: Arc<BuildConfig>,
+        context: &BuildConfigTarget,
     ) -> Result<BuildPackage> {
         let mut package = Arc::new(Mutex::new(BuildPackage::default()));
 
@@ -103,9 +105,9 @@ impl BuildRuleRegistry {
             let func = *func;
 
             let package = package.clone();
-            let config = config.clone();
+            let context = context.clone();
             universe.bind_function(rule_name.as_str(), move |mut ctx| {
-                let target = func(&mut ctx, &config)?;
+                let target = func(&mut ctx, &context)?;
                 let target_name = target.name().to_string();
 
                 let mut package = package.lock().unwrap();

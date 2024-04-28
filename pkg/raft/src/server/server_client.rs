@@ -1,10 +1,19 @@
+use std::collections::VecDeque;
+use std::future::Future;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use common::errors::*;
+use common::futures::{pin_mut, select, FutureExt};
 use common::io::{IoError, IoErrorKind};
-use executor::channel;
+use executor::channel::oneshot;
 use executor::child_task::ChildTask;
+use executor::sync::AsyncVariable;
+use executor::{channel, lock};
 use raft_proto::raft::*;
+
+/// Timeout for the first AppendEntries request in line waiting for a response.
+const APPEND_ENTRIES_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Instance of a
 ///
@@ -12,130 +21,255 @@ use raft_proto::raft::*;
 /// Wrapper around a Consensus stub for sending serialized AppendEntriesRequest
 /// protos and then getting back the corresponding responses.
 pub struct ServerClient {
-    stub: Arc<ConsensusStub>,
+    shared: Arc<Shared>,
+    append_entries_task: ChildTask,
+}
 
-    sender: channel::Sender<RequestWithCallback>,
-    child: ChildTask,
+struct Shared {
+    stub: Arc<ConsensusStub>,
+    append_entries_queue: AsyncVariable<AppendEntriesQueue>,
+}
+
+#[derive(Default)]
+struct AppendEntriesQueue {
+    /// Index in 'requests' of the next request that needs to be sent.
+    next_index: usize,
+
+    /// List of requests pending a response from the remote server.
+    /// - Requests are sent in the same order as in this list.
+    /// - Requests are popped from the front of the list after a response is
+    ///   received.
+    requests: VecDeque<RequestWithCallback>,
 }
 
 struct RequestWithCallback {
-    request: AppendEntriesRequest,
+    /// The sending thread takes this value and leaves beyond 'None' when the
+    /// request is ready to be sent.
+    request: Option<AppendEntriesRequest>,
+
     callback: channel::oneshot::Sender<Result<AppendEntriesResponse>>,
+    enqueue_time: Instant,
 }
 
 // TODO: Maintain a backoff if there are any attempts to make requests via the
 // client's stub.
+// ^ Yes. (eventually would want to replace with some smarter mechanism)
+// But should be per-request type.
+// - Don't want heartbeat requests to become broken by other types of requests.
+// Ideally mark all of them internally with wait_for_ready to allow blocking the
+// requests if we need to throttle.
 
 impl ServerClient {
     pub fn new(stub: Arc<ConsensusStub>, request_context: rpc::ClientRequestContext) -> Self {
-        // NOTE: The size of this channel is small to ensure that the stub's flow
-        // control is used to limit the rate of requests.
-        let (sender, receiver) = channel::bounded(1);
+        let shared = Arc::new(Shared {
+            stub,
+            append_entries_queue: AsyncVariable::default(),
+        });
 
         Self {
-            stub: stub.clone(),
-            sender,
-            child: ChildTask::spawn(Self::append_entries_runner_task(
-                stub,
+            shared: shared.clone(),
+            append_entries_task: ChildTask::spawn(Self::append_entries_runner_task(
+                shared,
                 request_context,
-                receiver,
             )),
         }
     }
 
     pub fn stub(&self) -> &ConsensusStub {
-        &self.stub
+        &self.shared.stub
     }
 
-    pub async fn send_append_entries(
+    /// Enqueues an AppendEntriesRequest to be sent to the remote server.
+    ///
+    /// The request will be sent before any previous calls to
+    /// enqueue_append_entries
+    pub async fn enqueue_append_entries(
         &self,
         request: AppendEntriesRequest,
-    ) -> Result<AppendEntriesResponse> {
+    ) -> impl Future<Output = Result<AppendEntriesResponse>> {
         let (sender, receiver) = channel::oneshot::channel();
 
-        // NOTE: Errors will be noticed when pulling from the reciever
-        let _ = self
-            .sender
-            .send(RequestWithCallback {
-                request,
-                callback: sender,
-            })
-            .await;
+        lock!(
+            queue <= self.shared.append_entries_queue.lock().await.unwrap(),
+            {
+                queue.requests.push_back(RequestWithCallback {
+                    request: Some(request),
+                    callback: sender,
+                    enqueue_time: Instant::now(),
+                });
 
-        let res = receiver.recv().await.map_err(|_| {
-            Error::from(IoError::new(
-                IoErrorKind::Cancelled,
-                "AppendEntries stream was aborted",
-            ))
-        })??;
+                queue.notify_all();
+            }
+        );
 
-        Ok(res)
+        async move {
+            let res = receiver.recv().await.map_err(|_| {
+                Error::from(IoError::new(
+                    IoErrorKind::Cancelled,
+                    "AppendEntries stream was aborted",
+                ))
+            })??;
+
+            Ok(res)
+        }
     }
 
     async fn append_entries_runner_task(
-        stub: Arc<ConsensusStub>,
+        shared: Arc<Shared>,
         mut request_context: rpc::ClientRequestContext,
-        receiver: channel::Receiver<RequestWithCallback>,
     ) {
         // Since we continuously restart the RPC, we should wait if the connection isn't
         // ready.
         request_context.http.wait_for_ready = true;
 
+        // Each iteration is one attempt at sending an AppendEntries stream to the
+        // remote server.
         loop {
-            // let mut pending_response = vec![];
+            let (result_sender, result_receiver) = oneshot::channel();
 
-            // TODO: Add some exponential backoff to this.
-            let (mut req_stream, mut res_stream) = stub.AppendEntries(&request_context).await;
+            let shared2 = shared.clone();
+            let request_context2 = request_context.clone();
+            let streamer = ChildTask::spawn(async move {
+                result_sender.send(Self::append_entries_streamer(shared2, request_context2).await);
+            });
+
+            let result = result_receiver.recv();
+            pin_mut!(result);
 
             loop {
-                let req = match receiver.recv().await {
-                    Ok(v) => v,
-                    Err(_) => break,
-                };
+                let r = executor::timeout(Duration::from_millis(200), &mut result).await;
 
-                let success = req_stream.send(&req.request).await;
+                match r {
+                    Ok(result) => {
+                        // The child task stopped running
+                        // eprintln!("AppendEntries stream stopped with: {:?}",
+                        // result);
 
-                let res = res_stream.recv().await;
+                        // NOTE: Polling the 'result' future again will result in undefined
+                        // behavior.
+                        break;
+                    }
+                    Err(_) => {
+                        // Timeout
 
-                if !success || !res.is_some() {
-                    req_stream.close().await;
+                        let now = Instant::now();
+                        let stop = lock!(
+                            queue <= shared.append_entries_queue.lock().await.unwrap(),
+                            {
+                                match queue.requests.get(0) {
+                                    Some(entry) => {
+                                        now - entry.enqueue_time >= APPEND_ENTRIES_TIMEOUT
+                                    }
+                                    None => false,
+                                }
+                            }
+                        );
 
-                    let err = res_stream
-                        .finish()
-                        .await
-                        .and_then(|_| -> Result<()> {
-                            Err(err_msg("No value returned for AppendEntries request"))
-                        })
-                        .unwrap_err();
-
-                    let _ = req.callback.send(Err(err));
-                    break;
+                        if stop {
+                            // eprintln!("AppendEntries timed out");
+                            break;
+                        }
+                    }
                 }
-
-                let res = res.unwrap();
-
-                let _ = req.callback.send(Ok(res));
             }
 
-            // - Timeout for the head request to avoid things taking too long
-            //   (if one times out, time out them all)
+            // Ensure that the streamer is no longer running to ensure that we can safely
+            // mutate the queue.
+            streamer.cancel().await;
 
-            // One of three things could happen:
-            // - Done appending an entry
-            // - receiver has stuff.
-            // - response has stuff.
+            // Clear the queue.
+            lock!(
+                queue <= shared.append_entries_queue.lock().await.unwrap(),
+                {
+                    // NOTE: There is no point in preserving requests that haven't been sent yet
+                    // since they likely can't be appended if previous requests failed.
+                    queue.next_index = 0;
+                    for entry in queue.requests.drain(..) {
+                        entry
+                            .callback
+                            .send(Err(err_msg("AppendEntries stream timed out or failed.")));
+                    }
+                }
+            );
 
-            // - response may die in which case we need to kill
-
-            /*
-            How to deal with graceful shutdown?
-            - Don't care. Just treat as an error and let raft backoff.
-            */
+            // Ensure that the task can get cancelled without infinite looping.
+            // TODO: Ensure we do this in all infinite loops.
+            executor::yield_now().await;
         }
     }
 
-    /*
+    async fn append_entries_streamer(
+        shared: Arc<Shared>,
+        request_context: rpc::ClientRequestContext,
+    ) -> Result<()> {
+        let (mut req_stream, mut res_stream) = shared.stub.AppendEntries(&request_context).await;
 
+        /*
+        Main cases to think about:
 
-    */
+        - RPC returns an error
+            - IDeally still gracefully close everything.
+
+        - RPC stops getting sent to the remote side.
+
+        - During shutdown, the server needs to return an error to the client since the request duration is unbounded.
+
+        */
+
+        let shared2 = shared.clone();
+        let sender = ChildTask::spawn(async move {
+            loop {
+                let request;
+                loop {
+                    let mut queue = shared2.append_entries_queue.lock().await.unwrap().enter();
+                    if queue.requests.len() <= queue.next_index {
+                        queue.wait().await;
+                        continue;
+                    }
+
+                    let idx = queue.next_index;
+                    request = queue.requests[idx].request.take().unwrap();
+                    queue.next_index += 1;
+                    queue.exit();
+                    break;
+                }
+
+                let success = req_stream.send(&request).await;
+                if !success {
+                    // TODO: Verify that if this happens, then recv() is also guaranteed to return
+                    // None soon.
+
+                    break;
+                }
+            }
+
+            // TODO: verify that it isn't necessary for us to ever call
+            // req_stream.close()
+        });
+
+        loop {
+            let res = match res_stream.recv().await {
+                Some(v) => v,
+                None => break,
+            };
+
+            lock!(
+                queue <= shared.append_entries_queue.lock().await.unwrap(),
+                {
+                    if queue.next_index == 0 {
+                        return Err(err_msg("Received response when no request was sent."));
+                    }
+
+                    let entry = queue.requests.pop_front().unwrap();
+                    queue.next_index -= 1;
+
+                    let _ = entry.callback.send(Ok(res));
+
+                    Ok(())
+                }
+            )?;
+        }
+
+        res_stream.finish().await
+    }
 }

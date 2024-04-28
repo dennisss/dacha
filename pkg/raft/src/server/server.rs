@@ -282,7 +282,7 @@ impl<R: Send + 'static> Server<R> {
             meta_receiver: Some(rx_meta),
             callbacks: LinkedList::new(),
             last_task_id: 0,
-            term_tasks: HashMap::new(),
+            term_tasks: HashMap::default(),
             snapshot_sender: tx_snapshot,
             snapshot_receiver: Some(rx_snapshot),
             snapshot_state: IncomingSnapshotState::None,
@@ -498,6 +498,8 @@ impl<R: Send + 'static> Server<R> {
             // These errors should only happen if proposing a config change (which we are not
             // doing).
             Err(ProposeError::RejectedConfigChange) | Err(ProposeError::RetryAfter(_)) => panic!(),
+            // TODO: Don't panic on this
+            Err(ProposeError::CommandTooLarge) => panic!(),
         };
 
         Ok(PendingExecution {
