@@ -52,9 +52,9 @@ impl<P: Program + Copy> Executor<P> {
         let mut inst = Self {
             program,
             best_match: None,
-            thread_list_a: ThreadList::new(),
+            thread_list_a: ThreadList::new(program.len()),
             thread_list_a_active: true,
-            thread_list_b: ThreadList::new(),
+            thread_list_b: ThreadList::new(program.len()),
         };
 
         // Add initial thread
@@ -140,23 +140,23 @@ impl<P: Program + Copy> Executor<P> {
             next_threads,
         };
 
-        for thread in current_threads.iter() {
+        for thread in current_threads.drain() {
             let (op, next_pc) = self.program.fetch(thread.pc);
             match op {
                 Instruction::Any => {
                     let _char_value = next_character!(value, thread, state.next_threads);
-                    state.schedule_thread(next_pc, thread.saved.clone());
+                    state.schedule_thread(next_pc, thread.saved);
                 }
                 Instruction::Range { start, end } => {
                     let char_value = next_character!(value, thread, state.next_threads);
                     if char_value >= start && char_value < end {
-                        state.schedule_thread(next_pc, thread.saved.clone());
+                        state.schedule_thread(next_pc, thread.saved);
                     }
                 }
                 Instruction::Char(expected_value) => {
                     let char_value = next_character!(value, thread, state.next_threads);
                     if char_value == expected_value {
-                        state.schedule_thread(next_pc, thread.saved.clone());
+                        state.schedule_thread(next_pc, thread.saved);
                     }
                 }
                 Instruction::Special(expected_symbol) => {
@@ -169,7 +169,7 @@ impl<P: Program + Copy> Executor<P> {
                     };
 
                     if symbol_value == expected_symbol {
-                        let saved = thread.saved.clone();
+                        let saved = thread.saved;
                         state.schedule_thread(next_pc, saved);
                     }
                 }
@@ -225,7 +225,7 @@ struct ExecutorStepState<'a, P> {
 
 impl<'a, P: Program> ExecutorStepState<'a, P> {
     // NOTE: 'pc' is the next instruction to execute
-    fn schedule_thread(&mut self, pc: ProgramCounter, saved: Rc<SavedStringPointers>) {
+    fn schedule_thread(&mut self, pc: ProgramCounter, mut saved: Rc<SavedStringPointers>) {
         let (op, next_pc) = self.program.fetch(pc);
         match op {
             Instruction::Jump(next_pc) => {
@@ -245,18 +245,19 @@ impl<'a, P: Program> ExecutorStepState<'a, P> {
                 // TODO: For regular expressions such as '.*(a)', this will run on every input
                 // byte so we need to see if we can reduce the number of copies that this
                 // requires (we'd need to gurantee that no other threads will need this ).
-                let mut saved = saved.as_ref().clone();
-                if saved.list.len() <= index {
-                    saved.list.resize(index + 1, None);
+                let saved_mut = Rc::make_mut(&mut saved);
+
+                if saved_mut.list.len() <= index {
+                    saved_mut.list.resize(index + 1, None);
                 }
-                saved.list[index] = Some(if lookbehind {
+                saved_mut.list[index] = Some(if lookbehind {
                     self.input_position
                 } else {
                     self.next_position
                 });
 
                 // TODO: the new value of PC is not the same as in the reference material.
-                self.schedule_thread(next_pc, Rc::new(saved));
+                self.schedule_thread(next_pc, saved);
             }
             _ => {
                 self.next_threads.add_thread(pc, saved);
@@ -305,7 +306,7 @@ struct ThreadList {
 }
 
 impl ThreadList {
-    fn new() -> Self {
+    fn new(program_len: usize) -> Self {
         Self {
             list: vec![],
             seen_pcs: HashSet::with_hasher(FastHasherBuilder::default()),
@@ -324,6 +325,10 @@ impl ThreadList {
 
         self.seen_pcs.insert(pc);
         self.list.push(Thread { pc, saved });
+    }
+
+    fn drain<'a>(&'a mut self) -> impl std::iter::Iterator<Item = Thread> + 'a {
+        self.list.drain(..)
     }
 
     fn iter(&self) -> impl std::iter::Iterator<Item = &Thread> {

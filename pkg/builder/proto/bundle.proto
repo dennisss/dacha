@@ -9,11 +9,11 @@ message BundleSpec {
 }
 
 message BundleVariant {
-    BlobSpec blob = 1;
+    BundleBlobSpec blob = 1;
     Platform platform = 2;
 }
 
-message BlobSpec {
+message BundleBlobSpec {
     // Id of this blob. Typically this will be the SHA256 hash of the contents of the blob in
     // hex form.
     //
@@ -28,10 +28,10 @@ message BlobSpec {
     // This is stored here as it is often useful for a node to decompress an archive ahead of its
     // usage. For ahead of time storage allocation, it is good to know that a blob will/will-not
     // grow in size once it is  
-    BlobFormat format = 3;
+    BundleBlobFormat format = 3;
 }
 
-enum BlobFormat {
+enum BundleBlobFormat {
     UNKNOWN = 0;
     TAR_ARCHIVE = 1;
 }

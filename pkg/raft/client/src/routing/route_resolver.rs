@@ -4,7 +4,7 @@ use std::sync::Arc;
 use base_error::*;
 use executor::child_task::ChildTask;
 use executor::lock;
-use executor::sync::AsyncMutex;
+use executor::sync::{AsyncMutex, SyncMutex};
 use http::uri::Authority;
 use net::ip::SocketAddr;
 
@@ -19,8 +19,8 @@ pub struct RouteResolver {
 struct Shared {
     route_store: RouteStore,
     group_id: GroupId,
-    server_id: Option<ServerId>,
-    listeners: AsyncMutex<Vec<http::ResolverChangeListener>>,
+    server_id: SyncMutex<Option<ServerId>>,
+    listeners: SyncMutex<Vec<http::ResolverChangeListener>>,
 }
 
 impl RouteResolver {
@@ -28,8 +28,8 @@ impl RouteResolver {
         let shared = Arc::new(Shared {
             route_store,
             group_id,
-            server_id,
-            listeners: AsyncMutex::new(vec![]),
+            server_id: SyncMutex::new(server_id),
+            listeners: SyncMutex::new(vec![]),
         });
 
         let waiter = ChildTask::spawn(Self::change_waiter(shared.clone()));
@@ -37,11 +37,39 @@ impl RouteResolver {
         Self { shared, waiter }
     }
 
+    pub(crate) fn set_server_id(&self, server_id: Option<ServerId>) {
+        let changed = self
+            .shared
+            .server_id
+            .apply(|v| {
+                if *v != server_id {
+                    *v = server_id;
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap();
+
+        if changed {
+            Self::notify_listeners(&self.shared);
+        }
+    }
+
     async fn change_waiter(shared: Arc<Shared>) {
         loop {
             let route_store = shared.route_store.lock().await;
 
-            lock!(listeners <= shared.listeners.lock().await.unwrap(), {
+            Self::notify_listeners(&shared);
+
+            route_store.wait().await;
+        }
+    }
+
+    fn notify_listeners(shared: &Shared) {
+        shared
+            .listeners
+            .apply(|listeners| {
                 let mut i = 0;
                 while i < listeners.len() {
                     if !(listeners[i])() {
@@ -51,10 +79,8 @@ impl RouteResolver {
 
                     i += 1;
                 }
-            });
-
-            route_store.wait().await;
-        }
+            })
+            .unwrap();
     }
 }
 
@@ -74,7 +100,7 @@ impl http::Resolver for RouteResolver {
         };
 
         let mut server_ids = vec![];
-        if let Some(id) = &self.shared.server_id {
+        if let Some(id) = &self.shared.server_id.read()? {
             server_ids.push(*id);
         } else {
             for id in route_store.remote_servers(self.shared.group_id) {
@@ -106,15 +132,22 @@ impl http::Resolver for RouteResolver {
 
             let address = SocketAddr::new(ip, port);
 
-            endpoints.push(http::ResolvedEndpoint { address, authority });
+            endpoints.push(http::ResolvedEndpoint {
+                name: id.value().to_string(),
+                address,
+                authority,
+            });
         }
 
         Ok(endpoints)
     }
 
     async fn add_change_listener(&self, listener: http::ResolverChangeListener) {
-        lock!(listeners <= self.shared.listeners.lock().await.unwrap(), {
-            listeners.push(listener);
-        });
+        self.shared
+            .listeners
+            .apply(|listeners| {
+                listeners.push(listener);
+            })
+            .unwrap();
     }
 }

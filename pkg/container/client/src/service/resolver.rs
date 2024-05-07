@@ -7,7 +7,7 @@ use common::errors::*;
 use datastore_meta_client::MetastoreClient;
 use executor::child_task::ChildTask;
 use executor::lock;
-use executor::sync::AsyncMutex;
+use executor::sync::{AsyncMutex, AsyncVariable};
 use http::ResolvedEndpoint;
 use net::ip::SocketAddr;
 
@@ -33,7 +33,7 @@ use crate::service::address::*;
 /// - "[zone]" : Name of the cluster from which to look up objects or a special
 ///   value of "local" to retrieve from the current cluster.
 /// - "[node_id]" : Id of the node to access or a special value of "self"
-/// - "_[port_name[": Name of the port which should be requested. This is
+/// - "_[port_name]": Name of the port which should be requested. This is
 ///   optional and if not present we will use the first port defined for the
 ///   job/worker.
 ///
@@ -55,12 +55,13 @@ pub struct ServiceResolver {
 struct Shared {
     meta_client: Arc<ClusterMetaClient>,
     service_address: ServiceAddress,
-    state: AsyncMutex<State>,
+    state: AsyncVariable<State>,
 }
 
 struct State {
     resolved: Vec<http::ResolvedEndpoint>,
     listeners: Vec<http::ResolverChangeListener>,
+    initialized: bool,
 }
 
 impl ServiceResolver {
@@ -105,9 +106,10 @@ impl ServiceResolver {
         let shared = Arc::new(Shared {
             meta_client,
             service_address,
-            state: AsyncMutex::new(State {
+            state: AsyncVariable::new(State {
                 resolved: vec![],
                 listeners: vec![],
+                initialized: false,
             }),
         });
 
@@ -125,6 +127,13 @@ impl ServiceResolver {
         loop {
             if let Err(e) = Self::background_thread_impl(shared.clone()).await {
                 eprintln!("ServiceResolver failed: {}", e);
+
+                lock!(state <= shared.state.lock().await.unwrap(), {
+                    if !state.initialized {
+                        state.initialized = true;
+                        state.notify_all();
+                    }
+                });
             }
 
             executor::sleep(Duration::from_secs(10)).await;
@@ -141,6 +150,7 @@ impl ServiceResolver {
             ServiceEntity::Node { id } => {
                 let address = Self::get_node_addr(&shared, *id).await?;
                 endpoints.push(http::ResolvedEndpoint {
+                    name: String::new(),
                     address,
                     authority: http::uri::Authority {
                         user: None,
@@ -164,7 +174,7 @@ impl ServiceResolver {
             }
             ServiceEntity::Worker {
                 job_name,
-                worker_id: worker_id,
+                worker_id,
             } => {
                 let worker = shared
                     .meta_client
@@ -191,6 +201,8 @@ impl ServiceResolver {
 
                 i += 1;
             }
+            state.initialized = true;
+            state.notify_all();
         });
 
         Ok(())
@@ -200,6 +212,8 @@ impl ServiceResolver {
         shared: &Shared,
         worker: &WorkerMetadata,
     ) -> Result<Option<http::ResolvedEndpoint>> {
+        // NOTE: Once we run in a txn, this should be cacheable if there are multiple
+        // workers on one node.
         let node_address = Self::get_node_addr(shared, worker.assigned_node()).await?;
 
         let mut port = None;
@@ -230,6 +244,7 @@ impl ServiceResolver {
                 .to_string();
 
         Ok(Some(ResolvedEndpoint {
+            name: String::new(),
             address,
             authority: http::uri::Authority {
                 user: None,
@@ -268,14 +283,21 @@ impl http::Resolver for ServiceResolver {
         // the LoadBalancedClient backoff logic to help retry communicating with cluster
         // metadata.
 
-        Ok(self
-            .shared
-            .state
-            .lock()
-            .await?
-            .read_exclusive()
-            .resolved
-            .clone())
+        let state = {
+            let mut state;
+            loop {
+                state = self.shared.state.lock().await?.read_exclusive();
+                if state.initialized {
+                    break;
+                }
+
+                state.wait().await;
+            }
+
+            state
+        };
+
+        Ok(state.resolved.clone())
     }
 
     async fn add_change_listener(&self, listener: http::ResolverChangeListener) {

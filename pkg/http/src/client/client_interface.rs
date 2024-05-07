@@ -5,6 +5,7 @@ use common::errors::*;
 use crypto::hasher::Hasher;
 use executor::sync::AsyncMutex;
 
+use crate::client::resolver::ResolvedEndpoint;
 use crate::request::Request;
 use crate::response::Response;
 
@@ -91,12 +92,19 @@ impl AffinityKeyCache {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct ClientResponseContext {
+    pub selected_endpoint: Option<ResolvedEndpoint>,
+    // TODO: Also include the selected protocol.
+}
+
 #[async_trait]
 pub trait ClientInterface: 'static + Send + Sync {
     async fn request(
         &self,
         request: Request,
         request_context: ClientRequestContext,
+        response_context: &mut ClientResponseContext,
     ) -> Result<Response>;
 
     async fn current_state(&self) -> ClientState;

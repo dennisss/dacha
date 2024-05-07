@@ -1,13 +1,15 @@
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 use base_error::*;
+use rpc::Http2ChannelOptions;
 
-use crate::proto::*;
 use crate::routing::route_resolver::RouteResolver;
 use crate::routing::route_store::RouteStore;
 use crate::server::channel_factory::ChannelFactory;
 use crate::utils::find_peer_group_id;
+use crate::{proto::*, LeaderResolver};
 
 pub struct RouteChannelFactory {
     group_id: GroupId,
@@ -30,15 +32,40 @@ impl RouteChannelFactory {
         }
     }
 
+    pub async fn create_leader(&self) -> Result<Arc<rpc::Http2Channel>> {
+        let resolver = Arc::new(LeaderResolver::create(
+            self.route_store.clone(),
+            self.group_id,
+        ));
+
+        let mut options =
+            Http2ChannelOptions::try_from(http::ClientOptions::from_resolver(resolver.clone()))?;
+
+        options.http.backend_balancer.subset_size = 3;
+        options.http.backend_balancer.max_backend_count = 5;
+        options.response_interceptor = Some(resolver);
+
+        // Add one extra retry opportunity since hitting a 'not leader' error is fairly
+        // likely which the stub is first initialized.
+        options.retrying.as_mut().unwrap().backoff.max_num_attempts += 1;
+
+        Ok(Arc::new(rpc::Http2Channel::create(options).await?))
+    }
+
     /// Creates an RPC channel which will contact any available cluster node
     /// (and may load balance different requests between any of them).
     pub async fn create_any(&self) -> Result<Arc<rpc::Http2Channel>> {
-        Ok(Arc::new(
-            rpc::Http2Channel::create(http::ClientOptions::from_resolver(Arc::new(
-                RouteResolver::create(self.route_store.clone(), self.group_id, None),
-            )))
-            .await?,
-        ))
+        let mut options = http::ClientOptions::from_resolver(Arc::new(RouteResolver::create(
+            self.route_store.clone(),
+            self.group_id,
+            None,
+        )));
+
+        // Best to avoid having too many connections to avoid overloading servers.
+        options.backend_balancer.subset_size = 2;
+        options.backend_balancer.max_backend_count = 4;
+
+        Ok(Arc::new(rpc::Http2Channel::create(options).await?))
     }
 }
 

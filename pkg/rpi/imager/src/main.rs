@@ -6,16 +6,20 @@ use std::{collections::HashSet, time::Instant};
 
 use base_units::ByteCount;
 use common::aligned::AlignedVec;
+use common::bool_to_num;
 use common::{
     errors::*,
     io::{Readable, Writeable},
 };
+use compression::transform::Transform;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use file::temp::TempDir;
-use file::{LocalFileOpenOptions, LocalPathBuf};
+use file::{LocalFileOpenOptions, LocalPath, LocalPathBuf};
 use storage::devices::*;
 use sys::{MountFlags, UmountFlags};
+
+const BUFFER_SIZE: usize = 4096 * 16; // 64 KiB
 
 #[derive(Args)]
 struct Args {
@@ -35,6 +39,11 @@ struct WriteCommand {
     ssh_public_key: Option<LocalPathBuf>,
     wpa_ssid: Option<String>,
     wpa_password: Option<String>,
+
+    // When these are set, a static ip will be assigned to the ethernet port.
+    ip_address: Option<net::ip::IPAddress>,
+    netmask: Option<net::ip::IPAddress>,
+    gateway: Option<net::ip::IPAddress>,
 }
 
 struct ProgressTracker {
@@ -81,6 +90,31 @@ impl ProgressTracker {
     }
 }
 
+async fn open_image_file(path: &LocalPath) -> Result<(Box<dyn Readable>, usize)> {
+    let mut image_file = file::LocalFile::open(path)?;
+    let image_meta = image_file.metadata().await?;
+    println!(
+        "[Image] Raw Size: {:?}",
+        ByteCount::from(image_meta.len() as usize)
+    );
+
+    if path.extension() == Some("img") {
+        println!("File is a raw .img");
+        Ok((Box::new(image_file), image_meta.len() as usize))
+    } else if path.extension() == Some("gz") {
+        let gzip_file = compression::gzip::GzipFile::open(image_file).await?;
+        let size = gzip_file.uncompressed_size();
+        println!("[GZip] Inner Size: {:?}", ByteCount::from(size));
+
+        Ok((Box::new(gzip_file.data_reader()), size))
+    } else {
+        Err(format_err!(
+            "Unsupported image format in file: {}",
+            path.as_str()
+        ))
+    }
+}
+
 async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     // Command validation (goal is to error out early)
     {
@@ -103,14 +137,25 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
                 return Err(format_err!("File does not exist: {:?}", path));
             }
         }
+
+        let num_ip_args = bool_to_num!(cmd.ip_address.is_some())
+            + bool_to_num!(cmd.gateway.is_some())
+            + bool_to_num!(cmd.netmask.is_some());
+        if num_ip_args == 3 {
+            // TODO: Verify they are all IP v4
+            // TODO: Check that 'gateway & mask' == ip_address & mask
+
+            if cmd.ip_address == cmd.gateway {
+                return Err(err_msg("--ip_address == --gateway. Probably a mistake?"));
+            }
+        } else if num_ip_args != 0 {
+            return Err(err_msg(
+                "Must set --ip_address, --gateway, --netmask as one set.",
+            ));
+        }
     }
 
-    let mut image_file = file::LocalFile::open(&cmd.image)?;
-    let image_meta = image_file.metadata().await?;
-    println!(
-        "[Image] Size: {:?}",
-        ByteCount::from(image_meta.len() as usize)
-    );
+    let (mut image_file, image_size) = open_image_file(&cmd.image).await?;
 
     // NOTE: After the image is written, the 'partitions' field of this will become
     // invalid.
@@ -142,7 +187,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         ByteCount::from(disk_entry.size)
     );
 
-    if image_meta.len() as usize > disk_entry.size {
+    if image_size > disk_entry.size {
         return Err(err_msg("Image is too large to write to the disk"));
     }
 
@@ -182,8 +227,6 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         }
     }
 
-    const BUFFER_SIZE: usize = 4096 * 16; // 64 KiB
-
     println!("Opening disk...");
 
     let mut disk_file = file::LocalFile::open_with_options(
@@ -201,14 +244,14 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
 
     let mut offset = 0;
 
-    let mut progress = ProgressTracker::new(image_meta.len() as usize);
+    let mut progress = ProgressTracker::new(image_size);
 
     // TODO: Use ioctl BLKSSZGET to get the logical block size for disk I/O.
 
     let mut hasher = SHA256Hasher::default();
 
-    while offset < (image_meta.len() as usize) {
-        let n = core::cmp::min(BUFFER_SIZE, (image_meta.len() as usize) - offset);
+    while offset < image_size {
+        let n = core::cmp::min(BUFFER_SIZE, image_size - offset);
         image_file.read_exact(&mut buffer[..n]).await?;
 
         hasher.update(&buffer[..n]);
@@ -223,6 +266,16 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
 
         offset += n;
         progress.update(offset);
+    }
+
+    // Verify that we did indeed fit the end of the file reader (for compressed
+    // archives this will also verify the checksums).
+    {
+        let mut buf = [0u8; 1];
+        let n = image_file.read(&mut buf[..]).await?;
+        if n != 0 {
+            return Err(err_msg("Extra unwritten data at the end of the image file"));
+        }
     }
 
     disk_file.sync_all().await?;
@@ -334,6 +387,31 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         }
 
         file::append(&dest, data).await?;
+    }
+
+    if cmd.ip_address.is_some() {
+        println!("Configuring static ip...");
+
+        let ip_addr = cmd.ip_address.as_ref().unwrap();
+        let netmask = cmd.netmask.as_ref().unwrap();
+        let gateway = cmd.gateway.as_ref().unwrap();
+
+        file::append(
+            root_dir.path().join("etc/network/interfaces"),
+            format!(
+                "
+                allow-hotplug eth0
+                iface eth0 inet static
+                address {ip_addr}
+                netmask {netmask}
+                gateway {gateway}
+                ",
+                ip_addr = ip_addr.to_string(),
+                netmask = netmask.to_string(),
+                gateway = gateway.to_string()
+            ),
+        )
+        .await?;
     }
 
     if cmd.wpa_ssid.is_some() {

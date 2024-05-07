@@ -1,4 +1,6 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use common::io::Readable;
+use file::LocalFile;
 use std::convert::{TryFrom, TryInto};
 use std::io::{Read, Seek, Write};
 
@@ -10,6 +12,7 @@ use parsing::iso::*;
 
 use crate::buffer_queue::BufferQueue;
 use crate::deflate::*;
+use crate::readable::TransformReadable;
 use crate::transform::*;
 
 // ZLib RFC http://www.zlib.org/rfc-gzip.html
@@ -152,22 +155,6 @@ struct Trailer {
     uncompressed_size: u32,
 }
 
-#[derive(Debug)]
-pub struct GZipFile {
-    pub header: Header,
-
-    pub data: Vec<u8>, /*
-                       /// File byte offsets
-                       pub compressed_range: (u64, u64),
-
-                       /// CRC32 of above compressed data range.
-                       pub compressed_checksum: u32,
-
-                       /// Uncompressed size (mod 2^32) of the original input to the compressor.
-                       pub input_size:  u32
-                       */
-}
-
 // TODO: Set a save max limit on length.
 fn read_null_terminated(reader: &mut dyn Read) -> Result<Vec<u8>> {
     let mut out = vec![];
@@ -176,7 +163,11 @@ fn read_null_terminated(reader: &mut dyn Read) -> Result<Vec<u8>> {
     loop {
         let n = reader.read(&mut buf)?;
         if n == 0 {
-            return Err(err_msg("Hit end of file before seeing null terminator"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Hit end of file before seeing null terminator",
+            )
+            .into());
         }
 
         if buf[0] == 0 {
@@ -190,6 +181,7 @@ fn read_null_terminated(reader: &mut dyn Read) -> Result<Vec<u8>> {
 }
 
 const HEADER_SIZE: usize = 10;
+const TRAILER_SIZE: usize = 8;
 
 pub const GZIP_UNIX_OS: u8 = 0x03;
 
@@ -222,21 +214,76 @@ trait RecordedRead: Read {
 
 // }
 
+pub struct GzipFile {
+    file: LocalFile,
+    input_buffer: Vec<u8>,
+    decoder: GzipDecoder,
+    uncompressed_size: usize,
+}
+
+impl GzipFile {
+    /// Opens the gzip file archive by reading metadata headers/trailers. Data
+    /// is not read yet.
+    pub async fn open(mut file: LocalFile) -> Result<Self> {
+        let mut decoder = GzipDecoder::new();
+
+        let file_meta = file.metadata().await?;
+
+        file.seek(0);
+
+        let mut input_buffer = vec![];
+        input_buffer.resize(core::cmp::min(4096, file_meta.len() as usize), 0);
+
+        file.read_exact(&mut input_buffer).await?;
+
+        let res = decoder.update(&input_buffer, false, &mut [])?;
+        if decoder.header().is_none() {
+            return Err(err_msg("Gzip header larger with buffer size."));
+        }
+
+        input_buffer = input_buffer.split_off(res.input_read);
+
+        let mut trailer = [0u8; TRAILER_SIZE];
+        file.read_exact_at(file_meta.len() - (TRAILER_SIZE as u64), &mut trailer)
+            .await?;
+
+        let uncompressed_size = u32::from_le_bytes(*array_ref![trailer, 4, 4]);
+
+        Ok(Self {
+            file,
+            input_buffer,
+            decoder,
+            uncompressed_size: uncompressed_size as usize,
+        })
+    }
+
+    pub fn header(&self) -> &Header {
+        self.decoder.header.as_ref().unwrap()
+    }
+
+    pub fn uncompressed_size(&self) -> usize {
+        self.uncompressed_size
+    }
+
+    pub fn data_reader(self) -> TransformReadable<LocalFile> {
+        TransformReadable::new_partially_read(self.file, Box::new(self.decoder), self.input_buffer)
+    }
+}
+
 pub struct GzipDecoder {
     state: GzipDecoderState,
 
     input_buffer: BufferQueue,
 
+    /// If we have read the full header yet, this will
     header: Option<Header>,
 
+    /// Number of output bytes written so far.
     output_size: usize,
 
     inflater: Inflater,
 
     hasher: CRC32Hasher,
-    /* header: Option<Header>,
-     * body_read: bool,
-     * trailer_read: bool, */
 }
 
 impl GzipDecoder {
@@ -249,6 +296,10 @@ impl GzipDecoder {
             inflater: Inflater::new(),
             hasher: CRC32Hasher::new(),
         }
+    }
+
+    pub fn header(&self) -> Option<&Header> {
+        self.header.as_ref()
     }
 
     fn update_impl(
@@ -273,6 +324,7 @@ impl GzipDecoder {
                             return Err(err_msg("Unsupported compression method"));
                         }
 
+                        self.header = Some(header);
                         self.state = GzipDecoderState::Body;
                     } else {
                         break;

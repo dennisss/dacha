@@ -3,7 +3,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::slice::SliceIndex;
 use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::errors::*;
 use common::hash::{FastHasherBuilder, SumHasherBuilder};
@@ -14,6 +14,7 @@ use executor::cancellation::CancellationToken;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::lock;
+use executor::loop_throttler::LoopThrottler;
 use executor::sync::AsyncVariable;
 use net::backoff::*;
 
@@ -284,24 +285,12 @@ impl LoadBalancedClient {
 
         let mut latest_resolved_endpoints = None;
 
-        let mut last_loop_time = None;
+        let mut throttler = LoopThrottler::new(10, Duration::from_secs(2));
 
-        while !cancellation_token.is_cancelled().await {
-            // Prevent too much churn due to backend state changes.
-            if let Some(time) = last_loop_time {
-                let now = std::time::Instant::now();
-                if now - time < Duration::from_millis(10) {
-                    executor::sleep(Duration::from_millis(10)).await;
-                }
-
-                last_loop_time = Some(now);
-            }
-
-            // TODO: Merge into the above executor::sleep polling.
-            if cancellation_token.is_cancelled().await {
-                break;
-            }
-
+        while throttler
+            .start_cancellable_iteration(cancellation_token.as_ref())
+            .await
+        {
             let mut received_events = HashSet::new();
 
             // Always retry resolving if we don't have data yet.
@@ -347,6 +336,7 @@ impl LoadBalancedClient {
                 match resolve_backoff.start_attempt() {
                     ExponentialBackoffResult::Start => {}
                     ExponentialBackoffResult::StartAfter(wait_time) => {
+                        // TODO: Account for cancellation.
                         executor::sleep(wait_time).await.unwrap();
                     }
                     ExponentialBackoffResult::Stop => {
@@ -356,7 +346,12 @@ impl LoadBalancedClient {
                 }
 
                 // TODO: Have a timeout on how long this is allowed to run for.
-                resolved_result = Some(self.shared.resolver.resolve().await);
+                // If it takes too long, then we should mark as failed.
+                let res = self.shared.resolver.resolve().await;
+
+                resolve_backoff.end_attempt(res.is_ok());
+
+                resolved_result = Some(res);
             }
 
             // TODO: Verify everything after this is syncronous to ensure this whole
@@ -651,6 +646,7 @@ impl ClientInterface for LoadBalancedClient {
         &self,
         request: Request,
         request_context: ClientRequestContext,
+        response_context: &mut ClientResponseContext,
     ) -> Result<Response> {
         // TODO: If a backend becomes healthy, we won't want to rush all enqueued
         // requests to start using it as it may only be able to handle one more request.
@@ -785,18 +781,19 @@ impl ClientInterface for LoadBalancedClient {
 
             // TODO: Record which endpoint we are using so that future retries are able to
             // explicitly retry on a distinct backend.
-            client = state
-                .backends
-                .get(&best_backend_id.unwrap())
-                .unwrap()
-                .client
-                .clone();
+            let backend = state.backends.get(&best_backend_id.unwrap()).unwrap();
+
+            response_context.selected_endpoint = Some(backend.key.endpoint.clone());
+
+            client = backend.client.clone();
 
             break;
         }
 
         // TODO: Use a 'enqueue_request' interface so that we can
-        client.request(request, request_context).await
+        client
+            .request(request, request_context, response_context)
+            .await
     }
 
     async fn current_state(&self) -> ClientState {

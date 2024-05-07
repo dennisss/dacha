@@ -7,30 +7,42 @@ replicas: 1
 # TODO: Have a label to nodes so that we can tell if it has an attached fan.
 scheduling {
     distinct_nodes: true
+    labels {
+        label {
+            key: "rpi_controller_config"
+            present: true
+        }
+    }
 }
 
 worker {
-    cwd: "/volumes/dacha"
+    cwd: "/volumes/bundle"
     args: [
         # TODO: Pre-validate that this file exists in the bundle
-        "/volumes/dacha/built/pkg/rpi/controller/rpi_controller",
+        "/volumes/bundle/built/pkg/rpi/controller/rpi_controller",
         "--rpc_port=rpc",
         "--web_port=web",
-        "--fan_pwm_pin=18",
-        # "--led_pin=27"
-        # "--fan_inverted"
+        "--config_name=rpi_rack_r5"
     ]
 
     volumes: [
         {
-            name: "dacha"
+            name: "bundle"
             build_target: "//pkg/rpi/controller:bundle"
         }
     ]
 
     ports: [
-        { name: "rpc" },
-        { name: "web" }
+        {
+            name: "rpc"
+            type: TCP
+            protocol: [HTTP, GRPC]
+        },
+        {
+            name: "web"
+            type: TCP
+            protocol: [HTTP]
+        }
     ]
 
     additional_groups: ["gpio"]
@@ -45,6 +57,13 @@ worker {
         {
             source {
                 raw: "/dev/gpiomem"
+                limit: 1
+            }
+            exclusive: true
+        },
+        {
+            source {
+                raw: "/dev/periphmem"
                 limit: 1
             }
             exclusive: true

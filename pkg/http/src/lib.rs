@@ -55,8 +55,8 @@ pub mod v2;
 pub use crate::body::{Body, BodyFromData, BodyFromParts, EmptyBody, WithTrailers};
 pub use crate::client::{
     AffinityContext, AffinityKey, AffinityKeyCache, Client, ClientInterface, ClientOptions,
-    ClientRequestContext, ResolvedEndpoint, Resolver, ResolverChangeListener, SimpleClient,
-    SimpleClientOptions, SystemDNSResolver,
+    ClientRequestContext, ClientResponseContext, ResolvedEndpoint, Resolver,
+    ResolverChangeListener, SimpleClient, SimpleClientOptions, SystemDNSResolver,
 };
 pub use crate::header::{Header, Headers};
 pub use crate::method::Method;

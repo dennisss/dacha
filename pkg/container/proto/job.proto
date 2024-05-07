@@ -6,6 +6,7 @@ syntax = "proto3";
 package cluster;
 
 import "pkg/container/proto/worker.proto";
+import "pkg/container/proto/labels.proto";
 
 message JobSpec {
     // Name of the job. Individual worker names will use this as a prefix.
@@ -36,6 +37,9 @@ message JobSchedulingSpec {
     // If there are more replicas than nodes, then excess replicas won't be scheduled until more
     // nodes are available.
     bool distinct_nodes = 2;
+
+    // If present, a node must have matching labels to be considered for job replication.
+    LabelsSelector labels = 3;
 }
 
 message JobUpdateStrategySpec {

@@ -46,6 +46,11 @@ async fn main() -> Result<()> {
         return Err(err_msg("Only cgroup directories may be created"));
     }
 
+    let process_stat = file::metadata_sync(format!("/proc/{}", args.pid))?;
+    if process_stat.st_uid() != uids.real.as_raw() as u32 {
+        return Err(err_msg("pid is not owned by the caller of newcgroup"));
+    }
+
     // Remove any old cgroup tree.
     if file::exists(&dir).await? {
         file::remove_dir_all_with_options(&dir, true).await?;

@@ -10,10 +10,18 @@ service ServerManagement {
     rpc CurrentStatus (google.protobuf.Empty) returns (raft.Status);
 
     rpc ConfigChange (ConfigChangeRequest) returns (google.protobuf.Empty);
+
+    rpc Drain (DrainRequest) returns (google.protobuf.Empty);
 }
 
 message ConfigChangeRequest {
     oneof change {
         raft.ServerId remove_server = 1;
     }
+}
+
+message DrainRequest {
+    // The id of the server that the client wants to drain.
+    // NOTE: This must match the server to which this request was sent.
+    raft.ServerId server_id = 1;
 }

@@ -41,11 +41,13 @@ impl ClusterMetaClient {
             )
         })?;
 
-        let seeds = std::env::var(META_STORE_SEEDS_ENV_VAR)
+        let mut seeds = std::env::var(META_STORE_SEEDS_ENV_VAR)
             .unwrap_or_default()
             .split(',')
             .map(|s| s.to_string())
             .collect::<Vec<String>>();
+
+        seeds.retain(|s| !s.is_empty());
 
         if seeds.is_empty() {
             eprintln!(

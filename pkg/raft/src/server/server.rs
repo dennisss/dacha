@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 
 use common::errors::*;
@@ -128,6 +129,52 @@ impl<R> PendingExecution<R> {
                 // then we can definitely retry it
 
                 PendingExecutionResult::Cancelled
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum BeginReadError {
+    NotLeader,
+    StaleIndex,
+}
+
+impl BeginReadError {
+    pub fn to_rpc_status(&self) -> rpc::Status {
+        match self {
+            BeginReadError::NotLeader => {
+                rpc::Status::unavailable("Not currently the leader of the raft group")
+            }
+            BeginReadError::StaleIndex => {
+                rpc::Status::unavailable("Stale index detected mid way through read resolution.")
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ExecuteError {
+    NotLeader,
+    RejectedConfigChange,
+    CommandTooLarge,
+    ReadIndexTainted,
+}
+
+impl ExecuteError {
+    pub fn to_rpc_status(&self) -> rpc::Status {
+        match self {
+            ExecuteError::NotLeader => {
+                rpc::Status::unavailable("Not currently the leader of the raft group")
+            }
+            ExecuteError::RejectedConfigChange => {
+                rpc::Status::invalid_argument("The given config change is not allowed.")
+            }
+            ExecuteError::CommandTooLarge => {
+                rpc::Status::invalid_argument("Command sent to raft log was too large to commit.")
+            }
+            ExecuteError::ReadIndexTainted => {
+                rpc::Status::aborted("Read index was tainted. Please retry the transaction")
             }
         }
     }
@@ -301,6 +348,7 @@ impl<R: Send + 'static> Server<R> {
 
             last_applied: AsyncVariable::new(last_applied),
             lease_start: AsyncVariable::new(None),
+            pending_election: AsyncVariable::new(false),
 
             // TODO: Initialize this.
             config_last_flushed: AsyncVariable::new(LogIndex::default()),
@@ -351,7 +399,7 @@ impl<R: Send + 'static> Server<R> {
         &self.shared.identity
     }
 
-    pub async fn leader_hint(&self) -> NotLeaderError {
+    pub async fn leader_hint(&self) -> LeaderHint {
         let state = self.shared.state.lock().await.unwrap().read_exclusive();
         state.inst.leader_hint()
     }
@@ -364,7 +412,7 @@ impl<R: Send + 'static> Server<R> {
     /// transactional guarantees.
     ///
     /// CANCEL SAFE
-    pub async fn currently_leader(&self) -> Result<Term, NotLeaderError> {
+    pub async fn currently_leader(&self) -> Result<Term, LeaderHint> {
         lock!(state <= self.shared.state.lock().await.unwrap(), {
             Ok(state.inst.read_index(Instant::now())?.term())
         })
@@ -379,36 +427,30 @@ impl<R: Send + 'static> Server<R> {
     /// NOTE: This will only succeed on the current leader.
     ///
     /// CANCEL SAFE
-    pub async fn begin_read(&self, optimistic: bool) -> Result<ReadIndex, NotLeaderError> {
+    pub async fn begin_read(&self, optimistic: bool) -> Result<ReadIndex, BeginReadError> {
         let read_index = {
             let state = match self.shared.state.lock().await {
                 Ok(v) => v.read_exclusive(),
                 Err(_) => {
-                    return Err(NotLeaderError {
-                        term: 0.into(),
-                        leader_hint: None,
-                    })
+                    return Err(BeginReadError::NotLeader);
                 }
             };
 
             let time = Instant::now();
-            state.inst.read_index(time)?
+            state
+                .inst
+                .read_index(time)
+                .map_err(|e| BeginReadError::NotLeader)?
         };
 
         // Trigger heartbeat to run
         // TODO: Batch this for non-critical requests.
         if !optimistic {
-            // run_tick executed in a separate task to make begin_read() cancel safe.
-            let shared = self.shared.clone();
-            let child_task = executor::spawn(async move {
-                shared
-                    .run_tick(|state, tick| {
-                        state.inst.schedule_heartbeat(tick);
-                    })
-                    .await;
-            });
-
-            child_task.join().await;
+            self.shared
+                .run_tick(|state, tick| {
+                    state.inst.schedule_heartbeat(tick);
+                })
+                .await;
         }
 
         let log_index;
@@ -423,8 +465,8 @@ impl<R: Send + 'static> Server<R> {
                     log_index = v;
                     break;
                 }
-                Err(ReadIndexError::NotLeader(e)) => {
-                    return Err(e);
+                Err(ReadIndexError::NotLeader) => {
+                    return Err(BeginReadError::NotLeader);
                 }
                 Err(ReadIndexError::RetryAfter(pos)) => {
                     self.shared.wait_for_commit(pos).await;
@@ -443,6 +485,25 @@ impl<R: Send + 'static> Server<R> {
 
                     lease_guard.wait().await;
                 }
+                Err(ReadIndexError::StaleIndex) => {
+                    return Err(BeginReadError::StaleIndex);
+                }
+                Err(ReadIndexError::PendingElection) => {
+                    let pending_election = self
+                        .shared
+                        .pending_election
+                        .lock()
+                        .await
+                        .unwrap()
+                        .read_exclusive();
+
+                    if !*pending_election {
+                        continue;
+                    }
+
+                    pending_election.wait().await;
+                    continue;
+                }
             }
         }
 
@@ -453,29 +514,38 @@ impl<R: Send + 'static> Server<R> {
     }
 
     /// Will propose a new change and will return a future that resolves once
-    /// it has either suceeded to be executed, or has failed
+    /// it has either suceeded to be executed, or has failed.
+    ///
     /// General failures include:
     /// - For what ever reason we missed the timeout <- NoResult error
     /// - Not the leader     <- ProposeError
     /// - Commit started but was overriden <- In this case we should (for this
     /// we may want ot wait for a commit before )
     ///
+    ///
+    /// Internal details:
+    ///
+    /// This runs the propose() method method on the ConsensusModule and blocks
+    /// until any ephemeral ProposeError issues are resolved.
+    ///
     /// NOTE: In order for this to resolve in all cases, we assume that a leader
     /// will always issue a no-op at the start of its term if it notices that it
     /// has uncommited entries in its own log or if it notices that another
     /// server has uncommited entries in its log
-    /// NOTE: If we are the leader and we lose contact with our followers or if
+    ///
+    /// TODO: If we are the leader and we lose contact with our followers or if
     /// we are executing via a connection to a leader that we lose, then we
     /// should trigger all pending callbacks to fail because of timeout
     ///
     /// CANCEL SAFE
-    pub async fn execute(
-        &self,
-        entry: LogEntryData,
-    ) -> Result<PendingExecution<R>, NotLeaderError> {
+    pub async fn execute(&self, entry: LogEntryData) -> Result<PendingExecution<R>, ExecuteError> {
         self.execute_after_read(entry, None).await
     }
 
+    /// Similar to execute() except optionally ensures that the change is
+    /// executed locally in the same leadership term as the one used to generate
+    /// the given read_index.
+    ///
     /// NOTE: We assume that this read has come from Self::begin_read() so it
     /// has already been at least optimistically resolved, so checking that
     /// the term hasn't changed since the read started should be good
@@ -486,21 +556,73 @@ impl<R: Send + 'static> Server<R> {
         &self,
         entry: LogEntryData,
         read_index: Option<ReadIndex>,
-    ) -> Result<PendingExecution<R>, NotLeaderError> {
-        let res = ServerShared::run_tick(&self.shared, move |s, t| {
-            Self::execute_tick(s, t, entry, read_index)
-        })
-        .await;
+    ) -> Result<PendingExecution<R>, ExecuteError> {
+        let proposal;
+        let rx;
 
-        let (proposal, rx) = match res {
-            Ok(v) => v,
-            Err(ProposeError::NotLeader(e)) => return Err(e),
-            // These errors should only happen if proposing a config change (which we are not
-            // doing).
-            Err(ProposeError::RejectedConfigChange) | Err(ProposeError::RetryAfter(_)) => panic!(),
-            // TODO: Don't panic on this
-            Err(ProposeError::CommandTooLarge) => panic!(),
-        };
+        // TODO: Limit how long this loop is running for (same for begin_read)
+        loop {
+            let entry = entry.clone();
+            let read_index = read_index.clone();
+            let res = ServerShared::run_tick(&self.shared, move |s, t| {
+                Self::execute_tick(s, t, entry, read_index)
+            })
+            .await;
+
+            match res {
+                Ok(v) => {
+                    (proposal, rx) = v;
+                    break;
+                }
+                Err(ProposeError::NotLeader) => return Err(ExecuteError::NotLeader),
+                Err(ProposeError::RejectedConfigChange) => {
+                    return Err(ExecuteError::RejectedConfigChange);
+                }
+                Err(ProposeError::CommandTooLarge) => {
+                    return Err(ExecuteError::CommandTooLarge);
+                }
+                Err(ProposeError::ReadIndexTainted) => {
+                    return Err(ExecuteError::ReadIndexTainted);
+                }
+                Err(ProposeError::Draining) => {
+                    let lease_guard = self
+                        .shared
+                        .lease_start
+                        .lock()
+                        .await
+                        .unwrap()
+                        .read_exclusive();
+
+                    // TODO: This assumes that we will never un-drain so lease_start will always
+                    // eventually become None.
+                    if lease_guard.is_none() {
+                        continue;
+                    }
+
+                    // TODO: Re-check that it become None after this before retrying the tick.
+                    lease_guard.wait().await;
+                }
+                Err(ProposeError::PendingElection) => {
+                    let pending_election = self
+                        .shared
+                        .pending_election
+                        .lock()
+                        .await
+                        .unwrap()
+                        .read_exclusive();
+
+                    if !*pending_election {
+                        continue;
+                    }
+
+                    pending_election.wait().await;
+                }
+                Err(ProposeError::RetryAfter(pos)) => {
+                    // TODO: Unblock this everywhere if we are no longer the leader.
+                    self.shared.wait_for_commit(pos).await;
+                }
+            };
+        }
 
         Ok(PendingExecution {
             proposal,
@@ -522,6 +644,15 @@ impl<R: Send + 'static> Server<R> {
         let (tx, rx) = oneshot::channel();
         state.callbacks.push_back((proposal.clone(), tx));
         Ok((proposal, rx))
+    }
+
+    /// CANCEL SAFE
+    pub async fn drain(&self) -> Result<()> {
+        ServerShared::run_tick(&self.shared, move |state, tick| {
+            state.inst.drain(tick);
+            Ok(())
+        })
+        .await
     }
 
     /// CANCEL SAFE
@@ -600,7 +731,6 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .check_incoming_request_context(req_stream.context(), res_stream.context())?;
 
         while let Some(req) = req_stream.recv().await? {
-            let timeout_now = req.timeout_now();
             let c = ServerShared::run_tick(&self.shared, move |state, tick| {
                 state.inst.append_entries(&req, tick)
             })
@@ -613,29 +743,8 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             let res = self.shared.wait_for_match(c).await?;
 
             res_stream.send(res).await?;
-
-            if timeout_now {
-                // TODO: Perform the timeout.
-            }
         }
 
-        Ok(())
-    }
-
-    /// CANCEL SAFE
-    async fn TimeoutNow(
-        &self,
-        req: rpc::ServerRequest<TimeoutNow>,
-        res: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
-    ) -> Result<()> {
-        self.shared
-            .identity
-            .check_incoming_request_context(&req.context, &mut res.context)?;
-
-        ServerShared::run_tick(&self.shared, move |state, tick| {
-            state.inst.timeout_now(&req.value, tick)
-        })
-        .await?;
         Ok(())
     }
 
@@ -645,6 +754,10 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         mut req: rpc::ServerStreamRequest<InstallSnapshotRequest>,
         res: &mut rpc::ServerResponse<InstallSnapshotResponse>,
     ) -> Result<()> {
+        self.shared
+            .identity
+            .check_incoming_request_context(req.context(), &mut res.context)?;
+
         // TODO: Ideally only one snapshot should ever be getting installed at a time.
         // ^ If we receive a second request, pick the latest leader.
 
@@ -790,12 +903,17 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         let pending_exec = match r {
             Ok(v) => v,
-            Err(NotLeaderError { term, leader_hint }) => {
-                let err = res.error_mut().not_leader_mut();
-                if let Some(hint) = leader_hint {
-                    err.set_leader_hint(hint);
-                }
+            Err(ExecuteError::NotLeader) => {
+                let hint = self.leader_hint().await;
 
+                let err = res.error_mut().not_leader_mut();
+                err.set_leader_hint(hint.leader_id());
+
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Unknown error");
+                res.error_mut();
                 return Ok(());
             }
         };

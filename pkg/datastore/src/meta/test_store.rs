@@ -54,7 +54,7 @@ impl TestMetastoreCluster {
         // TODO: Disable multicast as we don't need it in a unit test.
         let resource = crate::meta::store::run(crate::meta::store::MetastoreOptions {
             dir: dir.clone(),
-            init_port: 0,
+            init_port: None,
             bootstrap,
             service_port: port,
             route_labels: self.shared.route_labels.clone(),

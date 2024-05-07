@@ -35,6 +35,9 @@ pub struct ConsensusFollowerState {
 
 #[derive(Clone, Debug)]
 pub struct ConsensusCandidateState {
+    /// How many consecutive tries we've had at becomming the leader.
+    pub attempt_number: usize,
+
     /// Time at which this candidate started its election (when pre-votes were
     /// issued).
     pub election_start: Instant,
@@ -71,6 +74,9 @@ pub struct ConsensusCandidateState {
     /// contention from other nodes
     /// So if we don't win the election, we must bump the term
     pub some_rejected: bool,
+
+    /// Term of the leader which triggered this election via a TimeoutNow.
+    pub leader_approval: Option<Term>,
 }
 
 /// Volatile state on leaders:

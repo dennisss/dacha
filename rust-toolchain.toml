@@ -1,2 +1,3 @@
 [toolchain]
-channel = "nightly-2023-01-31"
+channel = "nightly-2024-04-05"
+targets = ["thumbv7em-none-eabihf", "aarch64-unknown-linux-gnu"]

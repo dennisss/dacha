@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
-use crypto::random::{self, RngExt};
+use crypto::random::{self, RngExt, SharedRngExt};
 
 use crate::consensus::config_state::*;
 use crate::consensus::constraint::*;
@@ -63,6 +63,9 @@ TODO: Verify that receiving an AppendEntries response out of order doesn't mess 
 
 /// At some random time in this range of milliseconds, a follower will become a
 /// candidate if no
+///
+/// TODO: We should use something close to this as the RPC retry rate if we
+/// detect a NoLeader error.
 const ELECTION_TIMEOUT: (u64, u64) = (400, 800);
 
 /// Minumum interval at which Heartbeat RPCs will be sent by the leader to all
@@ -116,7 +119,19 @@ const MIN_PESSIMISTIC_APPEND_INTERVAL: Duration = Duration::from_millis(50);
 /// Maximum size of an individual proposed command.
 /// - Applications should likely set smaller limits higher up in the stack.
 /// - Only checked on the leader since we never want failures on followers.
-const MAX_COMMAND_SIZE: usize = 4 * 1024 * 1024; // 4MiB
+const MAX_COMMAND_SIZE: usize = 4 * 1024 * 1024; // 4 MiB
+
+/// If we send out a TimeoutNow request to another server and we are still the
+/// leader after this amount of time, then we will try to send a new TimeoutNow
+/// to possibly a different server.
+const TIMEOUT_NOW_DEADLINE: Duration = Duration::from_secs(1);
+
+/// Maximum number of other AppendEntries requests that can be active when we
+/// send out a TimeoutNow request.
+///
+/// Too large of a queue length will mean that it may take longer than
+/// TIMEOUT_NOW_DEADLINE for new requests to be processed.
+const TIMEOUT_NOW_SEND_MAX_QUEUE_LENGTH: usize = 4;
 
 // NOTE: This is basically the same type as a LogPosition (we might as well wrap
 // a LogPosition and make the contents of a proposal opaque to other programs
@@ -135,14 +150,32 @@ pub enum ProposeError {
     /// NOTE: This will only happen if a config change was proposed.
     RetryAfter(Proposal),
 
+    /// The read index provided was from an earlier term so we can't guarantee
+    /// that the current server was the only leader since it was created.
+    ReadIndexTainted,
+
     /// The entry can't be proposed by this server because we are not the
-    /// current leader
-    NotLeader(NotLeaderError),
+    /// current leader and won't be soon.
+    NotLeader,
+
+    /// The current server is in the process of electing itself to become
+    /// leader. The client should wait for either the term to change or for us
+    /// to become a leader before retrying.
+    PendingElection,
 
     /// The given entry is an unparseable config state change
     RejectedConfigChange,
 
+    /// The payload was too big to append to the log.
     CommandTooLarge,
+
+    /// The server is the last known leader but is not currently accepting
+    /// proposals because it is transferring leadership to another server.
+    ///
+    /// The client can block for the lease_start to become None and then retry
+    /// to see a NotLeader error with the identity of the new server to which we
+    /// should send requests.
+    Draining,
 }
 
 impl std::fmt::Display for ProposeError {
@@ -238,6 +271,10 @@ impl std::fmt::Display for NotLeaderError {
 
 /// Error that may occur while attempting to resolve/finalize a read index.
 pub enum ReadIndexError {
+    StaleIndex,
+
+    PendingElection,
+
     /// The leader has changed since the read index was generated so we're not
     /// sure if it was valid.
     ///
@@ -245,7 +282,7 @@ pub enum ReadIndexError {
     /// new read index.
     ///
     /// NOTE: The new leader may be the local server.
-    NotLeader(NotLeaderError),
+    NotLeader,
 
     /// The read index can't be used until the given index has been committed.
     ///
@@ -281,6 +318,10 @@ pub struct ConsensusModule {
     // Basically this is the persistent state stuff
     state: ConsensusState,
 
+    /// If not none, we are draining the server and this contains our progress
+    /// in doing so.
+    draining: Option<DrainingState>,
+
     /// Highest log entry sequence at which we have seen a conflict
     ///
     /// (aka this is the position of some log entry that we added to the log
@@ -304,6 +345,16 @@ pub struct ConsensusModule {
 
     /// Id of the last request that we've sent out.
     last_request_id: RequestId,
+}
+
+struct DrainingState {
+    /// The term during which the drain started.
+    term: Term,
+
+    /// If we were the leader when the drain started, this is the id of the next
+    /// server we have chosen to be our successor (will be sent a 'timeout_now'
+    /// request) and the time at which the timeout now was emitted.
+    next_leader: Option<(ServerId, Instant)>,
 }
 
 impl ConsensusModule {
@@ -407,6 +458,7 @@ impl ConsensusModule {
             pending_conflict: None,
             pending_commit_index: None,
             last_request_id: 0.into(),
+            draining: None,
         }
     }
 
@@ -419,24 +471,29 @@ impl ConsensusModule {
     }
 
     /// Gets the identity of which server we believe is currently the leader of
-    /// the raft group.
+    /// the raft group (or who will soon be the leader).
+    ///
+    /// In the case that we are the candidate, operations like propose() will
+    /// return a PendingElection event to ensure that the server blocks for the
+    /// election to be resolved.
     ///
     /// NOTE: The returned id may be equal to the current server id.
-    pub fn leader_hint(&self) -> NotLeaderError {
+    pub fn leader_hint(&self) -> LeaderHint {
+        let mut hint = LeaderHint::default();
+        hint.set_term(self.meta.current_term());
+
         match &self.state {
-            ConsensusState::Leader(_) => NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: Some(self.id),
-            },
-            ConsensusState::Follower(s) => NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: s.last_leader_id.clone(),
-            },
-            ConsensusState::Candidate(_) => NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: None,
-            },
+            ConsensusState::Leader(_) | ConsensusState::Candidate(_) => {
+                hint.set_leader_id(self.id());
+            }
+            ConsensusState::Follower(s) => {
+                if let Some(id) = s.last_leader_id.clone() {
+                    hint.set_leader_id(id);
+                }
+            }
         }
+
+        hint
     }
 
     /// Gets the latest **committed** configuration snapshot known by the
@@ -461,6 +518,13 @@ impl ConsensusModule {
         match &self.state {
             ConsensusState::Leader(s) => Some(s.lease_start),
             _ => None,
+        }
+    }
+
+    pub fn pending_election(&self) -> bool {
+        match &self.state {
+            ConsensusState::Candidate(s) => s.attempt_number == 0,
+            _ => false,
         }
     }
 
@@ -495,6 +559,14 @@ impl ConsensusModule {
             }
         }
 
+        if let Some(draining) = &self.draining {
+            let status = status.draining_mut();
+            status.set_term(draining.term);
+            if let Some((next_leader_id, _)) = draining.next_leader {
+                status.set_next_leader_id(next_leader_id);
+            }
+        }
+
         status
     }
 
@@ -514,7 +586,7 @@ impl ConsensusModule {
     ///
     /// NOTE: It is only valid for this to be called on the leader. If we aren't
     /// the leader, this will return an error.
-    pub fn read_index(&self, mut time: Instant) -> Result<ReadIndex, NotLeaderError> {
+    pub fn read_index(&self, mut time: Instant) -> Result<ReadIndex, LeaderHint> {
         match &self.state {
             ConsensusState::Leader(s) => {
                 // In the case of a single node cluster, we shouldn't need to wait.
@@ -528,14 +600,7 @@ impl ConsensusModule {
                     time,
                 })
             }
-            ConsensusState::Follower(s) => Err(NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: s.last_leader_id.clone(),
-            }),
-            ConsensusState::Candidate(_) => Err(NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: None,
-            }),
+            ConsensusState::Follower(_) | ConsensusState::Candidate(_) => Err(self.leader_hint()),
         }
     }
 
@@ -583,6 +648,9 @@ impl ConsensusModule {
     ///   after read_index() is called without needing to make any network round
     ///   trips.
     ///
+    /// If the current server is draining, this will likely return a
+    /// WaitForLease event which will eventually lead to a NotLeader error.
+    ///
     /// Returns:
     /// Upon getting a successful return value, the user should wait until at
     /// least all log entries up to that index are applied to the state machine
@@ -599,25 +667,20 @@ impl ConsensusModule {
         let leader_state = match &self.state {
             ConsensusState::Leader(s) => s,
             ConsensusState::Follower(s) => {
-                return Err(ReadIndexError::NotLeader(NotLeaderError {
-                    term: self.meta.current_term(),
-                    leader_hint: s.last_leader_id.clone(),
-                }))
+                return Err(ReadIndexError::NotLeader);
             }
-            ConsensusState::Candidate(_) => {
-                return Err(ReadIndexError::NotLeader(NotLeaderError {
-                    term: self.meta.current_term(),
-                    leader_hint: None,
-                }))
+            ConsensusState::Candidate(s) => {
+                if self.pending_election() {
+                    return Err(ReadIndexError::PendingElection);
+                }
+
+                return Err(ReadIndexError::NotLeader);
             }
         };
 
         // Verify that the term hasn't changed since the index was created.
         if self.meta.current_term() != read_index.term {
-            return Err(ReadIndexError::NotLeader(NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: Some(self.id),
-            }));
+            return Err(ReadIndexError::StaleIndex);
         }
 
         // If we returned the min_read_index, ensure that it has been commited.
@@ -628,7 +691,8 @@ impl ConsensusModule {
         }
 
         let mut min_time = read_index.time;
-        if optimistic {
+        // TODO: Don't do this if we recently undrained.
+        if optimistic && self.draining.is_none() {
             min_time -=
                 Duration::from_millis(((ELECTION_TIMEOUT.0 as f32) / CLOCK_DRIFT_BOUND) as u64);
         }
@@ -659,11 +723,47 @@ impl ConsensusModule {
         self.cycle(tick);
     }
 
-    /// Assuming we are currently a follower, resets us to
+    /// Assuming we are currently a follower, resets us to be a fresh follower
+    /// which started at the given time.
     pub fn reset_follower(&mut self, time: Instant) {
         if let ConsensusState::Follower(f) = &self.state {
             self.state = Self::new_follower(time);
         }
+    }
+
+    /// Configures this module to start 'draining'.
+    ///
+    /// While draining, this means:
+    /// - If we are a follower, we will not transition to being a candidate.
+    /// - If we are a leader, we will:
+    ///   - Reject all new proposals (started after the drain began).
+    ///   - Find a random follower that is a group member and 'syncronized'.
+    ///     - TODO: Need some protection against hotspotting the first follower
+    ///       that becomes syncronized (mainly an issue if we ever have many af
+    ///       groups).
+    ///   - Once the last AppendEntries request is send is sent to that
+    ///     follower, we will send it a TimeoutNow to the server.
+    ///   - That follower should shortly afterwards become the leader of the
+    ///     group.
+    ///     - If we are still the leader 1 second later, we will repeat this
+    ///       process with another random follower.
+    ///
+    /// Draining can be considered to be 'done' once the current server is not a
+    /// leader. Given that getting a follower to become syncronized can take ~1s
+    /// and flushing and timing out a server may take another second with no
+    /// bound to how long the process runs, it is recommended to timeout any
+    /// task waiting for the drain to complete after around 4 seconds or so.
+    pub fn drain(&mut self, tick: &mut Tick) {
+        if self.draining.is_some() {
+            return;
+        }
+
+        self.draining = Some(DrainingState {
+            term: self.meta.current_term(),
+            next_leader: None,
+        });
+
+        self.cycle(tick);
     }
 
     /// Propose a new state machine command given some data packet
@@ -681,17 +781,6 @@ impl ConsensusModule {
 
         self.propose_entry(e, None, out)
     }
-
-    // How this will work, in general, wait for an AddServer RPC,
-    /*
-    pub fn propose_config(&mut self, change: ConfigChange) -> Proposal {
-        if let ServerState::Leader(_) = self.state {
-
-        }
-
-        // Otherwise, we must
-    }
-    */
 
     /// Checks the progress of a previously initiated proposal.
     ///
@@ -778,11 +867,12 @@ impl ConsensusModule {
 
             if let Some(read) = read_index {
                 if read.term() != term {
-                    return Err(ProposeError::NotLeader(NotLeaderError {
-                        term,
-                        leader_hint: Some(self.id()),
-                    }));
+                    return Err(ProposeError::ReadIndexTainted);
                 }
+            }
+
+            if self.draining.is_some() {
+                return Err(ProposeError::Draining);
             }
 
             // Considering we are a leader, this should always true, as we only
@@ -854,7 +944,7 @@ impl ConsensusModule {
             let mut e = LogEntry::default();
             e.pos_mut().set_term(term);
             e.pos_mut().set_index(index);
-            e.set_data(data);
+            e.set_data(data.clone());
 
             // As soon as a configuration change lands in the log, we will use it
             // immediately XXX: Here the commit index won't really help optimize
@@ -871,21 +961,15 @@ impl ConsensusModule {
 
             Ok(Proposal::new(term, index))
         } else if let ConsensusState::Follower(ref s) = self.state {
-            return Err(ProposeError::NotLeader(NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: s.last_leader_id.or_else(|| {
-                    if self.meta.voted_for().value() > 0 {
-                        Some(self.meta.voted_for())
-                    } else {
-                        None
-                    }
-                }),
-            }));
+            return Err(ProposeError::NotLeader);
+        } else if let ConsensusState::Candidate(ref s) = self.state {
+            if self.pending_election() {
+                return Err(ProposeError::PendingElection);
+            }
+
+            return Err(ProposeError::NotLeader);
         } else {
-            return Err(ProposeError::NotLeader(NotLeaderError {
-                term: self.meta.current_term(),
-                leader_hint: None,
-            }));
+            panic!()
         };
 
         // Cycle the state to replicate this entry to other servers
@@ -946,7 +1030,7 @@ impl ConsensusModule {
                 let elapsed = tick.time.duration_since(state.last_heartbeat);
                 let election_timeout = state.election_timeout.clone();
 
-                if !self.can_be_leader() {
+                if !self.can_be_leader() || self.draining.is_some() {
                     // Can not become a leader, so just wait keep deferring the
                     // election until we can potentially elect ourselves
                     self.state = Self::new_follower(tick.time.clone());
@@ -957,7 +1041,7 @@ impl ConsensusModule {
                 // trivially win the election without waiting
                 // TODO: Also check that we are actually a voting member in the config.
                 else if elapsed >= election_timeout || self.config.value.servers_len() == 1 {
-                    self.become_candidate(tick);
+                    self.become_candidate(None, tick);
                 } else {
                     // Otherwise sleep until the next election
                     // The preferred method here will be to wait on the
@@ -973,7 +1057,7 @@ impl ConsensusModule {
                 let elapsed = tick.time.duration_since(state.election_start);
                 if elapsed >= state.election_timeout {
                     // This always recursively calls cycle().
-                    self.become_candidate(tick);
+                    self.become_candidate(None, tick);
                     return;
                 } else {
                     // TODO: Ideally use absolute times for the next_tick.
@@ -1010,7 +1094,7 @@ impl ConsensusModule {
                     if let Some(time) = state.main_vote_start {
                         time.clone()
                     } else {
-                        if pre_vote_count >= majority {
+                        if pre_vote_count >= majority || state.leader_approval.is_some() {
                             let state = match &mut self.state {
                                 ConsensusState::Candidate(c) => c,
                                 _ => todo!(),
@@ -1109,24 +1193,19 @@ impl ConsensusModule {
                 /// pending waiters if appropriate).
                 if tick.time >= next_lease_start + Duration::from_millis(ELECTION_TIMEOUT.1) {
                     println!("Leader stepping down...");
-                    self.become_candidate(tick);
+
+                    if self.draining.is_some() {
+                        self.become_follower(tick);
+                    } else {
+                        self.become_candidate(None, tick);
+                    }
+
                     return;
                 }
 
                 // TODO: Optimize the case of a single node in which case there
                 // is no events or timeouts to wait for and the server can block
                 // indefinitely until that configuration changes
-
-                let mut next_heartbeat =
-                    core::cmp::min(self.send_heartbeats(tick), self.replicate_entries(tick))
-                        - tick.time;
-
-                // If we are the only server in the cluster, then we don't
-                // really need heartbeats at all, so we will just change this
-                // to some really large value
-                if self.config.value.servers_len() == 1 {
-                    next_heartbeat = Duration::from_secs(2);
-                }
 
                 // Stop any rounds that are taking too long.
                 {
@@ -1148,9 +1227,20 @@ impl ConsensusModule {
                     }
                 }
 
+                let mut next_heartbeat =
+                    core::cmp::min(self.send_heartbeats(tick), self.replicate_entries(tick))
+                        - tick.time;
+
+                // If we are the only server in the cluster, then we don't
+                // really need heartbeats at all, so we will just change this
+                // to some really large value
+                if self.config.value.servers_len() == 1 {
+                    next_heartbeat = Duration::from_secs(2);
+                }
+
                 // If there aren't already any config changes pending, we can upgrade/promote at
                 // most one server from ASPIRING to MEMBER.
-                if self.config.pending.is_none() {
+                if self.config.pending.is_none() && self.draining.is_none() {
                     let state = match &self.state {
                         ConsensusState::Leader(s) => s,
                         _ => todo!(),
@@ -1462,6 +1552,8 @@ impl ConsensusModule {
     /// Returns: Amount of time until this needs to be called again for issueing
     /// another heartbeat.
     fn replicate_entries(&mut self, tick: &mut Tick) -> Instant {
+        let mut timeout_now_id = self.pick_timeout_now_server_id(tick.time);
+
         let state: &mut ConsensusLeaderState = match self.state {
             ConsensusState::Leader(ref mut s) => s,
 
@@ -1482,8 +1574,9 @@ impl ConsensusModule {
 
         // Map used to duduplicate messages that will end up being exactly the
         // same to different followers
-        // key is the index range [prev, last_in_request] of the message
-        let mut message_map: BTreeMap<(LogIndex, LogIndex), ConsensusMessage> = BTreeMap::new();
+        // key is the index range [prev, last_in_request, timeout_now] of the message
+        let mut message_map: BTreeMap<(LogIndex, LogIndex, bool), ConsensusMessage> =
+            BTreeMap::new();
 
         // Ids of peers to which we need to send InstallSnapshot RPCs
         let mut install_snapshot_ids = vec![];
@@ -1494,7 +1587,13 @@ impl ConsensusModule {
         let mut server_iter = self.config.value.servers().iter();
         let mut cur_server = server_iter.next();
 
+        let mut num_iterations = 0;
+
         while let Some(server) = cur_server.clone() {
+            // Something is probably wrong if we are looping too many times.
+            num_iterations += 1;
+            assert!(num_iterations < 10_000);
+
             // Don't send to ourselves (the leader)
             if server.id() == leader_id {
                 cur_server = server_iter.next();
@@ -1507,14 +1606,10 @@ impl ConsensusModule {
             // they are removed from this (TODO: Eventually we should get rid of the insert
             // here and make sure that we always rely on the config changes for this)
             let progress = {
-                if !state.followers.contains_key(&server.id()) {
-                    state.followers.insert(
-                        server.id(),
-                        ConsensusFollowerProgress::new(leader_last_log_index),
-                    );
-                }
-
-                state.followers.get_mut(&server.id()).unwrap()
+                state
+                    .followers
+                    .entry(server.id())
+                    .or_insert_with(|| ConsensusFollowerProgress::new(leader_last_log_index))
             };
 
             let mut max_entries_per_request = MAX_ENTRIES_PER_LIVE_APPEND;
@@ -1523,6 +1618,11 @@ impl ConsensusModule {
             match progress.mode {
                 ConsensusFollowerMode::Live => {
                     // Good to send. Pipeline many requests.
+
+                    if progress.pending_append_requests.len() >= MAX_IN_FLIGHT_REQUESTS {
+                        cur_server = server_iter.next();
+                        continue;
+                    }
                 }
                 ConsensusFollowerMode::Pesimistic | ConsensusFollowerMode::CatchingUp => {
                     // Limit to one AppendEntries request at a time.
@@ -1541,10 +1641,29 @@ impl ConsensusModule {
                 }
             }
 
-            if progress.pending_append_requests.len() >= MAX_IN_FLIGHT_REQUESTS {
-                cur_server = server_iter.next();
-                continue;
-            }
+            // TODO: See the pipelining section of the thesis
+            // - We can optimistically increment the next_index as soon as we
+            // send this request
+            // - Combining with some scenario for throttling the maximum number
+            // of requests that can go through to a single server at a given
+            // time, we can send many append_entries in a row to a server before
+            // waiting for previous ones to suceed
+            let prev_log_index = progress.next_index - 1;
+
+            // TODO: Round down the first number slightly to try and keep more followers
+            // aligned (with getting the exact same message).
+            let last_log_index = core::cmp::min(
+                prev_log_index + ((1 + max_entries_per_request) as u64),
+                leader_last_log_index,
+            );
+
+            // NOTE: Currently we send the TimeoutNow as a separate empty AppendEntries
+            // request to avoid double computing the previous request if the same request
+            // needs to go to many servers.
+            let can_send_timeout_now = (prev_log_index == leader_last_log_index
+                && leader_last_log_index == last_log_index
+                && timeout_now_id == Some(server.id())
+                && progress.pending_append_requests.len() <= TIMEOUT_NOW_SEND_MAX_QUEUE_LENGTH);
 
             // Whether or not another AppendEntries request is needed.
             let need_another_request = (
@@ -1562,7 +1681,9 @@ impl ConsensusModule {
                 // Send if we have unsent log entries.
                 progress.next_index <= leader_last_log_index ||
                 // Send if the commit index has advanced
-                progress.last_commit_index_sent < leader_commit
+                progress.last_commit_index_sent < leader_commit ||
+                // Check if we want to send a TimeoutNow.
+                can_send_timeout_now
             );
 
             if !need_another_request {
@@ -1572,6 +1693,9 @@ impl ConsensusModule {
 
             // Flow control non-live requests since Pessimistic/CatchingUp states can easily
             // get into infinite sending loops.
+            //
+            // NOTE: This is checked after need_another_request to avoid updateing
+            // next_send_time if not needed.
             if progress.mode != ConsensusFollowerMode::Live {
                 if let Some(last_time) = progress.last_append_entries_sent {
                     let next_allowed = last_time + MIN_PESSIMISTIC_APPEND_INTERVAL;
@@ -1593,29 +1717,21 @@ impl ConsensusModule {
                 progress.round_start = Some((leader_last_log_index, tick.time));
             }
 
-            // TODO: See the pipelining section of the thesis
-            // - We can optimistically increment the next_index as soon as we
-            // send this request
-            // - Combining with some scenario for throttling the maximum number
-            // of requests that can go through to a single server at a given
-            // time, we can send many append_entries in a row to a server before
-            // waiting for previous ones to suceed
-            let prev_log_index = progress.next_index - 1;
-
-            // TODO: Round down the first number slightly to try and keep more followers
-            // aligned (with getting the exact same message).
-            let last_log_index = core::cmp::min(
-                prev_log_index + ((1 + max_entries_per_request) as u64),
-                leader_last_log_index,
-            );
-
             progress.next_index = last_log_index + 1;
 
             let request_id;
 
+            let timeout_now = can_send_timeout_now;
+            if timeout_now {
+                // Prevent the next loop from also sending a timeout now request.
+                timeout_now_id = None;
+
+                self.draining.as_mut().unwrap().next_leader = Some((server.id(), tick.time));
+            }
+
             // If we are already sending a request for this log index, re-use the existing
             // request.
-            if let Some(msg) = message_map.get_mut(&(prev_log_index, last_log_index)) {
+            if let Some(msg) = message_map.get_mut(&(prev_log_index, last_log_index, timeout_now)) {
                 msg.to.push(server.id());
                 request_id = msg.request_id;
             } else {
@@ -1626,10 +1742,15 @@ impl ConsensusModule {
                 {
                     Some(v) => v,
                     None => {
+                        // TODO: There is a small risk that we won't send the TimeoutNow requested
+                        // by 'timeout_now_id' if this happens.
+
                         progress.mode = ConsensusFollowerMode::InstallingSnapshot;
                         // Ignore AppendEntries responses while in InstallingSnapshot mode.
                         progress.pending_append_requests.clear();
                         install_snapshot_ids.push(server.id());
+
+                        cur_server = server_iter.next();
                         continue;
                     }
                 };
@@ -1646,9 +1767,10 @@ impl ConsensusModule {
                 request.set_prev_log_index(prev_log_index);
                 request.set_prev_log_term(prev_log_term);
                 request.set_leader_commit(leader_commit);
+                request.set_timeout_now(timeout_now);
 
                 message_map.insert(
-                    (prev_log_index, last_log_index),
+                    (prev_log_index, last_log_index, timeout_now),
                     ConsensusMessage {
                         request_id,
                         to: vec![server.id()],
@@ -1661,12 +1783,13 @@ impl ConsensusModule {
                 );
             }
 
+            assert!(!progress.pending_append_requests.contains_key(&request_id));
             progress.pending_append_requests.insert(
                 request_id,
                 PendingAppendEntries {
                     start_time: tick.time.clone(),
                     prev_log_index,
-                    last_index_sent: leader_last_log_index,
+                    last_index_sent: last_log_index,
                 },
             );
         }
@@ -1696,12 +1819,60 @@ impl ConsensusModule {
         next_send_time
     }
 
+    /// Attends to pick a server to which we should send a TimeoutNow request.
+    fn pick_timeout_now_server_id(&self, now: Instant) -> Option<ServerId> {
+        let state: &ConsensusLeaderState = match self.state {
+            ConsensusState::Leader(ref s) => s,
+            _ => return None,
+        };
+
+        let draining = match &self.draining {
+            Some(v) => v,
+            None => return None,
+        };
+
+        // Don't sent a request too soon after the previous timeout now request.
+        if let Some((_, last_time)) = draining.next_leader {
+            if last_time + TIMEOUT_NOW_DEADLINE >= now {
+                return None;
+            }
+        }
+
+        let mut candidates = vec![];
+        for server in self.config.value.servers().iter() {
+            if server.id() == self.id() || server.role() != Configuration_ServerRole::MEMBER {
+                continue;
+            }
+
+            let progress = match state.followers.get(&server.id()) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            if !self.is_follower_synchronized(progress) {
+                continue;
+            }
+
+            candidates.push(server.id());
+        }
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // TODO: Make deterministic
+        crypto::random::clocked_rng().shuffle(&mut candidates);
+
+        Some(candidates[0])
+    }
+
     /// Transitions the current server to become a candidate trying to become
     /// the leader.
     ///
     /// This will send out the initial round of pre-vote RPCs.
-    fn become_candidate(&mut self, tick: &mut Tick) {
+    fn become_candidate(&mut self, leader_approval: Option<Term>, tick: &mut Tick) {
         // Will be triggerred by a timeoutnow request
+        // XXX: Yes.
         if !self.can_be_leader() {
             panic!("We can not be the leader of this cluster");
         }
@@ -1728,6 +1899,14 @@ impl ConsensusModule {
             }
         };
 
+        let attempt_number = {
+            if let ConsensusState::Candidate(ref s) = self.state {
+                s.attempt_number + 1
+            } else {
+                0
+            }
+        };
+
         // TODO: Don't write metadata until the pre-vote succeeds?
         if must_increment {
             *self.meta.current_term_mut().value_mut() += 1;
@@ -1736,8 +1915,10 @@ impl ConsensusModule {
         }
 
         println!(
-            "Starting election for term: {}",
-            self.meta.current_term().value()
+            "Server {} starting election for term: {} (approval from {:?})",
+            self.id.value(),
+            self.meta.current_term().value(),
+            leader_approval
         );
 
         let request_id = self.last_request_id + 1;
@@ -1748,6 +1929,7 @@ impl ConsensusModule {
         // votes again? Unless it has been so long that we expect to get a new term
         // index by reasking
         self.state = ConsensusState::Candidate(ConsensusCandidateState {
+            attempt_number,
             election_start: tick.time.clone(),
             election_timeout: Self::new_election_timeout(),
             pre_votes_received: HashSet::with_hasher(FastHasherBuilder::default()),
@@ -1755,12 +1937,15 @@ impl ConsensusModule {
             vote_request_id: request_id,
             votes_received: HashSet::with_hasher(FastHasherBuilder::default()),
             some_rejected: false,
+            leader_approval,
         });
 
-        // TODO: We can skip these if we got a TimeoutNow
-
         // Send out PreVote requests.
-        self.perform_election(request_id, true, tick);
+        // If we have leader approval, then the main election will immediately be
+        // triggered instead inside fo cycle().
+        if leader_approval.is_none() {
+            self.perform_election(request_id, true, tick);
+        }
 
         // This will make the next tick at the election timeout or will
         // immediately make us the leader in the case of a single node cluster
@@ -1768,6 +1953,11 @@ impl ConsensusModule {
     }
 
     fn perform_election(&self, request_id: RequestId, pre_vote: bool, tick: &mut Tick) {
+        let state = match &self.state {
+            ConsensusState::Candidate(c) => c,
+            _ => todo!(),
+        };
+
         let (last_log_index, last_log_term) = {
             let off = self.log_meta.last();
             (off.position.index(), off.position.term())
@@ -1778,6 +1968,9 @@ impl ConsensusModule {
         req.set_candidate_id(self.id);
         req.set_last_log_index(last_log_index);
         req.set_last_log_term(last_log_term);
+        if let Some(term) = state.leader_approval {
+            req.set_leader_approval(term);
+        }
 
         // Send to all voting members aside from ourselves
         let ids = self
@@ -2349,6 +2542,7 @@ impl ConsensusModule {
         req: &RequestVoteRequest,
         tick: &mut Tick,
     ) -> MustPersistMetadata<RequestVoteResponse> {
+        // TODO: Rely on more robust authentication of who the peer is.
         let candidate_id = req.candidate_id();
         println!("Received request_vote from {}", candidate_id.value());
 
@@ -2364,6 +2558,10 @@ impl ConsensusModule {
             match self.state {
                 ConsensusState::Follower(ref mut s) => {
                     s.last_heartbeat = tick.time.clone();
+
+                    // Doing this during a leader server drain will allow us to more quickly
+                    // redirect deferred requests.
+                    s.last_leader_id = Some(req.candidate_id());
                 }
                 _ => panic!("Granted vote but did not transition back to being a follower"),
             };
@@ -2388,6 +2586,8 @@ impl ConsensusModule {
     /// should still be consistent)
     /// XXX: May have have a mutation to the hard state but I guess that is
     /// trivial right?
+    ///
+    /// TODO: Make things in here rpc::Status errors.
     pub fn append_entries(
         &mut self,
         req: &AppendEntriesRequest,
@@ -2497,6 +2697,9 @@ impl ConsensusModule {
         // This should never happen as the snapshot should only contain comitted
         // entries which should never be resent
         if req.prev_log_index() < self.log_meta.prev().position.index() {
+            // TODO: We probably want to return a regular Ok response in this case. It is
+            // possible that the leader thinks we haven't caught up to the top of the log
+            // yet.
             return Err(err_msg(
                 "Requested previous log entry is before the start of the log",
             ));
@@ -2682,6 +2885,14 @@ impl ConsensusModule {
         // It should be always captured by the first new entry
         assert!(!pending_truncation);
 
+        if req.timeout_now() {
+            if !self.can_be_leader() {
+                return Err(err_msg("Timeout now received but can't be the leader"));
+            }
+
+            self.become_candidate(Some(req.term()), tick);
+        }
+
         Ok(FlushConstraint::new(
             make_response(
                 true,
@@ -2693,12 +2904,6 @@ impl ConsensusModule {
             last_new_seq,
             LogPosition::new(last_new_term, last_new),
         ))
-    }
-
-    pub fn timeout_now(&mut self, req: &TimeoutNow, tick: &mut Tick) -> Result<()> {
-        // TODO: Possibly avoid a pre-vote in this case to speed up leader transfer
-        self.become_candidate(tick);
-        Ok(())
     }
 
     /*

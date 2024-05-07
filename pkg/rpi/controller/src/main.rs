@@ -215,7 +215,7 @@ async fn main() -> Result<()> {
 
     let config = match args.config_name.as_str() {
         "minimal" => rpi_controller::minimal_config()?,
-        "rpi-rack-r5" => rpi_controller::pi_rack_r5_config()?,
+        "rpi_rack_r5" => rpi_controller::pi_rack_r5_config()?,
         _ => return Err(format_err!("Unkown config named: {}", args.config_name)),
     };
 

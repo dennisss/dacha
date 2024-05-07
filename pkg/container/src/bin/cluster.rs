@@ -60,7 +60,8 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 use std::{collections::HashSet, sync::Arc};
 
-use builder::proto::{BlobFormat, BundleSpec};
+use builder::proto::{BundleBlobFormat, BundleSpec};
+use cluster_client::meta::constants::{META_STORE_SEEDS_ENV_VAR, ZONE_ENV_VAR};
 use common::errors::*;
 use common::failure::ResultExt;
 use common::io::{Readable, Writeable};
@@ -87,13 +88,14 @@ use rpc::ClientRequestContext;
 use cluster_client::meta::client::ClusterMetaClient;
 use cluster_client::meta::*;
 use container::{
-    AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec, ListWorkersRequest,
-    ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
+    AllocateBundleBlobsRequest, AllocateBundleBlobsResponse, BundleBlobMetadata, JobSpec,
+    ListWorkersRequest, ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
     WorkerStateMetadata_ReportedState,
 };
 use container::{
-    BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, WorkerMetadata, WorkerSpec,
-    WorkerSpec_Port, WorkerSpec_Volume, WorkerStateMetadata, WriteInputRequest, ZoneMetadata,
+    BundleBlobStoreStub, ContainerNodeStub, JobMetadata, Label, Labels, NodeMetadata_State,
+    UpdateLabelsRequests, WorkerMetadata, WorkerSpec, WorkerSpec_Port, WorkerSpec_Volume,
+    WorkerStateMetadata, WriteInputRequest, ZoneMetadata,
 };
 
 #[derive(Args)]
@@ -134,6 +136,12 @@ enum Command {
     /// Retrieve the log (stdout/stderr) outputs of a worker.
     #[arg(name = "log")]
     Log(LogCommand),
+
+    #[arg(name = "labels")]
+    Labels(LabelsCommand),
+
+    #[arg(name = "envvars")]
+    EnvVars(EnvVarsCommand),
 }
 
 #[derive(Args)]
@@ -191,14 +199,42 @@ struct StartWorkerCommand {
     #[arg(positional)]
     worker_spec_path: String,
 
-    /// Should be of the 'http(s)://ip:port'
+    /// Should be of the 'ip:port'
     node_addr: String,
+}
+
+#[derive(Args)]
+struct LabelsCommand {
+    sub_command: LabelsSubCommand,
+
+    node_selector: NodeSelector,
+}
+
+#[derive(Args)]
+enum LabelsSubCommand {
+    #[arg(name = "get")]
+    Get,
+
+    #[arg(name = "set")]
+    Set(SetLabelsCommand),
+}
+
+#[derive(Args)]
+struct SetLabelsCommand {
+    #[arg(positional)]
+    values: String,
+
+    #[arg(default = false)]
+    override_all: bool,
 }
 
 #[derive(Args)]
 struct EventsCommand {
     worker_selector: WorkerNodeSelector,
 }
+
+#[derive(Args)]
+struct EnvVarsCommand {}
 
 #[derive(Args)]
 struct LogCommand {
@@ -218,9 +254,7 @@ struct WorkerNodeSelector {
     /// Name of the worker from which to
     worker_name: String,
 
-    node_addr: Option<String>,
-
-    node_id: Option<u64>,
+    node_selector: NodeSelector,
     /* TODO: Provide the attempt_id here as it may influence us to use a differnet node (one
      * that was previously assigned the worker)
      * - Given the attempt_id as a timestamp, we can search the WorkerMetadata in the metastore
@@ -230,8 +264,8 @@ struct WorkerNodeSelector {
 
 impl WorkerNodeSelector {
     async fn connect(&self) -> Result<NodeStubs> {
-        let node_addr = match &self.node_addr {
-            Some(addr) => addr.clone(),
+        let node_addr = match self.node_selector.get_node_address().await? {
+            Some(addr) => addr,
             None => {
                 // Must connect to the metastore, find the worker, and then we can
 
@@ -258,17 +292,51 @@ impl WorkerNodeSelector {
     }
 }
 
+#[derive(Args)]
+struct NodeSelector {
+    node_addr: Option<String>,
+
+    node_id: Option<u64>,
+}
+
+impl NodeSelector {
+    async fn get_node_address(&self) -> Result<Option<String>> {
+        if self.node_addr.is_some() && self.node_id.is_some() {
+            return Err(err_msg("Ambigious node selector"));
+        }
+
+        if let Some(addr) = self.node_addr.clone() {
+            return Ok(Some(addr));
+        }
+
+        if let Some(id) = self.node_id {
+            let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+
+            let node_meta = meta_client
+                .cluster_table::<NodeMetadata>()
+                .get(&id)
+                .await?
+                .ok_or_else(|| err_msg("Failed to find node for worker"))?;
+
+            return Ok(Some(node_meta.address().to_string()));
+        }
+
+        Ok(None)
+    }
+}
+
 struct NodeStubs {
     service: ContainerNodeStub,
-    blobs: BlobStoreStub,
+    blobs: BundleBlobStoreStub,
 }
 
 async fn connect_to_node(node_addr: &str) -> Result<NodeStubs> {
-    let channel = Arc::new(rpc::Http2Channel::create(node_addr).await?);
+    let channel =
+        Arc::new(rpc::Http2Channel::create(format!("http://{}", node_addr).as_str()).await?);
 
     Ok(NodeStubs {
         service: ContainerNodeStub::new(channel.clone()),
-        blobs: BlobStoreStub::new(channel.clone()),
+        blobs: BundleBlobStoreStub::new(channel.clone()),
     })
 }
 
@@ -330,16 +398,26 @@ async fn run_local_metastore(port: u16, zone: String) -> Result<Arc<dyn ServiceR
         zone
     ));
 
-    datastore::meta::store::run(datastore::meta::store::MetastoreOptions {
+    let res = datastore::meta::store::run(datastore::meta::store::MetastoreOptions {
         dir: local_metastore_dir.path().to_owned(),
-        init_port: 0,
+        init_port: None,
         bootstrap: true,
         service_port: port,
         route_labels: vec![route_label],
         log: SegmentedLogOptions::default(),
         state_machine: datastore::meta::EmbeddedDBStateMachineOptions::default(),
     })
-    .await
+    .await;
+
+    // Prevent the temp dir from being deleted.
+    executor::spawn(async move {
+        loop {
+            executor::sleep(Duration::from_secs(10)).await;
+        }
+        drop(local_metastore_dir);
+    });
+
+    res
 }
 
 async fn run_bootstrap_inner(
@@ -669,7 +747,10 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
         }
         ObjectKind::Blob => {
             println!("Blobs:");
-            let nodes = meta_client.cluster_table::<BlobMetadata>().list().await?;
+            let nodes = meta_client
+                .cluster_table::<BundleBlobMetadata>()
+                .list()
+                .await?;
             for node in nodes {
                 println!("{:?}", node);
             }
@@ -794,12 +875,15 @@ async fn start_job_impl(
     let mut blobs = build_worker_blobs(job_spec.worker_mut()).await?;
 
     let blob_allocations = {
-        let mut req = AllocateBlobsRequest::default();
+        let mut req = AllocateBundleBlobsRequest::default();
         for blob in &blobs {
             req.add_blob_specs(blob.spec().clone());
         }
 
-        manager.AllocateBlobs(request_context, &req).await.result?
+        manager
+            .AllocateBundleBlobs(request_context, &req)
+            .await
+            .result?
     };
 
     let blobs_by_id = blobs
@@ -830,7 +914,7 @@ async fn start_job_impl(
 
             NodeStubs {
                 service: ContainerNodeStub::new(channel.clone()),
-                blobs: BlobStoreStub::new(channel.clone()),
+                blobs: BundleBlobStoreStub::new(channel.clone()),
             }
         };
 
@@ -1172,6 +1256,87 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
     Ok(())
 }
 
+async fn run_labels(cmd: LabelsCommand) -> Result<()> {
+    let node = {
+        let addr = cmd
+            .node_selector
+            .get_node_address()
+            .await?
+            .ok_or_else(|| err_msg("Missing node selector"))?;
+        connect_to_node(&addr).await?
+    };
+    let request_context = rpc::ClientRequestContext::default();
+
+    let mut labels = node
+        .service
+        .GetLabels(
+            &request_context,
+            &protobuf_builtins::google::protobuf::Empty::default(),
+        )
+        .await
+        .result?;
+
+    match cmd.sub_command {
+        LabelsSubCommand::Get => {}
+        LabelsSubCommand::Set(sub_cmd) => {
+            if sub_cmd.override_all {
+                labels = Labels::default();
+            }
+
+            for part in sub_cmd.values.split(",") {
+                let (k, v) = part
+                    .split_once(":")
+                    .ok_or_else(|| err_msg("Missing : delimiter in label string"))?;
+
+                // Delete any existing entry.
+                labels.label_mut().retain(|l| l.key() != k);
+
+                if !v.is_empty() {
+                    let l = labels.new_label();
+                    l.set_key(k);
+                    l.set_value(v);
+                }
+            }
+
+            let mut request = UpdateLabelsRequests::default();
+            request.set_labels(labels.clone());
+
+            println!("{:?}", request);
+
+            node.service
+                .UpdateLabels(&request_context, &request)
+                .await
+                .result?;
+        }
+    }
+
+    println!("Node Labels:\n{:?}", labels);
+
+    Ok(())
+}
+
+async fn run_envvars(cmd: EnvVarsCommand) -> Result<()> {
+    let meta_client = ClusterMetaClient::create_from_environment().await?;
+
+    // Wait for server discovery.
+    // TODO: Instead check that the RouteStore has marked initializers as done
+    // running.
+    executor::sleep(Duration::from_secs(4)).await;
+
+    let mut addrs = meta_client.inner().known_servers().await;
+    addrs.truncate(3);
+
+    let zone_var = format!("export {}={}", ZONE_ENV_VAR, meta_client.zone());
+    let seed_var = format!("export {}={}", META_STORE_SEEDS_ENV_VAR, addrs.join(","));
+
+    println!(
+        "Append the following to ~/.bashrc:\n\n{}\n{}\n",
+        zone_var, seed_var
+    );
+
+    Ok(())
+}
+
 fn time_to_string(time: &SystemTime) -> String {
     common::chrono::DateTime::<common::chrono::Local>::from(*time).to_rfc2822()
 }
@@ -1187,5 +1352,7 @@ async fn main() -> Result<()> {
         Command::Log(cmd) => run_log(cmd).await,
         Command::StartJob(cmd) => run_start_job(cmd).await,
         Command::Events(cmd) => run_events(cmd).await,
+        Command::Labels(cmd) => run_labels(cmd).await,
+        Command::EnvVars(cmd) => run_envvars(cmd).await,
     }
 }

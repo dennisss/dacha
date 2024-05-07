@@ -105,7 +105,7 @@ pub fn main() -> Result<()> {
     }
 
     if config.init_process_args().is_empty() {
-        let init_process = project_path!("target/release/container_init");
+        let init_process = project_path!("built/pkg/container/container_init");
         if !std::path::Path::new(init_process.as_path()).exists() {
             return Err(err_msg("Missing init process binary"));
         }
@@ -275,12 +275,6 @@ async fn run(
     config: &NodeConfig,
     mut setup_child: SetupSocketChild,
 ) -> Result<()> {
-    setup_child.wait(START_CHILD_BYTE)?;
-    unsafe { sys::unshare(sys::CloneFlags::CLONE_NEWCGROUP).unwrap() };
-    setup_child.notify(CGROUP_NAMESPACE_SETUP_BYTE)?;
-
-    setup_child.wait(FINISHED_BYTE)?;
-
     unsafe {
         sys::prctl(
             sys::PR_SET_PDEATHSIG,
@@ -290,7 +284,15 @@ async fn run(
             0,
         )
         .map_err(|e| format_err!("While setting PR_SET_PDEATHSIG: {}", e))?;
+    }
 
+    setup_child.wait(START_CHILD_BYTE)?;
+    unsafe { sys::unshare(sys::CloneFlags::CLONE_NEWCGROUP)? };
+    setup_child.notify(CGROUP_NAMESPACE_SETUP_BYTE)?;
+
+    setup_child.wait(FINISHED_BYTE)?;
+
+    unsafe {
         sys::prctl(
             sys::PR_SET_SECUREBITS,
             sys::SECBITS_LOCKED_DOWN as u64,
@@ -352,7 +354,7 @@ async fn run(
 fn newcgroup(pid: sys::pid_t, dir: &str) -> Result<()> {
     // TODO: Make this a private binary as we don't want a human to directly call
     // it.
-    let binary = project_path!("bin/newcgroup").to_string();
+    let binary = project_path!("built/pkg/container/newcgroup").to_string();
 
     let mut child = std::process::Command::new(&binary)
         .args(&[&pid.to_string(), dir])

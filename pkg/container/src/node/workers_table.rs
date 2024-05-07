@@ -1,7 +1,7 @@
 //! This file contains utilities for reading/writing from the node local
 //! database used by a node to remember what has done in the past.
 
-use builder::proto::BlobSpec;
+use builder::proto::BundleBlobSpec;
 use common::errors::*;
 use datastore_meta_client::key_encoding::KeyEncoder;
 use protobuf::{Message, StaticMessage};
@@ -9,13 +9,14 @@ use sstable::db::WriteBatch;
 use sstable::iterable::Iterable;
 use sstable::EmbeddedDB;
 
-use crate::proto::{WorkerEvent, WorkerMetadata};
+use crate::proto::{Labels, WorkerEvent, WorkerMetadata};
 
 const WORKERS_TABLE_ID: u64 = 11;
 const NODE_ID_TABLE_ID: u64 = 12;
 const BLOBS_TABLE_ID: u64 = 13;
 const EVENTS_TABLE_ID: u64 = 14;
 const EVENTS_TIMESTAMP_ID: u64 = 15;
+const NODE_LABELS_ID: u64 = 16;
 
 pub async fn list_workers(db: &EmbeddedDB) -> Result<Vec<WorkerMetadata>> {
     let mut start_key = vec![];
@@ -85,7 +86,7 @@ pub async fn set_saved_node_id(db: &EmbeddedDB, id: u64) -> Result<()> {
     db.set(&key, &value).await
 }
 
-pub async fn put_blob_spec(db: &EmbeddedDB, spec: BlobSpec) -> Result<()> {
+pub async fn put_blob_spec(db: &EmbeddedDB, spec: BundleBlobSpec) -> Result<()> {
     let mut key = vec![];
     KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
     KeyEncoder::encode_bytes(spec.id().as_bytes(), &mut key);
@@ -104,7 +105,7 @@ pub async fn delete_blob_spec(db: &EmbeddedDB, blob_id: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn get_blob_specs(db: &EmbeddedDB) -> Result<Vec<BlobSpec>> {
+pub async fn get_blob_specs(db: &EmbeddedDB) -> Result<Vec<BundleBlobSpec>> {
     let mut key = vec![];
     KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
 
@@ -118,7 +119,7 @@ pub async fn get_blob_specs(db: &EmbeddedDB) -> Result<Vec<BlobSpec>> {
         }
 
         if let Some(value) = entry.value {
-            out.push(BlobSpec::parse(&value)?);
+            out.push(BundleBlobSpec::parse(&value)?);
         }
     }
 
@@ -191,4 +192,29 @@ pub async fn get_worker_events(db: &EmbeddedDB, worker_name: &str) -> Result<Vec
     }
 
     Ok(out)
+}
+
+pub async fn get_node_labels(db: &EmbeddedDB) -> Result<Labels> {
+    let mut key = vec![];
+    KeyEncoder::encode_varuint(NODE_LABELS_ID, false, &mut key);
+
+    let value = match db.get(&key).await? {
+        Some(v) => v,
+        None => return Ok(Labels::default()),
+    };
+
+    let labels = Labels::parse(&value)?;
+
+    Ok(labels)
+}
+
+pub async fn put_node_labels(db: &EmbeddedDB, labels: &Labels) -> Result<()> {
+    let mut key = vec![];
+    KeyEncoder::encode_varuint(NODE_LABELS_ID, false, &mut key);
+
+    let value = labels.serialize()?;
+
+    db.set(&key, &value).await?;
+
+    Ok(())
 }

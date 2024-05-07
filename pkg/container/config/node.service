@@ -1,7 +1,7 @@
 [Unit]
 Description=Cluster Node Runtime
-After=network.target time-sync.target
-Wants=time-sync.target
+After=network.target time-sync.target network-online.target
+Requires=network.target time-sync.target network-online.target
 StartLimitIntervalSec=0
 
 [Service]
@@ -9,6 +9,9 @@ Type=simple
 Restart=always
 RestartSec=5
 User=cluster-node
+# Mainly to make sure that systemd enables them in the root '/sys/fs/cgroup/cgroup.subtree_control'
+Delegate=yes
+WorkingDirectory=/opt/dacha/bundle
 ExecStart=/opt/dacha/bundle/built/pkg/container/cluster_node --config=/opt/dacha/bundle/pkg/container/config/node.textproto
 TimeoutStopSec=30
 

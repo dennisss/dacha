@@ -61,6 +61,8 @@ pub struct ClientRequestContext {
     /// Arbitrary key-value metadata to send to the server.
     pub metadata: Metadata,
 
+    /// MUST be true in order for the channel to internally retry request
+    /// failures.
     pub idempotent: bool,
 
     /// If true, we will read and buffer the entire before any part of it is
@@ -71,6 +73,8 @@ pub struct ClientRequestContext {
     pub buffer_full_response: bool,
 
     pub http: http::ClientRequestContext,
+
+    pub response_interceptor: Option<Arc<dyn ClientResponseInterceptor>>,
 }
 
 #[derive(Default, Clone)]
@@ -81,6 +85,8 @@ pub struct ClientResponseContext {
     /// the server. Implementations should be resilient to this missing some
     /// keys.
     pub metadata: ResponseMetadata,
+
+    pub http_response_context: Option<http::ClientResponseContext>,
 }
 
 /// Response returned from an RPC with unary request and unary resposne.
@@ -378,7 +384,7 @@ impl<T> ClientStreamingResponse<T> {
             .take()
             .ok_or_else(|| err_msg("Response in invalid state 2"))?;
 
-        match state {
+        let res = match state {
             ClientStreamingResponseState::Sending(_) => {
                 Err(err_msg("Response hasn't been received yet"))
             }
@@ -394,7 +400,15 @@ impl<T> ClientStreamingResponse<T> {
                 result
             }
             ClientStreamingResponseState::Error(e) => Err(e),
+        };
+
+        if let Some(interceptor) = &self.interceptor {
+            interceptor
+                .on_response_complete(res.is_ok(), self.context())
+                .await;
         }
+
+        res
     }
 }
 
@@ -441,4 +455,8 @@ impl<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage> ClientStreaming
 #[async_trait]
 pub trait ClientResponseInterceptor: 'static + Send + Sync {
     async fn on_response_head(&self, metadata: &mut Metadata) -> Result<()>;
+
+    /// Called after all the data for a single request attempt has been
+    /// received.
+    async fn on_response_complete(&self, successful: bool, context: &ClientResponseContext);
 }

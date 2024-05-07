@@ -25,8 +25,19 @@ pub struct TransformReadable<R: Readable> {
 
 impl<R: Readable> TransformReadable<R> {
     pub fn new(reader: R, transform: Box<dyn Transform + Send + Sync>) -> Self {
-        let mut input_buffer = vec![];
-        input_buffer.reserve_exact(512);
+        Self::new_partially_read(reader, transform, vec![])
+    }
+
+    /// 'input_buffer' is any data from the reader that has already been read
+    /// but hasn't been transformed yet.
+    pub fn new_partially_read(
+        reader: R,
+        transform: Box<dyn Transform + Send + Sync>,
+        mut input_buffer: Vec<u8>,
+    ) -> Self {
+        if input_buffer.capacity() < 512 {
+            input_buffer.reserve_exact(512 - input_buffer.len());
+        }
 
         Self {
             reader,
@@ -105,6 +116,7 @@ impl<R: Readable> Readable for TransformReadable<R> {
             self.input_buffer.resize(self.input_buffer.capacity(), 0);
             let n = self.reader.read(&mut self.input_buffer).await?;
             self.input_buffer.truncate(n);
+            self.input_buffer_offset = 0;
 
             if n == 0 {
                 self.end_of_input = true;

@@ -9,7 +9,7 @@ use executor::child_task::ChildTask;
 use executor_multitask::ServiceResource;
 use file::temp::TempDir;
 use protobuf::text::ParseTextProto;
-use raft::proto::{Configuration_ServerRole, RouteLabel, Status};
+use raft::proto::{Configuration_ServerRole, RouteLabel, ServerId, Status};
 use rpc_util::AddProfilingEndpoints;
 
 use crate::meta::test_store::TestMetastore;
@@ -124,7 +124,7 @@ async fn get_range_of_keys() -> Result<()> {
 fn assert_is_failed_txn(result: Result<()>) {
     let error = result.unwrap_err();
     let status = error.downcast_ref::<rpc::Status>().unwrap();
-    assert_eq!(status.code(), rpc::StatusCode::FailedPrecondition);
+    assert_eq!(status.code(), rpc::StatusCode::Aborted);
 }
 
 #[testcase]
@@ -293,8 +293,18 @@ async fn multi_node_test() -> Result<()> {
     executor::sleep(Duration::from_millis(400)).await?;
 
     let client0 = node0.create_client().await?;
-    assert_eq!(client0.get(b"/a/1").await?, Some(b"hello".to_vec()));
-    assert_eq!(client0.get(b"/a/2").await?, Some(b"world".to_vec()));
+
+    // A bit of a stress test to verify that streams are being cleaned up in the
+    // HTTP2 code (the max number of concurrent streams is 200).
+
+    for i in 0..200 {
+        assert_eq!(client0.get(b"/a/blah").await?, None);
+    }
+
+    for i in 0..200 {
+        assert_eq!(client0.get(b"/a/1").await?, Some(b"hello".to_vec()));
+        assert_eq!(client0.get(b"/a/2").await?, Some(b"world".to_vec()));
+    }
 
     // TODO: Grab a read index here and verify that much later we can still read
     // this data.
@@ -585,6 +595,8 @@ async fn multi_node_test() -> Result<()> {
     node0.close().await?;
 
     // Writes still working with only 2 of 3 nodes.
+    // TODO: Verify that requests are indeed failing to hit node0 (e.g. check no
+    // longer syncronized)
     for i in 0..20 {
         let key = format!("/a/{}", i).into_bytes();
 
@@ -604,8 +616,101 @@ async fn multi_node_test() -> Result<()> {
         executor::sleep(Duration::from_millis(100)).await;
     }
 
+    let node0 = cluster.start_node(0, false).await?;
+
+    // Check that current leader is server id #6 (the second one)
+    {
+        let mut expected_status = Status::default();
+        protobuf::text::parse_text_proto(
+            r#"
+            id { value: 6 }
+            role: LEADER
+            configuration {
+                servers: [
+                    {
+                        id { value: 1 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 6 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 209 }
+                        role: MEMBER
+                    }
+                ]
+            }
+            "#,
+            &mut expected_status,
+        )?;
+
+        let status = client.current_status().await?;
+        assert_eq!(status.id(), expected_status.id());
+        assert_eq!(status.role(), expected_status.role());
+        assert_eq!(status.configuration(), expected_status.configuration());
+    }
+
+    // TODO: Verify that this leader transitoin transition is smoth
+    client.remove_server(ServerId::from(6)).await?;
+
+    // Verify things still working.
+    for i in 0..20 {
+        let key = format!("/a/{}", i).into_bytes();
+
+        let start = Instant::now();
+
+        // TODO: Make sure that calling this on a shutdown client immedialtey fails.
+        client.put(&key, &[2 * i]).await?;
+        let end = Instant::now();
+
+        println!("Key #{} took {:?}", i, end - start);
+
+        executor::sleep(Duration::from_millis(10)).await;
+
+        let value = client.get(&key).await?;
+        assert_eq!(value, Some(vec![2 * i]));
+
+        executor::sleep(Duration::from_millis(10)).await;
+    }
+
+    // Verify that the server was removed from the configuration.
+    // NOTE: It is undefined who will be the new leader.
+    {
+        let mut expected_status = Status::default();
+        protobuf::text::parse_text_proto(
+            r#"
+            # id { value: 6 }
+            role: LEADER
+            configuration {
+                servers: [
+                    {
+                        id { value: 1 }
+                        role: MEMBER
+                    },
+                    {
+                        id { value: 209 }
+                        role: MEMBER
+                    }
+                ]
+            }
+            "#,
+            &mut expected_status,
+        )?;
+
+        let status = client.current_status().await?;
+        // assert_eq!(status.id(), expected_status.id());
+        assert_eq!(status.role(), expected_status.role());
+        assert_eq!(status.configuration(), expected_status.configuration());
+    }
+
+    // TODO: Start 8 concurrent writes and have them all spamming at the same time.
+
+    // let client =
+
     client.close().await?;
 
+    node0.close().await?;
     node1.close().await?;
     node2.close().await?;
 

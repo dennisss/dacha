@@ -222,6 +222,21 @@ impl<'a> ServerStreamResponse<'a, ()> {
         }
     }
 
+    /// Creates a copy of this response which can be used to send responses
+    /// before the original owner of the ServerStreamResponse can send more.
+    ///
+    /// TODO: Avoid using this.
+    pub fn borrow<'b>(&'b mut self) -> ServerStreamResponse<'b, ()> {
+        ServerStreamResponse {
+            context: self.context,
+            response_type: self.response_type.clone(),
+            codec_options: self.codec_options.clone(),
+            head_sent: self.head_sent,
+            sender: self.sender,
+            phantom_t: self.phantom_t,
+        }
+    }
+
     /// This should only be used if you only expect to send one message.
     ///
     /// TODO: Enforce the above assumption. If the assumption is broken, corking

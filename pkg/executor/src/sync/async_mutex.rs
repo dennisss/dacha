@@ -55,6 +55,12 @@ impl<T> AsyncMutex<T> {
     }
 }
 
+impl<T: Default> Default for AsyncMutex<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 pub struct AsyncMutexPermit<'a, T> {
     inner: MutexGuardImpl<'a, AsyncMutexValue<T>>,
 }

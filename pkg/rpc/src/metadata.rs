@@ -38,6 +38,7 @@ impl Metadata {
         "te"
         */
 
+        // TODO: Need to also exclude Access-Control headers, Cookie, Age, Origin,
         header.is_content_level()
             || header.is_transport_level()
             || header.name.as_str().starts_with("grpc-")
@@ -144,16 +145,27 @@ impl Metadata {
         Ok(values.iter().map(|v| v.as_str()))
     }
 
-    pub fn get_binary(&self, name: &str) -> Result<Vec<u8>> {
+    pub fn get_one_binary(&self, name: &str) -> Result<Vec<u8>> {
+        let value = self
+            .get_binary(name)?
+            .ok_or_else(|| format_err!("No metadata named: {}", name))?;
+
+        Ok(value)
+    }
+
+    pub fn get_binary(&self, name: &str) -> Result<Option<Vec<u8>>> {
         let mut iter = self.iter_binary(name)?;
-        let value = iter
-            .next()
-            .ok_or_else(|| format_err!("No metadata named: {}", name))??;
+
+        let value = match iter.next() {
+            Some(v) => v?,
+            None => return Ok(None),
+        };
+
         if iter.next().is_some() {
             return Err(format_err!("More than one value named: {}", name));
         }
 
-        Ok(value)
+        Ok(Some(value))
     }
 
     pub fn iter_binary<'a>(
@@ -178,7 +190,7 @@ impl Metadata {
 }
 
 ///
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct ResponseMetadata {
     pub head_metadata: Metadata,
     pub trailer_metadata: Metadata,

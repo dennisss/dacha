@@ -41,7 +41,7 @@ pub struct NodeOptions<'a, R> {
     pub dir: DirLock,
 
     /// Port used to use the init service if this is an un-initialized server.
-    pub init_port: u16,
+    pub init_port: Option<u16>,
 
     pub bootstrap: bool,
 
@@ -217,7 +217,7 @@ impl<R: 'static + Send> Node<R> {
                 if options.bootstrap {
                     None
                 } else {
-                    let init_signal = ServerInit::wait_for_init(options.init_port).fuse();
+                    let init_signal = ServerInit::maybe_wait_for_init(options.init_port).fuse();
                     let found_peer = raft_client::utils::find_peer_group_id(&route_store).fuse();
                     let background_error = resources.wait_for_termination().fuse();
 
@@ -413,6 +413,15 @@ impl ServerInitService for ServerInit {
 }
 
 impl ServerInit {
+    async fn maybe_wait_for_init(port: Option<u16>) -> Result<()> {
+        let port = match port {
+            Some(v) => v,
+            None => executor::futures::pending().await,
+        };
+
+        Self::wait_for_init(port).await
+    }
+
     async fn wait_for_init(port: u16) -> Result<()> {
         let service = RootResource::new();
 

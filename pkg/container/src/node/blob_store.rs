@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use builder::proto::{BlobFormat, BlobSpec};
+use builder::proto::{BundleBlobFormat, BundleBlobSpec};
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use crypto::hasher::Hasher;
@@ -66,7 +66,7 @@ pub enum NewBlobError {
 ///   a user to be able to perform a read and a write operation, the BlobLease
 ///   must clear exclusive locks before returning to the caller.
 #[derive(Clone)]
-pub struct BlobStore {
+pub struct BundleBlobStore {
     shared: Arc<Shared>,
 }
 
@@ -97,7 +97,7 @@ struct State {
 }
 
 struct BlobEntry {
-    spec: BlobSpec,
+    spec: BundleBlobSpec,
 
     /// Whether or not this blob has been written to disk fully yet. Will be
     /// false for placeholder entries used for writing blobs.
@@ -108,7 +108,7 @@ struct BlobEntry {
     exclusive_lock: bool,
 }
 
-impl BlobStore {
+impl BundleBlobStore {
     /// NOTE: It is unsafe to create mutliple BlobStore instances with the same
     /// 'db' or 'dir' as they will overwrite each other's data.
     pub async fn create(dir: LocalPathBuf, db: Arc<EmbeddedDB>) -> Result<Self> {
@@ -174,12 +174,15 @@ impl BlobStore {
     /// Gets a writer instance for inserting a new non-existent blob into
     /// storage. While the writer is live, no other readers/writers will
     /// exist for this blob.
-    pub async fn new_writer(&self, spec: &BlobSpec) -> Result<Result<BlobWriter, NewBlobError>> {
+    pub async fn new_writer(
+        &self,
+        spec: &BundleBlobSpec,
+    ) -> Result<Result<BlobWriter, NewBlobError>> {
         if spec.id().len() > BLOB_ID_MAX_LENGTH || !BLOB_ID_PATTERN.test(spec.id()) {
             return Ok(Err(NewBlobError::InvalidBlobId));
         }
 
-        if spec.format() == BlobFormat::UNKNOWN {
+        if spec.format() == BundleBlobFormat::UNKNOWN {
             return Ok(Err(NewBlobError::InvalidBlobSpec));
         }
 
@@ -378,7 +381,7 @@ impl BlobStore {
 /// While this lease is active.
 pub struct BlobLease {
     shared: Arc<Shared>,
-    spec: BlobSpec,
+    spec: BundleBlobSpec,
 }
 
 impl Drop for BlobLease {
@@ -403,7 +406,7 @@ impl Drop for BlobLease {
 }
 
 impl BlobLease {
-    pub fn spec(&self) -> &BlobSpec {
+    pub fn spec(&self) -> &BundleBlobSpec {
         &self.spec
     }
 
@@ -462,8 +465,8 @@ impl BlobWriter {
         self.raw_file.flush().await?;
 
         match self.lease.spec().format() {
-            BlobFormat::UNKNOWN => {} // This should have been filtered out
-            BlobFormat::TAR_ARCHIVE => {
+            BundleBlobFormat::UNKNOWN => {} // This should have been filtered out
+            BundleBlobFormat::TAR_ARCHIVE => {
                 // TODO: Consider deferring extraction untul we actually need to use it.
                 let extracted_dir = self.lease.extracted_dir();
                 if !file::exists(&extracted_dir).await? {
@@ -500,7 +503,7 @@ impl BlobWriter {
 }
 
 #[async_trait]
-impl BlobStoreService for BlobStore {
+impl BundleBlobStoreService for BundleBlobStore {
     /// CANCEL SAFE
     async fn List(
         &self,

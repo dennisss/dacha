@@ -1,4 +1,6 @@
-use crate::{bindings, c_int, c_size_t, c_void, pid_t, Errno};
+use std::time::Duration;
+
+use crate::{bindings, c_int, c_size_t, c_void, kernel, pid_t, Errno};
 
 /*
 // TODO: Make this unsafe.
@@ -173,11 +175,26 @@ pub unsafe fn sigsuspend(new_mask: &SignalSet) {
     let _ = raw::rt_sigsuspend(&new_mask.set, core::mem::size_of::<SignalSet>());
 }
 
+pub unsafe fn sigtimedwait(set: SignalSet, duration: Duration) -> Result<Signal, Errno> {
+    let uts = kernel::timespec::from(duration);
+
+    let num = raw::rt_sigtimedwait(
+        &set.set as *const u64,
+        core::ptr::null_mut(),
+        &uts,
+        core::mem::size_of::<SignalSet>(),
+    )?;
+
+    Ok(Signal::from_raw(num))
+}
+
 pub unsafe fn kill(pid: pid_t, signal: Signal) -> Result<(), Errno> {
     raw::kill(pid, signal.to_raw() as i32)
 }
 
 mod raw {
+    use self::bindings::siginfo_t;
+
     use super::*;
 
     syscall!(rt_sigprocmask, bindings::SYS_rt_sigprocmask,
@@ -189,6 +206,14 @@ mod raw {
     syscall!(rt_sigsuspend, bindings::SYS_rt_sigsuspend,
         unewset: *const u64,
         sigsetsize: c_size_t => Result<()>
+    );
+
+    syscall!(rt_sigtimedwait, bindings::SYS_rt_sigtimedwait,
+        uthese: *const kernel::sigset_t,
+        uinfo: *mut siginfo_t,
+        uts: *const kernel::timespec,
+        sigsetsize: c_size_t
+        => Result<u32>
     );
 
     syscall!(kill, bindings::SYS_kill, pid: pid_t, signal: c_int => Result<()>);

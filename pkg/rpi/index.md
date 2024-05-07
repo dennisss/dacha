@@ -27,16 +27,35 @@ Compared to the standard Raspbian Lite image, our image is meant to be headlessl
 
 **Step 2**: Build the image:
 
-Run the following commands to generate the Raspberry Pi SD Card image. This step requires that you have Docker installed:
+NOTE: If you don't want to build an image yourself, you can download the latest prebuilt one here: [2024-05-04-Daspbian-lite.img](https://storage.googleapis.com/da-manual-us/raspbian-builds/2024-05-04/2024-05-04-Daspbian-lite.img.gz).
+
+Run the following commands to build a new Raspberry Pi SD Card image. This step requires that you have Docker installed:
 
 ```bash
-cd third_party/pi-gen
+PI_GEN_DIR=third_party/pi-gen
+DATE="$(date +%Y-%m-%d)"
+
+### Terminal 1
+# In one terminal, start an HTTP cache (will record all the apt packages used).
+cargo run --bin http_proxy --release -- \
+	--port=9000 --cache_dir="${PI_GEN_DIR}/deploy/${DATE}-cache/"
+
+### Terminal 2
+cd $PI_GEN_DIR
+
+# Build the base docker image
+docker build --no-cache -t pi-gen-base:latest ./docker-base
+
+# Build the pi image.
 ./build-docker.sh
+
+# Internal command for pushing to GCS
+gsutil -m cp -r "${PI_GEN_DIR}/deploy/${DATE}*" "gs://da-manual-us/raspbian-builds/${DATE}/"
 ```
 
 **Step 3**: Flash the new image to all Pi SDCards.
 
-If step #2 was successful, an image should be been written to `third_party/pi-gen/deploy/YYYY-MM-DD-Daspbian-lite.img`.
+If step #2 was successful, an image should be been written to `third_party/pi-gen/deploy/YYYY-MM-DD-Daspbian-lite.img.gz`.
 
 This can be done using commands like the following:
 
@@ -44,27 +63,41 @@ This can be done using commands like the following:
 cargo build --bin rpi_imager --release
 
 sudo target/release/rpi_imager write \
-    --image=$PWD/pi-gen/deploy/2023-02-23-Daspbian-lite.img --disk=/dev/sdb \
-    --wpa_ssid=WIFI_NETWORK_NAME \
-    --wpa_password=WIFI_NETWORK_PASSWORD \
+    --image=$PWD/pi-gen/deploy/2024-05-04-Daspbian-lite.img.gz \
+    --disk=/dev/sdb \
     --ssh_public_key=$HOME/.ssh/id_cluster.pub
+    
 ```
 
-If your Raspberry Pi will have a wired network connection, then the wpa flags are optional.
+If you want to connect to a WiFI network, modify and append the following arguments to the above command:
+
+```
+    --wpa_ssid=WIFI_NETWORK_NAME \
+    --wpa_password=WIFI_NETWORK_PASSWORD
+gs).
+If you want to set a static ip address for the ethernet port, modify and append the following arguments:
+
+```
+	--ip_address=10.1.1.1 \
+    --netmask=255.255.0.0 \
+    --gateway=10.1.0.1
+```
 
 **Step 4** Test connecting
 
-Once powered on, a Raspberry Pi will have a default hostname of `cluster-node`. If you look up the ip address of the Pi, you can connect it with a command like the following:
+Once powered on, a Raspberry Pi will have a default hostname of `cluster-node`. If you look up the ip address of the Pi on your router, you can connect it with a command like the following:
 
 ```bash
 ssh -i ~/.ssh/id_cluster cluster-user@10.1.0.111
 ```
 
+If following the [cluster setup guide](../container/index.md) then you can go back to that guide now.
+
 ## Cross Compiling
 
 This section explains how to cross compile programs to run on the Raspberry Pi (specifically to run on the aforementioned image).
 
-**Step 1**: Install cross-compilers using `sudo apt install g++-aarch64-linux-gnu`.
+**Step 1**: Make sure you've installed the AArch64 dependencies mentioned in the [user guide](../../doc/user_guide.md).
 
 **Step 2**: Set up a sysroot
 

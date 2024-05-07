@@ -22,6 +22,22 @@ impl IPAddress {
     }
 }
 
+impl common::args::ArgType for IPAddress {
+    fn parse_raw_arg(raw_arg: common::args::RawArgValue) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let s = match raw_arg {
+            common::args::RawArgValue::Bool(_) => {
+                return Err(err_msg("Expected string, got bool"));
+            }
+            common::args::RawArgValue::String(s) => s,
+        };
+
+        Ok(s.parse::<Self>()?)
+    }
+}
+
 impl std::str::FromStr for IPAddress {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {

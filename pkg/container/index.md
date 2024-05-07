@@ -13,19 +13,19 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Node`: A single machine in a `Cluster` which has a fixed resource ceiling for running `Workers`
   locally.
 
-- `Zone`: An isolated collection of `Node`s. One should typically have one or more `Zone`s per data center or geographic region. All machines in a zone are expected to be well connected in the network and each zone should be completely self sufficient in terms of workload management capabilities.
+- `Zone`: An isolated collection of `Node`s. One should typically have one `Zone`s per data center or geographic region. All machines in a zone are expected to be well connected in the network and each zone should be completely self sufficient in terms of workload management capabilities.
 
 - `Worker`: A set of `Container`s running in a shared resource envelope on a single `Node`. Usually
   this will only be running a single `Container`.
 
-- `Job`: A replicated set of `Worker`s with the same configuration.
+- `Job`: A replicated set of `Worker`s with the same configuration (typically the workers will run on different nodes for redundancy).
 
 - `Manager`: Special process which manages the state of the cluster.
     - There will be a single `Manager` `Job` per `Zone` with one leader `Worker` at a time which ensures that the cluster is in a healthy state.
     - This process also hosts the user facing API for performing CRUD operations on `Job`s.
 
 - `Metastore`: Strongly consistent and durable key-value store and lock service used to store
-  the state of a `Zone`. There will be exactly one of these per `Zone`.
+  the state of a `Zone`. There will be exactly one of these per `Zone`. Design documented [here](../datastore/src/meta/index.md).
 
 - `Blob`: A single usually large binary file identified by a hash. Blobs may also have a small amount of metadata such as a content type (e.g. tar or zip) to describe how they should be processed.
 
@@ -55,6 +55,8 @@ We will present two sets of instructions:
 #### Generic
 
 ##### Prerequisites
+
+Install a minimal Debian/Ubuntu installation onto the node. Minimal here means that you at least need `ssh`, `systemd`, and any kernel drivers for attached devices and networking.
 
 **Linux packages:**
 

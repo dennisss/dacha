@@ -193,7 +193,12 @@ impl LocalFile {
 
                 let dir_fd = sys::OpenFileDescriptor::new(
                     unsafe { sys::open(dir_cpath.as_ptr(), sys::O_DIRECTORY, 0) }
-                        .remap_errno::<FileError, _>(error_message)?,
+                        .remap_errno::<FileError, _>(|| {
+                            format!(
+                                "Failed to open local directory at path: {}",
+                                dir_path.as_str()
+                            )
+                        })?,
                 );
 
                 // TODO: Make these to InvalidPath errors.
@@ -298,7 +303,7 @@ impl LocalFile {
         self.file
             .sync(data_sync, range)
             .await
-            .remap_errno::<FileError, _>(|| String::new())
+            .remap_errno::<FileError, _>(|| format!("sync on {} failed", self.path.as_str()))
     }
 
     pub async fn sync_data(&self) -> Result<()> {

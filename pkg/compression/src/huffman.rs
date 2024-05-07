@@ -366,6 +366,7 @@ fn code2vec(code: usize, len: usize) -> BitVector {
         v.push(b);
     }
 
+    // TODO: This can cause a crash on bad inputs.
     assert_eq!(code >> len, 0);
 
     v

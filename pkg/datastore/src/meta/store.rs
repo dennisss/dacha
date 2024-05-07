@@ -60,7 +60,7 @@ pub struct MetastoreOptions {
     /// a new cluster.
     ///
     /// Not used for already setup clusters.
-    pub init_port: u16,
+    pub init_port: Option<u16>,
 
     pub bootstrap: bool,
 
@@ -120,7 +120,8 @@ impl Metastore {
             .node
             .server()
             .begin_read(request.optimistic())
-            .await?;
+            .await
+            .map_err(|e| e.to_rpc_status())?;
 
         let snapshot = self.shared.state_machine.snapshot().await;
 
@@ -141,7 +142,8 @@ impl Metastore {
             .node
             .server()
             .begin_read(request.read_index() != 0)
-            .await?;
+            .await
+            .map_err(|e| e.to_rpc_status())?;
 
         // TODO: Support changing to a specific read_index (will require checking the
         // flush index).
@@ -153,9 +155,7 @@ impl Metastore {
         let mut iter_options = SnapshotIteratorOptions::default();
         if request.read_index() > 0 {
             if request.read_index() < snapshot.compaction_waterline().unwrap() {
-                return Err(
-                    rpc::Status::failed_precondition("Request's read_index is too old.").into(),
-                );
+                return Err(rpc::Status::aborted("Request's read_index is too old.").into());
             }
 
             iter_options.last_sequence = Some(request.read_index());
@@ -274,7 +274,14 @@ impl Metastore {
         // If this succeeds, then we know that we were the leader in the given term.
         // If we have a locally unique value, we can make it globally unique by
         // prepending this term.
-        let term = self.shared.node.server().begin_read(true).await?.term();
+        let term = self
+            .shared
+            .node
+            .server()
+            .begin_read(true)
+            .await
+            .map_err(|e| e.to_rpc_status())?
+            .term();
 
         let index = self
             .shared
@@ -295,7 +302,13 @@ impl Metastore {
             }
         }
 
-        let pending_execution = self.shared.node.server().execute(entry).await?;
+        let pending_execution = self
+            .shared
+            .node
+            .server()
+            .execute(entry)
+            .await
+            .map_err(|e| Error::from(e.to_rpc_status()))?;
 
         let commited_index = match pending_execution.wait().await {
             PendingExecutionResult::Committed { log_index, .. } => log_index,
@@ -336,6 +349,20 @@ impl ServerManagementService for Metastore {
         res: &mut rpc::ServerResponse<raft::proto::Status>,
     ) -> Result<()> {
         res.value = self.shared.node.server().current_status().await?;
+        Ok(())
+    }
+
+    async fn Drain(
+        &self,
+        req: rpc::ServerRequest<DrainRequest>,
+        res: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
+    ) -> Result<()> {
+        if req.server_id() != self.shared.node.server().identity().server_id {
+            return Err(rpc::Status::invalid_argument("Drain request sent to wrong server").into());
+        }
+
+        self.shared.node.server().drain().await?;
+
         Ok(())
     }
 }
@@ -390,6 +417,8 @@ pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> 
         Arc::new(EmbeddedDBStateMachine::open(&options.dir, &options.state_machine).await?);
     service.register_dependency(state_machine.clone()).await;
 
+    // TODO: Must limit what percentage of request slots can be used for user facing
+    // requests since we also use this for server-to-server Raft requests.
     let mut rpc_server = rpc::Http2Server::new(Some(options.service_port));
 
     let local_address = http::uri::Authority {

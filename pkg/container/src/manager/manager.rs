@@ -345,6 +345,11 @@ impl Manager {
             }
         }
 
+        remaining_nodes.retain(|i| {
+            let node = &nodes[*i];
+            Self::filter_by_node_labels(node, job.spec().scheduling().labels())
+        });
+
         // TODO: Need to increment ref counts to blobs.
         // ^ Yes.
 
@@ -516,6 +521,39 @@ impl Manager {
         Ok(())
     }
 
+    /// Returns whether or not to keep a node based on a selector.
+    fn filter_by_node_labels(node_meta: &NodeMetadata, selector: &LabelsSelector) -> bool {
+        let mut node_labels: HashMap<&str, &str> = HashMap::default();
+        for label in node_meta.labels().label() {
+            node_labels.insert(label.key(), label.value());
+        }
+
+        for label_selector in selector.label() {
+            let value = match node_labels.get(&label_selector.key()) {
+                Some(v) => *v,
+                None => return false,
+            };
+
+            if label_selector.present() {
+                continue;
+            } else if !label_selector.value().is_empty() {
+                if label_selector
+                    .value()
+                    .iter()
+                    .find(|v| v.as_str() == value)
+                    .is_none()
+                {
+                    return false;
+                }
+            } else {
+                // Unknown or new selector.
+                continue;
+            }
+        }
+
+        true
+    }
+
     /// Given a set of workers that are drained, this will remove the metadata
     /// once the WorkerStateMetadata is marked as DONE (indicating that this
     /// worker will never be started again by the node).
@@ -621,6 +659,7 @@ impl Manager {
             }
         }
 
+        // TODO: Validate that there are no overlapping volumes names.
         for volume in spec.volumes_mut() {
             match volume.source_case() {
                 WorkerSpec_VolumeSourceCase::NOT_SET => {}
@@ -646,8 +685,8 @@ impl Manager {
 
     async fn allocate_blobs_impl<'a>(
         &self,
-        request: rpc::ServerRequest<AllocateBlobsRequest>,
-        response: &mut rpc::ServerResponse<'a, AllocateBlobsResponse>,
+        request: rpc::ServerRequest<AllocateBundleBlobsRequest>,
+        response: &mut rpc::ServerResponse<'a, AllocateBundleBlobsResponse>,
     ) -> Result<()> {
         // TODO: Filter out unhealthy nodes.
         let mut nodes = self
@@ -659,13 +698,13 @@ impl Manager {
         self.rng.shuffle(&mut nodes).await;
 
         let txn = self.meta_client.new_transaction().await?;
-        let blobs_table = txn.cluster_table::<BlobMetadata>();
+        let blobs_table = txn.cluster_table::<BundleBlobMetadata>();
 
         for spec in request.blob_specs() {
             // TODO: Validate the blob id format.
 
             let mut blob = blobs_table.get(spec.id()).await?.unwrap_or_else(|| {
-                let mut b = BlobMetadata::default();
+                let mut b = BundleBlobMetadata::default();
                 b.set_spec(spec.as_ref().clone());
                 b
             });
@@ -696,7 +735,7 @@ impl Manager {
 
                 let new_node_id = new_node_id.ok_or_else(|| err_msg("Failed to get a node"))?;
 
-                let mut replica = BlobReplica::default();
+                let mut replica = BundleBlobReplica::default();
                 replica.set_node_id(new_node_id);
                 replica.set_timestamp(std::time::SystemTime::now());
                 blob.add_replicas(replica);
@@ -713,7 +752,7 @@ impl Manager {
                 }
                 num_pushing += 1;
 
-                let mut assignment = BlobAssignment::default();
+                let mut assignment = BundleBlobAssignment::default();
                 assignment.set_blob_id(spec.id());
                 assignment.set_node_id(replica.node_id());
                 response.value.add_new_assignments(assignment);
@@ -738,10 +777,10 @@ impl ManagerService for Manager {
         self.start_job_impl(&request.value).await
     }
 
-    async fn AllocateBlobs(
+    async fn AllocateBundleBlobs(
         &self,
-        request: rpc::ServerRequest<AllocateBlobsRequest>,
-        response: &mut rpc::ServerResponse<AllocateBlobsResponse>,
+        request: rpc::ServerRequest<AllocateBundleBlobsRequest>,
+        response: &mut rpc::ServerResponse<AllocateBundleBlobsResponse>,
     ) -> Result<()> {
         self.allocate_blobs_impl(request, response).await
     }

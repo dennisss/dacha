@@ -145,6 +145,8 @@ pub struct ServerShared<R> {
 
     /// Latest value of lease_start() observed in the consensus module.
     pub lease_start: AsyncVariable<Option<Instant>>,
+
+    pub pending_election: AsyncVariable<bool>,
 }
 
 /// All the mutable state for the server that you hold a lock in order to look
@@ -956,12 +958,20 @@ impl<R: Send + 'static> ServerShared<R> {
         }
 
         let lease_start = state.inst.lease_start();
+        let pending_election = state.inst.pending_election();
 
         // TODO: Do this without holding the ServerState lock.
         // but we do need to ensure that it converges towards the final value.
         lock!(guard <= self.lease_start.lock().await?, {
             if *guard != lease_start {
                 *guard = lease_start;
+                guard.notify_all();
+            }
+        });
+
+        lock!(guard <= self.pending_election.lock().await?, {
+            if *guard != pending_election {
+                *guard = pending_election;
                 guard.notify_all();
             }
         });

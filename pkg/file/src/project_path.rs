@@ -15,7 +15,7 @@ pub fn project_dir() -> LocalPathBuf {
     loop {
         match dir.file_name() {
             Some(name) => {
-                if name == "dacha" {
+                if name == "dacha" || name == "bundle" {
                     break;
                 }
 

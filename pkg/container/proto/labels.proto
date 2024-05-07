@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package cluster;
+
+// NOTE: Labels should never have empty values.
+message Label {
+    string key = 1;
+    string value = 2;
+}
+
+message Labels {
+    repeated Label label = 1;
+}
+
+message LabelsSelector {
+    repeated LabelSelector label = 1;
+}
+
+message LabelSelector {
+    string key = 1;
+    
+    // If not empty, the label's value must be in this set.
+    repeated string value = 2;
+
+    bool present = 3;
+}

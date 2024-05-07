@@ -2,6 +2,7 @@
     const_fn_trait_bound,
     negative_impls,
     type_alias_impl_trait,
+    impl_trait_in_assoc_type,
     asm,
     waker_getters,
     thread_local
@@ -34,6 +35,8 @@ pub mod child_task;
 #[cfg(feature = "std")]
 pub mod future;
 pub mod futures;
+#[cfg(feature = "std")]
+pub mod loop_throttler;
 mod raw_waker;
 #[cfg(feature = "std")]
 pub mod signals;

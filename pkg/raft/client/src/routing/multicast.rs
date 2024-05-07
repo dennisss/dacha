@@ -3,6 +3,7 @@ use std::os::unix::prelude::FromRawFd;
 use std::time::{Duration, SystemTime};
 
 use base_error::*;
+use executor::child_task::ChildTask;
 use executor_multitask::{ServiceResource, TaskResource};
 use failure::ResultExt;
 use net::ip::{IPAddress, SocketAddr};
@@ -25,6 +26,8 @@ const MULTICAST_PORT: u16 = 8181;
 const MAX_PACKET_SIZE: usize = 512;
 
 const IFACE_ADDR: IPAddress = IPAddress::V4([0, 0, 0, 0]);
+
+// TODO: This data needs to be signed (and optionally encrypted).
 
 /// Service for finding other servers by broadcasting identities over UDP
 /// multi-cast.
@@ -51,6 +54,11 @@ impl DiscoveryMulticast {
 
         socket.join_multicast_v4(MULTICAST_ADDR, IFACE_ADDR)?;
 
+        route_store
+            .lock()
+            .await
+            .set_initializer_state(RouteInitializerState::Initializing);
+
         Ok(Self {
             socket,
             route_store,
@@ -63,13 +71,12 @@ impl DiscoveryMulticast {
 
     /// CANCEL SAFE
     async fn run(self) -> Result<()> {
+        let initer = ChildTask::spawn(Self::wait_for_init(self.route_store.clone()));
         executor::future::race(self.run_client(), self.run_server()).await
     }
 
     /// Periodically broadcasts our local identity to all other peers.
     async fn run_client(&self) -> Result<()> {
-        // TODO: Send immediately if our local route has changed.
-
         let mut last_send_time = None;
         let mut last_local_route = None;
 
@@ -80,6 +87,7 @@ impl DiscoveryMulticast {
 
             let a = route_store.serialize_local_only();
 
+            // TODO: Add some randomness to the interval.
             let time_elapsed = match last_send_time {
                 Some(t) => t + BROADCAST_INTERVAL <= now,
                 None => true,
@@ -96,6 +104,10 @@ impl DiscoveryMulticast {
                 last_send_time = Some(SystemTime::now());
                 continue;
             }
+
+            // TODO: If we sent out a local route, then we can mark ourselves as initialized
+            // if at least 0.5 seconds has elapsed since then (since we expect responses to
+            // be immediate).
 
             executor::timeout(CYCLE_INTERVAL, route_store.wait()).await;
         }
@@ -156,6 +168,16 @@ impl DiscoveryMulticast {
                 Ok(None)
             }
         }
+    }
+
+    /// Wait until at least two broadcast rounds have finished to have high
+    /// confidence they we have seen any servers that are currently alive.
+    async fn wait_for_init(route_store: RouteStore) {
+        executor::sleep(2 * BROADCAST_INTERVAL).await;
+        route_store
+            .lock()
+            .await
+            .set_initializer_state(RouteInitializerState::Initialized);
     }
 }
 

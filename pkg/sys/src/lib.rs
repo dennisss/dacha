@@ -54,7 +54,7 @@ pub use credentials::*;
 pub use epoll::*;
 pub use errno::*;
 pub use exit::*;
-pub use file::OpenFileDescriptor;
+pub use file::{blocking_read_to_string, OpenFileDescriptor};
 pub use getcwd::*;
 pub use getdents::*;
 pub use io_uring::*;
@@ -105,7 +105,8 @@ pub use bindings::{
 // pub use bindings::{ARCH_GET_FS, ARCH_SET_FS};
 
 pub use kernel::{
-    PR_CAP_AMBIENT, PR_GET_NO_NEW_PRIVS, PR_SET_NO_NEW_PRIVS, PR_SET_PDEATHSIG, PR_SET_SECUREBITS,
+    PR_CAP_AMBIENT, PR_GET_NO_NEW_PRIVS, PR_SET_CHILD_SUBREAPER, PR_SET_NO_NEW_PRIVS,
+    PR_SET_PDEATHSIG, PR_SET_SECUREBITS,
 };
 
 macro_rules! export_cast_bindings {
@@ -121,7 +122,7 @@ export_cast_bindings!(c_short, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT);
 
 /*
 See also nice list of syscalls here:
-https://chromium.googlesource.com/chromiumos/docs/+/HEAD/constants/syscalls.md
+https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/syscalls/
 
 
 */

@@ -7,11 +7,11 @@ use executor::sync::AsyncMutex;
 use net::backoff::*;
 use parsing::ascii::AsciiString;
 
-use crate::Response;
 use crate::{
     response::BufferedResponse, v2, BodyFromData, Client, ClientInterface, ClientOptions,
     ClientRequestContext, Request, RequestHead, ResponseHead,
 };
+use crate::{ClientResponseContext, Response};
 
 use super::load_balanced_client::LoadBalancedClientOptions;
 
@@ -94,7 +94,13 @@ impl SimpleClient {
         request_context: ClientRequestContext,
     ) -> Result<Response> {
         let client = self.get_client(&request.head).await?;
-        client.request(request, request_context).await
+        client
+            .request(
+                request,
+                request_context,
+                &mut crate::ClientResponseContext::default(),
+            )
+            .await
     }
 
     pub async fn request(
@@ -188,7 +194,13 @@ impl SimpleClient {
         request: Request,
         request_context: ClientRequestContext,
     ) -> Result<BufferedResponse> {
-        let mut res = client.request(request, request_context).await?;
+        let mut res = client
+            .request(
+                request,
+                request_context,
+                &mut ClientResponseContext::default(),
+            )
+            .await?;
         let head = res.head;
 
         if let Some(len) = res.body.len() {

@@ -280,7 +280,7 @@ impl ClusterMetaTableValue for WorkerStateMetadata {
     }
 }
 
-impl ClusterMetaTableValue for BlobMetadata {
+impl ClusterMetaTableValue for BundleBlobMetadata {
     type Id = str;
 
     fn primary_key(&self) -> Vec<u8> {
@@ -288,7 +288,7 @@ impl ClusterMetaTableValue for BlobMetadata {
     }
 
     fn primary_table_id() -> ClusterTableId {
-        ClusterTableId::Blob
+        ClusterTableId::BundleBlob
     }
 
     fn primary_key_from_id(id: &Self::Id) -> Vec<u8> {

@@ -110,15 +110,29 @@ macro_rules! define_thread {
         pub struct $name {}
 
         const _: () = {
-            type RetType = impl ::core::future::Future<Output = ()>;
+            trait ThreadFn {
+                type Fut: ::core::future::Future<Output = ()> + 'static;
+                fn start($($arg: $t,)*) -> Self::Fut;
+            }
 
-            static mut THREAD: $crate::thread::Thread<RetType> = {
+            impl ThreadFn for () {
+                type Fut = impl ::core::future::Future<Output = ()> + 'static;
+
+                fn start($($arg: $t,)*) -> Self::Fut {
+                    $handler($($arg,)*)
+                }
+            }
+
+
+            type ThreadFnFut = <() as ThreadFn>::Fut;
+
+            static mut THREAD: $crate::thread::Thread<ThreadFnFut> = {
                 $crate::thread::Thread::new()
             };
 
             impl $name {
                 pub fn start($($arg: $t,)*) {
-                    unsafe { THREAD.start(move || -> RetType { $handler($($arg,)*) }) };
+                    unsafe { THREAD.start(move || -> ThreadFnFut { <() as ThreadFn>::start($($arg,)*) }) };
                 }
 
                 pub fn stop() {

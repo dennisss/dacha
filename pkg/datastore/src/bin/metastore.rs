@@ -32,7 +32,7 @@ use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
 struct Args {
     /// Port on which the consensus initialization service will be hosted (if
     /// the server isn't already initialized).
-    init_port: NamedPortArg,
+    init_port: Option<NamedPortArg>,
 
     port: NamedPortArg,
 
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     root.register_dependency(
         run(MetastoreOptions {
             dir: args.dir,
-            init_port: args.init_port.value(),
+            init_port: args.init_port.as_ref().map(|v| v.value()),
             bootstrap: false,
             service_port: args.port.value(),
             route_labels,

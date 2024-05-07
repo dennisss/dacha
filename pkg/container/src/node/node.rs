@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use builder::current_platform;
 use builder::proto::BundleSpec;
 use cluster_client::meta::client::ClusterMetaClient;
 use cluster_client::meta::constants::*;
@@ -31,6 +32,14 @@ use crate::node::worker::*;
 use crate::node::workers_table;
 use crate::proto::*;
 use crate::runtime::ContainerRuntime;
+
+/// Maximum combined serialized size of all custom labels associated with this
+/// node.
+const MAX_LABELS_SIZE: usize = 4096;
+
+// NOTE: Each key/value must contain at least one character.
+// Delimiters like '=' and ':' are reserved to allow for selector strings.
+regexp!(LABEL_DATA_PATTERN => "^[a-z0-9_\\-\\.]+$");
 
 #[derive(Clone)]
 pub struct NodeContext {
@@ -73,12 +82,14 @@ struct NodeInner {
 struct NodeShared {
     id: u64,
 
+    start_time: SystemTime,
+
     context: NodeContext,
     config: NodeConfig,
 
     db: Arc<EmbeddedDB>,
 
-    blobs: BlobStore,
+    blobs: BundleBlobStore,
 
     runtime: Arc<ContainerRuntime>,
     event_channel: (channel::Sender<NodeEvent>, channel::Receiver<NodeEvent>),
@@ -107,11 +118,18 @@ struct NodeShared {
     /// TODO: Consider sending the name of the changed worker so that we don't
     /// need to re-check all of them.
     state_change_channel: (channel::Sender<()>, channel::Receiver<()>),
+
+    heartbeat_now_channel: (channel::Sender<()>, channel::Receiver<()>),
 }
 
 struct NodeState {
     workers: Vec<Worker>,
     inner: NodeStateInner,
+
+    labels: Labels,
+
+    /// Whether or not the labels have been flushed to disk.
+    labels_flushed: bool,
 }
 
 struct NodeStateInner {
@@ -203,13 +221,16 @@ impl Node {
         let usb_context = usb::Context::create()?;
 
         let blobs =
-            BlobStore::create(LocalPath::new(config.data_dir()).join("blob"), db.clone()).await?;
+            BundleBlobStore::create(LocalPath::new(config.data_dir()).join("blob"), db.clone())
+                .await?;
 
         let last_event_timestamp = {
             let last_db_time = workers_table::get_events_timestamp(&db).await?.unwrap_or(0);
             let current_time = NodeInner::current_system_timestamp();
             core::cmp::max(last_db_time, current_time)
         };
+
+        let labels = workers_table::get_node_labels(&db).await?;
 
         let runtime = ContainerRuntime::create(
             LocalPath::new(config.data_dir()).join("run"),
@@ -219,6 +240,7 @@ impl Node {
         let inst = NodeInner {
             shared: Arc::new(NodeShared {
                 id,
+                start_time: SystemTime::now(),
                 context: context.clone(),
                 config: config.clone(),
                 db,
@@ -227,6 +249,8 @@ impl Node {
                 state: AsyncMutex::new(NodeState {
                     workers: vec![],
                     inner,
+                    labels,
+                    labels_flushed: true,
                 }),
                 event_channel: channel::unbounded(),
                 last_timer_id: AtomicUsize::new(0),
@@ -234,6 +258,7 @@ impl Node {
                 meta_client: Eventually::new(),
                 last_event_timestamp: AsyncMutex::new(last_event_timestamp),
                 state_change_channel: channel::bounded(1),
+                heartbeat_now_channel: channel::bounded(1),
             }),
         };
 
@@ -364,9 +389,8 @@ impl NodeInner {
     /// avoid the entire node crashing. (simplest solution is to run this entire
     /// thread using failure backoff).
     async fn run_node_registration_inner(&mut self, start_time: &SystemTime) -> Result<()> {
-        println!("Starting node registration");
-
         let zone = self.shared.config.zone();
+        println!("Starting node registration in zone: {}", zone);
 
         let meta_client = {
             if !self.shared.meta_client.has_value().await {
@@ -378,50 +402,11 @@ impl NodeInner {
         };
 
         // Perform initial update of our node entry.
-        // NOTE: We don't set last_seen yet as we haven't yet written the initial worker
-        // states.
-        let mut node_state = run_transaction!(&meta_client, txn, {
-            let node_table = txn.cluster_table::<NodeMetadata>();
-            let mut node_meta = node_table.get(&self.shared.id).await?.unwrap_or_default();
-            node_meta.set_id(self.shared.id);
-            node_meta.set_address(&self.shared.context.local_address);
-            node_meta.set_start_time(start_time);
-            node_meta.set_last_seen(SystemTime::now());
-            node_meta.set_zone(zone);
-            if node_meta.state() == NodeMetadata_State::UNKNOWN {
-                node_meta.set_state(NodeMetadata_State::ACTIVE);
-            }
-            node_meta
-                .set_allocatable_port_range(self.shared.config.allocatable_port_range().clone());
-            node_table.put(&node_meta).await?;
-
-            node_meta.state()
-        });
+        // This is a good sanity check that we are well connected to the metastore
+        // before we spin up background threads.
+        self.update_node_metadata().await?;
 
         println!("Node registered in metastore!");
-
-        // Wait for the node to not be NEW
-        while node_state == NodeMetadata_State::NEW {
-            // TODO: Use a watcher.
-            executor::sleep(NODE_HEARTBEAT_INTERVAL).await;
-
-            node_state = {
-                let node_meta = meta_client
-                    .cluster_table::<NodeMetadata>()
-                    .get(&self.shared.id)
-                    .await?
-                    .ok_or_else(|| err_msg("NodeMetadata disappeared"))?;
-                node_meta.state()
-            };
-        }
-
-        println!("Node starting reconcile");
-
-        // Perform first reconcile round.
-        // NOTE: This MUST be done before the first last_seen heartbeat update so that
-        // we don't appear to be healthy while the WorkerStateMetadata entries have
-        // stale values.
-        self.reconcile_workers().await?;
 
         let mut task_bundle = executor::bundle::TaskResultBundle::new();
         task_bundle.add("run_heartbeat_loop", self.clone().run_heartbeat_loop());
@@ -431,27 +416,66 @@ impl NodeInner {
         task_bundle.join().await
     }
 
+    async fn update_node_metadata(&self) -> Result<()> {
+        let meta_client = self.shared.meta_client.get().await;
+
+        let (labels, labels_flushed) = lock!(state <= self.shared.state.lock().await?, {
+            (state.labels.clone(), state.labels_flushed)
+        });
+
+        if !labels_flushed {
+            workers_table::put_node_labels(&self.shared.db, &labels).await?;
+
+            lock!(state <= self.shared.state.lock().await?, {
+                state.labels_flushed = true;
+            });
+        }
+
+        let platform = current_platform()?;
+
+        run_transaction!(&meta_client, txn, {
+            let node_table = txn.cluster_table::<NodeMetadata>();
+            let mut node_meta = node_table.get(&self.shared.id).await?.unwrap_or_default();
+            node_meta.set_id(self.shared.id);
+            node_meta.set_address(&self.shared.context.local_address);
+            node_meta.set_start_time(self.shared.start_time);
+            node_meta.set_last_seen(SystemTime::now());
+            node_meta.set_zone(self.shared.config.zone());
+            if node_meta.state() == NodeMetadata_State::UNKNOWN {
+                node_meta.set_state(NodeMetadata_State::ACTIVE);
+            }
+            node_meta
+                .set_allocatable_port_range(self.shared.config.allocatable_port_range().clone());
+            node_meta.set_platform(platform);
+            node_meta.set_labels(labels.clone());
+
+            node_table.put(&node_meta).await?;
+        });
+
+        Ok(())
+    }
+
+    // Periodically updates the NodeMetadata for this node.
+    // - This mainly bumps 'last_seen' to keep the node alive.
+    // - May also trigger push to volatile configs like labels and the connected
+    //   devices list.
     async fn run_heartbeat_loop(self) -> Result<()> {
         let meta_client = self.shared.meta_client.get().await;
 
         // Periodically mark this node as still active.
         // TODO: Allow this is fail and continue to retry.
         loop {
-            run_transaction!(meta_client, txn, {
-                let node_table = txn.cluster_table::<NodeMetadata>();
-                let mut node_meta = node_table
-                    .get(&self.shared.id)
-                    .await?
-                    .ok_or_else(|| err_msg("NodeMetadata disappeared"))?;
-                node_meta.set_last_seen(SystemTime::now());
-                node_table.put(&node_meta).await?;
-            });
+            self.update_node_metadata().await?;
 
             // Trigger a reconcile after the timeout as we don't currently watch the
             // metastore for changes yet.
             let _ = self.shared.state_change_channel.0.try_send(());
 
-            executor::sleep(NODE_HEARTBEAT_INTERVAL).await;
+            executor::timeout(
+                NODE_HEARTBEAT_INTERVAL,
+                self.shared.heartbeat_now_channel.1.recv(),
+            )
+            .await;
         }
     }
 
@@ -1381,9 +1405,9 @@ impl NodeInner {
         let meta_client = self.shared.meta_client.get().await;
 
         // TODO: Once a node fetches a blob it becomes a replica of that blob. When
-        // should we update the BlobMetadata entry?
+        // should we update the BundleBlobMetadata entry?
         let blob_meta = meta_client
-            .cluster_table::<BlobMetadata>()
+            .cluster_table::<BundleBlobMetadata>()
             .get(blob_id)
             .await?
             .ok_or_else(|| err_msg("No such blob"))?;
@@ -1414,7 +1438,7 @@ impl NodeInner {
             rpc::Http2Channel::create(format!("http://{}", remote_node_meta.address()).as_str())
                 .await?;
 
-        let stub = BlobStoreStub::new(Arc::new(client));
+        let stub = BundleBlobStoreStub::new(Arc::new(client));
 
         let request_context = rpc::ClientRequestContext::default();
 
@@ -1889,6 +1913,68 @@ impl ContainerNodeService for NodeInner {
             workers_table::get_worker_events(&self.shared.db, request.worker_name()).await?;
         for event in events {
             response.value.add_events(event);
+        }
+
+        Ok(())
+    }
+
+    /// CANCEL SAFE
+    async fn GetLabels(
+        &self,
+        request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
+        response: &mut rpc::ServerResponse<Labels>,
+    ) -> Result<()> {
+        lock!(state <= self.shared.state.lock().await?, {
+            response.value = state.labels.clone();
+        });
+
+        Ok(())
+    }
+
+    /// CANCEL SAFE
+    async fn UpdateLabels(
+        &self,
+        request: rpc::ServerRequest<UpdateLabelsRequests>,
+        response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
+    ) -> Result<()> {
+        if request.labels().serialize()?.len() > MAX_LABELS_SIZE {
+            return Err(rpc::Status::invalid_argument("Labels are too large").into());
+        }
+
+        for label in request.labels().label() {
+            if !LABEL_DATA_PATTERN.test(label.key().as_bytes())
+                || !LABEL_DATA_PATTERN.test(label.value().as_bytes())
+            {
+                return Err(rpc::Status::invalid_argument(
+                    "Labels contain non-allowed characters.",
+                )
+                .into());
+            }
+        }
+
+        let mut labels = request.labels().clone();
+        labels.label_mut().sort_by_key(|v| v.key().to_string());
+        labels.label_mut().dedup_by_key(|v| v.key().to_string());
+
+        lock!(state <= self.shared.state.lock().await?, {
+            state.labels = labels;
+            state.labels_flushed = false;
+        });
+
+        let _ = self.shared.heartbeat_now_channel.0.try_send(());
+
+        // Wait for the labels to be flushed to disk. (shortly after that they should
+        // also get pushed to the metastore)
+        loop {
+            let done = lock!(state <= self.shared.state.lock().await?, {
+                state.labels_flushed
+            });
+
+            if done {
+                break;
+            }
+
+            executor::sleep(Duration::from_secs(1)).await?;
         }
 
         Ok(())

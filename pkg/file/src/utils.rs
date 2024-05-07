@@ -78,7 +78,8 @@ pub async fn metadata(path: &LocalPath) -> Result<Metadata> {
     metadata_sync(path)
 }
 
-pub fn metadata_sync(path: &LocalPath) -> Result<Metadata> {
+pub fn metadata_sync<P: AsRef<LocalPath>>(path: P) -> Result<Metadata> {
+    let path = path.as_ref();
     let cpath = CString::new(path.as_str())?;
     let mut stat = sys::bindings::stat::default();
     unsafe { sys::stat(cpath.as_ptr() as *const u8, &mut stat) }

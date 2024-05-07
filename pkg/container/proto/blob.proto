@@ -5,14 +5,14 @@ package cluster;
 import "google/protobuf/empty.proto";
 import "pkg/builder/proto/bundle.proto";
 
-service BlobStore {
+service BundleBlobStore {
     // Enumerates all blobs persisted to this server.
     rpc List (google.protobuf.Empty) returns (BlobListResponse);
     
     // Adds a new blob to this server.
     //
     // Errors:
-    // - ALREADY_EXISTS: If a bloc with the same id is already present on this server.
+    // - ALREADY_EXISTS: If a blob with the same id is already present on this server.
     rpc Upload (stream BlobData) returns (google.protobuf.Empty);
 
     // Retrieves the contents of an uploaded blob from the server.
@@ -26,11 +26,11 @@ service BlobStore {
 }
 
 message BlobListResponse {
-    repeated builder.BlobSpec blob = 1;
+    repeated builder.BundleBlobSpec blob = 1;
 }
 
 message BlobData {
-    builder.BlobSpec spec = 1;
+    builder.BundleBlobSpec spec = 1;
     bytes data = 2;
 }
 

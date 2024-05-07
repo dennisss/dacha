@@ -24,7 +24,7 @@ enum ClusterTableId {
     Worker = 4;
     WorkerByNode = 5;
     WorkerState = 6;
-    Blob = 7;
+    BundleBlob = 7;
     Object = 8;
 }
 
@@ -175,18 +175,18 @@ message WorkerStateMetadata {
     uint64 worker_revision = 3;
 }
 
-message BlobMetadata {
-    builder.BlobSpec spec = 1;
+message BundleBlobMetadata {
+    builder.BundleBlobSpec spec = 1;
 
     // List of the ids of all nodes which are known to have this blob.
-    repeated BlobReplica replicas = 2;
+    repeated BundleBlobReplica replicas = 2;
 
     // Last time this blob was referenced in some registered job.
     // If this is empty, then it is actively in use.
     google.protobuf.Timestamp last_used = 3;
 }
 
-message BlobReplica {
+message BundleBlobReplica {
     uint64 node_id = 1;
 
     bool uploaded = 2;

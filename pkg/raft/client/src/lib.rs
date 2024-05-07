@@ -16,6 +16,7 @@ pub mod utils;
 
 pub use routing::discovery_client::{DiscoveryClient, DiscoveryClientOptions};
 pub use routing::discovery_server::DiscoveryServer;
+pub use routing::leader_resolver::*;
 pub use routing::multicast::DiscoveryMulticast;
 pub use routing::route_channel::RouteChannelFactory;
 pub use routing::route_store::{RouteStore, RouteStoreGuard};

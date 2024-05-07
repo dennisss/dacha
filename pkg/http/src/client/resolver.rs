@@ -32,6 +32,9 @@ pub trait Resolver: 'static + Send + Sync {
 /// (e.g. HTTP over TLS).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ResolvedEndpoint {
+    /// Resolver selected name for this endpoint.
+    pub name: String,
+
     /// IP address and port to which we should connect.
     pub address: SocketAddr,
 
@@ -90,6 +93,7 @@ impl Resolver for SystemDNSResolver {
                 for a in addrs {
                     if a.socket_type == SocketType::Stream {
                         endpoints.push(ResolvedEndpoint {
+                            name: String::new(),
                             address: SocketAddr::new(a.address.clone(), self.port),
                             authority: authority.clone(),
                         });
@@ -98,6 +102,7 @@ impl Resolver for SystemDNSResolver {
             }
             Host::IP(ip) => {
                 endpoints.push(ResolvedEndpoint {
+                    name: String::new(),
                     address: SocketAddr::new(ip.clone(), self.port),
                     authority,
                 });

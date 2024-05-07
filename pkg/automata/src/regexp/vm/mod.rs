@@ -105,6 +105,26 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn vm_compile_range_test() -> Result<()> {
+        let node = RegExpNode::parse("[a-b]")?;
+
+        let prog = Compiler::compile(node.as_ref())?;
+
+        assert_eq!(
+            prog.program.instructions(),
+            &[
+                Instruction::Range {
+                    start: 'a' as u32,
+                    end: 'c' as u32
+                },
+                Instruction::Match
+            ]
+        );
+
+        Ok(())
+    }
+
     // TODO: We don't want '.' to match the empty string (given that it will
     // match the start marker)
 

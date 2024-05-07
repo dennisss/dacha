@@ -120,6 +120,8 @@ struct Shared {
     lb_client: LoadBalancedClient,
 }
 
+// TODO: Ensure that a client is healthy only if it has at least one healthy
+// backend.
 impl_resource_passthrough!(Client, resource);
 
 impl Client {
@@ -168,11 +170,12 @@ impl ClientInterface for Client {
         &self,
         request: Request,
         request_context: ClientRequestContext,
+        response_context: &mut ClientResponseContext,
     ) -> Result<Response> {
         return self
             .shared
             .lb_client
-            .request(request, request_context)
+            .request(request, request_context, response_context)
             .await;
     }
 

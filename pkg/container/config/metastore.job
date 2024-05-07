@@ -9,7 +9,6 @@ worker {
     args: [
         "/volumes/bundle/built/pkg/datastore/metastore",
         "--port=rpc",
-        "--init_port=rpc",
         "--dir=/volumes/data"
         # NOTE: An additional --labels flag is added dynamically by the bootstrapping script.
     ]

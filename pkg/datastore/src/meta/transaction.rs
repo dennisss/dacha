@@ -178,10 +178,11 @@ impl TransactionManager {
 
         // TODO: Automatically rewrite non-permanent errors.
 
-        // TODO: Limit the number of keys in a request
-        // Ideally <1000
-
-        let term = node.server().currently_leader().await?;
+        let term = node
+            .server()
+            .currently_leader()
+            .await
+            .map_err(|e| rpc::Status::unavailable("Not currently the leader"))?;
 
         // Step 1
         let lock_result = lock!(state <= manager_state.lock().await?, {
@@ -192,10 +193,9 @@ impl TransactionManager {
             Ok(v) => v,
             Err(conflict) => {
                 let _ = conflict.recv().await;
-                return Err(rpc::Status::failed_precondition(
-                    "Conflict while acquiring locks. Please retry",
-                )
-                .into());
+                return Err(
+                    rpc::Status::aborted("Conflict while acquiring locks. Please retry").into(),
+                );
             }
         };
 
@@ -218,11 +218,15 @@ impl TransactionManager {
         mut write_batch: WriteBatch,
     ) -> Result<LogIndex> {
         // Step 2
-        let read_index = node.server().begin_read(true).await?;
+        let read_index = node
+            .server()
+            .begin_read(true)
+            .await
+            .map_err(|e| e.to_rpc_status())?;
 
         // Step 3
         if read_index.term() != lock_holder.term {
-            return Err(rpc::Status::failed_precondition(
+            return Err(rpc::Status::unavailable(
                 "Locks lost due to leadership change since transaction start.",
             )
             .into());
@@ -233,10 +237,9 @@ impl TransactionManager {
             // Read against the latest version of the database.
             let snapshot = state_machine.snapshot().await;
             if !Self::verify_reads(&transaction, &snapshot, read_index.index()).await? {
-                return Err(rpc::Status::failed_precondition(
-                    "Changes have occured since the read index",
-                )
-                .into());
+                return Err(
+                    rpc::Status::aborted("Changes have occured since the read index").into(),
+                );
             }
         }
 
@@ -257,7 +260,8 @@ impl TransactionManager {
         let pending_execution = node
             .server()
             .execute_after_read(entry, Some(read_index))
-            .await?;
+            .await
+            .map_err(|e| Error::from(e.to_rpc_status()))?;
 
         // Step 6
         //
@@ -266,7 +270,10 @@ impl TransactionManager {
         let commited_index = match pending_execution.wait().await {
             PendingExecutionResult::Committed { log_index, .. } => log_index,
             PendingExecutionResult::Cancelled => {
-                return Err(rpc::Status::failed_precondition("message").into());
+                return Err(rpc::Status::unavailable(
+                    "Transaction abandoned during consensus replication.",
+                )
+                .into());
             }
         };
 
@@ -327,7 +334,10 @@ impl TransactionManager {
                     write.delete(op.key());
                 }
                 OperationTypeCase::NOT_SET => {
-                    return Err(rpc::Status::invalid_argument("Invalid operation").into());
+                    return Err(rpc::Status::invalid_argument(
+                        "Unsupported operation in transaction.writes",
+                    )
+                    .into());
                 }
             }
         }
@@ -440,9 +450,7 @@ impl TransactionManager {
         latest_commited_index: LogIndex,
     ) -> Result<bool> {
         if transaction.read_index() < snapshot.compaction_waterline().unwrap() {
-            return Err(
-                rpc::Status::failed_precondition("Transaction's read_index is too old.").into(),
-            );
+            return Err(rpc::Status::aborted("Transaction's read_index is too old.").into());
         }
 
         // TODO: Change the iterator to have a lower bound on the sequence (as that way

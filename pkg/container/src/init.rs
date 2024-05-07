@@ -1,8 +1,7 @@
-use nix::sys::signal::Signal;
-use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet};
-use sys::{sigprocmask, sigsuspend, Errno, SignalSet, SigprocmaskHow};
+use std::time::Duration;
 
-static mut RECEIVED_SIGNAL: Option<sys::c_int> = None;
+use common::errors::*;
+use sys::{sigprocmask, sigsuspend, Errno, Signal, SignalSet, SigprocmaskHow};
 
 pub struct MainProcessOptions {
     /// If true, start the child process in a new process group.
@@ -27,8 +26,13 @@ pub struct MainProcessOptions {
 /// signal dependencies. Additionally there should NEVER be more than one
 /// instance of this in a single process.
 pub struct MainProcess {
-    pid: sys::pid_t,
+    inner: Inner,
+}
+
+struct Inner {
     options: MainProcessOptions,
+    pid: sys::pid_t,
+    dead: bool,
 }
 
 impl MainProcess {
@@ -77,7 +81,13 @@ impl MainProcess {
                 child_process()
             })?;
 
-        Ok(Self { options, pid })
+        Ok(Self {
+            inner: Inner {
+                options,
+                pid,
+                dead: false,
+            },
+        })
     }
 
     unsafe fn prepare_child(options: &MainProcessOptions) -> Result<(), Errno> {
@@ -94,7 +104,7 @@ impl MainProcess {
     }
 
     pub fn pid(&self) -> sys::pid_t {
-        self.pid
+        self.inner.pid
     }
 
     /// Waits until the child process exits.
@@ -108,49 +118,53 @@ impl MainProcess {
     ///
     /// NOTE: This function should normally never return unless there is an
     /// error.
-    pub fn wait(self) -> Result<(), Errno> {
-        unsafe { self.wait_impl() }
+    pub fn wait(mut self) -> Result<()> {
+        unsafe { self.inner.wait_impl() }
     }
+}
 
-    unsafe fn wait_impl(&self) -> Result<(), Errno> {
-        // Configure a handler for all signals.
-        // Signal numbers 1 to 31 as normal signals (there may be holes though). Above
-        // that are realtime signals.
-        {
-            let action = SigAction::new(
-                SigHandler::Handler(handle_signal),
-                SaFlags::empty(),
-                SigSet::all(),
-            );
+impl Drop for Inner {
+    fn drop(&mut self) {
+        if !self.dead {
+            let _ = unsafe { self.kill(Signal::SIGKILL) };
+        }
+    }
+}
 
-            let mut some_succeeded = false;
-            for signal_num in 1..=31 {
-                some_succeeded |= sigaction(core::mem::transmute(signal_num), &action).is_ok();
-            }
-
-            // Some may fail as not all systems have all 31 syscall numbers defined.
-            if !some_succeeded {
-                return Err(Errno::EIO);
-            }
+impl Inner {
+    unsafe fn kill(&mut self, signal: Signal) -> Result<(), Errno> {
+        if signal == Signal::SIGKILL {
+            self.dead = true;
         }
 
+        sys::kill(
+            if self.options.use_setsid {
+                -self.pid
+            } else {
+                self.pid
+            },
+            signal,
+        )
+    }
+
+    unsafe fn wait_impl(&mut self) -> Result<()> {
         let mut got_sigint = false;
 
         // Wait for signals to occur.
         loop {
-            // Unmask all signals while waiting.
-            sys::sigsuspend(&SignalSet::empty());
+            let signal =
+                match unsafe { sys::sigtimedwait(SignalSet::all(), Duration::from_secs(1)) } {
+                    Ok(v) => Some(v),
+                    Err(Errno::EAGAIN) => None, // Timeout
+                    Err(e) => return Err(e.into()),
+                };
 
-            let mut signal = match RECEIVED_SIGNAL.take() {
-                Some(num) => sys::Signal::from_raw(num as u32),
-                None => continue,
-            };
-
-            if signal == sys::Signal::SIGCHLD {
+            if signal == Some(Signal::SIGCHLD) {
                 loop {
                     let v = sys::waitpid(-1, sys::WaitOptions::WNOHANG)?;
                     match v {
                         sys::WaitStatus::Exited { pid, status } => {
+                            self.dead = true;
                             if pid == self.pid {
                                 sys::exit(status);
                             }
@@ -172,8 +186,8 @@ impl MainProcess {
                         _ => {}
                     }
                 }
-            } else {
-                if signal == sys::Signal::SIGINT {
+            } else if let Some(mut signal) = signal {
+                if signal == sys::Signal::SIGINT || signal == sys::Signal::SIGTERM {
                     if got_sigint && self.options.raise_second_sigint {
                         println!("Killing...");
                         signal = sys::Signal::SIGKILL;
@@ -183,24 +197,36 @@ impl MainProcess {
                 }
 
                 // Forward signals
-                sys::kill(
-                    if self.options.use_setsid {
-                        -self.pid
-                    } else {
-                        self.pid
-                    },
-                    signal,
-                )?;
+                self.kill(signal)?;
+            } else {
+                // Sometimes we don't get a SIGCHLD for children in separate namespaces so
+                // ensure that we still kill them if they become zombies. This
+                // mainly happens in the cluster_node top level process. But, poking them with a
+                // SIGKILL tends to trigger a SIGCHLD to finally come.
+
+                // This file will look something like:
+                // "985987 (cluster_node) Z 985986 985987...."
+                let stat = sys::blocking_read_to_string(&format!("/proc/{}/stat", self.pid))?;
+
+                let err_fn = || format_err!("Invalid proc state file: {}", stat);
+
+                // Find the state ('Z' part)
+                let state = stat
+                    .split_once(") ")
+                    .ok_or_else(err_fn)?
+                    .1
+                    .chars()
+                    .next()
+                    .ok_or_else(err_fn)?;
+
+                // If a zombie kill it.
+                if state == 'Z' {
+                    println!("Manually reap zombie...");
+                    self.kill(sys::Signal::SIGKILL)?;
+                }
             }
         }
 
         Ok(())
-    }
-}
-
-extern "C" fn handle_signal(signal: sys::c_int) {
-    unsafe {
-        assert!(RECEIVED_SIGNAL.is_none());
-        RECEIVED_SIGNAL = Some(signal);
     }
 }

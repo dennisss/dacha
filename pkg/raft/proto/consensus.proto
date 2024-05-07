@@ -28,8 +28,6 @@ service Consensus {
 	// should be prioritized for network bandwidth and processing time.
 	rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
 
-	rpc TimeoutNow (TimeoutNow) returns (google.protobuf.Empty);
-
 	rpc InstallSnapshot (stream InstallSnapshotRequest) returns (InstallSnapshotResponse);
 
     // This is the odd ball out internal client method
@@ -240,10 +238,6 @@ message AppendEntriesResponse {
 	reserved 4;
 }
 
-// Upon being received a server should immediatley timeout and start its own
-// election
-message TimeoutNow {}
-
 // Asks the server to propose a single entry to the state machine
 message ProposeRequest {
 	// REQUIRED
@@ -275,14 +269,19 @@ message LeaderHint {
 	ServerId leader_id = 2;
 }
 
+
 message NotLeaderErrorProto {
+	// REQUIRED
+	Term term = 1;
+
 	// OPTIONAL
-	ServerId leader_hint = 1;
+	ServerId leader_hint = 2;
 }
 
 message ProposeErrorProto {
 	oneof type {
 		NotLeaderErrorProto not_leader = 1;
+		bool command_too_large = 2;
 	}
 }
 
@@ -404,4 +403,12 @@ message Status {
 	// Id of the leader of the current term (if known).
 	// OPTIONAL
 	ServerId leader_hint = 6;
+
+	message DrainingStatus {
+		Term term = 1;
+		ServerId next_leader_id = 2;
+	}
+
+	// If present, this server is currently being drained.
+	DrainingStatus draining = 7;
 }

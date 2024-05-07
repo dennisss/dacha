@@ -175,6 +175,7 @@ pub struct clone_args {
 
 pub const PR_SET_PDEATHSIG: c_uint = 1;
 pub const PR_SET_SECUREBITS: c_uint = 28;
+pub const PR_SET_CHILD_SUBREAPER: c_uint = 36;
 pub const PR_SET_NO_NEW_PRIVS: c_uint = 38;
 pub const PR_GET_NO_NEW_PRIVS: c_uint = 39;
 pub const PR_CAP_AMBIENT: c_uint = 47;

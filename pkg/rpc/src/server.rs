@@ -313,6 +313,8 @@ impl Http2RequestHandler {
                 service_name
             )))?;
 
+        let method_path = format!("/{}/{}", service_name, method_name);
+
         // NOTE: This must be bounded to provide backpressure while waiting for the
         // connection to transfer the bytes.
         //
@@ -335,6 +337,7 @@ impl Http2RequestHandler {
             .header(CONTENT_TYPE, response_type.to_string());
 
         let mut body = Box::new(ResponseBody {
+            method_path: method_path.clone(),
             child_task: Some(child_task),
             response_receiver,
             response_type,
@@ -360,7 +363,11 @@ impl Http2RequestHandler {
                     .trailer_metadata
                     .append_to_headers(response_builder.headers())?;
 
-                ResponseBody::append_result_to_headers(result, &mut response_builder.headers());
+                ResponseBody::append_result_to_headers(
+                    &method_path,
+                    result,
+                    &mut response_builder.headers(),
+                );
 
                 // Immediately indicate that there will be no more data.
                 body.done_data = true;
@@ -472,6 +479,7 @@ impl Http2RequestHandler {
             .status(OK)
             .header(CONTENT_TYPE, response_type.to_string())
             .body(Box::new(ResponseBody {
+                method_path: String::new(),
                 child_task: None,
                 response_receiver: receiver,
                 response_type,
@@ -509,6 +517,8 @@ impl http::ServerHandler for Http2RequestHandler {
 }
 
 struct ResponseBody {
+    method_path: String,
+
     child_task: Option<ChildTask>,
 
     response_receiver: spsc::Receiver<ServerStreamResponseEvent>,
@@ -552,7 +562,7 @@ impl ResponseBody {
                 let mut trailers = Headers::new();
                 trailer_meta.append_to_headers(&mut trailers)?;
 
-                Self::append_result_to_headers(result, &mut trailers)?;
+                Self::append_result_to_headers(&self.method_path, result, &mut trailers)?;
 
                 match self.response_type.protocol {
                     RPCMediaProtocol::Default => {
@@ -577,7 +587,11 @@ impl ResponseBody {
         Ok(())
     }
 
-    fn append_result_to_headers(result: Result<()>, headers: &mut Headers) -> Result<()> {
+    fn append_result_to_headers(
+        method_path: &str,
+        result: Result<()>,
+        headers: &mut Headers,
+    ) -> Result<()> {
         match result {
             Ok(()) => {
                 Status::ok().append_to_headers(headers)?;
@@ -587,7 +601,7 @@ impl ResponseBody {
                 // TODO: Only forward statuses that were generated locally and not ones
                 // that were returned as part of an internal client RPC call.
 
-                eprintln!("[rpc::Server] RPC Error: {}", error);
+                eprintln!("[rpc::Server] RPC Error: {}: {}", method_path, error);
                 let status = match error.downcast_ref::<Status>() {
                     Some(s) => s.clone(),
                     None => Status::internal("Internal error occured"),

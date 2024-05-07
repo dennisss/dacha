@@ -382,6 +382,7 @@ impl ClientInterface for DirectClient {
         &self,
         mut request: Request,
         request_context: ClientRequestContext,
+        response_context: &mut ClientResponseContext,
     ) -> Result<Response> {
         // TODO: We should allow the Connection header, but we shouldn't allow any
         // options which are used internally (keep-alive and close)

@@ -123,10 +123,10 @@ impl BuildTarget for Bundle {
                     format!("sha256:{}", base_radix::hex_encode(&hash))
                 };
 
-                let mut spec = BlobSpec::default();
+                let mut spec = BundleBlobSpec::default();
                 spec.set_id(hash);
                 spec.set_size(data.len() as u64);
-                spec.set_format(BlobFormat::TAR_ARCHIVE);
+                spec.set_format(BundleBlobFormat::TAR_ARCHIVE);
                 spec
             };
 

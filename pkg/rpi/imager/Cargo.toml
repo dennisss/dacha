@@ -12,5 +12,7 @@ parsing = { path = "../../parsing" }
 macros = { path = "../../macros" }
 storage = { path = "../../storage" }
 crypto = { path = "../../crypto" }
+compression = { path = "../../compression" }
 base_units = { path = "../../base/units" }
 base_radix = { path = "../../base/radix" }
+net = { path = "../../net" }

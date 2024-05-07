@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::ops::Bound;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use common::async_fn::AsyncFn1;
 use common::bytes::Bytes;
@@ -14,6 +15,8 @@ use executor::{lock, lock_async};
 use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup};
 use net::ip::SocketAddr;
 use raft_client::proto::RouteLabel;
+use raft_client::server::channel_factory::ChannelFactory;
+use raft_client::{RouteChannelFactory, RouteStore};
 
 use crate::constants::*;
 use crate::key_utils::*;
@@ -27,9 +30,19 @@ pub const MAX_TRANSACTION_RETRIES: usize = 5;
 pub struct MetastoreClient {
     client_id: String,
 
+    /// Main channel in this client which is used to execute requests against
     channel: Arc<dyn rpc::Channel>,
 
+    /// References to the state/layout of the whole metastore server cluster.
+    /// Will be None only if we are currently directly to a single node.
+    cluster: Option<ClusterState>,
+
     resources: ServiceResourceGroup,
+}
+
+struct ClusterState {
+    route_store: RouteStore,
+    route_channel_factory: RouteChannelFactory,
 }
 
 impl_resource_passthrough!(MetastoreClient, resources);
@@ -51,7 +64,7 @@ impl MetastoreClient {
     /// The store servers will automatically be discovered via multicast. The
     /// main downside of this is that it may take a few seconds to receive the
     /// next broadcast in order to connect.
-    pub async fn create(labels: &[RouteLabel]) -> Result<Self> {
+    pub async fn create(labels: &[RouteLabel], seeds: &[String]) -> Result<Self> {
         let route_store = raft_client::RouteStore::new(labels);
 
         let resources = ServiceResourceGroup::new("MetastoreClient");
@@ -72,17 +85,36 @@ impl MetastoreClient {
             .register_dependency(Arc::new(discovery.start()))
             .await;
 
+        if !seeds.is_empty() {
+            let client = raft_client::DiscoveryClient::create(
+                route_store.clone(),
+                raft_client::DiscoveryClientOptions {
+                    seeds: seeds.to_vec(),
+                    active_broadcaster: false,
+                },
+            )
+            .await;
+            resources
+                .spawn_interruptable("raft::DiscoveryClient", client.run())
+                .await;
+        }
         // TODO: In the resolver, also subscribe to one of the server's CurrentStatus.
         // Whenever the set of members changes, use that info to prune the routes we
         // have on the client side.
         let channel_factory =
             raft_client::RouteChannelFactory::find_group(route_store.clone()).await;
 
-        // We can talk to any metastore worker as they will all redirect requests to the
-        // leader if needed.
-        let channel = channel_factory.create_any().await?;
+        let channel = channel_factory.create_leader().await?;
 
-        Self::create_impl(channel, resources).await
+        Self::create_impl(
+            channel,
+            resources,
+            Some(ClusterState {
+                route_store,
+                route_channel_factory: channel_factory,
+            }),
+        )
+        .await
     }
 
     /// Directly connect to a metastore instance.
@@ -96,12 +128,13 @@ impl MetastoreClient {
             rpc::Http2Channel::create(format!("http://{}", addr.to_string()).as_str()).await?,
         );
 
-        Self::create_impl(channel, ServiceResourceGroup::new("MetastoreClient")).await
+        Self::create_impl(channel, ServiceResourceGroup::new("MetastoreClient"), None).await
     }
 
     async fn create_impl(
         channel: Arc<rpc::Http2Channel>,
         resources: ServiceResourceGroup,
+        cluster: Option<ClusterState>,
     ) -> Result<Self> {
         resources.register_dependency(channel.clone()).await;
 
@@ -112,6 +145,7 @@ impl MetastoreClient {
             let req = protobuf_builtins::google::protobuf::Empty::default();
             let mut ctx = rpc::ClientRequestContext::default();
             ctx.http.wait_for_ready = true;
+            ctx.idempotent = true;
             let res = stub.NewClient(&ctx, &req).await;
 
             res.result?.client_id().to_string()
@@ -121,6 +155,7 @@ impl MetastoreClient {
             client_id,
             channel,
             resources,
+            cluster,
         })
     }
 
@@ -130,12 +165,42 @@ impl MetastoreClient {
         self.wait_for_termination().await
     }
 
+    /// Retrieves a list of known server addresses. Can be used to seed a future
+    /// MetastoreClient instance.
+    ///
+    /// The list is sorted from most to least likely to be currently healthy.
+    pub async fn known_servers(&self) -> Vec<String> {
+        let cluster = match self.cluster.as_ref() {
+            Some(v) => v,
+            None => return vec![],
+        };
+
+        let mut out = vec![];
+
+        let guard = cluster.route_store.lock().await;
+        for route in guard.selected_routes() {
+            out.push((
+                SystemTime::from(route.last_seen()),
+                route.target().addr().to_string(),
+            ));
+        }
+
+        drop(guard);
+
+        // TODO: Also factor in 'ready'
+        out.sort();
+
+        out.into_iter().map(|(_, addr)| addr).collect()
+    }
+
     /// Request context to use if we are not running in a transaction.
     fn default_request_context(&self) -> Result<rpc::ClientRequestContext> {
         let mut request_context = rpc::ClientRequestContext::default();
         request_context
             .metadata
             .add_text(CLIENT_ID_KEY, &self.client_id)?;
+        // TODO: Label this in the protobuf service description?
+        request_context.idempotent = true;
         Ok(request_context)
     }
 
@@ -146,7 +211,8 @@ impl MetastoreClient {
         transaction_state: Option<AsyncMutexPermit<'_, MetastoreTransactionState>>,
     ) -> Result<Option<Vec<u8>>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
-        let request_context = self.default_request_context()?;
+        let mut request_context = self.default_request_context()?;
+        request_context.buffer_full_response = true;
 
         let mut request = ReadRequest::default();
 
@@ -191,7 +257,8 @@ impl MetastoreClient {
         transaction_state_permit: Option<AsyncMutexPermit<'_, MetastoreTransactionState>>,
     ) -> Result<Vec<KeyValueEntry>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
-        let request_context = self.default_request_context()?;
+        let mut request_context = self.default_request_context()?;
+        request_context.buffer_full_response = true;
 
         let mut request = ReadRequest::default();
 
@@ -296,12 +363,29 @@ impl MetastoreClient {
     }
 
     pub async fn remove_server(&self, id: raft_client::proto::ServerId) -> Result<()> {
-        let stub = ServerManagementStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
 
-        let mut request = ConfigChangeRequest::default();
-        request.set_remove_server(id);
-        stub.ConfigChange(&request_context, &request).await.result?;
+        // TODO: Eventually undrain.
+        {
+            let cluster = self.cluster.as_ref().ok_or_else(|| {
+                err_msg("Must use a cluster wide MetastoreClient to drain servers")
+            })?;
+
+            let stub = ServerManagementStub::new(cluster.route_channel_factory.create(id).await?);
+
+            let mut request = DrainRequest::default();
+            request.set_server_id(id);
+            stub.Drain(&request_context, &request).await.result?;
+        }
+
+        {
+            let stub = ServerManagementStub::new(self.channel.clone());
+
+            let mut request = ConfigChangeRequest::default();
+            request.set_remove_server(id);
+            stub.ConfigChange(&request_context, &request).await.result?;
+        }
+
         Ok(())
     }
 }

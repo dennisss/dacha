@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use common::args::ArgType;
 use common::errors::*;
+use executor_multitask::RootResource;
 use rpc_test::proto::adder::AdderIntoService;
 use rpc_test::AdderImpl;
 use rpc_util::{AddHealthEndpoints, AddReflection};
@@ -48,5 +49,7 @@ async fn main() -> Result<()> {
 
     println!("Starting on port {}", args.port.value());
 
-    executor_multitask::wait_for_main_resource(server.start()).await
+    let root = RootResource::new();
+    root.register_dependency(server.start()).await;
+    root.wait().await
 }

@@ -9,6 +9,7 @@ base_radix = { path = "../../base/radix" }
 common = { path = "../../common" }
 crypto = { path = "../../crypto" }
 executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 parsing = { path = "../../parsing" }
 macros = { path = "../../macros" }

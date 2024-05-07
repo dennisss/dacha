@@ -244,7 +244,7 @@ async fn main() -> Result<()> {
     let mut node = Arc::new(
         Node::create(NodeOptions {
             dir: lock,
-            init_port: 4000,
+            init_port: Some(4000),
             bootstrap: args.bootstrap,
             seed_list,
             state_machine: state_machine.clone(),

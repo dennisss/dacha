@@ -39,6 +39,14 @@ use protobuf::text::{parse_text_proto, ParseTextProto};
 
 use container::NodeConfig;
 
+/// Name of the user on the node's Linux system which will own all main files
+/// like node binaries.
+const ASSET_OWNER: &'static str = "cluster-user";
+
+/// Name of the user on the node's Linux system which will execute the node
+/// binary.
+const NODE_USER: &'static str = "cluster-node";
+
 // TODO: Support parsing "\\n" in a regexp?
 // TODO: Support specifying that the pattern must start at the beginning of the
 // line
@@ -56,7 +64,7 @@ struct Args {
 fn run_ssh(addr: &str, command: &str) -> Result<String> {
     let output = Command::new("ssh")
         .args([
-            &format!("pi@{}", addr),
+            &format!("{}@{}", ASSET_OWNER, addr),
             "-i",
             "~/.ssh/id_cluster",
             "-o",
@@ -114,7 +122,7 @@ fn copy_file<P: AsRef<LocalPath> + Debug, Q: AsRef<LocalPath> + Debug>(
 
     run_scp(
         source_path.as_ref().as_str(),
-        &format!("pi@{}:{}", addr, target_path.as_str()),
+        &format!("{}@{}:{}", ASSET_OWNER, addr, target_path.as_str()),
     )?;
 
     Ok(())
@@ -134,7 +142,7 @@ fn copy_repo_file<P: AsRef<LocalPath> + Debug>(addr: &str, relative_path: P) -> 
 }
 
 fn download_file(addr: &str, path: &str, output_path: &str) -> Result<()> {
-    run_scp(&format!("pi@{}:{}", addr, path), output_path)
+    run_scp(&format!("{}@{}:{}", ASSET_OWNER, addr, path), output_path)
 }
 
 #[executor_main]
@@ -145,6 +153,10 @@ async fn main() -> Result<()> {
         "Bootstrapping node at \"{}\" in zone \"{}\"",
         args.addr, args.zone
     );
+
+    if args.zone.is_empty() {
+        return Err(err_msg("Empty --zone provided"));
+    }
 
     println!("Stopping old node");
     // This is currently a required step in order to be able to overwrite the in-use
@@ -203,13 +215,8 @@ async fn main() -> Result<()> {
         let mut builder = Builder::default()?;
 
         let result = builder
-            .build_target_cwd("//pkg/container:cluster_node", build_config_target)
+            .build_target_cwd("//pkg/container:cluster_node_deps", build_config_target)
             .await?;
-        if result.outputs.output_files.len() != 1 {
-            return Err(err_msg(
-                "Expected exactly one output file from building :cluster_node",
-            ));
-        }
 
         result
     };
@@ -221,20 +228,48 @@ async fn main() -> Result<()> {
     )?;
 
     run_ssh(&args.addr, "sudo mkdir -p /opt/dacha")?;
-    run_ssh(&args.addr, "sudo chown pi:pi /opt/dacha")?;
+    run_ssh(
+        &args.addr,
+        &format!("sudo chown {owner}:{owner} /opt/dacha", owner = ASSET_OWNER),
+    )?;
+
+    // Delete any old built artifacts data.
+    run_ssh(&args.addr, "sudo rm -rf /opt/dacha/bundle/")?;
 
     // Cluster cluster data directory
     run_ssh(&args.addr, "mkdir -p /opt/dacha/data")?;
     run_ssh(
         &args.addr,
-        "sudo chown cluster-node:cluster-node /opt/dacha/data",
+        &format!(
+            "sudo chown {owner}:{owner} /opt/dacha/data",
+            owner = NODE_USER
+        ),
     )?;
     run_ssh(&args.addr, "sudo chmod 700 /opt/dacha/data")?;
 
-    // TODO: Also need to
     for (key, value) in node_built_result.outputs.output_files {
         copy_file(&args.addr, value.location, key)?;
     }
+
+    // TODO: This is the only file in the bundle not owned by
+    // 'cluster-user:cluster-user'
+    // TODO: Find a better place to store this logic that is shared with local
+    // executions.
+    run_ssh(
+        &args.addr,
+        &format!(
+            "sudo chown root:{} /opt/dacha/bundle/built/pkg/container/newcgroup",
+            NODE_USER
+        ),
+    )?;
+    run_ssh(
+        &args.addr,
+        "sudo chmod 750 /opt/dacha/bundle/built/pkg/container/newcgroup",
+    )?;
+    run_ssh(
+        &args.addr,
+        "sudo chmod u+s /opt/dacha/bundle/built/pkg/container/newcgroup",
+    )?;
 
     let mut node_config = {
         let s = file::read_to_string(project_path!("pkg/container/config/node.textproto")).await?;
@@ -260,8 +295,11 @@ async fn main() -> Result<()> {
 
     copy_repo_file(&args.addr, "pkg/container/config/node.service")?;
 
-    // [target] [link_name]
-    run_ssh(&args.addr, "sudo ln -f -s /opt/dacha/bundle/pkg/container/config/node.service /etc/systemd/system/cluster_node.service")?;
+    println!("Setting up /etc/subuid");
+    run_ssh(
+        &args.addr,
+        &format!("echo '{}:400000:65536' | sudo tee /etc/subuid", NODE_USER),
+    )?;
 
     println!("Setting up /etc/subgid");
     {
@@ -273,13 +311,13 @@ async fn main() -> Result<()> {
         let groups = container::node::shadow::read_groups_from_path(groups_path)?;
 
         let mut subgid = String::new();
-        subgid.push_str("cluster-node:400000:65536\n");
+        subgid.push_str(&format!("{}:400000:65536\n", NODE_USER));
 
         let target_groups = &["gpio", "plugdev", "dialout", "i2c", "spi", "video"];
 
         for group in groups {
             if target_groups.iter().find(|g| *g == &group.name).is_some() {
-                subgid.push_str(&format!("cluster-node:{}:1\n", group.id));
+                subgid.push_str(&format!("{}:{}:1\n", NODE_USER, group.id));
             }
         }
 
@@ -291,7 +329,7 @@ async fn main() -> Result<()> {
 
         run_scp(
             &subgid_path.as_str(),
-            &format!("pi@{}:/tmp/next_subgid", &args.addr),
+            &format!("{}@{}:/tmp/next_subgid", ASSET_OWNER, &args.addr),
         )?;
 
         run_ssh(&args.addr, "sudo cp /tmp/next_subgid /etc/subgid")?;

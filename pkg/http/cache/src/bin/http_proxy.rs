@@ -15,8 +15,11 @@ extern crate file;
 #[macro_use]
 extern crate macros;
 
+use std::sync::Arc;
+
 use common::errors::*;
 use common::io::Writeable;
+use executor_multitask::*;
 use file::LocalFile;
 use file::LocalFileOpenOptions;
 use file::LocalPathBuf;
@@ -116,6 +119,11 @@ async fn main() -> Result<()> {
     let service = Service { cache };
 
     let mut options = http::ServerOptions::default();
+    options.port = Some(args.port);
     let server = http::Server::new(service, options);
-    server.run(args.port).await
+
+    let mut root = RootResource::new();
+    root.register_dependency(Arc::new(server.start())).await;
+
+    root.wait().await
 }

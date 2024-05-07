@@ -318,7 +318,7 @@ impl Drop for RequestCancelledContext {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{convert::TryFrom, sync::Arc};
 
     use protobuf::text::ParseTextProto;
 
@@ -719,7 +719,9 @@ mod tests {
         // By default can't retry streaming response after one good response is
         // returned.
         {
-            interceptor.stats.lock().await.reset();
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset();
+            });
 
             let mut ctx = rpc::ClientRequestContext::default();
             ctx.idempotent = true;
@@ -732,9 +734,13 @@ mod tests {
 
             assert!(req_stream.send(&req).await);
             executor::sleep(Duration::from_millis(10)).await;
-            assert_eq!(interceptor.stats.lock().await.messages_received, 1);
 
-            interceptor.stats.lock().await.unavailable_tokens = 1;
+            lock!(stats <= interceptor.stats.lock().await?, {
+                assert_eq!(stats.messages_received, 1);
+
+                stats.unavailable_tokens = 1;
+            });
+
             assert!(req_stream.send(&req).await);
 
             req_stream.close().await;
@@ -754,7 +760,7 @@ mod tests {
                 rpc::StatusCode::Unavailable
             );
 
-            let stats = interceptor.stats.lock().await;
+            let stats = interceptor.stats.lock().await?.read_exclusive();
             assert_eq!(stats.unavailable_tokens, 0);
             assert_eq!(stats.requests_received, 1);
             assert_eq!(stats.messages_received, 2);
@@ -762,7 +768,9 @@ mod tests {
 
         // We can retry a streaming response if we buffer the responses.
         {
-            interceptor.stats.lock().await.reset();
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset();
+            });
 
             let mut ctx = rpc::ClientRequestContext::default();
             ctx.idempotent = true;
@@ -777,10 +785,14 @@ mod tests {
             assert!(req_stream.send(&req).await);
             // Send and receive the result for at least one message successfully.
             executor::sleep(Duration::from_millis(10)).await;
-            assert_eq!(interceptor.stats.lock().await.messages_received, 1);
 
-            // Force the
-            interceptor.stats.lock().await.unavailable_tokens = 1;
+            lock!(stats <= interceptor.stats.lock().await?, {
+                assert_eq!(stats.messages_received, 1);
+
+                // Force the
+                stats.unavailable_tokens = 1;
+            });
+
             req.set_y(5);
             assert!(req_stream.send(&req).await);
             req_stream.close().await;
@@ -799,7 +811,7 @@ mod tests {
 
             res_stream.finish().await?;
 
-            let stats = interceptor.stats.lock().await;
+            let stats = interceptor.stats.lock().await?.read_exclusive();
             assert_eq!(stats.unavailable_tokens, 0);
             assert_eq!(stats.requests_received, 2);
             assert_eq!(stats.messages_received, 4);
@@ -807,7 +819,10 @@ mod tests {
 
         // Exceeding maximum number of requests.
         {
-            interceptor.stats.lock().await.reset().unavailable_tokens = 40;
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset();
+                stats.unavailable_tokens = 40;
+            });
 
             let mut req = AddRequest::default();
             req.set_x(1);
@@ -827,15 +842,18 @@ mod tests {
                 rpc::StatusCode::Internal
             );
 
-            let mut stats = interceptor.stats.lock().await?;
+            lock!(stats <= interceptor.stats.lock().await?, {});
+
+            let stats = interceptor.stats.lock().await?.read_exclusive();
             assert_eq!(stats.unavailable_tokens, 37);
             assert_eq!(stats.requests_received, 3);
-            stats.reset();
         }
 
         // Does not retry non-retryable code
         {
-            interceptor.stats.lock().await.reset();
+            lock!(stats <= interceptor.stats.lock().await?, {
+                stats.reset();
+            });
 
             let mut req = AddRequest::default();
             req.set_x(1);
@@ -856,9 +874,8 @@ mod tests {
                 rpc::StatusCode::InvalidArgument
             );
 
-            let mut stats = interceptor.stats.lock().await;
+            let stats = interceptor.stats.lock().await?.read_exclusive();
             assert_eq!(stats.requests_received, 1);
-            stats.reset();
         }
 
         // Need at least one test with retrying with multiple request packets.
@@ -876,13 +893,13 @@ mod tests {
 
     fn make_service() -> (AdderImpl, AdderInterceptor) {
         let (sender, receiver) = channel::unbounded();
-        let mut stats = Arc::new(Mutex::new(AdderStats::default()));
+        let mut stats = Arc::new(AsyncMutex::new(AdderStats::default()));
 
         let adder = AdderImpl {
             log_file: None,
             event_listener: Some(sender),
             stats: stats.clone(),
-            busy_loop: Mutex::new(None),
+            busy_loop: AsyncMutex::new(None),
         };
 
         (
@@ -899,13 +916,13 @@ mod tests {
     async fn real_stub_test() -> Result<()> {
         let (adder, interceptor) = make_service();
 
-        let mut server = rpc::Http2Server::new();
+        let mut server = rpc::Http2Server::new(None);
         server.add_service(adder.into_service());
 
-        let server = server.bind(0).await?;
+        let server = server.bind().await?;
         let server_addr = server.local_addr()?;
 
-        let server_task = executor::spawn(async move { server.run().await.unwrap() });
+        let server_resource = server.start();
 
         let channel = {
             Arc::new(
@@ -940,6 +957,82 @@ mod tests {
 
         Ok(())
     }
+
+    #[derive(Default)]
+    struct TestClientInterceptor {
+        stats: AsyncMutex<TestClientInterceptorStats>,
+    }
+
+    #[derive(Default)]
+    struct TestClientInterceptorStats {
+        num_response_completions: usize,
+    }
+
+    #[async_trait]
+    impl rpc::ClientResponseInterceptor for TestClientInterceptor {
+        async fn on_response_head(&self, metadata: &mut rpc::Metadata) -> Result<()> {
+            Ok(())
+        }
+
+        async fn on_response_complete(
+            &self,
+            successful: bool,
+            context: &rpc::ClientResponseContext,
+        ) {
+            lock!(stats <= self.stats.lock().await.unwrap(), {
+                stats.num_response_completions += 1;
+            });
+        }
+    }
+
+    #[testcase]
+    async fn http_channel_interceptor_test() -> Result<()> {
+        let (adder, adder_interceptor) = make_service();
+
+        let mut server = rpc::Http2Server::new(None);
+        server.add_service(adder.into_service());
+
+        let server = server.bind().await?;
+        let server_addr = server.local_addr()?;
+
+        let server_resource = server.start();
+
+        let client_interceptor = Arc::new(TestClientInterceptor::default());
+
+        let mut channel_options = rpc::Http2ChannelOptions::try_from(
+            format!("http://{}", server_addr.to_string()).as_str(),
+        )?;
+
+        channel_options.response_interceptor = Some(client_interceptor.clone());
+
+        let channel = { Arc::new(rpc::Http2Channel::create(channel_options).await?) };
+
+        let stub = AdderStub::new(channel);
+
+        let mut req = AddRequest::default();
+        req.set_x(1);
+        req.set_y(2);
+
+        let mut ctx = rpc::ClientRequestContext::default();
+        // ctx.response_interceptor = Some(client_interceptor.clone());
+
+        let res = stub.Add(&ctx, &req).await.result?;
+
+        assert_eq!(res.z(), 3);
+
+        {
+            let stats = client_interceptor.stats.lock().await?.read_exclusive();
+            assert_eq!(stats.num_response_completions, 1);
+        }
+
+        // TODO: Also test with intercepting in an RPC retry.
+
+        Ok(())
+    }
+
+    // TODO: Test that sending a gRPC web RPC works (Both with a regular
+    // response and with an error response immediately (rpc service function
+    // returns immediately) or deferred)
 
     // TODO: Create a metadata echo endpoint to echo (with some simple
     // transformation any passed metadata keys). ^ Also good to test the

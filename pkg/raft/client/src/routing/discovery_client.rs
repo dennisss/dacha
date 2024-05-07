@@ -102,7 +102,14 @@ impl DiscoveryClient {
                 };
 
                 for addr in &self.options.seeds {
-                    maybe_select_addr(addr.clone());
+                    // Don't send to ourselves.
+                    if let Some(local_route) = route_store.local_route() {
+                        if local_route.target().addr() == addr {
+                            continue;
+                        }
+                    }
+
+                    maybe_select_addr(format!("http://{}", addr));
                 }
 
                 if self.options.active_broadcaster {
@@ -147,6 +154,9 @@ impl DiscoveryClient {
                     let channel = match states.get(addr) {
                         Some(state) => state.channel.clone(),
                         None => {
+                            // TODO: Don't let this fail the entire job if we get bad addresses (we
+                            // may have received a malformed address
+                            // from another server).
                             let channel = Arc::new(
                                 rpc::Http2Channel::create(http::ClientOptions::from_uri(
                                     &addr.parse()?,
@@ -180,8 +190,8 @@ impl DiscoveryClient {
 
             // Set the attempt time to a time after the attempt has completed.
             let now = SystemTime::now();
-            for addr in addrs {
-                states.get_mut(&addr).unwrap().last_send_attempt = now;
+            for addr in &addrs {
+                states.get_mut(addr).unwrap().last_send_attempt = now;
             }
 
             if !initialized {

@@ -13,7 +13,7 @@ service Manager {
     // - Way to monitor existing updates
     // - Support force update, pause a rollout, or rollback.
 
-    rpc AllocateBlobs (AllocateBlobsRequest) returns (AllocateBlobsResponse);
+    rpc AllocateBundleBlobs (AllocateBundleBlobsRequest) returns (AllocateBundleBlobsResponse);
 }
 
 message StartJobRequest {
@@ -24,20 +24,20 @@ message StartJobResponse {
 
 }
 
-message AllocateBlobsRequest {
+message AllocateBundleBlobsRequest {
     // Metadata for the blobs which the client wants to upload to the cluster.
-    repeated builder.BlobSpec blob_specs = 1;
+    repeated builder.BundleBlobSpec blob_specs = 1;
 }
 
-message AllocateBlobsResponse {
+message AllocateBundleBlobsResponse {
     // Nodes to which the client should upload the blobs to.
     //
     // TODO: For each of these, include authorization tokens that can let the node know that the
     // manager allowed the upload.
-    repeated BlobAssignment new_assignments = 1; 
+    repeated BundleBlobAssignment new_assignments = 1; 
 }
 
-message BlobAssignment {
+message BundleBlobAssignment {
     string blob_id = 1;
 
     uint64 node_id = 2;

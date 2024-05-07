@@ -225,10 +225,10 @@ impl ConnectionShared {
             // (based on the stream id in the latest GOAWAY message).
             //
             // TODO: Ensure that this is never present when the stream has a value.
-            if let Some((request_method, response_semder, body)) =
+            if let Some((request_method, response_sender, body)) =
                 stream.incoming_response_handler.take()
             {
-                response_semder.send(Err(error.into())).await;
+                response_sender.send(Err(error.into())).await;
             }
 
             if let Some(outgoing_body) = stream.outgoing_response_handler.take() {

@@ -45,6 +45,12 @@ impl<T> SyncMutex<T> {
     }
 }
 
+impl<T: Clone> SyncMutex<T> {
+    pub fn read(&self) -> Result<T, PoisonError> {
+        self.apply(|v| v.clone())
+    }
+}
+
 impl<T: Default> Default for SyncMutex<T> {
     fn default() -> Self {
         Self::new(T::default())

@@ -34,7 +34,7 @@ impl Default for RetryingOptions {
     fn default() -> Self {
         Self {
             backoff: ExponentialBackoffOptions {
-                base_duration: Duration::from_millis(1),
+                base_duration: Duration::from_millis(2),
                 jitter_duration: Duration::from_millis(5),
                 max_duration: Duration::from_secs(2),
                 cooldown_duration: Duration::from_secs(5),
