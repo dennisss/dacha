@@ -257,7 +257,7 @@ impl std::str::FromStr for Uri {
         let (v, rest) = parse_uri_reference(Bytes::from(s))?;
         if rest.len() != 0 {
             let reststr = String::from_utf8(rest.to_vec()).unwrap();
-            return Err(format_err!("Extra bytes after uri: '{}'.", reststr));
+            return Err(format_err!("Extra bytes after uri '{}': '{}'.", s, reststr));
         }
 
         Ok(v)

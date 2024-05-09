@@ -1,0 +1,24 @@
+[package]
+name = "home_hub"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+macros = { path = "../../macros" }
+rpi = { path = "../../rpi" }
+stream_deck = { path = "../../peripherals/devices/stream_deck" }
+hue = { path = "../../api/hue" }
+protobuf = { path = "../../protobuf" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+cluster_client = { path = "../../container/client" }
+peripherals_devices = { path = "../../peripherals/devices" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../protobuf/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

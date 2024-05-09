@@ -18,7 +18,8 @@ use reflection::ParseFrom;
 /// Client instance for communicating with a Hue Bridge without any
 /// authentication.
 pub struct AnonymousHueClient {
-    client: http::Client,
+    client: http::SimpleClient,
+    base_url: http::uri::Uri,
 }
 
 impl AnonymousHueClient {
@@ -26,20 +27,21 @@ impl AnonymousHueClient {
         let mut dns = net::dns::Client::create_multicast_insecure().await?;
         let (addr, _) = dns.resolve_service_addr("_hue._tcp.local.").await?;
 
-        let client = http::Client::create(http::ClientOptions::from_uri(&http::uri::Uri {
+        let base_url = http::uri::Uri {
             scheme: Some(AsciiString::from("http")?),
             authority: Some(http::uri::Authority {
                 user: None,
                 host: http::uri::Host::IP(addr),
                 port: Some(80),
             }),
-            path: AsciiString::from("")?,
+            path: AsciiString::new(""),
             query: None,
             fragment: None,
-        })?)
-        .await?;
+        };
 
-        Ok(Self { client })
+        let client = http::SimpleClient::new(http::SimpleClientOptions::default());
+
+        Ok(Self { client, base_url })
     }
 
     async fn request(
@@ -53,20 +55,22 @@ impl AnonymousHueClient {
             None => String::new(),
         };
 
+        let mut url = self.base_url.clone();
+        url.path = AsciiString::new(path); // TODO: check is ascii.
+
         let request = http::RequestBuilder::new()
             .method(method)
-            .path(path)
+            .uri2(url)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .body(http::BodyFromData(request_body))
             .build()?;
 
         let context = http::ClientRequestContext::default();
 
-        let mut response = self.client.request(request, context).await?;
-
-        let mut response_body = vec![];
-        response.body.read_to_end(&mut response_body).await?;
+        let mut response = self
+            .client
+            .request(&request.head, request_body.into(), &context)
+            .await?;
 
         // NOTE: API errors will have a 200 OK status code but will have the actual
         // error in the json response.
@@ -74,11 +78,11 @@ impl AnonymousHueClient {
             return Err(format_err!(
                 "Request failed: {:?}: {:?}",
                 response.head.status_code,
-                common::bytes::Bytes::from(response_body)
+                response.body
             ));
         }
 
-        let response_obj = json::parse(std::str::from_utf8(&response_body)?)?;
+        let response_obj = json::parse(std::str::from_utf8(&response.body)?)?;
 
         // See https://developers.meethue.com/develop/hue-api/error-messages/
         // While not formally documented, failures seem to always be returned as an

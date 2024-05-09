@@ -2,13 +2,15 @@
 
 This is a monorepo/ecosystem of software/hardware solutions built by [Dennis](https://github.com/dennisss). Code is written primarily in Rust. Check out the partial list of what's available below.
 
+To get started using the existing applications in this repo, follow the [user guide](./doc/user_guide.md).
+
 ## Components
 
 ### Systems
 
 - [Cluster Orchestration](./pkg/container/index.md) : Kubernetes/Borg like containerization and service mesh solution.
 - [Metadata Storage](./pkg/datastore/src/meta/index.md) : Chubby/Etcd like key-value store.
-- [Builder](./pkg/builder/index.md) : A Bazel/Buck like dependency graph based builded system.
+- [Builder](./pkg/builder/index.md) : A Bazel/Buck like dependency graph based build system.
 
 ### Libraries
 

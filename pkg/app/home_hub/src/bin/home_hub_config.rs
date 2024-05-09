@@ -1,13 +1,7 @@
 #[macro_use]
 extern crate common;
-extern crate peripheral;
-extern crate rpi;
-extern crate stream_deck;
 #[macro_use]
 extern crate macros;
-extern crate home_hub;
-extern crate hue;
-extern crate protobuf;
 
 use common::errors::*;
 use home_hub::proto::config::Config;

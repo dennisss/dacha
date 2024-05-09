@@ -349,13 +349,10 @@ impl NodeInner {
             return Ok(());
         }
 
-        // TODO: Move this into the node instance.
-        let start_time = SystemTime::now();
-
         let mut backoff = ExponentialBackoff::new(ExponentialBackoffOptions {
             base_duration: Duration::from_secs(10),
             jitter_duration: Duration::from_secs(10),
-            max_duration: Duration::from_secs(2 * 60),
+            max_duration: Duration::from_secs(60),
             cooldown_duration: Duration::from_secs(4 * 60),
             max_num_attempts: 0,
         });
@@ -371,7 +368,7 @@ impl NodeInner {
                 }
             }
 
-            let e = self.run_node_registration_inner(&start_time).await;
+            let e = self.run_node_registration_inner().await;
             eprintln!("Failure while running node registration: {:?}", e);
             backoff.end_attempt(false);
         }
@@ -388,7 +385,7 @@ impl NodeInner {
     /// TODO: Everything in here needs to be resilient to metastore failures to
     /// avoid the entire node crashing. (simplest solution is to run this entire
     /// thread using failure backoff).
-    async fn run_node_registration_inner(&mut self, start_time: &SystemTime) -> Result<()> {
+    async fn run_node_registration_inner(&mut self) -> Result<()> {
         let zone = self.shared.config.zone();
         println!("Starting node registration in zone: {}", zone);
 

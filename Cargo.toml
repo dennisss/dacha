@@ -59,7 +59,7 @@ members = [
 	"pkg/rpi",
 	"pkg/rpi/controller",
 	"pkg/rpi/imager",
-	# "pkg/home_hub",
+	"pkg/app/home_hub",
 	"pkg/usb",
 	"pkg/container",
 	"pkg/container/proto",

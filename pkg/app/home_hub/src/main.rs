@@ -3,7 +3,6 @@ extern crate core;
 
 #[macro_use]
 extern crate common;
-extern crate peripheral;
 extern crate rpi;
 extern crate stream_deck;
 #[macro_use]
@@ -16,11 +15,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{errors::*, project_path};
-use executor::channel;
+use common::errors::*;
 use executor::sync::AsyncMutex;
+use executor::{channel, lock};
+use file::project_path;
 use home_hub::proto::config::Config;
-use peripheral::ddc::DDCDevice;
+use peripherals_devices::ddc::DDCDevice;
 use rpi::gpio::*;
 use rpi::pwm::*;
 use stream_deck::StreamDeckDevice;
@@ -103,7 +103,7 @@ impl App {
         };
 
         let inst = Arc::new(Self {
-            state: Mutex::new(State::default()),
+            state: AsyncMutex::default(),
             state_event: channel::bounded(1),
             light_event: channel::bounded(1),
             ddc_event: channel::bounded(1),
@@ -178,7 +178,7 @@ impl App {
                 }
                 Ok(FutureEvent::StateChange) => {
                     // Get the current state and exit early if the value hasn't actually changed.
-                    let mut current_state = self.state.lock().await.clone();
+                    let mut current_state = self.state.lock().await?.read_exclusive().clone();
                     if !first_render && current_state == last_view_state {
                         continue;
                     }
@@ -246,32 +246,33 @@ impl App {
                     }
                     last_key_state = key_state;
 
-                    let mut state = self.state.lock().await;
-
-                    for event in events {
-                        println!("{:?}", event);
-                        match event {
-                            Event::KeyDown(DISPLAY_COMPUTER_BUTTON) => {
-                                state.pending_display_input = Some(InputSelectValue::DisplayPort1);
-                                let _ = self.ddc_event.0.try_send(());
+                    lock!(state <= self.state.lock().await?, {
+                        for event in events {
+                            println!("{:?}", event);
+                            match event {
+                                Event::KeyDown(DISPLAY_COMPUTER_BUTTON) => {
+                                    state.pending_display_input =
+                                        Some(InputSelectValue::DisplayPort1);
+                                    let _ = self.ddc_event.0.try_send(());
+                                }
+                                Event::KeyDown(DISPLAY_LAPTOP_BUTTON) => {
+                                    state.pending_display_input = Some(InputSelectValue::HDMI2);
+                                    let _ = self.ddc_event.0.try_send(());
+                                }
+                                Event::KeyDown(LIGHT_ENTRY_BUTTON) => {
+                                    state.pending_entry_light_on =
+                                        Some(!state.entry_light_on.unwrap_or(false));
+                                    let _ = self.light_event.0.try_send(());
+                                }
+                                Event::KeyDown(LIGHT_STUDY_BUTTON) => {
+                                    state.pending_study_light_on =
+                                        Some(!state.study_light_on.unwrap_or(false));
+                                    let _ = self.light_event.0.try_send(());
+                                }
+                                _ => {}
                             }
-                            Event::KeyDown(DISPLAY_LAPTOP_BUTTON) => {
-                                state.pending_display_input = Some(InputSelectValue::HDMI2);
-                                let _ = self.ddc_event.0.try_send(());
-                            }
-                            Event::KeyDown(LIGHT_ENTRY_BUTTON) => {
-                                state.pending_entry_light_on =
-                                    Some(!state.entry_light_on.unwrap_or(false));
-                                let _ = self.light_event.0.try_send(());
-                            }
-                            Event::KeyDown(LIGHT_STUDY_BUTTON) => {
-                                state.pending_study_light_on =
-                                    Some(!state.study_light_on.unwrap_or(false));
-                                let _ = self.light_event.0.try_send(());
-                            }
-                            _ => {}
                         }
-                    }
+                    });
                 }
             }
         }
@@ -282,13 +283,13 @@ impl App {
             // Wait for either a timeout or DDC event.
             let _ = executor::timeout(Duration::from_secs(10), self.ddc_event.1.recv()).await;
 
-            let pending_input = {
-                let mut state = self.state.lock().await;
+            let pending_input = lock!(state <= self.state.lock().await?, {
                 state.pending_display_input.take()
-            };
+            });
 
             if let Some(input) = pending_input {
-                ddc.set_vcp_feature(INPUT_SELECT_VCP_CODE, input.to_value() as u16)?;
+                ddc.set_vcp_feature(INPUT_SELECT_VCP_CODE, input.to_value() as u16)
+                    .await?;
             }
 
             // Timeout: Check again what the display thinks the current
@@ -298,7 +299,7 @@ impl App {
 
             let feature;
             loop {
-                match ddc.get_vcp_feature(INPUT_SELECT_VCP_CODE) {
+                match ddc.get_vcp_feature(INPUT_SELECT_VCP_CODE).await {
                     Ok(f) => {
                         feature = f;
                         break;
@@ -319,11 +320,10 @@ impl App {
 
             let current_value = InputSelectValue::from_value((feature.current_value & 0xff) as u8);
 
-            {
-                let mut state = self.state.lock().await;
+            lock!(state <= self.state.lock().await?, {
                 state.active_display_input = Some(current_value);
                 let _ = self.state_event.0.try_send(());
-            }
+            });
         }
     }
 
@@ -355,13 +355,12 @@ impl App {
                 }
             }
 
-            let (pending_entry, pending_study) = {
-                let mut state = self.state.lock().await;
+            let (pending_entry, pending_study) = lock!(state <= self.state.lock().await?, {
                 (
                     state.pending_entry_light_on.take(),
                     state.pending_study_light_on.take(),
                 )
-            };
+            });
 
             let mut entry_light_on = None;
             let mut study_light_on = None;
@@ -382,10 +381,11 @@ impl App {
                 }
             }
 
-            let mut state = self.state.lock().await;
-            state.entry_light_on = entry_light_on;
-            state.study_light_on = study_light_on;
-            let _ = self.state_event.0.try_send(());
+            lock!(state <= self.state.lock().await?, {
+                state.entry_light_on = entry_light_on;
+                state.study_light_on = study_light_on;
+                let _ = self.state_event.0.try_send(());
+            });
         }
     }
 }

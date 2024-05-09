@@ -38,6 +38,8 @@ pub struct Http2ChannelOptions {
     pub retrying: Option<RetryingOptions>,
 
     pub max_request_buffer_size: usize,
+
+    pub response_interceptor: Option<Arc<dyn ClientResponseInterceptor>>,
 }
 
 impl TryFrom<http::ClientOptions> for Http2ChannelOptions {
@@ -49,6 +51,7 @@ impl TryFrom<http::ClientOptions> for Http2ChannelOptions {
             retrying: Some(RetryingOptions::default()),
             max_request_buffer_size: 16 * 1024, // 16KB
             credentials: None,
+            response_interceptor: None,
         })
     }
 }
@@ -221,9 +224,23 @@ impl Channel for Http2Channel {
         let (request_sender, request_receiver) = spsc::bounded(2);
         let request = ClientStreamingRequest::new(request_sender);
 
-        let response = self
-            .call_raw_impl(service_name, method_name, request_context, request_receiver)
+        let mut request_context = request_context.clone();
+        // TODO: Merge with any interceptor already set by the user.
+        request_context.response_interceptor = self.shared.options.response_interceptor.clone();
+
+        // TODO: Pass in the full request_context without borrowing here.
+        let mut response = self
+            .call_raw_impl(
+                service_name,
+                method_name,
+                &request_context,
+                request_receiver,
+            )
             .await;
+
+        if let Some(interceptor) = &request_context.response_interceptor {
+            response.set_interceptor(interceptor.clone());
+        }
 
         (request, response)
     }
@@ -238,14 +255,14 @@ struct Http2RequestSender {
     request_buffer: Arc<MessageRequestBuffer>,
 }
 
+struct Retrier<'a> {
+    options: &'a RetryingOptions,
+    backoff: ExponentialBackoff,
+    num_local_error_retries: usize,
+}
+
 impl Http2RequestSender {
     async fn send_request(&self) -> Box<dyn ClientStreamingResponseInterface> {
-        struct Retrier<'a> {
-            options: &'a RetryingOptions,
-            backoff: ExponentialBackoff,
-            num_local_error_retries: usize,
-        }
-
         // TODO: Somewhere we want to return an Internal error if we run out of retries.
         let mut retrier = self.shared.options.retrying.as_ref().map(|options| {
             let mut backoff = ExponentialBackoff::new(options.backoff.clone());
@@ -275,68 +292,87 @@ impl Http2RequestSender {
             response.attempt_alive = None;
             assert!(response.state.is_none());
 
-            if let Some(retrier) = &mut retrier {
-                let mut is_retryable = false;
+            let retry = {
+                if let Some(retrier) = &mut retrier {
+                    self.should_retry(&mut error, retrier).await
+                } else {
+                    false
+                }
+            };
 
-                // Check if we saw an HTTP2 error that indicates that the server never got the
-                // request (these are always retryable).
-                if let Some(error) = error.downcast_ref::<http::v2::ProtocolErrorV2>() {
-                    if error.is_retryable() {
-                        is_retryable = true;
-
-                        if error.local
-                            && retrier.num_local_error_retries
-                                < retrier.options.max_local_error_retries
-                        {
-                            retrier.num_local_error_retries += 1;
-                            continue;
-                        }
-                    }
+            if retry {
+                if let Some(interceptor) = &self.request_context.response_interceptor {
+                    interceptor
+                        .on_response_complete(false, &response.context)
+                        .await;
                 }
 
-                let code = match error.downcast_ref::<Status>() {
-                    Some(status) => status.code(),
-                    None => StatusCode::Unknown,
-                };
-
-                // Check for code based retryability. Only applies to idempotent requests.
-                is_retryable |= self.request_context.idempotent
-                    && retrier.options.retryable_codes.contains(&code);
-
-                is_retryable &= self.request_buffer.is_retryable().await;
-
-                if is_retryable {
-                    let have_remaining_attempts = {
-                        retrier.backoff.end_attempt(false);
-                        match retrier.backoff.start_attempt() {
-                            net::backoff::ExponentialBackoffResult::Start => true,
-                            net::backoff::ExponentialBackoffResult::StartAfter(duration) => {
-                                executor::sleep(duration).await.unwrap();
-                                true
-                            }
-                            net::backoff::ExponentialBackoffResult::Stop => false,
-                        }
-                    };
-
-                    if have_remaining_attempts {
-                        // eprintln!(
-                        //     "[rpc::Http2Channel] [{}] Retrying error {}",
-                        //     self.path, error
-                        // );
-                        continue;
-                    }
-
-                    error = Status::internal(format!(
-                        "Exceeded maximum number of attempts in RPC. Last error: {}",
-                        error
-                    ))
-                    .into();
-                }
+                continue;
             }
 
             response.set_error(error);
             return Box::new(response);
         }
+    }
+
+    async fn should_retry(&self, error: &mut Error, retrier: &mut Retrier<'_>) -> bool {
+        let mut is_retryable = false;
+
+        // Check if we saw an HTTP2 error that indicates that the server never got the
+        // request (these are always retryable).
+        if let Some(error) = error.downcast_ref::<http::v2::ProtocolErrorV2>() {
+            if error.is_retryable() {
+                is_retryable = true;
+
+                if error.local
+                    && retrier.num_local_error_retries < retrier.options.max_local_error_retries
+                {
+                    retrier.num_local_error_retries += 1;
+                    return true;
+                }
+            }
+        }
+
+        let code = match error.downcast_ref::<Status>() {
+            Some(status) => status.code(),
+            None => StatusCode::Unknown,
+        };
+
+        // Check for code based retryability. Only applies to idempotent requests.
+        is_retryable |=
+            self.request_context.idempotent && retrier.options.retryable_codes.contains(&code);
+
+        is_retryable &= self.request_buffer.is_retryable().await;
+
+        if is_retryable {
+            let have_remaining_attempts = {
+                retrier.backoff.end_attempt(false);
+                match retrier.backoff.start_attempt() {
+                    net::backoff::ExponentialBackoffResult::Start => true,
+                    net::backoff::ExponentialBackoffResult::StartAfter(duration) => {
+                        executor::sleep(duration).await.unwrap();
+                        true
+                    }
+                    net::backoff::ExponentialBackoffResult::Stop => false,
+                }
+            };
+
+            if have_remaining_attempts {
+                // eprintln!(
+                //     "[rpc::Http2Channel] [{}] Retrying error {}",
+                //     self.path, error
+                // );
+                return true;
+            }
+
+            *error = Status::internal(format!(
+                "Exceeded maximum number of attempts in RPC. Last error: {}",
+                error
+            ))
+            .into();
+        }
+
+        false
     }
 
     /// Attempts to issue a single HTTP2 request to fulfill the request.
@@ -355,6 +391,9 @@ impl Http2RequestSender {
     ) -> Result<()> {
         let (attempt_alive_sender, attempt_alive_receiver) = spsc::bounded(0);
         output.attempt_alive = Some(attempt_alive_sender);
+
+        // Reset the context metadata for this attempt.
+        output.context = ClientResponseContext::default();
 
         let body = Box::new(MessageRequestBody::new(
             self.request_buffer.clone(),
@@ -397,10 +436,15 @@ impl Http2RequestSender {
         let mut http_request_context = http::ClientRequestContext::default();
         http_request_context = self.request_context.http.clone();
 
+        let mut http_response_context = output
+            .context
+            .http_response_context
+            .get_or_insert_with(|| http::ClientResponseContext::default());
+
         let mut response = self
             .shared
             .client
-            .request(request, http_request_context)
+            .request(request, http_request_context, http_response_context)
             .await?;
 
         Self::process_single_response(response, &self.request_context, might_retry, output).await
@@ -592,7 +636,7 @@ impl ClientStreamingResponseInterface for Http2ClientStreamingResponse {
                 Err(err_msg("Response body hasn't been fully read yet"))
             }
             Http2ClientStreamingResponseState::ReceivingTrailers(mut body) => {
-                return Http2RequestSender::read_trailers(
+                Http2RequestSender::read_trailers(
                     body.as_mut(),
                     &mut self.context.metadata.trailer_metadata,
                 )

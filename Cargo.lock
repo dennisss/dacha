@@ -1403,6 +1403,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "home_hub"
+version = "0.1.0"
+dependencies = [
+ "cluster_client",
+ "common",
+ "executor",
+ "file",
+ "hue",
+ "macros",
+ "peripherals_devices",
+ "protobuf",
+ "protobuf_compiler",
+ "rpi",
+ "stream_deck",
+]
+
+[[package]]
 name = "http"
 version = "0.1.0"
 dependencies = [
@@ -1450,6 +1467,20 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
+]
+
+[[package]]
+name = "hue"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "executor",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "reflection",
 ]
 
 [[package]]

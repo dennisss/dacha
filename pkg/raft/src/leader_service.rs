@@ -4,16 +4,21 @@ use std::sync::Arc;
 use common::errors::*;
 use executor::sync::{AsyncMutex, AsyncMutexPermit};
 use executor::{lock, lock_async};
+use protobuf::Message;
 use raft_client::server::channel_factory::ChannelFactory;
+use raft_client::LEADER_HINT_KEY;
 
 use crate::consensus::module::NotLeaderError;
 use crate::node::Node;
 use crate::proto::{NotLeaderErrorProto, Term};
 
-const PROXY_KEY: &'static str = "raft-proxy";
-
-/// Wrapper around an RPC service which ensures that the given RPC service is
-/// only called on the leader of the raft group.
+/// Wrapper around an RPC service which helps clients discover the current
+/// leader of the raft group.
+///
+/// When responses are sent back, the identity of the currently shown leader is
+/// sent back in the response trailer metadata. Clients that use the
+/// LeaderResolver will pick up on this and redirect future requests
+/// appropriately.
 ///
 /// If the wrapper is called on the leader server, then it will simply call the
 /// wrapped service.
@@ -28,17 +33,6 @@ pub struct LeaderServiceWrapper<R> {
     node: Arc<Node<R>>,
 
     local_service: Arc<dyn rpc::Service>,
-
-    state: AsyncMutex<State>,
-}
-
-struct State {
-    /// Last observed term with a leader transition.
-    term: Term,
-
-    /// Connection to the current leader server.
-    /// If None, we'll assume that we are the leader.
-    leader_client: Option<Arc<dyn rpc::Channel>>,
 }
 
 impl<R: 'static + Send> LeaderServiceWrapper<R> {
@@ -46,10 +40,6 @@ impl<R: 'static + Send> LeaderServiceWrapper<R> {
         Self {
             node,
             local_service,
-            state: AsyncMutex::new(State {
-                term: Term::default(),
-                leader_client: None,
-            }),
         }
     }
 
@@ -59,115 +49,34 @@ impl<R: 'static + Send> LeaderServiceWrapper<R> {
         server_request: rpc::ServerStreamRequest<()>,
         server_response: rpc::ServerStreamResponse<'a, ()>,
     ) -> Result<()> {
-        let is_proxied_request = server_request
-            .context()
-            .metadata
-            .get_text(PROXY_KEY)?
-            .is_some();
-
-        let leader_client = {
-            // TODO: What if we become the leader after the first round.
-            if is_proxied_request {
-                None
-            } else {
-                let latest_leader_hint = self.node.server().leader_hint().await;
-
-                self.apply_leader_hint(self.state.lock().await?, &latest_leader_hint)
-                    .await?
-            }
-        };
-
-        if let Some(leader_client) = leader_client {
-            let mut client_request_context = rpc::ClientRequestContext::default();
-            client_request_context.metadata = server_request.context().metadata.clone();
-            client_request_context.metadata.add_text(PROXY_KEY, "1")?;
-
-            let (client_request, client_response) = leader_client
-                .call_raw(
-                    self.local_service.service_name(),
-                    method_name,
-                    &client_request_context,
-                )
-                .await;
-
-            // NOTE: We assume that if the RPC failed with a leader hint, then no response
-            // data was send.
-
-            // NOTE: As we don't buffer the request, as soon as we start piping, we can't
-            // reliably retry the request on a different server.
-            let e = match rpc::pipe(
-                client_request,
-                client_response,
-                server_request,
-                server_response,
-            )
+        self.call_locally(method_name, server_request, server_response)
             .await
-            {
-                Ok(()) => return Ok(()),
-                Err(e) => e,
-            };
-
-            if let Some(status) = e.downcast_ref::<rpc::Status>() {
-                if let Some(leader_hint) = status.detail::<NotLeaderErrorProto>()? {
-                    // TODO: Update who we think is the leader.
-                }
-            }
-
-            return Err(e);
-        } else {
-            let e = match self
-                .local_service
-                .call(method_name, server_request, server_response)
-                .await
-            {
-                Ok(()) => return Ok(()),
-                Err(e) => e,
-            };
-
-            if let Some(e) = e.downcast_ref::<NotLeaderError>() {
-                // TOOD: Apply the leader hint.
-            }
-
-            // if let Some(crate::ExecuteError::Propose(crate::ProposeError::NotLeader(e)))
-            // =     e.downcast_ref()
-            // {
-            //     // TODO: Apply the leader hint.
-            // }
-
-            return Err(e);
-        }
     }
 
-    async fn apply_leader_hint(
+    async fn call_locally<'a>(
         &self,
-        state_permit: AsyncMutexPermit<'_, State>,
-        leader_hint: &NotLeaderError,
-    ) -> Result<Option<Arc<dyn rpc::Channel>>> {
-        let state = state_permit.read_exclusive();
+        method_name: &str,
+        server_request: rpc::ServerStreamRequest<()>,
+        mut server_response: rpc::ServerStreamResponse<'a, ()>,
+    ) -> Result<()> {
+        let inner_response = server_response.borrow();
 
-        if leader_hint.term < state.term
-            || (leader_hint.term == state.term && state.leader_client.is_some())
-        {
-            return Ok(state.leader_client.clone());
-        }
+        let res = self
+            .local_service
+            .call(method_name, server_request, inner_response)
+            .await;
 
-        let leader_client = match leader_hint.leader_hint {
-            Some(server_id) => {
-                if server_id == self.node.id() {
-                    None
-                } else {
-                    Some(self.node.channel_factory().create(server_id).await?)
-                }
-            }
-            None => None,
-        };
+        // NOTE: We require a hint to be sent back on every request to prove that we are
+        // still the leader even if there is an error.
+        let leader_hint = self.node.server().leader_hint().await;
 
-        lock!(state <= state.upgrade(), {
-            state.term = leader_hint.term;
-            state.leader_client = leader_client.clone();
-        });
+        server_response
+            .context()
+            .metadata
+            .trailer_metadata
+            .add_binary(LEADER_HINT_KEY, &leader_hint.serialize()?)?;
 
-        Ok(leader_client)
+        res
     }
 }
 

@@ -4,6 +4,7 @@
 use std::os::unix::prelude::{FromRawFd, RawFd};
 
 use common::errors::*;
+use failure::ResultExt;
 use nix::fcntl::OFlag;
 use nix::sys::stat::Mode;
 
@@ -78,7 +79,8 @@ impl FileReference {
             FileReferenceHandle::None => panic!("Opening empty FileReference"),
             FileReferenceHandle::Existing(fd) => *fd,
             FileReferenceHandle::Path(path) => {
-                nix::fcntl::open(path.as_str(), OFlag::O_CLOEXEC, Mode::S_IRUSR)?
+                nix::fcntl::open(path.as_str(), OFlag::O_CLOEXEC, Mode::S_IRUSR)
+                    .with_context(|e| format!("Failed to open {}: {}", path.as_str(), e))?
             }
         })
     }

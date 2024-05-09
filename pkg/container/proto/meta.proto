@@ -9,10 +9,12 @@ import "pkg/container/proto/worker.proto";
 import "pkg/container/proto/job.proto";
 import "pkg/container/proto/blob.proto";
 import "pkg/container/proto/node.proto";
+import "pkg/container/proto/labels.proto";
 import "google/protobuf/timestamp.proto";
 import "pkg/builder/proto/bundle.proto";
 import "google/protobuf/any.proto";
 import "pkg/protobuf/compiler/proto/extensions.proto";
+import "pkg/builder/proto/bundle.proto";
 
 // Ids of different tables stored in the main cluster metastore instance.
 // The numerical values of these dis are used as a key prefix in the key-value store.
@@ -49,16 +51,12 @@ message NodeMetadata {
     // Address at which this node can be contacted including the protocol and port on which the 
     // control RPC server is running.
     //
-    // e.g. "http://10.0.0.102:10400"
+    // e.g. "10.0.0.102:10400"
     string address = 2;
 
     // TODO: Need to implement more of this.
     enum State {
         UNKNOWN = 0;
-        
-        // This is a brand new node this has just joined the cluster.
-        // In this state, the node won't start/stop any workers assigned to it.
-        NEW = 1;
 
         // This is a regular node and will start any workers newly assigned to it and stop any workers
         // which aren't assigned to it in the metastore.
@@ -66,6 +64,7 @@ message NodeMetadata {
         
         DRAINING = 3;
         
+        // Like draining, except the node will re-enlist itself as ACTIVE once it starts again.
         RESTARTING = 4;
     }
     State state = 3;
@@ -73,7 +72,7 @@ message NodeMetadata {
     // Last time this node started its runtime (e.g. after the last reboot).
     google.protobuf.Timestamp start_time = 4;
 
-    //
+    // Last time this node was known to be healthy (periodically updated by the node).
     google.protobuf.Timestamp last_seen = 5;
 
     PortRange allocatable_port_range = 6;
@@ -81,6 +80,10 @@ message NodeMetadata {
     repeated uint32 allocated_ports = 7 [(dacha.unordered_set) = true];
 
     string zone = 8;
+
+    builder.Platform platform = 9;
+
+    Labels labels = 10;
 
     // TODO: Enumerate capabilities, platform, etc.
 

@@ -33,3 +33,10 @@ To run various services, we will setup a cluster of multiple machines on your LA
     - If using Raspberry Pis, it is recommended to follow this [rack building guide](./pi_rack/README.md).
     - Note: OS setup will happen in the next step.
 - Follow the [cluster setup user guide](../pkg/container/index.md) to build a managed cluster out of all the machines.
+
+
+## Individual Applications
+
+Below is a list of assorted applications that can be deployed on a cluster:
+
+- [Stream deck based home automation controller](../pkg/app/home_hub/index.md)

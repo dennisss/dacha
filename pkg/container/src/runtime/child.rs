@@ -164,16 +164,20 @@ fn run_child_process_inner(
         // TODO: Make this an optional step?
         if !target.exists() {
             if let Some(parent_dir) = target.parent() {
-                std::fs::create_dir_all(parent_dir)?;
+                std::fs::create_dir_all(parent_dir)
+                    .with_context(|e| format!("create_dir_all({:?}) failed: {}", parent_dir, e))?;
             }
 
             // The mount target must exist. If bind mounting a file or special device,
             // then the target needs to be a file. Otherwise, we'll assume
             if mount.typ() == "symlink" {
+                //
             } else if mount.typ().is_empty() && !Path::new(mount.source()).is_dir() {
-                std::fs::write(&target, "")?;
+                std::fs::write(&target, "")
+                    .with_context(|e| format!("write({:?}, '') failed: {}", target, e))?;
             } else {
-                std::fs::create_dir(&target)?;
+                std::fs::create_dir(&target)
+                    .with_context(|e| format!("create_dir({:?}) failed: {}", target, e))?;
             }
         }
 
@@ -259,7 +263,8 @@ fn run_child_process_inner(
     // TODO: Add RDONLY
     // Switch the root mount point back to using MS_SHARED which is usually the
     // default in most linux environments.
-    mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SHARED | MsFlags::MS_REC, None)?;
+    mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SHARED | MsFlags::MS_REC, None)
+        .map_err(|e| format_err!("MS_SHARED root remount failed: {}", e))?;
 
     exec_child_process(container_config.process(), setup_socket, file_mapping)
 }
@@ -394,10 +399,12 @@ fn exec_child_process(
     setup_socket.wait(FINISHED_SETUP_BYTE)?;
 
     if !process.cwd().is_empty() {
-        std::env::set_current_dir(process.cwd())?;
+        std::env::set_current_dir(process.cwd())
+            .with_context(|e| format!("Can't set cwd to: {}; {}", process.cwd(), e))?;
     }
 
-    nix::unistd::execve(&argv[0], &argv, &env)?;
+    nix::unistd::execve(&argv[0], &argv, &env)
+        .with_context(|e| format!("execve failed: {:?}; {}", argv, e))?;
 
     unsafe { sys::exit(1) };
     loop {}

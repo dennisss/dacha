@@ -63,6 +63,29 @@ Features:
 - Connects to a Raspberry Pi via the 40 pin connector
   - BOM: [0.1" 2x20-pin right angle female header](https://www.adafruit.com/product/2823)
 
+R5 Pinout:
+
+- I2C1 (pin 3/5) (SDA / SCL)
+    - SLS32AIA
+    - DS3231MZ
+- RTC power: pin 7 (GPIO 4)
+    - High-Z/High : Powers off the RTC
+    - Low : Powers on the RTC
+- Fan PWM: pin 12 (GPIO 18)
+    - Use for the regular PWM
+    - Powering will drive the fan PWM pin low
+- Fan Tach: pin 11 (GPIO 17)
+    - Use GPIO interrupts to detect the period
+- LED Serial: pin 40 (PCM DOUT / GPIO 21)
+- AUX PWM: pin 33
+
+
+R6 wishlist:
+
+- Current sensing via an I2C shunt resistance amplifier
+- I2C Qwiic connector
+
+
 ## Assembly
 
 Note: We will treat the bottom of the board as the side with the 40-pin header.
@@ -170,30 +193,42 @@ Specifically in this step you should test:
   - Note that the wires on the NF-A4x20mm are just barely small enough to fit in this connector so it will be a tight fit if not crimped precisely. 
 - Connect the fan to the board
 - Verify there is no continuity between the 5V and GND pins on the board's large capacitor by hand with a multimeter.
+  - Bad crimping is likely to cause this.
 - Test the full board by powering it via PoE
   - Verify that the fan spins and the LEDs on the raspberry pi turn on (don't need to have an SDCard inserted).
 
-**Step 10**: Run the self-test program
+**Step 10**: Wrapping Up
 
-- Initial state expected
-  - No RTC battery inserted
-  - Fan plugged in
-- The program will run through the following routine
-  1. Queries the TPM with a basic ID request to verify that it is responding via I2C.
-  1. Sets the fan PWM pin to low and verifies the tachometer input shows the expected RPM
-  1. Switches the fan PWM between 10%, 20%, 30%, ... up to 100% and verifies the tachometer output at each step.
-  1. Makes the top LED red
-    - Asks the user to verify
-  1. Makes the bottom LED blue
-    - Asks the user to verify
-  1. Makes both LEDs white
-    - Asks the user to verify
-  1. Turns off the RTC power and verifies that it doesn't show up in the I2C device list.
-  1. Turns on the RTC power and sets the initial RTC time to 100 seconds
-  1. Waits 10 seconds and verifies the RTC time has went forward
-    - Then asks the user to insert an RTC battery
-  1. Measures the current time on the RTC and then turns off RTC power
-  1. After 10 seconds, verifies that the RTC can still respond with the right time (just on battery power)
-  1. Turns back on RTC power
+The rest of the steps in this guide should be done in alongside the [cluster setup guide](../../pkg/container/index.md).
 
+- Prepare the RPi SDCards per instructions in the cluster setup guide.
+- Once the SDCard is ready, the Pi can be installed in the rack and connected to a PoE switch.
+- To test that the board is functioning correctly (fan is controllable, LEDs light up, etc.), there is a self-test program to help guide a user through validating the board. To run it, use the following commands with ip addresses changed to the current machine under test:
+
+```
+ADDR=10.1.1.1
+
+cargo build --target aarch64-unknown-linux-gnu --release --bin pi_rack_self_test
+
+scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/pi_rack_self_test cluster-user@$ADDR:/home/cluster-user/pi_rack_self_test
+
+ssh -i ~/.ssh/id_cluster cluster-user@$ADDR
+
+./pi_rack_self_test
+
+# Follow the onscreen instructions
+```
+
+- You can now follow the remainder of the cluster documentation to get the Pi aded to the cluster (and to bootstrap the cluster if this is the first Pi).
+- With the Pi in the cluster, we can load the controller service which will run on it to control the fan and monitor the custom board's resources:
+
+```
+# Mark that the new cluster node has a pi rack board attached to it.
+cargo run --bin cluster --  labels set "rpi_controller_config:rpi_rack_r5" --node_addr=10.1.1.1:10400
+
+# Bring up the controller job
+# NOTE: This only needs to be once done per cluster (the job will auto-replicate to all nodes with the above label set)
+cargo run --bin cluster -- start_job pkg/rpi/controller/config/rpi_controller.job
+
+```
 

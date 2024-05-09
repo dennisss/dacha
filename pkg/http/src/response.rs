@@ -153,3 +153,13 @@ pub struct BufferedResponse {
     pub body: Bytes,
     pub trailers: Option<Headers>,
 }
+
+impl BufferedResponse {
+    pub fn ok(&self) -> bool {
+        self.head.status_code == OK
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.head.status_code.clone()
+    }
+}

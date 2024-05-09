@@ -5,6 +5,5 @@ extern crate core;
 extern crate common;
 #[macro_use]
 extern crate macros;
-extern crate protobuf;
 
 pub mod proto;

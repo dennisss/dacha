@@ -27,9 +27,9 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Metastore`: Strongly consistent and durable key-value store and lock service used to store
   the state of a `Zone`. There will be exactly one of these per `Zone`. Design documented [here](../datastore/src/meta/index.md).
 
-- `Blob`: A single usually large binary file identified by a hash. Blobs may also have a small amount of metadata such as a content type (e.g. tar or zip) to describe how they should be processed.
+- `Bundle`: Collection of files typically containing a binary + static assets and distributed as one or more `BundleBlob` archives.
 
-- `Bundle`: Collection of files typically containing a binary + static assets and distributed as one or more `Blob` archives.
+- `BundleBlob`: A single usually large binary file identified by a hash. Blobs may also have a small amount of metadata such as a content type (e.g. tar or zip) to describe how they should be processed.
 
 - `Volume`: Mounted path in a `Container`. Typically the source will be a `Blob` or a persistent directory on the `Node`.
 
@@ -39,9 +39,15 @@ This is a system for managing a fleet of machines and assigning work to run on t
 
 This section describes the main user journeys for creating a cluster, updating it, and using it to run user workloads.
 
-Note: Currently we assume that you are executing all `cluster` binary commands mentioned below in the same LAN as your cluster.
+You should generally create one cluster for all machines in a local region / network. Each cluster is identified by a `Zone` name which should be unique across all instances you ever create.
 
-Note: Currently only one cluster can happily exist in each LAN network.
+To get started, pick a node name and define it as the `CLUSTER_ZONE` environment variant. Do this by adding the following to `~/.bashrc` on your personal machine and then restarting your terminal:
+
+```
+export CLUSTER_ZONE=home
+```
+
+Note: Currently we assume that you are executing all `cluster` binary commands mentioned below in the same LAN as your cluster.
 
 ### Node Setup
 
@@ -60,10 +66,11 @@ Install a minimal Debian/Ubuntu installation onto the node. Minimal here means t
 
 **Linux packages:**
 
-- Pre-compiled `newcgroup` binary.
-  - Run `./pkg/container/build_newcgroup.sh` to compile it into `./bin/newcgroup`
-  - `build_newcgroup.sh` MUST be run as the user that will run the node.
-- `sudo apt install uidmap`
+TLDR: Run `sudo apt install uidmap`
+
+Internal details on specific packages:
+
+- `uidmap`
   - Provides the `newuidmap` and `newgidmap` SETUID binaries for enabling us to support using a range of
     user ids for running containers while running the runtime binary as an unprivileged user.
   - To user running the node binary MUST have a large set of uids/gids mapped in `/etc/subuid` and`/etc/subgid`.
@@ -79,7 +86,7 @@ We require that cgroups v2 are enabled for all subsystems on the machine running
   - Verify running at least version 240 of systemd (check using `apt list | grep systemd`)
   - Add `systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all` to the systemd / linux arguments
     - In Ubuntu this is done by appending these to `GRUB_CMDLINE_LINUX_DEFAULT` in `/etc/default/grub`
-      and running `sudo update-grub`.
+      and running `sudo update-grub` (then restart the computer).
 
 If running in production on a dedicated node machine, we recommend the following config steps:
 
@@ -93,7 +100,10 @@ If running in production on a dedicated node machine, we recommend the following
   - `sudo chown -R cluster-node:cluster-node /opt/dacha`
   - `sudo chmod 700 /opt/dacha/data`
 - Use `/opt/dacha/bundle` as the root directory when storing repository assets like built binaries
-  - e.g. The `newcgroup` binary should go into `/opt/dacha/bundle/pkg/container/newcgroup`
+  - All binaries can be built by running `cargo run --bin builder -- build //pkg/container:cluster_node_deps`
+  - Then the `built/` directory should be copied into `/opt/dacha/bundle` as `/opt/dacha/bundle/built` 
+    - TODO: Instead explain how to copy all output_files from the build target.
+  - Additionally `pkg/container/setup_newcgroup.sh` needs to be copied into `/opt/dacha/bundle` and executed on the machine as the user that will execute the node.
 
 If just doing local testing/development as your user, you only need to create the `/opt/dacha/data` directory and make it owned by `$USER` on your local machine.
 
@@ -104,7 +114,10 @@ It is up to the user to figure out how to ensure that the node binary is run at 
 To run a node locally for testing (accessible at `127.0.0.1:10400`), run the following command:
 
 ```
-cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
+cargo run --bin builder -- build //pkg/container:cluster_node_deps
+./pkg/container/setup_newcgroup.sh
+
+built/pkg/container/cluster_node --config=pkg/container/config/node.textproto
 ```
 
 #### Raspberry Pi
@@ -113,32 +126,45 @@ In this section, we will describe the complete canonical process for setting up 
 
 **Step 1**: Flash image.
 
-Follow the instructions [here](../rpi/index.md) to flash our custom image to all the SDcards you want to use in the cluster.
+Follow the instructions [here](../rpi/index.md) to flash our custom image to all the SDcards you want to use in the cluster. It is recommended to flash while setting a static ethernet IP address.
 
 **Step 2**: Initialize the Pi:
 
 Run the following with the Raspberry Pi powered on and connected to the network:
 
 ```
-cargo run --bin cluster_node_setup -- --addr=[RASPBERRY_PI_IP_ADDRESS]
+cargo run --bin cluster_node_setup -- --zone=$CLUSTER_ZONE --addr=[RASPBERRY_PI_IP_ADDRESS]
 ```
 
 This will copy over the `cluster_node` binary, setup the persistent service and more.
 
 You are now done setting up your Pi!
 
+Should you want to upgrade to a newer `cluster_node` binary in the future, simply re-run the above command on each node. This will preserve data stored on the node but will temporarily take down the node while it is being upgraded.
+
 ### Cluster Initialization
 
-Now that you have at least one node running the `cluster_node` binary, we want to not initialize the cluster by starting up the control plane (metastore and manager jobs) on the cluster. To do this you need to know the ip address of one node in the cluster. For example to initialize a node running locally run:
+Now that you have at least one node running the `cluster_node` binary, we want to not initialize the cluster by starting up the control plane (metastore and manager jobs) on the cluster. To do this you need to know the ip address of one node in the cluster. Then to initialize a node run the following command locally:
 
 ```
-cargo run --bin cluster -- bootstrap --node_addr=http://127.0.0.1:10400
+cargo run --bin cluster -- bootstrap --node_addr=[NODE_IP_ADDRESS]:10400
 ```
 
 The above command should only be run ONCE on a single node in your LAN. All other running nodes in the same LAN should automatically discover the initialized control plane and register with it via multi-cast.
 
 Note: Currently only nodes on the same LAN can be added to the same cluster.
 
+Most future cluster operations will also use the 'cluster' binary. When we don't know which nodes we want to work with, tt takes a few seconds to discovery the location of servers via multicast on each run of this command. To speed it up, run the following command to generate env vars that should be added to `~/.bashrc`. These will cache the location of the current metastore servers to make future cluster operations quicker:
+
+```
+CLUSTER_ZONE=home cargo run --bin cluster -- envvars
+```
+
+At this point the cluster should be useable:
+
+- Repeat the above steps (excluding bootstrapping) for any other machines that you want to manage in the cluster. 
+- If you are following the [main user guide](../../doc/user_guide.md) you can head back.
+- Continue reading this page if you want to learn more about how to setup your own workloads.
 ### Running a user workload
 
 TODO: Describe how to bundle files/binaries together.

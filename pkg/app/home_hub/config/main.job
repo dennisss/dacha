@@ -3,18 +3,17 @@ name: "home_hub"
 replicas: 1
 
 task {
-    cwd: "/volumes/dacha"
+    cwd: "/volumes/bundle"
     args: [
-        "/volumes/dacha/built/pkg/home_hub/main",
+        "/volumes/bundle/built/pkg/home_hub/main",
         "--hdmi_ddc_device=/dev/i2c-1",
         "--config_object=home_hub_config"
     ]
 
-    # TODO: Use relative build targets
     volumes: [
         {
-            name: "dacha"
-            build_target: "//pkg/home_hub:bundle"
+            name: "bundle"
+            build_target: "//pkg/app/home_hub:bundle"
         }
     ]
 

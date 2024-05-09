@@ -11,6 +11,7 @@ use executor::{channel, lock};
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
+use crate::body::Body;
 use crate::connection_event_listener::{ConnectionEventListener, ConnectionShutdownDetails};
 use crate::header::{Header, CONNECTION, HOST};
 use crate::message::{read_http_message, HttpStreamEvent, StartLine, MESSAGE_HEAD_BUFFER_OPTIONS};
@@ -22,6 +23,7 @@ use crate::response::{Response, ResponseHead};
 use crate::spec::write_body;
 use crate::status_code::{StatusCode, SWITCHING_PROTOCOLS};
 use crate::uri_syntax::serialize_authority;
+use crate::RequestHead;
 
 // TODO: This needs control over the max request deadline (also on the server
 // side and for HTTP2)
@@ -261,6 +263,8 @@ impl ClientConnectionShared {
     ) -> Result<()> {
         let mut reader = PatternReader::new(reader, MESSAGE_HEAD_BUFFER_OPTIONS);
 
+        let mut request_head_buffer = vec![];
+
         loop {
             let ClientConnectionRequest {
                 mut request,
@@ -279,8 +283,13 @@ impl ClientConnectionShared {
                 continue;
             }
 
-            let mut request_head = vec![];
-            if let Err(e) = Self::prepare_outgoing_request(&mut request, &mut request_head) {
+            // NOTE: This mutates headers so must run before header serialization.
+            let mut body = encode_request_body_v1(&mut request.head, request.body);
+
+            request_head_buffer.clear();
+            if let Err(e) =
+                Self::prepare_outgoing_request(&mut request.head, &mut request_head_buffer)
+            {
                 if let Some(l) = &external_listener {
                     l.handle_request_completed().await;
                 }
@@ -288,9 +297,7 @@ impl ClientConnectionShared {
                 continue;
             }
 
-            let mut body = encode_request_body_v1(&mut request.head, request.body);
-
-            writer.write_all(&request_head).await?;
+            writer.write_all(&request_head_buffer).await?;
             write_body(body.as_mut(), writer.as_mut()).await?;
 
             let head = match read_http_message(&mut reader).await? {
@@ -389,14 +396,17 @@ impl ClientConnectionShared {
         Ok(())
     }
 
-    fn prepare_outgoing_request(request: &mut Request, request_head: &mut Vec<u8>) -> Result<()> {
+    fn prepare_outgoing_request(
+        request_head: &mut RequestHead,
+        request_head_buffer: &mut Vec<u8>,
+    ) -> Result<()> {
         // TODO: When using the 'Host' header, we can't provie the userinfo
-        if let Some(authority) = request.head.uri.authority.take() {
+        if let Some(authority) = request_head.uri.authority.take() {
             let mut value = vec![];
             serialize_authority(&authority, &mut value)?;
 
             // TODO: Ensure that this is the first header sent.
-            request.head.headers.raw_headers.push(Header {
+            request_head.headers.raw_headers.push(Header {
                 name: AsciiString::from(HOST).unwrap(),
                 value: OpaqueString::from(value),
             });
@@ -409,12 +419,12 @@ impl ClientConnectionShared {
         // TODO: USe the append_connection_header() method.
         // TODO: It may have "Upgrade" so we need to be careful to concatenate values
         // here.
-        request.head.headers.raw_headers.push(Header {
+        request_head.headers.raw_headers.push(Header {
             name: AsciiString::from(CONNECTION).unwrap(),
             value: "keep-alive".into(),
         });
 
-        request.head.serialize(request_head)?;
+        request_head.serialize(request_head_buffer)?;
 
         Ok(())
     }

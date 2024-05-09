@@ -236,7 +236,15 @@ impl Headers {
         // RFC 7230 5.4)
 
         for h in &self.raw_headers {
-            h.serialize(buf)?;
+            if h.name.as_str().eq_ignore_ascii_case(HOST) {
+                h.serialize(buf)?;
+            }
+        }
+
+        for h in &self.raw_headers {
+            if !h.name.as_str().eq_ignore_ascii_case(HOST) {
+                h.serialize(buf)?;
+            }
         }
 
         Ok(())
