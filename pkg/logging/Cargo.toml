@@ -6,7 +6,7 @@ edition = "2018"
 [dependencies]
 common = { path = "../common", default-features = false }
 protobuf = { path = "../protobuf", default-features = false }
-nordic_proto = { path = "../nordic_proto", default-features = false }
+nordic_proto = { path = "../nordic/proto", default-features = false }
 executor = { path = "../executor", default-features = false }
 macros = { path = "../macros" }
 

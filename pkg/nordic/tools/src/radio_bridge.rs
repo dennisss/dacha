@@ -6,13 +6,13 @@ use cluster_client::meta::client::ClusterMetaClient;
 use common::errors::*;
 use common::list::Appendable;
 use crypto::random::SharedRng;
-use executor::channel;
-use executor::sync::Mutex;
-use nordic_proto::constants::{RadioAddress, LINK_IV_SIZE, LINK_KEY_SIZE};
-use nordic_proto::packet::PacketBuffer;
+use executor::sync::AsyncMutex;
+use executor::{channel, lock};
+use nordic_tools_proto::nordic::*;
+use nordic_wire::constants::{RadioAddress, LINK_IV_SIZE, LINK_KEY_SIZE};
+use nordic_wire::packet::PacketBuffer;
 
 use crate::link_util::generate_radio_address;
-use crate::proto::bridge::*;
 use crate::usb_radio::USBRadio;
 
 const POLLING_INTERVAL: Duration = Duration::from_millis(100);
@@ -31,7 +31,7 @@ struct RadioBridgeInner {
 }
 
 struct Shared {
-    state: Mutex<State>,
+    state: AsyncMutex<State>,
 
     meta_client: ClusterMetaClient,
 
@@ -63,6 +63,10 @@ impl RadioBridge {
 
         let mut meta_client = ClusterMetaClient::create_from_environment().await?;
 
+        // TODO: We should ideally grab a lock on this key to ensure there aren't
+        // concurrent mutations. We can cache this in memory so long as we monitor the
+        // lock for failures and ensure that future writes check if changes since last
+        // index.
         let state_data = match meta_client
             .get_object::<RadioBridgeStateData>(state_object_name)
             .await?
@@ -97,7 +101,7 @@ impl RadioBridge {
             inner: RadioBridgeInner {
                 shared: Arc::new(Shared {
                     meta_client,
-                    state: Mutex::new(State {
+                    state: AsyncMutex::new(State {
                         state_object_name: state_object_name.to_string(),
                         state_data: state_data.clone(),
                         // last_packet_counter: state_data.network().last_packet_counter(),
@@ -130,7 +134,7 @@ impl RadioBridgeInner {
         event_receiver: channel::Receiver<()>,
     ) -> Result<()> {
         loop {
-            let mut state = self.shared.state.lock().await;
+            let mut state = self.shared.state.lock().await?.enter();
 
             if state.config_changed {
                 radio.set_network_config(state.state_data.network()).await?;
@@ -167,7 +171,7 @@ impl RadioBridgeInner {
                 radio.send_packet(&packet_buffer).await?;
             }
 
-            drop(state);
+            state.exit();
 
             let _ = executor::timeout(POLLING_INTERVAL, event_receiver.recv()).await;
         }
@@ -212,9 +216,9 @@ impl RadioBridgeService for RadioBridgeInner {
         request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         response: &mut rpc::ServerResponse<RadioBridgeListDevicesResponse>,
     ) -> Result<()> {
-        let state = self.shared.state.lock().await;
+        let state = self.shared.state.lock().await?.read_exclusive();
         for dev in state.state_data.devices() {
-            response.value.add_devices(dev.clone());
+            response.value.add_devices(dev.as_ref().clone());
         }
 
         response.set_bridge_address(state.state_data.network().address());
@@ -236,7 +240,7 @@ impl RadioBridgeService for RadioBridgeInner {
         let mut link_iv = vec![0u8; LINK_IV_SIZE];
         rng.generate_bytes(&mut link_iv).await;
 
-        let mut state = self.shared.state.lock().await;
+        let mut state = self.shared.state.lock().await?.read_exclusive();
 
         if self
             .name_to_address(request.device().name(), &state)
@@ -256,7 +260,7 @@ impl RadioBridgeService for RadioBridgeInner {
         dev.set_name(request.device().name());
         next_data.add_devices(dev.clone());
 
-        let mut link = nordic_proto::proto::net::Link::default();
+        let mut link = nordic_proto::nordic::Link::default();
         link.set_address(&address[..]);
         link.set_key(&link_key[..]);
         link.set_iv(&link_iv[..]);
@@ -266,22 +270,24 @@ impl RadioBridgeService for RadioBridgeInner {
             .meta_client
             .set_object(&state.state_object_name, &next_data)
             .await?;
-        state.state_data = next_data;
 
         // Populate the response
         response.set_device(dev);
 
         response.network_config_mut().set_address(&address[..]);
 
-        let mut dev_link = nordic_proto::proto::net::Link::default();
+        let mut dev_link = nordic_proto::nordic::Link::default();
         dev_link.set_address(state.state_data.network().address());
         dev_link.set_key(&link_key[..]);
         dev_link.set_iv(&link_iv[..]);
 
         response.network_config_mut().add_links(dev_link);
 
-        state.config_changed = true;
-        drop(state);
+        lock!(state <= state.upgrade(), {
+            state.state_data = next_data;
+            state.config_changed = true;
+        });
+
         let _ = self.shared.radio_event_sender.try_send(());
 
         Ok(())
@@ -292,13 +298,13 @@ impl RadioBridgeService for RadioBridgeInner {
         request: rpc::ServerRequest<RadioBridgeRemoveDeviceRequest>,
         response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
-        let mut state = self.shared.state.lock().await;
+        let mut state = self.shared.state.lock().await?.read_exclusive();
 
         let mut next_data = state.state_data.clone();
 
         let mut device = None;
         {
-            let devs: &mut Vec<RadioBridgeDevice> = next_data.devices_mut();
+            let devs: &mut Vec<protobuf::MessagePtr<RadioBridgeDevice>> = next_data.devices_mut();
             for i in 0..devs.len() {
                 if devs[i].name() == request.device_name() {
                     device = Some(devs.remove(i));
@@ -317,15 +323,16 @@ impl RadioBridgeService for RadioBridgeInner {
             }
         }
 
-        state.state_data = next_data;
-
         self.shared
             .meta_client
             .set_object(&state.state_object_name, &state.state_data)
             .await?;
 
-        state.config_changed = true;
-        drop(state);
+        lock!(state <= state.upgrade(), {
+            state.state_data = next_data;
+            state.config_changed = true;
+        });
+
         let _ = self.shared.radio_event_sender.try_send(());
 
         Ok(())
@@ -336,16 +343,18 @@ impl RadioBridgeService for RadioBridgeInner {
         request: rpc::ServerRequest<RadioBridgePacket>,
         response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
-        let mut state = self.shared.state.lock().await;
-        if self
-            .name_to_address(request.device_name(), &state)
-            .is_none()
-        {
-            return Err(rpc::Status::not_found("No such device").into());
-        }
+        lock!(state <= self.shared.state.lock().await?, {
+            if self
+                .name_to_address(request.device_name(), &state)
+                .is_none()
+            {
+                return Err(rpc::Status::not_found("No such device"));
+            }
 
-        state.send_queue.push(request.value);
-        drop(state);
+            state.send_queue.push(request.value);
+            Ok(())
+        })?;
+
         let _ = self.shared.radio_event_sender.try_send(());
 
         Ok(())
@@ -356,35 +365,31 @@ impl RadioBridgeService for RadioBridgeInner {
         request: rpc::ServerRequest<RadioReceiveRequest>,
         response: &mut rpc::ServerStreamResponse<RadioBridgePacket>,
     ) -> Result<()> {
-        let mut state = self.shared.state.lock().await;
+        let reg = lock!(state <= self.shared.state.lock().await?, {
+            // Resolve the device name to an address.
+            let address = self
+                .name_to_address(request.device_name(), &state)
+                .ok_or_else(|| {
+                    rpc::Status::not_found(format!(
+                        "No registered device named: {}",
+                        request.device_name()
+                    ))
+                })?;
 
-        // Resolve the device name to an address.
-        let address = self
-            .name_to_address(request.device_name(), &state)
-            .ok_or_else(|| {
-                Error::from(rpc::Status::not_found(format!(
-                    "No registered device named: {}",
-                    request.device_name()
-                )))
-            })?;
-
-        let reg = {
             let (sender, receiver) = channel::unbounded();
             if state.receivers.contains_key(&address) {
-                return Err(
-                    rpc::Status::aborted("Device already has another receiver registered").into(),
-                );
+                return Err(rpc::Status::aborted(
+                    "Device already has another receiver registered",
+                ));
             }
 
             state.receivers.insert(address, sender);
-            ReceiverRegistration {
+            Ok(ReceiverRegistration {
                 address,
                 receiver,
                 bridge: self,
-            }
-        };
-
-        drop(state);
+            })
+        })?;
 
         loop {
             match reg.receiver.recv().await {
@@ -412,8 +417,9 @@ impl<'a> Drop for ReceiverRegistration<'a> {
         let inst = self.bridge.clone();
         let address = self.address.clone();
         executor::spawn(async move {
-            let mut state = inst.shared.state.lock().await;
-            state.receivers.remove(&address);
+            lock!(state <= inst.shared.state.lock().await.unwrap(), {
+                state.receivers.remove(&address);
+            });
         });
     }
 }

@@ -1,10 +1,9 @@
 use std::time::Duration;
 
 use common::errors::*;
-use nordic_proto::packet::PacketBuffer;
-use nordic_proto::proto::log::LogEntry;
-use nordic_proto::proto::net::*;
-use nordic_proto::request_type::ProtocolRequestType;
+use nordic_proto::nordic::*;
+use nordic_wire::packet::PacketBuffer;
+use nordic_wire::request_type::ProtocolRequestType;
 use protobuf::{Message, StaticMessage};
 use usb::{descriptors::SetupPacket, registry::OUR_VENDOR_ID};
 

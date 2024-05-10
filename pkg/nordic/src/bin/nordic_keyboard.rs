@@ -57,7 +57,6 @@ use nordic::usb::default_handler::USBDeviceDefaultHandler;
 use nordic::usb::handler::USBDeviceHandler;
 use nordic::usb::handler::USBError;
 use nordic::usb::send_buffer::USBDeviceSendBuffer;
-use nordic_proto::request_type::ProtocolRequestType;
 use nordic_proto::usb_descriptors::*;
 use peripherals::raw::{PinDirection, PinLevel};
 use usb::descriptors::{SetupPacket, StandardRequestType};

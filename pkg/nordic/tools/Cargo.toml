@@ -1,0 +1,29 @@
+[package]
+name = "nordic_tools"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+protobuf = { path = "../../protobuf" }
+macros = { path = "../../macros" }
+usb = { path = "../../usb" }
+crypto = { path = "../../crypto" }
+cluster_client = { path = "../../container/client" }
+nordic_proto = { path = "../proto" }
+nordic_tools_proto = { path = "./proto" }
+nordic_wire = { path = "../wire" }
+rpc = { path = "../../rpc" }
+http = { path = "../../http" }
+rpc_util = { path = "../../rpc_util" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../protobuf/compiler" }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "nordic_proto/alloc", "nordic_wire/alloc", "rpc/alloc", "protobuf_builtins/alloc"]
+std = ["common/std", "crypto/std", "protobuf/std", "usb/std", "nordic_proto/std", "nordic_wire/std", "rpc/std", "protobuf_builtins/std"]

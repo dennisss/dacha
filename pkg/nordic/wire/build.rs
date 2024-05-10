@@ -1,7 +1,3 @@
-extern crate common;
-extern crate protobuf_compiler;
-extern crate usb;
-
 use std::path::PathBuf;
 
 use common::errors::*;
@@ -251,6 +247,7 @@ fn generate_usb_descriptors() -> Result<()> {
     lines.add(generate_bootloader_usb_descriptors()?);
     lines.add(generate_keyboard_usb_descriptors()?);
 
+    std::fs::create_dir_all(output_dir.join("src"));
     std::fs::write(output_dir.join("src/usb_descriptors.rs"), lines.to_string())?;
 
     /*
@@ -261,6 +258,5 @@ fn generate_usb_descriptors() -> Result<()> {
 }
 
 fn main() {
-    protobuf_compiler::build().unwrap();
     generate_usb_descriptors().unwrap();
 }

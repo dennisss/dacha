@@ -33,7 +33,6 @@ Desk has "\x91\x07\xad\xa9"
 extern crate common;
 #[macro_use]
 extern crate macros;
-extern crate container;
 extern crate http;
 extern crate nordic_proto;
 extern crate nordic_tools;
@@ -45,13 +44,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use nordic_proto::packet::PacketBuffer;
-use nordic_proto::proto::net::*;
+use nordic_proto::nordic::*;
+use nordic_wire::packet::PacketBuffer;
 use protobuf::text::ParseTextProto;
 use protobuf::Message;
 
-use nordic_tools::proto::bridge::*;
 use nordic_tools::usb_radio::USBRadio;
+use nordic_tools_proto::nordic::*;
 
 #[derive(Args)]
 struct Args {

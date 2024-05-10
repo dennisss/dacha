@@ -1,8 +1,8 @@
 use crypto::ccm::{BlockCipherBuffer, CCM};
+use nordic_proto::nordic::NetworkConfig;
 
 use crate::constants::*;
 use crate::packet::PacketBuffer;
-use crate::proto::net::NetworkConfig;
 
 const CCM_LENGTH_SIZE: usize = 2;
 const CCM_NONCE_SIZE: usize = 13; // 15 - CCM_LENGTH_SIZE

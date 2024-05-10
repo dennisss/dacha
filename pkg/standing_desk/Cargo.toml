@@ -11,6 +11,6 @@ crypto = { path = "../crypto" }
 cluster_client = { path = "../container/client" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }
-nordic_tools = { path = "../nordic_tools" }
+nordic_tools = { path = "../nordic/tools" }
 rpc_util = { path = "../rpc_util" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }

@@ -1851,14 +1851,14 @@ dependencies = [
 
 [[package]]
 name = "nordic_proto"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "common",
- "crypto",
  "macros",
  "protobuf",
+ "protobuf_builtins",
  "protobuf_compiler",
- "usb",
+ "protobuf_compiler_proto",
 ]
 
 [[package]]
@@ -1873,11 +1873,39 @@ dependencies = [
  "http",
  "macros",
  "nordic_proto",
+ "nordic_tools_proto",
+ "nordic_wire",
  "protobuf",
  "protobuf_builtins",
  "protobuf_compiler",
  "rpc",
  "rpc_util",
+ "usb",
+]
+
+[[package]]
+name = "nordic_tools_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "nordic_proto",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
+]
+
+[[package]]
+name = "nordic_wire"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
+ "macros",
+ "nordic_proto",
+ "protobuf",
  "usb",
 ]
 

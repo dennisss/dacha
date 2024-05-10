@@ -1,5 +1,9 @@
 syntax = "proto3";
 
+package nordic;
+
+// The data that is stored in flash by the bootloader to track information about the flashed
+// application.
 message BootloaderParams {
     // Number of bytes storing the firmware (or 0 if no firmware has been flashed).
     uint32 application_size = 1;

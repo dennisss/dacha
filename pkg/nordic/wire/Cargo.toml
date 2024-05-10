@@ -1,0 +1,21 @@
+[package]
+name = "nordic_wire"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common", default-features = false }
+protobuf = { path = "../../protobuf", default-features = false }
+crypto = { path = "../../crypto", default-features = false }
+usb = { path = "../../usb", default-features = false }
+nordic_proto = { path = "../proto", default-features = false }
+macros = { path = "../../macros" }
+
+[build-dependencies]
+usb = { path = "../../usb" }
+common = { path = "../../common" }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "nordic_proto/alloc"]
+std = ["common/std", "crypto/std", "protobuf/std", "usb/std", "nordic_proto/std"]

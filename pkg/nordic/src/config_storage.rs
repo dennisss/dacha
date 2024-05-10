@@ -4,7 +4,7 @@
 use common::const_default::ConstDefault;
 use common::errors::*;
 
-use nordic_proto::proto::net::NetworkConfig;
+use nordic_proto::nordic::NetworkConfig;
 use peripherals::storage::BlockHandle;
 use peripherals::storage::BlockStorage;
 use peripherals::storage::BlockStorageError;

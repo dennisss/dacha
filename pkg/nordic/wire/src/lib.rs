@@ -26,7 +26,6 @@ pub mod constants;
 pub mod keyboard_packet;
 pub mod packet;
 pub mod packet_cipher;
-pub mod proto;
 pub mod request_type;
 
 pub mod usb_descriptors {

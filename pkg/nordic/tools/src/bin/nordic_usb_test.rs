@@ -13,7 +13,8 @@ use usb::DescriptorSet;
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let desc = nordic_proto::usb_descriptors::PROTOCOL_USB_DESCRIPTORS;
+    /*
+    let desc = nordic_wire::usb_descriptors::PROTOCOL_USB_DESCRIPTORS;
 
     let iter = DescriptorIter::new(desc.config_bytes(0).unwrap());
 
@@ -23,6 +24,7 @@ async fn main() -> Result<()> {
     }
 
     return Ok(());
+    */
 
     let ctx = usb::Context::create()?;
 

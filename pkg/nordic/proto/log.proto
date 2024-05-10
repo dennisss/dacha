@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package nordic;
 
+import "pkg/protobuf/compiler/proto/extensions.proto";
+
 message LogEntry {
     // Index of this entry in the log.
     // The first entry produced by a device when it first boots will have index 0 and every
@@ -12,7 +14,7 @@ message LogEntry {
     uint32 index = 1;
 
     oneof message {
-        string text = 2 [max_length = 100];
+        string text = 2 [(dacha.max_length) = 100];
         // FormattedLogMessage formatted_message = 3;
     }
 }

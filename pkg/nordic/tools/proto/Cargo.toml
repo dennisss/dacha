@@ -1,0 +1,24 @@
+[package]
+name = "nordic_tools_proto"
+version = "0.0.0"
+edition = "2018"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+common = { path = "../../../common" }
+protobuf = { path = "../../../protobuf" }
+macros = { path = "../../../macros" }
+protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
+protobuf_compiler_proto = { path = "../../../protobuf/compiler/proto" }
+nordic_proto = { path = "../../proto" }
+rpc = { path = "../../../rpc" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../../protobuf/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc", "common/std", "protobuf/std"]
+alloc = ["common/alloc", "protobuf/alloc"]

@@ -8,9 +8,9 @@ use crypto::ccm::CCM;
 use executor::channel::Channel;
 use executor::futures::*;
 use executor::sync::{Mutex, MutexGuard};
-use nordic_proto::packet::PacketBuffer;
-use nordic_proto::packet_cipher::PacketCipher;
-use nordic_proto::proto::net::{LinkState, NetworkConfig, NetworkState};
+use nordic_proto::nordic::{LinkState, NetworkConfig, NetworkState};
+use nordic_wire::packet::PacketBuffer;
+use nordic_wire::packet_cipher::PacketCipher;
 
 use crate::ecb::*;
 use crate::params::{ParamsStorage, NETWORK_CONFIG_ID, NETWORK_STATE_ID};

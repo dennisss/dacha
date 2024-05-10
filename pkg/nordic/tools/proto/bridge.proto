@@ -3,7 +3,7 @@ syntax = "proto3";
 package nordic;
 
 import "google/protobuf/empty.proto";
-import "pkg/nordic_proto/src/proto/net.proto";
+import "pkg/nordic/proto/net.proto";
 
 service RadioBridge {
     // Lsits all devices 
@@ -67,7 +67,7 @@ message RadioReceiveRequest {
 
 // Serializable state of the radio bridge containing all registered devices and encrpytion information.
 message RadioBridgeStateData {
-    // Complete network configuration to be used by the bridge USB radio dongle. This continues
+    // Complete network configuration to be used by the bridge USB radio dongle. This contains
     // links to all registered devices.
     NetworkConfig network = 1;
 

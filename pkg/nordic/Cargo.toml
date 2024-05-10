@@ -11,7 +11,8 @@ crypto = { path = "../crypto", default-features = false }
 protobuf = { path = "../protobuf", default-features = false }
 macros = { path = "../macros" }
 usb = { path = "../usb", default-features = false }
-nordic_proto = { path = "../nordic_proto", default-features = false }
+nordic_proto = { path = "./proto", default-features = false }
+nordic_wire = { path = "./wire", default-features = false }
 cnc = { path = "../cnc", default-features = false }
 uf2 = { path = "../flasher/uf2", default-features = false }
 math = { path = "../math", default-features = false }
@@ -19,5 +20,5 @@ logging = { path = "../logging", default-features = false }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "nordic_proto/alloc", "executor/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "cnc/alloc", "math/alloc", "logging/alloc"]
-std = ["common/std", "nordic_proto/alloc", "nordic_proto/std", "executor/std", "crypto/std", "protobuf/std", "usb/std", "cnc/std", "math/std", "logging/std"]
+alloc = ["common/alloc", "nordic_proto/alloc", "nordic_wire/alloc", "executor/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "cnc/alloc", "math/alloc", "logging/alloc"]
+std = ["common/std", "nordic_proto/alloc", "nordic_proto/std", "nordic_wire/std", "executor/std", "crypto/std", "protobuf/std", "usb/std", "cnc/std", "math/std", "logging/std"]
