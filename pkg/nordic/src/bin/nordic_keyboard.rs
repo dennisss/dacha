@@ -1,4 +1,8 @@
-#![feature(type_alias_impl_trait, generic_associated_types)]
+#![feature(
+    type_alias_impl_trait,
+    generic_associated_types,
+    impl_trait_in_assoc_type
+)]
 #![no_std]
 #![no_main]
 
@@ -42,7 +46,6 @@ extern crate logging;
 use core::arch::asm;
 use core::future::Future;
 
-use executor::mutex::Mutex;
 use executor::singleton::Singleton;
 use logging::Logger;
 use nordic::gpio::{GPIOPin, Resistor, GPIO};
@@ -57,7 +60,7 @@ use nordic::usb::default_handler::USBDeviceDefaultHandler;
 use nordic::usb::handler::USBDeviceHandler;
 use nordic::usb::handler::USBError;
 use nordic::usb::send_buffer::USBDeviceSendBuffer;
-use nordic_proto::usb_descriptors::*;
+use nordic_wire::usb_descriptors::*;
 use peripherals::raw::{PinDirection, PinLevel};
 use usb::descriptors::{SetupPacket, StandardRequestType};
 use usb::hid::*;

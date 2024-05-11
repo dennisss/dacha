@@ -8,9 +8,10 @@ common = { path = "../common" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 crypto = { path = "../crypto" }
+executor = { path = "../executor" }
 cluster_client = { path = "../container/client" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }
-nordic_tools = { path = "../nordic/tools" }
+nordic_tools_proto = { path = "../nordic/tools/proto" }
 rpc_util = { path = "../rpc_util" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }

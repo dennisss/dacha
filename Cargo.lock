@@ -89,7 +89,7 @@ checksum = "a4c527152e37cf757a3f78aae5a06fbeefdb07ccc535c980a3208ee3060dd544"
 name = "asn"
 version = "0.0.0"
 dependencies = [
- "asn_compiler",
+ "asn_core",
  "common",
  "math",
  "parsing",
@@ -99,11 +99,16 @@ dependencies = [
 name = "asn_compiler"
 version = "0.0.0"
 dependencies = [
+ "asn_core",
  "base_radix",
  "common",
  "file",
  "parsing",
 ]
+
+[[package]]
+name = "asn_core"
+version = "0.0.0"
 
 [[package]]
 name = "async-attributes"
@@ -993,6 +998,7 @@ dependencies = [
  "common",
  "failure",
  "macros",
+ "peripherals_raw",
  "sys",
 ]
 
@@ -1850,15 +1856,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "nordic"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
+ "executor",
+ "logging",
+ "macros",
+ "math",
+ "nordic_proto",
+ "nordic_wire",
+ "peripherals",
+ "protobuf",
+ "uf2",
+ "usb",
+]
+
+[[package]]
 name = "nordic_proto"
 version = "0.0.0"
 dependencies = [
  "common",
  "macros",
  "protobuf",
- "protobuf_builtins",
- "protobuf_compiler",
- "protobuf_compiler_proto",
+obuf_compiler_proto",
 ]
 
 [[package]]
@@ -2117,13 +2139,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "peripherals_raw"
+name = "peripherals_genfiles"
 version = "0.0.0"
 dependencies = [
  "automata",
  "cmsis_svd",
  "common",
  "file",
+]
+
+[[package]]
+name = "peripherals_raw"
+version = "0.0.0"
+dependencies = [
+ "common",
 ]
 
 [[package]]
@@ -2225,7 +2254,6 @@ dependencies = [
  "parsing",
  "protobuf_builtins",
  "protobuf_compiler",
- "protobuf_compiler_proto",
  "protobuf_core",
  "protobuf_descriptor",
  "protobuf_dynamic",
@@ -2725,9 +2753,10 @@ dependencies = [
  "cluster_client",
  "common",
  "crypto",
+ "executor",
  "http",
  "macros",
- "nordic_tools",
+ "nordic_tools_proto",
  "protobuf",
  "protobuf_builtins",
  "rpc",
@@ -2886,6 +2915,14 @@ name = "typenum"
 version = "1.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d2783fe2d6b8c1101136184eb41be8b1ad379e4657050b8aaff0c79ee7575f9"
+
+[[package]]
+name = "uf2"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
+]
 
 [[package]]
 name = "unicode-ident"
@@ -3156,7 +3193,6 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
- "file",
  "macros",
  "parsing",
  "reflection",

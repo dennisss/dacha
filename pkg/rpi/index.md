@@ -74,7 +74,8 @@ If you want to connect to a WiFI network, modify and append the following argume
 ```
     --wpa_ssid=WIFI_NETWORK_NAME \
     --wpa_password=WIFI_NETWORK_PASSWORD
-gs).
+```
+
 If you want to set a static ip address for the ethernet port, modify and append the following arguments:
 
 ```

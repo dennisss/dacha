@@ -1,7 +1,7 @@
 use common::fixed::vec::FixedVec;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-use nordic_proto::proto::bootloader::*;
+use nordic_proto::nordic::BootloaderParams;
 use peripherals::raw::nvmc::NVMC;
 use protobuf::{Message, StaticMessage};
 

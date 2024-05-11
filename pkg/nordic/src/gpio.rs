@@ -34,7 +34,7 @@ use peripherals::raw::p0::outset::OUTSET_WRITE_VALUE;
 use peripherals::raw::p0::pin_cnf::{PULL_FIELD, INPUT_FIELD, DIR_FIELD};
 use peripherals::raw::p0::{P0, P0_REGISTERS};
 use peripherals::raw::p1::P1;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::Interrupt;
 
 pub use peripherals::raw::{PinDirection, PinLevel};

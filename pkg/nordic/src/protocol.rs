@@ -38,7 +38,6 @@ use common::fixed::vec::FixedVec;
 use common::list::Appendable;
 use executor::channel::Channel;
 use executor::futures::*;
-use executor::mutex::Mutex;
 use logging::Logger;
 use nordic_proto::nordic::NetworkConfig;
 use nordic_wire::packet::PacketBuffer;

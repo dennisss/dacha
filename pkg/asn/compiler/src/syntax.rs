@@ -1,13 +1,13 @@
 use std::convert::AsRef;
 use std::string::ToString;
 
+use asn_core::tag::TagClass;
 use common::bits::BitVector;
 use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::*;
 
-use crate::tag::TagClass;
 use crate::tokenizer::Token;
 
 parser!(number<usize> => Token::skip_to(Token::number));

@@ -1,7 +1,7 @@
 use core::mem::transmute;
 
 use executor::interrupts::wait_for_irq;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::spim0::SPIM0;
 use peripherals::raw::PinLevel;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};

@@ -1,5 +1,5 @@
-use executor::mutex::Mutex;
 use executor::singleton::Singleton;
+use executor::sync::AsyncMutex;
 use peripherals::raw::{PinDirection, PinLevel};
 use usb::hid::StandardKeyboardInputReport;
 
@@ -26,7 +26,7 @@ static RADIO_SOCKET: RadioSocket = RadioSocket::new();
 
 static REPORT_SEND_BUFFER: USBDeviceSendBuffer = USBDeviceSendBuffer::new();
 
-static STATE: Mutex<KeyboardState> = Mutex::new(KeyboardState {
+static STATE: AsyncMutex<KeyboardState> = AsyncMutex::new(KeyboardState {
     // 500ms as recommended in section 7.2.4 of the HID v1.11 spec.
     idle_timeout: 500,
 

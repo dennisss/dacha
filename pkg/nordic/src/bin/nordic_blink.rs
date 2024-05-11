@@ -1,4 +1,4 @@
-#![feature(type_alias_impl_trait)]
+#![feature(type_alias_impl_trait, impl_trait_in_assoc_type)]
 #![no_std]
 #![no_main]
 
@@ -34,7 +34,7 @@ use nordic::radio_socket::RadioSocket;
 use nordic::timer::Timer;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
-use nordic_proto::usb_descriptors::*;
+use nordic_wire::usb_descriptors::*;
 use peripherals::raw::{PinDirection, PinLevel};
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();

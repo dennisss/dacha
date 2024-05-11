@@ -11,3 +11,8 @@ macros = { path = "../../macros" }
 parsing = { path = "../../parsing" }
 compression = { path = "../../compression" }
 math = { path = "../" }
+
+[features]
+default = ["std", "alloc"]
+std = []
+alloc = []

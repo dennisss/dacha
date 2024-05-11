@@ -1,4 +1,5 @@
-use peripherals::raw::{power::POWER, register::RegisterWrite};
+use common::register::RegisterWrite;
+use peripherals::raw::power::POWER;
 
 // Well defined values for the GPREGRET flag.
 enum_def_with_unknown!(ResetState u32 =>

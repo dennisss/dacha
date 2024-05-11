@@ -1,13 +1,13 @@
 // This file contains an implementation of a human readable debug format for
 // viewing DER serialized messages.
 
+use asn_core::tag::*;
 use common::bits::BitVector;
 use common::bytes::Bytes;
 use common::chrono::{DateTime, Utc};
 use common::errors::*;
 use math::big::BigInt;
 use parsing::*;
-use asn_compiler::tag::*;
 
 use crate::builtin::*;
 use crate::debug::ParsedElementValue::Unknown;

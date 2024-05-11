@@ -1,6 +1,5 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use common::bytes::Bytes;
 use core::intrinsics::unlikely;
 use core::result::Result;
 

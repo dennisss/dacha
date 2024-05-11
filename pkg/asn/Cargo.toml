@@ -7,4 +7,4 @@ edition = "2018"
 math = { path = "../math" }
 common = { path = "../common" }
 parsing = { path = "../parsing" }
-asn_compiler = { path = "./compiler" }
+asn_core = { path = "./core" }

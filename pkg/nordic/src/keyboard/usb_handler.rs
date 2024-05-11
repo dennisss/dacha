@@ -1,7 +1,8 @@
 use core::future::Future;
 
-use executor::mutex::Mutex;
-use nordic_proto::usb_descriptors::*;
+use executor::lock;
+use executor::sync::AsyncMutex;
+use nordic_wire::usb_descriptors::*;
 use usb::descriptors::{SetupPacket, StandardRequestType};
 use usb::hid::HIDDescriptorType;
 
@@ -13,7 +14,7 @@ use crate::usb::controller::*;
 use crate::usb::handler::{USBDeviceHandler, USBError};
 
 pub struct KeyboardUSBHandler {
-    state: &'static Mutex<KeyboardState>,
+    state: &'static AsyncMutex<KeyboardState>,
     inner_handler: ProtocolUSBHandler<KeyboardUSBDescriptors>,
 }
 
@@ -61,7 +62,7 @@ impl USBDeviceHandler for KeyboardUSBHandler {
 
 impl KeyboardUSBHandler {
     pub fn new(
-        state: &'static Mutex<KeyboardState>,
+        state: &'static AsyncMutex<KeyboardState>,
         radio_socket: &'static RadioSocket,
         timer: Timer,
     ) -> Self {
@@ -94,10 +95,9 @@ impl KeyboardUSBHandler {
                     return Ok(());
                 }
 
-                {
-                    let mut state = self.state.lock().await;
+                lock!(state <= self.state.lock().await.unwrap(), {
                     state.idle_timeout = (duration as usize) * 4;
-                }
+                });
 
                 req.read(&mut []).await;
                 return Ok(());
@@ -112,10 +112,10 @@ impl KeyboardUSBHandler {
             if setup.bRequest == usb::hid::HIDRequestType::SET_PROTOCOL.to_value() {
                 // TODO: If this occurs then we may want to clear our send buffer of any values
                 // from the old protocol.
-                {
-                    let mut state = self.state.lock().await;
+                lock!(state <= self.state.lock().await.unwrap(), {
                     state.protocol = KeyboardUSBProtocol::from_value(setup.wValue as u8);
-                }
+                });
+
                 req.read(&mut []).await?;
                 return Ok(());
             }
@@ -136,7 +136,13 @@ impl KeyboardUSBHandler {
                 == get_attr!(&KEYBOARD_USB_DESCRIPTORS, usb::hid::HIDInterfaceNumberTag) as u16
         {
             if setup.bRequest == usb::hid::HIDRequestType::GET_IDLE.to_value() {
-                let idle_timeout = self.state.lock().await.idle_timeout;
+                let idle_timeout = self
+                    .state
+                    .lock()
+                    .await
+                    .unwrap()
+                    .read_exclusive()
+                    .idle_timeout;
 
                 let mut data = [(idle_timeout / 4) as u8];
                 res.write(&data).await?;
@@ -144,7 +150,7 @@ impl KeyboardUSBHandler {
             }
 
             if setup.bRequest == usb::hid::HIDRequestType::GET_PROTOCOL.to_value() {
-                let protocol = self.state.lock().await.protocol;
+                let protocol = self.state.lock().await.unwrap().read_exclusive().protocol;
                 let mut data = [protocol.to_value()];
                 res.write(&data).await?;
                 return Ok(());

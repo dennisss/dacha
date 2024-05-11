@@ -1,6 +1,6 @@
 use peripherals::raw::ficr::FICR;
 use peripherals::raw::nvmc::NVMC;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::uicr::{UICR, UICR_REGISTERS};
 
 /// Start offset in flash of the bootloader code.

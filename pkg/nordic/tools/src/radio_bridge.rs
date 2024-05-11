@@ -323,6 +323,13 @@ impl RadioBridgeService for RadioBridgeInner {
             }
         }
 
+        if state.receivers.contains_key(device.address()) {
+            return Err(rpc::Status::failed_precondition(
+                "Can't remove a device which has an active subscriber",
+            )
+            .into());
+        }
+
         self.shared
             .meta_client
             .set_object(&state.state_object_name, &state.state_data)

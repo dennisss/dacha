@@ -447,8 +447,6 @@ async fn multi_node_test() -> Result<()> {
     client0.close().await?;
 
     let client = cluster.create_client().await?;
-    // Wait for multicast updates to propagate to the client
-    executor::sleep(Duration::from_secs(3)).await?;
 
     all_keys.sort();
 

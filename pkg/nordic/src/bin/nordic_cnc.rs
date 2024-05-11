@@ -10,7 +10,6 @@ extern crate common;
 use core::arch::asm;
 
 use executor::cond_value::*;
-use executor::mutex::*;
 use nordic::gpio::GPIO;
 use nordic::pins::PeripheralPinHandle;
 use nordic::spi::SPIHost;
@@ -52,7 +51,10 @@ fn main() -> () {
     let mut peripherals = peripherals::raw::Peripherals::new();
 
     nordic::clock::init_high_freq_clk(&mut peripherals.clock);
-    nordic::clock::init_low_freq_clk(&mut peripherals.clock);
+    nordic::clock::init_low_freq_clk(
+        nordic::clock::LowFrequencyClockSource::CrystalOscillator,
+        &mut peripherals.clock,
+    );
 
     // Main::start();
 

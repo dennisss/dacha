@@ -1,0 +1,7 @@
+name: "system.sleep"
+replicas: 1
+worker {
+    args: [
+        "/usr/bin/sleep", "200"
+    ]
+}

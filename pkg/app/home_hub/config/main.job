@@ -2,11 +2,11 @@ name: "home_hub"
 
 replicas: 1
 
-task {
+worker {
     cwd: "/volumes/bundle"
     args: [
-        "/volumes/bundle/built/pkg/home_hub/main",
-        "--hdmi_ddc_device=/dev/i2c-1",
+        "/volumes/bundle/built/pkg/app/home_hub/main",
+        "--hdmi_ddc_device=/dev/i2c-20",
         "--config_object=home_hub_config"
     ]
 
@@ -31,7 +31,7 @@ task {
         },
         {
             source {
-                raw: "/dev/i2c-1"
+                raw: "/dev/i2c-20"
                 limit: 1
             }
             exclusive: true

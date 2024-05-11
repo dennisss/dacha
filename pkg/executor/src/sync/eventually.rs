@@ -1,6 +1,4 @@
-// TODO: Move out of the linux directory.
-
-use common::errors::*;
+use base_error::*;
 
 use crate::sync::AsyncVariable;
 

@@ -1,12 +1,12 @@
 use core::arch::asm;
 use core::ptr::read_volatile;
 
+use common::register::{RegisterRead, RegisterWrite};
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-use nordic_proto::proto::bootloader::*;
+use nordic_proto::nordic::BootloaderParams;
 use peripherals::raw::nvic::NVIC_VTOR;
 use peripherals::raw::power::resetreas::RESETREAS_VALUE;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
 
 use crate::bootloader::flash::*;
 use crate::reset::ResetState;

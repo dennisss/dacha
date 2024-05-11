@@ -18,6 +18,7 @@ openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 ma
 #![feature(
     lang_items,
     type_alias_impl_trait,
+    impl_trait_in_assoc_type,
     inherent_associated_types,
     alloc_error_handler,
     generic_associated_types
@@ -52,7 +53,7 @@ use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
 use nordic::timer::Timer;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
-use nordic_proto::usb_descriptors::*;
+use nordic_wire::usb_descriptors::*;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
 

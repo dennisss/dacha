@@ -164,7 +164,7 @@ impl Hasher for SipHasher {
     }
 }
 
-impl std::hash::Hasher for SipHasher {
+impl core::hash::Hasher for SipHasher {
     fn finish(&self) -> u64 {
         self.clone().finish_u64()
     }

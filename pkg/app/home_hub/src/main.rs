@@ -125,27 +125,28 @@ impl App {
     async fn render_thread(self: Arc<Self>, deck: StreamDeckDevice) -> Result<()> {
         const DISPLAY_COMPUTER_BUTTON: usize = 0;
         let computer_active =
-            file::read(project_path!("pkg/home_hub/icons/computer-active.jpg")).await?;
-        let computer_default = file::read(project_path!("pkg/home_hub/icons/computer.jpg")).await?;
+            file::read(project_path!("pkg/app/home_hub/icons/computer-active.jpg")).await?;
+        let computer_default =
+            file::read(project_path!("pkg/app/home_hub/icons/computer.jpg")).await?;
 
         const DISPLAY_LAPTOP_BUTTON: usize = 1;
         let laptop_active =
-            file::read(project_path!("pkg/home_hub/icons/laptop-active.jpg")).await?;
-        let laptop_default = file::read(project_path!("pkg/home_hub/icons/laptop.jpg")).await?;
+            file::read(project_path!("pkg/app/home_hub/icons/laptop-active.jpg")).await?;
+        let laptop_default = file::read(project_path!("pkg/app/home_hub/icons/laptop.jpg")).await?;
 
         const LIGHT_ENTRY_BUTTON: usize = 5;
         let light_on_entry =
-            file::read(project_path!("pkg/home_hub/icons/light-on-entry.jpg")).await?;
+            file::read(project_path!("pkg/app/home_hub/icons/light-on-entry.jpg")).await?;
         let light_off_entry =
-            file::read(project_path!("pkg/home_hub/icons/light-off-entry.jpg")).await?;
+            file::read(project_path!("pkg/app/home_hub/icons/light-off-entry.jpg")).await?;
 
         const LIGHT_STUDY_BUTTON: usize = 6;
         let light_on_study =
-            file::read(project_path!("pkg/home_hub/icons/light-on-study.jpg")).await?;
+            file::read(project_path!("pkg/app/home_hub/icons/light-on-study.jpg")).await?;
         let light_off_study =
-            file::read(project_path!("pkg/home_hub/icons/light-off-study.jpg")).await?;
+            file::read(project_path!("pkg/app/home_hub/icons/light-off-study.jpg")).await?;
 
-        let error_jpg = file::read(project_path!("pkg/home_hub/icons/error.jpg")).await?;
+        let error_jpg = file::read(project_path!("pkg/app/home_hub/icons/error.jpg")).await?;
 
         let mut last_key_state = vec![];
 

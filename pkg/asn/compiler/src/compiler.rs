@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
+use asn_core::tag::TagClass;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::line_builder::*;
@@ -10,7 +11,6 @@ use file::LocalPathBuf;
 use parsing::*;
 
 use crate::syntax::*;
-use crate::tag::TagClass;
 
 pub struct Context {
     names: Vec<String>,

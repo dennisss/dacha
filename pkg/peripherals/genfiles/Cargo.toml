@@ -1,0 +1,11 @@
+[package]
+name = "peripherals_genfiles"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+automata = { path = "../../automata" }
+cmsis_svd = { path = "../cmsis_svd" }
+file = { path = "../../file" }
+

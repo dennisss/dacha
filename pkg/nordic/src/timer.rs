@@ -1,6 +1,6 @@
 use core::arch::asm;
 
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::rtc0::RTC0;
 use peripherals::raw::Interrupt;
 

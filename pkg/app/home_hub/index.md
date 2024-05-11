@@ -11,7 +11,7 @@ As a pre-requisite, we assume that you have a Raspberry Pi that has been setup i
 
 - A Stream Deck via USB
 - A monitor via HDMI
-    - TODO: Document which I2C devices to use.
+    - Plug into the left HDMI port (nearest the USB-C port) so that it is exposed as `/dev/i2c-20`. 
 
 First you need to obtain a Hue bridge username (a secret password to control the lights). Run the following and follow the instructions:
 

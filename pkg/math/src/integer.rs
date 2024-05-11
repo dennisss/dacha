@@ -1,3 +1,4 @@
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::ops::{Add, Mul, Rem, Sub};
 
@@ -21,8 +22,10 @@ pub trait Integer: Clone + Ord + PartialOrd + Eq + PartialEq {
 
     fn from_be_bytes(data: &[u8]) -> Self;
 
+    #[cfg(feature = "alloc")]
     fn to_le_bytes(&self) -> Vec<u8>;
 
+    #[cfg(feature = "alloc")]
     fn to_be_bytes(&self) -> Vec<u8>;
 
     /// Maximum number of bits of information this Integer instance can store.

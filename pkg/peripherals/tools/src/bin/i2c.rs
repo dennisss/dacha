@@ -3,7 +3,7 @@
 /*
 cargo build --target aarch64-unknown-linux-gnu --release --bin i2c
 
-scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/i2c cluster-user@10.1.0.120:~
+scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/i2c cluster-user@10.1.1.1:~
 
 ssh -i ~/.ssh/id_cluster cluster-user@10.1.0.112
 
@@ -53,13 +53,13 @@ enum Command {
     DS3231,
 }
 
-fn run_scan(mut bus: I2CHostController) -> Result<()> {
+async fn run_scan(mut bus: I2CHostController) -> Result<()> {
     for i in 0..8 {
         let mut line = format!("{}_:", i);
 
         for j in 0..16 {
             let addr = (i << 4) | j;
-            let valid = bus.test(addr).is_ok();
+            let valid = bus.test(addr).await.is_ok();
 
             line = format!(
                 "{} {}",
@@ -78,31 +78,31 @@ fn run_scan(mut bus: I2CHostController) -> Result<()> {
     Ok(())
 }
 
-fn run_trust_m(bus: I2CHostController) -> Result<()> {
-    let mut dev = TrustM::open(bus)?;
+async fn run_trust_m(bus: I2CHostController) -> Result<()> {
+    let mut dev = TrustM::open(&bus).await?;
 
-    dev.read_coprocessor_uid()?;
+    dev.read_coprocessor_uid().await?;
 
     // dev.get_random()?;
 
     Ok(())
 }
 
-fn run_sgp30(bus: I2CHostController) -> Result<()> {
-    let mut dev = SGP30::open(bus);
+async fn run_sgp30(bus: I2CHostController) -> Result<()> {
+    let mut dev = SGP30::open(&bus);
 
-    let serial = dev.get_serial()?;
+    let serial = dev.get_serial().await?;
     println!("SERIAL {:?}", serial);
 
-    dev.init_air_quality()?;
+    dev.init_air_quality().await?;
 
     let mut i = 0;
     loop {
-        let quality = dev.measure_air_quality()?;
+        let quality = dev.measure_air_quality().await?;
         println!("{:?}", quality);
 
         if i % 10 == 0 {
-            let baseline = dev.get_baseline()?;
+            let baseline = dev.get_baseline().await?;
             println!("Baseline: {:?}", baseline);
         }
 
@@ -113,13 +113,15 @@ fn run_sgp30(bus: I2CHostController) -> Result<()> {
     Ok(())
 }
 
-fn run_ds3231(bus: I2CHostController) -> Result<()> {
-    let mut clock = DS3231::open(bus);
+async fn run_ds3231(bus: I2CHostController) -> Result<()> {
+    let mut clock = DS3231::open(&bus);
 
-    println!("Temp: {}", clock.read_temperature()?);
-    clock.write_time(&DS3231Time::from_atomic_seconds(0))?;
+    println!("Temp: {}", clock.read_temperature().await?);
+    clock
+        .write_time(&DS3231Time::from_atomic_seconds(0))
+        .await?;
     for i in 0..100 {
-        let time = clock.read_time()?;
+        let time = clock.read_time().await?;
         println!("Time: {}", time.to_atomic_seconds());
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -128,16 +130,17 @@ fn run_ds3231(bus: I2CHostController) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[executor_main]
+async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let bus = peripherals::i2c::I2CHostController::open(&args.bus)?;
 
     match args.command {
-        Command::Scan => run_scan(bus)?,
-        Command::TrustM => run_trust_m(bus)?,
-        Command::SGP30 => run_sgp30(bus)?,
-        Command::DS3231 => run_ds3231(bus)?,
+        Command::Scan => run_scan(bus).await?,
+        Command::TrustM => run_trust_m(bus).await?,
+        Command::SGP30 => run_sgp30(bus).await?,
+        Command::DS3231 => run_ds3231(bus).await?,
     }
 
     Ok(())

@@ -2,8 +2,10 @@ syntax = "proto3";
 
 package cnc;
 
+import "pkg/protobuf/compiler/proto/extensions.proto";
+
 message VectorXfProto {
-    repeated float values = 1 [max_count = 6];
+    repeated float values = 1 [(dacha.max_count) = 6];
 }
 
 message LinearMotionProto {

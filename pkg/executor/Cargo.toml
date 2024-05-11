@@ -6,11 +6,12 @@ edition = "2021"
 [dependencies]
 base_error = { path = "../base/error", default-features = false }
 common = { path = "../common", default-features = false }
+peripherals_raw = { path = "../peripherals/raw", default-features = false }
 sys = { path = "../sys", optional = true }
 macros = { path = "../macros" }
 failure = { version = "0.1.8", optional = true }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "base_error/alloc"]
-std = ["common/std", "base_error/std", "sys", "failure"]
+alloc = ["common/alloc", "base_error/alloc", "peripherals_raw/alloc"]
+std = ["common/std", "base_error/std", "sys", "failure", "peripherals_raw/std"]

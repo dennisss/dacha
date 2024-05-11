@@ -28,7 +28,8 @@ async fn main() -> Result<()> {
 
     let data = file::read(file::current_dir()?.join(&args.path)).await?;
 
-    let mut descriptor_pool = protobuf::DescriptorPool::new();
+    let mut descriptor_pool =
+        protobuf::DescriptorPool::new(protobuf::DescriptorPoolOptions::default());
 
     // TODO: Deduplicate some of this logic with the compiler.
     if let Some(path) = args.proto_file {
@@ -36,9 +37,7 @@ async fn main() -> Result<()> {
         // directory traversals.
         let path = file::current_dir()?.join(&path);
 
-        descriptor_pool
-            .add_proto_file(path, file::project_dir())
-            .await?;
+        descriptor_pool.add_file(path).await?;
 
         // TODO: Convert to result.
         let type_name = args.proto_type.unwrap();

@@ -12,9 +12,6 @@ use cmsis_svd::compiler::*;
 use common::errors::*;
 
 fn main() -> Result<()> {
-    // TODO: Re-enable once this build script is faster.
-    return Ok(());
-
     let mut options = CompilerOptions::default();
 
     options.field_rewrites.push(FieldRewriteRule {
@@ -103,16 +100,19 @@ fn main() -> Result<()> {
     ^ We should support bit vector where a regexp can extract the
     */
 
-    let output_dir = PathBuf::from(env::var("OUT_DIR")?);
+    let project_dir = file::project_dir();
 
     for model in ["nrf52840", "nrf52833"] {
         let input = std::fs::read_to_string(
-            file::project_dir().join(format!("third_party/cmsis_svd/{}.svd", model)),
+            project_dir.join(format!("third_party/cmsis_svd/{}.svd", model)),
         )?;
 
         let compiled = Compiler::compile(&input, &options)?;
 
-        let output_path = output_dir.join(format!("{}.rs", model));
+        let output_path = project_dir
+            .join("pkg/peripherals/raw/src")
+            .join(format!("{}.rs", model));
+
         std::fs::write(&output_path, compiled);
 
         // if model == "nrf52840" {
@@ -120,20 +120,18 @@ fn main() -> Result<()> {
         // project_path!("pkg/peripherals_raw/src/nrf52840.rs");
         //     std::fs::write(&output_path2, std::fs::read(&output_path)?)?;
         // }
-    }
 
-    /*
-    {
-        let res = std::process::Command::new("rustfmt")
-            .arg(output_path.as_str())
-            .output()?;
-        if !res.status.success() {
-            std::io::stdout().write_all(&res.stdout).unwrap();
-            std::io::stderr().write_all(&res.stderr).unwrap();
-            return Err(err_msg("rustfmt failed"));
+        {
+            let res = std::process::Command::new("rustfmt")
+                .arg(output_path.as_str())
+                .output()?;
+            if !res.status.success() {
+                std::io::stdout().write_all(&res.stdout).unwrap();
+                std::io::stderr().write_all(&res.stderr).unwrap();
+                return Err(err_msg("rustfmt failed"));
+            }
         }
     }
-    */
 
     Ok(())
 }

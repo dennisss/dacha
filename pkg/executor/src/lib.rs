@@ -42,7 +42,6 @@ mod raw_waker;
 pub mod signals;
 pub mod singleton;
 pub mod stack_pinned;
-#[cfg(feature = "std")]
 pub mod sync;
 pub mod thread;
 pub mod waker;

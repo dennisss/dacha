@@ -10,7 +10,8 @@ use file::LocalFile;
 
 const MAX_ROW_SIZE: usize = 16 * 1024;
 
-#[derive(Clone, Copy, Debug, Errable, PartialEq, Fail)]
+#[derive(Clone, Copy, Debug, Errable, PartialEq)]
+#[cfg_attr(feature = "std", derive(Fail))]
 #[repr(u32)]
 pub enum CSVError {
     IncompleteRow,

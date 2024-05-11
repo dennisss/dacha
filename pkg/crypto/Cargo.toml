@@ -15,7 +15,7 @@ parsing = { path = "../parsing", optional = true }
 pkix = { path = "../../third_party/pkix", optional = true }
 generic-array = { version = "0.13.2"}
 typenum = { version = "1.11.2" }
-executor = { path = "../executor" }
+executor = { path = "../executor", default-features = false }
 file = { path = "../file", optional = true }
 base_radix = { path = "../base/radix", optional = true }
 

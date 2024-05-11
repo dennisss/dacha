@@ -1,4 +1,4 @@
-# proto-file: pkg/builder/src/proto/config.proto
+# proto-file: pkg/builder/proto/config.proto
 # proto-message: BuildConfig
 
 platform {

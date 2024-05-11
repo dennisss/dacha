@@ -6,12 +6,12 @@ version = "0.0.0"
 path = "lib.rs"
 
 [dependencies]
-common = { path = "../../../common" }
+common = { path = "../../../common", default-features = false }
 protobuf_core = { path = "../../core", default-features = false }
 macros = { path = "../../../macros" }
 protobuf_descriptor = { path = "../../../../third_party/protobuf_descriptor", default-features = false }
 
 [features]
 default = ["std"]
-std = ["alloc", "protobuf_core/std", "protobuf_descriptor/std"]
-alloc = ["protobuf_core/alloc", "protobuf_descriptor/alloc"]
+std = ["alloc", "protobuf_core/std", "protobuf_descriptor/std", "common/std"]
+alloc = ["protobuf_core/alloc", "protobuf_descriptor/alloc", "common/alloc"]

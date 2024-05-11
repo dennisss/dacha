@@ -22,6 +22,7 @@ cargo run --bin flasher -- built/pkg/nordic/nordic_radio_serial --usb_product_id
 #![feature(
     lang_items,
     type_alias_impl_trait,
+    impl_trait_in_assoc_type,
     inherent_associated_types,
     alloc_error_handler,
     generic_associated_types
@@ -48,23 +49,22 @@ extern crate macros;
 use core::arch::asm;
 
 use executor::singleton::Singleton;
-use nordic::params::ParamsStorage;
-use nordic::uarte::UARTEWriter;
-use nordic_proto::packet::PacketBuffer;
-use peripherals::storage::BlockStorage;
-
 use nordic::config_storage::NetworkConfigStorage;
 use nordic::ecb::ECB;
 use nordic::gpio::*;
+use nordic::params::ParamsStorage;
 use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio::Radio;
 use nordic::radio_activity_led::setup_radio_activity_leds;
 use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
 use nordic::timer::Timer;
 use nordic::twim::TWIM;
+use nordic::uarte::UARTEWriter;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
-use nordic_proto::usb_descriptors::*;
+use nordic_wire::packet::PacketBuffer;
+use nordic_wire::usb_descriptors::*;
+use peripherals::storage::BlockStorage;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
 static PARAMS_STORAGE: Singleton<ParamsStorage> = Singleton::uninit();

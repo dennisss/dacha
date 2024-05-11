@@ -81,6 +81,7 @@ https://devzone.nordicsemi.com/f/nordic-q-a/50722/nrf52832-can-nreset-be-program
 #![feature(
     lang_items,
     type_alias_impl_trait,
+    impl_trait_in_assoc_type,
     inherent_associated_types,
     alloc_error_handler,
     generic_associated_types
@@ -90,23 +91,22 @@ https://devzone.nordicsemi.com/f/nordic-q-a/50722/nrf52832-can-nreset-be-program
 
 #[macro_use]
 extern crate executor;
-extern crate peripherals;
 #[macro_use]
 extern crate common;
 #[macro_use]
 extern crate nordic;
 #[macro_use]
 extern crate macros;
-extern crate uf2;
 #[macro_use]
 extern crate logging;
-extern crate nordic_proto;
 
 use core::arch::asm;
 use core::future::Future;
 use core::ptr::read_volatile;
 
 use common::fixed::vec::FixedVec;
+use common::register::RegisterRead;
+use common::register::RegisterWrite;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 use logging::Logger;
@@ -125,12 +125,10 @@ use nordic::usb::controller::{
 };
 use nordic::usb::default_handler::USBDeviceDefaultHandler;
 use nordic::usb::handler::{USBDeviceHandler, USBError};
-use nordic_proto::proto::bootloader::*;
-use nordic_proto::request_type::ProtocolRequestType;
-use nordic_proto::usb_descriptors::*;
+use nordic_proto::nordic::BootloaderParams;
+use nordic_wire::request_type::ProtocolRequestType;
+use nordic_wire::usb_descriptors::*;
 use peripherals::raw::nvmc::NVMC;
-use peripherals::raw::register::RegisterRead;
-use peripherals::raw::register::RegisterWrite;
 use peripherals::raw::uicr::UICR;
 use peripherals::raw::uicr::UICR_REGISTERS;
 use protobuf::Message;

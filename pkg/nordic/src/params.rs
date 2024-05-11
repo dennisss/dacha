@@ -1,5 +1,6 @@
 use common::errors::*;
-use executor::mutex::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
 use peripherals::blob::{BlobHandle, BlobMemoryController, BlobRegistry, BlobStorage};
 use peripherals::raw::nvmc::NVMC;
 use protobuf::{Message, StaticMessage};
@@ -13,7 +14,7 @@ pub const NETWORK_STATE_ID: u32 = 0xB0A4A986;
 
 /// Stores small application parameters robustly in NRF application flash space.
 pub struct ParamsStorage {
-    blobs: Mutex<BlobStorage<AppParamsMemoryController, [BlobHandle; 2]>>,
+    blobs: AsyncMutex<BlobStorage<AppParamsMemoryController, [BlobHandle; 2]>>,
 }
 
 impl ParamsStorage {
@@ -30,7 +31,7 @@ impl ParamsStorage {
         let blobs = BlobStorage::create(memory, registry)?;
 
         Ok(Self {
-            blobs: Mutex::new(blobs),
+            blobs: AsyncMutex::new(blobs),
         })
     }
 
@@ -40,7 +41,7 @@ impl ParamsStorage {
         param_id: u32,
         proto: &mut M,
     ) -> Result<bool> {
-        let blobs = self.blobs.lock().await;
+        let blobs = self.blobs.lock().await?.read_exclusive();
 
         let data = match blobs.get(param_id)? {
             Some(v) => v,
@@ -57,9 +58,9 @@ impl ParamsStorage {
         let mut data = common::fixed::vec::FixedVec::<u8, 256>::new();
         proto.serialize_to(&mut data)?;
 
-        let mut blobs = self.blobs.lock().await;
-        blobs.write(param_id, &data)?;
-        Ok(())
+        lock!(blobs <= self.blobs.lock().await?, {
+            blobs.write(param_id, &data)
+        })
     }
 }
 

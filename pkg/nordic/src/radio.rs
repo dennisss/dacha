@@ -1,5 +1,5 @@
+use common::register::{RegisterRead, RegisterWrite};
 use executor::interrupts::wait_for_irq;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::Interrupt;
 
 type RadioAddress = [u8; 4];

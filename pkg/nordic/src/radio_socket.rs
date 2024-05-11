@@ -7,7 +7,7 @@ use common::segmented_buffer::SegmentedBuffer;
 use crypto::ccm::CCM;
 use executor::channel::Channel;
 use executor::futures::*;
-use executor::sync::{Mutex, MutexGuard};
+use executor::sync::{AsyncMutex, AsyncMutexGuard, AsyncMutexReadOnlyGuard};
 use nordic_proto::nordic::{LinkState, NetworkConfig, NetworkState};
 use nordic_wire::packet::PacketBuffer;
 use nordic_wire::packet_cipher::PacketCipher;
@@ -43,7 +43,7 @@ pub struct RadioSocket {
 
     receive_pending: Channel<()>,
 
-    state: Mutex<RadioSocketState>,
+    state: AsyncMutex<RadioSocketState>,
 }
 
 struct RadioSocketState {
@@ -71,7 +71,7 @@ impl RadioSocket {
         Self {
             transmit_pending: Channel::new(),
             receive_pending: Channel::new(),
-            state: Mutex::new(RadioSocketState {
+            state: AsyncMutex::new(RadioSocketState {
                 network_config: NetworkConfig::DEFAULT,
                 network_state: NetworkState::DEFAULT,
                 network_valid: false,
@@ -94,7 +94,7 @@ impl RadioSocket {
         &self,
         mut params_storage: &'static ParamsStorage,
     ) -> Result<()> {
-        let mut state_guard = self.state.lock().await;
+        let mut state_guard = self.state.lock().await?.enter();
         let state = &mut *state_guard;
 
         assert_no_debug!(state.params_storage.is_none() && !state.network_valid);
@@ -125,16 +125,18 @@ impl RadioSocket {
             log!("No valid config available in storage.");
         }
 
+        state_guard.exit();
+
         Ok(())
     }
 
     pub async fn lock_network_config<'a>(&'a self) -> RadioNetworkConfigGuard<'a> {
-        let state_guard = self.state.lock().await;
+        let state_guard = self.state.lock().await.unwrap().read_exclusive();
         RadioNetworkConfigGuard { state_guard }
     }
 
     pub async fn set_network_config(&self, config: NetworkConfig) -> Result<()> {
-        let mut state_guard = self.state.lock().await;
+        let mut state_guard = self.state.lock().await?.enter();
         let state = &mut *state_guard;
 
         state.network_valid = false;
@@ -161,7 +163,7 @@ impl RadioSocket {
             Self::cleanup_network_state(state);
         }
 
-        drop(state);
+        state_guard.exit();
 
         // Notify the RadioController that a change has occured in case it is waiting
         // for one.
@@ -172,14 +174,14 @@ impl RadioSocket {
 
     // Also must validate the state
     fn is_valid_config(config: &NetworkConfig) -> bool {
-        if config.address().len() != nordic_proto::constants::RADIO_ADDRESS_SIZE {
+        if config.address().len() != nordic_wire::constants::RADIO_ADDRESS_SIZE {
             return false;
         }
 
         for link in config.links() {
-            if link.address().len() != nordic_proto::constants::RADIO_ADDRESS_SIZE
-                || link.iv().len() != nordic_proto::constants::LINK_IV_SIZE
-                || link.key().len() != nordic_proto::constants::LINK_KEY_SIZE
+            if link.address().len() != nordic_wire::constants::RADIO_ADDRESS_SIZE
+                || link.iv().len() != nordic_wire::constants::LINK_IV_SIZE
+                || link.key().len() != nordic_wire::constants::LINK_KEY_SIZE
             {
                 return false;
             }
@@ -221,7 +223,7 @@ impl RadioSocket {
     /// - After this function returns, packet.counter() will be set to the value
     ///   of the counter that will be used to send this packet.
     pub async fn enqueue_tx(&self, packet: &mut PacketBuffer) -> Result<()> {
-        let mut state_guard = self.state.lock().await;
+        let mut state_guard = self.state.lock().await?.enter();
         let state = &mut *state_guard;
 
         if !state.network_valid || packet.counter() != 0 {
@@ -251,7 +253,8 @@ impl RadioSocket {
         packet.set_counter(packet_counter);
 
         packet.write_to(&mut state.transmit_buffer);
-        drop(state);
+
+        state_guard.exit();
 
         // TODO: Make sure that this doesn't block if the channel is full.
         self.transmit_pending.try_send(()).await;
@@ -266,18 +269,20 @@ impl RadioSocket {
     /// immediately return false (does not block for a packet to be received).
     #[must_use]
     pub async fn dequeue_rx(&self, packet: &mut PacketBuffer) -> bool {
-        let mut state = self.state.lock().await;
-        state.receive_buffer.read(packet.raw_mut()).is_some()
+        lock!(state <= self.state.lock().await.unwrap(), {
+            state.receive_buffer.read(packet.raw_mut()).is_some()
+        })
     }
 
     /// Waits until a packet can be read with dequeue_rx.
     pub async fn wait_for_rx(&self) {
         loop {
-            {
-                let mut state = self.state.lock().await;
-                if !state.receive_buffer.is_empty() {
-                    return;
-                }
+            let done = lock!(state <= self.state.lock().await.unwrap(), {
+                !state.receive_buffer.is_empty()
+            });
+
+            if done {
+                return;
             }
 
             self.receive_pending.recv().await;
@@ -286,21 +291,21 @@ impl RadioSocket {
 
     /// NOTE: This should only be called by the RadioController when there are
     /// no other pending waits on the transmit_pending channel.
-    async fn get_valid_state<'a>(&'a self) -> MutexGuard<'a, RadioSocketState> {
+    async fn get_valid_state<'a>(&'a self) -> AsyncMutexGuard<'a, RadioSocketState> {
         loop {
-            let state = self.state.lock().await;
+            let state = self.state.lock().await.unwrap().enter();
             if state.network_valid {
                 return state;
             }
 
-            drop(state);
+            state.exit();
             self.transmit_pending.recv().await;
         }
     }
 }
 
 pub struct RadioNetworkConfigGuard<'a> {
-    state_guard: MutexGuard<'a, RadioSocketState>,
+    state_guard: AsyncMutexReadOnlyGuard<'a, RadioSocketState>,
 }
 
 impl<'a> RadioNetworkConfigGuard<'a> {
@@ -369,7 +374,7 @@ impl RadioController {
             self.radio
                 .set_address(array_ref![socket_state.network_config.address(), 0, 4]);
 
-            drop(socket_state);
+            socket_state.exit();
 
             // TODO: Implement a more efficient way to cancel the receive future.
             let event = race!(
@@ -383,6 +388,9 @@ impl RadioController {
             .await;
 
             let mut socket_state = self.socket.get_valid_state().await;
+
+            // TODO: Replace with more proper exit transitions.
+            unsafe { socket_state.unpoison() };
 
             match event {
                 Event::Received => {
@@ -437,7 +445,7 @@ impl RadioController {
                                 // Create a new entry.
                                 let mut new_state = LinkState::default();
                                 new_state.address_mut().extend_from_slice(&from_address);
-                                socket_state.network_state.links_mut().push(new_state);
+                                socket_state.network_state.add_links(new_state);
                                 socket_state.network_state.links_mut().last_mut().unwrap()
                             }
                         }

@@ -3,11 +3,20 @@ use core::time::Duration;
 
 use base_error::Result;
 
+#[cfg(feature = "std")]
 type MutexImpl<T> = common::async_std::sync::Mutex<T>;
 
+#[cfg(feature = "std")]
 type MutexGuardImpl<'a, T> = common::async_std::sync::MutexGuard<'a, T>;
 
-#[derive(Clone, Copy, Debug, Errable, PartialEq, Fail)]
+#[cfg(target_label = "cortex_m")]
+type MutexImpl<T> = crate::cortex_m::mutex::Mutex<T>;
+
+#[cfg(target_label = "cortex_m")]
+type MutexGuardImpl<'a, T> = crate::cortex_m::mutex::MutexGuard<'a, T>;
+
+#[derive(Clone, Copy, Debug, Errable, PartialEq)]
+#[cfg_attr(feature = "std", derive(Fail))]
 #[repr(u32)]
 pub enum PoisonError {
     MutationCancelled,

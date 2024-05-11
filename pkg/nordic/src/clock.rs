@@ -1,7 +1,7 @@
 use core::arch::asm;
 
 use peripherals::raw::clock::CLOCK;
-use peripherals::raw::register::RegisterRead;
+use common::register::RegisterRead;
 
 /*
 Need a reference counting system for enabling/disabling these clocks.

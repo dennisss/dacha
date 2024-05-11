@@ -2,7 +2,7 @@ use core::arch::asm;
 use core::ops::{DerefMut, Drop};
 use core::pin::Pin;
 
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::uarte0::UARTE0;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};
 

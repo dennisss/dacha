@@ -2,7 +2,7 @@ use core::arch::asm;
 use core::result::Result;
 
 use crypto::ccm::BlockCipherBuffer;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::Interrupt;
 
 const BLOCK_SIZE: usize = 16; // 128-bit blocks

@@ -8,3 +8,4 @@ common = { path = "../../common" }
 file = { path = "../../file" }
 parsing = { path = "../../parsing" }
 base_radix = { path = "../../base/radix" }
+asn_core = { path = "../core" }

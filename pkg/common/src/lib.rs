@@ -118,7 +118,9 @@ pub mod errors {
     pub use base_error::*;
 }
 
+#[cfg(feature = "std")]
 mod eventually;
+#[cfg(feature = "std")]
 pub use eventually::*;
 
 pub trait FlipSign<T> {

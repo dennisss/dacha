@@ -10,4 +10,3 @@ common = { path = "../../common" }
 reflection = { path = "../../reflection" }
 macros = { path = "../../macros" }
 parsing = { path = "../../parsing" }
-file = { path = "../../file" }

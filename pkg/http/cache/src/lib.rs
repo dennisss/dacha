@@ -170,6 +170,7 @@ impl DiskCache {
                 let blob_path = self
                     .blobs_dir
                     .join(base_radix::hex_encode(entry.response().body_sha256()));
+                // TODO: Implement the support for Content-Range headers here.
                 Box::new(http::static_file_handler::StaticFileBody::open(&blob_path).await?)
             }
         };

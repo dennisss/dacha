@@ -1,4 +1,4 @@
-use peripherals::raw::register::RegisterRead;
+use common::register::RegisterRead;
 use peripherals::raw::Interrupt;
 
 pub struct Rng {

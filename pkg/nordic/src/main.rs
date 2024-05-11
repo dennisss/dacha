@@ -3,7 +3,8 @@
     type_alias_impl_trait,
     inherent_associated_types,
     alloc_error_handler,
-    generic_associated_types
+    generic_associated_types,
+    impl_trait_in_assoc_type
 )]
 #![no_std]
 #![no_main]
@@ -24,7 +25,6 @@ extern crate macros;
 #[macro_use]
 extern crate nordic;
 
-extern crate cnc;
 extern crate math;
 
 /*
@@ -42,9 +42,10 @@ General workflow:
 
 use core::arch::asm;
 
+use common::register::{RegisterRead, RegisterWrite};
 use executor::singleton::Singleton;
+use logging::log;
 use peripherals::eeprom::EEPROM;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::rtc0::RTC0;
 use peripherals::raw::PinLevel;
 use peripherals::storage::BlockStorage;
@@ -53,9 +54,7 @@ use nordic::config_storage::NetworkConfigStorage;
 use nordic::ecb::ECB;
 use nordic::eeprom::Microchip24XX256;
 use nordic::gpio::*;
-use nordic::log;
-use nordic::log::num_to_slice;
-use nordic::protocol::ProtocolUSBThread;
+// use nordic::protocol::ProtocolUSBThread;
 use nordic::radio::Radio;
 use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
 use nordic::rng::Rng;
@@ -180,6 +179,7 @@ For 100ms/s, I'd need to support 10K steps per second.
 
 */
 
+/*
 use cnc::linear_motion::LinearMotion;
 use math::matrix::Vector3f;
 
@@ -252,6 +252,7 @@ async fn run_cnc(mut timer: Timer, mut step_pin: GPIOPin) {
 
     log!("Z");
 }
+*/
 
 define_thread!(Blinker, blinker_thread_fn);
 async fn blinker_thread_fn() {
@@ -266,7 +267,8 @@ async fn blinker_thread_fn() {
 
     {
         let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
-        log::setup(serial).await;
+        // TODO:
+        // log::setup(serial).await;
     }
 
     log!("Started up!");
@@ -332,10 +334,9 @@ async fn blinker_thread_fn() {
             let num = tmc.read_register(0x04).await.to_be_bytes();
 
             for i in 0..4 {
-                log!(nordic::log::num_to_slice(num[i] as u32).as_ref());
-                log!(b", ");
+                log!(num[i] as u32, ", ");
             }
-            log!(b"\n");
+            log!("\n");
 
             if num[0] != 0x11 {
                 return;
@@ -437,7 +438,7 @@ async fn blinker_thread_fn() {
         // let mut blink = gpio.pin(pins.P0_14);
         // blink.set_direction(PinDirection::Output);
 
-        return run_cnc(timer, step_pin).await;
+        // return run_cnc(timer, step_pin).await;
 
         let mut value = false;
         let mut count = 0;
@@ -592,7 +593,10 @@ fn main() -> () {
     let mut peripherals = peripherals::raw::Peripherals::new();
 
     nordic::clock::init_high_freq_clk(&mut peripherals.clock);
-    nordic::clock::init_low_freq_clk(&mut peripherals.clock);
+    nordic::clock::init_low_freq_clk(
+        nordic::clock::LowFrequencyClockSource::CrystalOscillator,
+        &mut peripherals.clock,
+    );
 
     // Enabling FPU per:
     // https://developer.arm.com/documentation/ddi0439/b/Floating-Point-Unit/FPU-Programmers-Model/Enabling-the-FPU?lang=en

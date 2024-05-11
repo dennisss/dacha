@@ -212,6 +212,9 @@ pub enum ConnectionEvent {
 
     /// We are an HTTP client connection and a locally generated request needs
     /// to be sent to the other endpoint.
+    ///
+    /// NOTE: This event only needs to be triggered if pending_requests was
+    /// recently empty.
     SendRequest,
 
     /// Triggered when the client waiting for a response has stopped waiting.

@@ -42,10 +42,10 @@ Start up (based on figure 3 on the USBD section):
 
 use core::arch::asm;
 
+use common::register::{RegisterRead, RegisterWrite};
 use common::struct_bytes::struct_bytes;
 use executor::futures;
 use executor::interrupts::wait_for_irq;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::usbd::epdatastatus::EPDATASTATUS_VALUE;
 use peripherals::raw::usbd::epinen::EPINEN_VALUE;
 use peripherals::raw::usbd::epouten::EPOUTEN_VALUE;

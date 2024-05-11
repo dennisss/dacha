@@ -35,8 +35,3 @@ pub mod storage;
 mod linux;
 #[cfg(feature = "std")]
 pub use linux::*;
-
-/*
-Could do something like:
-RUSTFLAGS='--cfg target_model="nrf52840"'
-*/

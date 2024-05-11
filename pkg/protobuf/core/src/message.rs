@@ -4,8 +4,9 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
+use common::any::AsAny;
+use common::errors::*;
 use common::list::Appendable;
-use common::{any::AsAny, errors::*};
 
 #[cfg(feature = "alloc")]
 use crate::merge::ReflectMergeFrom;

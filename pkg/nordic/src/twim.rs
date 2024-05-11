@@ -1,5 +1,5 @@
 use common::errors::*;
-use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::twim0::TWIM0;
 use peripherals::raw::{Interrupt, InterruptState};
 

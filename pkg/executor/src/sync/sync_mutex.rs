@@ -6,6 +6,9 @@ type MutexImpl<T> = std::sync::Mutex<T>;
 
 type MutexGuardImpl<'a, T> = std::sync::MutexGuard<'a, T>;
 
+/// NOTE: This can not be used on any single threaded systems since it would
+/// prevent co-operative preemption as individual futures would continously
+/// block if a lock is not available.
 pub struct SyncMutex<T> {
     inner: MutexImpl<SyncMutexValue<T>>,
 }

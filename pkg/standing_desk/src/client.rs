@@ -5,7 +5,7 @@ use common::errors::*;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::AsyncMutex;
-use nordic_tools::proto::bridge::*;
+use nordic_tools_proto::nordic::*;
 
 use crate::packet::*;
 

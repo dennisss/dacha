@@ -576,6 +576,30 @@ impl<M: Message + ?Sized> MessageCodec<M> {
         Ok(())
     }
 
+    #[cfg(feature = "alloc")]
+    pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized>(
+        field_number: FieldNumber,
+        values: &[MessagePtr<M>],
+        out: &mut A,
+    ) -> Result<()> {
+        for value in values.iter() {
+            Self::serialize(field_number, value.as_ref(), out)?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
+        field_number: FieldNumber,
+        value: &M,
+        out: &mut A,
+    ) -> Result<()> {
+        Self::serialize(field_number, value, out)
+    }
+}
+
+impl<M: Message + Sized> MessageCodec<M> {
     /// When not having 'alloc', we first must fake serialize the message to
     /// figure out its serialized length and then serialize it for real after
     /// appending the tag and length bytes.
@@ -605,18 +629,20 @@ impl<M: Message + ?Sized> MessageCodec<M> {
         Ok(())
     }
 
+    #[cfg(not(feature = "alloc"))]
     pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized>(
         field_number: FieldNumber,
         values: &[MessagePtr<M>],
         out: &mut A,
     ) -> Result<()> {
-        for value in values {
+        for value in values.iter() {
             Self::serialize(field_number, value.as_ref(), out)?;
         }
 
         Ok(())
     }
 
+    #[cfg(not(feature = "alloc"))]
     pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
         field_number: FieldNumber,
         value: &M,

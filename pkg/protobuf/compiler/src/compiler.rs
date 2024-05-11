@@ -298,12 +298,13 @@ impl Compiler {
             // it will be referenced by other FILE_DESCRIPTORs in
             // other generated files.
             c.outer.push_str(&format!(
-                "
+                r#"
+            #[cfg(feature = "std")]
             pub static FILE_DESCRIPTOR_{file_id}: {runtime_pkg}::StaticFileDescriptor = {runtime_pkg}::StaticFileDescriptor {{
                 proto: {proto},
                 dependencies: &[{deps}]
             }};
-            ",
+            "#,
             file_id = c.file_id,
             runtime_pkg = c.options.runtime_package,
                 proto = proto,
@@ -1376,11 +1377,13 @@ impl Compiler {
             }
 
             if can_have_extensions {
+                lines.add("#[cfg(feature = \"std\")]");
                 lines.add(format!(
                     "extensions: {}::ExtensionSet,",
                     self.options.runtime_package
                 ));
             } else if !is_typed_num {
+                lines.add("#[cfg(feature = \"std\")]");
                 lines.add(format!(
                     "unknown_fields: {}::UnknownFieldSet,",
                     self.options.runtime_package
@@ -1737,6 +1740,7 @@ impl Compiler {
             lines.add(
                 r#"
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             "#,
@@ -1745,6 +1749,7 @@ impl Compiler {
             lines.add(
                 r#"
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             "#,
@@ -1968,9 +1973,13 @@ impl Compiler {
             lines.add("\t\t}");
         }
 
+        // TODO: When we don't have 'std', still use a boolean to track if we were
+        // exposed to any unknown fields.
         if can_have_extensions {
+            lines.add("#[cfg(feature = \"std\")]");
             lines.add(r#"self.extensions.serialize_to(out)?;"#);
         } else if !is_typed_num {
+            lines.add("#[cfg(feature = \"std\")]");
             lines.add(r#"self.unknown_fields.serialize_to(out)?;"#);
         }
 

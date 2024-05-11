@@ -18,7 +18,15 @@ use crate::meta::state_machine::EmbeddedDBStateMachine;
 use crate::meta::table_key::*;
 use crate::proto::*;
 
-const MAX_KEYS_PER_TRANSACTION: usize = 100;
+const MAX_READ_RANGES_PER_TRANSACTION: usize = 10;
+
+const MAX_KEYS_WRITTEN_PER_TRANSACTION: usize = 100;
+
+/// TODO: Consider also limiting the size of individual keys.
+///
+/// TODO: Early reject any request sent to the server with payload > 2 MiB if
+/// using the Metastore methods.
+const MAX_WRITTEN_SIZE_PER_TRANSACTION: usize = 1 * 1024 * 1024; // 1 MiB
 
 /// Executes and tracks multi-key transactions being executed on the key value
 /// store. This enables parallel execution of transactions with non-conflicting
@@ -57,7 +65,8 @@ const MAX_KEYS_PER_TRANSACTION: usize = 100;
 /// 7. Release our locks (if they haven't been released already due to the term
 /// changing).
 ///   - Note that these must be released before returning to the user to ensure
-///     that
+///     that the caller can immediately run another transaction touching the
+///     same keys at step 1.
 pub struct TransactionManager {
     state: Arc<AsyncMutex<TransactionManagerState>>,
 }
@@ -152,7 +161,48 @@ impl TransactionManager {
         node: Arc<raft::Node<()>>,
         state_machine: Arc<EmbeddedDBStateMachine>,
     ) -> Result<LogIndex> {
+        // TODO: Limit the number of keys in a request
+        // Ideally <1000
+
+        if transaction.reads_len() > MAX_READ_RANGES_PER_TRANSACTION {
+            return Err(rpc::Status::invalid_argument("Too many reads in one transaction").into());
+        }
+
+        if transaction.writes_len() > MAX_KEYS_WRITTEN_PER_TRANSACTION {
+            return Err(
+                rpc::Status::invalid_argument("Too many keys written in one transaction").into(),
+            );
+        }
+
+        let mut writes_size = 0;
+
+        for op in transaction.writes() {
+            // Add some approximate log entry overhead per write.
+            writes_size += 32;
+
+            writes_size += op.key().len();
+
+            match op.typ_case() {
+                OperationTypeCase::NOT_SET => {
+                    return Err(rpc::Status::invalid_argument("Unknown operation type set").into())
+                }
+                OperationTypeCase::Put(v) => {
+                    writes_size += v.len();
+                }
+                OperationTypeCase::Delete(v) => {}
+            }
+        }
+
+        if writes_size > MAX_WRITTEN_SIZE_PER_TRANSACTION {
+            return Err(rpc::Status::invalid_argument(
+                "Amount of written data in one transaction is too large.",
+            )
+            .into());
+        }
+
         // Spawn in a detached task to make the outer function cancel safe.
+        // TODO: If the term changes, then we can safely cancel this. This would help to
+        // bound how long this runs for.
         executor::spawn(Self::execute_inner(
             self.state.clone(),
             transaction,

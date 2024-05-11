@@ -47,6 +47,7 @@ pub mod wire;
 pub use bytes::BytesField;
 #[cfg(feature = "std")]
 pub use collections::*;
+#[cfg(feature = "std")]
 pub use extension::{ExtensionRef, ExtensionSet, ExtensionTag};
 #[cfg(feature = "alloc")]
 pub use merge::*;
@@ -58,6 +59,7 @@ pub use reflection::{
 };
 pub use types::FieldNumber;
 pub use types::{EnumValue, ExtensionNumberType};
+#[cfg(feature = "std")]
 pub use unknown::UnknownFieldSet;
 #[cfg(feature = "std")]
 pub use value::*;

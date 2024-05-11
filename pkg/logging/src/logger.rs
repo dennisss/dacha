@@ -2,10 +2,10 @@ use core::convert::AsRef;
 
 use common::{fixed::vec::FixedVec, segmented_buffer::SegmentedBuffer};
 use executor::channel::Channel;
-use executor::mutex::Mutex;
+use executor::lock;
+use executor::sync::AsyncMutex;
+use nordic_proto::nordic::*;
 use protobuf::Message;
-
-use nordic_proto::proto::log::*;
 
 const LOG_BUFFER_SIZE: usize = 256;
 
@@ -13,7 +13,7 @@ static LOGGER: Logger = Logger::new();
 
 pub struct Logger {
     // entries_written: Channel<()>,
-    state: Mutex<LoggerState>,
+    state: AsyncMutex<LoggerState>,
 }
 
 struct LoggerState {
@@ -29,7 +29,7 @@ impl Logger {
     const fn new() -> Self {
         Self {
             // entries_written: Channel::new(),
-            state: Mutex::new(LoggerState {
+            state: AsyncMutex::new(LoggerState {
                 entries: SegmentedBuffer::new([0u8; LOG_BUFFER_SIZE]),
                 next_index: 0,
             }),
@@ -37,7 +37,7 @@ impl Logger {
     }
 
     pub async fn write(&self, mut entry: LogEntry) {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock().await.unwrap().enter();
 
         entry.set_index(state.next_index);
         state.next_index += 1;
@@ -48,7 +48,8 @@ impl Logger {
         // let is_first = state.entries.is_empty();
 
         state.entries.write(buffer.as_ref());
-        drop(state);
+
+        state.exit();
 
         // if is_first {
         //     let _ = self.entries_written.try_send(()).await;
@@ -58,17 +59,17 @@ impl Logger {
     /// Returns the number of bytes read or None if the buffer is empty or the
     /// next message doesn't fit in the given buffer.
     pub async fn try_read(&self, out: &mut [u8]) -> Option<usize> {
-        let mut state = self.state.lock().await;
-
-        if let Some(len) = state.entries.peek() {
-            if len > out.len() {
+        lock!(state <= self.state.lock().await.unwrap(), {
+            if let Some(len) = state.entries.peek() {
+                if len > out.len() {
+                    return None;
+                }
+            } else {
                 return None;
             }
-        } else {
-            return None;
-        }
 
-        state.entries.read(out)
+            state.entries.read(out)
+        })
     }
 }
 
@@ -77,7 +78,7 @@ impl Logger {
 #[macro_export]
 macro_rules! log {
     ($($s:expr),*) => {{
-        use $crate::nordic_proto::proto::log::*;
+        use $crate::nordic_proto::nordic::*;
         use $crate::logger::*;
 
         let mut entry = LogEntry::default();
