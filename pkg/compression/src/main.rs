@@ -3,6 +3,8 @@ extern crate macros;
 extern crate byteorder;
 extern crate compression;
 
+use std::time::Instant;
+
 use common::bits::*;
 use common::errors::*;
 use compression::deflate::*;
@@ -10,6 +12,7 @@ use compression::gzip::*;
 use compression::huffman::*;
 use compression::tar::{FileMetadata, FileMetadataMask};
 use compression::zlib::*;
+use file::project_path;
 
 // https://zlib.net/feldspar.html
 // TODO: Blah b[D=5, L=18]!
@@ -28,6 +31,50 @@ Fuzzing the compression:
 
 #[executor_main]
 async fn main() -> Result<()> {
+    /*
+    Speed:
+    - Random 1MiB blocks: 11.6 MiB/s
+    -
+
+     */
+
+    // let data =
+    // file::read(project_path!("testdata/random/random_1048576")).await?;
+
+    let data = file::read(project_path!("testdata/gutenberg/shakespeare.txt")).await?;
+
+    let mut n = 0;
+
+    let start = Instant::now();
+
+    let mut input_count = 0;
+
+    for i in 0..100 {
+        let mut output = vec![];
+        input_count += data.len();
+        compression::snappy::snappy_compress(&data, &mut output);
+        n += output.len();
+
+        // let mut decompressed = vec![];
+        // let rest = compression::snappy::snappy_decompress(&output, &mut
+        // decompressed)?; assert!(rest == &[]);
+        // assert!(&decompressed == &data);
+    }
+
+    let end = Instant::now();
+
+    println!("{}", n);
+
+    println!("Took: {:?}", end - start);
+
+    println!("Ratio: {:02}", (n as f64) / (input_count as f64));
+
+    println!(
+        "MiB/s: {:02}",
+        ((input_count as f64) / (1024.0 * 1024.0)) / (end - start).as_secs_f64()
+    );
+
+    /*
     let mut tar = compression::tar::Reader::open(
         "/home/dennis/workspace/dacha/built/pkg/home_hub/bundle.tar",
     )
@@ -35,6 +82,7 @@ async fn main() -> Result<()> {
 
     tar.extract_files(&file::current_dir()?.join("/tmp/bundle"))
         .await?;
+    */
 
     // while let Some(entry) = tar.read_entry().await? {
     //     println!("{:#?}", entry);

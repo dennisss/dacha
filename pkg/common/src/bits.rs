@@ -310,8 +310,8 @@ impl std::convert::TryFrom<&'_ str> for BitVector {
 /// ALL READS ARE CACHED until the user calls consume() to allow discarding bits
 /// that have been read.
 ///
-/// For reading many bytes, Read is also implemented, but it is invalid to use
-/// Read until a multiple of 8 bits have been partially read.
+/// For reading many bytes, read_bytes*() can be used, but it is invalid to use
+/// these until a multiple of 8 bits have been partially read.
 pub struct BitReader<'a> {
     /// Base reader from which we will pull full bytes.
     reader: &'a mut dyn Read,
@@ -319,16 +319,12 @@ pub struct BitReader<'a> {
     /// Order in which to pull
     /// NOTE: This only effects reading partial partial bytes
     bit_order: BitOrder,
-    /*
-    We want to keep this byte aligned to
-    */
-    /// Bits read from the 'reader' which haven't yet been given to the user.
+
+    /// Bits read from the 'reader' which haven't yet been given to the
+    /// user/consumed.
     ///
-    /// NOTE: This may continue a non-multiple-of-8 bits if we called load()
-    /// after into_unconsumed_bits() with a non-exact number of bytes being
-    /// read.
-    ///
-    /// TODO:
+    /// NOTE: This is always contain a multiple of 8 bits since we read whole
+    /// bytes at a time from the underlying reader.
     buffer: BitVector,
 
     /// Offset from 0-N bits within the buffer at which the next read will
@@ -337,6 +333,11 @@ pub struct BitReader<'a> {
     offset: usize,
 
     /// How many bits were consumed (aka we can drop all bits before this point)
+    consumed_offset: usize,
+}
+
+pub struct BitReaderRawState {
+    buffer: BitVector,
     consumed_offset: usize,
 }
 
@@ -368,8 +369,41 @@ impl<'a> BitReader<'a> {
             return Err(err_msg("Already have pending bits loaded"));
         }
 
-        self.buffer = bits;
+        self.buffer.clear();
 
+        // Add zero padding so that when we later append 'bits', the end of the buffer
+        // will be byte aligned.
+        {
+            let mut n = (bits.len() % 8);
+            if n != 0 {
+                n = 8 - n;
+            }
+
+            for i in 0..n {
+                self.buffer.push(0);
+            }
+            self.offset = n;
+            self.consumed_offset = n;
+        }
+
+        // Push the actual bits.
+        for i in 0..bits.len() {
+            self.buffer.push(bits.get(i).unwrap());
+        }
+
+        assert!(self.buffer.len() % 8 == 0);
+
+        Ok(())
+    }
+
+    pub fn load_raw(&mut self, raw: BitReaderRawState) -> Result<()> {
+        if self.offset != self.buffer.len() {
+            return Err(err_msg("Already have pending bits loaded"));
+        }
+
+        self.buffer = raw.buffer;
+        self.offset = raw.consumed_offset;
+        self.consumed_offset = raw.consumed_offset;
         Ok(())
     }
 
@@ -420,10 +454,13 @@ impl<'a> BitReader<'a> {
                     BitOrder::LSBFirst => {
                         // Push bits into buffer from LSB to MSB
                         let mut b = buf[0];
+                        self.buffer.push_full_msb(b.reverse_bits());
+                        /*
                         for _ in 0..8 {
                             self.buffer.push(b & 0b01);
                             b = b >> 1;
                         }
+                        */
                     }
                     BitOrder::MSBFirst => {
                         // TODO: WE should be able to simplify this to just pushing to the back of
@@ -476,8 +513,6 @@ impl<'a> BitReader<'a> {
 
     /// Moves the cursor of the stream to the next full byte
     pub fn align_to_byte(&mut self) {
-        // NOTE: We assign based on distance to the end of the buffer as the start may
-        // contain a partially read byte from a past call to into_unconsumed_bits().
         self.offset += (self.buffer.len() - self.offset) % 8;
     }
 
@@ -489,6 +524,95 @@ impl<'a> BitReader<'a> {
         }
 
         buf
+    }
+
+    pub fn into_unconsumed_raw(self) -> BitReaderRawState {
+        BitReaderRawState {
+            buffer: self.buffer,
+            consumed_offset: self.consumed_offset,
+        }
+    }
+
+    /// Reads some number of complete bytes from the
+    pub fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize> {
+        // TODO: A lot of this code assumes that we are storing bits MSB first.
+
+        // NOTE: Because we always push full bytes into the end of the buffer, the end
+        // of the buffer will always be aligned to an underlying byte offset.
+        if (self.buffer.len() - self.offset) % 8 != 0 {
+            println!("{} {}", self.buffer.len(), self.offset);
+            return Err(err_msg(
+                "BitReader not aligned to a whole byte offset: regular reading not supported",
+            ));
+        }
+
+        let mut num_read = 0;
+
+        for i in 0..buf.len() {
+            let res = match self.bit_order {
+                BitOrder::LSBFirst => self.read_bits_exact(8),
+                BitOrder::MSBFirst => self.read_bits_be(8),
+            };
+
+            let b = match res {
+                Ok(v) => v as u8,
+                Err(e) => {
+                    if let Some(BitIoError::NotEnoughBits) = e.downcast_ref() {
+                        break;
+                    }
+
+                    return Err(e);
+                }
+            };
+
+            buf[i] = b;
+            num_read += 1;
+        }
+
+        Ok(num_read)
+    }
+
+    pub fn read_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+        // TODO: Must loop if we got zero?
+        let n = self.read_bytes(buf)?;
+        if n != buf.len() {
+            return Err(BitIoError::NotEnoughBits.into());
+        }
+
+        Ok(())
+    }
+
+    /// Faster version of read_bytes() which immediately consumes any read bytes
+    /// without buffering them.
+    pub fn read_bytes_and_consume(&mut self, buf: &mut [u8]) -> Result<usize> {
+        // NOTE: Because we always push full bytes into the end of the buffer, the end
+        // of the buffer will always be aligned to an underlying byte offset.
+        if (self.buffer.len() - self.offset) % 8 != 0 {
+            println!("{} {}", self.buffer.len(), self.offset);
+            return Err(err_msg(
+                "BitReader not aligned to a whole byte offset: regular reading not supported",
+            ));
+        }
+
+        let mut num_read = 0;
+
+        while num_read < buf.len() && self.offset < self.buffer.len() {
+            let b = match self.bit_order {
+                BitOrder::LSBFirst => self.read_bits_exact(8),
+                BitOrder::MSBFirst => self.read_bits_be(8),
+            }? as u8;
+
+            buf[num_read] = b;
+            num_read += 1;
+        }
+
+        self.consume();
+
+        if num_read < buf.len() {
+            num_read += self.reader.read(&mut buf[num_read..])?;
+        }
+
+        Ok(num_read)
     }
 }
 
@@ -533,47 +657,6 @@ impl<T> BitReader<'_, std::io::Cursor<T>> {
     }
 }
 */
-
-impl Read for BitReader<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        // TODO: A lot of this code assumes that we are storing bits MSB first.
-
-        // NOTE: Because we always push full bytes into the end of the buffer, the end
-        // of the buffer will always be aligned to an underlying byte offset.
-        if (self.buffer.len() - self.offset) % 8 != 0 {
-            println!("{} {}", self.buffer.len(), self.offset);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "BitReader not aligned to a whole byte offset: regular reading not supported",
-            ));
-        }
-
-        for i in 0..buf.len() {
-            let res = match self.bit_order {
-                BitOrder::LSBFirst => self.read_bits_exact(8),
-                BitOrder::MSBFirst => self.read_bits_be(8),
-            };
-
-            let b = match res {
-                Ok(v) => v as u8,
-                Err(e) => {
-                    if let Some(BitIoError::NotEnoughBits) = e.downcast_ref() {
-                        break;
-                    }
-
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "Unknown error",
-                    ));
-                }
-            };
-
-            buf[i] = b;
-        }
-
-        Ok(buf.len())
-    }
-}
 
 pub trait BitWrite {
     /// Writes the lowest 'len' bits of 'val' to this stream.
@@ -767,7 +850,7 @@ mod tests {
             reader.align_to_byte();
 
             let mut buf = [0u8];
-            reader.read(&mut buf)?;
+            assert_eq!(reader.read_bytes(&mut buf)?, 1);
 
             assert_eq!(&buf, &[0xAA]);
         }
@@ -783,7 +866,7 @@ mod tests {
             reader.align_to_byte();
 
             let mut buf = [0u8];
-            reader.read(&mut buf)?;
+            assert_eq!(reader.read_bytes(&mut buf)?, 1);
 
             assert_eq!(&buf, &[0xBB]);
         }
@@ -799,7 +882,7 @@ mod tests {
             reader.align_to_byte();
 
             let mut buf = [0u8];
-            reader.read(&mut buf)?;
+            assert_eq!(reader.read_bytes(&mut buf)?, 1);
 
             assert_eq!(&buf, &[0xAA]);
         }
@@ -815,9 +898,41 @@ mod tests {
             reader.align_to_byte();
 
             let mut buf = [0u8];
-            reader.read(&mut buf)?;
+            assert_eq!(reader.read_bytes(&mut buf)?, 1);
 
             assert_eq!(&buf, &[0xCC]);
+        }
+
+        // Consume some bytes from both the buffer and internal reader.
+        {
+            let data = &[0xAA, 0xBB];
+            let mut cursor = Cursor::new(data);
+
+            let mut reader = BitReader::new_with_order(&mut cursor, BitOrder::MSBFirst);
+            reader.load(BitVector::from_usize(0xCC, 10))?;
+
+            reader.align_to_byte();
+
+            let mut buf = [0u8; 4];
+            assert_eq!(reader.read_bytes(&mut buf)?, 3);
+
+            assert_eq!(&buf, &[0xCC, 0xAA, 0xBB, 00]);
+        }
+
+        // Same thing as the previous case, but use read_bytes_and_consume
+        {
+            let data = &[0xAA, 0xBB];
+            let mut cursor = Cursor::new(data);
+
+            let mut reader = BitReader::new_with_order(&mut cursor, BitOrder::MSBFirst);
+            reader.load(BitVector::from_usize(0xCC, 10))?;
+
+            reader.align_to_byte();
+
+            let mut buf = [0u8; 4];
+            assert_eq!(reader.read_bytes_and_consume(&mut buf)?, 3);
+
+            assert_eq!(&buf, &[0xCC, 0xAA, 0xBB, 00]);
         }
 
         Ok(())

@@ -2,7 +2,6 @@ use super::cyclic_buffer::*;
 use crate::deflate::shared::*;
 use crate::huffman::*;
 use crate::transform::{Transform, TransformProgress};
-use byteorder::{LittleEndian, ReadBytesExt};
 use common::bits::*;
 use common::errors::*;
 use std::io::Read;
@@ -96,7 +95,7 @@ pub struct Inflater {
 
     /// Remaining bits from the compressed input which we have consumed but have
     /// not processed yet.
-    input_prefix: BitVector,
+    input_prefix: Option<BitReaderRawState>,
 
     /// Stores the last N bytes of uncompressed data produced.
     output_window: CyclicBuffer,
@@ -107,7 +106,7 @@ impl Inflater {
         Inflater {
             state: State::Start,
             final_seen: false,
-            input_prefix: BitVector::new(),
+            input_prefix: None,
             // TODO: Lazy allocate this memory as it is usually unneeded for small inputs.
             output_window: CyclicBuffer::new(MAX_REFERENCE_DISTANCE),
         }
@@ -122,7 +121,10 @@ impl Inflater {
     ) -> Result<TransformProgress> {
         let mut cursor = std::io::Cursor::new(&input);
         let mut strm = BitReader::new(&mut cursor);
-        strm.load(self.input_prefix.clone())?; // TODO: Should delete the old value
+
+        if let Some(v) = self.input_prefix.take() {
+            strm.load_raw(v)?;
+        }
 
         if self.is_done() {
             return Err(err_msg("Already done"));
@@ -137,7 +139,6 @@ impl Inflater {
         // cases where the final input byte marking that the block is done isn't
         // read just because this is no output data remaining.
         while out.index < out.buf.len() {
-            // loop {
             match self.update_inner(&mut strm, &mut out) {
                 Ok(_) => {}
                 Err(e) => {
@@ -159,7 +160,7 @@ impl Inflater {
         let done = self.is_done();
         if !done {
             self.output_window.extend_from_slice(&out.buf[0..out.index]);
-            self.input_prefix = strm.into_unconsumed_bits();
+            self.input_prefix = Some(strm.into_unconsumed_raw());
         }
 
         // drop(strm);
@@ -193,7 +194,7 @@ impl Inflater {
     fn update_inner(&mut self, strm: &mut BitReader, out: &mut OutputBuffer) -> Result<()> {
         self.state = match &mut self.state {
             State::Start => {
-                let header = self.read_block_header(strm)?;
+                let header = Self::read_block_header(strm)?;
                 self.final_seen = header.bfinal;
                 match header.btype {
                     // No compression
@@ -216,7 +217,7 @@ impl Inflater {
                 }
             }
             State::UncompressedHeader => {
-                let len = self.read_uncompressed_header(strm)?;
+                let len = Self::read_uncompressed_header(strm)?;
                 if len == 0 {
                     State::Start
                 } else {
@@ -228,7 +229,8 @@ impl Inflater {
 
                 // TODO: We should ensure try to ensure that this is never buffered as we don't
                 // need it to be.
-                let nread = strm.read(&mut out.buf[out.index..(out.index + n)])?;
+                let nread =
+                    strm.read_bytes_and_consume(&mut out.buf[out.index..(out.index + n)])?;
                 out.index += nread;
 
                 if nread == 0 {
@@ -330,14 +332,13 @@ impl Inflater {
         Ok(())
     }
 
-    fn read_block_header(&mut self, strm: &mut BitReader) -> Result<BlockHeader> {
-        Ok(BlockHeader {
-            bfinal: strm.read_bits_exact(1)? != 0,
-            btype: strm.read_bits_exact(2)? as u8,
-        })
+    fn read_block_header(strm: &mut BitReader) -> Result<BlockHeader> {
+        let bfinal = strm.read_bits_exact(1)? != 0;
+        let btype = strm.read_bits_exact(2)? as u8;
+        Ok(BlockHeader { bfinal, btype })
     }
 
-    fn read_uncompressed_header(&mut self, strm: &mut BitReader) -> Result<u16> {
+    fn read_uncompressed_header(strm: &mut BitReader) -> Result<u16> {
         // NOTE: The consume after align_to_byte() is only safe here because the caller
         // of read_uncompressed_header didn't do any other reading on the byte before
         // calling this function. So if we restart later, we will always be attempting
@@ -345,8 +346,11 @@ impl Inflater {
         strm.align_to_byte();
         strm.consume();
 
-        let len = strm.read_u16::<LittleEndian>()?;
-        let nlen = strm.read_u16::<LittleEndian>()?;
+        let mut data = [0u8; 4];
+        strm.read_bytes_exact(&mut data)?;
+
+        let len = u16::from_le_bytes(*array_ref![data, 0, 2]);
+        let nlen = u16::from_le_bytes(*array_ref![data, 2, 2]);
         if len != !nlen {
             return Err(err_msg("Uncompressed block lengths do not match"));
         }
@@ -506,45 +510,5 @@ impl Transform for Inflater {
         self.update_impl(input, end_of_input, output)
     }
 }
-
-/*
-pub trait InflateRead {
-    ///
-    /// NOTE: This creates a new Inflater context each time so is not efficient
-    /// to run multiple times.
-    fn read_inflate(&mut self) -> Result<Vec<u8>>;
-}
-
-impl<T: Read> InflateRead for T {
-    fn read_inflate(&mut self) -> Result<Vec<u8>> {
-        let mut inflater = Inflater::new();
-
-        let mut out = vec![];
-        let mut out_size = 0;
-        out.resize(4096, 0);
-
-        // TODO: Currently this will never finish if we don't have enough input.
-        loop {
-            let progress = inflater.update(self, &mut out[out_size..])?;
-
-            // Typically this will actually mean that a failure occured.
-            // TODO: Get rid of this
-            if progress.output_written == 0 {
-                break;
-            }
-
-            out_size += progress.output_written;
-            if progress.done {
-                break;
-            }
-
-            out.resize(out_size + 4096, 0);
-        }
-
-        out.truncate(out_size);
-        Ok(out)
-    }
-}
-*/
 
 // reader.read_inflate();

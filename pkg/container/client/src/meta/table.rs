@@ -280,6 +280,12 @@ impl ClusterMetaTableValue for WorkerStateMetadata {
     }
 }
 
+impl<'a> ClusterMetaTable<'a, WorkerStateMetadata> {
+    pub async fn list_by_job(&self, job_name: &str) -> Result<Vec<WorkerStateMetadata>> {
+        self.get_prefix(&format!("{}.", job_name)).await
+    }
+}
+
 impl ClusterMetaTableValue for BundleBlobMetadata {
     type Id = str;
 

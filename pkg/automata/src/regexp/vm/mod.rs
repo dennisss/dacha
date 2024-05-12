@@ -3,10 +3,12 @@
 
 // TODO: Eventually make this private.
 pub mod instruction;
+pub mod lut;
 
 mod compiler;
 mod executor;
 pub mod instance;
+mod string_pointers;
 
 #[cfg(test)]
 mod tests {
@@ -23,7 +25,7 @@ mod tests {
     // Helper for running a program through an executor.
     fn run(prog: &[Instruction], inputs: &[u8]) -> Option<Vec<Option<usize>>> {
         let mut exec = Executor::new(ReferencedProgram::new(prog));
-        exec.run(inputs, 0).map(|v| v.list)
+        exec.run(inputs, 0).map(|v| v.to_vec())
     }
 
     #[test]
@@ -121,6 +123,26 @@ mod tests {
                 Instruction::Match
             ]
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vm_run_character_class_special() -> Result<()> {
+        let re = instance::RegExp::new("^[a-z0-9_\\-\\.]+$")?;
+
+        let tests = &[
+            ("hello_world", true),
+            ("a-b", true),
+            ("-.hel_lo", true),
+            ("ok there", false),
+            ("A", false),
+            ("a", true),
+        ];
+
+        for (s, valid) in tests {
+            assert_eq!(re.test(*s), *valid);
+        }
 
         Ok(())
     }

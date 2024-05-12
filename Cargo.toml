@@ -110,7 +110,7 @@ members = [
 	# "pkg/flasher",
 	# "pkg/flasher/uf2",
 	"pkg/builder/skylark",
-	# "pkg/builder/linker",
+	"pkg/builder/linker",
 	"pkg/logging",
 	"pkg/base/radix",
 	# "pkg/peripherals/devices/ptouch",

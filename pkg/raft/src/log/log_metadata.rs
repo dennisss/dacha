@@ -18,6 +18,8 @@ use crate::proto::{LogIndex, LogPosition};
 /// In practice, operations on this data structure should feel like O(k) where k
 /// is the average number of uncomitted elections. Under normal operation, k
 /// should never go beyond 2.
+///
+/// TODO: Consolidate this implementation more with the MemoryLog.
 pub struct LogMetadata {
     /// Start offsets of contiguous ranges of entries stored in the log.
     ///

@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use common::bit_set::BitSet;
 use common::hash::FastHasherBuilder;
 
 use crate::regexp::vm::instruction::*;
+use crate::regexp::vm::string_pointers::SavedStringPointers;
 
 /// Helper for performing a single step of the executor given the current input
 /// and position.
@@ -173,6 +175,14 @@ impl<P: Program + Copy> Executor<P> {
                         state.schedule_thread(next_pc, saved);
                     }
                 }
+                Instruction::LUT { index } => {
+                    let lut = state.program.fetch_lut(index).unwrap();
+
+                    let char_value = next_character!(value, thread, state.next_threads);
+                    if lut.contains(char_value as u8) {
+                        state.schedule_thread(next_pc, thread.saved);
+                    }
+                }
                 Instruction::Match => {
                     // Save the match. This may be overriden if a higher priority thread later
                     // finds an alternative match.
@@ -247,14 +257,14 @@ impl<'a, P: Program> ExecutorStepState<'a, P> {
                 // requires (we'd need to gurantee that no other threads will need this ).
                 let saved_mut = Rc::make_mut(&mut saved);
 
-                if saved_mut.list.len() <= index {
-                    saved_mut.list.resize(index + 1, None);
-                }
-                saved_mut.list[index] = Some(if lookbehind {
-                    self.input_position
-                } else {
-                    self.next_position
-                });
+                saved_mut.set(
+                    index,
+                    if lookbehind {
+                        self.input_position
+                    } else {
+                        self.next_position
+                    },
+                );
 
                 // TODO: the new value of PC is not the same as in the reference material.
                 self.schedule_thread(next_pc, saved);
@@ -264,11 +274,6 @@ impl<'a, P: Program> ExecutorStepState<'a, P> {
             }
         }
     }
-}
-
-#[derive(Clone, Default)]
-pub struct SavedStringPointers {
-    pub list: Vec<Option<StringPointer>>,
 }
 
 pub enum ExecutorStepResult {
@@ -298,18 +303,17 @@ struct ThreadList {
     /// Used to deduplicate threads which are added with the same program
     /// counter as an existing thread.
     ///
-    /// TODO: Consider using a bitmap to store this as the number of distinct
-    /// PCs is finite and known in advance.
-    ///
-    /// NOTE: We don't just store the threads in a HashMap to ensure that
-    seen_pcs: HashSet<ProgramCounter, FastHasherBuilder>,
+    /// TODO: We don't need to have this in both thread_list_a and thread_list_b
+    seen_pcs: BitSet,
 }
 
 impl ThreadList {
     fn new(program_len: usize) -> Self {
+        let seen_pcs = BitSet::new(program_len);
+
         Self {
             list: vec![],
-            seen_pcs: HashSet::with_hasher(FastHasherBuilder::default()),
+            seen_pcs,
         }
     }
 
@@ -319,11 +323,11 @@ impl ThreadList {
     }
 
     fn add_thread(&mut self, pc: ProgramCounter, saved: Rc<SavedStringPointers>) {
-        if self.seen_pcs.contains(&pc) {
+        if self.seen_pcs.contains(pc as usize) {
             return;
         }
 
-        self.seen_pcs.insert(pc);
+        self.seen_pcs.insert(pc as usize);
         self.list.push(Thread { pc, saved });
     }
 

@@ -42,7 +42,8 @@ impl Compilation {
                     | Instruction::Char(_)
                     | Instruction::Match
                     | Instruction::Special(_)
-                    | Instruction::Save { .. } => [None, None],
+                    | Instruction::Save { .. }
+                    | Instruction::LUT { .. } => [None, None],
 
                     Instruction::Jump(x) => [Some(x), None],
                     Instruction::Split(x, y) => [Some(x), Some(y)],
@@ -230,6 +231,10 @@ impl Compiler {
                     symbols = invert_symbols(symbols);
                 }
 
+                // TODO: Combine and simplify.
+                // e.g. if all 0-255 values are matched, then we can just use append an Any
+                // instruction.
+
                 // TODO: Deduplicate with the ::Literal case.
                 self.compile_alternation(&symbols, |c, sym| {
                     if sym.end == sym.start + 1 {
@@ -410,5 +415,14 @@ impl Compiler {
         // with no jumps to it can be removed (similarly at the end)
 
         // TODO: Jumps to a 'Match' can be replaced with a 'Match'
+
+        // TODO: If there is a split that ends up using the same 'Char'
+        // instruction on both branches, then we should merge it.
+        // (e.g. '(a|a)')
+
+        // TODO: Merge alternation into range instructions
+        // e.g. '(a|b)' == '[a-b]'
+
+        // [a-zA-Z0-9-._~!$&'()*+,;=:@%]
     }
 }

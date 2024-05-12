@@ -4,6 +4,7 @@ use crate::regexp::node::*;
 use crate::regexp::vm::compiler::*;
 use crate::regexp::vm::executor::*;
 use crate::regexp::vm::instruction::*;
+use crate::regexp::vm::string_pointers::*;
 
 pub struct RegExp {
     compilation: Compilation,
@@ -95,8 +96,8 @@ impl<'a, P: Program + Copy> RegExpMatch<'a, P> {
         // TODO: Need to avoid infinite matches.
 
         // Add the offset
-        self.index = string_pointers.list[0].unwrap();
-        self.last_index = string_pointers.list[1].unwrap();
+        self.index = string_pointers.get(0).unwrap();
+        self.last_index = string_pointers.get(1).unwrap();
         self.string_pointers = string_pointers;
 
         Some(self)
@@ -114,8 +115,8 @@ impl<'a, P: Program + Copy> RegExpMatch<'a, P> {
 
     /// NOTE: Group 0 will always contain the complete match.
     pub fn group(&self, i: usize) -> Option<&'a [u8]> {
-        let start = self.string_pointers.list.get(2 * i).and_then(|v| *v);
-        let end = self.string_pointers.list.get(2 * i + 1).and_then(|v| *v);
+        let start = self.string_pointers.get(2 * i);
+        let end = self.string_pointers.get(2 * i + 1);
 
         if let Some(start) = start {
             if let Some(end) = end {

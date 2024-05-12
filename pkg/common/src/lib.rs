@@ -67,9 +67,13 @@ pub mod async_fn;
 pub mod attribute;
 pub mod bit_flags;
 #[cfg(feature = "std")]
+pub mod bit_set;
+#[cfg(feature = "std")]
 pub mod bits;
 #[cfg(feature = "std")]
 pub mod borrowed;
+#[cfg(feature = "std")]
+pub mod buffered_reader;
 pub mod collections;
 pub mod concat_slice;
 pub mod const_default;

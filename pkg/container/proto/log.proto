@@ -15,7 +15,14 @@ message LogEntry {
     
     google.protobuf.Timestamp timestamp = 2;
     
-    LogStream stream = 3;
+    // NOTE: This will normally only contain more than one entry for the first entry containing
+    // 'start_stream' to trigger the beginning of multiple streams.
+    repeated LogStream stream = 3;
+
+    // If true, then this log entry marks the beginning of one or more streams. 
+    // This is written in the very first log entry in a file to identify how many streams are
+    // stored in it. 
+    bool start_stream = 6;
 
     // If true, then this is the final entry for this stream.
     bool end_stream = 5;

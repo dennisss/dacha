@@ -408,7 +408,7 @@ impl Compiler {
         let mut duplicates = vec![];
 
         // TODO: Implement a better debug function
-        lines.add("#[derive(Clone, Copy, PartialEq, Eq, Debug)]");
+        lines.add("#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]");
         lines.add(format!("pub enum {} {{", fullname));
         for v in e.proto().value() {
             if seen_numbers.contains_key(&v.number()) {

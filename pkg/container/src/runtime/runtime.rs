@@ -88,8 +88,8 @@ struct Container {
     // TODO: Make sure this is cleaned up
     waiter_task: Option<JoinHandle<()>>,
 
-    /// Used to notify the waiter_task when the process associated with this
-    /// container has exited.
+    /// Channel used to notify the waiter_task when the process associated with
+    /// this container has exited.
     event_sender: channel::Sender<ContainerStatus>,
 }
 
@@ -109,6 +109,8 @@ struct ContainerWaiter {
     container_dir: LocalPathBuf,
     // TODO: a LocalFile is unappropriate with a this as it is not seekable.
     output_streams: Vec<(LogStream, LocalFile)>,
+
+    // TODO: MAke this one-shot
     event_receiver: channel::Receiver<ContainerStatus>,
 }
 
@@ -550,8 +552,15 @@ impl ContainerRuntime {
         // TODO: Check that the container is still running.
         // If it is still being created, we may need to take special action to kill it.
 
-        // TODO: Should I ignore ESRCH?
-        unsafe { sys::kill(container.pid, signal)? };
+        match unsafe { sys::kill(container.pid, signal) } {
+            Ok(()) => {}
+            Err(sys::Errno::ESRCH) => {
+                // Process doesn't exist. Probably a race condition before the
+                // container is fully cleaned up.
+            }
+            Err(e) => return Err(e.into()),
+        };
+
         Ok(())
     }
 
@@ -587,6 +596,9 @@ impl ContainerRuntime {
         FileLogReader::open(&log_path).await
     }
 
+    /// Writes data to the stdin file of the container (assuming it has been
+    /// setup in terminal mode).
+    ///
     /// NOT CANCEL SAFE
     pub async fn write_to_stdin(&self, container_id: &str, data: &[u8]) -> Result<()> {
         let containers = self.containers.lock().await?.read_exclusive();
@@ -612,6 +624,35 @@ impl ContainerRuntime {
         Ok(())
     }
 
+    async fn write_all_to_log(input: &mut ContainerWaiter) -> Result<()> {
+        let log_writer = Arc::new(FileLogWriter::create(&input.container_dir.join("log")).await?);
+
+        let streams_list = input
+            .output_streams
+            .iter()
+            .map(|(s, _)| *s)
+            .collect::<Vec<_>>();
+
+        log_writer.begin_all_streams(&streams_list).await?;
+
+        let mut log_tasks = vec![];
+        for (stream, file) in input.output_streams.drain(..) {
+            log_tasks.push(ChildTask::spawn(Self::write_log(
+                file,
+                log_writer.clone(),
+                stream,
+            )));
+        }
+
+        for task in log_tasks {
+            task.join().await;
+        }
+
+        log_writer.flush().await?;
+
+        Ok(())
+    }
+
     async fn write_log(file: LocalFile, log_writer: Arc<FileLogWriter>, stream: LogStream) {
         if let Err(e) = log_writer.write_stream(file, stream).await {
             eprintln!("Log writer failed: {:?}", e);
@@ -629,25 +670,12 @@ impl ContainerRuntime {
     }
 
     /// NOT CANCEL SAFE
-    async fn container_waiter_inner(self: Arc<Self>, input: ContainerWaiter) -> Result<()> {
-        let log_writer = Arc::new(FileLogWriter::create(&input.container_dir.join("log")).await?);
-
-        let mut log_tasks = vec![];
-        for (stream, file) in input.output_streams {
-            log_tasks.push(ChildTask::spawn(Self::write_log(
-                file,
-                log_writer.clone(),
-                stream,
-            )));
+    async fn container_waiter_inner(self: Arc<Self>, mut input: ContainerWaiter) -> Result<()> {
+        if let Err(e) = Self::write_all_to_log(&mut input).await {
+            eprintln!("Log writing failed: {}", e);
         }
 
         let status = input.event_receiver.recv().await?;
-
-        for task in log_tasks {
-            task.join().await;
-        }
-
-        // TODO: Flush the log? (fsync, etc.)
 
         let container_id = input.container_id.as_str();
 

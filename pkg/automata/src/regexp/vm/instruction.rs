@@ -4,6 +4,8 @@ use common::errors::*;
 
 use crate::regexp::symbol::RegExpSymbol;
 
+use super::lut::LookupTable;
+
 pub type StringPointer = usize;
 
 /// TODO: Pick the min(u32, usize)
@@ -41,7 +43,7 @@ pub enum SpecialSymbol {
 
 /// NOTE: A u32 character type is used to be compatible with the RegExpSymbol
 /// struct.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Instruction {
     /// Match any character (excluding special symbols).
     Any,
@@ -59,6 +61,10 @@ pub enum Instruction {
     /// character value is seen instead, this instruction will terminate the
     /// current thread.
     Special(SpecialSymbol),
+
+    LUT {
+        index: u32,
+    },
 
     /// When executed, indicates that the matching is complete.
     Match,
@@ -94,6 +100,7 @@ pub enum Instruction {
 impl Instruction {
     pub fn assembly(&self) -> String {
         match self {
+            // TODO: Stop using debug_offset here.
             Instruction::Any => format!("any"),
             Instruction::Range { start, end } => {
                 format!(
@@ -108,6 +115,7 @@ impl Instruction {
             Instruction::Jump(index) => format!("jump {}", index),
             Instruction::Split(a, b) => format!("split {}, {}", a, b),
             Instruction::Save { index, lookbehind } => format!("save {} {}", index, lookbehind),
+            Instruction::LUT { index } => format!("lut @ {}", index),
         }
     }
 
@@ -133,6 +141,13 @@ pub trait Program {
     /// Returns the fetched instruction and a pointer to the next instruction.
     fn fetch(&self, pc: ProgramCounter) -> (Instruction, ProgramCounter);
 
+    fn fetch_lut(&self, index: u32) -> Option<&LookupTable>;
+
+    /// Returns the number of instructions in this program. The program counter
+    /// should never be '>= len()' when running this program.
+    fn len(&self) -> usize;
+
+    /// Returns the memory size of the program in bytes.
     fn size_of(&self) -> usize;
 }
 
@@ -146,6 +161,10 @@ impl VecProgram {
         Self {
             instructions: vec![],
         }
+    }
+
+    pub fn instructions(&self) -> &[Instruction] {
+        &self.instructions
     }
 
     pub fn as_referenced_program(&self) -> ReferencedProgram {
@@ -171,6 +190,14 @@ impl Program for VecProgram {
         (self.instructions[pc as usize].clone(), pc + 1)
     }
 
+    fn fetch_lut(&self, index: u32) -> Option<&LookupTable> {
+        None
+    }
+
+    fn len(&self) -> usize {
+        self.as_referenced_program().len()
+    }
+
     fn size_of(&self) -> usize {
         self.as_referenced_program().size_of()
     }
@@ -190,6 +217,14 @@ impl<'a> ReferencedProgram<'a> {
 impl<'a> Program for ReferencedProgram<'a> {
     fn fetch(&self, pc: ProgramCounter) -> (Instruction, ProgramCounter) {
         (self.instructions[pc as usize].clone(), pc + 1)
+    }
+
+    fn fetch_lut(&self, index: u32) -> Option<&LookupTable> {
+        None
+    }
+
+    fn len(&self) -> usize {
+        self.instructions.len()
     }
 
     fn size_of(&self) -> usize {

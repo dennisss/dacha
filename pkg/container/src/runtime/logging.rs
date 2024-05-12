@@ -1,6 +1,7 @@
 //! Code for performing logging of the stdout/stderr pipes of the container to
 //! durable storage.
 
+use std::alloc::System;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -64,6 +65,22 @@ impl FileLogWriter {
         })
     }
 
+    pub async fn begin_all_streams(&self, streams: &[LogStream]) -> Result<()> {
+        let mut log_entry = LogEntry::default();
+        for s in streams {
+            log_entry.add_stream(*s);
+        }
+
+        log_entry.set_timestamp(SystemTime::now());
+        log_entry.set_start_stream(true);
+
+        lock_async!(log <= self.log.lock().await?, {
+            log.append(&log_entry.serialize()?).await
+        })?;
+
+        Ok(())
+    }
+
     /// Reads all the contents of 'file' and writes it to the log.
     ///
     /// - 'stream': Tag to use when creating log entries read from the file.
@@ -74,6 +91,10 @@ impl FileLogWriter {
         }
         .write(file)
         .await
+    }
+
+    pub async fn flush(&self) -> Result<()> {
+        lock_async!(log <= self.log.lock().await?, { log.flush().await })
     }
 }
 
@@ -134,10 +155,6 @@ impl<'a> FileLogStreamWriter<'a> {
             }
 
             buffer_size = remaining_size;
-
-            // TODO: Don't need this to fsync. Just need to make it far enough into the OS
-            // for other users to be able to read it.
-            lock_async!(log <= self.log.lock().await?, { log.flush().await })?;
         }
 
         // Always write a final entry with any remaining data to mark that the stream
@@ -145,19 +162,17 @@ impl<'a> FileLogStreamWriter<'a> {
         let time = SystemTime::now();
         let line = &buffer[0..buffer_size];
         self.write_line(line, time, true).await?;
-        lock_async!(log <= self.log.lock().await?, { log.flush().await })?;
 
         Ok(())
     }
 
     async fn write_line(&self, line: &[u8], time: SystemTime, end_stream: bool) -> Result<()> {
         let mut log_entry = LogEntry::default();
-        log_entry.set_stream(self.stream);
+        log_entry.add_stream(self.stream);
         log_entry.set_timestamp(time);
         log_entry.set_end_stream(end_stream);
         log_entry.value_mut().extend_from_slice(line);
 
-        let mut log = self.log.lock().await;
         lock_async!(log <= self.log.lock().await?, {
             log.append(&log_entry.serialize()?).await
         })?;

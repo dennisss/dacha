@@ -184,11 +184,12 @@ parser!(literal<&str, RegExpNodePtr> => {
         |c| Box::new(RegExpNode::Literal(Char::Value(c))))
 });
 
-// TODO: Check this
-parser!(character_class_literal<&str, char> => {
-    //shared_literal |
-    map(not_one_of("]"), |c| c as char)
-});
+// Same as 'literal' but applied inside of a character class.
+parser!(character_class_literal<&str, char> => alt!(
+    shared_literal,
+    // Special symbols which no don't have a special meaning inside of a character class
+    map(one_of("[^$.|?*+()"), |c| c as char)
+));
 
 // Single characters which need to be matched exactly
 // (excluding symbols which may have a different meaning depending on context)
