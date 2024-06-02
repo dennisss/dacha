@@ -9,7 +9,7 @@ mod symbol;
 mod syntax;
 pub mod vm;
 
-pub use self::instance::RegExp;
+// pub use self::instance::RegExp;
 
 /*
     PCRE Style RegExp Parser

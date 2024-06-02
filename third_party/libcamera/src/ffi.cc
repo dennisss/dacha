@@ -24,7 +24,7 @@ rust::Vec<CameraPtr> list_cameras(const CameraManager &camera_manager) {
 
 std::unique_ptr<CameraConfiguration> generate_camera_configuration(
     Camera &camera, rust::Slice<const StreamRole> stream_roles) {
-  StreamRoles roles;
+  std::vector<StreamRole> roles;
   for (const auto &role : stream_roles) {
     roles.push_back(role);
   }

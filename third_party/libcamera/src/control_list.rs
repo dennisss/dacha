@@ -39,6 +39,7 @@ pub struct ControlList {
 }
 
 impl ControlList {
+    // TODO: This is specifically a control list for controls and not properties.
     pub fn new() -> ControlListOwned {
         ControlListOwned {
             ptr: unsafe { ffi::new_control_list() },

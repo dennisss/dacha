@@ -84,6 +84,11 @@ unions {
         type { named: "FileTypeBox" }
     }
     case {
+        name: "SegmentTypeBox",
+        case_value: '"styp"'
+        type { named: "FileTypeBox" }
+    }
+    case {
         name: "MovieHeaderBox",
         case_value: '"mvhd"'
         type { named: "MovieHeaderBox" }
@@ -223,20 +228,40 @@ unions {
         case_value: '"mfhd"'
         type { named: "MovieFragmentHeaderBox" }
     }
-    #case {
-    #    name: "TrackFragmentHeaderBox",
-    #    case_value: '"tfhd"'
-    #    type { named: "TrackFragmentHeaderBox" }
-    #}
-    #case {
-    #    name: "TrackRunBox",
-    #    case_value: '"trun"'
-    #    type { named: "TrackRunBox" }
-    #}
+    case {
+        name: "TrackFragmentHeaderBox",
+        case_value: '"tfhd"'
+        type { named: "TrackFragmentHeaderBox" }
+    }
+    case {
+        name: "TrackFragmentBaseMediaDecodeTimeBox",
+        case_value: '"tfdt"'
+        type { named: "TrackFragmentBaseMediaDecodeTimeBox" }
+    }
+    case {
+        name: "TrackRunBox",
+        case_value: '"trun"'
+        type { named: "TrackRunBox" }
+    }
     case {
         name: "SampleEncryptionBox",
         case_value: '"senc"'
         type { named: "SampleEncryptionBox" }
+    }
+    case {
+        name: "MovieExtendsBox",
+        case_value: '"mvex"'
+        type { named: "ContainerBox" }
+    }
+    case {
+        name: "MovieExtendsHeaderBox",
+        case_value: '"mvex"'
+        type { named: "MovieExtendsHeaderBox" }
+    }
+    case {
+        name: "TrackExtendsBox",
+        case_value: '"trex"'
+        type { named: "TrackExtendsBox" }
     }
     case {
         name: "Unknown"
@@ -1491,6 +1516,75 @@ structs {
     }
 }
 
+# aligned(8) class MovieExtendsHeaderBox extends FullBox(‘mehd’, version, 0) {
+#   if (version==1) {
+#     unsigned int(64) fragment_duration;
+#   } else { // version==0
+#     unsigned int(32) fragment_duration;
+#   }
+# }
+structs {
+    name: "MovieExtendsHeaderBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "full_box_header"
+        type { named: "FullBoxHeader" }
+    }
+    field {
+        name: "fragment_duration_v1"
+        type { primitive: U64 }
+        presence: "full_box_header.version == 1"
+    }
+    field {
+        name: "fragment_duration_v0"
+        type { primitive: U32 }
+        presence: "full_box_header.version == 0"
+    }
+}
+
+# Contianer: "mvex"
+# Mandatory: Yes
+# Quantity: Exactly one for each track in the Movie Box
+# Definition:
+#
+# aligned(8) class TrackExtendsBox extends FullBox(‘trex’, 0, 0){
+#   unsigned int(32) track_ID;
+#   unsigned int(32) default_sample_description_index;
+#   unsigned int(32) default_sample_duration;
+#   unsigned int(32) default_sample_size;
+#   unsigned int(32) default_sample_flags
+# }
+structs {
+    name: "TrackExtendsBox"
+    endian: BIG_ENDIAN
+    field {
+        name: "full_box_header"
+        type { named: "FullBoxHeader" }
+    }
+    field {
+        name: "track_id"
+        type { primitive: U32 }
+    }
+    field {
+        name: "default_sample_description_index"
+        type { primitive: U32 }
+    }
+    field {
+        name: "default_sample_duration"
+        type { primitive: U32 }
+    }
+    field {
+        name: "default_sample_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "default_sample_flags"
+        type { primitive: U32 }
+    }
+}
+
+
+
 # Container: File
 # Mandatory: No
 # Quantity: Zero or more 
@@ -1549,25 +1643,53 @@ structs {
         name: "track_id"
         type { primitive: U32 }
     }
+    # TODO: Implement these by respecting the tf_flags.
+    # field {
+    #    name: "base_data_offset"
+    #    type { primitive: U64 }
+    #}
+    #field {
+    #    name: "sample_description_index"
+    #    type { primitive: U32 }
+    #}
+    #field {
+    #    name: "default_sample_duration"
+    #    type { primitive: U32 }
+    #}
+    #field {
+    #    name: "default_sample_size"
+    #    type { primitive: U32 }
+    #}
+    #field {
+    #    name: "default_sample_flags"
+    #    type { primitive: U32 }
+    #}
+}
+
+# aligned(8) class TrackFragmentBaseMediaDecodeTimeBox
+#   extends FullBox("tfdt", version, 0) {
+#     if (version==1) {
+#       unsigned int(64) baseMediaDecodeTime;
+#    } else { // version==0
+#       unsigned int(32) baseMediaDecodeTime;
+#   }
+# } 
+structs {
+    name: "TrackFragmentBaseMediaDecodeTimeBox"
+    endian: BIG_ENDIAN
     field {
-        name: "base_data_offset"
+        name: "full_box_header"
+        type { named: "FullBoxHeader" }
+    }
+    field {
+        name: "base_media_decode_time_v1"
         type { primitive: U64 }
+        presence: "full_box_header.version == 1"
     }
     field {
-        name: "sample_description_index"
+        name: "base_media_decode_time_v0"
         type { primitive: U32 }
-    }
-    field {
-        name: "default_sample_duration"
-        type { primitive: U32 }
-    }
-    field {
-        name: "default_sample_size"
-        type { primitive: U32 }
-    }
-    field {
-        name: "default_sample_flags"
-        type { primitive: U32 }
+        presence: "full_box_header.version == 0"
     }
 }
 
@@ -1599,16 +1721,22 @@ structs {
     field {
         name: "data_offset"
         type { primitive: I32 }
+        presence: "full_box_header.flags & 0x1 != 0"
     }
     field {
         name: "first_sample_flags"
         type { primitive: U32 }
+        presence: "full_box_header.flags & 0x4 != 0"
     }
     field {
         name: "samples"
         argument {
             name: "sample_count"
             value: "sample_count"
+        }
+        argument {
+            name: "flags"
+            value: "full_box_header.flags"
         }
         type {
             buffer {
@@ -1622,21 +1750,29 @@ structs {
 structs {
     name: "TrackRunBoxSample"
     endian: BIG_ENDIAN
+    argument {
+        name: "flags"
+        type { primitive: U32 }
+    }
     field {
         name: "sample_duration"
         type { primitive: U32 }
+        presence: "flags & 0x100 != 0"
     }
     field {
         name: "sample_size"
         type { primitive: U32 }
+        presence: "flags & 0x200 != 0"
     }
     field {
         name: "sample_flags"
         type { primitive: U32 }
+        presence: "flags & 0x400 != 0"
     }
     field {
         name: "sample_composition_time_offset"
         type { primitive: U32 }
+        presence: "flags & 0x800 != 0"
     }
 }
 
@@ -1736,8 +1872,10 @@ structs {
 }
 
 
+
+
+
 # tfdt
-# trun
 # saiz
 # saio
 # senc

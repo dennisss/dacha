@@ -13,6 +13,7 @@ use syn::{parse_macro_input, Expr, Ident, LitStr, Token};
 struct RegExpDeclaraction {
     name: Ident,
     pattern: LitStr,
+    flags: Option<LitStr>,
 }
 
 impl Parse for RegExpDeclaraction {
@@ -22,7 +23,18 @@ impl Parse for RegExpDeclaraction {
         input.parse::<Token![>]>()?;
         let pattern: LitStr = input.parse()?;
 
-        Ok(Self { name, pattern })
+        // Second argument is a flags string.
+        let mut flags = None;
+        if !input.is_empty() {
+            input.parse::<Token![,]>()?;
+            flags = Some(input.parse()?);
+        }
+
+        Ok(Self {
+            name,
+            pattern,
+            flags,
+        })
     }
 }
 
@@ -45,7 +57,12 @@ pub fn regexp(input: TokenStream) -> TokenStream {
 
     let name = def.name;
 
-    let regexp = match automata::regexp::vm::instance::RegExp::new(&def.pattern.value()) {
+    let flags = def.flags.map(|v| v.value()).unwrap_or_default();
+
+    let regexp = match automata::regexp::vm::instance::RegExp::new_with_flags(
+        &def.pattern.value(),
+        &flags,
+    ) {
         Ok(v) => v,
         Err(e) => {
             def.pattern

@@ -62,10 +62,10 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn compile(root: &RegExpNode) -> Result<Compilation> {
+    pub fn compile(root: &RegExpNode, flags: Flags) -> Result<Compilation> {
         let mut inst = Self {
             output: Compilation {
-                program: VecProgram::new(),
+                program: VecProgram::new(flags),
                 groups: vec![],
                 groups_by_name: HashMap::new(),
             },

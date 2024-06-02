@@ -264,6 +264,10 @@ impl Metastore {
         // TODO: Must translate back to user keys.
         // XXX: ^ Yes.
 
+        // TODO: If we ever stop being the leader (or we believe that we are a follower
+        // that is significantly out of sync, then we should perform a cancellation from
+        // the server after removing ourselves from the serving set).
+
         loop {
             let res = registration.recv().await?;
             response.send(res).await?;

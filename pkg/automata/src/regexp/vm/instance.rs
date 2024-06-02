@@ -3,6 +3,7 @@ use common::errors::*;
 use crate::regexp::node::*;
 use crate::regexp::vm::compiler::*;
 use crate::regexp::vm::executor::*;
+use crate::regexp::vm::flags::Flags;
 use crate::regexp::vm::instruction::*;
 use crate::regexp::vm::string_pointers::*;
 
@@ -12,9 +13,31 @@ pub struct RegExp {
 
 impl RegExp {
     pub fn new(expr: &str) -> Result<Self> {
-        // TODO: Don't add a '.*?' if the expression begins with a '^'
-        let root = RegExpNode::parse(&format!(".*?({})", expr))?;
-        let compilation = Compiler::compile(&root)?;
+        Self::new_with_flags(expr, "")
+    }
+
+    pub fn new_with_flags(expr: &str, flags: &str) -> Result<Self> {
+        // TODO: Don't add a '.*?' if the expression begins with a '^' (also if it
+        // starts with '^', then we don't need the '()' as we can more efficiently
+        // capture the matching window without it)
+
+        let s = {
+            // Don't need .* if the first character must be '^'.
+            // Note that this is a huge performance optimization since otherwise '.*' will
+            // always force scanning the entire input.
+
+            // TODO: Need a more robust way to detect when we want to end early due to a
+            // dependency on '^'.
+            if expr.starts_with("^") {
+                format!("({})", expr)
+            } else {
+                format!(".*?({})", expr)
+            }
+        };
+
+        let root = RegExpNode::parse(&s)?;
+        let flags = Flags::parse_from(flags)?;
+        let compilation = Compiler::compile(&root, flags)?;
         Ok(Self { compilation })
     }
 
@@ -59,8 +82,9 @@ impl RegExp {
             .join(", ");
 
         format!(
-            "::automata::regexp::vm::instance::StaticRegExp::from_compilation(&[{}])",
-            instructions
+            "::automata::regexp::vm::instance::StaticRegExp::from_compilation(&[{}], {})",
+            instructions,
+            self.compilation.program.flags().codegen()
         )
     }
 }
@@ -185,9 +209,9 @@ pub struct StaticRegExp {
 }
 
 impl StaticRegExp {
-    pub const fn from_compilation(instructions: &'static [Instruction]) -> Self {
+    pub const fn from_compilation(instructions: &'static [Instruction], flags: Flags) -> Self {
         Self {
-            program: ReferencedProgram::new(instructions),
+            program: ReferencedProgram::new(instructions, flags),
         }
     }
 

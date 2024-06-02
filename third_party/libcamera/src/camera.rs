@@ -112,10 +112,10 @@ impl Camera {
 
     fn get_mut(&self) -> Pin<&mut ffi::Camera> {
         unsafe {
-            Pin::<&mut ffi::Camera>::new_unchecked(
-                &mut *(core::mem::transmute::<_, u64>(self.raw.as_ref().unwrap())
-                    as *mut ffi::Camera),
-            )
+            let v = core::mem::transmute::<&ffi::Camera, u64>(self.raw.as_ref().unwrap());
+            let v = core::mem::transmute::<u64, &mut ffi::Camera>(v);
+
+            Pin::<&mut ffi::Camera>::new_unchecked(v)
         }
     }
 

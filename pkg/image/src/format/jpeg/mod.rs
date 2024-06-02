@@ -10,14 +10,11 @@ mod stuffed;
 mod zigzag;
 
 use std::f32::consts::PI;
-use std::fs::File;
-use std::io::{Cursor, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io::{Cursor, Read};
 
 use common::bits::{BitOrder, BitReader, BitVector};
 use common::ceil_div;
 use common::errors::*;
-use common::futures::future::err;
 use compression::huffman::HuffmanTree;
 use constants::*;
 use dct::*;
@@ -124,17 +121,6 @@ fn parse_restart_marker(byte: u8) -> Option<u8> {
 // range.
 
 impl JPEG {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<JPEG> {
-        let mut file = File::open(path)?;
-
-        // TODO: Limit max size of the jpeg
-
-        let mut buf = vec![];
-        file.read_to_end(&mut buf)?;
-
-        Self::parse(&buf)
-    }
-
     // TODO: It is still possible for this to crash if we perform multiplies that
     // overflow. Should just ignore these cases and warn.
     pub fn parse(data: &[u8]) -> Result<JPEG> {

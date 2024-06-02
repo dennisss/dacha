@@ -8,6 +8,7 @@ sys = { path = "../../pkg/sys" }
 base_error = { path = "../../pkg/base/error" }
 file = { path = "../../pkg/file" }
 executor = { path = "../../pkg/executor" }
+macros = { path = "../../pkg/macros" }
 
 [build-dependencies]
 bindgen = "0.63.0"

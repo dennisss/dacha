@@ -97,7 +97,12 @@ impl<'a> H264BitStreamIterator<'a> {
                 // We expect the start of the stream to have a start code.
                 // So in this case, keep trying to find another start code.
                 if first {
-                    assert!(data.is_empty());
+                    // Sometimes V4L2 cameras dumping H264 streams like to have a few unneeded
+                    // bytes.
+                    if !data.is_empty() {
+                        eprintln!("Unused bytes before first NALU: {}", data.len());
+                    }
+
                     first = false;
                     i = 0;
                     last_byte = 0xff;

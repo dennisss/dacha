@@ -396,6 +396,9 @@ fn exec_child_process(
         }
     }
 
+    // TODO: We must protect against having errors before this point since they will
+    // be dumped to the cluster_node's stderr.
+
     setup_socket.wait(FINISHED_SETUP_BYTE)?;
 
     if !process.cwd().is_empty() {

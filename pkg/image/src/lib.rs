@@ -24,6 +24,7 @@ mod buffer;
 pub mod format;
 pub mod open;
 pub mod resize;
+pub mod types;
 
 pub use binary::*;
 

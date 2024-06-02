@@ -4,6 +4,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd};
 use common::errors::*;
 use sys::bindings::*;
 
+use crate::sysctl::check_perf_events_supported;
+
 /// Tracker for measuring the number of CPU cycles executed in a single thread.
 pub struct CPUCycleTracker {
     file: File,
@@ -11,12 +13,14 @@ pub struct CPUCycleTracker {
 
 impl CPUCycleTracker {
     pub fn create() -> Result<Self> {
+        check_perf_events_supported()?;
+
         let mut attr = perf_event_attr::default();
         attr.type_ = perf_type_id::PERF_TYPE_HARDWARE as u32;
         attr.size = core::mem::size_of::<perf_event_attr>() as u32;
         attr.config = perf_hw_id::PERF_COUNT_HW_CPU_CYCLES as u64;
         attr.set_disabled(0); // Start counting right away.
-        attr.set_exclude_kernel(1);
+        attr.set_exclude_kernel(0);
         attr.set_exclude_hv(1);
         attr.set_exclude_idle(1);
 

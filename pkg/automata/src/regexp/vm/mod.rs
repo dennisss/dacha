@@ -2,6 +2,7 @@
 //! This is largely based on the design of RE2 / https://swtch.com/~rsc/regexp/regexp2.html
 
 // TODO: Eventually make this private.
+pub mod flags;
 pub mod instruction;
 pub mod lut;
 

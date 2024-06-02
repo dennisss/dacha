@@ -3,9 +3,6 @@
 
 #[macro_use]
 extern crate common;
-extern crate crypto;
-extern crate executor;
-extern crate peripherals_raw;
 
 #[macro_use]
 extern crate macros;

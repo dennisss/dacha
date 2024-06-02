@@ -26,8 +26,8 @@ pub struct MemoryMappedSymbol {
 }
 
 impl MemoryMap {
-    pub async fn read_self() -> Result<Self> {
-        let regions = VirtualMemoryMap::read_current()?;
+    pub async fn read_process(pid: sys::pid_t) -> Result<Self> {
+        let regions = VirtualMemoryMap::read(pid)?;
 
         let mut symbols = BTreeMap::<u64, MemoryMappedSymbol>::new();
 

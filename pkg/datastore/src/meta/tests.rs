@@ -270,6 +270,13 @@ async fn multi_node_test() -> Result<()> {
     TODO: Test that even if InstallSnapshot returns an error (after succeeding), the ConsensusModule will still make forward progress by retrying via an AppendEntries request to pull the current state of the log.
     */
 
+    /*
+    Need to verify that a client who still has a stale leader hint can eventually shift to
+
+    ^ Missing untested edge case is where the currently known leader dies and gets TTLed out of the RouteStore (and only after that happens do we send the next request).
+
+    */
+
     let mut status_server = rpc::Http2Server::new(Some(8000));
     status_server.add_profilez()?;
     let status_server = status_server.start();

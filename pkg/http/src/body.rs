@@ -208,7 +208,7 @@ impl IncomingSizedBody {
 #[async_trait]
 impl Body for IncomingSizedBody {
     fn len(&self) -> Option<usize> {
-        None
+        Some(self.length)
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {

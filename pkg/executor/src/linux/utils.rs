@@ -24,6 +24,7 @@ pub fn run_main<F: Future>(future: F) -> Result<F::Output> {
 
         crate::signals::trigger_shutdown();
 
+        // TODO: We no longer use this as a shutdown mechanism.
         crate::timeout(
             GRACEFUL_SHUTDOWN_TIMEOUT,
             crate::signals::wait_for_shutdowns(),

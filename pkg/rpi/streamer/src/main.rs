@@ -193,6 +193,8 @@ impl Streamer {
         Ok(())
     }
 
+    /// Input: Stream of H264 video chunks
+    /// Output: MP4 file written to disk.
     async fn encoder_outfeed_task(
         encoder: Arc<H264Encoder>,
         mut mp4_builder: MP4Builder,
@@ -281,12 +283,13 @@ async fn record_camera() -> Result<()> {
         Streamer::camera_infeed_task(camera, request_sender),
     );
 
-    //
+    // Feeds frames to the H264 encoder.
     bundle.add(
         "EncoderInfeed",
         Streamer::encoder_infeed_task(encoder.clone(), stream_id, request_receiver, encoded_sender),
     );
 
+    // Pulls encoded data from the H264 encoder and dumbs to disk.
     bundle.add(
         "EncoderOutfeed",
         Streamer::encoder_outfeed_task(encoder.clone(), mp4_builder, encoded_receiver),

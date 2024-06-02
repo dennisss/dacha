@@ -18,6 +18,7 @@ use sys::MappedMemory;
 
 use crate::busy::*;
 use crate::memory::MemoryMap;
+use crate::sysctl::check_perf_events_supported;
 
 /*
 Things we need to test:
@@ -37,7 +38,17 @@ Things we need to test:
 ///
 /// TODO: Must verify that this is able to profile all new and existing threads.
 pub async fn profile_self(duration: Duration) -> Result<Profile> {
-    let memory_map = MemoryMap::read_self().await?;
+    let pid = unsafe { sys::getpid() };
+    profile_process(pid, duration).await
+}
+
+pub async fn profile_process(pid: sys::pid_t, duration: Duration) -> Result<Profile> {
+    check_perf_events_supported()?;
+
+    // TODO: Block multiple performance profiles to be taken simultanouesly.
+
+    // NOTE:
+    let memory_map = MemoryMap::read_process(pid).await?;
 
     let mut profile = Profile::default();
     profile.add_string_table("".into());
@@ -110,6 +121,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
     attr.set_disabled(0); // Start event counter right away.
     attr.set_exclude_idle(1);
     attr.set_exclude_user(0);
+    attr.set_exclude_kernel(0);
 
     // TODO: Setup wakeup_watermark (and watermark) and properly poll the state of
     // the memory buffer. Basically set it to half the size and then use epoll to
@@ -144,7 +156,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
     // these? TODO: Figure out which CPUs each thread can go on (if restricted
     // then we don't need to make as many events).
     let mut task_ids = vec![];
-    for entry in std::fs::read_dir("/proc/self/task")? {
+    for entry in std::fs::read_dir(format!("/proc/{}/task", pid))? {
         let entry = entry?;
         let id = entry
             .path()
@@ -317,13 +329,6 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
     }
 
     Ok(profile)
-}
-
-struct ProfileBuilder {
-    data: Profile,
-
-    /// Map from
-    seen_locations: HashSet<u64>,
 }
 
 #[derive(Default)]

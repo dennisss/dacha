@@ -17,6 +17,11 @@ mod bindings {
         v4l2_fourcc(a, b, c, d) | (1 << 31)
     }
 
+    pub fn v4l2_type_is_multiplane(typ: v4l2_buf_type) -> bool {
+        typ == v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
+            || typ == v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE
+    }
+
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
     include!(concat!(env!("OUT_DIR"), "/formats.rs"));
@@ -95,9 +100,11 @@ mod io {
 
 mod buffer;
 mod device;
+mod format;
 mod stream;
 
 pub use bindings::*;
 pub use buffer::*;
 pub use device::*;
+pub use format::*;
 pub use stream::*;

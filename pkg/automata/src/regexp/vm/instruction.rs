@@ -4,7 +4,7 @@ use common::errors::*;
 
 use crate::regexp::symbol::RegExpSymbol;
 
-use super::lut::LookupTable;
+use super::{flags::Flags, lut::LookupTable};
 
 pub type StringPointer = usize;
 
@@ -149,17 +149,21 @@ pub trait Program {
 
     /// Returns the memory size of the program in bytes.
     fn size_of(&self) -> usize;
+
+    fn flags(&self) -> Flags;
 }
 
 /// A simple program which just uses a dynamic Vec to store instructions.
 pub struct VecProgram {
     instructions: Vec<Instruction>,
+    flags: Flags,
 }
 
 impl VecProgram {
-    pub fn new() -> Self {
+    pub fn new(flags: Flags) -> Self {
         Self {
             instructions: vec![],
+            flags,
         }
     }
 
@@ -168,7 +172,7 @@ impl VecProgram {
     }
 
     pub fn as_referenced_program(&self) -> ReferencedProgram {
-        ReferencedProgram::new(&self.instructions)
+        ReferencedProgram::new(&self.instructions, self.flags)
     }
 }
 
@@ -201,16 +205,24 @@ impl Program for VecProgram {
     fn size_of(&self) -> usize {
         self.as_referenced_program().size_of()
     }
+
+    fn flags(&self) -> Flags {
+        self.flags
+    }
 }
 
 #[derive(Clone, Copy)]
 pub struct ReferencedProgram<'a> {
     instructions: &'a [Instruction],
+    flags: Flags,
 }
 
 impl<'a> ReferencedProgram<'a> {
-    pub const fn new(instructions: &[Instruction]) -> ReferencedProgram {
-        ReferencedProgram { instructions }
+    pub const fn new(instructions: &[Instruction], flags: Flags) -> ReferencedProgram {
+        ReferencedProgram {
+            instructions,
+            flags,
+        }
     }
 }
 
@@ -229,6 +241,10 @@ impl<'a> Program for ReferencedProgram<'a> {
 
     fn size_of(&self) -> usize {
         std::mem::size_of::<Instruction>() * self.instructions.len()
+    }
+
+    fn flags(&self) -> Flags {
+        self.flags
     }
 }
 

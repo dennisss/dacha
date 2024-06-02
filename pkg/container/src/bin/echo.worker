@@ -1,0 +1,7 @@
+name: "echo_test"
+
+args: [
+    "/bin/echo",
+    "hello world"
+]
+

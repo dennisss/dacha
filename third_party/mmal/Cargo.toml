@@ -1,6 +1,0 @@
-[package]
-name = "mmal"
-version = "0.1.0"
-
-[build-dependencies]
-bindgen = "0.53.1"

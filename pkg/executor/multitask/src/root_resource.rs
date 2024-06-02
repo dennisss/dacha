@@ -21,6 +21,8 @@ impl RootResource {
         }));
 
         let deps2 = deps.clone();
+        // TODO: Make this smart enough to change its behavior to the end of unit tests
+        // when those happen.
         let cancellation_token = executor::signals::new_shutdown_token();
         executor::spawn(async move {
             cancellation_token.wait_for_cancellation().await;

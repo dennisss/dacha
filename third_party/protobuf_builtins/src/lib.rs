@@ -15,6 +15,7 @@ extern crate macros;
 include!(concat!(env!("OUT_DIR"), "/proto_lib.rs"));
 
 use common::errors::*;
+use google::protobuf::Duration;
 use google::protobuf::Timestamp;
 
 impl std::convert::From<std::time::SystemTime> for Timestamp {
@@ -39,6 +40,30 @@ impl std::convert::From<&Timestamp> for std::time::SystemTime {
         std::time::UNIX_EPOCH
             + std::time::Duration::from_secs(v.seconds() as u64)
             + std::time::Duration::from_nanos(v.nanos() as u64)
+    }
+}
+
+impl std::convert::From<std::time::Duration> for Duration {
+    fn from(value: std::time::Duration) -> Self {
+        (&value).into()
+    }
+}
+
+impl std::convert::From<&std::time::Duration> for Duration {
+    fn from(value: &std::time::Duration) -> Self {
+        let mut inst = Self::default();
+        inst.set_seconds(value.as_secs() as i64);
+        inst.set_nanos(value.subsec_nanos() as i32);
+        inst
+    }
+}
+
+impl std::convert::From<&Duration> for std::time::Duration {
+    fn from(value: &Duration) -> Self {
+        // NOTE: We can't represent negative durations using the standard duration type
+        // so that will overflow.
+        std::time::Duration::from_secs(value.seconds() as u64)
+            + std::time::Duration::from_nanos(value.nanos() as u64)
     }
 }
 

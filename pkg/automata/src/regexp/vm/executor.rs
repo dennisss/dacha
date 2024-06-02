@@ -4,6 +4,7 @@ use std::rc::Rc;
 use common::bit_set::BitSet;
 use common::hash::FastHasherBuilder;
 
+use crate::regexp::vm::flags::Flags;
 use crate::regexp::vm::instruction::*;
 use crate::regexp::vm::string_pointers::SavedStringPointers;
 
@@ -150,13 +151,27 @@ impl<P: Program + Copy> Executor<P> {
                     state.schedule_thread(next_pc, thread.saved);
                 }
                 Instruction::Range { start, end } => {
-                    let char_value = next_character!(value, thread, state.next_threads);
+                    let mut char_value = next_character!(value, thread, state.next_threads);
+
+                    // TODO: Deduplication this.
+                    if self.program.flags().contains(Flags::CASE_INSENSITIVE) {
+                        // TODO: Make the input value u8
+                        char_value = (char_value as u8).to_ascii_lowercase() as u32;
+                    }
+
                     if char_value >= start && char_value < end {
                         state.schedule_thread(next_pc, thread.saved);
                     }
                 }
                 Instruction::Char(expected_value) => {
-                    let char_value = next_character!(value, thread, state.next_threads);
+                    let mut char_value = next_character!(value, thread, state.next_threads);
+
+                    // TODO: Deduplication this.
+                    if self.program.flags().contains(Flags::CASE_INSENSITIVE) {
+                        // TODO: Make the input value u8
+                        char_value = (char_value as u8).to_ascii_lowercase() as u32;
+                    }
+
                     if char_value == expected_value {
                         state.schedule_thread(next_pc, thread.saved);
                     }

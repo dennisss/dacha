@@ -85,7 +85,7 @@ impl FrameBuffer {
         })
     }
 
-    /// Attempts to retrieve all the occupied memory as one contigous memory
+    /// Attempts to retrieve all the occupied memory as one contiguous memory
     /// slice.
     ///
     /// This assumes that the last frame was successfully captured.

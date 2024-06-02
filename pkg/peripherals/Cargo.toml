@@ -9,6 +9,7 @@ crypto = { path = "../crypto", default-features = false }
 executor = { path = "../executor", default-features = false }
 peripherals_raw = { path = "./raw", default-features = false }
 macros = { path = "../macros" }
+file = { path = "../file", optional = true }
 failure = { version = "0.1.8", optional = true }
 nix = { version = "0.21.0", optional = true }
 libc = { version = "0.2.97", optional = true }
@@ -16,4 +17,4 @@ libc = { version = "0.2.97", optional = true }
 [features]
 default = ["std", "alloc"]
 alloc = ["common/alloc", "crypto/alloc", "executor/alloc"]
-std = ["common/std", "crypto/std", "executor/std", "failure", "nix", "libc"]
+std = ["common/std", "crypto/std", "executor/std", "failure", "nix", "libc", "file"]

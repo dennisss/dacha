@@ -6,6 +6,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct ControlIds {
+    vendor: String,
     controls: Vec<BTreeMap<String, Control>>,
 }
 
@@ -23,9 +24,10 @@ struct Control {
 
     size: Option<Vec<serde_yaml::Value>>,
 
-    /// TODO: Handle this appropriately
+    /// NOTE: We currently ignore this and assume it is the same as the one in
+    /// the wrapping ControlIds.
     #[serde(default)]
-    draft: bool,
+    vendor: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -42,6 +44,14 @@ fn compile_controls(namespace: &str, in_path: &str, out_dir: &Path) {
         serde_yaml::from_str(&yaml).unwrap()
     };
 
+    let subnamespace = {
+        if control_ids.vendor == "libcamera" {
+            "".to_string()
+        } else {
+            format!("::{}", control_ids.vendor)
+        }
+    };
+
     let mut out = String::new();
 
     for control in control_ids.controls {
@@ -56,6 +66,7 @@ fn compile_controls(namespace: &str, in_path: &str, out_dir: &Path) {
             "Rectangle" => ("Rectangle", false),
             "Size" => ("Size", false),
             "string" => ("String", false),
+            "uint8_t" => ("u8", true),
             _ => panic!("Unsupported control type: {}", control.typ),
         };
 
@@ -109,8 +120,6 @@ fn compile_controls(namespace: &str, in_path: &str, out_dir: &Path) {
             }
         }
 
-        let subnamespace = if control.draft { "::draft" } else { "" };
-
         out.push_str(&format!(
             "control!(\n/// {}\n{}, {}, {}{});\n\n",
             control.description.replace("\n", " "),
@@ -147,12 +156,24 @@ fn main() {
         .map(|p| p.to_str().unwrap())
         .collect::<Vec<_>>();
 
-    compile_controls("controls", "repo/src/libcamera/control_ids.yaml", &out_path);
-    compile_controls(
-        "properties",
-        "repo/src/libcamera/property_ids.yaml",
-        &out_path,
-    );
+    // TODO: Compile all the property types (need to merge into one generated file).
+    // TODO: Change to use globs to find the files.
+
+    for name in ["core" /* "draft"*/ /* , "rpi" */] {
+        compile_controls(
+            "controls",
+            &format!("repo/src/libcamera/control_ids_{}.yaml", name),
+            &out_path,
+        );
+    }
+
+    for name in ["core" /* "draft" */] {
+        compile_controls(
+            "properties",
+            &format!("repo/src/libcamera/property_ids_{}.yaml", name),
+            &out_path,
+        );
+    }
 
     // Bindgen is only used for generating Rust bindings for trivial copyable
     // structs.
@@ -160,7 +181,7 @@ fn main() {
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .header("src/wrapper.h")
         .clang_args(include_paths.iter().map(|path| format!("-I{}", path)))
-        .clang_args(["-x", "c++", "-std=c++2a"])
+        .clang_args(["-x", "c++", "-std=c++2a", "-stdlib=libc++"])
         .enable_cxx_namespaces()
         .newtype_enum(".*")
         .allowlist_type("libcamera.*StreamRole")
@@ -182,6 +203,9 @@ fn main() {
         .no_debug("libcamera.*PixelFormat")
         .no_debug("libcamera.*ColorSpace")
         .blocklist_function(".*")
+        .blocklist_type(".*std.*")
+        .blocklist_type("libcamera.*Span.*")
+        .blocklist_item(".*ValueMap")
         .generate()
         .expect("Unable to generate bindings");
 
@@ -190,6 +214,7 @@ fn main() {
         .expect("Couldn't write bindings!");
 
     cxx_build::bridge("src/ffi.rs") // returns a cc::Build
+        .compiler("clang++")
         .file("src/ffi.cc")
         .includes(include_paths)
         .flag("-std=c++2a")

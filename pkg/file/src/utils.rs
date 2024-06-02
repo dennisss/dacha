@@ -3,6 +3,7 @@ use core::ffi::CStr;
 use alloc::borrow::ToOwned;
 use alloc::{ffi::CString, string::String, vec::Vec};
 
+use common::async_std::fs::read_link;
 use common::io::Readable;
 use common::{errors::*, io::Writeable};
 use executor::RemapErrno;
@@ -55,6 +56,49 @@ pub fn readlink<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
     let s = String::from_utf8(buffer[..n].to_vec())?;
 
     Ok(LocalPathBuf::from(s))
+}
+
+pub async fn realpath<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
+    use crate::LocalPathSegment;
+
+    let mut path = path.as_ref().to_owned();
+
+    if path.is_absolute() {
+        path = current_dir()?.join(path);
+    }
+
+    let mut resolved_path = LocalPathBuf::default();
+
+    for segment in path.segments() {
+        match segment {
+            LocalPathSegment::Root => {
+                resolved_path.push("/");
+            }
+            LocalPathSegment::CurrentDir => {
+                // Do nothing
+            }
+            LocalPathSegment::ParentDir => {
+                resolved_path.pop();
+            }
+            LocalPathSegment::File(name) => {
+                let file_path = resolved_path.join(name);
+                let meta = symlink_metadata(&file_path).await?;
+
+                if meta.is_symlink() {
+                    let link = readlink(&file_path)?;
+                    resolved_path = resolved_path.join(link).normalized();
+                } else {
+                    resolved_path = file_path;
+                }
+            }
+        }
+    }
+
+    if resolved_path.parent().is_none() {
+        resolved_path.push("/");
+    }
+
+    Ok(resolved_path)
 }
 
 pub fn recursively_list_dir(dir: &LocalPath, callback: &mut dyn FnMut(&LocalPath)) -> Result<()> {

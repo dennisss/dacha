@@ -21,7 +21,7 @@ const BODY_BUFFER_SIZE: usize = 4096;
 // and Transfer-Encoding.
 pub async fn write_body(body: &mut dyn Body, writer: &mut dyn Writeable) -> Result<()> {
     // TODO: If we sent a Content-Length, make sure that we are consistent.
-    let mut buf = [0u8; BODY_BUFFER_SIZE];
+    let mut buf = vec![0u8; BODY_BUFFER_SIZE];
     loop {
         let n = body.read(&mut buf).await?;
         if n == 0 {

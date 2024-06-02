@@ -277,7 +277,7 @@ parser!(field_type<&str, FieldType> => seq!(c => {
             "sint32" => FieldType::SInt32,
             "sint64" => FieldType::SInt64,
             "fixed32" => FieldType::Fixed32,
-            "fixed64" => FieldType::SFixed64,
+            "fixed64" => FieldType::Fixed64,
             "sfixed32" => FieldType::SFixed32,
             "sfixed64" => FieldType::SFixed64,
             "bool" => FieldType::Bool,

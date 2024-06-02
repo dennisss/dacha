@@ -1,6 +1,6 @@
 use base_error::*;
 
-use crate::file::blocking_read_to_string;
+use crate::{file::blocking_read_to_string, pid_t};
 
 // TODO: Switch to expecting exactly 2 numbers fo the device_bus and device_num.
 regexp!(LINE => "^([a-f0-9]+)-([a-f0-9]+) +(r|-)(w|-)(x|-)(s|p) +([0-9a-f]+) +([0-9a-f]+):([0-9a-f]+) +([0-9]+) +([^ ]*)$");
@@ -37,6 +37,11 @@ pub struct VirtualMemoryPermissions {
 impl VirtualMemoryMap {
     pub fn read_current() -> Result<Self> {
         let data = blocking_read_to_string("/proc/self/maps")?;
+        Self::read_data(&data)
+    }
+
+    pub fn read(pid: pid_t) -> Result<Self> {
+        let data = blocking_read_to_string(&format!("/proc/{}/maps", pid))?;
         Self::read_data(&data)
     }
 

@@ -450,6 +450,85 @@ impl DeviceEntry {
         self.get_sysfs_value("serial").await
     }
 
+    /// Enumerates well known kernel driver devices which are interfacing with
+    /// this USB device.
+    pub async fn driver_devices(&self) -> Result<Vec<DriverDevice>> {
+        let mut out = vec![];
+
+        for entry in file::read_dir(&self.sysfs_dir)? {
+            // Find all the interface directories. These will be of the form
+            // '[bus_num]-[device_path]:[config_num].[interface_num]'
+            // e.g. '7-3.2.1.1.2:1.0'
+            if !entry.name().contains(":") {
+                continue;
+            }
+
+            let iface_dir = self.sysfs_dir.join(entry.name());
+
+            for entry in file::read_dir(&iface_dir)? {
+                let path = iface_dir.join(entry.name());
+
+                if entry.name() == "tty" {
+                    // 'cdc_acm' driver will make a 'tty' sub-directory with each tty as a separate
+                    // folder in there. Each tty will have a name like 'ttyACM0'
+                    for entry in file::read_dir(&path)? {
+                        out.push(DriverDevice {
+                            path: format!("/dev/{}", entry.name()).into(),
+                            typ: DriverDeviceType::TTY,
+                        });
+                    }
+                } else if entry.name().starts_with("tty") {
+                    // 'ftdi_sio' driver will directly make sub-directories for each tty. Each tty
+                    // will have a name like 'ttyUSB0'.
+                    out.push(DriverDevice {
+                        path: format!("/dev/{}", entry.name()).into(),
+                        typ: DriverDeviceType::TTY,
+                    });
+                } else if entry.name() == "video4linux" {
+                    for entry in file::read_dir(&path)? {
+                        out.push(DriverDevice {
+                            path: format!("/dev/{}", entry.name()).into(),
+                            typ: DriverDeviceType::V4L2,
+                        });
+                    }
+                } else if entry.name().starts_with("media") {
+                    out.push(DriverDevice {
+                        path: format!("/dev/{}", entry.name()).into(),
+                        typ: DriverDeviceType::Media,
+                    });
+                } else if entry.name() == "sound" {
+                    // ALSA adds a folder structure like:
+                    // ./sound/card4/card4/controlC4 -> /dev/snd/controlC4
+                    // ./sound/card4/pcmC4D0c -> /dev/snd/pcmC4D0c
+
+                    for entry in file::read_dir(&path)? {
+                        if !entry.name().starts_with("card") {
+                            continue;
+                        }
+
+                        let path = path.join(entry.name());
+
+                        for entry in file::read_dir(&path)? {
+                            if entry.name().starts_with("control") {
+                                out.push(DriverDevice {
+                                    path: format!("/dev/snd/{}", entry.name()).into(),
+                                    typ: DriverDeviceType::ALSA_CONTROL,
+                                });
+                            } else if entry.name().starts_with("pcm") {
+                                out.push(DriverDevice {
+                                    path: format!("/dev/snd/{}", entry.name()).into(),
+                                    typ: DriverDeviceType::ALSA_PCM,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
     pub async fn open(&self) -> Result<Device> {
         let path = CString::new(self.usbdevfs_path.as_str())?;
         let fd = match unsafe { sys::open(path.as_ptr(), sys::O_RDWR | sys::O_CLOEXEC, 0) } {
@@ -471,4 +550,22 @@ impl DeviceEntry {
         // TODO: If this fails, then we need to remove the device from the list.
         Device::create(self.context_state.clone(), state, &self.raw_descriptors)
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct DriverDevice {
+    /// Path that can be used to open this driver device. Normally something of
+    /// the form '/dev/xxx'.
+    pub path: LocalPathBuf,
+
+    pub typ: DriverDeviceType,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DriverDeviceType {
+    TTY,
+    V4L2,
+    Media,
+    ALSA_PCM,
+    ALSA_CONTROL,
 }

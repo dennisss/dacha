@@ -43,6 +43,13 @@ In the above example, the `PATTERN` variable is a `StaticRegExp` instance which 
 - `test(input: &str) -> bool`
 - `split(input: &str) -> Iterator<&str>` : Splits the input using matches of the pattern as a delimiter.
 
+### Semantics
+
+- All patterns are implicitly preceded by `.*`. To do a full match, you need to wrap your pattern in `^` and `$`.
+- Matching is done on individual bytes (non-ASCII/UTF8 bytes are also accepted by `.`)
+- By default `^` and `$` only match the start and end of the string.
+- By default `.` matches any character including `\n`
+- By default matching is case sensitive.
 
 # TODOs
 

@@ -136,6 +136,8 @@ impl ServiceResolver {
                 });
             }
 
+            // TODO: This is way too slow if we want to support tasks sometimes going down /
+            // restarting.
             executor::sleep(Duration::from_secs(10)).await;
         }
     }
@@ -183,6 +185,8 @@ impl ServiceResolver {
                     .await?
                     .ok_or_else(|| err_msg("Failed to find worker"))?;
 
+                // TODO: Must check worker state metadata.
+
                 if let Some(endpoint) = Self::get_worker_endpoint(&shared, &worker).await? {
                     endpoints.push(endpoint);
                 }
@@ -201,6 +205,7 @@ impl ServiceResolver {
 
                 i += 1;
             }
+
             state.initialized = true;
             state.notify_all();
         });
@@ -215,6 +220,9 @@ impl ServiceResolver {
         // NOTE: Once we run in a txn, this should be cacheable if there are multiple
         // workers on one node.
         let node_address = Self::get_node_addr(shared, worker.assigned_node()).await?;
+
+        // TOOD: Must restrict to only healthy workers (so we must look at
+        // WorkerStateMetadata).
 
         let mut port = None;
         for port_spec in worker.spec().ports() {

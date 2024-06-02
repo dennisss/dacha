@@ -7,10 +7,16 @@ mod proto {
         pub fn children(&self) -> &[BoxClass] {
             match &self.value {
                 BoxData::FileTypeBox(_)
+                | BoxData::SegmentTypeBox(_)
                 | BoxData::MovieHeaderBox(_)
                 | BoxData::TrackHeaderBox(_)
+                | BoxData::TrackFragmentHeaderBox(_)
+                | BoxData::TrackFragmentBaseMediaDecodeTimeBox(_)
+                | BoxData::TrackRunBox(_)
                 | BoxData::MediaHeaderBox(_)
                 | BoxData::HandlerBox(_)
+                | BoxData::MovieExtendsHeaderBox(_)
+                | BoxData::TrackExtendsBox(_)
                 | BoxData::VideoMediaHeaderBox(_)
                 | BoxData::TimeToSampleBox(_)
                 | BoxData::SyncSampleBox(_)
@@ -32,7 +38,7 @@ mod proto {
                 | BoxData::EditBox(v)
                 | BoxData::DataInformationBox(v)
                 | BoxData::UserDataBox(v)
-                | BoxData::MovieFragmentBox(v)
+                | BoxData::MovieExtendsBox(v)
                 | BoxData::MovieFragmentBox(v)
                 | BoxData::TrackFragmentBox(v) => &v.children,
 
@@ -46,10 +52,16 @@ mod proto {
         pub fn children_mut(&mut self) -> Option<&mut Vec<BoxClass>> {
             match &mut self.value {
                 BoxData::FileTypeBox(_)
+                | BoxData::SegmentTypeBox(_)
                 | BoxData::MovieHeaderBox(_)
                 | BoxData::TrackHeaderBox(_)
+                | BoxData::TrackFragmentHeaderBox(_)
+                | BoxData::TrackFragmentBaseMediaDecodeTimeBox(_)
+                | BoxData::TrackRunBox(_)
                 | BoxData::MediaHeaderBox(_)
                 | BoxData::HandlerBox(_)
+                | BoxData::MovieExtendsHeaderBox(_)
+                | BoxData::TrackExtendsBox(_)
                 | BoxData::VideoMediaHeaderBox(_)
                 | BoxData::TimeToSampleBox(_)
                 | BoxData::SyncSampleBox(_)
@@ -71,7 +83,7 @@ mod proto {
                 | BoxData::EditBox(v)
                 | BoxData::DataInformationBox(v)
                 | BoxData::UserDataBox(v)
-                | BoxData::MovieFragmentBox(v)
+                | BoxData::MovieExtendsBox(v)
                 | BoxData::MovieFragmentBox(v)
                 | BoxData::TrackFragmentBox(v) => Some(&mut v.children),
 

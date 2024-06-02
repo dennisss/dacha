@@ -169,6 +169,9 @@ impl CameraModule {
     /// Requests that another frame be captured. This frame will be triggered
     /// after all previously requested frames are done. May block if we hit the
     /// max queue length.
+    ///
+    /// Returns once the frame has been enqueued without waiting for it be
+    /// captured.
     pub async fn request_frame(&mut self) -> Result<CameraModuleRequest> {
         let new_request = self.new_request_receiver.recv().await?;
         let pending_request = new_request.enqueue()?;

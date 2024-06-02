@@ -3,11 +3,8 @@ extern crate common;
 extern crate http;
 #[macro_use]
 extern crate regexp_macros;
-extern crate automata;
-extern crate parsing;
 #[macro_use]
 extern crate macros;
-extern crate json;
 #[macro_use]
 extern crate file;
 

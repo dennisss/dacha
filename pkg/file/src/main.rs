@@ -13,6 +13,9 @@ struct Args {
 enum Command {
     #[arg(name = "copy")]
     Copy(CopyCommand),
+
+    #[arg(name = "realpath")]
+    RealPath(RealPathCommand),
 }
 
 #[derive(Args)]
@@ -35,6 +38,12 @@ struct CopyCommand {
     /// to read them.
     #[arg(default = false)]
     skip_permission_denied: bool,
+}
+
+#[derive(Args)]
+struct RealPathCommand {
+    #[arg(positional)]
+    path: LocalPathBuf,
 }
 
 async fn run_copy_command(cmd: CopyCommand) -> Result<()> {
@@ -101,12 +110,19 @@ async fn run_copy_command(cmd: CopyCommand) -> Result<()> {
     Ok(())
 }
 
+async fn run_realpath_command(cmd: RealPathCommand) -> Result<()> {
+    println!("{}", file::realpath(cmd.path).await?.as_str());
+
+    Ok(())
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     match args.command {
         Command::Copy(cmd) => run_copy_command(cmd).await,
+        Command::RealPath(cmd) => run_realpath_command(cmd).await,
     }
 
     /*

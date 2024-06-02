@@ -11,12 +11,14 @@ use sys::{
 use crate::error::NetworkError;
 use crate::ip::IPAddress;
 use crate::ip::SocketAddr;
+use crate::utils::set_broadcast;
 use crate::utils::set_reuse_addr;
 use crate::utils::set_tcp_nodelay;
 
 pub struct UdpBindOptions {
     reuse_addr: bool,
     reuse_port: bool,
+    broadcast: bool,
 }
 
 impl UdpBindOptions {
@@ -24,6 +26,7 @@ impl UdpBindOptions {
         Self {
             reuse_addr: false,
             reuse_port: false,
+            broadcast: false,
         }
     }
 
@@ -34,6 +37,11 @@ impl UdpBindOptions {
 
     pub fn reuse_port(&mut self, value: bool) -> &mut Self {
         self.reuse_port = value;
+        self
+    }
+
+    pub fn broadcast(&mut self, value: bool) -> &mut Self {
+        self.broadcast = value;
         self
     }
 }
@@ -64,6 +72,10 @@ impl UdpSocket {
 
             if options.reuse_port {
                 set_reuse_addr(&fd, options.reuse_port)?;
+            }
+
+            if options.broadcast {
+                set_broadcast(&fd, options.broadcast)?;
             }
 
             sys::bind(&fd, &sys_addr).remap_errno::<NetworkError, _>(|| {

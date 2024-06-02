@@ -22,6 +22,14 @@ pub struct SyncRange {
     pub end: u64,
 }
 
+/*
+TODO: Need to define which operations on here are ok with cancellation
+
+- All the functions that require '&mut FileHandle' (like write(), read()) will be poisoning
+- Also fsync() is latching and will
+
+*/
+
 /// Generic wrapper around a Linux file descriptor for performing common I/O
 /// operations.
 ///
@@ -48,6 +56,10 @@ impl FileHandle {
             fd: Arc::new(fd),
             offset: if seekable { Some(0) } else { None },
         }
+    }
+
+    pub unsafe fn set_not_seeekable(&mut self) {
+        self.offset = None;
     }
 
     pub unsafe fn as_raw_fd(&self) -> &OpenFileDescriptor {

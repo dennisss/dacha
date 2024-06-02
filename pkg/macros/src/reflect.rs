@@ -49,7 +49,7 @@ pub fn derive_reflection(input: TokenStream) -> TokenStream {
                     "i16" => "I16".to_string(),
                     "u8" => "U8".to_string(),
                     s @ _ => {
-                        if s.starts_with("[u8 ;") {
+                        if s.starts_with("[u8;") {
                             "U8Slice".to_string()
                         } else {
                             panic!("Unknown type {}", s)

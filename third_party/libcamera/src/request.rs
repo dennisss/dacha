@@ -76,13 +76,10 @@ impl Request {
     pub fn metadata<'a>(&'a self) -> &'a ControlList {
         // Safe because on the C++ side, this is just a simple field accessor.
         unsafe {
-            (Pin::new_unchecked(
-                &mut *(core::mem::transmute::<&ffi::Request, u64>(self.raw.as_ref().unwrap())
-                    as *mut ffi::Request),
-            )
-            .metadata()
-            .get_unchecked_mut() as &ffi::ControlList)
-                .into()
+            let v = core::mem::transmute::<&ffi::Request, u64>(self.raw.as_ref().unwrap());
+            let v = core::mem::transmute::<u64, &mut ffi::Request>(v);
+
+            (Pin::new_unchecked(v).metadata().get_unchecked_mut() as &ffi::ControlList).into()
         }
     }
 
