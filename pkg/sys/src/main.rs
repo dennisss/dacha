@@ -308,7 +308,89 @@ fn test_mounts() -> Result<()> {
     Ok(())
 }
 
+fn test_scm_rights() -> Result<()> {
+    let (pipe_reader, pipe_writer) = sys::pipe2(sys::O_CLOEXEC)?;
+
+    let (sock_a, sock_b) = unsafe {
+        sys::socketpair(
+            sys::AddressFamily::AF_UNIX,
+            sys::SocketType::SOCK_STREAM,
+            sys::SocketFlags::empty(),
+            sys::SocketProtocol::NONE,
+        )?
+    };
+
+    // Send pipe_reader through sock_a.
+    {
+        let data = [sys::IoSlice::new(b"ABC")];
+
+        let messages =
+            sys::ControlMessageBuffer::new(&[sys::ControlMessage::ScmRights(vec![*pipe_reader])]);
+        println!("Send FD: {}", *pipe_reader);
+
+        let msg = sys::MessageHeader::new(&data[..], None, Some(&messages));
+
+        let n = sys::sendmsg(*sock_a, &msg, 0)?;
+        println!("Sent Bytes: {}", n);
+        assert_eq!(n, 3);
+    }
+
+    // Recv fd from sock_b.
+    let mut received_messages = vec![];
+    {
+        let mut buf = [0u8; 16];
+        let data = [sys::IoSliceMut::new(&mut buf[..])];
+
+        let mut messages =
+            sys::ControlMessageBuffer::new(&[sys::ControlMessage::ScmRights(vec![0, 0, 0, 0, 0])]);
+
+        let mut msg = sys::MessageHeaderMut::new(&data[..], None, Some(&mut messages));
+
+        let n = sys::recvmsg(*sock_b, &mut msg, 0)?;
+
+        println!("Recieved Bytes: {}", n);
+        assert_eq!(n, 3);
+
+        for control_msg in msg.control_messages().unwrap() {
+            println!("Recv Message: {:?}", control_msg);
+            received_messages.push(control_msg);
+        }
+
+        assert_eq!(&buf[0..3], b"ABC");
+    }
+
+    assert_eq!(received_messages.len(), 1);
+
+    let new_pipe_reader_fd = match received_messages.pop().unwrap() {
+        sys::ControlMessage::ScmRights(fds) => {
+            assert_eq!(fds.len(), 1);
+            fds[0]
+        }
+        _ => panic!(),
+    };
+
+    unsafe {
+        assert_eq!(sys::write(*pipe_writer, b"WOFO".as_ptr(), 4)?, 4);
+    }
+
+    {
+        let mut buf = [0u8; 16];
+        unsafe {
+            assert_eq!(sys::read(new_pipe_reader_fd, buf.as_mut_ptr(), 16)?, 4);
+        }
+
+        assert_eq!(&buf[0..4], b"WOFO");
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
+    test_scm_rights()?;
+
+    // println!("{}", core::mem::size_of::<sys::c_int>());
+    return Ok(());
+
     test_mounts()?;
     return Ok(());
 

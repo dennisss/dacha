@@ -34,6 +34,7 @@ mod stat;
 // pub mod thread;
 mod ioctl;
 mod mount;
+mod mountinfo;
 mod utils;
 pub mod utsname;
 mod virtual_memory;
@@ -62,6 +63,7 @@ pub use ioctl::*;
 pub use iov::*;
 pub use mapped_memory::*;
 pub use mount::*;
+pub use mountinfo::*;
 pub use poll::*;
 pub use proc::*;
 pub use send::*;
@@ -119,13 +121,6 @@ macro_rules! export_cast_bindings {
 
 // Should match the pollfd::events field.
 export_cast_bindings!(c_short, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT);
-
-/*
-See also nice list of syscalls here:
-https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/syscalls/
-
-
-*/
 
 syscall!(read, bindings::SYS_read, fd: c_int, buf: *mut u8, count: c_size_t => Result<c_size_t>);
 syscall!(write, bindings::SYS_write, fd: c_int, buf: *const u8, count: c_size_t => Result<c_size_t>);
@@ -185,11 +180,14 @@ syscall!(getsid, bindings::SYS_getsid => Result<pid_t>);
 syscall!(setsid, bindings::SYS_setsid => Result<pid_t>);
 
 // syscall!(eventfd, bindings::SYS_eventfd, count: c_uint => Result<c_int>);
+// TODO: Wrap in OpenFileDescriptor
 syscall!(eventfd2, bindings::SYS_eventfd2, count: c_uint, flags: c_uint => Result<c_int>);
 
 syscall!(
     prctl, bindings::SYS_prctl, option: c_uint, arg2: c_ulong, arg3: c_ulong, arg4: c_ulong, arg5: c_ulong => Result<u64>
 );
+
+syscall!(fcntl, bindings::SYS_fcntl, fd: c_int, cmd: c_uint, arg: c_ulong => Result<c_int>);
 
 /*
 syscall!(
@@ -200,3 +198,20 @@ syscall!(
     arch_prctl_get, bindings::SYS_arch_prctl, code: c_uint, addr: *mut c_ulong => Result<()>
 );
 */
+
+/// Returns the (reader end, writer_end)
+pub fn pipe2(flags: c_uint) -> Result<(OpenFileDescriptor, OpenFileDescriptor), Errno> {
+    let mut fds = [0; 2];
+    unsafe { raw::pipe2(&mut fds, flags) }?;
+
+    Ok((
+        OpenFileDescriptor::new(fds[0]),
+        OpenFileDescriptor::new(fds[1]),
+    ))
+}
+
+mod raw {
+    use super::*;
+
+    syscall!(pipe2, bindings::SYS_pipe2, fds: *mut [c_int; 2], flags: c_uint => Result<()>);
+}

@@ -6,9 +6,15 @@ use base_error::*;
 
 // NOTE: We must separately verify that there is at least one digit in the
 // number
+//
+// TODO: REquire a complete match ending with '$' here.
 regexp!(DECIMAL => "^([+-]?)([0-9]*)\\.?([0-9]*)");
 
 /// Holds up to 9 digits of integer and 9 digits of fraction data.  
+///
+/// The main goal of this struct is to exactly represent a gcode real value
+/// (parsing a gcode number and then re-stringifying the Decimal should produce
+/// equal values aside from minor formatting differences).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Decimal {
     value: i64,
@@ -123,6 +129,10 @@ impl Decimal {
             out.push((b'0' + (digit as u8)) as char);
             frac -= scale * digit;
         }
+    }
+
+    pub fn to_f32(&self) -> f32 {
+        self.to_string().parse::<f32>().unwrap()
     }
 }
 

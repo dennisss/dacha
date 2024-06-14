@@ -1,7 +1,6 @@
 use std::{collections::HashMap, thread::current, time::Instant};
 
 use decimal::Decimal;
-use parser::Event;
 
 #[macro_use]
 extern crate regexp_macros;
@@ -11,16 +10,17 @@ mod parser;
 
 use base_error::*;
 
-use crate::parser::*;
+pub use crate::parser::*;
 
 #[derive(Clone)]
-struct Line {
-    command: Command,
-    params: HashMap<char, Decimal>,
+pub struct Line {
+    pub command: Command,
+    pub params: HashMap<char, Decimal>,
     params_order: Vec<char>,
 }
 
 impl Line {
+    // TODO: Support a compact format without any spaces.
     pub fn to_string(&self) -> String {
         let mut out = self.command.to_string();
 
@@ -34,15 +34,70 @@ impl Line {
     }
 }
 
-#[derive(Clone)]
-struct Command {
-    group: char,
-    number: Decimal,
+#[derive(Clone, PartialEq)]
+pub struct Command {
+    pub group: char,
+    pub number: Decimal,
 }
 
 impl Command {
+    pub fn new<N: Into<Decimal>>(group: char, number: N) -> Self {
+        Self {
+            group,
+            number: number.into(),
+        }
+    }
+
     pub fn to_string(&self) -> String {
         format!("{}{}", self.group, self.number)
+    }
+}
+
+pub struct LineBuilder {
+    command: Option<Command>,
+    params: HashMap<char, Decimal>,
+    params_order: Vec<char>,
+}
+
+impl LineBuilder {
+    pub fn new() -> Self {
+        Self {
+            command: None,
+            params: HashMap::default(),
+            params_order: vec![],
+        }
+    }
+
+    pub fn add_word(&mut self, word: Word) -> Result<()> {
+        if self.command.is_none() {
+            self.command = Some(Command {
+                group: word.key,
+                number: word.value,
+            });
+
+            return Ok(());
+        }
+
+        if self.params.contains_key(&word.key) {
+            return Err(err_msg("Duplicate parameter"));
+        }
+
+        self.params.insert(word.key, word.value);
+        self.params_order.push(word.key);
+        Ok(())
+    }
+
+    pub fn finish(self) -> Option<Line> {
+        let command = match self.command {
+            Some(v) => v,
+            None => return None,
+        };
+
+        Some(Line {
+            command,
+            params: self.params,
+            params_order: self.params_order,
+        })
     }
 }
 
@@ -57,15 +112,11 @@ pub fn tile_gcode(
     {
         let mut current_line: Option<Line> = None;
 
-        let mut parser = Parser::default();
-        let mut rest = initial_gcode;
-        while !rest.is_empty() {
-            let (e, r) = parser.parse(rest);
-            rest = r;
-
+        let mut parser = Parser::new(initial_gcode);
+        while let Some(e) = parser.next() {
             match e {
-                Some(Event::ParseError) => return Err(err_msg("Invalid initial gcode")),
-                Some(Event::Word(word)) => {
+                Event::ParseError => return Err(err_msg("Invalid initial gcode")),
+                Event::Word(word) => {
                     if let Some(line) = &mut current_line {
                         if line.params.contains_key(&word.key) {
                             return Err(err_msg("Duplicate parameter"));
@@ -84,14 +135,12 @@ pub fn tile_gcode(
                         });
                     }
                 }
-                Some(Event::EndLine) => {
+                Event::EndLine => {
                     if let Some(line) = current_line.take() {
                         lines.push(line);
                     }
                 }
-                None => {
-                    assert!(rest.is_empty());
-                }
+                Event::Comment(_) => {}
             }
         }
     }

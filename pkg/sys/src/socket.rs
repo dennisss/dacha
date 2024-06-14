@@ -13,6 +13,25 @@ pub unsafe fn socket(
     )?))
 }
 
+pub unsafe fn socketpair(
+    family: AddressFamily,
+    typ: SocketType,
+    flags: SocketFlags,
+    protocol: SocketProtocol,
+) -> Result<(OpenFileDescriptor, OpenFileDescriptor), Errno> {
+    let mut fds = [0, 0];
+    raw::socketpair(
+        family.to_raw(),
+        typ.to_raw() | flags.to_raw(),
+        protocol.to_raw(),
+        &mut fds,
+    )?;
+
+    let a = OpenFileDescriptor::new(fds[0]);
+    let b = OpenFileDescriptor::new(fds[1]);
+    Ok((a, b))
+}
+
 // TODO: Introduce an explicit AF_UNKNOWN to tell which addresses have not been
 // populated.
 // Also use a normal enum to ensure there are no duplicate entries.
@@ -36,6 +55,7 @@ define_bit_flags!(SocketFlags c_int {
 });
 
 define_transparent_enum!(SocketProtocol c_int {
+    NONE = 0,
     TCP = (bindings::IPPROTO_IP as c_int),
     UDP = (bindings::IPPROTO_UDP as c_int)
 });
@@ -261,6 +281,8 @@ mod raw {
     use super::*;
 
     syscall!(socket, bindings::SYS_socket, family: c_int, typ: c_int, protocol: c_int => Result<c_int>);
+
+    syscall!(socketpair, bindings::SYS_socketpair, family: c_int, typ: c_int, protocol: c_int, sv: *mut [c_int; 2] => Result<()>);
 
     syscall!(bind, bindings::SYS_bind, sockfd: c_int, addr: *const bindings::sockaddr, addrlen: bindings::socklen_t => Result<()>);
 

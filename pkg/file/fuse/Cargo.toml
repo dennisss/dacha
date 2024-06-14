@@ -1,0 +1,14 @@
+[package]
+name = "fuse"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+automata = { path = "../../automata" }
+common = { path = "../../common" }
+base_error = { path = "../../base/error" }
+sys = { path = "../../sys" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = ".." }
+macros = { path = "../../macros" }

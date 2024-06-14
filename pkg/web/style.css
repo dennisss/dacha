@@ -1,0 +1,75 @@
+@font-face {
+    font-family: "Noto Sans";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url(/assets/third_party/noto_sans/font_normal.ttf) format("truetype");
+}
+
+@font-face {
+    font-family: "Noto Sans Mono";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url(/assets/third_party/noto_sans/font_mono_normal.ttf) format("truetype");
+}
+
+@font-face {
+    font-family: 'Material Symbols Outlined';
+    font-style: normal;
+    src: url(/assets/third_party/material_icons/material_symbols_outlined.woff2) format('woff2');
+}
+
+
+.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-variation-settings:
+        'FILL' 0,
+        'wght' 700,
+        'GRAD' 0,
+        'opsz' 24
+}
+
+.material-symbols-fill {
+    font-family: 'Material Symbols Outlined';
+    font-variation-settings:
+        'FILL' 1,
+        'wght' 700,
+        'GRAD' 0,
+        'opsz' 24
+}
+
+.card-body>.table {
+    padding: 10px;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@-webkit-keyframes spin {
+    0% {
+        -webkit-transform: rotate(0deg);
+    }
+
+    100% {
+        -webkit-transform: rotate(360deg);
+    }
+}
+
+.spinner-inline {
+    display: inline-block;
+    border-radius: 50%;
+    border-top: 16px solid #444;
+    border-bottom: 16px solid #444;
+    width: 1em;
+    height: 1em;
+    animation: spin 2s linear infinite;
+    -webkit-animation: spin 2s linear infinite;
+}

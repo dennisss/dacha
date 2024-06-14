@@ -102,6 +102,7 @@ pub fn base64url_decode(data: &str) -> Result<Vec<u8>, DecodeRadixError> {
 }
 
 fn base64_decode_with(data: &str, options: &Base64Options) -> Result<Vec<u8>, DecodeRadixError> {
+    // TODO: Not required if there is no pad character?
     if data.len() % 4 != 0 {
         return Err(DecodeRadixError {
             input_position: data.len(),
