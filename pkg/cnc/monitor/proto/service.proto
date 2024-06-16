@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package cnc;
+
+import "google/protobuf/timestamp.proto";
+import "pkg/cnc/monitor/proto/machine_config.proto";
+import "pkg/cnc/monitor/proto/machine.proto";
+import "pkg/cnc/monitor/proto/file.proto";
+
+service Monitor {
+    // This will always return one response message immediately and may follow up with more if
+    // we are 'watch' was configured.
+    rpc QueryEntities (QueryEntitiesRequest) returns (stream QueryEntitiesResponse);
+
+    // Executes some operation on a specific machine.
+    rpc RunMachineCommand (RunMachineCommandRequest) returns (RunMachineCommandResponse);
+
+    rpc ReadSerialLog (ReadSerialLogRequest) returns (stream ReadSerialLogResponse);
+
+    rpc StartFileUpload (StartFileUploadRequest) returns (StartFileUploadResponse);
+
+    rpc DeleteFile (DeleteFileRequest) returns (DeleteFileResponse);
+
+    // TODO: Need to be able to read the terminal messages (optionally filter out any parsed messages or sent message responses).
+}
+
+message ReadSerialLogRequest {
+    fixed64 machine_id = 1;
+}
+
+
+
+message ReadSerialLogResponse {
+    enum LineKind {
+        UNKNOWN = 0;
+        
+        // This is an 'ok' response received from the machine.
+        OK = 1;
+    
+        ERROR = 2;
+    
+        // This line contains periodically reported state information. 
+        STATE_UPDATE = 3;
+    }
+
+    message Line {
+        string value = 1;
+
+        // If true, this line was sent to the machine. Else the line was received from the machine.
+        bool sent = 2;
+
+        uint64 number = 3;
+
+        LineKind kind = 4; 
+    }
+
+    repeated Line lines = 1;
+}
+
+enum EntityType {
+    UNKNOWN_ENTITY = 0;
+    MACHINE = 1;
+    FILE = 2;
+    CAMERA = 3;
+}
+
+message QueryEntitiesRequest {
+    EntityType entity_type = 1;
+
+    // If we want a specific 
+    optional fixed64 entity_id = 2;
+
+    // If true, then we want to also receive higher frequency 'verbose' data about the entities.
+    bool verbose = 3;
+
+    // If true, monitor the entities for changes and send back an updated response after each
+    // change.
+    bool watch = 4;
+}
+
+message QueryEntitiesResponse {
+    repeated MachineProto machines = 1;
+    repeated CameraEntry cameras = 2;
+    repeated FileProto files = 3;
+}
+
+message CameraEntry {
+    fixed64 id = 1;
+    string name = 2;
+}
+
+message ListMachinesRequest {
+
+}
+
+message ListMachinesResponse {
+    repeated MachineProto machines = 1;
+}
+
+message WatchMachineStateRequest {
+    fixed64 machine_id = 1;
+}
+
+message WatchMachineStateResponse {
+    MachineStateProto state = 1;
+}
+
+message RunMachineCommandRequest {
+    fixed64 machine_id = 1;
+
+    oneof command {
+        // Assuming the machine is currently in a DISCONNECTED|ERROR state, try to re-connect to it.
+        bool connect = 2;
+
+        bool disconnect = 3;
+
+        // Immediately stops whatever this machine is doing and tries to reset it to an initial idle
+        // state.
+        //
+        // - All enqueued commands will be dropped if possible.
+        // - All other operations will be ignored for 5 seconds after this is triggered.
+        bool emergency_stop = 4;
+
+        // Sends a raw gcode command to a machine (single line without \n).
+        // Note that this only blocks for the command to get enqueued. THe command will be sent and
+        // processed by the machine later.
+        string send_serial_command = 5;
+
+        LoadProgramCommand load_program = 10;
+
+        bool unload_program = 12;
+
+        // Plays a program given its file id.
+        bool play_program = 6;
+
+        bool pause_program = 7;
+
+        // Stops running the current program and marks no program as running.
+        bool stop_program = 8;
+
+        // Merges the given data into the machine config.
+        //
+        // WARNING: Not all changes can be changed live and may require a machine
+        // disconnect/connect cycle to take effect.
+        MachineConfig update_config = 9;
+
+        SetTemperatureCommand set_temperature = 11;
+
+        bool home_x = 13;
+
+        bool home_y = 14;
+
+        bool probe_z = 15;
+
+        bool mesh_level = 16;
+
+        GotoCommand goto = 17;
+
+        JogCommand jog = 18;
+    }
+}
+
+message LoadProgramCommand {
+    fixed64 file_id = 1;
+}
+
+message GotoCommand {
+    float x = 1;
+    float y = 2;
+    uint32 feed_rate = 3;
+}
+
+message JogCommand {
+    uint32 feed_rate = 1;
+    repeated JogIncrement increment = 2;
+}
+
+message JogIncrement {
+    string axis_id = 1;
+    float value = 2;
+}
+
+message SetTemperatureCommand {
+    string axis_id = 1;
+    float target = 2;
+}
+
+
+message RunMachineCommandResponse {
+
+}
+
+
+message StartFileUploadRequest {
+    string name = 1;
+    uint32 size = 2;
+}
+
+message StartFileUploadResponse {
+    // This will be the file in its initial uploading state.
+    FileProto file = 1;
+}
+
+message DeleteFileRequest {
+    fixed64 file_id = 1;
+}
+
+message DeleteFileResponse {
+
+}

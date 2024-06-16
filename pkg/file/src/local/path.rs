@@ -31,7 +31,7 @@ Some notes on normalization:
 */
 
 // TODO: Implement custom eq?
-#[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
 pub struct LocalPathBuf {
     inner: String,
 }

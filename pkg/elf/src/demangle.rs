@@ -54,6 +54,8 @@ fn demangle_name_standard(name: &str) -> Option<String> {
     Some(
         out.replace("$LT$", "<")
             .replace("$GT$", ">")
+            .replace("$LP$", "(")
+            .replace("$RP$", ")")
             .replace("$u20$", " ")
             .replace("$u7b$", "{")
             .replace("$u7d$", "}")

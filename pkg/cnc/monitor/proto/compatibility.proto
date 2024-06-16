@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package cnc;
+
+message FileMachineCompatibility {
+    fixed64 file_id = 1;
+    fixed64 machine_id = 2;
+    
+    // Whether or not the file can be played back as a program as the machine.
+    bool compatible = 3;
+
+    repeated string failure_reasons = 4;
+}

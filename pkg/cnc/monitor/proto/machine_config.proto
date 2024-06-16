@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package cnc;
+
+
+message MachineConfig {
+    // Name of the 
+    string base_config = 1;
+
+    // Human friendly unique name for this machine.
+    string name = 2;
+
+    // Selector for the main device which we should communicate with to send GCode commands.
+    DeviceSelector device = 3;
+
+    WorkArea work_area = 5;
+
+    // If true, then this machine can be reset by a high->low DTR line transition.
+    //
+    // This is the reset mechanism for many Arduino/ATMega2560 based boards and will be
+    // used as an emergency stop mechanism if the machine doesn't support ADVANCED_OK. 
+    bool reset_using_dtr = 6;
+
+    // If true, we will attempt to automatically connect to this machine whenever it is detected.
+    optional bool auto_connect = 7;
+
+    // Type of firmware used on the machine. Mainly used for determining what commands are
+    // supported and what format responses are expected in.
+    enum Firmware {
+        UNKNOWN = 0;
+        GENERIC = 1;
+        MARLIN = 2;
+        GRBL = 3;
+        SMOOTHIEWARE = 4;
+    }
+    Firmware firmware = 8;
+
+    repeated AxisConfig axes = 9;
+
+    repeated CameraConfig cameras = 10;
+
+    uint32 baud_rate = 11;
+
+    string model_name = 12;
+
+    repeated FieldPath clear_fields = 13;
+
+    // Whether or not to use silent mode. Should only be set for Prusa MK3/4 machines.
+    optional bool silent_mode = 14;
+
+    // TODO: Support an e-stop pin (that can be driven high/low to trigger a stop.)
+}
+
+message FieldPath {
+    repeated uint32 field_id = 1;
+}
+
+enum AxisType {
+    UNKNOWN = 0;
+    POSITION = 1;
+    HEATER = 2;
+    FAN_TACHOMETER_RPM = 3;
+    FAN_PWM_VALUE = 4;
+    GENERIC_SENSOR = 5;
+}
+
+message AxisConfig {
+    // Identifier used to label this axis in gcode responses. e.g. in 'X: 12.0', 'X' is the label.
+    string id = 1;
+
+    // Human friendly name for this axis.
+    string name = 2;
+
+    AxisType type = 3;
+
+    // Hide this axis because it is redundant with some other axis.
+    bool hide = 4;
+
+    // Min/max limit on what values can be reached by this asxis. 
+    Range range = 5;
+}
+
+message WorkArea {
+    Range x_range = 1;
+    Range y_range = 2;
+}
+
+message Range {
+    float min = 1;
+    float max = 2;
+}
+
+
+// NOTE: Only one of the child fields can be set at a time.
+message DeviceSelector {
+    USBSelector usb = 1;
+
+    // Path so a serial port device to always use for this machine.
+    // e.g. /dev/ttyS0
+    //
+    // TODO: Allow distinguishing these by USB interface. 
+    //
+    // NOTE: This shouldn't use dynamically allocated devices like /dev/ttyUSB0.
+    repeated string serial_path = 2;
+
+    uint32 fake = 3;
+
+    // Path to a V4L2 device.
+    // TODO: Allow distinguishing these by USB interface.
+    repeated string video_path = 4;
+}
+
+message USBSelector {
+    uint32 vendor = 1;
+
+    uint32 product = 2;
+
+    // NOTE: This shouldn't be set in any presets but will be set for specific machine
+    // instances during the first connection to bind the machine id to the same machine. 
+    string serial_number = 3;
+
+    string vendor_name = 4;
+
+    string product_name = 5;
+}
+
+message CameraConfig {
+    string id = 1;
+
+    // If present, defines which USB device this camera is on.
+    DeviceSelector device = 2;
+
+    // If true, we will record video from this camera while the machine is playing a file.
+    bool record_while_playing = 3;
+}

@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package cnc;
+
+/*
+Non-machine metrics:
+- e.g. player load times.
+
+
+Note that we don't want to store type information in the value.
+- Preferrable to just 
+
+May make sense to group things be:
+- Resource
+
+*/
+
+message MetricResourceEntry {
+    fixed64 key = 1;
+    MetricResource resource = 2;
+}
+
+message MetricResource {
+    fixed64 machine_id = 1;
+    string axis = 2;
+}
+
+message MetricValue {
+    // TODO: Ideally we would still keep similar data together (e.g. data from the same source machine)
+    fixed64 resource_key = 1;
+
+    // Time at which this measurement was made (in microseconds since unix epoch)
+    fixed64 timestamp = 2;
+
+    oneof data {
+        float float_value = 3;
+    }
+}

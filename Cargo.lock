@@ -586,6 +586,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "cnc_monitor"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "base_radix",
+ "cnc_monitor_proto",
+ "common",
+ "crypto",
+ "datastore_meta_client",
+ "executor",
+ "executor_multitask",
+ "failure",
+ "file",
+ "gcode",
+ "http",
+ "image",
+ "json",
+ "macros",
+ "math",
+ "parsing",
+ "peripherals",
+ "protobuf",
+ "regexp_macros",
+ "rpc",
+ "rpc_util",
+ "sstable",
+ "usb",
+ "web",
+]
+
+[[package]]
+name = "cnc_monitor_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "rpc",
+]
+
+[[package]]
 name = "cnc_tools"
 version = "0.1.0"
 dependencies = [
@@ -985,6 +1029,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "equivalent"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
+
+[[package]]
 name = "event-listener"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1051,6 +1101,20 @@ dependencies = [
  "automata",
  "common",
  "executor",
+ "macros",
+ "sys",
+]
+
+[[package]]
+name = "fuse"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "common",
+ "executor",
+ "executor_multitask",
+ "file",
  "macros",
  "sys",
 ]
@@ -1170,6 +1234,7 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "base_error",
+ "common",
  "macros",
  "math",
  "regexp_macros",
@@ -1789,6 +1854,29 @@ dependencies = [
  "uuid",
  "video",
  "xml",
+]
+
+[[package]]
+name = "media_web"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "compression",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "json",
+ "macros",
+ "math",
+ "parsing",
+ "reflection",
+ "rpc",
+ "rpc_util",
+ "v4l2",
+ "video",
+ "web",
 ]
 
 [[package]]

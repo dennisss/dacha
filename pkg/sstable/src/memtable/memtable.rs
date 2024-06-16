@@ -2,10 +2,13 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 use common::bytes::Bytes;
+use common::errors::*;
 
-use crate::iterable::Iterable;
+use crate::iterable::{Iterable, KeyValueEntry};
 use crate::memtable::vec::*;
 use crate::table::comparator::*;
+
+use super::skip_list::SkipListMemtable;
 
 /*
 Internal table implementation needs to support:
@@ -25,14 +28,14 @@ Internal table implementation needs to support:
 // sequence which aren't on disk already. (but can be GC'ed when initializing
 // the table from a log)
 pub struct MemTable {
-    table: VecMemTable,
+    table: SkipListMemtable,
     size: AtomicUsize,
 }
 
 impl MemTable {
     pub fn new(comparator: Arc<dyn KeyComparator>) -> Self {
         Self {
-            table: VecMemTable::new(comparator),
+            table: SkipListMemtable::new(comparator),
             size: AtomicUsize::new(0),
         }
     }
@@ -57,15 +60,8 @@ impl MemTable {
     //		Some(TableValue { sequence: entry.sequence, value: Some(&entry.value) })
     //	}
 
-    pub fn iter(&self) -> VecMemTableIterator {
+    pub fn iter(&self) -> impl Iterable<KeyValueEntry> {
         self.table.iter()
-    }
-
-    /// Creates an iterator over the memtable starting at the given key.
-    pub fn range_from(&self, key: &[u8]) -> VecMemTableIterator {
-        let mut iter = self.table.iter();
-        iter.seek(key);
-        iter
     }
 
     // TODO: Change to taking references as arguments as we eventually want to copy
@@ -78,8 +74,8 @@ impl MemTable {
         self.table.insert(key, value).await;
     }
 
-    pub async fn key_range(&self) -> Option<(Bytes, Bytes)> {
-        self.table.key_range().await
+    pub fn key_range(&self) -> Option<(Bytes, Bytes)> {
+        self.table.key_range()
     }
 }
 //

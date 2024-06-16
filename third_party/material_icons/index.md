@@ -1,0 +1,1 @@
+From https://github.com/google/material-design-icons/tree/master

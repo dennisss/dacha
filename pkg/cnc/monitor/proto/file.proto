@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package cnc;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+// TODO: Rename to a 'Program' (but there will be many different types of programs. Some normal and )
+message FileProto {
+    fixed64 id = 1;
+
+    string name = 2;
+    
+    uint64 size = 3;
+
+    enum State {
+        UNKNOWN = 0;
+        UPLOADING = 1;
+        PROCESSING = 2;
+        READY = 3;
+    }
+    State state = 4;
+
+    // How much of the current state's work is done (from 0 to 1).
+    float state_progress = 5;
+
+    google.protobuf.Timestamp upload_time = 6;
+
+    // TODO: Implement me.
+    google.protobuf.Timestamp last_used_time = 7;
+
+    // TODO: Stats on previous attempts to use this file.
+
+    // If present, then this is an playable GCode file.
+    ProgramSummaryProto program = 8;
+
+    bool has_thumbnail = 9;
+}
+
+message ProgramSummaryProto {
+    uint32 num_lines = 1;
+
+    uint32 num_invalid_lines = 2;
+
+    google.protobuf.Duration normal_duration = 3;
+
+    google.protobuf.Duration silent_duration = 4;
+
+    map<uint32, ProgramToolSummary> tools = 5;
+
+    optional float max_bed_temperature = 6;
+
+    repeated string unique_commands = 8;
+}
+
+message ProgramToolSummary {
+    optional float max_extruder_temperature = 1;
+}

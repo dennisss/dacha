@@ -1,0 +1,195 @@
+syntax = "proto3";
+
+package cnc;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "pkg/cnc/monitor/proto/machine_config.proto";
+import "pkg/cnc/monitor/proto/file.proto";
+
+message MachineProto {
+    fixed64 id = 1;
+
+    MachineConfig config = 2;
+
+    MachineStateProto state = 3;
+}
+
+message MachineStateProto {
+    enum ConnectionState {
+        UNKNOWN = 0;
+
+        // We can't connect to this machine because the main serial device used to connect to it is
+        // not available (e.g. USB cable is unplugged).
+        MISSING = 1;
+
+        // The machine has been detected as available for connection but we won't connect to it
+        DISCONNECTED = 2;
+
+        // The serial port is being configured or initialize commands are still being sent. 
+        CONNECTING = 3;
+
+        // The link to the machine is fully setup and the machine is believed to be healthy
+        // (responding to keep alives).
+        //
+        // Most other fields in the MachineStateProto are only valid in this state.
+        CONNECTED = 4;
+
+        // Something failed while communicating with this machine.
+        // If auto_connect is enabled, we will retry connecting after a backoff.
+        ERROR = 5;
+    }
+
+    ConnectionState connection_state = 1;
+
+    // Error message from the last time the machine entered the ERROR state.
+    string last_connection_error = 2;
+
+    // Verbose set of information on what device was selected to use for connecting to this
+    // machine. If the machine is not a CONNECTED|CONNECTING state, then this will instead contain
+    // information on the candidate device which can be connected to.
+    DeviceSelector connection_device = 5;
+
+    repeated AxisValue axis_values = 3;
+
+    LoadedProgramState loaded_program = 6;
+
+    // Information about the currently running program on the machine.
+    //
+    // If not set, then there is no program running.
+    //
+    // After a program finished (either into the DONE, STOPPED, or ERROR state), running_program will stay
+    // set to capture the final state. New files can be loaded only when this is not set or it is a
+    // terminal state.
+    //
+    // TODO: Eventually don't keep this set and instead just refer to the last recorded run on
+    // the machine.
+    // 
+    //
+    //
+    // If set, then there is currently a program running on the machine.
+    //
+    // 
+    //
+    RunningProgramState running_program = 4;
+
+    // Whether or not steppers are on?
+
+    // Info on the currently chosen interface port (USB/serial etc.) and metadata like names and serial numbers.
+}
+
+
+message AxisValue {
+    string id = 1;
+
+    // For heaters, this will contain two elements [current_temperature, target_temperature]
+    repeated float value = 2;
+
+    // Last time we got the value of this axis from the machine.
+    google.protobuf.Timestamp last_reported = 3;
+}
+
+message LoadedProgramState {
+    FileProto file = 1;
+}
+
+
+/*
+ProgramRun {
+    uint64 run_id 
+    PlayerState final_state
+    Message final_status_message
+    optional boolean user_success_feedback
+    Timestamp start_time
+    Timestamp end_time
+
+    // Only final values are stored in the database.
+    State state
+
+
+}
+
+ProgramRunEvent {
+    type: 
+}
+
+*/
+
+message RunningProgramState {
+    enum PlayerState {
+        UNKNOWN = 0;
+    
+        // Program has completed some percentage of the program lines and is waiting for 
+        // the user to un-pause.
+        //
+        // - This is the initial state of the player.
+        // - Program triggered stops will typically display the reason in the 'status_message'
+        //   field.
+        //
+        // TODO: While paused, do something to keep the stepper motors alive (if we send > 0 lines).
+        PAUSED = 1;
+    
+        // Program is actively streaming commands to the machine.
+        PLAYING = 2;
+    
+        // Transitioning from PLAYING to PAUSED.
+        PAUSING = 3;
+    
+        // Transitioning from PLAYING to STOPPED.
+        STOPPING = 4;
+    
+        // Upon user request, the program was gracefully stopped (no commands are being sent
+        // anymore, motors/heaters have been disabled, and the program can not be resumed
+        // without restarting it).
+        //
+        // TERMINAL STATE
+        STOPPED = 5;
+        
+        // All commands in the program have been sent and:
+        // - We waited for all motions to complete.
+        // - We turned off any heaters/lasers/etc.
+        //
+        // TERMINAL STATE
+        DONE = 6;
+    
+        // TERMINAL STATE
+        ERROR = 7;
+    } 
+
+    // TODO: Want a run_id
+
+    // TODO: May want to have a revision id to allow operations to be stateless.
+
+    PlayerState status = 1;
+
+    google.protobuf.Timestamp start_time = 2;
+
+    google.protobuf.Timestamp end_time = 3;
+
+    // Last time that progress/estimated_remaining_time were updated.
+    // This is always updated on state transitions to/from PLAYING.
+    google.protobuf.Timestamp last_progress_update = 4;
+
+    // Percentage of execution time in this program that has finished.
+    // Will be 1.0 iff the program is completely done running.
+    float progress = 5;
+
+    // Assuming we have been playing since last_progress_update, this is the amount of
+    // wall time remaining remaining
+    google.protobuf.Duration estimated_remaining_time = 6;
+
+    // Number of lines in the file that have been fully processed (locally).
+    // Starts at 0.
+    uint32 line_number = 7;
+
+    // Message describing the current state of playback.
+    Message status_message = 8;
+}
+
+message Message {
+    string text = 1;
+    // log level
+    // time created
+}
+
+

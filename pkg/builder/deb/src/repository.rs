@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common::errors::*;
+use common::{bytes::Bytes, errors::*};
 use file::{LocalPath, LocalPathBuf};
 use http::uri::Uri;
 use http::ClientInterface;
@@ -11,8 +11,8 @@ use http::ClientInterface;
 use crate::{ControlFile, PackagesFile, ReleaseFile, ReleaseFileEntry};
 
 pub struct Repository {
-    client: http::Client,
-    root_path: LocalPathBuf,
+    client: http::SimpleClient,
+    root_url: Uri,
     dists: HashMap<String, Distribution>,
     cache_dir: LocalPathBuf,
 }
@@ -21,38 +21,38 @@ impl Repository {
     pub async fn create(root_url: Uri, cache_dir: LocalPathBuf) -> Result<Self> {
         // TODO: Tune this to only use a single backend ip at a time
         // If there are multiple, only try one until it fails.
-        let client = http::Client::create(root_url.clone()).await?;
+        let client = http::SimpleClient::new(http::SimpleClientOptions::default());
 
         Ok(Self {
             client,
-            root_path: root_url.path.as_str().into(),
+            root_url,
             dists: HashMap::new(),
             cache_dir,
         })
     }
 
-    async fn get_file<P: AsRef<LocalPath>>(&self, path: P) -> Result<Vec<u8>> {
+    async fn get_file<P: AsRef<LocalPath>>(&self, path: P) -> Result<Bytes> {
         let path = path.as_ref();
         let request = http::RequestBuilder::new()
             .method(http::Method::GET)
-            .path(self.root_path.join(path).as_str())
+            .uri2(self.root_url.join(&path.as_str().parse()?)?)
             .build()?;
 
-        println!("GET {:?}", self.root_path.join(path).as_str());
+        // println!("GET {:?}", self.root_path.join(path).as_str());
 
         let mut request_context = http::ClientRequestContext::default();
 
-        let mut response = self.client.request(request, request_context).await?;
+        let mut response = self
+            .client
+            .request(&request.head, Bytes::new(), &request_context)
+            .await?;
         if !response.ok() {
             return Err(format_err!("Request failed: {:?}", response.status()));
         }
 
-        let mut out = vec![];
-        response.body.read_to_end(&mut out).await?;
+        println!("=> Downloaded: {} bytes", response.body.len());
 
-        println!("=> Downloaded: {} bytes", out.len());
-
-        Ok(out)
+        Ok(response.body)
     }
 
     /*
@@ -76,7 +76,7 @@ impl Repository {
                         &data,
                         &mut uncompressed,
                     )?;
-                    uncompressed
+                    Bytes::from(uncompressed)
                 } else {
                     self.get_file(distribution.path.join(packages)).await?
                 }

@@ -711,8 +711,7 @@ impl EmbeddedDB {
                 let key_range = memtable
                     .table
                     .key_range()
-                    .await
-                    .ok_or_else(|| err_msg("Empty memtable beign compacted"))?;
+                                        .ok_or_else(|| err_msg("Empty memtable beign compacted"))?;
 
                 let selected_level = state.version_set.pick_memtable_level(KeyRangeRef {
                     smallest: &key_range.0,

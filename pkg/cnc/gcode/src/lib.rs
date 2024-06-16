@@ -1,4 +1,4 @@
-use std::{collections::HashMap, thread::current, time::Instant};
+use std::{collections::HashMap, time::Instant};
 
 use decimal::Decimal;
 
@@ -6,100 +6,15 @@ use decimal::Decimal;
 extern crate regexp_macros;
 
 mod decimal;
+mod line;
 mod parser;
 
 use base_error::*;
 
+pub use crate::line::*;
 pub use crate::parser::*;
 
-#[derive(Clone)]
-pub struct Line {
-    pub command: Command,
-    pub params: HashMap<char, Decimal>,
-    params_order: Vec<char>,
-}
-
-impl Line {
-    // TODO: Support a compact format without any spaces.
-    pub fn to_string(&self) -> String {
-        let mut out = self.command.to_string();
-
-        for key in &self.params_order {
-            let val = self.params.get(key).unwrap().to_string();
-            out.push_str(&format!(" {}{}", *key, val));
-        }
-
-        out.push('\n');
-        out
-    }
-}
-
-#[derive(Clone, PartialEq)]
-pub struct Command {
-    pub group: char,
-    pub number: Decimal,
-}
-
-impl Command {
-    pub fn new<N: Into<Decimal>>(group: char, number: N) -> Self {
-        Self {
-            group,
-            number: number.into(),
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        format!("{}{}", self.group, self.number)
-    }
-}
-
-pub struct LineBuilder {
-    command: Option<Command>,
-    params: HashMap<char, Decimal>,
-    params_order: Vec<char>,
-}
-
-impl LineBuilder {
-    pub fn new() -> Self {
-        Self {
-            command: None,
-            params: HashMap::default(),
-            params_order: vec![],
-        }
-    }
-
-    pub fn add_word(&mut self, word: Word) -> Result<()> {
-        if self.command.is_none() {
-            self.command = Some(Command {
-                group: word.key,
-                number: word.value,
-            });
-
-            return Ok(());
-        }
-
-        if self.params.contains_key(&word.key) {
-            return Err(err_msg("Duplicate parameter"));
-        }
-
-        self.params.insert(word.key, word.value);
-        self.params_order.push(word.key);
-        Ok(())
-    }
-
-    pub fn finish(self) -> Option<Line> {
-        let command = match self.command {
-            Some(v) => v,
-            None => return None,
-        };
-
-        Some(Line {
-            command,
-            params: self.params,
-            params_order: self.params_order,
-        })
-    }
-}
+pub const MAX_STANDARD_LINE_LENGTH: usize = 256;
 
 pub fn tile_gcode(
     initial_gcode: &[u8],
@@ -110,37 +25,27 @@ pub fn tile_gcode(
 
     let mut lines: Vec<Line> = vec![];
     {
-        let mut current_line: Option<Line> = None;
+        let mut current_line = LineBuilder::new();
 
-        let mut parser = Parser::new(initial_gcode);
-        while let Some(e) = parser.next() {
+        let mut parser = Parser::new();
+        let mut iter = parser.iter(initial_gcode, true);
+
+        while let Some(e) = iter.next() {
             match e {
-                Event::ParseError => return Err(err_msg("Invalid initial gcode")),
+                Event::LineNumber(_) => {}
+                Event::ParseError(_) => return Err(err_msg("Invalid initial gcode")),
                 Event::Word(word) => {
-                    if let Some(line) = &mut current_line {
-                        if line.params.contains_key(&word.key) {
-                            return Err(err_msg("Duplicate parameter"));
-                        }
-
-                        line.params.insert(word.key, word.value);
-                        line.params_order.push(word.key);
-                    } else {
-                        current_line = Some(Line {
-                            command: Command {
-                                group: word.key,
-                                number: word.value,
-                            },
-                            params: HashMap::default(),
-                            params_order: vec![],
-                        });
-                    }
+                    current_line.add_word(word)?;
                 }
                 Event::EndLine => {
-                    if let Some(line) = current_line.take() {
+                    let mut l = LineBuilder::new();
+                    core::mem::swap(&mut l, &mut current_line);
+
+                    if let Some(line) = l.finish() {
                         lines.push(line);
                     }
                 }
-                Event::Comment(_) => {}
+                Event::Comment(..) => {}
             }
         }
     }
@@ -179,7 +84,7 @@ pub fn tile_gcode(
 
         for line in &lines {
             let mut line = line.clone();
-            let cmd = line.command.to_string();
+            let cmd = line.command().to_string();
             match cmd.as_str() {
                 "G90" => {
                     absolute_mode = true;
@@ -209,11 +114,21 @@ pub fn tile_gcode(
 
                     // TODO: Verify only well known params are being used.
 
-                    if let Some(x_value) = line.params.get_mut(&'X') {
+                    if let Some(x_value) = line.param_mut('X') {
+                        let x_value = match x_value {
+                            WordValue::RealValue(v) => v,
+                            _ => return Err(err_msg("X is not a number")),
+                        };
+
                         *x_value = *x_value + x_offset.into();
                     }
 
-                    if let Some(y_value) = line.params.get_mut(&'Y') {
+                    if let Some(y_value) = line.param_mut('Y') {
+                        let y_value = match y_value {
+                            WordValue::RealValue(v) => v,
+                            _ => return Err(err_msg("Y is not a number")),
+                        };
+
                         *y_value = *y_value + y_offset.into();
                     }
                 }

@@ -9,11 +9,12 @@ doctest = false
 [dependencies]
 macros = { path = "../../macros" }
 math = { path = "../../math", default-features = false }
+common = { path = "../../common", default-features = false }
 base_error = { path = "../../base/error", default-features = false }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["base_error/alloc", "math/alloc"]
-std = ["base_error/std", "math/std"]
+alloc = ["base_error/alloc", "math/alloc", "common/alloc"]
+std = ["base_error/std", "math/std", "common/std"]

@@ -8,7 +8,7 @@ use base_error::*;
 // number
 //
 // TODO: REquire a complete match ending with '$' here.
-regexp!(DECIMAL => "^([+-]?)([0-9]*)\\.?([0-9]*)");
+regexp!(DECIMAL => "^([+-]?)([0-9]*)\\.*([0-9]*)");
 
 /// Holds up to 9 digits of integer and 9 digits of fraction data.  
 ///
@@ -32,6 +32,14 @@ impl Decimal {
 
     fn is_nonnegative(&self) -> bool {
         self.value >= 0
+    }
+
+    pub fn parse_complete(data: &[u8]) -> Option<Self> {
+        if let Some((v, b"")) = Self::parse(data) {
+            Some(v)
+        } else {
+            None
+        }
     }
 
     /// Parses a decimal in human readable ASCII form from some bytes.

@@ -1,0 +1,37 @@
+[package]
+name = "cnc_monitor"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+base_radix = { path = "../../base/radix" }
+common = { path = "../../common" }
+macros = { path = "../../macros" }
+protobuf = { path = "../../protobuf" }
+crypto = { path = "../../crypto" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc_util" }
+usb = { path = "../../usb" }
+http = { path = "../../http" }
+web = { path = "../../web" }
+parsing = { path = "../../parsing" }
+image = { path = "../../image" }
+json = { path = "../../format/json" }
+cnc_monitor_proto = { path = "./proto" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+automata = { path = "../../automata" }
+peripherals = { path = "../../peripherals" }
+failure = "0.1.8"
+gcode = { path = "../gcode" }
+math = { path = "../../math" }
+datastore_meta_client = { path = "../../datastore/meta/client" }
+sstable = { path = "../../sstable" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

@@ -36,6 +36,24 @@ impl ComparatorRegistry {
     }
 }
 
+#[derive(Default)]
+pub struct AlwaysGreaterComparator {}
+
+impl KeyComparator for AlwaysGreaterComparator {
+    fn name(&self) -> &'static str {
+        unimplemented!("")
+    }
+    fn compare(&self, a: &[u8], b: &[u8]) -> Ordering {
+        Ordering::Greater
+    }
+    fn find_shortest_separator(&self, start: Vec<u8>, limit: &[u8]) -> Vec<u8> {
+        unimplemented!("")
+    }
+    fn find_short_successor(&self, key: Vec<u8>) -> Vec<u8> {
+        unimplemented!("")
+    }
+}
+
 pub struct DummyComparator {}
 
 impl DummyComparator {
