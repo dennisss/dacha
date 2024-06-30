@@ -77,11 +77,13 @@ pub async fn serialize_table_properties(
             return Err(err_msg("TableProperties field has no key"));
         }
 
-        let value = match props.field_by_number(field.proto().number() as FieldNumber) {
-            Some(v) => v,
-            // No value present.
-            None => continue,
-        };
+        if !props.has_field_with_number(field.proto().number() as FieldNumber) {
+            continue;
+        }
+
+        let value = props
+            .field_by_number(field.proto().number() as FieldNumber)
+            .unwrap();
 
         let mut serialized_value = vec![];
 

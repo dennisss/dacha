@@ -53,10 +53,7 @@ pub use extension::{ExtensionRef, ExtensionSet, ExtensionTag};
 pub use merge::*;
 pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage};
 #[cfg(feature = "std")]
-pub use reflection::{
-    FieldDescriptorShort, MessageReflection, SingularFieldReflectionProto2,
-    SingularFieldReflectionProto3, StringPtr,
-};
+pub use reflection::{FieldDescriptorShort, MessageReflection, StringPtr};
 pub use types::FieldNumber;
 pub use types::{EnumValue, ExtensionNumberType};
 #[cfg(feature = "std")]

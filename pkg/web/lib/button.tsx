@@ -26,6 +26,12 @@ export class Button extends React.Component<ButtonProps, ButtonState> {
         _waiting: false
     };
 
+    _mounted: boolean = true;
+
+    componentWillUnmount(): void {
+        this._mounted = false;
+    }
+
     _on_click = (e) => {
         if (this.state._waiting || this.props.spin || this.props.disabled) {
             return;
@@ -36,8 +42,9 @@ export class Button extends React.Component<ButtonProps, ButtonState> {
         });
 
         this.props.onClick(() => {
-            // TODO: Prevent this from running if we were unmounted.
-            this.setState({ _waiting: false })
+            if (this._mounted) {
+                this.setState({ _waiting: false });
+            }
         })
     }
 

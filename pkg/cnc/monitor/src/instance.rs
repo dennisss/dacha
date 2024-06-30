@@ -14,8 +14,10 @@ use executor::sync::AsyncRwLock;
 use executor::{channel, lock, lock_async};
 use executor_multitask::{impl_resource_passthrough, ServiceResource, TaskResource};
 use file::{LocalPath, LocalPathBuf};
+use media_web::camera_manager::CameraManager;
 use protobuf::Message;
 
+use crate::camera_controller::CameraController;
 use crate::change::{ChangeDistributer, ChangeEvent};
 use crate::config::MachineConfigContainer;
 use crate::devices::*;
@@ -27,7 +29,7 @@ use crate::serial_controller::DEFAULT_COMMAND_TIMEOUT;
 use crate::tables::{FILE_TABLE_TAG, MACHINE_TABLE_TAG};
 use crate::{presets::get_machine_presets, serial_controller::SerialController};
 
-const RECONNECT_BACKOFF: Duration = Duration::from_secs(10);
+const RETRY_BACKOFF: Duration = Duration::from_secs(10);
 
 /// Maximum number of locally connected machines.
 const MAX_NUM_MACHINES: usize = 10;
@@ -47,7 +49,9 @@ impl_resource_passthrough!(MonitorImpl, task_resource);
 
 struct Shared {
     local_data_dir: LocalPathBuf,
+    config_presets: Vec<MachineConfig>,
     changes: ChangeDistributer,
+    camera_manager: Arc<CameraManager>,
     db: Arc<ProtobufDB>,
     files: FileManager,
     state: AsyncMutex<State>,
@@ -59,7 +63,7 @@ struct State {
     // Machines indexed by id.
     machines: HashMap<MachineId, MachineEntry>,
 
-    files: HashMap<FileId, FileProto>,
+    all_devices: Vec<DeviceEntry>,
 }
 
 struct MachineEntry {
@@ -67,37 +71,21 @@ struct MachineEntry {
 
     config: Arc<AsyncRwLock<MachineConfigContainer>>,
 
-    /// If set, then this machine (as represented by its serial interface) has
-    /// been detected as attached to the current machine so can be connected
-    /// to.
-    present: Option<DeviceSelector>,
-
     // TODO: Dynamically add these to the resource group.
     /// If not None,
-    serial: Option<OpenedSerialInterface>,
-
-    // TODO: Need better propagation of this to the UI. There may be multiple errors if there is a
-    // camera and serial device on one machine.
-    last_error: Option<String>,
-
-    /*
-    - Loaded file.
-    - Mesh leveling grid (when external to the machine)
-    */
-    /// If set, connecting to the machine errored out so
-    ///
-    /// TODO: Need a gneeral backoff that limits max connect attempt rate (e.g.
-    /// if machines fail very fast).
-    start_after: Option<Instant>,
+    serial: SerialEntry,
 
     loaded_file: Option<FileReference>,
 
     player: Option<PlayerEntry>,
 
-    /// The user has explicitly requested we connect to this machine
-    connect_requested: bool,
-
-    disconnect_requested: bool,
+    /// This will usually contain one entry for every camera defined in
+    /// 'config'.
+    cameras: HashMap<u64, CameraEntry>,
+    /*
+    - Loaded file.
+    - Mesh leveling grid (when external to the machine)
+    */
 }
 
 impl MachineEntry {
@@ -105,48 +93,102 @@ impl MachineEntry {
         Self {
             id,
             config: Arc::new(AsyncRwLock::new(config)),
-            present: None,
-            serial: None,
-            last_error: None,
-            start_after: None,
+            serial: SerialEntry::default(),
             loaded_file: None,
             player: None,
-            connect_requested: false,
-            disconnect_requested: false,
+            cameras: HashMap::new(),
         }
     }
 
-    fn set_last_error(&mut self, error: String) {
-        eprintln!("Machine Error: {}", error);
-        self.last_error = Some(error);
-
-        // TODO: Do some backoff.
+    /// NOTE: This should mainly be used for errors that don't require backoff.
+    fn set_role_error(&mut self, role: DeviceRole, error: String) {
+        match role {
+            DeviceRole::SerialInterface => {
+                self.serial.last_error.get_or_insert(error);
+            }
+            DeviceRole::Camera(camera_id) => {
+                self.cameras
+                    .entry(camera_id)
+                    .or_default()
+                    .last_error
+                    .get_or_insert(error);
+            }
+        }
     }
+
+    // fn set_
 }
 
-struct OpenedSerialInterface {
-    controller: Arc<SerialController>,
+struct DeviceEntry {
+    device: AvailableDevice,
+    used_by_machine_id: Option<u64>,
+}
 
-    /// sysfs path to the USB device used for the serial_interface.
-    device_path: LocalPathBuf,
+#[derive(Default)]
+struct SerialEntry {
+    device: Option<AvailableDevice>,
 
-    device_info: DeviceSelector,
+    controller: Option<Arc<SerialController>>,
 
-    watcher_task: ChildTask,
+    // TODO: Need better propagation of this to the UI. There may be multiple errors if there is a
+    // camera and serial device on one machine.
+    last_error: Option<String>,
+
+    /// If set, connecting to the machine errored out so
+    ///
+    /// TODO: Need a gneeral backoff that limits max connect attempt rate (e.g.
+    /// if machines fail very fast).
+    start_after: Option<Instant>,
+
+    watcher_task: Option<ChildTask>,
+
+    /// The user has explicitly requested we connect to this machine
+    /// - Only allowed to be true when controller.is_none() && device.is_some()
+    connect_requested: bool,
+
+    /// - Only allowed to be true when controller.is_some()
+    disconnect_requested: bool,
 
     /// If true, we have issues a cancellation on the 'controller' resource.
     /// The disconnect will be complete once the 'watcher_task'
-    disconnect_requested: bool,
+    shutting_down: bool,
 }
 
 struct PlayerEntry {
     player: Arc<Player>,
 }
 
+#[derive(Default)]
+struct CameraEntry {
+    /// Most recent device used to
+    device: Option<AvailableDevice>,
+
+    /// NOTE: If there is a controller, then there must be a 'device'.
+    controller: Option<Arc<CameraController>>,
+
+    // TODO: Implement me.
+    start_after: Option<Instant>,
+
+    // TODO: Need to expose in the UI
+    last_error: Option<String>,
+
+    device_error: Option<String>,
+
+    /// Always present when controller.is_some()
+    watcher_task: Option<ChildTask>,
+
+    /// If true, the current controller is being shut down as it needs to be
+    /// replaced with a newer device.
+    ///
+    /// - May only be true if controller.is_some()
+    /// - Cleared when the watcher_task
+    shutting_down: bool,
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 enum DeviceRole {
     SerialInterface,
-    Camera,
+    Camera(u64),
 }
 
 impl MonitorImpl {
@@ -198,15 +240,17 @@ impl MonitorImpl {
         let shared = Arc::new(Shared {
             local_data_dir: local_data_dir.to_owned(),
             changes,
+            config_presets,
             state: AsyncMutex::new(state),
             db,
             files,
             force_reconcile: reconcile_sender,
+            camera_manager: Arc::new(CameraManager::default()),
         });
 
         let task_resource = TaskResource::spawn_interruptable(
             "MonitorImpl::run",
-            Self::run(shared.clone(), reconcile_receiver, config_presets),
+            Self::run(shared.clone(), reconcile_receiver),
         );
 
         Ok(Self {
@@ -219,125 +263,156 @@ impl MonitorImpl {
         &self.shared.files
     }
 
-    // TODO: If this thread fails, it shouldn't take down all existing machines.
-    async fn run(
-        shared: Arc<Shared>,
-        reconcile_receiver: channel::Receiver<()>,
-        config_presets: Vec<MachineConfig>,
-    ) -> Result<()> {
+    /// Main loop that periodically reacts to hardware connect/disconnect events
+    /// to instantiate all desired machines.
+    async fn run(shared: Arc<Shared>, reconcile_receiver: channel::Receiver<()>) -> Result<()> {
         // The main loop has the job of periodically ensuring that we assign
 
         let usb_context = usb::Context::create()?;
 
-        // TODO: Also need a concept of top level error messages that we can broadcast
-        // to the user in the web UI.
-
         // TODO: Pass in a cancellation token for this part.
+
         loop {
-            let devices = AvailableDevice::list_all(&usb_context).await?;
-
-            let mut state = shared.state.lock().await?.enter();
-
-            /*
-            Two important invariants:
-            - For all instantiated machines, no one device can match multiple of them.
-                - Also multiple devices can't satisfy
-
-            - For all presets, no one device can match to multiple of them.
-
-            Two maps:
-            (device_path -> Vec<(MachineId, Role)>)
-
-            (MachineId, Role) -> Vec<device_path>
-
-            */
-
-            // Handle all disconnect requests.
-            for machine in state.machines.values_mut() {
-                if let Some(serial) = &mut machine.serial {
-                    if machine.disconnect_requested && !serial.disconnect_requested {
-                        serial
-                            .controller
-                            .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                            .await;
-                        serial.disconnect_requested = true;
-                    }
-                    machine.disconnect_requested = false;
+            let made_new_devices = match Self::run_once(&shared, &usb_context).await {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Device sync loop failed: {}", e);
+                    // TODO: exponential backoff.
+                    executor::sleep(Duration::from_secs(10)).await;
+                    continue;
                 }
-            }
+            };
 
+            // TODO: Adjust this based on the backoff time and also respond faster if we
+            // detect hot plugging of devices.
+            // If a new machine is created, we can immediately allocate devices to it.
+            if !made_new_devices {
+                // Publish broadcast events since something has probably changed and we don't
+                // track individual changes well.
+                shared.changes.publisher().publish(ChangeEvent::new(
+                    EntityType::DEVICE,
+                    None,
+                    false,
+                ));
+                shared.changes.publisher().publish(ChangeEvent::new(
+                    EntityType::MACHINE,
+                    None,
+                    false,
+                ));
+
+                executor::timeout(Duration::from_secs(5), reconcile_receiver.recv()).await;
+            }
+        }
+    }
+
+    async fn run_once(shared: &Arc<Shared>, usb_context: &usb::Context) -> Result<bool> {
+        let devices = AvailableDevice::list_all(&usb_context).await?;
+
+        let mut device_usage: HashMap<usize, MachineId> = HashMap::new();
+
+        lock_async!(state <= shared.state.lock().await?, {
             // Try to assign all available devices to existing machine instances.
+            // - role_to_device will contain every possible key and possibly empty vecs for
+            //   keys if no device matches to it.
             let mut role_to_device = HashMap::<(MachineId, DeviceRole), Vec<usize>>::new();
             let mut device_to_role = HashMap::<usize, Vec<(MachineId, DeviceRole)>>::new();
             for (machine_id, machine) in &state.machines {
                 let config = machine.config.read().await?;
 
-                for (i, dev) in devices.iter().enumerate() {
-                    if !config.has_device() {
+                let serial_role = (*machine_id, DeviceRole::SerialInterface);
+                let serial_devices = role_to_device.entry(serial_role).or_default();
+
+                if config.has_device() {
+                    for (i, dev) in devices.iter().enumerate() {
+                        if dev.matches(config.device()) {
+                            serial_devices.push(i);
+                            device_to_role.entry(i).or_default().push(serial_role);
+                        }
+                    }
+                }
+
+                for camera_config in config.cameras() {
+                    let camera_role = (*machine_id, DeviceRole::Camera(camera_config.id()));
+                    let camera_devices = role_to_device.entry(camera_role).or_default();
+
+                    if !camera_config.has_device() {
                         continue;
                     }
 
-                    if dev.matches(config.device()) {
-                        let role = (*machine_id, DeviceRole::SerialInterface);
-                        role_to_device.entry(role).or_default().push(i);
-                        device_to_role.entry(i).or_default().push(role);
+                    for (i, dev) in devices.iter().enumerate() {
+                        if dev.matches(camera_config.device()) {
+                            camera_devices.push(i);
+                            device_to_role.entry(i).or_default().push(camera_role);
+                        }
                     }
-
-                    // TODO: Also implement config.serial_path()
-
-                    // TODO: Also add cameras.
                 }
-            }
 
-            // Reset presence (will be set in the next loop)
-            for machine in state.machines.values_mut() {
-                machine.present = None;
+                // Insert empty entries for instantitated but unconfigured cameras.
+                // TODO: Clean up any camera entries that are dead and don't have a config.
+                for camera_id in machine.cameras.keys() {
+                    let camera_role = (*machine_id, DeviceRole::Camera(*camera_id));
+                    role_to_device.entry(camera_role).or_default();
+                }
             }
 
             // Apply the device changes.
             for ((machine_id, role), device_index) in &role_to_device {
                 let machine = state.machines.get_mut(machine_id).unwrap();
 
-                // TODO: Throttle based on retry backoff. (but still want to preserve any
-                // presence information, assuming we didn't fail because we couldn't match the
-                // right device).
-
                 // Verify we made an unambiguous device assignment (part 1)
                 if device_index.len() > 1 {
-                    machine.set_last_error(format!(
-                        "Multiple devices satisfy the role of {:?} for machine {}",
-                        *role, *machine_id
-                    ));
+                    machine.set_role_error(
+                        *role,
+                        format!(
+                            "Multiple devices satisfy the role of {:?} for machine {}",
+                            *role, *machine_id
+                        ),
+                    );
                     continue;
                 }
 
-                let device_index = device_index[0];
-                let device = &devices[device_index];
+                let device = {
+                    if device_index.len() == 0 {
+                        None
+                    } else {
+                        let device_index = device_index[0];
+                        let device = &devices[device_index];
 
-                // Verify we made an unambiguous device assignment (part 2)
-                {
-                    let roles = device_to_role.get(&device_index).unwrap();
-                    if roles.len() > 1 {
-                        // TODO: There may be multiple errors for one machine if we count both
-                        // camera and connection roles.
-                        machine.set_last_error(format!(
-                            "{} satifies roles for multiple machines.",
-                            device.label()
-                        ));
-                        continue;
+                        // Verify we made an unambiguous device assignment (part 2)
+                        {
+                            let roles = device_to_role.get(&device_index).unwrap();
+                            if roles.len() > 1 {
+                                // TODO: There may be multiple errors for one machine if we count
+                                // both camera and connection roles.
+                                machine.set_role_error(
+                                    *role,
+                                    format!(
+                                        "{} satifies roles for multiple machines.",
+                                        device.label()
+                                    ),
+                                );
+                                continue;
+                            }
+                        }
+
+                        device_usage.insert(device_index, *machine_id);
+
+                        Some(device)
                     }
-                }
+                };
 
                 // Apply the effects.
                 match *role {
                     DeviceRole::SerialInterface => {
-                        if let Err(e) = Self::open_serial_interface(&shared, device, machine).await
+                        if let Err(e) = Self::open_serial_controller(&shared, device, machine).await
                         {
-                            machine.set_last_error(e.to_string());
+                            eprintln!("Serial Open Error: {}", e);
+                            machine.serial.start_after = Some(Instant::now() + RETRY_BACKOFF);
+                            machine.serial.last_error = Some(e.to_string());
                         }
                     }
-                    DeviceRole::Camera => {
-                        //
+                    DeviceRole::Camera(camera_id) => {
+                        Self::open_camera_controller(shared, device, camera_id, machine).await?;
                     }
                 }
             }
@@ -351,7 +426,7 @@ impl MonitorImpl {
                     continue;
                 }
 
-                for preset in &config_presets {
+                for preset in &shared.config_presets {
                     if !preset.has_device() {
                         continue;
                     }
@@ -370,8 +445,7 @@ impl MonitorImpl {
 
                         let id = crypto::random::global_rng().uniform::<MachineId>().await;
 
-                        // TODO:
-                        // device_to_role.insert(k, v)
+                        device_usage.insert(i, id);
 
                         eprintln!(
                             "Creating new machine with id {} from preset {}",
@@ -392,93 +466,88 @@ impl MonitorImpl {
                 }
             }
 
-            // TODO: Improve this.
-            state.exit();
-
-            // TODO: Any unassigned USB devices may be useable as cameras or serial ports
-            // for generic presets.
+            // Save the whole list of devices so that clients can inspect this.
+            state.all_devices = devices
+                .into_iter()
+                .enumerate()
+                .map(|(i, device)| DeviceEntry {
+                    device,
+                    used_by_machine_id: device_usage.get(&i).copied(),
+                })
+                .collect();
 
             // TODO: Report events.
 
             // TODO: Need a self test for cameras so that we know that they are behaving
             // prior to us hitting play.
 
-            /*
-            Also some concept of intent:
-            - If serial device changes, we need a new machine
-            - If the camera device changes, we need to make a new device.
-            */
-
-            // Try to open any closed
-
-            // Go through all existing machines and mark device claims.
-            // - Need some warnings if there are multiple possibilites for one machine or
-            //   multiple match one.
-
-            // Go through all existing devices and maybe restart them
-            // - Also update 'present'
-            // - Maybe kill 'machine' if not present for a while.
-
-            // Go through the presets.
-            // - Try to instantiate new machines for them.
-
-            // Things to do
-
-            // All configs matching
-
-            // Check if any
-
-            // Note that for existing machines,
-
             // What we should do all the time is record event logs to a database.
             // - Ideally have a full traceable play/pause/connect/etc. history.
 
-            // TODO: Adjust this based on the backoff time and also respond faster if we
-            // detect hot plugging of devices.
-            // If a new machine is created, we can immediately allocate devices to it.
-            if !made_new_devices {
-                executor::timeout(Duration::from_secs(5), reconcile_receiver.recv()).await;
-            }
-        }
+            Ok(made_new_devices)
+        })
     }
 
-    // TODO: Avoid holding a state lock while this is running.
-    async fn open_serial_interface(
+    // TODO: Make this function fast and not blocking on any I/O.
+    async fn open_serial_controller(
         shared: &Arc<Shared>,
-        device: &AvailableDevice,
+        device: Option<&AvailableDevice>,
         machine: &mut MachineEntry,
     ) -> Result<()> {
-        let info = device.verbose_proto().await?;
+        // TODO: If we don't have auto_connect enabled, should we do any
+        // auto-disconnects.
 
-        machine.present = Some(info.clone());
+        if let Some(old_device) = &machine.serial.device {
+            let changed = device.is_none() || old_device.path() != device.unwrap().path();
 
-        if let Some(serial) = &mut machine.serial {
-            if serial.device_path.as_path() == &device.path() {
+            let want_shutdown = changed || machine.serial.disconnect_requested;
+            machine.serial.disconnect_requested = false;
+
+            if want_shutdown && !machine.serial.shutting_down {
+                if let Some(controller) = &machine.serial.controller {
+                    controller
+                        .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
+                        .await;
+                    machine.serial.shutting_down = true;
+                }
+            }
+
+            // Wait for controller to finish shutting down before changing the device.
+            if changed && machine.serial.controller.is_some() {
                 return Ok(());
             }
+        }
 
-            if !serial.disconnect_requested {
-                serial
-                    .controller
-                    .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
-                    .await;
-                serial.disconnect_requested = true;
-            }
-            machine.disconnect_requested = false;
+        machine.serial.device = device.cloned();
 
-            // Wait for disconnect to finish.
+        // Maybe connect
+
+        let connect_requested = machine.serial.connect_requested;
+        machine.serial.connect_requested = false;
+
+        let device = match device {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+
+        if machine.serial.controller.is_some() {
+            machine.serial.last_error = None;
             return Ok(());
         }
 
         let auto_connect = machine.config.read().await?.auto_connect();
 
-        if !auto_connect && !machine.connect_requested {
+        let after_start_after = match machine.serial.start_after {
+            Some(v) => Instant::now() > v,
+            None => true,
+        };
+
+        let should_connect = connect_requested || (auto_connect && after_start_after);
+        if !should_connect {
             return Ok(());
         }
 
-        machine.connect_requested = false;
-
-        // TODO: Check if we want to auto-connect.
+        machine.serial.start_after = None;
 
         let (reader, writer) = device
             .open_as_serial_port(machine.config.read().await?.value().baud_rate() as usize)
@@ -495,23 +564,21 @@ impl MonitorImpl {
             .await?,
         );
 
-        let watcher_task = ChildTask::spawn(Self::watch_serial_port(
+        machine.serial.watcher_task = Some(ChildTask::spawn(Self::watch_serial_port(
             Arc::downgrade(shared),
             machine.id,
             controller.clone(),
-        ));
+        )));
 
-        machine.serial = Some(OpenedSerialInterface {
-            controller,
-            device_path: device.path().to_owned(),
-            device_info: info.clone(),
-            watcher_task,
-            disconnect_requested: false,
-        });
+        machine.serial.controller = Some(controller);
+        machine.serial.last_error = None;
 
         Ok(())
     }
 
+    // TODO: Consider moving most of part of this and the retry loop for the
+    // connection into the SerialController class (will require us to be able to
+    // fully re-index driver paths based on one sysfs path).
     async fn watch_serial_port(
         shared: Weak<Shared>,
         machine_id: u64,
@@ -547,14 +614,16 @@ impl MonitorImpl {
                 None => return,
             };
 
-            entry.disconnect_requested = false;
-
-            entry.serial.take();
+            entry.serial.controller.take();
+            entry.serial.disconnect_requested = false;
+            entry.serial.shutting_down = false;
 
             if let Some(error) = error {
-                entry.set_last_error(error);
+                eprintln!("Seiral Controller Failure: {}", error);
+                entry.serial.start_after = Some(Instant::now() + RETRY_BACKOFF);
+                entry.serial.last_error = Some(error.to_string());
             } else {
-                entry.last_error = None;
+                entry.serial.last_error = None;
             }
         });
 
@@ -566,6 +635,141 @@ impl MonitorImpl {
             Some(machine_id),
             false,
         ));
+    }
+
+    /// NOTE: This is meant to be a fast running function that is unlikely to
+    /// fail.
+    async fn open_camera_controller(
+        shared: &Arc<Shared>,
+        device: Option<&AvailableDevice>,
+        camera_id: u64,
+        machine: &mut MachineEntry,
+    ) -> Result<()> {
+        // TODO: Eventually clean up all unused camera entries.
+
+        let camera_entry = machine
+            .cameras
+            .entry(camera_id)
+            .or_insert_with(|| CameraEntry::default());
+
+        if let Some(old_device) = &camera_entry.device {
+            let changed = device.is_none() || old_device.path() != device.unwrap().path();
+
+            if changed && !camera_entry.shutting_down {
+                if let Some(controller) = &camera_entry.controller {
+                    controller
+                        .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
+                        .await;
+                    camera_entry.shutting_down = true;
+                }
+            }
+
+            // Must wait for the old controller to be cleaned up before we can
+            // switch to a new device.
+            if changed && camera_entry.controller.is_some() {
+                return Ok(());
+            }
+        }
+
+        camera_entry.device = device.cloned();
+
+        // If we have both a device and no existing controller, create a new
+        // controller.
+
+        let device = match device {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+
+        if camera_entry.controller.is_some() {
+            camera_entry.last_error = None;
+            return Ok(());
+        }
+
+        if let Some(start_after) = camera_entry.start_after {
+            if Instant::now() <= start_after {
+                return Ok(());
+            }
+        }
+        camera_entry.start_after = None;
+
+        let controller = Arc::new(CameraController::create(
+            machine.id,
+            camera_id,
+            shared.camera_manager.clone(),
+            device.clone(),
+            machine.config.clone(),
+            shared.local_data_dir.join("camera"),
+            shared.db.clone(),
+        ));
+
+        if let Some(player) = &machine.player {
+            controller
+                .set_current_player(Some(player.player.clone()))
+                .await?;
+        }
+
+        camera_entry.watcher_task = Some(ChildTask::spawn(Self::watch_camera_controller(
+            Arc::downgrade(&shared),
+            machine.id,
+            camera_id,
+            controller.clone(),
+        )));
+
+        camera_entry.controller = Some(controller);
+        camera_entry.last_error = None;
+
+        Ok(())
+    }
+
+    async fn watch_camera_controller(
+        shared: Weak<Shared>,
+        machine_id: u64,
+        camera_id: u64,
+        controller: Arc<CameraController>,
+    ) {
+        // Wait for it to terminate.
+
+        let res = controller.wait_for_termination().await;
+        drop(controller);
+
+        let shared = match shared.upgrade() {
+            Some(v) => v,
+            None => {
+                return;
+            }
+        };
+
+        let state = match shared.state.lock().await {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        lock!(state <= state, {
+            let machine_entry = match state.machines.get_mut(&machine_id) {
+                Some(v) => v,
+                None => return,
+            };
+
+            let camera_entry = match machine_entry.cameras.get_mut(&camera_id) {
+                Some(v) => v,
+                None => return,
+            };
+
+            if let Err(e) = res {
+                eprintln!("Camera controller failed: {}", e);
+                camera_entry.last_error = Some(e.to_string());
+                camera_entry.start_after = Some(Instant::now() + RETRY_BACKOFF);
+            } else {
+                camera_entry.last_error = None;
+            }
+
+            camera_entry.controller = None;
+            camera_entry.shutting_down = false;
+        });
+
+        // May want to immediately reconnect.
+        let _ = shared.force_reconcile.try_send(());
     }
 
     async fn query_entities_impl(
@@ -614,8 +818,21 @@ impl MonitorImpl {
                 self.list_machines_impl(filter.id, &mut out).await?;
             }
             EntityType::FILE => self.shared.files.query_files(filter.id, &mut out)?,
-            EntityType::CAMERA => {
-                // TODO
+            EntityType::DEVICE => {
+                lock!(state <= self.shared.state.lock().await?, {
+                    for device in &state.all_devices {
+                        let proto = out.new_devices();
+                        proto.set_info(device.device.verbose_proto());
+                        if let Some(id) = &device.used_by_machine_id {
+                            proto.set_used_by_machine_id(*id);
+                        }
+                    }
+                })
+            }
+            EntityType::PRESET => {
+                for config in &self.shared.config_presets {
+                    out.add_presets(config.clone());
+                }
             }
             _ => {
                 // TODO
@@ -640,34 +857,34 @@ impl MonitorImpl {
                 }
             }
 
+            let machine_config = machine.config.read().await?.value().clone();
+
             let proto = out.new_machines();
             proto.set_id(*machine_id);
-            proto.set_config(machine.config.read().await?.value().clone());
+            proto.set_config(machine_config.clone());
 
             let state_proto = proto.state_mut();
 
-            if let Some(iface) = &machine.serial {
-                // In this case, we are in a CONNECTING | CONNECTED state.
-                iface.controller.state_proto(state_proto).await?;
+            if let Some(device) = &machine.serial.device {
+                state_proto.set_connection_device(device.verbose_proto());
+            }
 
-                state_proto.set_connection_device(iface.device_info.clone());
+            if let Some(iface) = &machine.serial.controller {
+                // In this case, we are in a CONNECTING | CONNECTED state.
+                iface.state_proto(state_proto).await?;
             } else {
-                if machine.start_after.is_some() {
+                if machine.serial.start_after.is_some() {
                     // TODO: Is this correct if auto_connect is disabled?
                     state_proto.set_connection_state(MachineStateProto_ConnectionState::ERROR);
-                } else if machine.present.is_some() {
+                } else if machine.serial.device.is_some() {
                     state_proto
                         .set_connection_state(MachineStateProto_ConnectionState::DISCONNECTED);
                 } else {
                     state_proto.set_connection_state(MachineStateProto_ConnectionState::MISSING);
                 }
-
-                if let Some(v) = machine.present.clone() {
-                    state_proto.set_connection_device(v);
-                }
             }
 
-            if let Some(e) = machine.last_error.clone() {
+            if let Some(e) = machine.serial.last_error.clone() {
                 state_proto.set_last_connection_error(e);
             }
 
@@ -682,6 +899,49 @@ impl MonitorImpl {
             } else {
                 // TODO: Mark as STOPPED and put in an estimated_time_remaining
                 // based on the file's duration (in the appropriate mode).
+            }
+
+            for camera_config in machine_config.cameras() {
+                let camera_id = camera_config.id();
+
+                let camera_proto = state_proto.new_cameras();
+                camera_proto.set_camera_id(camera_id);
+
+                let camera = match machine.cameras.get(&camera_id) {
+                    Some(v) => v,
+                    None => {
+                        camera_proto.set_status(CameraState_State::MISSING);
+                        continue;
+                    }
+                };
+
+                if let Some(device) = &camera.device {
+                    camera_proto.set_device(device.verbose_proto());
+                }
+
+                if let Some(error) = &camera.last_error {
+                    camera_proto.set_last_error(error.clone());
+                }
+
+                if camera.shutting_down {
+                    camera_proto.set_status(CameraState_State::SETUP);
+                } else {
+                    if let Some(controller) = &camera.controller {
+                        // TODO: Also implement the STARTING and SETUP states for this.
+
+                        if controller.recording().await? {
+                            camera_proto.set_status(CameraState_State::RECORDING);
+                        } else {
+                            camera_proto.set_status(CameraState_State::IDLE);
+                        }
+                    } else if camera.start_after.is_some() {
+                        camera_proto.set_status(CameraState_State::ERROR);
+                    } else if camera.device.is_some() {
+                        camera_proto.set_status(CameraState_State::SETUP);
+                    } else {
+                        camera_proto.set_status(CameraState_State::MISSING);
+                    }
+                }
             }
         }
 
@@ -739,21 +999,21 @@ impl MonitorImpl {
                         .get_mut(&request.machine_id())
                         .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
 
-                    if entry.serial.is_some() {
+                    if entry.serial.controller.is_some() {
                         return Err(
                             rpc::Status::failed_precondition("Machine already connected.").into(),
                         );
                     }
 
-                    if entry.present.is_none() {
+                    if entry.serial.device.is_none() {
                         return Err(rpc::Status::failed_precondition(
                             "Machine has no device attached for connecting.",
                         )
                         .into());
                     }
 
-                    entry.connect_requested = true;
-                    entry.disconnect_requested = false;
+                    entry.serial.connect_requested = true;
+                    entry.serial.disconnect_requested = false;
 
                     Ok::<_, Error>(())
                 })?;
@@ -767,21 +1027,21 @@ impl MonitorImpl {
                         .get_mut(&request.machine_id())
                         .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
 
-                    if entry.serial.is_none() {
+                    if entry.serial.controller.is_none() {
                         return Err(
                             rpc::Status::failed_precondition("Machine is not connected.").into(),
                         );
                     }
 
-                    if entry.present.is_none() {
+                    if entry.serial.device.is_none() {
                         return Err(rpc::Status::failed_precondition(
                             "Machine has no device attached for connecting.",
                         )
                         .into());
                     }
 
-                    entry.connect_requested = false;
-                    entry.disconnect_requested = true;
+                    entry.serial.connect_requested = false;
+                    entry.serial.disconnect_requested = true;
 
                     Ok::<_, Error>(())
                 })?;
@@ -881,6 +1141,8 @@ impl MonitorImpl {
                 ));
             }
             RunMachineCommandRequestCommandCase::UpdateConfig(new_config) => {
+                // TODO: Make this cancel safe.
+
                 let state = self.shared.state.lock().await?.read_exclusive();
                 let entry = state
                     .machines
@@ -888,9 +1150,21 @@ impl MonitorImpl {
                     .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
 
                 // TODO: Don't update if the merge fails?
-                lock!(config <= entry.config.write().await?, {
-                    config.merge_from(new_config)
+                let diff = lock!(config <= entry.config.write().await?, {
+                    config.merge_from(new_config)?;
+                    Ok::<_, Error>(config.diff().clone())
                 })?;
+
+                // NOTE: We are still holding an exclusive lock on 'state' while this happens.
+                {
+                    let mut machine_proto = MachineProto::default();
+                    machine_proto.set_id(request.machine_id());
+                    machine_proto.set_config(diff);
+                    self.shared
+                        .db
+                        .insert(&MACHINE_TABLE_TAG, &machine_proto)
+                        .await?;
+                }
 
                 // TODO: Must save the change to the db.
 
@@ -970,11 +1244,11 @@ impl MonitorImpl {
 
             // TODO: Error out if a player is currently controlling the machine.
 
-            let serial = entry.serial.as_ref().clone().ok_or_else(|| {
+            let serial = entry.serial.controller.clone().ok_or_else(|| {
                 rpc::Status::failed_precondition("Machine not currently connected")
             })?;
 
-            Result::<_, Error>::Ok(serial.controller.clone())
+            Result::<_, Error>::Ok(serial)
         })
     }
 
@@ -986,6 +1260,9 @@ impl MonitorImpl {
 
     /// NOT CANCEL SAFE
     async fn play_impl_inner(shared: Arc<Shared>, machine_id: u64) -> Result<()> {
+        // TODO: Before we allow something like this to run, we should have some overall
+        // status check (serial port opened, all camera controllers setup, etc.).
+
         lock_async!(state <= shared.state.lock().await?, {
             let entry = state
                 .machines
@@ -1005,12 +1282,13 @@ impl MonitorImpl {
                 rpc::Status::failed_precondition("No file loaded on the machine to play")
             })?;
 
-            let serial_entry = entry
+            let serial_controller = entry
                 .serial
+                .controller
                 .as_ref()
                 .ok_or_else(|| rpc::Status::failed_precondition("Machine is not connected"))?;
 
-            if !serial_entry.controller.connected().await? {
+            if !serial_controller.connected().await? {
                 return Err(rpc::Status::failed_precondition(
                     "Machine connection is not ready yet",
                 )
@@ -1022,7 +1300,7 @@ impl MonitorImpl {
                     machine_id,
                     entry.config.clone(),
                     file_ref.clone(),
-                    serial_entry.controller.clone(),
+                    serial_controller.clone(),
                     shared.changes.publisher(),
                 )
                 .await?,
@@ -1031,6 +1309,17 @@ impl MonitorImpl {
             entry.player = Some(PlayerEntry {
                 player: player.clone(),
             });
+
+            // TODO: Don't lock the entire state while this is running.
+            // TODO: Parallelize if there are multiple cameras.
+            for camera in entry.cameras.values_mut() {
+                if let Some(camera_controller) = &mut camera.controller {
+                    camera_controller
+                        .set_current_player(Some(player.clone()))
+                        .await?;
+                    camera_controller.pre_play().await?;
+                }
+            }
 
             player.play().await?;
 
@@ -1084,6 +1373,35 @@ impl MonitorImpl {
         })
         .join()
         .await
+    }
+
+    /// TODO: If the camera attached to the machine at this id changes while
+    /// this is running, we should cancel the request.
+    pub async fn get_camera_feed(&self, machine_id: u64, camera_id: u64) -> Result<http::Response> {
+        let device_entry = lock!(state <= self.shared.state.lock().await?, {
+            let machine = state
+                .machines
+                .get(&machine_id)
+                .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
+
+            let camera = machine
+                .cameras
+                .get(&camera_id)
+                .ok_or_else(|| rpc::Status::not_found("Camera not found"))?;
+
+            let device = camera
+                .device
+                .as_ref()
+                .ok_or_else(|| rpc::Status::not_found("Camera not connected"))?;
+
+            Ok::<_, Error>(device.clone())
+        })?;
+
+        let subscriber = device_entry
+            .open_as_camera(&self.shared.camera_manager)
+            .await?;
+
+        media_web::camera_stream::respond_with_camera_stream(subscriber).await
     }
 }
 

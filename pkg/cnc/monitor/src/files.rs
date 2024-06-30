@@ -176,7 +176,6 @@ impl FileManager {
         // TODO: Need to limit max processing concurrency.
         let name = file_lock.proto.name().to_ascii_lowercase();
         if name.ends_with(".gcode") || name.ends_with(".nc") {
-            println!("Processing...");
             let summary = ProgramSummary::create(&raw_path).await?;
 
             if let Some(thumb) = summary.best_thumbnail()? {

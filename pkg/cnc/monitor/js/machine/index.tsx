@@ -7,7 +7,7 @@ import { PositionBox } from "./position";
 import { ConnectionBox } from "./connection";
 import { PlayerBox } from "./player";
 import { SettingsComponent } from "./settings";
-import { CameraBox } from "./camera";
+import { CamerasBox } from "./camera";
 import { Title } from "pkg/web/lib/title";
 import { Navbar } from "../navbar";
 
@@ -36,8 +36,6 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
             }
 
             let m = msg.machines[0];
-            console.log(m);
-
             this.setState({ _machine: m });
         })
     }
@@ -83,7 +81,7 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
                 <div className="container-fluid">
                     <div className="row" style={{ padding: '10px 0' }}>
                         <div className="col col-md-3">
-                            <CameraBox machine={machine} context={this.props.context} />
+                            <CamerasBox machine={machine} context={this.props.context} />
                             <ConnectionBox machine={machine} context={this.props.context} />
                             <PlayerBox machine={machine} context={this.props.context} />
                         </div>

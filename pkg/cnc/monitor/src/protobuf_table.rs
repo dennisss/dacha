@@ -104,8 +104,6 @@ impl ProtobufDB {
         KeyEncoder::encode_bytes(tag.table_name().as_bytes(), &mut key);
 
         for field in primary_key_def.fields {
-            // TODO: Need to switch reflection to return fields even if they have no field
-            // presence.
             let r: Reflection = value
                 .field_by_number(field)
                 .ok_or_else(|| err_msg("Missing index field value"))?;

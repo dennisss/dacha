@@ -606,6 +606,7 @@ dependencies = [
  "json",
  "macros",
  "math",
+ "media_web",
  "parsing",
  "peripherals",
  "protobuf",
@@ -614,6 +615,7 @@ dependencies = [
  "rpc_util",
  "sstable",
  "usb",
+ "video",
  "web",
 ]
 
@@ -1874,6 +1876,7 @@ dependencies = [
  "reflection",
  "rpc",
  "rpc_util",
+ "usb",
  "v4l2",
  "video",
  "web",
@@ -2498,6 +2501,40 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
+]
+
+[[package]]
+name = "protobuf_test"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "protobuf",
+ "protobuf_test_proto",
+]
+
+[[package]]
+name = "protobuf_test_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+]
+
+[[package]]
+name = "ptouch"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "graphics",
+ "image",
+ "macros",
+ "usb",
 ]
 
 [[package]]

@@ -49,10 +49,11 @@ fn message_to_json_value(
     }
 
     for field_desc in message.fields() {
-        let field = match message.field_by_number(field_desc.number) {
-            Some(f) => f,
-            None => continue,
-        };
+        if !message.has_field_with_number(field_desc.number) {
+            continue;
+        }
+
+        let field = message.field_by_number(field_desc.number).unwrap();
 
         let value = output.key(&*field_desc.name);
         reflection_to_json_value(field, options, value)?;
@@ -92,8 +93,6 @@ fn serialize_any(
 
     let value = match message.field_by_number(ANY_VALUE_FIELD_NUM) {
         Some(Reflection::Bytes(v)) => v,
-        // TODO: Remove this case once field_by_number returns default values.
-        None => &[],
         _ => return Err(err_msg("Unable to get value in Any proto")),
     };
 

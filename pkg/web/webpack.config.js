@@ -1,11 +1,19 @@
 const path = require('path');
+const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 
 module.exports = (env, argv) => {
     return {
         entry: env.entry,
         mode: 'development',
+        plugins: [new MiniCssExtractPlugin({
+            filename: 'app.css'
+        })],
         module: {
             rules: [
+                {
+                    test: /\.css$/,
+                    use: [MiniCssExtractPlugin.loader, 'css-loader']
+                },
                 {
                     test: /\.tsx?$/,
                     use: [
@@ -13,7 +21,8 @@ module.exports = (env, argv) => {
                             loader: 'ts-loader',
                             options: {
                                 configFile: path.resolve(__dirname, 'tsconfig.json'),
-                                onlyCompileBundledFiles: true
+                                onlyCompileBundledFiles: true,
+                                transpileOnly: true
                             }
                         }
                     ],

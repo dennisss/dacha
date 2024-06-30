@@ -1,0 +1,24 @@
+[package]
+name = "media_web"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+compression = { path = "../../compression" }
+math = { path = "../../math" }
+macros = { path = "../../macros" }
+reflection = { path = "../../reflection" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+web = { path = "../../web" }
+rpc = { path = "../../rpc" }
+http = { path = "../../http" }
+rpc_util = { path = "../../rpc_util" }
+json = { path = "../../format/json" }
+video = { path = "../video" }
+v4l2 = { path = "../../../third_party/v4l2" }
+usb = { path = "../../usb" }

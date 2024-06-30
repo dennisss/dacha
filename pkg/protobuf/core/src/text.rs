@@ -612,10 +612,11 @@ pub fn serialize_text_proto(message: &dyn MessageReflection) -> String {
 
 fn serialize_message(message: &dyn MessageReflection, indent: &str, out: &mut String) {
     for field in message.fields() {
-        let refl = match message.field_by_number(field.number) {
-            Some(v) => v,
-            None => continue,
-        };
+        if !message.has_field_with_number(field.number) {
+            continue;
+        }
+
+        let refl = message.field_by_number(field.number).unwrap();
 
         let is_message = match &refl {
             Reflection::Message(_) => true,

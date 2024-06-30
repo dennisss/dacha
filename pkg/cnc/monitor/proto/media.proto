@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package cnc;
+
+/*
+message MediaStream {
+    // Id of the stream.
+    fixed64 id = 1;
+
+    fixed64 machine_id = 2;
+
+    fixed64 camera_id = 3;
+
+    // Mime Type: VIDEO|AUDIO|SUBTITLE|etc.
+    // Resolution
+    // Bit Rate
+    // Codec Type
+
+}
+*/
+
+// Contiguous playable/seekable span of media data.
+// This is immutable once written.
+message MediaFragment {
+    fixed64 camera_id = 1;
+
+    // Start time in milliseconds relative to the start of the stream.
+    uint64 start_time = 2;
+
+    // End time in milliseconds relative to the start of the stream.
+    uint64 end_time = 3;
+
+    // If present, location of the init data needed to initialize the codecs used in this fragment. If not present, then this fragment can be played independently. 
+    MediaSegmentData init_data = 4;
+
+    // Location of the main media data unique to this fragment.
+    MediaSegmentData data = 5;
+
+    // Start time of this fragment relative to the overall MP4 stream in which it was generated (if not the same as start_time).
+    uint64 relative_time = 6;
+
+    // MIME type for the data. This will be constant across all fragments sharing the same init data. 
+    string mime_type = 7;
+}
+
+// Reference to some slice of data in a segment file.
+message MediaSegmentData {
+    // Id of the segment file.
+    uint64 segment_id = 1;
+
+    // Byte offsets within the segment file between which this data is located.
+    // If not present, then we are referencing the whole file.
+    ByteRange byte_range = 2;
+}
+
+message ByteRange {
+    uint64 start = 1;
+    uint64 end = 2;
+}

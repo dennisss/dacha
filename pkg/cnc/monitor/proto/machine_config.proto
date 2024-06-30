@@ -52,8 +52,17 @@ message MachineConfig {
 }
 
 message FieldPath {
-    repeated uint32 field_id = 1;
+    repeated FieldKey key = 1;
 }
+
+message FieldKey {
+    oneof key {
+        uint32 field_id = 1;
+        string field_name = 2;
+    }
+}
+
+
 
 enum AxisType {
     UNKNOWN = 0;
@@ -103,11 +112,13 @@ message DeviceSelector {
     // NOTE: This shouldn't use dynamically allocated devices like /dev/ttyUSB0.
     repeated string serial_path = 2;
 
-    uint32 fake = 3;
+    optional uint32 fake = 3;
 
     // Path to a V4L2 device.
     // TODO: Allow distinguishing these by USB interface.
     repeated string video_path = 4;
+
+    string path = 5;
 }
 
 message USBSelector {
@@ -125,11 +136,15 @@ message USBSelector {
 }
 
 message CameraConfig {
-    string id = 1;
+    // Random id used to identify this specific camera entry.
+    fixed64 id = 1;
 
     // If present, defines which USB device this camera is on.
     DeviceSelector device = 2;
 
     // If true, we will record video from this camera while the machine is playing a file.
     bool record_while_playing = 3;
+
+    // If true, we will record video from this camera when the player is in a paused state.
+    bool record_while_paused = 4;
 }

@@ -49,6 +49,11 @@ export class SettingsComponent extends React.Component<{ machine: any, context: 
                     </div>
                     <div className="card-body">
                         <PropertiesTable properties={properties} style={{ verticalAlign: 'baseline' }} />
+
+                        <div>
+                            {/* TODO: This needs confirmation followed by navigating away from the current page. */}
+                            <Button onClick={(done) => { }} preset="danger">Delete Machine</Button>
+                        </div>
                     </div>
                 </div>
 

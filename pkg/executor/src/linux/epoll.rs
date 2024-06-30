@@ -83,16 +83,20 @@ impl ExecutorEpoll {
                 continue;
             }
 
-            let desc_state = state
-                .polled_descriptors
-                .get_mut(&event.fd())
-                .ok_or_else(|| {
-                    format_err!(
-                        "Unregistered fd: {}, events: {:?}",
+            let desc_state = match state.polled_descriptors.get_mut(&event.fd()) {
+                Some(v) => v,
+                None => {
+                    // If we see this, then most likely there was a race condition caused by a
+                    // descriptor being unregistered in between the poller.wait() returning and the
+                    // state being locked.
+                    eprintln!(
+                        "Unregistered epoll fd: {}, events: {:?}",
                         event.fd(),
                         event.events()
-                    )
-                })?;
+                    );
+                    continue;
+                }
+            };
 
             desc_state.events |= event.events();
 

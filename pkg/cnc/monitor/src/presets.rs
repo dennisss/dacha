@@ -59,6 +59,7 @@ pub fn get_prusa_i3_mk3sp_config() -> Result<MachineConfig> {
         firmware: MARLIN
         baud_rate: 115200
         reset_using_dtr: true
+        silent_mode: true
 
         axes: [
             { id: "X" type: POSITION range { min: 0 max: 255 } },

@@ -20,6 +20,12 @@ export async function pick_file(channel: Channel): Promise<string> {
             body: (
                 <div>
                     <ul className="list-group list-group-flush">
+                        {files.length == 0 ? (
+                            <div style={{ color: '#ccc', padding: 15, textAlign: 'center' }}>
+                                No files uploaded
+                            </div>
+                        ) : null}
+
                         {files.map((file) => {
                             return <FileListItem key={file.id} file={file} onClick={() => {
                                 ModalStore.global().close();

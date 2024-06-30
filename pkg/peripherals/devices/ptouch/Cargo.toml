@@ -10,3 +10,4 @@ graphics = { path = "../../../graphics" }
 image = { path = "../../../image" }
 executor = { path = "../../../executor" }
 file = { path = "../../../file" }
+macros = { path = "../../../macros" }

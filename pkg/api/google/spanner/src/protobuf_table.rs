@@ -256,6 +256,8 @@ impl<'a, T: ProtobufTableTag + 'static> ProtobufTable<'a, T> {
         let reflect = match reflect {
             Some(v) => v,
             None => {
+                // TODO: Instead return an error or verify that the field has no presence if
+                // doing this.
                 value.null_value_mut();
                 return Ok(());
             }

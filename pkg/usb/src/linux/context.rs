@@ -382,6 +382,7 @@ struct ContextDevices {
 /// Reference to a device connected to the system.
 /// Can be used to open the device or preview descriptors that are cached by the
 /// system.
+#[derive(Clone)]
 pub struct DeviceEntry {
     context_state: Arc<ContextState>,
     busnum: usize,

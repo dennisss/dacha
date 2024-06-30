@@ -1,0 +1,9 @@
+[package]
+name = "protobuf_test"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+protobuf = { path = ".." }
+protobuf_test_proto = { path = "./proto" }

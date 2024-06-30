@@ -4,6 +4,7 @@ import { PageContext } from "../page";
 import { Button } from "pkg/web/lib/button";
 import { EditInput } from "pkg/web/lib/input";
 import { run_machine_command } from "../rpc_utils";
+import { Card, CardBody } from "../card";
 
 export class ControlsComponent extends React.Component<{ machine: any, context: PageContext }> {
 
@@ -45,12 +46,8 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
         // TODO: Also need a configurable job feed rate.
 
         return (
-            <div className="card" style={{ marginBottom: 10 }}>
-                <div className="card-header">
-                    Jog
-                </div>
-
-                <div className="card-body">
+            <Card id="jog" header="Jog" style={{ marginBottom: 10 }}>
+                <CardBody>
                     <div style={{ display: 'flex' }}>
                         <JogButtons machine={machine} context={this.props.context} />
                         <div style={{ paddingTop: 3 }}>
@@ -116,10 +113,8 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
                             </tbody>
                         </table>
                     </div>
-                </div>
-
-
-            </div>
+                </CardBody>
+            </Card>
         );
     }
 };
@@ -232,6 +227,7 @@ class JogButtons extends React.Component<{ machine: any, context: PageContext }>
                     <input type="text" className="form-control" value={this.state._feedrate + ''} onChange={(e) => this.setState({ _feedrate: e.target.value * 1 })} />
                 </div>
 
+                {/* TODO: Hide if not a milling machine */}
                 <div style={{ width: 140, display: 'inline-block', marginRight: 10 }}>
                     <div style={{ fontSize: '0.8em' }}>
                         Spindle (RPM):
@@ -304,12 +300,8 @@ class TemperaturesBox extends React.Component<{ machine: any, context: PageConte
         })
 
         return (
-            <div className="card" style={{ marginBottom: 10 }}>
-                <div className="card-header">
-                    Temperatures
-                </div>
-
-                <div className="card-body">
+            <Card id="temps" header="Temperatures" style={{ marginBottom: 10 }}>
+                <CardBody>
                     {/* <Figure /> */}
 
                     <div>
@@ -344,8 +336,8 @@ class TemperaturesBox extends React.Component<{ machine: any, context: PageConte
                             </tbody>
                         </table>
                     </div>
-                </div>
-            </div>
+                </CardBody>
+            </Card>
         );
     }
 };

@@ -106,6 +106,8 @@ impl MMAPBuffer {
         self.raw.buffer.sequence
     }
 
+    /// Monotonic timestamp at which which the frame was recorded.
+    /// This uses the same clock as clock_gettime(CLOCK_MONOTONIC).
     pub fn monotonic_timestamp(&self) -> Option<Duration> {
         if self.raw.buffer.flags & crate::V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC == 0 {
             return None;

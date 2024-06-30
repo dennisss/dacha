@@ -12,9 +12,14 @@ use sys::Errno;
 use crate::bindings::*;
 use crate::io::*;
 use crate::stream::*;
+use crate::utils::read_null_terminated_string;
 
 pub struct Device {
     handle: Arc<DeviceHandle>,
+
+    /// Stream types which have already been created using
+    /// new_capture_stream/new_output_stream/etc. This is used to ensure that
+    /// the same stream isn't created twice.
     streams: HashSet<v4l2_buf_type>,
 }
 
@@ -81,6 +86,7 @@ impl Device {
         V4L2_CAP_VIDEO_OUTPUT_MPLANE
 
         V4L2_CAP_VIDEO_M2M ?
+
         */
 
         println!("Driver: {}", read_null_terminated_string(&caps.driver)?);
@@ -157,35 +163,6 @@ impl Device {
             device: self.handle.clone(),
             typ,
         })
-    }
-
-    /// TODO: The list can change if we switch inputs/outputs.
-    pub async fn list_formats(&self, typ: v4l2_buf_type) -> Result<Vec<FormatDefinition>> {
-        let file = self.handle.shared.file.lock().await?.read_exclusive();
-
-        let mut out = vec![];
-
-        loop {
-            let mut fmt = v4l2_fmtdesc::default();
-            fmt.type_ = typ.0;
-            fmt.index = out.len() as u32;
-
-            match unsafe { vidioc_enum_fmt(file.as_raw_fd(), &mut fmt) } {
-                Ok(i) => {
-                    assert_eq!(i, 0);
-                }
-                Err(Errno::EINVAL) => break,
-                Err(e) => return Err(e.into()),
-            };
-
-            out.push(FormatDefinition {
-                description: read_null_terminated_string(&fmt.description)?,
-                flags: fmt.flags,
-                pixelformat: fmt.pixelformat,
-            });
-        }
-
-        Ok(out)
     }
 
     pub async fn list_frame_sizes(&self, pixel_format: u32) -> Result<Vec<FrameSizeRange>> {
@@ -310,22 +287,4 @@ pub enum FrameSizeRange {
         max_height: u32,
         step_height: u32,
     },
-}
-
-#[derive(Clone, Debug)]
-pub struct FormatDefinition {
-    pub description: String,
-    pub flags: u32,
-    pub pixelformat: u32,
-}
-
-// TODO: Deduplicate this everywhere.
-fn read_null_terminated_string(data: &[u8]) -> Result<String> {
-    for i in 0..data.len() {
-        if data[i] == 0x00 {
-            return Ok(std::str::from_utf8(&data[0..i])?.to_string());
-        }
-    }
-
-    Err(err_msg("Missing null terminator"))
 }

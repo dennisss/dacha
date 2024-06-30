@@ -22,11 +22,20 @@ use crate::spec::Syntax;
 
 #[derive(Clone, PartialEq)]
 pub struct DynamicMessage {
-    // NOTE: Field numbers are frequently sequential and pretty easy to hash.
-    // TODO: We should just be able to make this a flat Vec based on the order in the field
-    // descriptor (have on shared hash map)
+    /// Sparse map of field values for this message. Only contains fields that
+    /// have been touched by the user.
+    ///
+    /// - In proto2 (or proto3 explicit optional), existence in this map implies
+    ///   field presence.
+    /// - In proto3, the value must be further compared to the default value to
+    ///   check for presence.
+    ///
+    /// NOTE: Field numbers are frequently sequential and pretty easy to hash.
+    /// TODO: We should just be able to make this a flat Vec based on the order
+    /// in the field descriptor (have on shared hash map)
     fields: HashMap<FieldNumber, Value, SumHasherBuilder>,
 
+    // TODO: Need to cache default values for any non-trivial fields.
     extensions: ExtensionSet,
 
     desc: MessageDescriptor,
@@ -42,9 +51,7 @@ impl DynamicMessage {
     }
 
     // TODO: Return a 'Value' here
-    pub(crate) fn default_value_for_field(
-        field_desc: &FieldDescriptor,
-    ) -> WireResult<SingularValue> {
+    fn default_value_for_field(field_desc: &FieldDescriptor) -> WireResult<SingularValue> {
         use FieldDescriptorProto_Type::*;
         Ok(match field_desc.proto().typ() {
             TYPE_DOUBLE => SingularValue::Double(0.0),
@@ -80,6 +87,48 @@ impl DynamicMessage {
             TYPE_SFIXED64 => SingularValue::Int64(0),
             TYPE_SINT32 => SingularValue::Int32(0),
             TYPE_SINT64 => SingularValue::Int64(0),
+        })
+    }
+
+    fn default_reflect_for_field(field_desc: &FieldDescriptor) -> Option<Reflection<'static>> {
+        use FieldDescriptorProto_Type::*;
+        Some(match field_desc.proto().typ() {
+            TYPE_DOUBLE => Reflection::F64(&0.0),
+            TYPE_FLOAT => Reflection::F32(&0.0),
+            TYPE_INT64 => Reflection::I64(&0),
+            TYPE_UINT64 => Reflection::U64(&0),
+            TYPE_INT32 => Reflection::I32(&0),
+            TYPE_FIXED64 => Reflection::U64(&0),
+            TYPE_FIXED32 => Reflection::U32(&0),
+            TYPE_BOOL => Reflection::Bool(&false),
+            TYPE_STRING => Reflection::String(""),
+            TYPE_GROUP => {
+                todo!()
+            }
+            TYPE_MESSAGE | TYPE_ENUM => match field_desc.find_type() {
+                /*
+                TODO: Easiest way to implement these to to implement protobuf::Message / protobuf::Enum on MessageDescriptor / EnumDescriptor and then return a pointer to these.
+                */
+                Some(TypeDescriptor::Message(m)) => {
+                    // let val = DynamicMessage::new(m);
+                    // SingularValue::Message(Box::new(val))
+                    todo!()
+                }
+                Some(TypeDescriptor::Enum(e)) => {
+                    // let val = DynamicEnum::new(e);
+                    // SingularValue::Enum(Box::new(val))
+                    todo!()
+                }
+                _ => {
+                    return None;
+                }
+            },
+            TYPE_BYTES => Reflection::Bytes(&[]),
+            TYPE_UINT32 => Reflection::U32(&0),
+            TYPE_SFIXED32 => Reflection::I32(&0),
+            TYPE_SFIXED64 => Reflection::I64(&0),
+            TYPE_SINT32 => Reflection::I32(&0),
+            TYPE_SINT64 => Reflection::I64(&0),
         })
     }
 }
@@ -158,37 +207,61 @@ impl protobuf_core::MessageReflection for DynamicMessage {
         &self.desc.fields_short()
     }
 
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
+        self.fields.remove(&num);
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        let field = match self.fields.get(&num) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        match field {
+            Value::Singular(v) => {
+                match self.desc.syntax() {
+                    Syntax::Proto2 => {
+                        // Nothing else to check.
+                        // Presence of the value in the map is good enough.
+                        true
+                    }
+                    Syntax::Proto3 => {
+                        let field_desc = match self.desc.field_by_number(num) {
+                            Some(v) => v,
+                            None => return false,
+                        };
+
+                        if field_desc.proto().proto3_optional()
+                            || field_desc.proto().has_oneof_index()
+                        {
+                            true
+                        } else {
+                            let default_value = Self::default_value_for_field(&field_desc).unwrap();
+
+                            *v != default_value
+                        }
+                    }
+                }
+            }
+            Value::Repeated(v) => v.reflect_len() > 0,
+        }
+    }
+
+    // TODO: This must also return if a valuid thing.
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         let field = match self.fields.get(&num) {
             Some(v) => v,
-            None => return None,
-        };
+            None => {
+                // Returning a default value.
 
-        // Check field presence.
-        let present = match self.desc.syntax() {
-            Syntax::Proto2 => {
-                // Nothing else to check.
-                // Presence of the value in the map is good enough.
-                true
+                let field_desc = match self.desc.field_by_number(num) {
+                    Some(v) => v,
+                    None => return None,
+                };
+
+                return Self::default_reflect_for_field(&field_desc);
             }
-            Syntax::Proto3 => match field {
-                Value::Singular(v) => {
-                    let field_desc = self.desc.field_by_number(num).unwrap();
-                    if field_desc.proto().has_oneof_index() {
-                        true
-                    } else {
-                        let default_value = Self::default_value_for_field(&field_desc).unwrap();
-
-                        *v != default_value
-                    }
-                }
-                Value::Repeated(v) => true,
-            },
         };
-
-        if !present {
-            return None;
-        }
 
         Some(field.reflect())
     }

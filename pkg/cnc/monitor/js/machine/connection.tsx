@@ -3,6 +3,10 @@ import { PropertiesTable } from "../properties_table";
 import { PageContext } from "../page";
 import { run_machine_command } from "../rpc_utils";
 import { Button } from "pkg/web/lib/button";
+import { CardError } from "../card_error";
+import { DeviceSelectorInput } from "../device_selector";
+import { shallow_copy } from "pkg/web/lib/utils";
+import { Card, CardBody } from "../card";
 
 
 export interface ConnectionBoxProps {
@@ -10,14 +14,44 @@ export interface ConnectionBoxProps {
     machine: any
 }
 
-export class ConnectionBox extends React.Component<ConnectionBoxProps> {
+interface ConnectionBoxState {
+    // Contains a sparse edit to the MachineConfig.
+    _config: any,
+
+    _selected_device: any
+}
+
+export class ConnectionBox extends React.Component<ConnectionBoxProps, ConnectionBoxState> {
+
+    state = {
+        _config: null,
+        _selected_device: null
+    };
 
     _run_command = (command, done) => {
         run_machine_command(this.props.context, this.props.machine, command, done);
     }
 
+    _click_save = (done) => {
+        this._run_command({ update_config: this.state._config }, () => {
+            this._click_revert(done);
+        });
+    }
+
+    _click_revert = (done) => {
+        this.setState({
+            _config: null,
+            _selected_device: null
+        }, () => {
+            done()
+        });
+    }
+
     render() {
         let machine = this.props.machine;
+
+        let machine_config = { ...machine.config, ...(this.state._config || {}) };
+
         let connection_state = machine.state.connection_state;
 
         let properties = [
@@ -27,14 +61,7 @@ export class ConnectionBox extends React.Component<ConnectionBoxProps> {
             }
         ];
 
-        if (connection_state == 'ERROR' && machine.state.last_connection_error) {
-            properties.push({
-                name: 'Error:',
-                value: machine.state.last_connection_error
-            })
-        }
-
-        let auto_connect = machine.config.auto_connect || false;
+        let auto_connect = machine_config.auto_connect || false;
 
         properties.push(
             {
@@ -42,68 +69,91 @@ export class ConnectionBox extends React.Component<ConnectionBoxProps> {
                 value: (
                     <div>
                         <div className="form-check form-switch">
-                            {/* TODO: Name this a stateful switch with a spinner */}
                             <input className="form-check-input" type="checkbox" checked={auto_connect} onChange={(e) => {
                                 let new_value = e.target.checked;
-                                this._run_command({ update_config: { auto_connect: new_value } }, () => { });
-                            }} />
-                        </div>
 
-                        <div style={{ fontSize: '0.8em' }}>
-                            Selector: {JSON.stringify(machine.config.device)}
+                                let config = shallow_copy(this.state._config || {});
+                                config.auto_connect = new_value;
+
+                                this.setState({
+                                    _config: config
+                                });
+                            }} />
                         </div>
                     </div>
                 )
             }
         );
 
-        // If autoconnecting, show the spec. 
-        // (auto-connect only supported if bound to the machine).
-        //  <input class="form-check-input" type="checkbox" value="" id="flexCheckDisabled" disabled>
-
         let can_disconnect = connection_state == 'CONNECTED' || connection_state == 'CONNECTING';
         let can_connect = !can_disconnect && (machine.state.connection_device ? true : false);
-
-        // TODO: Show the connector selector proto.
-
-        // TODO: May need a dropdown of available devices if it is not clear.
 
         // TODO: Need disconnect confirmation if we are playing.
 
         /*
-        State
-        Path to the serial port.
-        USB info
-        Serial Number
-        Baud Rate
-        Connect / Disconnect button depending on the state.
-        Auto-Connect Toggle.
+        Dealing with the transition state:
+        - Show the selector with both the wanted and actual values. 
         */
 
         return (
-            <div className="card" style={{ marginBottom: 10 }}>
-                <div className="card-header">
-                    Connection
-                </div>
-
-                <div className="card-body">
-                    <PropertiesTable properties={properties} />
+            <Card
+                id="connection"
+                style={{ marginBottom: 10 }}
+                header="Connection"
+                error={machine.state.last_connection_error}
+            >
+                <CardBody>
+                    <div>
+                        <div style={{ fontWeight: 'bold', paddingBottom: 5 }}>
+                            General
+                        </div>
+                        <PropertiesTable properties={properties} />
+                    </div>
 
                     <div>
-                        {can_disconnect ? (
+                        <div style={{ fontWeight: 'bold', paddingBottom: 5 }}>
+                            Device Selector
+                        </div>
+
+                        {/* TODO: state.connection_device won't match the selector if we are transitioning between devices */}
+                        <DeviceSelectorInput
+                            context={this.props.context}
+                            device={this.state._selected_device || machine.state.connection_device}
+                            selector={machine_config.device}
+                            connected_device={machine.state.connection_device}
+                            filter={(device) => device.serial_path ? true : false}
+                            onChange={(selector, device) => {
+                                let config = shallow_copy(this.state._config || {});
+                                config.device = selector;
+                                config.clear_fields = [{ key: [{ field_name: 'device' }] }];
+                                this.setState({ _config: config, _selected_device: device });
+                            }}
+                        />
+                    </div>
+
+                    <div>
+                        {this.state._config != null ? (
+                            <div style={{ display: 'flex' }}>
+                                <Button style={{ flexGrow: 1, marginRight: 5 }} preset="primary" onClick={this._click_save}>
+                                    Save
+                                </Button>
+                                <Button style={{ flexGrow: 1, marginLeft: 5 }} preset="dark" onClick={this._click_revert}>
+                                    Revert
+                                </Button>
+                            </div>
+                        ) : null}
+
+                        {can_disconnect && this.state._config == null ? (
                             <Button preset="outline-dark" style={{ width: '100%' }}
                                 onClick={(done) => this._run_command({ disconnect: true }, done)}>Disconnect</Button>
                         ) : null}
-                        {can_connect ? (
+                        {can_connect && this.state._config == null ? (
                             <Button preset="outline-primary" style={{ width: '100%' }}
                                 onClick={(done) => this._run_command({ connect: true }, done)}>Connect</Button>
                         ) : null}
                     </div>
-
-                </div>
-
-
-            </div>
+                </CardBody>
+            </Card>
         );
     }
 };

@@ -13,11 +13,36 @@ mod serializer;
 pub use parser::*;
 pub use serializer::*;
 
+// TODO: Move this to the protobuf_test crate so that we don't need to link to
+// the compiler.
 #[cfg(test)]
 mod tests {
     use super::*;
     use common::errors::*;
     use protobuf_json_proto::TestMessage;
+
+    #[test]
+    fn empty_json_test() -> Result<()> {
+        let mut m = TestMessage::default();
+
+        let serialized = m.serialize_json(&SerializerOptions::default())?;
+
+        assert_eq!(r#"{}"#, serialized);
+
+        Ok(())
+    }
+
+    #[test]
+    fn one_field_set_test() -> Result<()> {
+        let mut m = TestMessage::default();
+        m.set_integer(10);
+
+        let serialized = m.serialize_json(&SerializerOptions::default())?;
+
+        assert_eq!(r#"{"integer":10}"#, serialized);
+
+        Ok(())
+    }
 
     #[test]
     fn json_ser_deser_test() -> Result<()> {
@@ -30,7 +55,7 @@ mod tests {
         m.set_s("Hello world");
         m.set_data(vec![0, 0, 1, 0, 0]);
 
-        let serialized = m.serialize_json(&SerializerOptions::default());
+        let serialized = m.serialize_json(&SerializerOptions::default())?;
 
         assert_eq!(
             r#"{"integer":123,"flag":true,"data":"AAABAAA","ids":[10,20,30],"s":"Hello world"}"#,

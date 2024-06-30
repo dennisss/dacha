@@ -30,6 +30,8 @@ gcode = { path = "../gcode" }
 math = { path = "../../math" }
 datastore_meta_client = { path = "../../datastore/meta/client" }
 sstable = { path = "../../sstable" }
+media_web = { path = "../../media/web" }
+video = { path = "../../media/video" }
 
 [features]
 default = ["std"]

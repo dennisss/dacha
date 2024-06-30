@@ -59,6 +59,14 @@ impl KeyEncoder {
         Ok((input, &[]))
     }
 
+    /*
+    TODO:
+    Representing signed integers:
+    - First bit is the sign (0 if negative, 1 is positive)
+    - Then we can use regular integer encoding (possibly inverting the value if it is negative)
+
+    */
+
     pub fn encode_varuint(mut value: u64, inverted: bool, out: &mut Vec<u8>) {
         // Minimum number of bytes needed to encode the unsigned integer.
         let nbits = (64 - value.leading_zeros()) as usize;
@@ -154,6 +162,8 @@ impl KeyEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // TODO: Needs tests to verify bytes stability for this.
 
     fn run_encode_varuint_test(inverted: bool) {
         let mut out = vec![];

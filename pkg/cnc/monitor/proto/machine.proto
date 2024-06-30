@@ -29,6 +29,8 @@ message MachineStateProto {
         // The serial port is being configured or initialize commands are still being sent. 
         CONNECTING = 3;
 
+        // TODO: Need a DISCONNECTING state.
+
         // The link to the machine is fully setup and the machine is believed to be healthy
         // (responding to keep alives).
         //
@@ -73,9 +75,7 @@ message MachineStateProto {
     //
     RunningProgramState running_program = 4;
 
-    // Whether or not steppers are on?
-
-    // Info on the currently chosen interface port (USB/serial etc.) and metadata like names and serial numbers.
+    repeated CameraState cameras = 7;
 }
 
 
@@ -190,6 +190,37 @@ message Message {
     string text = 1;
     // log level
     // time created
+}
+
+message CameraState {
+    fixed64 camera_id = 1;
+
+    enum State {
+        UNKNOWN = 0;
+        
+        // The camera is not physically connected.
+        MISSING = 1;
+
+        // This camera is still initializing. It can't be actively 
+        SETUP = 2;
+        
+        IDLE = 3;
+        
+        STARTING = 4;
+        
+        RECORDING = 5;
+        
+        ERROR = 6;
+    }
+
+    State status = 2;
+
+    // If present, the full set of information on the connected camera.
+    // If not present, then the camera isn't connected. 
+    DeviceSelector device = 3;
+
+    // Error from the last attempt to record using this camera.
+    string last_error = 4;
 }
 
 

@@ -17,8 +17,8 @@ pub struct Word {
 #[derive(Debug, PartialEq, Clone)]
 pub enum WordValue {
     RealValue(Decimal),
-    QuotedString(Vec<u8>),
-    UnquotedString(Vec<u8>),
+    QuotedString(String),
+    UnquotedString(String),
     Empty,
 }
 
@@ -26,8 +26,8 @@ impl WordValue {
     pub fn to_string(&self) -> String {
         match self {
             WordValue::RealValue(v) => v.to_string(),
-            WordValue::QuotedString(_) => todo!(),
-            WordValue::UnquotedString(_) => todo!(),
+            WordValue::QuotedString(v) => format!("\"{}\"", v),
+            WordValue::UnquotedString(v) => v.clone(),
             WordValue::Empty => String::new(),
         }
     }
@@ -59,6 +59,7 @@ pub enum ParseErrorKind {
     InvalidLineNumber,
     UnterminatedString,
     UnterminatedComment,
+    InvalidUTF8InString,
 }
 
 pub struct Parser {
@@ -365,7 +366,18 @@ impl Parser {
                             if let Some(v) = Decimal::parse_complete(&self.buffer) {
                                 WordValue::RealValue(v)
                             } else {
-                                WordValue::UnquotedString(self.buffer.clone())
+                                let s = match String::from_utf8(self.buffer.clone()) {
+                                    Ok(v) => v,
+                                    Err(_) => {
+                                        event = Some(Event::ParseError(
+                                            ParseErrorKind::InvalidUTF8InString,
+                                        ));
+                                        self.state = ParserState::StartOfLineComponent;
+                                        break;
+                                    }
+                                };
+
+                                WordValue::UnquotedString(s)
                             }
                         };
 
@@ -391,10 +403,21 @@ impl Parser {
 
                     if c == b'"' {
                         i += 1;
+
+                        let s = match String::from_utf8(self.buffer.clone()) {
+                            Ok(v) => v,
+                            Err(_) => {
+                                self.state = ParserState::StartOfLineComponent;
+                                event =
+                                    Some(Event::ParseError(ParseErrorKind::InvalidUTF8InString));
+                                break;
+                            }
+                        };
+
                         self.state = ParserState::StartOfLineComponent;
                         event = Some(Event::Word(Word {
                             key: self.word_key as char,
-                            value: WordValue::QuotedString(self.buffer.clone()),
+                            value: WordValue::QuotedString(s),
                         }));
 
                         break;

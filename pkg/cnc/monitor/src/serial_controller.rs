@@ -126,6 +126,10 @@ struct State {
 
 #[derive(Default)]
 struct SerialPendingSendQueue {
+    /// When true, the sending thread has stopped so can't send any more
+    /// commands.
+    stopped: bool,
+
     /// Lines that haven't yet been sent via the serial connection.
     pending_send: VecDeque<PendingSend>,
 
@@ -145,9 +149,35 @@ struct PendingSend {
     deadline: Instant,
 }
 
-struct AxisData {
-    data: Vec<f32>,
-    last_update: Option<Instant>,
+#[derive(Clone)]
+pub struct AxisData {
+    pub data: Vec<f32>,
+    pub last_update: Option<Instant>,
+}
+
+/// This ensures that if the threads die, we will cancel all outstanding send
+/// requests. Without this, send_command futures started shortly before the
+/// connection fails may never terminate.
+struct SenderCancellationGuard {
+    shared: Arc<Shared>,
+}
+
+impl Drop for SenderCancellationGuard {
+    fn drop(&mut self) {
+        let shared = self.shared.clone();
+        executor::spawn(async move {
+            let state = match shared.sender_pending_buffer.lock().await {
+                Ok(v) => v,
+                Err(e) => return,
+            };
+
+            lock!(state <= state, {
+                state.stopped = true;
+                state.pending_send.clear();
+                state.inflight_send.take();
+            });
+        });
+    }
 }
 
 impl SerialController {
@@ -183,10 +213,14 @@ impl SerialController {
             processed_line_waterline: AsyncVariable::default(),
         });
 
+        let sender_guard = SenderCancellationGuard {
+            shared: shared.clone(),
+        };
+
         resources
             .spawn_interruptable(
                 "cnc::Machine::serial_writer",
-                Self::serial_writer_thread(shared.clone(), serial_writer),
+                Self::serial_writer_thread(shared.clone(), serial_writer, sender_guard),
             )
             .await;
 
@@ -357,6 +391,16 @@ impl SerialController {
         Ok(())
     }
 
+    pub async fn axis_value(&self, axis_name: &str) -> Result<AxisData> {
+        let state = self.shared.state.lock().await?.read_exclusive();
+
+        state
+            .axes
+            .get(axis_name)
+            .cloned()
+            .ok_or_else(|| err_msg("Missing axis"))
+    }
+
     /// TODO: Make this independent of the SerialController
     ///
     /// CANCEL SAFE
@@ -525,9 +569,15 @@ impl SerialController {
             .await
             .map_err(|_| SendCommandError::AbruptCancellation)?;
         lock!(queue <= queue_guard, {
+            if queue.stopped {
+                return Err(SendCommandError::AbruptCancellation);
+            }
+
             queue.pending_send.push_back(entry);
             queue.notify_all();
-        });
+
+            Ok::<_, SendCommandError>(())
+        })?;
 
         let res = receiver
             .recv()
@@ -540,6 +590,7 @@ impl SerialController {
     async fn serial_writer_thread(
         shared: Arc<Shared>,
         mut writer: Box<dyn Writeable>,
+        sender_guard: SenderCancellationGuard,
     ) -> Result<()> {
         // Many platforms using will initially boot into the bootloader for a few
         // seconds to wait for flashing commands.
@@ -578,6 +629,8 @@ impl SerialController {
 
             writer.write_all(&data).await?;
         }
+
+        drop(sender_guard);
 
         Ok(())
     }

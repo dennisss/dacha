@@ -3,6 +3,7 @@ import { Figure } from "pkg/web/lib/figure";
 import { EntityKind, FigureOptions, Point, Range } from "pkg/web/lib/figure/types";
 import { PageContext } from "../page";
 import { run_machine_command } from "../rpc_utils";
+import { Card, CardBody } from "../card";
 
 
 function clean_range(v: any): Range {
@@ -167,14 +168,11 @@ export class PositionBox extends React.Component<{ machine: any, context: PageCo
 
     render() {
         return (
-            <div className="card">
-                <div className="card-header">
-                    Top-down View
-                </div>
-                <div className="card-body">
+            <Card id="pos" header="Top-down View">
+                <CardBody>
                     <Figure options={this._get_figure_options()} onClick={this._on_click} />
-                </div>
-            </div>
+                </CardBody>
+            </Card>
         );
     }
 };

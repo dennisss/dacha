@@ -13,6 +13,7 @@ Tables:
 
 pub const MACHINE_TABLE_TAG: MachineTable = MachineTable {};
 pub const FILE_TABLE_TAG: FileTable = FileTable {};
+pub const MEDIA_FRAGMENT_TABLE_TAG: MediaFragmentTable = MediaFragmentTable {};
 
 pub struct MachineTable {}
 
@@ -49,10 +50,45 @@ impl ProtobufTableTag for FileTable {
 }
 
 /*
-MetricValue:
-- machine_id
-- metric_name (T0)
-- metric_value (float)
+pub struct MediaStreamTable {}
+
+impl ProtobufTableTag for MediaStreamTable {
+    type Message = MediaStream;
+
+    fn table_name(&self) -> &str {
+        "MediaStream"
+    }
+
+    fn indexed_keys(&self) -> Vec<ProtobufTableKey> {
+        vec![ProtobufTableKey {
+            index_name: None,
+            fields: vec![MediaStream::ID_FIELD_NUM],
+        }]
+    }
+}
+*/
+
+pub struct MediaFragmentTable {}
+
+impl ProtobufTableTag for MediaFragmentTable {
+    type Message = MediaFragment;
+
+    fn table_name(&self) -> &str {
+        "MediaFragment"
+    }
+
+    fn indexed_keys(&self) -> Vec<ProtobufTableKey> {
+        vec![ProtobufTableKey {
+            index_name: None,
+            fields: vec![
+                MediaFragment::CAMERA_ID_FIELD_NUM,
+                MediaFragment::START_TIME_FIELD_NUM,
+            ],
+        }]
+    }
+}
+
+/*
 
 ProgramRun
 - machine_id
@@ -61,7 +97,27 @@ ProgramRun
 - state
 - file_id
 
-Events
+Event:
+- Key
+    - machine_id
+    - time
+- Value
+    - type:
+        PROGRAM_START
+        PROGRAM_PLAY
+        PROGRAM_PAUSE
+        PROGRAM_DONE
+        PRINT_LAYER
+
+
+
+
+MetricValue:
+- machine_id
+- metric_name (T0)
+- time
+- metric_value (float)
+
 
 
 

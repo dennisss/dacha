@@ -11,7 +11,7 @@ use std::sync::Arc;
 use alloc::boxed::Box;
 
 use common::collections::FixedString;
-use common::const_default::ConstDefault;
+use common::const_default::{ConstDefault, StaticDefault};
 use common::errors::*;
 use common::fixed::vec::FixedVec;
 use common::list::Appendable;
@@ -24,6 +24,7 @@ use protobuf_core::wire::*;
 #[cfg(feature = "alloc")]
 use protobuf_core::reflection::*;
 
+#[cfg(feature = "std")]
 pub static FILE_DESCRIPTOR_635CB7D60B6984D8: protobuf_core::StaticFileDescriptor = protobuf_core::StaticFileDescriptor {
                 proto: b"\x0a\x2cpkg\x2fprotobuf\x2fcompiler\x2fproto\x2fextensions\x2eproto\x12\x05dacha\x1a\x20google\x2fprotobuf\x2fdescriptor\x2eproto\x3a2\x0a\x09max\x5fcount\x18\xc1\x3e\x20\x01\x28\x0d\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a3\x0a\x0amax\x5flength\x18\xc2\x3e\x20\x01\x28\x0d\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a6\x0a\x0dunordered\x5fset\x18\xc3\x3e\x20\x01\x28\x08\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a\x2c\x0a\x03key\x18\xc4\x3e\x20\x01\x28\x09\x12\x1cgoogle\x2eprotobuf\x2eFieldOptionsB\x00\x3a4\x0a\x09typed\x5fnum\x18\xc4\x3e\x20\x01\x28\x08\x12\x1egoogle\x2eprotobuf\x2eMessageOptionsB\x00B\x00b\x06proto2",
                 dependencies: &[// google/protobuf/descriptor.proto

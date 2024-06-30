@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use common::any::AsAny;
+use common::const_default::{ConstDefault, StaticDefault};
 use core::any::Any;
 use core::convert::Infallible;
 use core::default::Default;
@@ -115,15 +116,17 @@ pub trait MessageReflection: Message + AsAny + MessageEquals {
     // set to the default value.
     fn fields(&self) -> &[FieldDescriptorShort];
 
-    // /// Checks if
-    // fn has_field_with_number(&self, num: FieldNumber) -> bool;
-
-    // clear_field_with_number()
-
-    /// Returns None if the field is now defined in the descriptor or the field
-    /// doesn't have a value (based on field presence rules).
+    /// Checks if
     ///
-    /// TODO: Change this to return default values if not present.
+    /// NOTE: This will also return false for unknown fields.
+    fn has_field_with_number(&self, num: FieldNumber) -> bool;
+
+    fn clear_field_with_number(&mut self, num: FieldNumber);
+
+    /// Gets the value of a field given its field number.
+    ///
+    /// - If the field is not present, returns a default value.
+    /// - Returns None only if an unknown field number was specified.
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection>;
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut>;
@@ -156,13 +159,30 @@ impl<M: Message + PartialEq<M> + 'static> MessageEquals for M {
     }
 }
 
+/// Trivially downcasts a type to its Reflection/ReflectionMut representation.
+///
+/// INTERNAL TYPE: Mainly to be used in generated code.
 pub trait Reflect {
     fn reflect(&self) -> Reflection;
+
+    // TODO: Split into a separate ReflectMut trait.
     fn reflect_mut(&mut self) -> ReflectionMut;
 }
 
+/// Static methods implemented on types used inside of Message structs.
+///
+/// INTERNAL TYPE: Mainly to be used in generated code.
+pub trait ReflectStatic {
+    type Type: ?Sized + Reflect;
+
+    /// Gets a reference to the default value of this field type.
+    /// Note that non-default constructable types will return a different type
+    /// than Self.
+    fn reflect_static_default() -> &'static Self::Type;
+}
+
 macro_rules! define_reflect {
-    ($name:ident, $t:ident) => {
+    ($name:ident, $t:ident, $y:ident, $default:expr) => {
         impl Reflect for $t {
             fn reflect(&self) -> Reflection {
                 Reflection::$name(self)
@@ -171,17 +191,46 @@ macro_rules! define_reflect {
                 ReflectionMut::$name(self)
             }
         }
+
+        impl ReflectStatic for $t {
+            type Type = $y;
+
+            fn reflect_static_default() -> &'static Self::Type {
+                &$default
+            }
+        }
     };
 }
 
-define_reflect!(F32, f32);
-define_reflect!(F64, f64);
-define_reflect!(I32, i32);
-define_reflect!(I64, i64);
-define_reflect!(U32, u32);
-define_reflect!(U64, u64);
-define_reflect!(Bool, bool);
-define_reflect!(String, String);
+define_reflect!(F32, f32, f32, 0.0);
+define_reflect!(F64, f64, f64, 0.0);
+define_reflect!(I32, i32, i32, 0);
+define_reflect!(I64, i64, i64, 0);
+define_reflect!(U32, u32, u32, 0);
+define_reflect!(U64, u64, u64, 0);
+define_reflect!(Bool, bool, bool, false);
+define_reflect!(String, String, str, "");
+
+impl Reflect for str {
+    fn reflect(&self) -> Reflection {
+        Reflection::String(self)
+    }
+
+    // TODO: Split up Reflect and ReflectMut so that this isn't needed.
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        panic!()
+    }
+}
+
+impl Reflect for [u8] {
+    fn reflect(&self) -> Reflection {
+        Reflection::Bytes(self)
+    }
+
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        panic!()
+    }
+}
 
 impl Reflect for crate::bytes::BytesField {
     fn reflect(&self) -> Reflection {
@@ -189,6 +238,14 @@ impl Reflect for crate::bytes::BytesField {
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         ReflectionMut::Bytes(&mut self.0)
+    }
+}
+
+impl ReflectStatic for crate::bytes::BytesField {
+    type Type = [u8];
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &[]
     }
 }
 
@@ -207,6 +264,14 @@ impl<T: Reflect> Reflect for crate::MessagePtr<T> {
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         self.deref_mut().reflect_mut()
+    }
+}
+
+impl<T: Reflect + StaticDefault> ReflectStatic for crate::message::MessagePtr<T> {
+    type Type = T;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        T::static_default()
     }
 }
 
@@ -248,63 +313,74 @@ impl<T: Reflect + Default, const LEN: usize> Reflect for FixedVec<T, LEN> {
     }
 }
 
-pub trait SingularFieldReflectionProto2 {
-    fn reflect_field_proto2(&self) -> Option<Reflection>;
-    fn reflect_field_mut_proto2(&mut self) -> ReflectionMut;
+/// This trait is implemented on types that store the value of a protobuf
+/// message field.
+///
+/// NOTE: It is only correct for this to be used in the internal generated
+/// message code directly on the raw struct fields.
+pub trait MessageFieldReflection {
+    fn reflect_has_field(&self) -> bool;
+
+    fn reflect_field(&self) -> Reflection;
+
+    fn reflect_field_mut(&mut self) -> ReflectionMut;
+
+    fn reflect_clear_field(&mut self);
 }
 
-impl<T: Reflect + Default> SingularFieldReflectionProto2 for Option<T> {
-    fn reflect_field_proto2(&self) -> Option<Reflection> {
-        self.as_ref().map(|v| v.reflect())
+// Option<T>
+// - This is used for all singular fields in proto2.
+// - Only explicitly optional and message types use this in proto3.
+//
+// In all cases, field presence is straight forward since it is explicitly
+// encoded in the Option.
+impl<T: 'static + Reflect + Default + ReflectStatic> MessageFieldReflection for Option<T> {
+    fn reflect_has_field(&self) -> bool {
+        self.is_some()
     }
-    fn reflect_field_mut_proto2(&mut self) -> ReflectionMut {
-        if !self.is_some() {
+
+    fn reflect_field(&self) -> Reflection {
+        match self {
+            Some(v) => v.reflect(),
+            None => T::reflect_static_default().reflect(),
+        }
+    }
+
+    fn reflect_field_mut(&mut self) -> ReflectionMut {
+        let v = match self {
+            Some(v) => v,
             // TODO: If an explicit default value is available, we should use that instead.
-            *self = Some(T::default());
-        }
+            None => self.insert(T::default()),
+        };
 
-        self.as_mut().unwrap().reflect_mut()
+        v.reflect_mut()
+    }
+
+    fn reflect_clear_field(&mut self) {
+        *self = None;
     }
 }
 
-impl<T: Reflect> SingularFieldReflectionProto2 for T {
-    fn reflect_field_proto2(&self) -> Option<Reflection> {
-        Some(self.reflect())
+// Regular non-Option values.
+// - In proto2/proto3, this is used for all repeated fields.
+// - In proto3, this is used for all primitive non-explicitly optional fields.
+impl<T: Reflect + Default + PartialEq> MessageFieldReflection for T {
+    fn reflect_has_field(&self) -> bool {
+        *self != T::default()
     }
-    fn reflect_field_mut_proto2(&mut self) -> ReflectionMut {
+
+    fn reflect_field(&self) -> Reflection {
+        self.reflect()
+    }
+
+    fn reflect_field_mut(&mut self) -> ReflectionMut {
         self.reflect_mut()
     }
-}
 
-pub trait SingularFieldReflectionProto3 {
-    fn reflect_field_proto3(&self) -> Option<Reflection>;
-    fn reflect_field_mut_proto3(&mut self) -> ReflectionMut;
-}
-
-impl<T: Reflect + Default> SingularFieldReflectionProto3 for Option<T> {
-    fn reflect_field_proto3(&self) -> Option<Reflection> {
-        self.as_ref().map(|v| v.reflect())
-    }
-    fn reflect_field_mut_proto3(&mut self) -> ReflectionMut {
-        if !self.is_some() {
-            *self = Some(T::default());
-        }
-
-        self.as_mut().unwrap().reflect_mut()
-    }
-}
-
-// TODO: Make sure that this doesn't accidentally get used for repeated fields.
-impl<T: Reflect + Default + PartialEq> SingularFieldReflectionProto3 for T {
-    fn reflect_field_proto3(&self) -> Option<Reflection> {
-        if *self == T::default() {
-            return None;
-        }
-
-        Some(self.reflect())
-    }
-    fn reflect_field_mut_proto3(&mut self) -> ReflectionMut {
-        self.reflect_mut()
+    // TODO: For repeated fields, it is more efficient to preserve the memory buffer
+    // by calling .clear() on the Vec.
+    fn reflect_clear_field(&mut self) {
+        *self = T::default();
     }
 }
 

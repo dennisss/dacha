@@ -20,15 +20,11 @@ service Monitor {
     rpc StartFileUpload (StartFileUploadRequest) returns (StartFileUploadResponse);
 
     rpc DeleteFile (DeleteFileRequest) returns (DeleteFileResponse);
-
-    // TODO: Need to be able to read the terminal messages (optionally filter out any parsed messages or sent message responses).
 }
 
 message ReadSerialLogRequest {
     fixed64 machine_id = 1;
 }
-
-
 
 message ReadSerialLogResponse {
     enum LineKind {
@@ -61,7 +57,8 @@ enum EntityType {
     UNKNOWN_ENTITY = 0;
     MACHINE = 1;
     FILE = 2;
-    CAMERA = 3;
+    DEVICE = 3;
+    PRESET = 4;
 }
 
 message QueryEntitiesRequest {
@@ -70,7 +67,6 @@ message QueryEntitiesRequest {
     // If we want a specific 
     optional fixed64 entity_id = 2;
 
-    // If true, then we want to also receive higher frequency 'verbose' data about the entities.
     bool verbose = 3;
 
     // If true, monitor the entities for changes and send back an updated response after each
@@ -80,13 +76,20 @@ message QueryEntitiesRequest {
 
 message QueryEntitiesResponse {
     repeated MachineProto machines = 1;
-    repeated CameraEntry cameras = 2;
+
+    repeated DeviceProto devices = 2;
+
     repeated FileProto files = 3;
+
+    repeated MachineConfig presets = 4;
 }
 
-message CameraEntry {
-    fixed64 id = 1;
-    string name = 2;
+message DeviceProto {
+    // Verbose information about this device.
+    // info.path can be sued as an id.
+    DeviceSelector info = 2;
+
+    fixed64 used_by_machine_id = 3;
 }
 
 message ListMachinesRequest {
@@ -138,7 +141,7 @@ message RunMachineCommandRequest {
         // Stops running the current program and marks no program as running.
         bool stop_program = 8;
 
-        // Merges the given data into the machine config.
+        // Merges the given data into the machine config (using protobuf 'merge' semantics).
         //
         // WARNING: Not all changes can be changed live and may require a machine
         // disconnect/connect cycle to take effect.

@@ -102,6 +102,7 @@ mod buffer;
 mod device;
 mod format;
 mod stream;
+mod utils;
 
 pub use bindings::*;
 pub use buffer::*;

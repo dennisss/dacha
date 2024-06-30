@@ -2,21 +2,27 @@ use base_error::*;
 use cnc_monitor_proto::cnc::DeviceSelector;
 use common::io::{Readable, Writeable};
 use file::{LocalPath, LocalPathBuf};
+use media_web::camera_manager::{CameraManager, CameraSubscriber};
 use peripherals::serial::SerialPort;
 
 use crate::fake_machine::FakeMachine;
 
+#[derive(Clone)]
 pub enum AvailableDevice {
     USB(AvailableUSBDevice),
     Fake(usize),
 }
 
+#[derive(Clone)]
 pub struct AvailableUSBDevice {
     pub usb_entry: usb::DeviceEntry,
     pub device_descriptor: usb::descriptors::DeviceDescriptor,
     /// Serial number.
     pub serial_number: String,
     pub driver_devices: Vec<usb::DriverDevice>,
+
+    pub vendor_name: Option<String>,
+    pub product_name: Option<String>,
 }
 
 impl AvailableDevice {
@@ -28,11 +34,16 @@ impl AvailableDevice {
             let device_descriptor = device.device_descriptor()?;
             let serial = device.serial().await?.unwrap_or(String::new());
             let driver_devices = device.driver_devices().await?;
+            let vendor_name = device.manufacturer().await?;
+            let product_name = device.product().await?;
+
             out.push(AvailableDevice::USB(AvailableUSBDevice {
                 usb_entry: device,
                 device_descriptor,
                 serial_number: serial,
                 driver_devices,
+                vendor_name,
+                product_name,
             }));
         }
 
@@ -41,6 +52,21 @@ impl AvailableDevice {
         }
 
         Ok(out)
+    }
+
+    /// Unique path/id for this device.
+    ///
+    /// Two devices with the same path are considered to be equivalent (this
+    /// shouldn't be a need to re-connect to a device if metadata other than the
+    /// path changes).
+    ///
+    /// NOTE: This is not long term stable. e.g. switching a USB device from one
+    /// port to another will change its path.
+    pub fn path(&self) -> LocalPathBuf {
+        match self {
+            Self::USB(dev) => dev.usb_entry.sysfs_dir().to_owned(),
+            Self::Fake(i) => LocalPath::new(&format!("/fake/{}", *i)).to_owned(),
+        }
     }
 
     pub fn label(&self) -> String {
@@ -113,8 +139,10 @@ impl AvailableDevice {
         sel
     }
 
-    pub async fn verbose_proto(&self) -> Result<DeviceSelector> {
+    pub fn verbose_proto(&self) -> DeviceSelector {
         let mut sel = DeviceSelector::default();
+
+        sel.set_path(self.path().as_str());
 
         match self {
             Self::USB(dev) => {
@@ -124,11 +152,11 @@ impl AvailableDevice {
                     .set_product(dev.device_descriptor.idProduct as u32);
                 sel.usb_mut().set_serial_number(dev.serial_number.clone());
 
-                if let Some(v) = dev.usb_entry.manufacturer().await? {
+                if let Some(v) = &dev.vendor_name {
                     sel.usb_mut().set_vendor_name(v);
                 }
 
-                if let Some(v) = dev.usb_entry.product().await? {
+                if let Some(v) = &dev.product_name {
                     sel.usb_mut().set_product_name(v);
                 }
 
@@ -150,14 +178,7 @@ impl AvailableDevice {
             }
         };
 
-        Ok(sel)
-    }
-
-    pub fn path(&self) -> LocalPathBuf {
-        match self {
-            Self::USB(dev) => dev.usb_entry.sysfs_dir().to_owned(),
-            Self::Fake(i) => LocalPath::new(&format!("/fake/{}", *i)).to_owned(),
-        }
+        sel
     }
 
     pub async fn open_as_serial_port(
@@ -187,6 +208,17 @@ impl AvailableDevice {
                 Ok((serial_reader, serial_writer))
             }
             Self::Fake(i) => FakeMachine::create().await,
+        }
+    }
+
+    pub async fn open_as_camera(&self, camera_manager: &CameraManager) -> Result<CameraSubscriber> {
+        match self {
+            Self::USB(device) => {
+                camera_manager
+                    .open_usb_camera(device.usb_entry.clone())
+                    .await
+            }
+            _ => return Err(err_msg("Unsupported device type for camera")),
         }
     }
 }

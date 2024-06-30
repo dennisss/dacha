@@ -194,7 +194,7 @@ impl Compiler {
         lines.add("use common::list::Appendable;");
         lines.add("use common::collections::FixedString;");
         lines.add("use common::fixed::vec::FixedVec;");
-        lines.add("use common::const_default::ConstDefault;");
+        lines.add("use common::const_default::{ConstDefault, StaticDefault};");
         lines.add(format!("use {}::*;\n", options.runtime_package));
         lines.add(format!("use {}::codecs::*;\n", options.runtime_package));
         lines.add(format!("use {}::wire::*;\n", options.runtime_package));
@@ -471,6 +471,19 @@ impl Compiler {
             lines.add(format!("\tconst DEFAULT: Self = Self::{};", option_name));
             lines.add("}");
             lines.nl();
+
+            lines.add(format!(
+                r#"
+                impl ReflectStatic for {name} {{
+                    type Type = Self;
+
+                    fn reflect_static_default() -> &'static Self::Type {{
+                        &Self::DEFAULT
+                    }}
+                }}
+                "#,
+                name = fullname
+            ));
         }
 
         lines.add(format!(
@@ -1038,7 +1051,7 @@ impl Compiler {
                 } else if rettype == "[u8]" {
                     "&[]".to_string()
                 } else if is_message && !is_copyable {
-                    format!("{}::static_default_value()", typ)
+                    format!("{}::static_default()", typ)
                 } else {
                     // For now it's a const,
                     format!("{}<{}>::DEFAULT", modifier, typ)
@@ -1086,7 +1099,7 @@ impl Compiler {
                         pub fn has_{}(&self) -> bool {{
                             if let {}::{}(_) = &self.{} {{ true }} else {{ false }}
                         }}
-                    ",
+                        ",
                         name, oneof_typename, oneof_case, oneof_fieldname
                     ));
                 }
@@ -1403,6 +1416,21 @@ impl Compiler {
                     f.write_str(&{pkg}::text::serialize_text_proto(self))
                 }}
             }}
+
+            impl StaticDefault for {name} {{
+                fn static_default() -> &'static Self {{
+                    static VALUE: {name} = {name}::DEFAULT;
+                    &VALUE
+                }}
+            }}
+
+            impl ReflectStatic for {name} {{
+                type Type = Self;
+
+                fn reflect_static_default() -> &'static Self::Type {{
+                    Self::static_default()
+                }}
+            }}
         ",
             name = fullname,
             pkg = self.options.runtime_package
@@ -1488,7 +1516,6 @@ impl Compiler {
                         self.{field_name}().hash(state);
                     }}
                 }}
-
             "#,
                 msg_name = fullname,
                 field_type = field_type,
@@ -1510,15 +1537,6 @@ impl Compiler {
 
             lines.nl();
         }
-
-        lines.add("\tpub fn static_default_value() -> &'static Self {");
-        lines.add(format!(
-            "\t\tstatic VALUE: {} = {}::DEFAULT;",
-            fullname, fullname
-        ));
-        lines.add("\t\t&VALUE");
-        lines.add("\t}");
-        lines.nl();
 
         for field in msg.fields() {
             if field.proto().has_oneof_index() {
@@ -2063,170 +2081,177 @@ impl Compiler {
             lines.add("}");
         });
 
-        lines.indented(|lines| -> Result<()> {
-            lines.add("fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {");
-            lines.indented(|lines| {
-                if msg.proto().field_len() == 0 {
-                    lines.add("None");
-                    return;
+        {
+            let mut clear_field_lines = LineBuilder::new();
+            let mut has_field_lines = LineBuilder::new();
+            let mut field_lines = LineBuilder::new();
+            let mut field_mut_lines = LineBuilder::new();
+            let mut field_name_lines = LineBuilder::new();
+
+            for field in msg.fields() {
+                if field.proto().has_oneof_index() {
+                    continue;
                 }
 
-                lines.add("match num {");
+                let name = self.field_name(&field);
 
-                for field in msg.fields() {
-                    if field.proto().has_oneof_index() {
-                        continue;
+                field_lines.add(format!(
+                    "\t{} => self.{}.reflect_field(),",
+                    field.proto().number(),
+                    name,
+                ));
+
+                field_mut_lines.add(format!(
+                    "\t{} => self.{}.reflect_field_mut(),",
+                    field.proto().number(),
+                    name,
+                ));
+
+                clear_field_lines.add(format!(
+                    "{} => self.{}.reflect_clear_field(),",
+                    field.proto().number(),
+                    name
+                ));
+
+                has_field_lines.add(format!(
+                    "{} => self.{}.reflect_has_field(),",
+                    field.proto().number(),
+                    name
+                ));
+            }
+
+            // NOTE: This includes everything including oneofs.
+            for field in msg.proto().field() {
+                field_name_lines.add(format!("\t\"{}\" => {},", field.name(), field.number()));
+            }
+
+            for oneof in msg.oneofs() {
+                let name = Self::field_name_inner(oneof.proto().name());
+
+                for field in oneof.fields() {
+                    let mut typ = self.compile_field_type(&field)?;
+
+                    let is_message = self.is_message(&field)?;
+                    if is_message && !self.is_primitive(&field)? {
+                        typ = format!("MessagePtr<{}>", typ);
                     }
 
-                    let name = self.field_name(&field);
+                    field_lines.add(format!(
+                        r#"
+                        {number} => {{
+                            if let {oneof_type}::{variant_name}(v) = &self.{field_name} {{
+                                v.reflect()
+                            }} else {{
+                                <{variant_typ}>::reflect_static_default().reflect()
+                            }}
+                        }}
+                        "#,
+                        number = field.proto().number(),
+                        oneof_type = self.oneof_typename(&oneof),
+                        variant_name = common::snake_to_camel_case(&field.proto().name()),
+                        field_name = name,
+                        variant_typ = typ
+                    ));
 
-                    let f = match self.file.syntax() {
-                        Syntax::Proto2 => "reflect_field_proto2",
-                        Syntax::Proto3 => "reflect_field_proto3",
-                    };
+                    field_mut_lines.add(format!(
+                        r#"
+                        {number} => {{
+                            if let {oneof_type}::{variant_name}(v) = &self.{field_name} {{
+                                // Good
+                            }} else {{
+                                self.{field_name} = {oneof_type}::{variant_name}(<{variant_typ}>::default());
+                            }}
 
-                    lines.add(format!(
-                        "\t{} => self.{}.{}(),",
-                        field.proto().number(),
-                        name,
-                        f
+                            if let {oneof_type}::{variant_name}(v) = &mut self.{field_name} {{
+                                v.reflect_mut()
+                            }} else {{
+                                panic!() 
+                            }}
+                        }}
+                        "#,
+                        number = field.proto().number(),
+                        oneof_type = self.oneof_typename(&oneof),
+                        variant_name = common::snake_to_camel_case(&field.proto().name()),
+                        field_name = name,
+                        variant_typ = typ,
+                    ));
+
+                    clear_field_lines.add(format!(
+                        r#"
+                        {number} => {{
+                            if let {oneof_type}::{variant_name}(v) = &self.{field_name} {{
+                                self.{field_name} = {oneof_type}::NOT_SET;
+                            }}
+                        }}
+                        "#,
+                        number = field.proto().number(),
+                        oneof_type = self.oneof_typename(&oneof),
+                        variant_name = common::snake_to_camel_case(&field.proto().name()),
+                        field_name = name,
+                    ));
+
+                    has_field_lines.add(format!(
+                        r#"
+                        {number} => {{
+                            if let {oneof_type}::{variant_name}(v) = &self.{field_name} {{
+                                true
+                            }} else {{
+                                false
+                            }}
+                        }}
+                        "#,
+                        number = field.proto().number(),
+                        oneof_type = self.oneof_typename(&oneof),
+                        variant_name = common::snake_to_camel_case(&field.proto().name()),
+                        field_name = name,
                     ));
                 }
+            }
 
-                for oneof in msg.oneofs() {
-                    let name = Self::field_name_inner(oneof.proto().name());
+            lines.add(format!(
+                r#"
+                fn clear_field_with_number(&mut self, num: FieldNumber) {{
+                    match num {{
+                        {clear_field_lines}
+                        _ => {{}}
+                    }}
+                }}
 
-                    // TODO: The issue with this is that we can't distinguish between an
-                    // invalid field and an unpopulated
-                    for field in oneof.fields() {
-                        lines.add(format!("\t{} => {{", field.proto().number()));
-                        lines.add(format!(
-                            "\t\tif let {}::{}(v) = &self.{} {{",
-                            self.oneof_typename(&oneof),
-                            common::snake_to_camel_case(&field.proto().name()),
-                            name
-                        ));
-                        lines.add("\t\t\tSome(v.reflect())");
+                fn has_field_with_number(&self, num: FieldNumber) -> bool {{
+                    match num {{
+                        {has_field_lines}
+                        _ => false
+                    }}
+                }}
 
-                        // TODO: Reflect a DEFAULT value
-                        lines.add("\t\t} else { None }");
-                        lines.add("\t}");
-                    }
-                }
+                fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {{
+                    Some(match num {{
+                        {field_lines}
+                        _ => return None
+                    }})
+                }}
 
-                lines.add("\t_ => None");
-                lines.add("}");
-            });
-            lines.add("}");
-            lines.nl();
+                fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {{
+                    Some(match num {{
+                        {field_mut_lines}
+                        _ => return None
+                    }})
+                }}
 
-            // TODO: Dedup with the last case.
-            lines.add(
-                "fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {",
-            );
-            lines.indented(|lines| -> Result<()> {
-                if msg.proto().field_len() == 0 {
-                    lines.add("None");
-                    return Ok(());
-                }
-
-                lines.add("Some(match num {");
-
-                for field in msg.fields() {
-                    if field.proto().has_oneof_index() {
-                        continue;
-                    }
-
-                    // TODO: Implement handling of None
-
-                    let name = self.field_name(&field);
-
-                    let f = match self.file.syntax() {
-                        Syntax::Proto2 => "reflect_field_mut_proto2",
-                        Syntax::Proto3 => "reflect_field_mut_proto3",
-                    };
-
-                    lines.add(format!(
-                        "\t{} => self.{}.{}(),",
-                        field.proto().number(),
-                        name,
-                        f
-                    ));
-                }
-
-                for oneof in msg.oneofs() {
-                    let name = Self::field_name_inner(&oneof.proto().name());
-
-                    for field in oneof.fields() {
-                        lines.add(format!("\t{} => {{", field.proto().number()));
-                        lines.add(format!(
-                            "\t\tif let {}::{}(v) = &mut self.{} {{}}",
-                            self.oneof_typename(&oneof),
-                            common::snake_to_camel_case(&field.proto().name()),
-                            name
-                        ));
-                        lines.add("\t\telse {");
-
-                        let mut typ = self.compile_field_type(&field)?;
-
-                        let is_message = self.is_message(&field)?;
-                        if is_message && !self.is_primitive(&field)? {
-                            typ = format!("MessagePtr<{}>", typ);
-                        }
-
-                        lines.add(format!(
-                            "\t\t\tself.{} = {}::{}(<{}>::default());",
-                            name,
-                            self.oneof_typename(&oneof),
-                            common::snake_to_camel_case(&field.proto().name()),
-                            typ
-                        ));
-                        lines.add("\t\t}");
-                        lines.nl();
-
-                        lines.add(format!(
-                            "\t\tif let {}::{}(v) = &mut self.{} {{",
-                            self.oneof_typename(&oneof),
-                            common::snake_to_camel_case(field.proto().name()),
-                            name
-                        ));
-
-                        lines.add("\t\t\tv.reflect_mut()");
-
-                        lines.add("\t\t} else {");
-                        lines.add("\t\t\tpanic!();");
-                        lines.add("\t\t}");
-                        lines.add("\t}");
-                    }
-                }
-
-                lines.add("\t_ => { return None; }");
-                lines.add("})");
-
-                Ok(())
-            })?;
-            lines.add("}");
-            lines.nl();
-
-            lines.add("fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {");
-            lines.indented(|lines| {
-                if msg.proto().field_len() == 0 {
-                    lines.add("None");
-                    return;
-                }
-
-                lines.add("Some(match name {");
-                for field in msg.proto().field() {
-                    lines.add(format!("\t\"{}\" => {},", field.name(), field.number()));
-                }
-
-                lines.add("\t_ => { return None; }");
-                lines.add("})");
-            });
-            lines.add("}");
-
-            Ok(())
-        })?;
+                fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {{
+                    Some(match name {{
+                        {field_name_lines}
+                        _ => return None
+                    }})
+                }}
+                "#,
+                clear_field_lines = clear_field_lines.to_string(),
+                has_field_lines = has_field_lines.to_string(),
+                field_lines = field_lines.to_string(),
+                field_mut_lines = field_mut_lines.to_string(),
+                field_name_lines = field_name_lines.to_string(),
+            ));
+        }
 
         lines.add("}");
 
@@ -2248,9 +2273,8 @@ impl Compiler {
             #[derive(Clone)]
             pub struct {service_name}Stub {{
                 channel: Arc<dyn {rpc_package}::Channel>
-
             }}
-        "#,
+            "#,
             service_name = service.proto().name(),
             rpc_package = self.options.rpc_package
         ));

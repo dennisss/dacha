@@ -58,76 +58,64 @@ pub use proto::*;
 /// Currently assumes the complete stream is available in memory.
 pub struct H264BitStreamIterator<'a> {
     remaining: &'a [u8],
-    first: bool,
 }
 
 impl<'a> H264BitStreamIterator<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self {
-            remaining: data,
-            first: true,
-        }
+        Self { remaining: data }
     }
 
     pub fn peek<'b>(&'b mut self) -> Option<H264BitStreamIteratorPeek<'a, 'b>> {
         let mut remaining = self.remaining;
-        let mut first = self.first;
 
         if remaining.is_empty() {
             return None;
         }
 
-        let mut last_byte = 0xff;
+        let (start_index, start_len) = match Self::find_start_code(remaining) {
+            Some(v) => v,
+            // TODO: Log how many skipped bytes there are.
+            None => return None,
+        };
 
-        let mut i = 0;
-        while i < remaining.len() {
-            if i + 3 > remaining.len() {
-                break;
-            }
+        let data_start_index = start_index + start_len;
 
-            if &remaining[i..(i + 3)] == &[0, 0, 1] {
-                // Currently we will only support 4 byte start code sequences.
-                assert_eq!(last_byte, 0);
+        // TODO: Avoid re-calculating this each time.
+        let end_index = match Self::find_start_code(&remaining[data_start_index..]) {
+            Some((v, _)) => data_start_index + v,
+            None => remaining.len(),
+        };
 
-                let data = &remaining[0..(i - 1)];
-
-                // Skip start code
-                remaining = &remaining[(i + 3)..];
-
-                // We expect the start of the stream to have a start code.
-                // So in this case, keep trying to find another start code.
-                if first {
-                    // Sometimes V4L2 cameras dumping H264 streams like to have a few unneeded
-                    // bytes.
-                    if !data.is_empty() {
-                        eprintln!("Unused bytes before first NALU: {}", data.len());
-                    }
-
-                    first = false;
-                    i = 0;
-                    last_byte = 0xff;
-                    continue;
-                }
-
-                return Some(H264BitStreamIteratorPeek {
-                    iter: self,
-                    data,
-                    remaining,
-                });
-            }
-
-            last_byte = remaining[i];
-            i += 1;
+        // Sometimes V4L2 cameras dumping H264 streams like to have a few unneeded
+        // bytes before the first start code.
+        if start_index != 0 {
+            eprintln!("Unused bytes before first NALU: {}", start_index);
         }
 
-        assert!(!first);
+        let raw = &remaining[start_index..end_index];
+        let data = &remaining[data_start_index..end_index];
+        let remaining = &remaining[end_index..];
 
-        // Saw no start code, so return all the remaining data.
         Some(H264BitStreamIteratorPeek {
             iter: self,
-            data: remaining,
-            remaining: &[],
+            raw,
+            data,
+            remaining,
         })
+    }
+
+    /// Returns the start index and code length
+    fn find_start_code(data: &[u8]) -> Option<(usize, usize)> {
+        for i in 0..data.len() {
+            let mut code_length = 0;
+            if data[i..].starts_with(&[0, 0, 1]) {
+                return Some((i, 3));
+            } else if data[i..].starts_with(&[0, 0, 0, 1]) {
+                return Some((i, 4));
+            }
+        }
+
+        None
     }
 
     pub fn next(&mut self) -> Option<&'a [u8]> {
@@ -145,17 +133,23 @@ impl<'a> H264BitStreamIterator<'a> {
 
 pub struct H264BitStreamIteratorPeek<'a, 'b> {
     iter: &'b mut H264BitStreamIterator<'a>,
+    raw: &'a [u8],
     data: &'a [u8],
     remaining: &'a [u8],
 }
 
 impl<'a, 'b> H264BitStreamIteratorPeek<'a, 'b> {
+    /// Gets all the data in the current packet (start code + NALU data)
+    pub fn raw(&self) -> &'a [u8] {
+        self.raw
+    }
+
+    /// Gets the NALU data in the current packet (start code stripped).
     pub fn data(&self) -> &'a [u8] {
         self.data
     }
 
     pub fn advance(mut self) {
         self.iter.remaining = self.remaining;
-        self.iter.first = false;
     }
 }

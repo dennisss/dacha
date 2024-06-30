@@ -2,6 +2,7 @@ import { ExponentialBackoff, ExponentialBackoffOptions } from "pkg/net/src/backo
 import { PageContext } from "./page";
 import { Notification } from "pkg/web/lib/notifications";
 import { shallow_copy } from "pkg/web/lib/utils";
+import { RequestOptions } from "pkg/web/lib/rpc";
 
 const BACKOFF_OPTIONS: ExponentialBackoffOptions = {
     base_duration: 1,
@@ -11,14 +12,14 @@ const BACKOFF_OPTIONS: ExponentialBackoffOptions = {
     max_num_attempts: 0
 };
 
-export function watch_entities(ctx: PageContext, request: any, callback: (res: object) => void) {
+export function watch_entities(ctx: PageContext, request: any, callback: (res: object) => void, options: RequestOptions = {}) {
     let sync_notification: Notification | null = null;
     let backoff = new ExponentialBackoff(BACKOFF_OPTIONS);
 
     request.watch = true;
 
     async function sync_loop() {
-        while (!ctx.channel.aborted()) {
+        while (!ctx.channel.aborted() && (!options.abort_signal || !options.abort_signal.aborted)) {
             // TODO: Cancel on abort. 
             await backoff.start_attempt();
 
@@ -30,6 +31,9 @@ export function watch_entities(ctx: PageContext, request: any, callback: (res: o
 
             backoff.end_attempt(false);
         }
+
+        // Ensure notification is always cleared when done.
+        set_sync_error(null);
     }
 
     function set_sync_error(text: string | null) {
@@ -58,7 +62,7 @@ export function watch_entities(ctx: PageContext, request: any, callback: (res: o
     }
 
     async function query_attempt() {
-        let res = ctx.channel.call_streaming('cnc.Monitor', 'QueryEntities', request);
+        let res = ctx.channel.call_streaming('cnc.Monitor', 'QueryEntities', request, options);
 
         while (true) {
             let msg = await res.recv();

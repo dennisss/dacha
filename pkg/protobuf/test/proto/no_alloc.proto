@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-package protobuf;
-
 import "pkg/protobuf/compiler/proto/extensions.proto";
 
 /*

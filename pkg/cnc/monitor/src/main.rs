@@ -180,7 +180,22 @@ impl HttpHandler {
         /api/files/:file_id/thumbnail
         */
 
-        // TODO: Switch to not_found.
+        if let Some(mut params) =
+            extract_path_params(path, "/api/machines/:machine_id/cameras/:camera_id/stream")
+        {
+            let machine_id = match params.remove("machine_id").unwrap().parse::<u64>() {
+                Ok(v) => v,
+                Err(e) => return Ok(bad_request()),
+            };
+
+            let camera_id = match params.remove("camera_id").unwrap().parse::<u64>() {
+                Ok(v) => v,
+                Err(e) => return Ok(bad_request()),
+            };
+
+            return self.instance.get_camera_feed(machine_id, camera_id).await;
+        }
+
         Ok(not_found_request())
     }
 

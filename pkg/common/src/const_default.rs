@@ -7,10 +7,21 @@ pub trait ConstDefault {
     const DEFAULT: Self;
 }
 
+pub trait StaticDefault {
+    fn static_default() -> &'static Self;
+}
+
 macro_rules! impl_const_default {
     ($t:ident, $v:expr) => {
         impl ConstDefault for $t {
             const DEFAULT: Self = $v;
+        }
+
+        impl StaticDefault for $t {
+            fn static_default() -> &'static Self {
+                static V: $t = $t::DEFAULT;
+                &V
+            }
         }
     };
 }

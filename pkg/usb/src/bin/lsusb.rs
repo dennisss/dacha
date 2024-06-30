@@ -1,5 +1,3 @@
-extern crate common;
-extern crate usb;
 #[macro_use]
 extern crate macros;
 
@@ -7,8 +5,16 @@ use std::fmt::Write;
 
 use common::errors::*;
 
+#[derive(Args)]
+struct Args {
+    #[arg(default = false)]
+    verbose: bool,
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+
     let ctx = usb::Context::create()?;
 
     let devices = ctx.enumerate_devices().await?;
@@ -44,6 +50,14 @@ async fn main() -> Result<()> {
             product,
             serial
         );
+
+        if args.verbose {
+            println!("- sysfs path: {}", dev.sysfs_dir().as_str());
+
+            for driver in dev.driver_devices().await? {
+                println!("- {:?}: {}", driver.typ, driver.path.as_str());
+            }
+        }
     }
 
     Ok(())

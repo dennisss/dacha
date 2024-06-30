@@ -5,6 +5,7 @@ import { run_machine_command } from "../rpc_utils";
 import { TimeUnit, format_duration_proto, format_duration_secs, timestamp_proto_to_millis } from "pkg/web/lib/formatting";
 import { Button } from "pkg/web/lib/button";
 import { pick_file } from "../file_picker";
+import { Card, CardBody } from "../card";
 
 export interface PlayerBoxProps {
     context: PageContext,
@@ -17,19 +18,16 @@ export class PlayerBox extends React.Component<PlayerBoxProps> {
         let machine = this.props.machine;
 
         return (
-            <div className="card" style={{ marginBottom: 10 }}>
-                <div className="card-header">
-                    Program Playback
-                </div>
-                <div className="card-body">
+            <Card id="program" header="Program Playback" style={{ marginBottom: 10 }}>
+                <CardBody>
                     {machine.state.loaded_program ? (
                         <PlayerLoaded {...this.props} />
                     ) : (
                         <PlayerNotLoaded {...this.props} />
                     )}
 
-                </div>
-            </div>
+                </CardBody>
+            </Card>
         );
     }
 };
@@ -41,7 +39,8 @@ class PlayerLoaded extends React.Component<PlayerBoxProps> {
     }
 
     _open_file = (done) => {
-        run_open_file(this.props.context, this.props.machine, done);
+        run_open_file(this.props.context, this.props.machine, () => { });
+        done();
     }
 
     render() {
@@ -130,6 +129,7 @@ export function get_player_properties(machine: any, thin: boolean = false): Prop
     if (machine.state.running_program) {
         let r = machine.state.running_program;
 
+        // TODO: Switch to a CardError?
         if (r.status_message) {
             properties.push({
                 name: 'Message:',
@@ -229,7 +229,8 @@ async function run_open_file(context: PageContext, machine: any, done: any) {
 
 class PlayerNotLoaded extends React.Component<PlayerBoxProps> {
     _open_file = (done) => {
-        run_open_file(this.props.context, this.props.machine, done);
+        run_open_file(this.props.context, this.props.machine, () => { });
+        done();
     }
 
     render() {

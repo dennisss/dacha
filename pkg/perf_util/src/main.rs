@@ -11,10 +11,17 @@ use common::errors::*;
 use compression::gzip::*;
 use protobuf::Message;
 
+#[derive(Args)]
+struct Args {
+    pid: sys::pid_t,
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
-    let profile = perf::profile_self(Duration::from_secs(5)).await?;
-    println!("Profile: {:?}", profile);
+    let args = common::args::parse_args::<Args>()?;
+
+    let profile = perf::profile_process(args.pid, Duration::from_secs(5)).await?;
+    // println!("Profile: {:?}", profile);
 
     let mut data = profile.serialize()?;
     file::write("perf_custom.pb", &data).await?;

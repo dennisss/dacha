@@ -26,8 +26,6 @@ export class MachinesPage extends React.Component<MachinesPageProps, MachinesPag
         super(props);
 
         watch_entities(props.context, { entity_type: 'MACHINE' }, (msg) => {
-            console.log(msg);
-
             let machines = msg.machines || [];
             machines.sort((a, b) => {
                 a['id'] < b['id']

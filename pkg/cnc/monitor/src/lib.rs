@@ -5,6 +5,8 @@ extern crate macros;
 #[macro_use]
 extern crate regexp_macros;
 
+mod camera_controller;
+mod camera_recorder;
 mod change;
 mod config;
 mod devices;

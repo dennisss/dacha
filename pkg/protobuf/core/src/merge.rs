@@ -23,10 +23,11 @@ impl<T: MessageReflection> ReflectMergeFrom for T {
 
 fn merge_messages(this: &mut dyn MessageReflection, other: &dyn MessageReflection) -> Result<()> {
     for field in other.fields() {
-        let new_value = match other.field_by_number(field.number) {
-            Some(v) => v,
-            None => continue,
-        };
+        if !other.has_field_with_number(field.number) {
+            continue;
+        }
+
+        let new_value = other.field_by_number(field.number).unwrap();
 
         let old_value = this.field_by_number_mut(field.number).unwrap();
 

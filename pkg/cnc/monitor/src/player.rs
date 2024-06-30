@@ -4,7 +4,7 @@ TODO: Use more Instant rather than SystemTime timestamps in thie file.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
@@ -21,6 +21,15 @@ use crate::config::MachineConfigContainer;
 use crate::files::FileReference;
 use crate::program::*;
 use crate::serial_controller::{SerialController, DEFAULT_COMMAND_TIMEOUT};
+
+/// When waiting for the temperature of a heater to enter some range, it must
+/// stay in the range for this amount of time to proceed to the next step.
+const TEMPERATURE_HOLD_TIME: Duration = Duration::from_secs(4);
+
+/// When waiting for the temperature of a header to become '>= X', the
+/// temperature will only be considered ok if it is also
+/// '< X + TEMPERATURE_MAX_OVER_MIN'
+const TEMPERATURE_MAX_OVER_MIN: f32 = 10.0;
 
 /// Streams a file containing GCode commands to a machine.
 ///
@@ -62,6 +71,14 @@ struct State {
 struct ParsedLine {
     command_to_send: Option<String>,
     state_update: RunningProgramState,
+    action: Option<LineAction>,
+}
+
+enum LineAction {
+    WaitForTemperature {
+        axis_name: String,
+        min_temperature: f32,
+    },
 }
 
 impl Player {
@@ -167,14 +184,14 @@ impl Player {
         let result = bundle.join().await;
 
         lock!(state <= shared.state.lock().await?, {
+            state.proto.set_end_time(SystemTime::now());
+
             if let Err(e) = result {
                 eprintln!("Player failed: {}", e);
                 state.status_message = Some(e.to_string());
                 state.state = RunningProgramState_PlayerState::ERROR;
                 return;
             }
-
-            state.proto.set_end_time(SystemTime::now());
 
             if state.state == RunningProgramState_PlayerState::STOPPING {
                 state.state = RunningProgramState_PlayerState::STOPPED;
@@ -207,11 +224,19 @@ impl Player {
 
         let mut parse_error = false;
         let mut stopping = false;
+        let mut current_action = None;
+        let mut first_stable_time = None;
+        let mut status_message = None;
         loop {
             //
 
             {
                 let mut state = shared.state.lock().await?.enter();
+
+                if state.status_message != status_message {
+                    state.status_message = status_message.clone();
+                    Self::publish_change(&shared);
+                }
 
                 if state.state == RunningProgramState_PlayerState::PAUSING {
                     Self::advance_progress(&mut state.proto)?;
@@ -242,6 +267,69 @@ impl Player {
                 break;
             }
 
+            if let Some(action) = &current_action {
+                let mut done = false;
+                match action {
+                    LineAction::WaitForTemperature {
+                        axis_name,
+                        min_temperature,
+                    } => {
+                        let axis_config = {
+                            // TODO: Verify that this axis is a header (ideally in the parsing
+                            // code). TODO: ^ This should also be
+                            // verified in the compatibility check for files (the summary can
+                            // contain info on which axes are used as heaters).
+
+                            let config = shared.machine_config.read().await?;
+                            config
+                                .axes()
+                                .iter()
+                                .find(|a| a.id() == axis_name)
+                                .ok_or_else(|| err_msg("Unknown axis"))?
+                                .as_ref()
+                                .clone()
+                        };
+
+                        status_message = Some(format!(
+                            "Waiting for temperature of {} to be >= {:.1}",
+                            axis_config.name(),
+                            *min_temperature
+                        ));
+
+                        let current_value = serial_interface.axis_value(&axis_name).await?;
+                        if current_value.data.len() >= 1 {
+                            let current_temp = current_value.data[0];
+
+                            if current_temp >= *min_temperature
+                                && current_temp < *min_temperature + TEMPERATURE_MAX_OVER_MIN
+                            {
+                                let now = Instant::now();
+                                let first_stable_time = *first_stable_time.get_or_insert(now);
+
+                                // TODO: Instead look up historical metric data so that we can
+                                // parallelize the wait for the heater/
+                                if now >= first_stable_time + TEMPERATURE_HOLD_TIME {
+                                    done = true;
+                                }
+                            } else {
+                                first_stable_time = None;
+                            }
+                        }
+                    }
+                }
+
+                if done {
+                    current_action = None;
+                    first_stable_time = None;
+                    status_message = None;
+                } else {
+                    // TODO: This will delay the setting of the status message in the state which we
+                    // want to avoid (for the first round of waiting on the action).
+                    executor::sleep(Duration::from_millis(100)).await?;
+                    continue;
+                }
+            }
+
             let line = match lines.recv().await {
                 Ok(Some(v)) => v,
                 Ok(None) => break,
@@ -268,6 +356,8 @@ impl Player {
                     .await?;
             }
 
+            current_action = parsed_line.action;
+
             lock!(state <= shared.state.lock().await?, {
                 let num = state.proto.line_number() + 1;
                 state.proto.set_line_number(num);
@@ -276,12 +366,6 @@ impl Player {
 
                 Ok::<_, Error>(())
             })?;
-
-            /*
-            Temperature wait settings:
-            - Wait for
-
-            */
 
             // TODO: If we see an un-recognized line, then we should enter an
             // error state and attempt to stop ourselves.
@@ -399,6 +483,65 @@ impl Player {
                     out.state_update.set_last_progress_update(now);
                     out.state_update.set_progress(v.to_f32()? / 100.0);
                 }
+            }
+
+            // Set extruder temperature
+            "M104" => {}
+            // Set extruder temperature and wait.
+            "M109" => {
+                // TODO: Verify there are no other params.
+                let temp = line
+                    .params()
+                    .get(&'S')
+                    .ok_or_else(|| err_msg("M109 requires S parameter"))?;
+
+                let mut new_line = gcode::LineBuilder::new();
+                new_line.add_word(gcode::Word {
+                    key: 'M',
+                    value: gcode::WordValue::RealValue(104.into()),
+                })?;
+                new_line.add_word(gcode::Word {
+                    key: 'S',
+                    value: temp.clone(),
+                })?;
+                out.command_to_send = Some(new_line.finish().unwrap().to_string_compact());
+
+                // TODO: Verify this axis exists.
+                out.action = Some(LineAction::WaitForTemperature {
+                    axis_name: "T".into(),
+                    min_temperature: temp.to_f32()?,
+                });
+
+                return Ok(());
+            }
+
+            // Set bed temperature
+            "M140" => {}
+            // Set bed temperature and wait.
+            // TODO: Dedup this code with M109
+            "M190" => {
+                // TODO: Verify there are no other params.
+                let temp = line
+                    .params()
+                    .get(&'S')
+                    .ok_or_else(|| err_msg("M109 requires S parameter"))?;
+
+                let mut new_line = gcode::LineBuilder::new();
+                new_line.add_word(gcode::Word {
+                    key: 'M',
+                    value: gcode::WordValue::RealValue(140.into()),
+                })?;
+                new_line.add_word(gcode::Word {
+                    key: 'S',
+                    value: temp.clone(),
+                })?;
+                out.command_to_send = Some(new_line.finish().unwrap().to_string_compact());
+
+                // TODO: Verify this axis exists.
+                out.action = Some(LineAction::WaitForTemperature {
+                    axis_name: "B".into(),
+                    min_temperature: temp.to_f32()?,
+                });
             }
 
             _ => {}

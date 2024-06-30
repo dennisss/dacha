@@ -10,7 +10,9 @@ use sys::MappedMemory;
 use crate::bindings::*;
 use crate::buffer::*;
 use crate::device::DeviceHandle;
+use crate::format::{Format, FormatDefinition};
 use crate::io::*;
+use crate::utils::read_null_terminated_string;
 
 // TODO: On drop, consider turning the stream off and deallocating all buffers?
 pub struct UnconfiguredStream {
@@ -19,9 +21,39 @@ pub struct UnconfiguredStream {
 }
 
 impl UnconfiguredStream {
-    pub async fn get_format(&self) -> Result<v4l2_format> {
+    /// TODO: The list can change if we switch inputs/outputs.
+    pub async fn list_formats(&self) -> Result<Vec<FormatDefinition>> {
+        let file = self.device.shared.file.lock().await?.read_exclusive();
+
+        let mut out = vec![];
+
+        loop {
+            let mut fmt = v4l2_fmtdesc::default();
+            fmt.type_ = self.typ.0;
+            fmt.index = out.len() as u32;
+
+            match unsafe { vidioc_enum_fmt(file.as_raw_fd(), &mut fmt) } {
+                Ok(i) => {
+                    assert_eq!(i, 0);
+                }
+                Err(Errno::EINVAL) => break,
+                Err(e) => return Err(e.into()),
+            };
+
+            out.push(FormatDefinition {
+                description: read_null_terminated_string(&fmt.description)?,
+                flags: fmt.flags,
+                pixelformat: fmt.pixelformat,
+            });
+        }
+
+        Ok(out)
+    }
+
+    pub async fn get_format(&self) -> Result<Format> {
         let dev = self.device.shared.file.lock().await?.read_exclusive();
-        self.get_format_impl(&dev)
+        let raw = self.get_format_impl(&dev)?;
+        Ok(Format { raw })
     }
 
     fn get_format_impl(&self, file: &LocalFile) -> Result<v4l2_format> {
@@ -33,10 +65,14 @@ impl UnconfiguredStream {
 
     // TODO: This is potentially unsafe if we mis-match multi-plane formats with
     // non-multi-plane types.
-    pub async fn set_format(&mut self, mut format: v4l2_format) -> Result<()> {
+    pub async fn set_format(&mut self, mut format: Format) -> Result<()> {
         let dev = self.device.shared.file.lock().await?.read_exclusive();
-        format.type_ = self.typ.0;
-        unsafe { vidioc_s_fmt(dev.as_raw_fd(), &mut format) }?;
+
+        if format.raw.type_ != self.typ.0 {
+            return Err(err_msg("Format is for the wrong stream type"));
+        }
+
+        unsafe { vidioc_s_fmt(dev.as_raw_fd(), &mut format.raw) }?;
         Ok(())
     }
 
@@ -338,9 +374,14 @@ impl<B: Buffer> Stream<B> {
         Ok(())
     }
 
-    /*
-    TODO: VIDIOC_STREAMOFF
-    - This will also auto-dequeue all buffers.
+    pub async fn turn_off(&mut self) -> Result<()> {
+        let dev = self.device.shared.file.lock().await?.read_exclusive();
+        unsafe { vidioc_streamoff(dev.as_raw_fd(), &self.typ.0) }?;
 
-    */
+        // VIDIOC_STREAMOFF dequeues all buffers, so they can all be returned to the
+        // user.
+        // TODO: We want to implement this to avoid any accidental memory leaks.
+
+        Ok(())
+    }
 }

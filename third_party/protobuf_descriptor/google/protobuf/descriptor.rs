@@ -11,7 +11,7 @@ use std::sync::Arc;
 use alloc::boxed::Box;
 
 use common::collections::FixedString;
-use common::const_default::ConstDefault;
+use common::const_default::{ConstDefault, StaticDefault};
 use common::errors::*;
 use common::fixed::vec::FixedVec;
 use common::list::Appendable;
@@ -24,6 +24,7 @@ use protobuf_core::wire::*;
 #[cfg(feature = "alloc")]
 use protobuf_core::reflection::*;
 
+#[cfg(feature = "std")]
 pub static FILE_DESCRIPTOR_0F2934D003718DD8: protobuf_core::StaticFileDescriptor = protobuf_core::StaticFileDescriptor {
                 proto: b"\x0a\x20google\x2fprotobuf\x2fdescriptor\x2eproto\x12\x0fgoogle\x2eprotobuf\x22\x3a\x0a\x11FileDescriptorSet\x12\x23\x0a\x04file\x18\x01\x20\x03\x28\x0b2\x13FileDescriptorProtoB\x00\x3a\x00\x22\xa2\x03\x0a\x13FileDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x11\x0a\x07package\x18\x02\x20\x01\x28\x09B\x00\x12\x14\x0a\x0adependency\x18\x03\x20\x03\x28\x09B\x00\x12\x1b\x0a\x11public\x5fdependency\x18\x0a\x20\x03\x28\x05B\x00\x12\x19\x0a\x0fweak\x5fdependency\x18\x0b\x20\x03\x28\x05B\x00\x12\x27\x0a\x0cmessage\x5ftype\x18\x04\x20\x03\x28\x0b2\x0fDescriptorProtoB\x00\x12\x28\x0a\x09enum\x5ftype\x18\x05\x20\x03\x28\x0b2\x13EnumDescriptorProtoB\x00\x12\x29\x0a\x07service\x18\x06\x20\x03\x28\x0b2\x16ServiceDescriptorProtoB\x00\x12\x29\x0a\x09extension\x18\x07\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x1e\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0bFileOptionsB\x00\x12\x2a\x0a\x10source\x5fcode\x5finfo\x18\x09\x20\x01\x28\x0b2\x0eSourceCodeInfoB\x00\x12\x10\x0a\x06syntax\x18\x0c\x20\x01\x28\x09B\x00\x12\x11\x0a\x07edition\x18\x0d\x20\x01\x28\x09B\x00\x3a\x00\x22\x94\x04\x0a\x0fDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x25\x0a\x05field\x18\x02\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x29\x0a\x09extension\x18\x06\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x26\x0a\x0bnested\x5ftype\x18\x03\x20\x03\x28\x0b2\x0fDescriptorProtoB\x00\x12\x28\x0a\x09enum\x5ftype\x18\x04\x20\x03\x28\x0b2\x13EnumDescriptorProtoB\x00\x12\x29\x0a\x0fextension\x5frange\x18\x05\x20\x03\x28\x0b2\x0eExtensionRangeB\x00\x12\x2a\x0a\x0aoneof\x5fdecl\x18\x08\x20\x03\x28\x0b2\x14OneofDescriptorProtoB\x00\x12\x21\x0a\x07options\x18\x07\x20\x01\x28\x0b2\x0eMessageOptionsB\x00\x12\x27\x0a\x0ereserved\x5frange\x18\x09\x20\x03\x28\x0b2\x0dReservedRangeB\x00\x12\x17\x0a\x0dreserved\x5fname\x18\x0a\x20\x03\x28\x09B\x00\x1a\x5c\x0a\x0eExtensionRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x12\x28\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x15ExtensionRangeOptionsB\x00\x3a\x00\x1a1\x0a\x0dReservedRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x3a\x00\x3a\x00\x22\x89\x03\x0a\x15ExtensionRangeOptions\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x12\x25\x0a\x0bdeclaration\x18\x02\x20\x03\x28\x0b2\x0bDeclarationB\x03\x88\x01\x02\x12\x1e\x0a\x08features\x182\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x125\x0a\x0cverification\x18\x03\x20\x01\x28\x0b2\x11VerificationState\x3a\x0aUNVERIFIEDB\x00\x1an\x0a\x0bDeclaration\x12\x10\x0a\x06number\x18\x01\x20\x01\x28\x05B\x00\x12\x13\x0a\x09full\x5fname\x18\x02\x20\x01\x28\x09B\x00\x12\x0e\x0a\x04type\x18\x03\x20\x01\x28\x09B\x00\x12\x12\x0a\x08reserved\x18\x05\x20\x01\x28\x08B\x00\x12\x12\x0a\x08repeated\x18\x06\x20\x01\x28\x08B\x00\x3a\x00\x22\x3a\x0a\x11VerificationState\x12\x11\x0a\x0bDECLARATION\x10\x00\x1a\x00\x12\x10\x0a\x0aUNVERIFIED\x10\x01\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xbe\x05\x0a\x14FieldDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x10\x0a\x06number\x18\x03\x20\x01\x28\x05B\x00\x12\x16\x0a\x05label\x18\x04\x20\x01\x28\x0b2\x05LabelB\x00\x12\x14\x0a\x04type\x18\x05\x20\x01\x28\x0b2\x04TypeB\x00\x12\x13\x0a\x09type\x5fname\x18\x06\x20\x01\x28\x09B\x00\x12\x12\x0a\x08extendee\x18\x02\x20\x01\x28\x09B\x00\x12\x17\x0a\x0ddefault\x5fvalue\x18\x07\x20\x01\x28\x09B\x00\x12\x15\x0a\x0boneof\x5findex\x18\x09\x20\x01\x28\x05B\x00\x12\x13\x0a\x09json\x5fname\x18\x0a\x20\x01\x28\x09B\x00\x12\x1f\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0cFieldOptionsB\x00\x12\x19\x0a\x0fproto3\x5foptional\x18\x11\x20\x01\x28\x08B\x00\x22\xdc\x02\x0a\x04Type\x12\x11\x0a\x0bTYPE\x5fDOUBLE\x10\x01\x1a\x00\x12\x10\x0a\x0aTYPE\x5fFLOAT\x10\x02\x1a\x00\x12\x10\x0a\x0aTYPE\x5fINT64\x10\x03\x1a\x00\x12\x11\x0a\x0bTYPE\x5fUINT64\x10\x04\x1a\x00\x12\x10\x0a\x0aTYPE\x5fINT32\x10\x05\x1a\x00\x12\x12\x0a\x0cTYPE\x5fFIXED64\x10\x06\x1a\x00\x12\x12\x0a\x0cTYPE\x5fFIXED32\x10\x07\x1a\x00\x12\x0f\x0a\x09TYPE\x5fBOOL\x10\x08\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSTRING\x10\x09\x1a\x00\x12\x10\x0a\x0aTYPE\x5fGROUP\x10\x0a\x1a\x00\x12\x12\x0a\x0cTYPE\x5fMESSAGE\x10\x0b\x1a\x00\x12\x10\x0a\x0aTYPE\x5fBYTES\x10\x0c\x1a\x00\x12\x11\x0a\x0bTYPE\x5fUINT32\x10\x0d\x1a\x00\x12\x0f\x0a\x09TYPE\x5fENUM\x10\x0e\x1a\x00\x12\x13\x0a\x0dTYPE\x5fSFIXED32\x10\x0f\x1a\x00\x12\x13\x0a\x0dTYPE\x5fSFIXED64\x10\x10\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSINT32\x10\x11\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSINT64\x10\x12\x1a\x00\x1a\x00\x22K\x0a\x05Label\x12\x14\x0a\x0eLABEL\x5fOPTIONAL\x10\x01\x1a\x00\x12\x14\x0a\x0eLABEL\x5fREQUIRED\x10\x02\x1a\x00\x12\x14\x0a\x0eLABEL\x5fREPEATED\x10\x03\x1a\x00\x1a\x00\x3a\x00\x22I\x0a\x14OneofDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x1f\x0a\x07options\x18\x02\x20\x01\x28\x0b2\x0cOneofOptionsB\x00\x3a\x00\x22\xef\x01\x0a\x13EnumDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x29\x0a\x05value\x18\x02\x20\x03\x28\x0b2\x18EnumValueDescriptorProtoB\x00\x12\x1e\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0bEnumOptionsB\x00\x12\x2b\x0a\x0ereserved\x5frange\x18\x04\x20\x03\x28\x0b2\x11EnumReservedRangeB\x00\x12\x17\x0a\x0dreserved\x5fname\x18\x05\x20\x03\x28\x09B\x00\x1a5\x0a\x11EnumReservedRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x3a\x00\x3a\x00\x22c\x0a\x18EnumValueDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x10\x0a\x06number\x18\x02\x20\x01\x28\x05B\x00\x12\x23\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x10EnumValueOptionsB\x00\x3a\x00\x22v\x0a\x16ServiceDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x27\x0a\x06method\x18\x02\x20\x03\x28\x0b2\x15MethodDescriptorProtoB\x00\x12\x21\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0eServiceOptionsB\x00\x3a\x00\x22\xbe\x01\x0a\x15MethodDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x14\x0a\x0ainput\x5ftype\x18\x02\x20\x01\x28\x09B\x00\x12\x15\x0a\x0boutput\x5ftype\x18\x03\x20\x01\x28\x09B\x00\x12\x20\x0a\x07options\x18\x04\x20\x01\x28\x0b2\x0dMethodOptionsB\x00\x12\x21\x0a\x10client\x5fstreaming\x18\x05\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x21\x0a\x10server\x5fstreaming\x18\x06\x20\x01\x28\x08\x3a\x05falseB\x00\x3a\x00\x22\xc8\x06\x0a\x0bFileOptions\x12\x16\x0a\x0cjava\x5fpackage\x18\x01\x20\x01\x28\x09B\x00\x12\x1e\x0a\x14java\x5fouter\x5fclassname\x18\x08\x20\x01\x28\x09B\x00\x12\x24\x0a\x13java\x5fmultiple\x5ffiles\x18\x0a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x29\x0a\x1djava\x5fgenerate\x5fequals\x5fand\x5fhash\x18\x14\x20\x01\x28\x08B\x02\x18\x01\x12\x27\x0a\x16java\x5fstring\x5fcheck\x5futf8\x18\x1b\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x2b\x0a\x0coptimize\x5ffor\x18\x09\x20\x01\x28\x0b2\x0cOptimizeMode\x3a\x05SPEEDB\x00\x12\x14\x0a\x0ago\x5fpackage\x18\x0b\x20\x01\x28\x09B\x00\x12\x24\x0a\x13cc\x5fgeneric\x5fservices\x18\x10\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x26\x0a\x15java\x5fgeneric\x5fservices\x18\x11\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x24\x0a\x13py\x5fgeneric\x5fservices\x18\x12\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x25\x0a\x14php\x5fgeneric\x5fservices\x18\x2a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x17\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x20\x0a\x10cc\x5fenable\x5farenas\x18\x1f\x20\x01\x28\x08\x3a\x04trueB\x00\x12\x1b\x0a\x11objc\x5fclass\x5fprefix\x18\x24\x20\x01\x28\x09B\x00\x12\x1a\x0a\x10csharp\x5fnamespace\x18\x25\x20\x01\x28\x09B\x00\x12\x16\x0a\x0cswift\x5fprefix\x18\x27\x20\x01\x28\x09B\x00\x12\x1a\x0a\x10php\x5fclass\x5fprefix\x18\x28\x20\x01\x28\x09B\x00\x12\x17\x0a\x0dphp\x5fnamespace\x18\x29\x20\x01\x28\x09B\x00\x12\x20\x0a\x16php\x5fmetadata\x5fnamespace\x18\x2c\x20\x01\x28\x09B\x00\x12\x16\x0a\x0cruby\x5fpackage\x18\x2d\x20\x01\x28\x09B\x00\x12\x1e\x0a\x08features\x182\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x22B\x0a\x0cOptimizeMode\x12\x0b\x0a\x05SPEED\x10\x01\x1a\x00\x12\x0f\x0a\x09CODE\x5fSIZE\x10\x02\x1a\x00\x12\x12\x0a\x0cLITE\x5fRUNTIME\x10\x03\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xba\x02\x0a\x0eMessageOptions\x12\x28\x0a\x17message\x5fset\x5fwire\x5fformat\x18\x01\x20\x01\x28\x08\x3a\x05falseB\x00\x120\x0a\x1fno\x5fstandard\x5fdescriptor\x5faccessor\x18\x02\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x13\x0a\x09map\x5fentry\x18\x07\x20\x01\x28\x08B\x00\x122\x0a\x26deprecated\x5flegacy\x5fjson\x5ffield\x5fconflicts\x18\x0b\x20\x01\x28\x08B\x02\x18\x01\x12\x1e\x0a\x08features\x18\x0c\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\x84\x08\x0a\x0cFieldOptions\x12\x1e\x0a\x05ctype\x18\x01\x20\x01\x28\x0b2\x05CType\x3a\x06STRINGB\x00\x12\x10\x0a\x06packed\x18\x02\x20\x01\x28\x08B\x00\x12\x23\x0a\x06jstype\x18\x06\x20\x01\x28\x0b2\x06JSType\x3a\x09JS\x5fNORMALB\x00\x12\x15\x0a\x04lazy\x18\x05\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x20\x0a\x0funverified\x5flazy\x18\x0f\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x15\x0a\x04weak\x18\x0a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1d\x0a\x0cdebug\x5fredact\x18\x10\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x24\x0a\x09retention\x18\x11\x20\x01\x28\x0b2\x0fOptionRetentionB\x00\x12\x23\x0a\x07targets\x18\x13\x20\x03\x28\x0b2\x10OptionTargetTypeB\x00\x12\x2a\x0a\x10edition\x5fdefaults\x18\x14\x20\x03\x28\x0b2\x0eEditionDefaultB\x00\x12\x1e\x0a\x08features\x18\x15\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x1a6\x0a\x0eEditionDefault\x12\x11\x0a\x07edition\x18\x01\x20\x01\x28\x09B\x00\x12\x0f\x0a\x05value\x18\x02\x20\x01\x28\x09B\x00\x3a\x00\x227\x0a\x05CType\x12\x0c\x0a\x06STRING\x10\x00\x1a\x00\x12\x0a\x0a\x04CORD\x10\x01\x1a\x00\x12\x12\x0a\x0cSTRING\x5fPIECE\x10\x02\x1a\x00\x1a\x00\x22\x3d\x0a\x06JSType\x12\x0f\x0a\x09JS\x5fNORMAL\x10\x00\x1a\x00\x12\x0f\x0a\x09JS\x5fSTRING\x10\x01\x1a\x00\x12\x0f\x0a\x09JS\x5fNUMBER\x10\x02\x1a\x00\x1a\x00\x22\x5d\x0a\x0fOptionRetention\x12\x17\x0a\x11RETENTION\x5fUNKNOWN\x10\x00\x1a\x00\x12\x17\x0a\x11RETENTION\x5fRUNTIME\x10\x01\x1a\x00\x12\x16\x0a\x10RETENTION\x5fSOURCE\x10\x02\x1a\x00\x1a\x00\x22\xa2\x02\x0a\x10OptionTargetType\x12\x19\x0a\x13TARGET\x5fTYPE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x16\x0a\x10TARGET\x5fTYPE\x5fFILE\x10\x01\x1a\x00\x12\x21\x0a\x1bTARGET\x5fTYPE\x5fEXTENSION\x5fRANGE\x10\x02\x1a\x00\x12\x19\x0a\x13TARGET\x5fTYPE\x5fMESSAGE\x10\x03\x1a\x00\x12\x17\x0a\x11TARGET\x5fTYPE\x5fFIELD\x10\x04\x1a\x00\x12\x17\x0a\x11TARGET\x5fTYPE\x5fONEOF\x10\x05\x1a\x00\x12\x16\x0a\x10TARGET\x5fTYPE\x5fENUM\x10\x06\x1a\x00\x12\x1c\x0a\x16TARGET\x5fTYPE\x5fENUM\x5fENTRY\x10\x07\x1a\x00\x12\x19\x0a\x13TARGET\x5fTYPE\x5fSERVICE\x10\x08\x1a\x00\x12\x18\x0a\x12TARGET\x5fTYPE\x5fMETHOD\x10\x09\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22v\x0a\x0cOneofOptions\x12\x1e\x0a\x08features\x18\x01\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xdd\x01\x0a\x0bEnumOptions\x12\x15\x0a\x0ballow\x5falias\x18\x02\x20\x01\x28\x08B\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x122\x0a\x26deprecated\x5flegacy\x5fjson\x5ffield\x5fconflicts\x18\x06\x20\x01\x28\x08B\x02\x18\x01\x12\x1e\x0a\x08features\x18\x07\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xb6\x01\x0a\x10EnumValueOptions\x12\x1b\x0a\x0adeprecated\x18\x01\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1e\x0a\x08features\x18\x02\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x12\x1d\x0a\x0cdebug\x5fredact\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\x95\x01\x0a\x0eServiceOptions\x12\x1e\x0a\x08features\x18\x22\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x12\x1b\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x3a\x05falseB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xb2\x02\x0a\x0dMethodOptions\x12\x1b\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x3a\x05falseB\x00\x12B\x0a\x11idempotency\x5flevel\x18\x22\x20\x01\x28\x0b2\x10IdempotencyLevel\x3a\x13IDEMPOTENCY\x5fUNKNOWNB\x00\x12\x1e\x0a\x08features\x18\x23\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x22X\x0a\x10IdempotencyLevel\x12\x19\x0a\x13IDEMPOTENCY\x5fUNKNOWN\x10\x00\x1a\x00\x12\x15\x0a\x0fNO\x5fSIDE\x5fEFFECTS\x10\x01\x1a\x00\x12\x10\x0a\x0aIDEMPOTENT\x10\x02\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\x8f\x02\x0a\x13UninterpretedOption\x12\x18\x0a\x04name\x18\x02\x20\x03\x28\x0b2\x08NamePartB\x00\x12\x1a\x0a\x10identifier\x5fvalue\x18\x03\x20\x01\x28\x09B\x00\x12\x1c\x0a\x12positive\x5fint\x5fvalue\x18\x04\x20\x01\x28\x04B\x00\x12\x1c\x0a\x12negative\x5fint\x5fvalue\x18\x05\x20\x01\x28\x03B\x00\x12\x16\x0a\x0cdouble\x5fvalue\x18\x06\x20\x01\x28\x01B\x00\x12\x16\x0a\x0cstring\x5fvalue\x18\x07\x20\x01\x28\x0cB\x00\x12\x19\x0a\x0faggregate\x5fvalue\x18\x08\x20\x01\x28\x09B\x00\x1a9\x0a\x08NamePart\x12\x13\x0a\x09name\x5fpart\x18\x01\x20\x02\x28\x09B\x00\x12\x16\x0a\x0cis\x5fextension\x18\x02\x20\x02\x28\x08B\x00\x3a\x00\x3a\x00\x22\xb6\x06\x0a\x0aFeatureSet\x12B\x0a\x0efield\x5fpresence\x18\x01\x20\x01\x28\x0b2\x0dFieldPresenceB\x1b\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x10\x0a\x042023\x12\x08EXPLICIT\x124\x0a\x09enum\x5ftype\x18\x02\x20\x01\x28\x0b2\x08EnumTypeB\x17\x88\x01\x01\x9a\x01\x02\x06\x01\xa2\x01\x0c\x0a\x042023\x12\x04OPEN\x12Q\x0a\x17repeated\x5ffield\x5fencoding\x18\x03\x20\x01\x28\x0b2\x15RepeatedFieldEncodingB\x19\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x0e\x0a\x042023\x12\x06PACKED\x12M\x0a\x10message\x5fencoding\x18\x05\x20\x01\x28\x0b2\x0fMessageEncodingB\x22\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x17\x0a\x042023\x12\x0fLENGTH\x5fPREFIXED\x12\x3a\x0a\x0bjson\x5fformat\x18\x06\x20\x01\x28\x0b2\x0aJsonFormatB\x19\x88\x01\x01\x9a\x01\x03\x03\x06\x01\xa2\x01\x0d\x0a\x042023\x12\x05ALLOW\x22f\x0a\x0dFieldPresence\x12\x1c\x0a\x16FIELD\x5fPRESENCE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0e\x0a\x08EXPLICIT\x10\x01\x1a\x00\x12\x0e\x0a\x08IMPLICIT\x10\x02\x1a\x00\x12\x15\x0a\x0fLEGACY\x5fREQUIRED\x10\x03\x1a\x00\x1a\x00\x22\x3f\x0a\x08EnumType\x12\x17\x0a\x11ENUM\x5fTYPE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0a\x0a\x04OPEN\x10\x01\x1a\x00\x12\x0c\x0a\x06CLOSED\x10\x02\x1a\x00\x1a\x00\x22\x5e\x0a\x15RepeatedFieldEncoding\x12\x25\x0a\x1fREPEATED\x5fFIELD\x5fENCODING\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0c\x0a\x06PACKED\x10\x01\x1a\x00\x12\x0e\x0a\x08EXPANDED\x10\x02\x1a\x00\x1a\x00\x22\x5b\x0a\x0fMessageEncoding\x12\x1e\x0a\x18MESSAGE\x5fENCODING\x5fUNKNOWN\x10\x00\x1a\x00\x12\x15\x0a\x0fLENGTH\x5fPREFIXED\x10\x01\x1a\x00\x12\x0f\x0a\x09DELIMITED\x10\x02\x1a\x00\x1a\x00\x22P\x0a\x0aJsonFormat\x12\x19\x0a\x13JSON\x5fFORMAT\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0b\x0a\x05ALLOW\x10\x01\x1a\x00\x12\x18\x0a\x12LEGACY\x5fBEST\x5fEFFORT\x10\x02\x1a\x00\x1a\x00\x2a\x06\x08\xe8\x07\x10\xe8\x07\x2a\x06\x08\xe9\x07\x10\xe9\x07\x2a\x06\x08\x8bN\x10\x8fN\x3a\x00\x22\xcb\x01\x0a\x12FeatureSetDefaults\x12\x2c\x0a\x08defaults\x18\x01\x20\x03\x28\x0b2\x18FeatureSetEditionDefaultB\x00\x12\x19\x0a\x0fminimum\x5fedition\x18\x02\x20\x01\x28\x09B\x00\x12\x19\x0a\x0fmaximum\x5fedition\x18\x03\x20\x01\x28\x09B\x00\x1aO\x0a\x18FeatureSetEditionDefault\x12\x11\x0a\x07edition\x18\x01\x20\x01\x28\x09B\x00\x12\x1e\x0a\x08features\x18\x02\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x3a\x00\x3a\x00\x22\xc1\x01\x0a\x0eSourceCodeInfo\x12\x1c\x0a\x08location\x18\x01\x20\x03\x28\x0b2\x08LocationB\x00\x1a\x8e\x01\x0a\x08Location\x12\x10\x0a\x04path\x18\x01\x20\x03\x28\x05B\x02\x10\x01\x12\x10\x0a\x04span\x18\x02\x20\x03\x28\x05B\x02\x10\x01\x12\x1a\x0a\x10leading\x5fcomments\x18\x03\x20\x01\x28\x09B\x00\x12\x1b\x0a\x11trailing\x5fcomments\x18\x04\x20\x01\x28\x09B\x00\x12\x23\x0a\x19leading\x5fdetached\x5fcomments\x18\x06\x20\x03\x28\x09B\x00\x3a\x00\x3a\x00\x22\xe1\x01\x0a\x11GeneratedCodeInfo\x12\x20\x0a\x0aannotation\x18\x01\x20\x03\x28\x0b2\x0aAnnotationB\x00\x1a\xa7\x01\x0a\x0aAnnotation\x12\x10\x0a\x04path\x18\x01\x20\x03\x28\x05B\x02\x10\x01\x12\x15\x0a\x0bsource\x5ffile\x18\x02\x20\x01\x28\x09B\x00\x12\x0f\x0a\x05begin\x18\x03\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x04\x20\x01\x28\x05B\x00\x12\x1c\x0a\x08semantic\x18\x05\x20\x01\x28\x0b2\x08SemanticB\x00\x220\x0a\x08Semantic\x12\x0a\x0a\x04NONE\x10\x00\x1a\x00\x12\x09\x0a\x03SET\x10\x01\x1a\x00\x12\x0b\x0a\x05ALIAS\x10\x02\x1a\x00\x1a\x00\x3a\x00\x3a\x00B\x7e\x0a\x13com\x2egoogle\x2eprotobufB\x10DescriptorProtosH\x01Z\x2dgoogle\x2egolang\x2eorg\x2fprotobuf\x2ftypes\x2fdescriptorpb\xf8\x01\x01\xa2\x02\x03GPB\xaa\x02\x1aGoogle\x2eProtobuf\x2eReflectionb\x06proto2",
                 dependencies: &[]
@@ -31,6 +32,7 @@ pub static FILE_DESCRIPTOR_0F2934D003718DD8: protobuf_core::StaticFileDescriptor
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct FileDescriptorSet {
     file: Vec<MessagePtr<FileDescriptorProto>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -41,13 +43,23 @@ impl ::core::fmt::Debug for FileDescriptorSet {
     }
 }
 
-impl FileDescriptorSet {
-    pub const FILE_FIELD_NUM: protobuf_core::FieldNumber = 1;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for FileDescriptorSet {
+    fn static_default() -> &'static Self {
         static VALUE: FileDescriptorSet = FileDescriptorSet::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for FileDescriptorSet {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl FileDescriptorSet {
+    pub const FILE_FIELD_NUM: protobuf_core::FieldNumber = 1;
 
     pub fn file(&self) -> &[MessagePtr<FileDescriptorProto>] {
         &self.file
@@ -125,6 +137,7 @@ impl protobuf_core::Message for FileDescriptorSet {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -133,6 +146,7 @@ impl protobuf_core::Message for FileDescriptorSet {
     }
     fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(1, &self.file, out)?;
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -162,28 +176,44 @@ impl protobuf_core::MessageReflection for FileDescriptorSet {
             number: 1,
         }]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.file.reflect_field_proto2(),
-            _ => None,
+            1 => self.file.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.file.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.file.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.file.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.file.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {
         Some(match name {
             "file" => 1,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -203,6 +233,7 @@ pub struct FileDescriptorProto {
     source_code_info: Option<MessagePtr<SourceCodeInfo>>,
     syntax: Option<String>,
     edition: Option<String>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -210,6 +241,21 @@ pub struct FileDescriptorProto {
 impl ::core::fmt::Debug for FileDescriptorProto {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
+}
+
+impl StaticDefault for FileDescriptorProto {
+    fn static_default() -> &'static Self {
+        static VALUE: FileDescriptorProto = FileDescriptorProto::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for FileDescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
     }
 }
 
@@ -227,11 +273,6 @@ impl FileDescriptorProto {
     pub const SOURCE_CODE_INFO_FIELD_NUM: protobuf_core::FieldNumber = 9;
     pub const SYNTAX_FIELD_NUM: protobuf_core::FieldNumber = 12;
     pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 13;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: FileDescriptorProto = FileDescriptorProto::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -466,7 +507,7 @@ impl FileDescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FileOptions::static_default_value())
+            .unwrap_or(FileOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -488,7 +529,7 @@ impl FileDescriptorProto {
         self.source_code_info
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(SourceCodeInfo::static_default_value())
+            .unwrap_or(SourceCodeInfo::static_default())
     }
     pub fn has_source_code_info(&self) -> bool {
         self.source_code_info.is_some()
@@ -626,6 +667,7 @@ impl protobuf_core::Message for FileDescriptorProto {
                 13 => self.edition = Some(StringCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -658,6 +700,7 @@ impl protobuf_core::Message for FileDescriptorProto {
         if let Some(v) = self.edition.as_ref() {
             StringCodec::serialize(13, v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -737,43 +780,84 @@ impl protobuf_core::MessageReflection for FileDescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            2 => self.package.reflect_field_proto2(),
-            3 => self.dependency.reflect_field_proto2(),
-            10 => self.public_dependency.reflect_field_proto2(),
-            11 => self.weak_dependency.reflect_field_proto2(),
-            4 => self.message_type.reflect_field_proto2(),
-            5 => self.enum_type.reflect_field_proto2(),
-            6 => self.service.reflect_field_proto2(),
-            7 => self.extension.reflect_field_proto2(),
-            8 => self.options.reflect_field_proto2(),
-            9 => self.source_code_info.reflect_field_proto2(),
-            12 => self.syntax.reflect_field_proto2(),
-            13 => self.edition.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            2 => self.package.reflect_clear_field(),
+            3 => self.dependency.reflect_clear_field(),
+            10 => self.public_dependency.reflect_clear_field(),
+            11 => self.weak_dependency.reflect_clear_field(),
+            4 => self.message_type.reflect_clear_field(),
+            5 => self.enum_type.reflect_clear_field(),
+            6 => self.service.reflect_clear_field(),
+            7 => self.extension.reflect_clear_field(),
+            8 => self.options.reflect_clear_field(),
+            9 => self.source_code_info.reflect_clear_field(),
+            12 => self.syntax.reflect_clear_field(),
+            13 => self.edition.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            2 => self.package.reflect_has_field(),
+            3 => self.dependency.reflect_has_field(),
+            10 => self.public_dependency.reflect_has_field(),
+            11 => self.weak_dependency.reflect_has_field(),
+            4 => self.message_type.reflect_has_field(),
+            5 => self.enum_type.reflect_has_field(),
+            6 => self.service.reflect_has_field(),
+            7 => self.extension.reflect_has_field(),
+            8 => self.options.reflect_has_field(),
+            9 => self.source_code_info.reflect_has_field(),
+            12 => self.syntax.reflect_has_field(),
+            13 => self.edition.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            2 => self.package.reflect_field(),
+            3 => self.dependency.reflect_field(),
+            10 => self.public_dependency.reflect_field(),
+            11 => self.weak_dependency.reflect_field(),
+            4 => self.message_type.reflect_field(),
+            5 => self.enum_type.reflect_field(),
+            6 => self.service.reflect_field(),
+            7 => self.extension.reflect_field(),
+            8 => self.options.reflect_field(),
+            9 => self.source_code_info.reflect_field(),
+            12 => self.syntax.reflect_field(),
+            13 => self.edition.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            2 => self.package.reflect_field_mut_proto2(),
-            3 => self.dependency.reflect_field_mut_proto2(),
-            10 => self.public_dependency.reflect_field_mut_proto2(),
-            11 => self.weak_dependency.reflect_field_mut_proto2(),
-            4 => self.message_type.reflect_field_mut_proto2(),
-            5 => self.enum_type.reflect_field_mut_proto2(),
-            6 => self.service.reflect_field_mut_proto2(),
-            7 => self.extension.reflect_field_mut_proto2(),
-            8 => self.options.reflect_field_mut_proto2(),
-            9 => self.source_code_info.reflect_field_mut_proto2(),
-            12 => self.syntax.reflect_field_mut_proto2(),
-            13 => self.edition.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            2 => self.package.reflect_field_mut(),
+            3 => self.dependency.reflect_field_mut(),
+            10 => self.public_dependency.reflect_field_mut(),
+            11 => self.weak_dependency.reflect_field_mut(),
+            4 => self.message_type.reflect_field_mut(),
+            5 => self.enum_type.reflect_field_mut(),
+            6 => self.service.reflect_field_mut(),
+            7 => self.extension.reflect_field_mut(),
+            8 => self.options.reflect_field_mut(),
+            9 => self.source_code_info.reflect_field_mut(),
+            12 => self.syntax.reflect_field_mut(),
+            13 => self.edition.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -792,9 +876,8 @@ impl protobuf_core::MessageReflection for FileDescriptorProto {
             "source_code_info" => 9,
             "syntax" => 12,
             "edition" => 13,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -804,6 +887,7 @@ pub struct DescriptorProto_ExtensionRange {
     start: Option<i32>,
     end: Option<i32>,
     options: Option<MessagePtr<ExtensionRangeOptions>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -814,15 +898,25 @@ impl ::core::fmt::Debug for DescriptorProto_ExtensionRange {
     }
 }
 
+impl StaticDefault for DescriptorProto_ExtensionRange {
+    fn static_default() -> &'static Self {
+        static VALUE: DescriptorProto_ExtensionRange = DescriptorProto_ExtensionRange::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for DescriptorProto_ExtensionRange {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl DescriptorProto_ExtensionRange {
     pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: DescriptorProto_ExtensionRange = DescriptorProto_ExtensionRange::DEFAULT;
-        &VALUE
-    }
 
     pub fn start(&self) -> i32 {
         self.start.unwrap_or_default()
@@ -862,7 +956,7 @@ impl DescriptorProto_ExtensionRange {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(ExtensionRangeOptions::static_default_value())
+            .unwrap_or(ExtensionRangeOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -928,6 +1022,7 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
                 3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -944,6 +1039,7 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
         if let Some(v) = self.options.as_ref() {
             MessageCodec::serialize(3, v.as_ref(), out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -983,23 +1079,44 @@ impl protobuf_core::MessageReflection for DescriptorProto_ExtensionRange {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.start.reflect_field_proto2(),
-            2 => self.end.reflect_field_proto2(),
-            3 => self.options.reflect_field_proto2(),
-            _ => None,
+            1 => self.start.reflect_clear_field(),
+            2 => self.end.reflect_clear_field(),
+            3 => self.options.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.start.reflect_has_field(),
+            2 => self.end.reflect_has_field(),
+            3 => self.options.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.start.reflect_field(),
+            2 => self.end.reflect_field(),
+            3 => self.options.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.start.reflect_field_mut_proto2(),
-            2 => self.end.reflect_field_mut_proto2(),
-            3 => self.options.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.start.reflect_field_mut(),
+            2 => self.end.reflect_field_mut(),
+            3 => self.options.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -1008,9 +1125,8 @@ impl protobuf_core::MessageReflection for DescriptorProto_ExtensionRange {
             "start" => 1,
             "end" => 2,
             "options" => 3,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -1019,6 +1135,7 @@ impl protobuf_core::MessageReflection for DescriptorProto_ExtensionRange {
 pub struct DescriptorProto_ReservedRange {
     start: Option<i32>,
     end: Option<i32>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -1029,14 +1146,24 @@ impl ::core::fmt::Debug for DescriptorProto_ReservedRange {
     }
 }
 
-impl DescriptorProto_ReservedRange {
-    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for DescriptorProto_ReservedRange {
+    fn static_default() -> &'static Self {
         static VALUE: DescriptorProto_ReservedRange = DescriptorProto_ReservedRange::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for DescriptorProto_ReservedRange {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl DescriptorProto_ReservedRange {
+    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
 
     pub fn start(&self) -> i32 {
         self.start.unwrap_or_default()
@@ -1119,6 +1246,7 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
                 2 => self.end = Some(Int32Codec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -1132,6 +1260,7 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
         if let Some(v) = self.end.as_ref() {
             Int32Codec::serialize(2, *v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -1167,21 +1296,40 @@ impl protobuf_core::MessageReflection for DescriptorProto_ReservedRange {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.start.reflect_field_proto2(),
-            2 => self.end.reflect_field_proto2(),
-            _ => None,
+            1 => self.start.reflect_clear_field(),
+            2 => self.end.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.start.reflect_has_field(),
+            2 => self.end.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.start.reflect_field(),
+            2 => self.end.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.start.reflect_field_mut_proto2(),
-            2 => self.end.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.start.reflect_field_mut(),
+            2 => self.end.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -1189,9 +1337,8 @@ impl protobuf_core::MessageReflection for DescriptorProto_ReservedRange {
         Some(match name {
             "start" => 1,
             "end" => 2,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -1208,6 +1355,7 @@ pub struct DescriptorProto {
     options: Option<MessagePtr<MessageOptions>>,
     reserved_range: Vec<MessagePtr<DescriptorProto_ReservedRange>>,
     reserved_name: Vec<String>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -1215,6 +1363,21 @@ pub struct DescriptorProto {
 impl ::core::fmt::Debug for DescriptorProto {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
+}
+
+impl StaticDefault for DescriptorProto {
+    fn static_default() -> &'static Self {
+        static VALUE: DescriptorProto = DescriptorProto::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for DescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
     }
 }
 
@@ -1229,11 +1392,6 @@ impl DescriptorProto {
     pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 7;
     pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 9;
     pub const RESERVED_NAME_FIELD_NUM: protobuf_core::FieldNumber = 10;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: DescriptorProto = DescriptorProto::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -1430,7 +1588,7 @@ impl DescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(MessageOptions::static_default_value())
+            .unwrap_or(MessageOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -1591,6 +1749,7 @@ impl protobuf_core::Message for DescriptorProto {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -1612,6 +1771,7 @@ impl protobuf_core::Message for DescriptorProto {
         }
         MessageCodec::serialize_repeated(9, &self.reserved_range, out)?;
         StringCodec::serialize_repeated(10, &self.reserved_name, out)?;
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -1679,37 +1839,72 @@ impl protobuf_core::MessageReflection for DescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            2 => self.field.reflect_field_proto2(),
-            6 => self.extension.reflect_field_proto2(),
-            3 => self.nested_type.reflect_field_proto2(),
-            4 => self.enum_type.reflect_field_proto2(),
-            5 => self.extension_range.reflect_field_proto2(),
-            8 => self.oneof_decl.reflect_field_proto2(),
-            7 => self.options.reflect_field_proto2(),
-            9 => self.reserved_range.reflect_field_proto2(),
-            10 => self.reserved_name.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            2 => self.field.reflect_clear_field(),
+            6 => self.extension.reflect_clear_field(),
+            3 => self.nested_type.reflect_clear_field(),
+            4 => self.enum_type.reflect_clear_field(),
+            5 => self.extension_range.reflect_clear_field(),
+            8 => self.oneof_decl.reflect_clear_field(),
+            7 => self.options.reflect_clear_field(),
+            9 => self.reserved_range.reflect_clear_field(),
+            10 => self.reserved_name.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            2 => self.field.reflect_has_field(),
+            6 => self.extension.reflect_has_field(),
+            3 => self.nested_type.reflect_has_field(),
+            4 => self.enum_type.reflect_has_field(),
+            5 => self.extension_range.reflect_has_field(),
+            8 => self.oneof_decl.reflect_has_field(),
+            7 => self.options.reflect_has_field(),
+            9 => self.reserved_range.reflect_has_field(),
+            10 => self.reserved_name.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            2 => self.field.reflect_field(),
+            6 => self.extension.reflect_field(),
+            3 => self.nested_type.reflect_field(),
+            4 => self.enum_type.reflect_field(),
+            5 => self.extension_range.reflect_field(),
+            8 => self.oneof_decl.reflect_field(),
+            7 => self.options.reflect_field(),
+            9 => self.reserved_range.reflect_field(),
+            10 => self.reserved_name.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            2 => self.field.reflect_field_mut_proto2(),
-            6 => self.extension.reflect_field_mut_proto2(),
-            3 => self.nested_type.reflect_field_mut_proto2(),
-            4 => self.enum_type.reflect_field_mut_proto2(),
-            5 => self.extension_range.reflect_field_mut_proto2(),
-            8 => self.oneof_decl.reflect_field_mut_proto2(),
-            7 => self.options.reflect_field_mut_proto2(),
-            9 => self.reserved_range.reflect_field_mut_proto2(),
-            10 => self.reserved_name.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            2 => self.field.reflect_field_mut(),
+            6 => self.extension.reflect_field_mut(),
+            3 => self.nested_type.reflect_field_mut(),
+            4 => self.enum_type.reflect_field_mut(),
+            5 => self.extension_range.reflect_field_mut(),
+            8 => self.oneof_decl.reflect_field_mut(),
+            7 => self.options.reflect_field_mut(),
+            9 => self.reserved_range.reflect_field_mut(),
+            10 => self.reserved_name.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -1725,14 +1920,13 @@ impl protobuf_core::MessageReflection for DescriptorProto {
             "options" => 7,
             "reserved_range" => 9,
             "reserved_name" => 10,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum ExtensionRangeOptions_VerificationState {
     DECLARATION = 0,
     UNVERIFIED = 1,
@@ -1748,6 +1942,14 @@ impl core::default::Default for ExtensionRangeOptions_VerificationState {
 
 impl common::const_default::ConstDefault for ExtensionRangeOptions_VerificationState {
     const DEFAULT: Self = Self::DECLARATION;
+}
+
+impl ReflectStatic for ExtensionRangeOptions_VerificationState {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for ExtensionRangeOptions_VerificationState {
@@ -1813,6 +2015,7 @@ pub struct ExtensionRangeOptions_Declaration {
     typ: Option<String>,
     reserved: Option<bool>,
     repeated: Option<bool>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -1823,18 +2026,28 @@ impl ::core::fmt::Debug for ExtensionRangeOptions_Declaration {
     }
 }
 
+impl StaticDefault for ExtensionRangeOptions_Declaration {
+    fn static_default() -> &'static Self {
+        static VALUE: ExtensionRangeOptions_Declaration =
+            ExtensionRangeOptions_Declaration::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for ExtensionRangeOptions_Declaration {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl ExtensionRangeOptions_Declaration {
     pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const FULL_NAME_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const TYP_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const RESERVED_FIELD_NUM: protobuf_core::FieldNumber = 5;
     pub const REPEATED_FIELD_NUM: protobuf_core::FieldNumber = 6;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: ExtensionRangeOptions_Declaration =
-            ExtensionRangeOptions_Declaration::DEFAULT;
-        &VALUE
-    }
 
     pub fn number(&self) -> i32 {
         self.number.unwrap_or_default()
@@ -1971,6 +2184,7 @@ impl protobuf_core::Message for ExtensionRangeOptions_Declaration {
                 6 => self.repeated = Some(BoolCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -1993,6 +2207,7 @@ impl protobuf_core::Message for ExtensionRangeOptions_Declaration {
         if let Some(v) = self.repeated.as_ref() {
             BoolCodec::serialize(6, *v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -2040,27 +2255,52 @@ impl protobuf_core::MessageReflection for ExtensionRangeOptions_Declaration {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.number.reflect_field_proto2(),
-            2 => self.full_name.reflect_field_proto2(),
-            3 => self.typ.reflect_field_proto2(),
-            5 => self.reserved.reflect_field_proto2(),
-            6 => self.repeated.reflect_field_proto2(),
-            _ => None,
+            1 => self.number.reflect_clear_field(),
+            2 => self.full_name.reflect_clear_field(),
+            3 => self.typ.reflect_clear_field(),
+            5 => self.reserved.reflect_clear_field(),
+            6 => self.repeated.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.number.reflect_has_field(),
+            2 => self.full_name.reflect_has_field(),
+            3 => self.typ.reflect_has_field(),
+            5 => self.reserved.reflect_has_field(),
+            6 => self.repeated.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.number.reflect_field(),
+            2 => self.full_name.reflect_field(),
+            3 => self.typ.reflect_field(),
+            5 => self.reserved.reflect_field(),
+            6 => self.repeated.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.number.reflect_field_mut_proto2(),
-            2 => self.full_name.reflect_field_mut_proto2(),
-            3 => self.typ.reflect_field_mut_proto2(),
-            5 => self.reserved.reflect_field_mut_proto2(),
-            6 => self.repeated.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.number.reflect_field_mut(),
+            2 => self.full_name.reflect_field_mut(),
+            3 => self.typ.reflect_field_mut(),
+            5 => self.reserved.reflect_field_mut(),
+            6 => self.repeated.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -2071,9 +2311,8 @@ impl protobuf_core::MessageReflection for ExtensionRangeOptions_Declaration {
             "type" => 3,
             "reserved" => 5,
             "repeated" => 6,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -2084,6 +2323,7 @@ pub struct ExtensionRangeOptions {
     declaration: Vec<MessagePtr<ExtensionRangeOptions_Declaration>>,
     features: Option<MessagePtr<FeatureSet>>,
     verification: Option<ExtensionRangeOptions_VerificationState>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -2094,16 +2334,26 @@ impl ::core::fmt::Debug for ExtensionRangeOptions {
     }
 }
 
+impl StaticDefault for ExtensionRangeOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: ExtensionRangeOptions = ExtensionRangeOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for ExtensionRangeOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl ExtensionRangeOptions {
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
     pub const DECLARATION_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 50;
     pub const VERIFICATION_FIELD_NUM: protobuf_core::FieldNumber = 3;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: ExtensionRangeOptions = ExtensionRangeOptions::DEFAULT;
-        &VALUE
-    }
 
     pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
@@ -2169,7 +2419,7 @@ impl ExtensionRangeOptions {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -2266,6 +2516,7 @@ impl protobuf_core::Message for ExtensionRangeOptions {
                 3 => self.verification = Some(EnumCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -2281,6 +2532,7 @@ impl protobuf_core::Message for ExtensionRangeOptions {
         if let Some(v) = self.verification.as_ref() {
             EnumCodec::serialize(3, v, out)?;
         }
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -2324,25 +2576,48 @@ impl protobuf_core::MessageReflection for ExtensionRangeOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            2 => self.declaration.reflect_field_proto2(),
-            50 => self.features.reflect_field_proto2(),
-            3 => self.verification.reflect_field_proto2(),
-            _ => None,
+            999 => self.uninterpreted_option.reflect_clear_field(),
+            2 => self.declaration.reflect_clear_field(),
+            50 => self.features.reflect_clear_field(),
+            3 => self.verification.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            999 => self.uninterpreted_option.reflect_has_field(),
+            2 => self.declaration.reflect_has_field(),
+            50 => self.features.reflect_has_field(),
+            3 => self.verification.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            999 => self.uninterpreted_option.reflect_field(),
+            2 => self.declaration.reflect_field(),
+            50 => self.features.reflect_field(),
+            3 => self.verification.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            2 => self.declaration.reflect_field_mut_proto2(),
-            50 => self.features.reflect_field_mut_proto2(),
-            3 => self.verification.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            999 => self.uninterpreted_option.reflect_field_mut(),
+            2 => self.declaration.reflect_field_mut(),
+            50 => self.features.reflect_field_mut(),
+            3 => self.verification.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -2352,14 +2627,13 @@ impl protobuf_core::MessageReflection for ExtensionRangeOptions {
             "declaration" => 2,
             "features" => 50,
             "verification" => 3,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FieldDescriptorProto_Type {
     TYPE_DOUBLE = 1,
     TYPE_FLOAT = 2,
@@ -2391,6 +2665,14 @@ impl core::default::Default for FieldDescriptorProto_Type {
 
 impl common::const_default::ConstDefault for FieldDescriptorProto_Type {
     const DEFAULT: Self = Self::TYPE_DOUBLE;
+}
+
+impl ReflectStatic for FieldDescriptorProto_Type {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FieldDescriptorProto_Type {
@@ -2497,7 +2779,7 @@ impl protobuf_core::reflection::Reflect for FieldDescriptorProto_Type {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FieldDescriptorProto_Label {
     LABEL_OPTIONAL = 1,
     LABEL_REQUIRED = 2,
@@ -2514,6 +2796,14 @@ impl core::default::Default for FieldDescriptorProto_Label {
 
 impl common::const_default::ConstDefault for FieldDescriptorProto_Label {
     const DEFAULT: Self = Self::LABEL_OPTIONAL;
+}
+
+impl ReflectStatic for FieldDescriptorProto_Label {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FieldDescriptorProto_Label {
@@ -2588,6 +2878,7 @@ pub struct FieldDescriptorProto {
     json_name: Option<String>,
     options: Option<MessagePtr<FieldOptions>>,
     proto3_optional: Option<bool>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -2595,6 +2886,21 @@ pub struct FieldDescriptorProto {
 impl ::core::fmt::Debug for FieldDescriptorProto {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
+}
+
+impl StaticDefault for FieldDescriptorProto {
+    fn static_default() -> &'static Self {
+        static VALUE: FieldDescriptorProto = FieldDescriptorProto::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for FieldDescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
     }
 }
 
@@ -2610,11 +2916,6 @@ impl FieldDescriptorProto {
     pub const JSON_NAME_FIELD_NUM: protobuf_core::FieldNumber = 10;
     pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 8;
     pub const PROTO3_OPTIONAL_FIELD_NUM: protobuf_core::FieldNumber = 17;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: FieldDescriptorProto = FieldDescriptorProto::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -2779,7 +3080,7 @@ impl FieldDescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FieldOptions::static_default_value())
+            .unwrap_or(FieldOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -2871,6 +3172,7 @@ impl protobuf_core::Message for FieldDescriptorProto {
                 17 => self.proto3_optional = Some(BoolCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -2911,6 +3213,7 @@ impl protobuf_core::Message for FieldDescriptorProto {
         if let Some(v) = self.proto3_optional.as_ref() {
             BoolCodec::serialize(17, *v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -2982,39 +3285,76 @@ impl protobuf_core::MessageReflection for FieldDescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            3 => self.number.reflect_field_proto2(),
-            4 => self.label.reflect_field_proto2(),
-            5 => self.typ.reflect_field_proto2(),
-            6 => self.type_name.reflect_field_proto2(),
-            2 => self.extendee.reflect_field_proto2(),
-            7 => self.default_value.reflect_field_proto2(),
-            9 => self.oneof_index.reflect_field_proto2(),
-            10 => self.json_name.reflect_field_proto2(),
-            8 => self.options.reflect_field_proto2(),
-            17 => self.proto3_optional.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            3 => self.number.reflect_clear_field(),
+            4 => self.label.reflect_clear_field(),
+            5 => self.typ.reflect_clear_field(),
+            6 => self.type_name.reflect_clear_field(),
+            2 => self.extendee.reflect_clear_field(),
+            7 => self.default_value.reflect_clear_field(),
+            9 => self.oneof_index.reflect_clear_field(),
+            10 => self.json_name.reflect_clear_field(),
+            8 => self.options.reflect_clear_field(),
+            17 => self.proto3_optional.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            3 => self.number.reflect_has_field(),
+            4 => self.label.reflect_has_field(),
+            5 => self.typ.reflect_has_field(),
+            6 => self.type_name.reflect_has_field(),
+            2 => self.extendee.reflect_has_field(),
+            7 => self.default_value.reflect_has_field(),
+            9 => self.oneof_index.reflect_has_field(),
+            10 => self.json_name.reflect_has_field(),
+            8 => self.options.reflect_has_field(),
+            17 => self.proto3_optional.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            3 => self.number.reflect_field(),
+            4 => self.label.reflect_field(),
+            5 => self.typ.reflect_field(),
+            6 => self.type_name.reflect_field(),
+            2 => self.extendee.reflect_field(),
+            7 => self.default_value.reflect_field(),
+            9 => self.oneof_index.reflect_field(),
+            10 => self.json_name.reflect_field(),
+            8 => self.options.reflect_field(),
+            17 => self.proto3_optional.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            3 => self.number.reflect_field_mut_proto2(),
-            4 => self.label.reflect_field_mut_proto2(),
-            5 => self.typ.reflect_field_mut_proto2(),
-            6 => self.type_name.reflect_field_mut_proto2(),
-            2 => self.extendee.reflect_field_mut_proto2(),
-            7 => self.default_value.reflect_field_mut_proto2(),
-            9 => self.oneof_index.reflect_field_mut_proto2(),
-            10 => self.json_name.reflect_field_mut_proto2(),
-            8 => self.options.reflect_field_mut_proto2(),
-            17 => self.proto3_optional.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            3 => self.number.reflect_field_mut(),
+            4 => self.label.reflect_field_mut(),
+            5 => self.typ.reflect_field_mut(),
+            6 => self.type_name.reflect_field_mut(),
+            2 => self.extendee.reflect_field_mut(),
+            7 => self.default_value.reflect_field_mut(),
+            9 => self.oneof_index.reflect_field_mut(),
+            10 => self.json_name.reflect_field_mut(),
+            8 => self.options.reflect_field_mut(),
+            17 => self.proto3_optional.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -3031,9 +3371,8 @@ impl protobuf_core::MessageReflection for FieldDescriptorProto {
             "json_name" => 10,
             "options" => 8,
             "proto3_optional" => 17,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -3042,6 +3381,7 @@ impl protobuf_core::MessageReflection for FieldDescriptorProto {
 pub struct OneofDescriptorProto {
     name: Option<String>,
     options: Option<MessagePtr<OneofOptions>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -3052,14 +3392,24 @@ impl ::core::fmt::Debug for OneofDescriptorProto {
     }
 }
 
-impl OneofDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 2;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for OneofDescriptorProto {
+    fn static_default() -> &'static Self {
         static VALUE: OneofDescriptorProto = OneofDescriptorProto::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for OneofDescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl OneofDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 2;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -3082,7 +3432,7 @@ impl OneofDescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(OneofOptions::static_default_value())
+            .unwrap_or(OneofOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -3147,6 +3497,7 @@ impl protobuf_core::Message for OneofDescriptorProto {
                 2 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -3160,6 +3511,7 @@ impl protobuf_core::Message for OneofDescriptorProto {
         if let Some(v) = self.options.as_ref() {
             MessageCodec::serialize(2, v.as_ref(), out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -3195,21 +3547,40 @@ impl protobuf_core::MessageReflection for OneofDescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            2 => self.options.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            2 => self.options.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            2 => self.options.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            2 => self.options.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            2 => self.options.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            2 => self.options.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -3217,9 +3588,8 @@ impl protobuf_core::MessageReflection for OneofDescriptorProto {
         Some(match name {
             "name" => 1,
             "options" => 2,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -3228,6 +3598,7 @@ impl protobuf_core::MessageReflection for OneofDescriptorProto {
 pub struct EnumDescriptorProto_EnumReservedRange {
     start: Option<i32>,
     end: Option<i32>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -3238,15 +3609,25 @@ impl ::core::fmt::Debug for EnumDescriptorProto_EnumReservedRange {
     }
 }
 
-impl EnumDescriptorProto_EnumReservedRange {
-    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for EnumDescriptorProto_EnumReservedRange {
+    fn static_default() -> &'static Self {
         static VALUE: EnumDescriptorProto_EnumReservedRange =
             EnumDescriptorProto_EnumReservedRange::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for EnumDescriptorProto_EnumReservedRange {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl EnumDescriptorProto_EnumReservedRange {
+    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
 
     pub fn start(&self) -> i32 {
         self.start.unwrap_or_default()
@@ -3329,6 +3710,7 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
                 2 => self.end = Some(Int32Codec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -3342,6 +3724,7 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
         if let Some(v) = self.end.as_ref() {
             Int32Codec::serialize(2, *v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -3377,21 +3760,40 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto_EnumReservedRange 
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.start.reflect_field_proto2(),
-            2 => self.end.reflect_field_proto2(),
-            _ => None,
+            1 => self.start.reflect_clear_field(),
+            2 => self.end.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.start.reflect_has_field(),
+            2 => self.end.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.start.reflect_field(),
+            2 => self.end.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.start.reflect_field_mut_proto2(),
-            2 => self.end.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.start.reflect_field_mut(),
+            2 => self.end.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -3399,9 +3801,8 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto_EnumReservedRange 
         Some(match name {
             "start" => 1,
             "end" => 2,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -3413,6 +3814,7 @@ pub struct EnumDescriptorProto {
     options: Option<MessagePtr<EnumOptions>>,
     reserved_range: Vec<MessagePtr<EnumDescriptorProto_EnumReservedRange>>,
     reserved_name: Vec<String>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -3423,17 +3825,27 @@ impl ::core::fmt::Debug for EnumDescriptorProto {
     }
 }
 
+impl StaticDefault for EnumDescriptorProto {
+    fn static_default() -> &'static Self {
+        static VALUE: EnumDescriptorProto = EnumDescriptorProto::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for EnumDescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl EnumDescriptorProto {
     pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const VALUE_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 4;
     pub const RESERVED_NAME_FIELD_NUM: protobuf_core::FieldNumber = 5;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: EnumDescriptorProto = EnumDescriptorProto::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -3486,7 +3898,7 @@ impl EnumDescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(EnumOptions::static_default_value())
+            .unwrap_or(EnumOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -3624,6 +4036,7 @@ impl protobuf_core::Message for EnumDescriptorProto {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -3640,6 +4053,7 @@ impl protobuf_core::Message for EnumDescriptorProto {
         }
         MessageCodec::serialize_repeated(4, &self.reserved_range, out)?;
         StringCodec::serialize_repeated(5, &self.reserved_name, out)?;
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -3687,27 +4101,52 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            2 => self.value.reflect_field_proto2(),
-            3 => self.options.reflect_field_proto2(),
-            4 => self.reserved_range.reflect_field_proto2(),
-            5 => self.reserved_name.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            2 => self.value.reflect_clear_field(),
+            3 => self.options.reflect_clear_field(),
+            4 => self.reserved_range.reflect_clear_field(),
+            5 => self.reserved_name.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            2 => self.value.reflect_has_field(),
+            3 => self.options.reflect_has_field(),
+            4 => self.reserved_range.reflect_has_field(),
+            5 => self.reserved_name.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            2 => self.value.reflect_field(),
+            3 => self.options.reflect_field(),
+            4 => self.reserved_range.reflect_field(),
+            5 => self.reserved_name.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            2 => self.value.reflect_field_mut_proto2(),
-            3 => self.options.reflect_field_mut_proto2(),
-            4 => self.reserved_range.reflect_field_mut_proto2(),
-            5 => self.reserved_name.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            2 => self.value.reflect_field_mut(),
+            3 => self.options.reflect_field_mut(),
+            4 => self.reserved_range.reflect_field_mut(),
+            5 => self.reserved_name.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -3718,9 +4157,8 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto {
             "options" => 3,
             "reserved_range" => 4,
             "reserved_name" => 5,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -3730,6 +4168,7 @@ pub struct EnumValueDescriptorProto {
     name: Option<String>,
     number: Option<i32>,
     options: Option<MessagePtr<EnumValueOptions>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -3740,15 +4179,25 @@ impl ::core::fmt::Debug for EnumValueDescriptorProto {
     }
 }
 
+impl StaticDefault for EnumValueDescriptorProto {
+    fn static_default() -> &'static Self {
+        static VALUE: EnumValueDescriptorProto = EnumValueDescriptorProto::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for EnumValueDescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl EnumValueDescriptorProto {
     pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: EnumValueDescriptorProto = EnumValueDescriptorProto::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -3788,7 +4237,7 @@ impl EnumValueDescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(EnumValueOptions::static_default_value())
+            .unwrap_or(EnumValueOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -3854,6 +4303,7 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
                 3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -3870,6 +4320,7 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
         if let Some(v) = self.options.as_ref() {
             MessageCodec::serialize(3, v.as_ref(), out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -3909,23 +4360,44 @@ impl protobuf_core::MessageReflection for EnumValueDescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            2 => self.number.reflect_field_proto2(),
-            3 => self.options.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            2 => self.number.reflect_clear_field(),
+            3 => self.options.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            2 => self.number.reflect_has_field(),
+            3 => self.options.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            2 => self.number.reflect_field(),
+            3 => self.options.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            2 => self.number.reflect_field_mut_proto2(),
-            3 => self.options.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            2 => self.number.reflect_field_mut(),
+            3 => self.options.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -3934,9 +4406,8 @@ impl protobuf_core::MessageReflection for EnumValueDescriptorProto {
             "name" => 1,
             "number" => 2,
             "options" => 3,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -3946,6 +4417,7 @@ pub struct ServiceDescriptorProto {
     name: Option<String>,
     method: Vec<MessagePtr<MethodDescriptorProto>>,
     options: Option<MessagePtr<ServiceOptions>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -3956,15 +4428,25 @@ impl ::core::fmt::Debug for ServiceDescriptorProto {
     }
 }
 
+impl StaticDefault for ServiceDescriptorProto {
+    fn static_default() -> &'static Self {
+        static VALUE: ServiceDescriptorProto = ServiceDescriptorProto::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for ServiceDescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl ServiceDescriptorProto {
     pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const METHOD_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: ServiceDescriptorProto = ServiceDescriptorProto::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -4017,7 +4499,7 @@ impl ServiceDescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(ServiceOptions::static_default_value())
+            .unwrap_or(ServiceOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -4087,6 +4569,7 @@ impl protobuf_core::Message for ServiceDescriptorProto {
                 3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -4101,6 +4584,7 @@ impl protobuf_core::Message for ServiceDescriptorProto {
         if let Some(v) = self.options.as_ref() {
             MessageCodec::serialize(3, v.as_ref(), out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -4140,23 +4624,44 @@ impl protobuf_core::MessageReflection for ServiceDescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            2 => self.method.reflect_field_proto2(),
-            3 => self.options.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            2 => self.method.reflect_clear_field(),
+            3 => self.options.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            2 => self.method.reflect_has_field(),
+            3 => self.options.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            2 => self.method.reflect_field(),
+            3 => self.options.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            2 => self.method.reflect_field_mut_proto2(),
-            3 => self.options.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            2 => self.method.reflect_field_mut(),
+            3 => self.options.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -4165,9 +4670,8 @@ impl protobuf_core::MessageReflection for ServiceDescriptorProto {
             "name" => 1,
             "method" => 2,
             "options" => 3,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -4180,6 +4684,7 @@ pub struct MethodDescriptorProto {
     options: Option<MessagePtr<MethodOptions>>,
     client_streaming: Option<bool>,
     server_streaming: Option<bool>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -4190,6 +4695,21 @@ impl ::core::fmt::Debug for MethodDescriptorProto {
     }
 }
 
+impl StaticDefault for MethodDescriptorProto {
+    fn static_default() -> &'static Self {
+        static VALUE: MethodDescriptorProto = MethodDescriptorProto::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for MethodDescriptorProto {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl MethodDescriptorProto {
     pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const INPUT_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 2;
@@ -4197,11 +4717,6 @@ impl MethodDescriptorProto {
     pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 4;
     pub const CLIENT_STREAMING_FIELD_NUM: protobuf_core::FieldNumber = 5;
     pub const SERVER_STREAMING_FIELD_NUM: protobuf_core::FieldNumber = 6;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: MethodDescriptorProto = MethodDescriptorProto::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -4258,7 +4773,7 @@ impl MethodDescriptorProto {
         self.options
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(MethodOptions::static_default_value())
+            .unwrap_or(MethodOptions::static_default())
     }
     pub fn has_options(&self) -> bool {
         self.options.is_some()
@@ -4363,6 +4878,7 @@ impl protobuf_core::Message for MethodDescriptorProto {
                 6 => self.server_streaming = Some(BoolCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -4388,6 +4904,7 @@ impl protobuf_core::Message for MethodDescriptorProto {
         if let Some(v) = self.server_streaming.as_ref() {
             BoolCodec::serialize(6, *v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -4439,29 +4956,56 @@ impl protobuf_core::MessageReflection for MethodDescriptorProto {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name.reflect_field_proto2(),
-            2 => self.input_type.reflect_field_proto2(),
-            3 => self.output_type.reflect_field_proto2(),
-            4 => self.options.reflect_field_proto2(),
-            5 => self.client_streaming.reflect_field_proto2(),
-            6 => self.server_streaming.reflect_field_proto2(),
-            _ => None,
+            1 => self.name.reflect_clear_field(),
+            2 => self.input_type.reflect_clear_field(),
+            3 => self.output_type.reflect_clear_field(),
+            4 => self.options.reflect_clear_field(),
+            5 => self.client_streaming.reflect_clear_field(),
+            6 => self.server_streaming.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name.reflect_has_field(),
+            2 => self.input_type.reflect_has_field(),
+            3 => self.output_type.reflect_has_field(),
+            4 => self.options.reflect_has_field(),
+            5 => self.client_streaming.reflect_has_field(),
+            6 => self.server_streaming.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name.reflect_field(),
+            2 => self.input_type.reflect_field(),
+            3 => self.output_type.reflect_field(),
+            4 => self.options.reflect_field(),
+            5 => self.client_streaming.reflect_field(),
+            6 => self.server_streaming.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_field_mut_proto2(),
-            2 => self.input_type.reflect_field_mut_proto2(),
-            3 => self.output_type.reflect_field_mut_proto2(),
-            4 => self.options.reflect_field_mut_proto2(),
-            5 => self.client_streaming.reflect_field_mut_proto2(),
-            6 => self.server_streaming.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name.reflect_field_mut(),
+            2 => self.input_type.reflect_field_mut(),
+            3 => self.output_type.reflect_field_mut(),
+            4 => self.options.reflect_field_mut(),
+            5 => self.client_streaming.reflect_field_mut(),
+            6 => self.server_streaming.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -4473,14 +5017,13 @@ impl protobuf_core::MessageReflection for MethodDescriptorProto {
             "options" => 4,
             "client_streaming" => 5,
             "server_streaming" => 6,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FileOptions_OptimizeMode {
     SPEED = 1,
     CODE_SIZE = 2,
@@ -4497,6 +5040,14 @@ impl core::default::Default for FileOptions_OptimizeMode {
 
 impl common::const_default::ConstDefault for FileOptions_OptimizeMode {
     const DEFAULT: Self = Self::SPEED;
+}
+
+impl ReflectStatic for FileOptions_OptimizeMode {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FileOptions_OptimizeMode {
@@ -4582,6 +5133,7 @@ pub struct FileOptions {
     ruby_package: Option<String>,
     features: Option<MessagePtr<FeatureSet>>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -4589,6 +5141,21 @@ pub struct FileOptions {
 impl ::core::fmt::Debug for FileOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
+}
+
+impl StaticDefault for FileOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: FileOptions = FileOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for FileOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
     }
 }
 
@@ -4615,11 +5182,6 @@ impl FileOptions {
     pub const RUBY_PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 45;
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 50;
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: FileOptions = FileOptions::DEFAULT;
-        &VALUE
-    }
 
     pub fn java_package(&self) -> &str {
         self.java_package.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -4998,7 +5560,7 @@ impl FileOptions {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -5117,6 +5679,7 @@ impl protobuf_core::Message for FileOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -5188,6 +5751,7 @@ impl protobuf_core::Message for FileOptions {
             MessageCodec::serialize(50, v.as_ref(), out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -5303,63 +5867,120 @@ impl protobuf_core::MessageReflection for FileOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.java_package.reflect_field_proto2(),
-            8 => self.java_outer_classname.reflect_field_proto2(),
-            10 => self.java_multiple_files.reflect_field_proto2(),
-            20 => self.java_generate_equals_and_hash.reflect_field_proto2(),
-            27 => self.java_string_check_utf8.reflect_field_proto2(),
-            9 => self.optimize_for.reflect_field_proto2(),
-            11 => self.go_package.reflect_field_proto2(),
-            16 => self.cc_generic_services.reflect_field_proto2(),
-            17 => self.java_generic_services.reflect_field_proto2(),
-            18 => self.py_generic_services.reflect_field_proto2(),
-            42 => self.php_generic_services.reflect_field_proto2(),
-            23 => self.deprecated.reflect_field_proto2(),
-            31 => self.cc_enable_arenas.reflect_field_proto2(),
-            36 => self.objc_class_prefix.reflect_field_proto2(),
-            37 => self.csharp_namespace.reflect_field_proto2(),
-            39 => self.swift_prefix.reflect_field_proto2(),
-            40 => self.php_class_prefix.reflect_field_proto2(),
-            41 => self.php_namespace.reflect_field_proto2(),
-            44 => self.php_metadata_namespace.reflect_field_proto2(),
-            45 => self.ruby_package.reflect_field_proto2(),
-            50 => self.features.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+            1 => self.java_package.reflect_clear_field(),
+            8 => self.java_outer_classname.reflect_clear_field(),
+            10 => self.java_multiple_files.reflect_clear_field(),
+            20 => self.java_generate_equals_and_hash.reflect_clear_field(),
+            27 => self.java_string_check_utf8.reflect_clear_field(),
+            9 => self.optimize_for.reflect_clear_field(),
+            11 => self.go_package.reflect_clear_field(),
+            16 => self.cc_generic_services.reflect_clear_field(),
+            17 => self.java_generic_services.reflect_clear_field(),
+            18 => self.py_generic_services.reflect_clear_field(),
+            42 => self.php_generic_services.reflect_clear_field(),
+            23 => self.deprecated.reflect_clear_field(),
+            31 => self.cc_enable_arenas.reflect_clear_field(),
+            36 => self.objc_class_prefix.reflect_clear_field(),
+            37 => self.csharp_namespace.reflect_clear_field(),
+            39 => self.swift_prefix.reflect_clear_field(),
+            40 => self.php_class_prefix.reflect_clear_field(),
+            41 => self.php_namespace.reflect_clear_field(),
+            44 => self.php_metadata_namespace.reflect_clear_field(),
+            45 => self.ruby_package.reflect_clear_field(),
+            50 => self.features.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.java_package.reflect_has_field(),
+            8 => self.java_outer_classname.reflect_has_field(),
+            10 => self.java_multiple_files.reflect_has_field(),
+            20 => self.java_generate_equals_and_hash.reflect_has_field(),
+            27 => self.java_string_check_utf8.reflect_has_field(),
+            9 => self.optimize_for.reflect_has_field(),
+            11 => self.go_package.reflect_has_field(),
+            16 => self.cc_generic_services.reflect_has_field(),
+            17 => self.java_generic_services.reflect_has_field(),
+            18 => self.py_generic_services.reflect_has_field(),
+            42 => self.php_generic_services.reflect_has_field(),
+            23 => self.deprecated.reflect_has_field(),
+            31 => self.cc_enable_arenas.reflect_has_field(),
+            36 => self.objc_class_prefix.reflect_has_field(),
+            37 => self.csharp_namespace.reflect_has_field(),
+            39 => self.swift_prefix.reflect_has_field(),
+            40 => self.php_class_prefix.reflect_has_field(),
+            41 => self.php_namespace.reflect_has_field(),
+            44 => self.php_metadata_namespace.reflect_has_field(),
+            45 => self.ruby_package.reflect_has_field(),
+            50 => self.features.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.java_package.reflect_field(),
+            8 => self.java_outer_classname.reflect_field(),
+            10 => self.java_multiple_files.reflect_field(),
+            20 => self.java_generate_equals_and_hash.reflect_field(),
+            27 => self.java_string_check_utf8.reflect_field(),
+            9 => self.optimize_for.reflect_field(),
+            11 => self.go_package.reflect_field(),
+            16 => self.cc_generic_services.reflect_field(),
+            17 => self.java_generic_services.reflect_field(),
+            18 => self.py_generic_services.reflect_field(),
+            42 => self.php_generic_services.reflect_field(),
+            23 => self.deprecated.reflect_field(),
+            31 => self.cc_enable_arenas.reflect_field(),
+            36 => self.objc_class_prefix.reflect_field(),
+            37 => self.csharp_namespace.reflect_field(),
+            39 => self.swift_prefix.reflect_field(),
+            40 => self.php_class_prefix.reflect_field(),
+            41 => self.php_namespace.reflect_field(),
+            44 => self.php_metadata_namespace.reflect_field(),
+            45 => self.ruby_package.reflect_field(),
+            50 => self.features.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.java_package.reflect_field_mut_proto2(),
-            8 => self.java_outer_classname.reflect_field_mut_proto2(),
-            10 => self.java_multiple_files.reflect_field_mut_proto2(),
-            20 => self
-                .java_generate_equals_and_hash
-                .reflect_field_mut_proto2(),
-            27 => self.java_string_check_utf8.reflect_field_mut_proto2(),
-            9 => self.optimize_for.reflect_field_mut_proto2(),
-            11 => self.go_package.reflect_field_mut_proto2(),
-            16 => self.cc_generic_services.reflect_field_mut_proto2(),
-            17 => self.java_generic_services.reflect_field_mut_proto2(),
-            18 => self.py_generic_services.reflect_field_mut_proto2(),
-            42 => self.php_generic_services.reflect_field_mut_proto2(),
-            23 => self.deprecated.reflect_field_mut_proto2(),
-            31 => self.cc_enable_arenas.reflect_field_mut_proto2(),
-            36 => self.objc_class_prefix.reflect_field_mut_proto2(),
-            37 => self.csharp_namespace.reflect_field_mut_proto2(),
-            39 => self.swift_prefix.reflect_field_mut_proto2(),
-            40 => self.php_class_prefix.reflect_field_mut_proto2(),
-            41 => self.php_namespace.reflect_field_mut_proto2(),
-            44 => self.php_metadata_namespace.reflect_field_mut_proto2(),
-            45 => self.ruby_package.reflect_field_mut_proto2(),
-            50 => self.features.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.java_package.reflect_field_mut(),
+            8 => self.java_outer_classname.reflect_field_mut(),
+            10 => self.java_multiple_files.reflect_field_mut(),
+            20 => self.java_generate_equals_and_hash.reflect_field_mut(),
+            27 => self.java_string_check_utf8.reflect_field_mut(),
+            9 => self.optimize_for.reflect_field_mut(),
+            11 => self.go_package.reflect_field_mut(),
+            16 => self.cc_generic_services.reflect_field_mut(),
+            17 => self.java_generic_services.reflect_field_mut(),
+            18 => self.py_generic_services.reflect_field_mut(),
+            42 => self.php_generic_services.reflect_field_mut(),
+            23 => self.deprecated.reflect_field_mut(),
+            31 => self.cc_enable_arenas.reflect_field_mut(),
+            36 => self.objc_class_prefix.reflect_field_mut(),
+            37 => self.csharp_namespace.reflect_field_mut(),
+            39 => self.swift_prefix.reflect_field_mut(),
+            40 => self.php_class_prefix.reflect_field_mut(),
+            41 => self.php_namespace.reflect_field_mut(),
+            44 => self.php_metadata_namespace.reflect_field_mut(),
+            45 => self.ruby_package.reflect_field_mut(),
+            50 => self.features.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -5387,9 +6008,8 @@ impl protobuf_core::MessageReflection for FileOptions {
             "ruby_package" => 45,
             "features" => 50,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -5403,6 +6023,7 @@ pub struct MessageOptions {
     deprecated_legacy_json_field_conflicts: Option<bool>,
     features: Option<MessagePtr<FeatureSet>>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -5410,6 +6031,21 @@ pub struct MessageOptions {
 impl ::core::fmt::Debug for MessageOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
+}
+
+impl StaticDefault for MessageOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: MessageOptions = MessageOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for MessageOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
     }
 }
 
@@ -5421,11 +6057,6 @@ impl MessageOptions {
     pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM: protobuf_core::FieldNumber = 11;
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 12;
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: MessageOptions = MessageOptions::DEFAULT;
-        &VALUE
-    }
 
     pub fn message_set_wire_format(&self) -> bool {
         self.message_set_wire_format.unwrap_or(false)
@@ -5523,7 +6154,7 @@ impl MessageOptions {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -5627,6 +6258,7 @@ impl protobuf_core::Message for MessageOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -5653,6 +6285,7 @@ impl protobuf_core::Message for MessageOptions {
             MessageCodec::serialize(12, v.as_ref(), out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -5708,37 +6341,66 @@ impl protobuf_core::MessageReflection for MessageOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.message_set_wire_format.reflect_field_proto2(),
-            2 => self.no_standard_descriptor_accessor.reflect_field_proto2(),
-            3 => self.deprecated.reflect_field_proto2(),
-            7 => self.map_entry.reflect_field_proto2(),
+            1 => self.message_set_wire_format.reflect_clear_field(),
+            2 => self.no_standard_descriptor_accessor.reflect_clear_field(),
+            3 => self.deprecated.reflect_clear_field(),
+            7 => self.map_entry.reflect_clear_field(),
             11 => self
                 .deprecated_legacy_json_field_conflicts
-                .reflect_field_proto2(),
-            12 => self.features.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+                .reflect_clear_field(),
+            12 => self.features.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.message_set_wire_format.reflect_has_field(),
+            2 => self.no_standard_descriptor_accessor.reflect_has_field(),
+            3 => self.deprecated.reflect_has_field(),
+            7 => self.map_entry.reflect_has_field(),
+            11 => self
+                .deprecated_legacy_json_field_conflicts
+                .reflect_has_field(),
+            12 => self.features.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.message_set_wire_format.reflect_field(),
+            2 => self.no_standard_descriptor_accessor.reflect_field(),
+            3 => self.deprecated.reflect_field(),
+            7 => self.map_entry.reflect_field(),
+            11 => self.deprecated_legacy_json_field_conflicts.reflect_field(),
+            12 => self.features.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.message_set_wire_format.reflect_field_mut_proto2(),
-            2 => self
-                .no_standard_descriptor_accessor
-                .reflect_field_mut_proto2(),
-            3 => self.deprecated.reflect_field_mut_proto2(),
-            7 => self.map_entry.reflect_field_mut_proto2(),
+            1 => self.message_set_wire_format.reflect_field_mut(),
+            2 => self.no_standard_descriptor_accessor.reflect_field_mut(),
+            3 => self.deprecated.reflect_field_mut(),
+            7 => self.map_entry.reflect_field_mut(),
             11 => self
                 .deprecated_legacy_json_field_conflicts
-                .reflect_field_mut_proto2(),
-            12 => self.features.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+                .reflect_field_mut(),
+            12 => self.features.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -5751,14 +6413,13 @@ impl protobuf_core::MessageReflection for MessageOptions {
             "deprecated_legacy_json_field_conflicts" => 11,
             "features" => 12,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FieldOptions_CType {
     STRING = 0,
     CORD = 1,
@@ -5775,6 +6436,14 @@ impl core::default::Default for FieldOptions_CType {
 
 impl common::const_default::ConstDefault for FieldOptions_CType {
     const DEFAULT: Self = Self::STRING;
+}
+
+impl ReflectStatic for FieldOptions_CType {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FieldOptions_CType {
@@ -5836,7 +6505,7 @@ impl protobuf_core::reflection::Reflect for FieldOptions_CType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FieldOptions_JSType {
     JS_NORMAL = 0,
     JS_STRING = 1,
@@ -5853,6 +6522,14 @@ impl core::default::Default for FieldOptions_JSType {
 
 impl common::const_default::ConstDefault for FieldOptions_JSType {
     const DEFAULT: Self = Self::JS_NORMAL;
+}
+
+impl ReflectStatic for FieldOptions_JSType {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FieldOptions_JSType {
@@ -5914,7 +6591,7 @@ impl protobuf_core::reflection::Reflect for FieldOptions_JSType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FieldOptions_OptionRetention {
     RETENTION_UNKNOWN = 0,
     RETENTION_RUNTIME = 1,
@@ -5931,6 +6608,14 @@ impl core::default::Default for FieldOptions_OptionRetention {
 
 impl common::const_default::ConstDefault for FieldOptions_OptionRetention {
     const DEFAULT: Self = Self::RETENTION_UNKNOWN;
+}
+
+impl ReflectStatic for FieldOptions_OptionRetention {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FieldOptions_OptionRetention {
@@ -5992,7 +6677,7 @@ impl protobuf_core::reflection::Reflect for FieldOptions_OptionRetention {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FieldOptions_OptionTargetType {
     TARGET_TYPE_UNKNOWN = 0,
     TARGET_TYPE_FILE = 1,
@@ -6016,6 +6701,14 @@ impl core::default::Default for FieldOptions_OptionTargetType {
 
 impl common::const_default::ConstDefault for FieldOptions_OptionTargetType {
     const DEFAULT: Self = Self::TARGET_TYPE_UNKNOWN;
+}
+
+impl ReflectStatic for FieldOptions_OptionTargetType {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FieldOptions_OptionTargetType {
@@ -6102,6 +6795,7 @@ impl protobuf_core::reflection::Reflect for FieldOptions_OptionTargetType {
 pub struct FieldOptions_EditionDefault {
     edition: Option<String>,
     value: Option<String>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -6112,14 +6806,24 @@ impl ::core::fmt::Debug for FieldOptions_EditionDefault {
     }
 }
 
-impl FieldOptions_EditionDefault {
-    pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const VALUE_FIELD_NUM: protobuf_core::FieldNumber = 2;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for FieldOptions_EditionDefault {
+    fn static_default() -> &'static Self {
         static VALUE: FieldOptions_EditionDefault = FieldOptions_EditionDefault::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for FieldOptions_EditionDefault {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl FieldOptions_EditionDefault {
+    pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const VALUE_FIELD_NUM: protobuf_core::FieldNumber = 2;
 
     pub fn edition(&self) -> &str {
         self.edition.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -6202,6 +6906,7 @@ impl protobuf_core::Message for FieldOptions_EditionDefault {
                 2 => self.value = Some(StringCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -6215,6 +6920,7 @@ impl protobuf_core::Message for FieldOptions_EditionDefault {
         if let Some(v) = self.value.as_ref() {
             StringCodec::serialize(2, v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -6250,21 +6956,40 @@ impl protobuf_core::MessageReflection for FieldOptions_EditionDefault {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.edition.reflect_field_proto2(),
-            2 => self.value.reflect_field_proto2(),
-            _ => None,
+            1 => self.edition.reflect_clear_field(),
+            2 => self.value.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.edition.reflect_has_field(),
+            2 => self.value.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.edition.reflect_field(),
+            2 => self.value.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.edition.reflect_field_mut_proto2(),
-            2 => self.value.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.edition.reflect_field_mut(),
+            2 => self.value.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -6272,9 +6997,8 @@ impl protobuf_core::MessageReflection for FieldOptions_EditionDefault {
         Some(match name {
             "edition" => 1,
             "value" => 2,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -6294,6 +7018,7 @@ pub struct FieldOptions {
     edition_defaults: Vec<MessagePtr<FieldOptions_EditionDefault>>,
     features: Option<MessagePtr<FeatureSet>>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -6301,6 +7026,21 @@ pub struct FieldOptions {
 impl ::core::fmt::Debug for FieldOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
+}
+
+impl StaticDefault for FieldOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: FieldOptions = FieldOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for FieldOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
     }
 }
 
@@ -6318,11 +7058,6 @@ impl FieldOptions {
     pub const EDITION_DEFAULTS_FIELD_NUM: protobuf_core::FieldNumber = 20;
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 21;
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: FieldOptions = FieldOptions::DEFAULT;
-        &VALUE
-    }
 
     pub fn ctype(&self) -> FieldOptions_CType {
         self.ctype.unwrap_or(FieldOptions_CType::STRING)
@@ -6545,7 +7280,7 @@ impl FieldOptions {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -6663,6 +7398,7 @@ impl protobuf_core::Message for FieldOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -6703,6 +7439,7 @@ impl protobuf_core::Message for FieldOptions {
             MessageCodec::serialize(21, v.as_ref(), out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -6782,43 +7519,84 @@ impl protobuf_core::MessageReflection for FieldOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.ctype.reflect_field_proto2(),
-            2 => self.packed.reflect_field_proto2(),
-            6 => self.jstype.reflect_field_proto2(),
-            5 => self.lazy.reflect_field_proto2(),
-            15 => self.unverified_lazy.reflect_field_proto2(),
-            3 => self.deprecated.reflect_field_proto2(),
-            10 => self.weak.reflect_field_proto2(),
-            16 => self.debug_redact.reflect_field_proto2(),
-            17 => self.retention.reflect_field_proto2(),
-            19 => self.targets.reflect_field_proto2(),
-            20 => self.edition_defaults.reflect_field_proto2(),
-            21 => self.features.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+            1 => self.ctype.reflect_clear_field(),
+            2 => self.packed.reflect_clear_field(),
+            6 => self.jstype.reflect_clear_field(),
+            5 => self.lazy.reflect_clear_field(),
+            15 => self.unverified_lazy.reflect_clear_field(),
+            3 => self.deprecated.reflect_clear_field(),
+            10 => self.weak.reflect_clear_field(),
+            16 => self.debug_redact.reflect_clear_field(),
+            17 => self.retention.reflect_clear_field(),
+            19 => self.targets.reflect_clear_field(),
+            20 => self.edition_defaults.reflect_clear_field(),
+            21 => self.features.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.ctype.reflect_has_field(),
+            2 => self.packed.reflect_has_field(),
+            6 => self.jstype.reflect_has_field(),
+            5 => self.lazy.reflect_has_field(),
+            15 => self.unverified_lazy.reflect_has_field(),
+            3 => self.deprecated.reflect_has_field(),
+            10 => self.weak.reflect_has_field(),
+            16 => self.debug_redact.reflect_has_field(),
+            17 => self.retention.reflect_has_field(),
+            19 => self.targets.reflect_has_field(),
+            20 => self.edition_defaults.reflect_has_field(),
+            21 => self.features.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.ctype.reflect_field(),
+            2 => self.packed.reflect_field(),
+            6 => self.jstype.reflect_field(),
+            5 => self.lazy.reflect_field(),
+            15 => self.unverified_lazy.reflect_field(),
+            3 => self.deprecated.reflect_field(),
+            10 => self.weak.reflect_field(),
+            16 => self.debug_redact.reflect_field(),
+            17 => self.retention.reflect_field(),
+            19 => self.targets.reflect_field(),
+            20 => self.edition_defaults.reflect_field(),
+            21 => self.features.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.ctype.reflect_field_mut_proto2(),
-            2 => self.packed.reflect_field_mut_proto2(),
-            6 => self.jstype.reflect_field_mut_proto2(),
-            5 => self.lazy.reflect_field_mut_proto2(),
-            15 => self.unverified_lazy.reflect_field_mut_proto2(),
-            3 => self.deprecated.reflect_field_mut_proto2(),
-            10 => self.weak.reflect_field_mut_proto2(),
-            16 => self.debug_redact.reflect_field_mut_proto2(),
-            17 => self.retention.reflect_field_mut_proto2(),
-            19 => self.targets.reflect_field_mut_proto2(),
-            20 => self.edition_defaults.reflect_field_mut_proto2(),
-            21 => self.features.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.ctype.reflect_field_mut(),
+            2 => self.packed.reflect_field_mut(),
+            6 => self.jstype.reflect_field_mut(),
+            5 => self.lazy.reflect_field_mut(),
+            15 => self.unverified_lazy.reflect_field_mut(),
+            3 => self.deprecated.reflect_field_mut(),
+            10 => self.weak.reflect_field_mut(),
+            16 => self.debug_redact.reflect_field_mut(),
+            17 => self.retention.reflect_field_mut(),
+            19 => self.targets.reflect_field_mut(),
+            20 => self.edition_defaults.reflect_field_mut(),
+            21 => self.features.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -6837,9 +7615,8 @@ impl protobuf_core::MessageReflection for FieldOptions {
             "edition_defaults" => 20,
             "features" => 21,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -6848,6 +7625,7 @@ impl protobuf_core::MessageReflection for FieldOptions {
 pub struct OneofOptions {
     features: Option<MessagePtr<FeatureSet>>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -6858,20 +7636,30 @@ impl ::core::fmt::Debug for OneofOptions {
     }
 }
 
-impl OneofOptions {
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for OneofOptions {
+    fn static_default() -> &'static Self {
         static VALUE: OneofOptions = OneofOptions::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for OneofOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl OneofOptions {
+    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
 
     pub fn features(&self) -> &FeatureSet {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -6970,6 +7758,7 @@ impl protobuf_core::Message for OneofOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -6981,6 +7770,7 @@ impl protobuf_core::Message for OneofOptions {
             MessageCodec::serialize(1, v.as_ref(), out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -7016,21 +7806,40 @@ impl protobuf_core::MessageReflection for OneofOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.features.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+            1 => self.features.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.features.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.features.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.features.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.features.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -7038,9 +7847,8 @@ impl protobuf_core::MessageReflection for OneofOptions {
         Some(match name {
             "features" => 1,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -7052,6 +7860,7 @@ pub struct EnumOptions {
     deprecated_legacy_json_field_conflicts: Option<bool>,
     features: Option<MessagePtr<FeatureSet>>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -7062,17 +7871,27 @@ impl ::core::fmt::Debug for EnumOptions {
     }
 }
 
+impl StaticDefault for EnumOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: EnumOptions = EnumOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for EnumOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl EnumOptions {
     pub const ALLOW_ALIAS_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM: protobuf_core::FieldNumber = 6;
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 7;
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: EnumOptions = EnumOptions::DEFAULT;
-        &VALUE
-    }
 
     pub fn allow_alias(&self) -> bool {
         self.allow_alias.unwrap_or_default()
@@ -7134,7 +7953,7 @@ impl EnumOptions {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -7236,6 +8055,7 @@ impl protobuf_core::Message for EnumOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -7256,6 +8076,7 @@ impl protobuf_core::Message for EnumOptions {
             MessageCodec::serialize(7, v.as_ref(), out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -7303,31 +8124,58 @@ impl protobuf_core::MessageReflection for EnumOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            2 => self.allow_alias.reflect_field_proto2(),
-            3 => self.deprecated.reflect_field_proto2(),
+            2 => self.allow_alias.reflect_clear_field(),
+            3 => self.deprecated.reflect_clear_field(),
             6 => self
                 .deprecated_legacy_json_field_conflicts
-                .reflect_field_proto2(),
-            7 => self.features.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+                .reflect_clear_field(),
+            7 => self.features.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            2 => self.allow_alias.reflect_has_field(),
+            3 => self.deprecated.reflect_has_field(),
+            6 => self
+                .deprecated_legacy_json_field_conflicts
+                .reflect_has_field(),
+            7 => self.features.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            2 => self.allow_alias.reflect_field(),
+            3 => self.deprecated.reflect_field(),
+            6 => self.deprecated_legacy_json_field_conflicts.reflect_field(),
+            7 => self.features.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            2 => self.allow_alias.reflect_field_mut_proto2(),
-            3 => self.deprecated.reflect_field_mut_proto2(),
+            2 => self.allow_alias.reflect_field_mut(),
+            3 => self.deprecated.reflect_field_mut(),
             6 => self
                 .deprecated_legacy_json_field_conflicts
-                .reflect_field_mut_proto2(),
-            7 => self.features.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+                .reflect_field_mut(),
+            7 => self.features.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -7338,9 +8186,8 @@ impl protobuf_core::MessageReflection for EnumOptions {
             "deprecated_legacy_json_field_conflicts" => 6,
             "features" => 7,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -7351,6 +8198,7 @@ pub struct EnumValueOptions {
     features: Option<MessagePtr<FeatureSet>>,
     debug_redact: Option<bool>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -7361,16 +8209,26 @@ impl ::core::fmt::Debug for EnumValueOptions {
     }
 }
 
+impl StaticDefault for EnumValueOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: EnumValueOptions = EnumValueOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for EnumValueOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl EnumValueOptions {
     pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const DEBUG_REDACT_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: EnumValueOptions = EnumValueOptions::DEFAULT;
-        &VALUE
-    }
 
     pub fn deprecated(&self) -> bool {
         self.deprecated.unwrap_or(false)
@@ -7393,7 +8251,7 @@ impl EnumValueOptions {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -7511,6 +8369,7 @@ impl protobuf_core::Message for EnumValueOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -7528,6 +8387,7 @@ impl protobuf_core::Message for EnumValueOptions {
             BoolCodec::serialize(3, *v, out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -7571,25 +8431,48 @@ impl protobuf_core::MessageReflection for EnumValueOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.deprecated.reflect_field_proto2(),
-            2 => self.features.reflect_field_proto2(),
-            3 => self.debug_redact.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+            1 => self.deprecated.reflect_clear_field(),
+            2 => self.features.reflect_clear_field(),
+            3 => self.debug_redact.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.deprecated.reflect_has_field(),
+            2 => self.features.reflect_has_field(),
+            3 => self.debug_redact.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.deprecated.reflect_field(),
+            2 => self.features.reflect_field(),
+            3 => self.debug_redact.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.deprecated.reflect_field_mut_proto2(),
-            2 => self.features.reflect_field_mut_proto2(),
-            3 => self.debug_redact.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.deprecated.reflect_field_mut(),
+            2 => self.features.reflect_field_mut(),
+            3 => self.debug_redact.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -7599,9 +8482,8 @@ impl protobuf_core::MessageReflection for EnumValueOptions {
             "features" => 2,
             "debug_redact" => 3,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -7611,6 +8493,7 @@ pub struct ServiceOptions {
     features: Option<MessagePtr<FeatureSet>>,
     deprecated: Option<bool>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -7621,21 +8504,31 @@ impl ::core::fmt::Debug for ServiceOptions {
     }
 }
 
+impl StaticDefault for ServiceOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: ServiceOptions = ServiceOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for ServiceOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl ServiceOptions {
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 34;
     pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 33;
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
 
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: ServiceOptions = ServiceOptions::DEFAULT;
-        &VALUE
-    }
-
     pub fn features(&self) -> &FeatureSet {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -7752,6 +8645,7 @@ impl protobuf_core::Message for ServiceOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -7766,6 +8660,7 @@ impl protobuf_core::Message for ServiceOptions {
             BoolCodec::serialize(33, *v, out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -7805,23 +8700,44 @@ impl protobuf_core::MessageReflection for ServiceOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            34 => self.features.reflect_field_proto2(),
-            33 => self.deprecated.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+            34 => self.features.reflect_clear_field(),
+            33 => self.deprecated.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            34 => self.features.reflect_has_field(),
+            33 => self.deprecated.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            34 => self.features.reflect_field(),
+            33 => self.deprecated.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            34 => self.features.reflect_field_mut_proto2(),
-            33 => self.deprecated.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            34 => self.features.reflect_field_mut(),
+            33 => self.deprecated.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -7830,14 +8746,13 @@ impl protobuf_core::MessageReflection for ServiceOptions {
             "features" => 34,
             "deprecated" => 33,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum MethodOptions_IdempotencyLevel {
     IDEMPOTENCY_UNKNOWN = 0,
     NO_SIDE_EFFECTS = 1,
@@ -7854,6 +8769,14 @@ impl core::default::Default for MethodOptions_IdempotencyLevel {
 
 impl common::const_default::ConstDefault for MethodOptions_IdempotencyLevel {
     const DEFAULT: Self = Self::IDEMPOTENCY_UNKNOWN;
+}
+
+impl ReflectStatic for MethodOptions_IdempotencyLevel {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for MethodOptions_IdempotencyLevel {
@@ -7921,6 +8844,7 @@ pub struct MethodOptions {
     idempotency_level: Option<MethodOptions_IdempotencyLevel>,
     features: Option<MessagePtr<FeatureSet>>,
     uninterpreted_option: Vec<MessagePtr<UninterpretedOption>>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -7931,16 +8855,26 @@ impl ::core::fmt::Debug for MethodOptions {
     }
 }
 
+impl StaticDefault for MethodOptions {
+    fn static_default() -> &'static Self {
+        static VALUE: MethodOptions = MethodOptions::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for MethodOptions {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl MethodOptions {
     pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 33;
     pub const IDEMPOTENCY_LEVEL_FIELD_NUM: protobuf_core::FieldNumber = 34;
     pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 35;
     pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: MethodOptions = MethodOptions::DEFAULT;
-        &VALUE
-    }
 
     pub fn deprecated(&self) -> bool {
         self.deprecated.unwrap_or(false)
@@ -7985,7 +8919,7 @@ impl MethodOptions {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -8086,6 +9020,7 @@ impl protobuf_core::Message for MethodOptions {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -8103,6 +9038,7 @@ impl protobuf_core::Message for MethodOptions {
             MessageCodec::serialize(35, v.as_ref(), out)?;
         }
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -8146,25 +9082,48 @@ impl protobuf_core::MessageReflection for MethodOptions {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            33 => self.deprecated.reflect_field_proto2(),
-            34 => self.idempotency_level.reflect_field_proto2(),
-            35 => self.features.reflect_field_proto2(),
-            999 => self.uninterpreted_option.reflect_field_proto2(),
-            _ => None,
+            33 => self.deprecated.reflect_clear_field(),
+            34 => self.idempotency_level.reflect_clear_field(),
+            35 => self.features.reflect_clear_field(),
+            999 => self.uninterpreted_option.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            33 => self.deprecated.reflect_has_field(),
+            34 => self.idempotency_level.reflect_has_field(),
+            35 => self.features.reflect_has_field(),
+            999 => self.uninterpreted_option.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            33 => self.deprecated.reflect_field(),
+            34 => self.idempotency_level.reflect_field(),
+            35 => self.features.reflect_field(),
+            999 => self.uninterpreted_option.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            33 => self.deprecated.reflect_field_mut_proto2(),
-            34 => self.idempotency_level.reflect_field_mut_proto2(),
-            35 => self.features.reflect_field_mut_proto2(),
-            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            33 => self.deprecated.reflect_field_mut(),
+            34 => self.idempotency_level.reflect_field_mut(),
+            35 => self.features.reflect_field_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -8174,9 +9133,8 @@ impl protobuf_core::MessageReflection for MethodOptions {
             "idempotency_level" => 34,
             "features" => 35,
             "uninterpreted_option" => 999,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -8185,6 +9143,7 @@ impl protobuf_core::MessageReflection for MethodOptions {
 pub struct UninterpretedOption_NamePart {
     name_part: Option<String>,
     is_extension: Option<bool>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -8195,14 +9154,24 @@ impl ::core::fmt::Debug for UninterpretedOption_NamePart {
     }
 }
 
-impl UninterpretedOption_NamePart {
-    pub const NAME_PART_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const IS_EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 2;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for UninterpretedOption_NamePart {
+    fn static_default() -> &'static Self {
         static VALUE: UninterpretedOption_NamePart = UninterpretedOption_NamePart::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for UninterpretedOption_NamePart {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl UninterpretedOption_NamePart {
+    pub const NAME_PART_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const IS_EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 2;
 
     pub fn name_part(&self) -> &str {
         self.name_part.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -8285,6 +9254,7 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
                 2 => self.is_extension = Some(BoolCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -8302,6 +9272,7 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
         } else {
             return Err(MessageSerializeError::RequiredFieldNotSet.into());
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -8337,21 +9308,40 @@ impl protobuf_core::MessageReflection for UninterpretedOption_NamePart {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.name_part.reflect_field_proto2(),
-            2 => self.is_extension.reflect_field_proto2(),
-            _ => None,
+            1 => self.name_part.reflect_clear_field(),
+            2 => self.is_extension.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.name_part.reflect_has_field(),
+            2 => self.is_extension.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.name_part.reflect_field(),
+            2 => self.is_extension.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name_part.reflect_field_mut_proto2(),
-            2 => self.is_extension.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.name_part.reflect_field_mut(),
+            2 => self.is_extension.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -8359,9 +9349,8 @@ impl protobuf_core::MessageReflection for UninterpretedOption_NamePart {
         Some(match name {
             "name_part" => 1,
             "is_extension" => 2,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -8375,6 +9364,7 @@ pub struct UninterpretedOption {
     double_value: Option<f64>,
     string_value: Option<BytesField>,
     aggregate_value: Option<String>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -8382,6 +9372,21 @@ pub struct UninterpretedOption {
 impl ::core::fmt::Debug for UninterpretedOption {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
+}
+
+impl StaticDefault for UninterpretedOption {
+    fn static_default() -> &'static Self {
+        static VALUE: UninterpretedOption = UninterpretedOption::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for UninterpretedOption {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
     }
 }
 
@@ -8393,11 +9398,6 @@ impl UninterpretedOption {
     pub const DOUBLE_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 6;
     pub const STRING_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 7;
     pub const AGGREGATE_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 8;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: UninterpretedOption = UninterpretedOption::DEFAULT;
-        &VALUE
-    }
 
     pub fn name(&self) -> &[MessagePtr<UninterpretedOption_NamePart>] {
         &self.name
@@ -8601,6 +9601,7 @@ impl protobuf_core::Message for UninterpretedOption {
                 8 => self.aggregate_value = Some(StringCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -8627,6 +9628,7 @@ impl protobuf_core::Message for UninterpretedOption {
         if let Some(v) = self.aggregate_value.as_ref() {
             StringCodec::serialize(8, v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -8682,31 +9684,60 @@ impl protobuf_core::MessageReflection for UninterpretedOption {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            2 => self.name.reflect_field_proto2(),
-            3 => self.identifier_value.reflect_field_proto2(),
-            4 => self.positive_int_value.reflect_field_proto2(),
-            5 => self.negative_int_value.reflect_field_proto2(),
-            6 => self.double_value.reflect_field_proto2(),
-            7 => self.string_value.reflect_field_proto2(),
-            8 => self.aggregate_value.reflect_field_proto2(),
-            _ => None,
+            2 => self.name.reflect_clear_field(),
+            3 => self.identifier_value.reflect_clear_field(),
+            4 => self.positive_int_value.reflect_clear_field(),
+            5 => self.negative_int_value.reflect_clear_field(),
+            6 => self.double_value.reflect_clear_field(),
+            7 => self.string_value.reflect_clear_field(),
+            8 => self.aggregate_value.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            2 => self.name.reflect_has_field(),
+            3 => self.identifier_value.reflect_has_field(),
+            4 => self.positive_int_value.reflect_has_field(),
+            5 => self.negative_int_value.reflect_has_field(),
+            6 => self.double_value.reflect_has_field(),
+            7 => self.string_value.reflect_has_field(),
+            8 => self.aggregate_value.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            2 => self.name.reflect_field(),
+            3 => self.identifier_value.reflect_field(),
+            4 => self.positive_int_value.reflect_field(),
+            5 => self.negative_int_value.reflect_field(),
+            6 => self.double_value.reflect_field(),
+            7 => self.string_value.reflect_field(),
+            8 => self.aggregate_value.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            2 => self.name.reflect_field_mut_proto2(),
-            3 => self.identifier_value.reflect_field_mut_proto2(),
-            4 => self.positive_int_value.reflect_field_mut_proto2(),
-            5 => self.negative_int_value.reflect_field_mut_proto2(),
-            6 => self.double_value.reflect_field_mut_proto2(),
-            7 => self.string_value.reflect_field_mut_proto2(),
-            8 => self.aggregate_value.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            2 => self.name.reflect_field_mut(),
+            3 => self.identifier_value.reflect_field_mut(),
+            4 => self.positive_int_value.reflect_field_mut(),
+            5 => self.negative_int_value.reflect_field_mut(),
+            6 => self.double_value.reflect_field_mut(),
+            7 => self.string_value.reflect_field_mut(),
+            8 => self.aggregate_value.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -8719,14 +9750,13 @@ impl protobuf_core::MessageReflection for UninterpretedOption {
             "double_value" => 6,
             "string_value" => 7,
             "aggregate_value" => 8,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FeatureSet_FieldPresence {
     FIELD_PRESENCE_UNKNOWN = 0,
     EXPLICIT = 1,
@@ -8744,6 +9774,14 @@ impl core::default::Default for FeatureSet_FieldPresence {
 
 impl common::const_default::ConstDefault for FeatureSet_FieldPresence {
     const DEFAULT: Self = Self::FIELD_PRESENCE_UNKNOWN;
+}
+
+impl ReflectStatic for FeatureSet_FieldPresence {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FeatureSet_FieldPresence {
@@ -8808,7 +9846,7 @@ impl protobuf_core::reflection::Reflect for FeatureSet_FieldPresence {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FeatureSet_EnumType {
     ENUM_TYPE_UNKNOWN = 0,
     OPEN = 1,
@@ -8825,6 +9863,14 @@ impl core::default::Default for FeatureSet_EnumType {
 
 impl common::const_default::ConstDefault for FeatureSet_EnumType {
     const DEFAULT: Self = Self::ENUM_TYPE_UNKNOWN;
+}
+
+impl ReflectStatic for FeatureSet_EnumType {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FeatureSet_EnumType {
@@ -8886,7 +9932,7 @@ impl protobuf_core::reflection::Reflect for FeatureSet_EnumType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FeatureSet_RepeatedFieldEncoding {
     REPEATED_FIELD_ENCODING_UNKNOWN = 0,
     PACKED = 1,
@@ -8903,6 +9949,14 @@ impl core::default::Default for FeatureSet_RepeatedFieldEncoding {
 
 impl common::const_default::ConstDefault for FeatureSet_RepeatedFieldEncoding {
     const DEFAULT: Self = Self::REPEATED_FIELD_ENCODING_UNKNOWN;
+}
+
+impl ReflectStatic for FeatureSet_RepeatedFieldEncoding {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FeatureSet_RepeatedFieldEncoding {
@@ -8964,7 +10018,7 @@ impl protobuf_core::reflection::Reflect for FeatureSet_RepeatedFieldEncoding {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FeatureSet_MessageEncoding {
     MESSAGE_ENCODING_UNKNOWN = 0,
     LENGTH_PREFIXED = 1,
@@ -8981,6 +10035,14 @@ impl core::default::Default for FeatureSet_MessageEncoding {
 
 impl common::const_default::ConstDefault for FeatureSet_MessageEncoding {
     const DEFAULT: Self = Self::MESSAGE_ENCODING_UNKNOWN;
+}
+
+impl ReflectStatic for FeatureSet_MessageEncoding {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FeatureSet_MessageEncoding {
@@ -9042,7 +10104,7 @@ impl protobuf_core::reflection::Reflect for FeatureSet_MessageEncoding {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum FeatureSet_JsonFormat {
     JSON_FORMAT_UNKNOWN = 0,
     ALLOW = 1,
@@ -9059,6 +10121,14 @@ impl core::default::Default for FeatureSet_JsonFormat {
 
 impl common::const_default::ConstDefault for FeatureSet_JsonFormat {
     const DEFAULT: Self = Self::JSON_FORMAT_UNKNOWN;
+}
+
+impl ReflectStatic for FeatureSet_JsonFormat {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for FeatureSet_JsonFormat {
@@ -9127,6 +10197,7 @@ pub struct FeatureSet {
     repeated_field_encoding: Option<FeatureSet_RepeatedFieldEncoding>,
     message_encoding: Option<FeatureSet_MessageEncoding>,
     json_format: Option<FeatureSet_JsonFormat>,
+    #[cfg(feature = "std")]
     extensions: protobuf_core::ExtensionSet,
 }
 
@@ -9137,17 +10208,27 @@ impl ::core::fmt::Debug for FeatureSet {
     }
 }
 
+impl StaticDefault for FeatureSet {
+    fn static_default() -> &'static Self {
+        static VALUE: FeatureSet = FeatureSet::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for FeatureSet {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl FeatureSet {
     pub const FIELD_PRESENCE_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const ENUM_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const REPEATED_FIELD_ENCODING_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const MESSAGE_ENCODING_FIELD_NUM: protobuf_core::FieldNumber = 5;
     pub const JSON_FORMAT_FIELD_NUM: protobuf_core::FieldNumber = 6;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: FeatureSet = FeatureSet::DEFAULT;
-        &VALUE
-    }
 
     pub fn field_presence(&self) -> FeatureSet_FieldPresence {
         self.field_presence.unwrap_or_default()
@@ -9297,6 +10378,7 @@ impl protobuf_core::Message for FeatureSet {
                 6 => self.json_format = Some(EnumCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.extensions.parse_merge(field_ref.span.into());
                 }
             }
@@ -9319,6 +10401,7 @@ impl protobuf_core::Message for FeatureSet {
         if let Some(v) = self.json_format.as_ref() {
             EnumCodec::serialize(6, v, out)?;
         }
+        #[cfg(feature = "std")]
         self.extensions.serialize_to(out)?;
         Ok(())
     }
@@ -9366,27 +10449,52 @@ impl protobuf_core::MessageReflection for FeatureSet {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.field_presence.reflect_field_proto2(),
-            2 => self.enum_type.reflect_field_proto2(),
-            3 => self.repeated_field_encoding.reflect_field_proto2(),
-            5 => self.message_encoding.reflect_field_proto2(),
-            6 => self.json_format.reflect_field_proto2(),
-            _ => None,
+            1 => self.field_presence.reflect_clear_field(),
+            2 => self.enum_type.reflect_clear_field(),
+            3 => self.repeated_field_encoding.reflect_clear_field(),
+            5 => self.message_encoding.reflect_clear_field(),
+            6 => self.json_format.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.field_presence.reflect_has_field(),
+            2 => self.enum_type.reflect_has_field(),
+            3 => self.repeated_field_encoding.reflect_has_field(),
+            5 => self.message_encoding.reflect_has_field(),
+            6 => self.json_format.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.field_presence.reflect_field(),
+            2 => self.enum_type.reflect_field(),
+            3 => self.repeated_field_encoding.reflect_field(),
+            5 => self.message_encoding.reflect_field(),
+            6 => self.json_format.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.field_presence.reflect_field_mut_proto2(),
-            2 => self.enum_type.reflect_field_mut_proto2(),
-            3 => self.repeated_field_encoding.reflect_field_mut_proto2(),
-            5 => self.message_encoding.reflect_field_mut_proto2(),
-            6 => self.json_format.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.field_presence.reflect_field_mut(),
+            2 => self.enum_type.reflect_field_mut(),
+            3 => self.repeated_field_encoding.reflect_field_mut(),
+            5 => self.message_encoding.reflect_field_mut(),
+            6 => self.json_format.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -9397,9 +10505,8 @@ impl protobuf_core::MessageReflection for FeatureSet {
             "repeated_field_encoding" => 3,
             "message_encoding" => 5,
             "json_format" => 6,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -9408,6 +10515,7 @@ impl protobuf_core::MessageReflection for FeatureSet {
 pub struct FeatureSetDefaults_FeatureSetEditionDefault {
     edition: Option<String>,
     features: Option<MessagePtr<FeatureSet>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -9418,15 +10526,25 @@ impl ::core::fmt::Debug for FeatureSetDefaults_FeatureSetEditionDefault {
     }
 }
 
-impl FeatureSetDefaults_FeatureSetEditionDefault {
-    pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 2;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for FeatureSetDefaults_FeatureSetEditionDefault {
+    fn static_default() -> &'static Self {
         static VALUE: FeatureSetDefaults_FeatureSetEditionDefault =
             FeatureSetDefaults_FeatureSetEditionDefault::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for FeatureSetDefaults_FeatureSetEditionDefault {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl FeatureSetDefaults_FeatureSetEditionDefault {
+    pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 2;
 
     pub fn edition(&self) -> &str {
         self.edition.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -9449,7 +10567,7 @@ impl FeatureSetDefaults_FeatureSetEditionDefault {
         self.features
             .as_ref()
             .map(|v| v.as_ref())
-            .unwrap_or(FeatureSet::static_default_value())
+            .unwrap_or(FeatureSet::static_default())
     }
     pub fn has_features(&self) -> bool {
         self.features.is_some()
@@ -9514,6 +10632,7 @@ impl protobuf_core::Message for FeatureSetDefaults_FeatureSetEditionDefault {
                 2 => self.features = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -9527,6 +10646,7 @@ impl protobuf_core::Message for FeatureSetDefaults_FeatureSetEditionDefault {
         if let Some(v) = self.features.as_ref() {
             MessageCodec::serialize(2, v.as_ref(), out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -9562,21 +10682,40 @@ impl protobuf_core::MessageReflection for FeatureSetDefaults_FeatureSetEditionDe
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.edition.reflect_field_proto2(),
-            2 => self.features.reflect_field_proto2(),
-            _ => None,
+            1 => self.edition.reflect_clear_field(),
+            2 => self.features.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.edition.reflect_has_field(),
+            2 => self.features.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.edition.reflect_field(),
+            2 => self.features.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.edition.reflect_field_mut_proto2(),
-            2 => self.features.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.edition.reflect_field_mut(),
+            2 => self.features.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -9584,9 +10723,8 @@ impl protobuf_core::MessageReflection for FeatureSetDefaults_FeatureSetEditionDe
         Some(match name {
             "edition" => 1,
             "features" => 2,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -9596,6 +10734,7 @@ pub struct FeatureSetDefaults {
     defaults: Vec<MessagePtr<FeatureSetDefaults_FeatureSetEditionDefault>>,
     minimum_edition: Option<String>,
     maximum_edition: Option<String>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -9606,15 +10745,25 @@ impl ::core::fmt::Debug for FeatureSetDefaults {
     }
 }
 
+impl StaticDefault for FeatureSetDefaults {
+    fn static_default() -> &'static Self {
+        static VALUE: FeatureSetDefaults = FeatureSetDefaults::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for FeatureSetDefaults {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl FeatureSetDefaults {
     pub const DEFAULTS_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const MINIMUM_EDITION_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const MAXIMUM_EDITION_FIELD_NUM: protobuf_core::FieldNumber = 3;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: FeatureSetDefaults = FeatureSetDefaults::DEFAULT;
-        &VALUE
-    }
 
     pub fn defaults(&self) -> &[MessagePtr<FeatureSetDefaults_FeatureSetEditionDefault>] {
         &self.defaults
@@ -9742,6 +10891,7 @@ impl protobuf_core::Message for FeatureSetDefaults {
                 3 => self.maximum_edition = Some(StringCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -9756,6 +10906,7 @@ impl protobuf_core::Message for FeatureSetDefaults {
         if let Some(v) = self.maximum_edition.as_ref() {
             StringCodec::serialize(3, v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -9795,23 +10946,44 @@ impl protobuf_core::MessageReflection for FeatureSetDefaults {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.defaults.reflect_field_proto2(),
-            2 => self.minimum_edition.reflect_field_proto2(),
-            3 => self.maximum_edition.reflect_field_proto2(),
-            _ => None,
+            1 => self.defaults.reflect_clear_field(),
+            2 => self.minimum_edition.reflect_clear_field(),
+            3 => self.maximum_edition.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.defaults.reflect_has_field(),
+            2 => self.minimum_edition.reflect_has_field(),
+            3 => self.maximum_edition.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.defaults.reflect_field(),
+            2 => self.minimum_edition.reflect_field(),
+            3 => self.maximum_edition.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.defaults.reflect_field_mut_proto2(),
-            2 => self.minimum_edition.reflect_field_mut_proto2(),
-            3 => self.maximum_edition.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.defaults.reflect_field_mut(),
+            2 => self.minimum_edition.reflect_field_mut(),
+            3 => self.maximum_edition.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -9820,9 +10992,8 @@ impl protobuf_core::MessageReflection for FeatureSetDefaults {
             "defaults" => 1,
             "minimum_edition" => 2,
             "maximum_edition" => 3,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -9834,6 +11005,7 @@ pub struct SourceCodeInfo_Location {
     leading_comments: Option<String>,
     trailing_comments: Option<String>,
     leading_detached_comments: Vec<String>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -9844,17 +11016,27 @@ impl ::core::fmt::Debug for SourceCodeInfo_Location {
     }
 }
 
+impl StaticDefault for SourceCodeInfo_Location {
+    fn static_default() -> &'static Self {
+        static VALUE: SourceCodeInfo_Location = SourceCodeInfo_Location::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for SourceCodeInfo_Location {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl SourceCodeInfo_Location {
     pub const PATH_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const SPAN_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const LEADING_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const TRAILING_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 4;
     pub const LEADING_DETACHED_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 6;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: SourceCodeInfo_Location = SourceCodeInfo_Location::DEFAULT;
-        &VALUE
-    }
 
     pub fn path(&self) -> &[i32] {
         &self.path
@@ -10038,6 +11220,7 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -10054,6 +11237,7 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
             StringCodec::serialize(4, v, out)?;
         }
         StringCodec::serialize_repeated(6, &self.leading_detached_comments, out)?;
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -10101,27 +11285,52 @@ impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.path.reflect_field_proto2(),
-            2 => self.span.reflect_field_proto2(),
-            3 => self.leading_comments.reflect_field_proto2(),
-            4 => self.trailing_comments.reflect_field_proto2(),
-            6 => self.leading_detached_comments.reflect_field_proto2(),
-            _ => None,
+            1 => self.path.reflect_clear_field(),
+            2 => self.span.reflect_clear_field(),
+            3 => self.leading_comments.reflect_clear_field(),
+            4 => self.trailing_comments.reflect_clear_field(),
+            6 => self.leading_detached_comments.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.path.reflect_has_field(),
+            2 => self.span.reflect_has_field(),
+            3 => self.leading_comments.reflect_has_field(),
+            4 => self.trailing_comments.reflect_has_field(),
+            6 => self.leading_detached_comments.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.path.reflect_field(),
+            2 => self.span.reflect_field(),
+            3 => self.leading_comments.reflect_field(),
+            4 => self.trailing_comments.reflect_field(),
+            6 => self.leading_detached_comments.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.path.reflect_field_mut_proto2(),
-            2 => self.span.reflect_field_mut_proto2(),
-            3 => self.leading_comments.reflect_field_mut_proto2(),
-            4 => self.trailing_comments.reflect_field_mut_proto2(),
-            6 => self.leading_detached_comments.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.path.reflect_field_mut(),
+            2 => self.span.reflect_field_mut(),
+            3 => self.leading_comments.reflect_field_mut(),
+            4 => self.trailing_comments.reflect_field_mut(),
+            6 => self.leading_detached_comments.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -10132,9 +11341,8 @@ impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
             "leading_comments" => 3,
             "trailing_comments" => 4,
             "leading_detached_comments" => 6,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -10142,6 +11350,7 @@ impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct SourceCodeInfo {
     location: Vec<MessagePtr<SourceCodeInfo_Location>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -10152,13 +11361,23 @@ impl ::core::fmt::Debug for SourceCodeInfo {
     }
 }
 
-impl SourceCodeInfo {
-    pub const LOCATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for SourceCodeInfo {
+    fn static_default() -> &'static Self {
         static VALUE: SourceCodeInfo = SourceCodeInfo::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for SourceCodeInfo {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl SourceCodeInfo {
+    pub const LOCATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
 
     pub fn location(&self) -> &[MessagePtr<SourceCodeInfo_Location>] {
         &self.location
@@ -10240,6 +11459,7 @@ impl protobuf_core::Message for SourceCodeInfo {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -10248,6 +11468,7 @@ impl protobuf_core::Message for SourceCodeInfo {
     }
     fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(1, &self.location, out)?;
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -10277,33 +11498,49 @@ impl protobuf_core::MessageReflection for SourceCodeInfo {
             number: 1,
         }]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.location.reflect_field_proto2(),
-            _ => None,
+            1 => self.location.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.location.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.location.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.location.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.location.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {
         Some(match name {
             "location" => 1,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum GeneratedCodeInfo_Annotation_Semantic {
     NONE = 0,
     SET = 1,
@@ -10320,6 +11557,14 @@ impl core::default::Default for GeneratedCodeInfo_Annotation_Semantic {
 
 impl common::const_default::ConstDefault for GeneratedCodeInfo_Annotation_Semantic {
     const DEFAULT: Self = Self::NONE;
+}
+
+impl ReflectStatic for GeneratedCodeInfo_Annotation_Semantic {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &Self::DEFAULT
+    }
 }
 
 impl protobuf_core::Enum for GeneratedCodeInfo_Annotation_Semantic {
@@ -10388,6 +11633,7 @@ pub struct GeneratedCodeInfo_Annotation {
     begin: Option<i32>,
     end: Option<i32>,
     semantic: Option<GeneratedCodeInfo_Annotation_Semantic>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -10398,17 +11644,27 @@ impl ::core::fmt::Debug for GeneratedCodeInfo_Annotation {
     }
 }
 
+impl StaticDefault for GeneratedCodeInfo_Annotation {
+    fn static_default() -> &'static Self {
+        static VALUE: GeneratedCodeInfo_Annotation = GeneratedCodeInfo_Annotation::DEFAULT;
+        &VALUE
+    }
+}
+
+impl ReflectStatic for GeneratedCodeInfo_Annotation {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
 impl GeneratedCodeInfo_Annotation {
     pub const PATH_FIELD_NUM: protobuf_core::FieldNumber = 1;
     pub const SOURCE_FILE_FIELD_NUM: protobuf_core::FieldNumber = 2;
     pub const BEGIN_FIELD_NUM: protobuf_core::FieldNumber = 3;
     pub const END_FIELD_NUM: protobuf_core::FieldNumber = 4;
     pub const SEMANTIC_FIELD_NUM: protobuf_core::FieldNumber = 5;
-
-    pub fn static_default_value() -> &'static Self {
-        static VALUE: GeneratedCodeInfo_Annotation = GeneratedCodeInfo_Annotation::DEFAULT;
-        &VALUE
-    }
 
     pub fn path(&self) -> &[i32] {
         &self.path
@@ -10562,6 +11818,7 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
                 5 => self.semantic = Some(EnumCodec::parse(&f)?),
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -10582,6 +11839,7 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
         if let Some(v) = self.semantic.as_ref() {
             EnumCodec::serialize(5, v, out)?;
         }
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -10629,27 +11887,52 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
             },
         ]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.path.reflect_field_proto2(),
-            2 => self.source_file.reflect_field_proto2(),
-            3 => self.begin.reflect_field_proto2(),
-            4 => self.end.reflect_field_proto2(),
-            5 => self.semantic.reflect_field_proto2(),
-            _ => None,
+            1 => self.path.reflect_clear_field(),
+            2 => self.source_file.reflect_clear_field(),
+            3 => self.begin.reflect_clear_field(),
+            4 => self.end.reflect_clear_field(),
+            5 => self.semantic.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.path.reflect_has_field(),
+            2 => self.source_file.reflect_has_field(),
+            3 => self.begin.reflect_has_field(),
+            4 => self.end.reflect_has_field(),
+            5 => self.semantic.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.path.reflect_field(),
+            2 => self.source_file.reflect_field(),
+            3 => self.begin.reflect_field(),
+            4 => self.end.reflect_field(),
+            5 => self.semantic.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.path.reflect_field_mut_proto2(),
-            2 => self.source_file.reflect_field_mut_proto2(),
-            3 => self.begin.reflect_field_mut_proto2(),
-            4 => self.end.reflect_field_mut_proto2(),
-            5 => self.semantic.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.path.reflect_field_mut(),
+            2 => self.source_file.reflect_field_mut(),
+            3 => self.begin.reflect_field_mut(),
+            4 => self.end.reflect_field_mut(),
+            5 => self.semantic.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
@@ -10660,9 +11943,8 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
             "begin" => 3,
             "end" => 4,
             "semantic" => 5,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
@@ -10670,6 +11952,7 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
 #[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct GeneratedCodeInfo {
     annotation: Vec<MessagePtr<GeneratedCodeInfo_Annotation>>,
+    #[cfg(feature = "std")]
     unknown_fields: protobuf_core::UnknownFieldSet,
 }
 
@@ -10680,13 +11963,23 @@ impl ::core::fmt::Debug for GeneratedCodeInfo {
     }
 }
 
-impl GeneratedCodeInfo {
-    pub const ANNOTATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
-
-    pub fn static_default_value() -> &'static Self {
+impl StaticDefault for GeneratedCodeInfo {
+    fn static_default() -> &'static Self {
         static VALUE: GeneratedCodeInfo = GeneratedCodeInfo::DEFAULT;
         &VALUE
     }
+}
+
+impl ReflectStatic for GeneratedCodeInfo {
+    type Type = Self;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        Self::static_default()
+    }
+}
+
+impl GeneratedCodeInfo {
+    pub const ANNOTATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
 
     pub fn annotation(&self) -> &[MessagePtr<GeneratedCodeInfo_Annotation>] {
         &self.annotation
@@ -10768,6 +12061,7 @@ impl protobuf_core::Message for GeneratedCodeInfo {
                 }
 
                 _ => {
+                    #[cfg(feature = "std")]
                     self.unknown_fields.fields.push(field_ref.span.into());
                 }
             }
@@ -10776,6 +12070,7 @@ impl protobuf_core::Message for GeneratedCodeInfo {
     }
     fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(1, &self.annotation, out)?;
+        #[cfg(feature = "std")]
         self.unknown_fields.serialize_to(out)?;
         Ok(())
     }
@@ -10805,28 +12100,44 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo {
             number: 1,
         }]
     }
-    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+
+    fn clear_field_with_number(&mut self, num: FieldNumber) {
         match num {
-            1 => self.annotation.reflect_field_proto2(),
-            _ => None,
+            1 => self.annotation.reflect_clear_field(),
+
+            _ => {}
         }
+    }
+
+    fn has_field_with_number(&self, num: FieldNumber) -> bool {
+        match num {
+            1 => self.annotation.reflect_has_field(),
+
+            _ => false,
+        }
+    }
+
+    fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
+        Some(match num {
+            1 => self.annotation.reflect_field(),
+
+            _ => return None,
+        })
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.annotation.reflect_field_mut_proto2(),
-            _ => {
-                return None;
-            }
+            1 => self.annotation.reflect_field_mut(),
+
+            _ => return None,
         })
     }
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {
         Some(match name {
             "annotation" => 1,
-            _ => {
-                return None;
-            }
+
+            _ => return None,
         })
     }
 }
