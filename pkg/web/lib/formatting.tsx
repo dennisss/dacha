@@ -65,6 +65,22 @@ export function format_duration_secs(secs: number, round_to: TimeUnit = TimeUnit
     return out.trim();
 }
 
+export function format_timecode_secs(seconds: number, max_time: number = 0): string {
+    seconds = Math.floor(seconds);
+
+    let secs = seconds % 60;
+    seconds = Math.floor(seconds / 60);
+
+    let mins = seconds % 60;
+    seconds = Math.floor(seconds / 60);
+
+    let hrs = seconds;
+
+    let show_hrs = hrs != 0 || (max_time / (60 * 60) >= 1);
+
+    return `${show_hrs ? hrs + ':' : ''}${mins.toString().padStart(show_hrs ? 2 : 0, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
 const NANOS_PER_SECOND = 1000000000;
 
 // Converts a google.protobuf.Timestamp proto object to a number of milliseconds since epoch.

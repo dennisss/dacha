@@ -135,25 +135,6 @@ pub enum Write<'a> {
     Deletion { key: &'a [u8] },
 }
 
-pub fn serialize_write_batch(sequence: u64, writes: &[Write], out: &mut Vec<u8>) {
-    out.extend_from_slice(&sequence.to_le_bytes());
-    out.extend_from_slice(&(writes.len() as u32).to_le_bytes());
-
-    for write in writes {
-        match write {
-            Write::Value { key, value } => {
-                out.push(ValueType::Value.to_value());
-                serialize_slice(*key, out);
-                serialize_slice(*value, out);
-            }
-            Write::Deletion { key } => {
-                out.push(ValueType::Deletion.to_value());
-                serialize_slice(*key, out);
-            }
-        }
-    }
-}
-
 // TODO: Ensure that all changes in a WriteBatch touch distinct keys. Otherwise
 // we can't apply all of the writes with the same sequence.
 #[derive(Clone)]

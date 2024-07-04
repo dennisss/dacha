@@ -47,6 +47,8 @@ message SnapshotResponse {
 }
 
 message ReadRequest {
+    // Range of keys to read.
+    // We will only return entries with keys '>= start_key' and '< end_key'.
     KeyRange keys = 1;
 
     // If not specified, we will perform a linearizable read of the latest value.
@@ -54,7 +56,10 @@ message ReadRequest {
 }
 
 message KeyRange {
+    // Inclusive
     bytes start_key = 1;
+
+    // Exclusive
     bytes end_key = 2;
 }
 

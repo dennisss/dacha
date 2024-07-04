@@ -4,9 +4,9 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use common::any::AsAny;
 use common::errors::*;
 use common::list::Appendable;
+use common::{any::AsAny, const_default::ConstDefault};
 
 #[cfg(feature = "alloc")]
 use crate::merge::ReflectMergeFrom;
@@ -16,9 +16,9 @@ use crate::wire::WireResult;
 use crate::{MessageReflection, StaticFileDescriptor};
 
 #[cfg(feature = "alloc")]
-pub trait StaticMessageTraits = Message + Default + MessageReflection;
+pub trait StaticMessageTraits = ConstDefault + Clone + Message + Default + MessageReflection;
 #[cfg(not(feature = "alloc"))]
-pub trait StaticMessageTraits = Message + Default;
+pub trait StaticMessageTraits = ConstDefault + Clone + Message + Default;
 
 /// Message whose definition is well known to the binary.
 /// Usually these will be declared with code generation.

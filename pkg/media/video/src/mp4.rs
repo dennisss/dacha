@@ -190,7 +190,8 @@ pub struct MP4BuilderOptions {
 
 /// When fragmentation is enabled, each of these corresponds to one fragment.
 pub struct MP4BuilderChunk {
-    /// Starts at zero. When this goes up, we suggest writing to a new file.
+    /// Starts at zero. All chunks with the same segment_index should be written
+    /// to the same file.
     pub segment_index: usize,
 
     pub is_init: bool,
@@ -220,8 +221,8 @@ pub struct TimeRange {
 /// Builds MP4s. Note that this is a streaming builder and will never edit old
 /// data.
 ///
-/// The output is generated as a sequence of chunks (/ fragments). It is up to
-/// the caller to form one or more segments (files) out of some group of chunks.
+/// The output is generated as a sequence of chunks (/ fragments). Groups of
+/// these chunks/fragments are optionally grouped into segments (files).
 /// They will be structured in one of two forms:
 ///
 /// 1. Non-Fragmented (Single-File) (when options.fragment.is_none()):
@@ -242,8 +243,11 @@ pub struct TimeRange {
 ///     - 'moof'
 ///     - 'mdat'
 ///
-/// Note that in #2, when using independent_segments, the init chunk will be
-/// periodically repeated.
+/// In form #1, separate segments will each have their own First/Middle/Last
+/// chunks.
+///
+/// In form #2, only the first segment will have the init chunk (unless
+/// independent_segments is true).
 pub struct MP4Builder {
     options: MP4BuilderOptions,
 

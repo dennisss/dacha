@@ -10,8 +10,9 @@ use file::LocalPathBuf;
 use media_web::camera_manager::CameraManager;
 
 use crate::camera_recorder::CameraRecorder;
+use crate::db::ProtobufDB;
 use crate::devices::AvailableDevice;
-use crate::{config::MachineConfigContainer, player::Player, protobuf_table::ProtobufDB};
+use crate::{config::MachineConfigContainer, player::Player};
 
 // TODO: This needs to emit state change events.
 
@@ -268,14 +269,14 @@ impl CameraController {
         if let Some(player) = &state.player {
             let player_state = player.state_proto().await?;
 
-            if (player_state.status() == RunningProgramState_PlayerState::PLAYING
-                || player_state.status() == RunningProgramState_PlayerState::PAUSING)
+            if (player_state.status() == ProgramRun_PlayerState::PLAYING
+                || player_state.status() == ProgramRun_PlayerState::PAUSING)
                 && camera_config.record_while_playing()
             {
                 return Ok(true);
             }
 
-            if (player_state.status() == RunningProgramState_PlayerState::PAUSED)
+            if (player_state.status() == ProgramRun_PlayerState::PAUSED)
                 && camera_config.record_while_paused()
             {
                 return Ok(true);

@@ -168,9 +168,11 @@ export class PositionBox extends React.Component<{ machine: any, context: PageCo
 
     render() {
         return (
-            <Card id="pos" header="Top-down View">
+            <Card id="pos" header="Top-down View" style={{ marginBottom: 10 }}>
                 <CardBody>
-                    <Figure options={this._get_figure_options()} onClick={this._on_click} />
+                    <div style={{ padding: '0 40px' }}>
+                        <Figure options={this._get_figure_options()} onClick={this._on_click} />
+                    </div>
                 </CardBody>
             </Card>
         );

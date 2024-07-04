@@ -4,7 +4,7 @@ TODO: Use more Instant rather than SystemTime timestamps in thie file.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
@@ -18,9 +18,13 @@ use protobuf::Message;
 
 use crate::change::{ChangeEvent, ChangePublisher};
 use crate::config::MachineConfigContainer;
+use crate::db::ProtobufDB;
 use crate::files::FileReference;
 use crate::program::*;
 use crate::serial_controller::{SerialController, DEFAULT_COMMAND_TIMEOUT};
+use crate::tables::ProgramRunTable;
+
+const MIN_DB_FLUSH_RATE: Duration = Duration::from_secs(30);
 
 /// When waiting for the temperature of a heater to enter some range, it must
 /// stay in the range for this amount of time to proceed to the next step.
@@ -30,6 +34,8 @@ const TEMPERATURE_HOLD_TIME: Duration = Duration::from_secs(4);
 /// temperature will only be considered ok if it is also
 /// '< X + TEMPERATURE_MAX_OVER_MIN'
 const TEMPERATURE_MAX_OVER_MIN: f32 = 10.0;
+
+const TEMPERATURE_MIN_UNDER_MIN: f32 = 0.5;
 
 /// Streams a file containing GCode commands to a machine.
 ///
@@ -52,6 +58,7 @@ struct Shared {
     file: FileReference,
     state: AsyncVariable<State>,
     change_publisher: ChangePublisher,
+    db: Arc<ProtobufDB>,
 
     use_silent_mode: bool,
 
@@ -61,8 +68,7 @@ struct Shared {
 }
 
 struct State {
-    proto: RunningProgramState,
-    state: RunningProgramState_PlayerState,
+    proto: ProgramRun,
     status_message: Option<String>,
     // ETA information and elapsed time.
 }
@@ -70,7 +76,7 @@ struct State {
 #[derive(Default)]
 struct ParsedLine {
     command_to_send: Option<String>,
-    state_update: RunningProgramState,
+    state_update: ProgramRun,
     action: Option<LineAction>,
 }
 
@@ -89,10 +95,18 @@ impl Player {
         file: FileReference,
         serial_interface: Arc<SerialController>,
         change_publisher: ChangePublisher,
+        db: Arc<ProtobufDB>,
     ) -> Result<Self> {
         let mut now = SystemTime::now();
 
-        let mut state_proto = RunningProgramState::default();
+        let mut state_proto = ProgramRun::default();
+
+        state_proto.set_run_id(now.duration_since(UNIX_EPOCH).unwrap().as_micros() as u64);
+        state_proto.set_file_id(file.id());
+        state_proto.set_machine_id(machine_id);
+        state_proto.set_last_updated(now);
+
+        state_proto.set_status(ProgramRun_PlayerState::PAUSED);
         state_proto.set_start_time(now);
         state_proto.set_last_progress_update(now);
 
@@ -116,8 +130,8 @@ impl Player {
             machine_config,
             file,
             use_silent_mode,
+            db,
             state: AsyncVariable::new(State {
-                state: RunningProgramState_PlayerState::PAUSED,
                 status_message: None,
                 proto: state_proto,
             }),
@@ -133,10 +147,10 @@ impl Player {
         Ok(Self { shared, task })
     }
 
-    pub fn is_terminal_state(state: RunningProgramState_PlayerState) -> bool {
-        state == RunningProgramState_PlayerState::DONE
-            || state == RunningProgramState_PlayerState::ERROR
-            || state == RunningProgramState_PlayerState::STOPPED
+    pub fn is_terminal_state(state: ProgramRun_PlayerState) -> bool {
+        state == ProgramRun_PlayerState::DONE
+            || state == ProgramRun_PlayerState::ERROR
+            || state == ProgramRun_PlayerState::STOPPED
     }
 
     pub fn terminated(&self) -> bool {
@@ -150,12 +164,11 @@ impl Player {
             .load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    pub async fn state_proto(&self) -> Result<RunningProgramState> {
+    pub async fn state_proto(&self) -> Result<ProgramRun> {
         let state = self.shared.state.lock().await?.read_exclusive();
 
         let mut proto = state.proto.clone();
 
-        proto.set_status(state.state);
         if let Some(message) = &state.status_message {
             proto.status_message_mut().set_text(message);
         }
@@ -183,26 +196,37 @@ impl Player {
 
         let result = bundle.join().await;
 
-        lock!(state <= shared.state.lock().await?, {
-            state.proto.set_end_time(SystemTime::now());
+        let final_proto = lock!(state <= shared.state.lock().await?, {
+            let now = SystemTime::now();
+            state.proto.set_end_time(now);
+            state.proto.set_last_updated(now);
+
+            // Finalize the last segment
+            // TODO: Deduplicate this logic.
+            if let Some(last_seg) = state.proto.playing_segments_mut().last_mut() {
+                if !last_seg.has_end_time() {
+                    last_seg.set_end_time(now);
+                }
+            }
 
             if let Err(e) = result {
                 eprintln!("Player failed: {}", e);
                 state.status_message = Some(e.to_string());
-                state.state = RunningProgramState_PlayerState::ERROR;
-                return;
+                state.proto.set_status(ProgramRun_PlayerState::ERROR);
+            } else if state.proto.status() == ProgramRun_PlayerState::STOPPING {
+                state.proto.set_status(ProgramRun_PlayerState::STOPPED);
+            } else {
+                state.proto.set_status(ProgramRun_PlayerState::DONE);
             }
 
-            if state.state == RunningProgramState_PlayerState::STOPPING {
-                state.state = RunningProgramState_PlayerState::STOPPED;
-            } else {
-                state.state = RunningProgramState_PlayerState::DONE;
-            }
+            state.proto.clone()
         });
 
         shared
             .terminated
             .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        shared.db.insert::<ProgramRunTable>(&final_proto).await?;
 
         Self::publish_change(&shared);
 
@@ -227,36 +251,88 @@ impl Player {
         let mut current_action = None;
         let mut first_stable_time = None;
         let mut status_message = None;
+
+        // TODO: Throttle this loop
         loop {
             //
 
             {
                 let mut state = shared.state.lock().await?.enter();
 
+                let mut state_changed = false;
+
                 if state.status_message != status_message {
                     state.status_message = status_message.clone();
-                    Self::publish_change(&shared);
+                    state_changed = true;
                 }
 
-                if state.state == RunningProgramState_PlayerState::PAUSING {
+                if state.proto.status() == ProgramRun_PlayerState::PAUSING {
                     Self::advance_progress(&mut state.proto)?;
-                    state.state = RunningProgramState_PlayerState::PAUSED;
-                    Self::publish_change(&shared);
+                    state.proto.set_status(ProgramRun_PlayerState::PAUSED);
+                    state_changed = true;
                 }
 
-                match state.state {
-                    RunningProgramState_PlayerState::PLAYING => {
+                if state.proto.status() == ProgramRun_PlayerState::STARTING {
+                    state.proto.set_status(ProgramRun_PlayerState::PLAYING);
+                    state.proto.set_last_progress_update(SystemTime::now());
+                    state_changed = true;
+                }
+
+                if state.proto.status() == ProgramRun_PlayerState::PLAYING {
+                    let need_new_segment = match state.proto.playing_segments().last() {
+                        Some(seg) => seg.has_end_time(),
+                        None => true,
+                    };
+
+                    if need_new_segment {
+                        let line_num = state.proto.line_number();
+                        let seg = state.proto.new_playing_segments();
+                        seg.set_start_line(line_num);
+                        seg.set_start_time(SystemTime::now());
+                        state_changed = true;
+                    }
+                } else {
+                    if let Some(last_seg) = state.proto.playing_segments_mut().last_mut() {
+                        if !last_seg.has_end_time() {
+                            last_seg.set_end_time(SystemTime::now());
+                            state_changed = true;
+                        }
+                    }
+                }
+
+                if state_changed
+                    || (state.proto.status() == ProgramRun_PlayerState::PLAYING
+                        && SystemTime::now()
+                            > SystemTime::from(state.proto.last_updated()) + MIN_DB_FLUSH_RATE)
+                {
+                    state.proto.set_last_updated(SystemTime::now());
+
+                    let new_proto = state.proto.clone();
+                    state.exit();
+
+                    shared.db.insert::<ProgramRunTable>(&new_proto).await?;
+
+                    Self::publish_change(&shared);
+
+                    continue;
+                }
+
+                match state.proto.status() {
+                    ProgramRun_PlayerState::PLAYING => {
                         // Handled below
                     }
-                    RunningProgramState_PlayerState::PAUSED => {
+                    ProgramRun_PlayerState::PAUSED => {
                         state.wait().await;
                         continue;
                     }
-                    RunningProgramState_PlayerState::STOPPING => {
+                    ProgramRun_PlayerState::STOPPING => {
                         stopping = true;
                     }
                     _ => {
-                        return Err(format_err!("In an unexpected state: {:?}", state.state));
+                        return Err(format_err!(
+                            "In an unexpected state: {:?}",
+                            state.proto.status()
+                        ));
                     }
                 }
 
@@ -300,7 +376,7 @@ impl Player {
                         if current_value.data.len() >= 1 {
                             let current_temp = current_value.data[0];
 
-                            if current_temp >= *min_temperature
+                            if current_temp >= *min_temperature - TEMPERATURE_MIN_UNDER_MIN
                                 && current_temp < *min_temperature + TEMPERATURE_MAX_OVER_MIN
                             {
                                 let now = Instant::now();
@@ -407,11 +483,11 @@ impl Player {
 
          */
 
-    fn advance_progress(state_proto: &mut RunningProgramState) -> Result<()> {
+    fn advance_progress(state_proto: &mut ProgramRun) -> Result<()> {
         // TODO: Do the same for the percentage.
 
-        if state_proto.status() != RunningProgramState_PlayerState::PLAYING
-            && state_proto.status() != RunningProgramState_PlayerState::PAUSING
+        if state_proto.status() != ProgramRun_PlayerState::PLAYING
+            && state_proto.status() != ProgramRun_PlayerState::PAUSING
         {
             return Ok(());
         }
@@ -512,6 +588,7 @@ impl Player {
                     min_temperature: temp.to_f32()?,
                 });
 
+                // Don't send the regular command.
                 return Ok(());
             }
 
@@ -542,6 +619,9 @@ impl Player {
                     axis_name: "B".into(),
                     min_temperature: temp.to_f32()?,
                 });
+
+                // Don't send the regular command.
+                return Ok(());
             }
 
             _ => {}
@@ -562,14 +642,13 @@ impl Player {
     /// CANCEL SAFE
     pub async fn play(&self) -> Result<()> {
         lock!(state <= self.shared.state.lock().await?, {
-            if state.state != RunningProgramState_PlayerState::PAUSED {
+            if state.proto.status() != ProgramRun_PlayerState::PAUSED {
                 return Err(
                     rpc::Status::failed_precondition("Player not currently paused.").into(),
                 );
             }
 
-            state.state = RunningProgramState_PlayerState::PLAYING;
-            state.proto.set_last_progress_update(SystemTime::now());
+            state.proto.set_status(ProgramRun_PlayerState::STARTING);
             state.notify_all();
 
             Ok::<_, Error>(())
@@ -583,13 +662,13 @@ impl Player {
     /// CANCEL SAFE
     pub async fn pause(&self) -> Result<()> {
         lock!(state <= self.shared.state.lock().await?, {
-            if state.state != RunningProgramState_PlayerState::PLAYING {
+            if state.proto.status() != ProgramRun_PlayerState::PLAYING {
                 return Err(
                     rpc::Status::failed_precondition("Player not currently playing.").into(),
                 );
             }
 
-            state.state = RunningProgramState_PlayerState::PAUSING;
+            state.proto.set_status(ProgramRun_PlayerState::PAUSING);
             state.notify_all();
 
             Ok::<_, Error>(())
@@ -603,8 +682,8 @@ impl Player {
     /// CANCEL SAFE
     pub async fn stop(&self) -> Result<()> {
         lock!(state <= self.shared.state.lock().await?, {
-            if state.state != RunningProgramState_PlayerState::PLAYING
-                && state.state != RunningProgramState_PlayerState::PAUSED
+            if state.proto.status() != ProgramRun_PlayerState::PLAYING
+                && state.proto.status() != ProgramRun_PlayerState::PAUSED
             {
                 return Err(rpc::Status::failed_precondition(
                     "Player not currently playing or paused.",
@@ -612,7 +691,7 @@ impl Player {
                 .into());
             }
 
-            state.state = RunningProgramState_PlayerState::STOPPING;
+            state.proto.set_status(ProgramRun_PlayerState::STOPPING);
             state.notify_all();
 
             Ok::<_, Error>(())

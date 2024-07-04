@@ -8,11 +8,11 @@ use executor::lock;
 use executor::sync::SyncMutex;
 use file::LocalPathBuf;
 
+use crate::db::ProtobufDB;
 use crate::{
     change::{ChangeEvent, ChangePublisher},
     program::ProgramSummary,
-    protobuf_table::ProtobufDB,
-    tables::FILE_TABLE_TAG,
+    tables::FileTable,
 };
 
 /// Manages the state for all locally uploaded files.
@@ -55,7 +55,7 @@ impl FileManager {
         change_publisher: ChangePublisher,
     ) -> Result<Self> {
         let mut state = State::default();
-        for file in db.list(&FILE_TABLE_TAG).await? {
+        for file in db.list::<FileTable>().await? {
             state.files.insert(file.id(), FileEntry::new(file));
         }
 
@@ -87,7 +87,7 @@ impl FileManager {
                     }
                 }
 
-                out.add_files(file.proto.clone());
+                out.add_files(Self::file_proto_with_urls(&self.shared, &file.proto));
             }
         })?;
 
@@ -115,7 +115,7 @@ impl FileManager {
 
         let shared = self.shared.clone();
         executor::spawn(async move {
-            shared.db.insert(&FILE_TABLE_TAG, &proto).await?;
+            shared.db.insert::<FileTable>(&proto).await?;
 
             shared.state.apply(|state| {
                 state.files.insert(id, FileEntry::new(proto.clone()));
@@ -191,7 +191,7 @@ impl FileManager {
         // TODO: Make a standard helper for this.
         let shared = self.shared.clone();
         executor::spawn::<_, Result<()>>(async move {
-            shared.db.insert(&FILE_TABLE_TAG, &file_lock.proto).await?;
+            shared.db.insert::<FileTable>(&file_lock.proto).await?;
 
             shared.state.apply(|state| {
                 let entry = state.files.get_mut(&id).unwrap();
@@ -220,7 +220,7 @@ impl FileManager {
         let shared = self.shared.clone();
 
         executor::spawn(async move {
-            shared.db.remove(&FILE_TABLE_TAG, &file_lock.proto).await?;
+            shared.db.remove::<FileTable>(&file_lock.proto).await?;
 
             shared.state.apply(|state| {
                 state.files.remove(&file_id);
@@ -279,6 +279,39 @@ impl FileManager {
             })
         })?
     }
+
+    fn file_data_dir(shared: &Shared, file_id: u64) -> LocalPathBuf {
+        shared
+            .files_dir
+            .join(base_radix::hex_encode(&file_id.to_be_bytes()))
+    }
+
+    fn file_raw_path(shared: &Shared, file_id: u64) -> LocalPathBuf {
+        Self::file_data_dir(shared, file_id).join("raw")
+    }
+
+    fn file_thumbnail_path(shared: &Shared, file_id: u64) -> LocalPathBuf {
+        Self::file_data_dir(shared, file_id).join("thumbnail")
+    }
+
+    fn file_proto_with_urls(shared: &Shared, proto: &FileProto) -> FileProto {
+        let mut proto = proto.clone();
+
+        let base = format!(
+            "/data/files/{}",
+            base_radix::hex_encode(&proto.id().to_be_bytes())
+        );
+
+        proto.urls_mut().set_raw_url(format!("{}/raw", base));
+
+        if proto.has_thumbnail() {
+            proto
+                .urls_mut()
+                .set_thumbnail_url(format!("{}/thumbnail", base));
+        }
+
+        proto
+    }
 }
 
 pub struct FileReference {
@@ -314,8 +347,16 @@ impl Drop for FileReference {
 }
 
 impl FileReference {
+    pub fn id(&self) -> u64 {
+        self.file_id
+    }
+
     pub fn proto(&self) -> &FileProto {
         &self.proto
+    }
+
+    pub fn proto_with_urls(&self) -> FileProto {
+        FileManager::file_proto_with_urls(&self.shared, &self.proto)
     }
 
     fn data_dir(&self) -> LocalPathBuf {
@@ -326,10 +367,10 @@ impl FileReference {
 
     /// Path to the raw data file for this file.
     pub fn path(&self) -> LocalPathBuf {
-        self.data_dir().join("raw")
+        FileManager::file_raw_path(&self.shared, self.file_id)
     }
 
     pub fn thumbnail_path(&self) -> LocalPathBuf {
-        self.data_dir().join("thumbnail")
+        FileManager::file_thumbnail_path(&self.shared, self.file_id)
     }
 }

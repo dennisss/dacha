@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package cnc;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "pkg/cnc/monitor/proto/file.proto";
+
+
+message ProgramRun {
+    fixed64 machine_id = 1;
+
+    fixed64 run_id = 2;
+
+    fixed64 file_id = 3;
+
+    // Last time this ProgramRun was saved to the database.
+    // Mainly used as a liveness check for runs in non-terminal states.
+    google.protobuf.Timestamp last_updated = 4;
+
+    enum PlayerState {
+        UNKNOWN = 0;
+    
+        // Program has completed some percentage of the program lines and is waiting for 
+        // the user to un-pause.
+        //
+        // - This is the initial state of the player.
+        // - Program triggered stops will typically display the reason in the 'status_message'
+        //   field.
+        //
+        // TODO: While paused, do something to keep the stepper motors alive (if we send > 0 lines).
+        PAUSED = 1;
+    
+        // Transitioning from PAUSED to PLAYING.
+        STARTING = 2;
+
+        // Program is actively streaming commands to the machine.
+        PLAYING = 3;
+    
+        // Transitioning from PLAYING to PAUSED.
+        PAUSING = 4;
+    
+        // Transitioning from PLAYING to STOPPED.
+        STOPPING = 5;
+    
+        // Upon user request, the program was gracefully stopped (no commands are being sent
+        // anymore, motors/heaters have been disabled, and the program can not be resumed
+        // without restarting it).
+        //
+        // TERMINAL STATE
+        STOPPED = 6;
+        
+        // All commands in the program have been sent and:
+        // - We waited for all motions to complete.
+        // - We turned off any heaters/lasers/etc.
+        //
+        // TERMINAL STATE
+        DONE = 7;
+    
+        // TERMINAL STATE
+        ERROR = 8;
+    } 
+
+    // TODO: May want to have a revision id to allow operations to be stateless.
+
+    PlayerState status = 5;
+
+    google.protobuf.Timestamp start_time = 6;
+
+    google.protobuf.Timestamp end_time = 7;
+
+    // Time segments during which the player's state was PLAYING
+    // (may also overlap with transition states like PAUSING).
+    repeated ProgramRunSegment playing_segments = 8;
+
+    // Last time that progress/estimated_remaining_time were updated.
+    // This is always updated on state transitions to/from PLAYING.
+    google.protobuf.Timestamp last_progress_update = 9;
+
+    // Percentage of execution time in this program that has finished.
+    // Will be 1.0 iff the program is completely done running.
+    float progress = 10;
+
+    // Assuming we have been playing since last_progress_update, this is the amount of
+    // wall time remaining remaining
+    google.protobuf.Duration estimated_remaining_time = 11;
+
+    // Number of lines in the file that have been fully processed (locally).
+    // Starts at 0.
+    uint32 line_number = 12;
+
+    // Message describing the current state of playback.
+    Message status_message = 13;
+
+    // The file data associated with file_id.
+    // NOTE: Only present when looking up the run history.
+    FileProto file = 14;
+}
+
+message ProgramRunSegment {
+    google.protobuf.Timestamp start_time = 1;
+
+    // NOTE: This may not be set in the last segment if the transition away from the last transition away from
+    // the PLAYING state is incomplete.
+    google.protobuf.Timestamp end_time = 2;
+
+    // Index of the first line to be processed in the segment.
+    uint32 start_line = 3;
+}
+
+message Message {
+    string text = 1;
+    // log level
+    // time created
+}
+

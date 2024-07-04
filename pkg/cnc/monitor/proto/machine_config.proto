@@ -87,6 +87,15 @@ message AxisConfig {
 
     // Min/max limit on what values can be reached by this asxis. 
     Range range = 5;
+
+    // If set, this axis will have its values to storage.
+    AxisCollectionConfig collect = 6;
+}
+
+message AxisCollectionConfig {
+    // We won't record any value that is it is < this value.
+    // TODO: Think about instead always collecting temperatures while a program is running so that we can distinguish between missing and filtered data.
+    optional float min_value = 1;
 }
 
 message WorkArea {

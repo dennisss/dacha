@@ -18,7 +18,7 @@ pub fn prefix_key_range(prefix: &[u8]) -> (Bytes, Bytes) {
 }
 
 // TODO: Dedup with sstable::table::BytewiseComparator
-fn find_short_successor(mut key: Vec<u8>) -> Vec<u8> {
+pub fn find_short_successor(mut key: Vec<u8>) -> Vec<u8> {
     for i in (0..key.len()).rev() {
         if key[i] != 0xff {
             key[i] += 1;

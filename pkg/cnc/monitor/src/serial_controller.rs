@@ -6,6 +6,7 @@ use base_error::*;
 use cnc_monitor_proto::cnc::*;
 use common::bytes::Bytes;
 use common::failure::Fail;
+use common::fixed::vec::FixedVec;
 use common::io::{Readable, Writeable};
 use executor::channel::oneshot;
 use executor::lock;
@@ -16,6 +17,7 @@ use peripherals::serial::SerialPort;
 
 use crate::change::{ChangeEvent, ChangePublisher};
 use crate::config::MachineConfigContainer;
+use crate::metric::{MetricStore, MetricStream};
 use crate::response_parser::*;
 use crate::serial_receiver_buffer::SerialReceiverBuffer;
 use crate::serial_send_buffer::SerialSendBuffer;
@@ -111,6 +113,8 @@ struct Shared {
     /// Contains the index of the next non-processed line in the receiver
     /// buffer.
     processed_line_waterline: AsyncVariable<u64>,
+
+    axis_metrics: HashMap<String, Vec<MetricStream>>,
 }
 
 #[derive(Default)]
@@ -151,7 +155,9 @@ struct PendingSend {
 
 #[derive(Clone)]
 pub struct AxisData {
-    pub data: Vec<f32>,
+    /// Will be empty if no data has been collected yet.
+    pub data: FixedVec<f32, 2>,
+
     pub last_update: Option<Instant>,
 }
 
@@ -187,20 +193,47 @@ impl SerialController {
         serial_reader: Box<dyn Readable>,
         serial_writer: Box<dyn Writeable>,
         change_publisher: ChangePublisher,
+        metric_store: &MetricStore,
     ) -> Result<Self> {
         let resources = ServiceResourceGroup::new("cnc::Machine");
 
         let mut state = State::default();
+
+        let mut axis_metrics = HashMap::new();
 
         let config_value = config.read().await?;
         for axis_config in config_value.axes() {
             state.axes.insert(
                 axis_config.id().to_string(),
                 AxisData {
-                    data: vec![],
+                    data: FixedVec::new(),
                     last_update: None,
                 },
             );
+
+            let mut num_values = {
+                if axis_config.typ() == AxisType::HEATER {
+                    2
+                } else {
+                    1
+                }
+            };
+
+            if axis_config.has_collect() {
+                let mut streams = vec![];
+                for i in 0..num_values {
+                    let mut resource = MetricResource::default();
+                    resource.set_machine_id(machine_id);
+                    resource.set_kind(MetricKind::MACHINE_AXIS_VALUE);
+                    resource.set_axis_id(axis_config.id());
+                    resource.set_value_index(i as u32);
+
+                    let stream = metric_store.stream(&resource).await?;
+                    streams.push(stream);
+                }
+
+                axis_metrics.insert(axis_config.id().to_string(), streams);
+            }
         }
 
         let shared = Arc::new(Shared {
@@ -211,6 +244,7 @@ impl SerialController {
             receiver_buffer: SerialReceiverBuffer::default(),
             change_publisher,
             processed_line_waterline: AsyncVariable::default(),
+            axis_metrics,
         });
 
         let sender_guard = SenderCancellationGuard {
@@ -673,6 +707,10 @@ impl SerialController {
         // Absolute offset of the next received line that needs to be
         let mut next_line_offset = shared.receiver_buffer.last_line_offset().await?;
 
+        /// Stores new axes/capabilities data that should be incorporated into
+        /// the stet.
+        let mut new_state_data = State::default();
+
         loop {
             let mut buf = [0u8; READ_BUFFER_SIZE];
             let n = reader.read(&mut buf).await?;
@@ -683,15 +721,16 @@ impl SerialController {
             }
 
             let now = Instant::now();
+            let now_systime = SystemTime::now();
 
             // TODO: Consider not erroring out if there are extremely long lines.
             shared.receiver_buffer.append(&buf[0..n], now).await?;
 
             let config = shared.config.read().await?;
 
-            let mut state = shared.state.lock().await?.enter();
-
             let mut got_state_change = false;
+            new_state_data.capabilites.clear();
+            new_state_data.axes.clear();
 
             // Process any newly added lines.
             let end_line_offset = shared.receiver_buffer.last_line_offset().await?;
@@ -725,11 +764,11 @@ impl SerialController {
                             // TODO: Do something!
                         }
                         ResponseEvent::Capability { name, present } => {
-                            state.capabilites.insert(name, present);
+                            new_state_data.capabilites.insert(name, present);
                             got_state_change = true;
                         }
                         ResponseEvent::AxisValue { id, values } => {
-                            state.axes.insert(
+                            new_state_data.axes.insert(
                                 id,
                                 AxisData {
                                     data: values,
@@ -764,14 +803,49 @@ impl SerialController {
                     });
                 }
 
-                // TODO: Maybe send an event here.
-
                 // TODO: Delete or move logic to me.
                 // Self::process_line(&line);
             }
 
-            // TOOD: Improve this.
-            state.exit();
+            if got_state_change {
+                // NOTE: If we ended up getting multiple state updates for the
+                // same axes in the same batch, we will only record the last
+                // update here.
+                for (axis, axis_data) in new_state_data.axes.iter() {
+                    let axis_config = config
+                        .axes()
+                        .iter()
+                        .find(|a| a.id() == axis)
+                        .ok_or_else(|| err_msg("Missing axis config"))?;
+
+                    if !axis_config.has_collect() {
+                        continue;
+                    }
+
+                    let streams = shared.axis_metrics.get_or_err(axis)?;
+
+                    for i in 0..axis_data.data.len() {
+                        let value = axis_data.data[i];
+                        if axis_config.collect().has_min_value() {
+                            if value < axis_config.collect().min_value() {
+                                continue;
+                            }
+                        }
+
+                        let stream = streams
+                            .get(i)
+                            .ok_or_else(|| err_msg("Wrong number of stream metrics for axis"))?;
+
+                        // TODO: Instead use the axis_data timestamp / the line timestamp.
+                        stream.record(now_systime, value).await?;
+                    }
+                }
+
+                lock!(state <= shared.state.lock().await?, {
+                    state.axes.extend(new_state_data.axes.drain());
+                    state.capabilites.extend(new_state_data.capabilites.drain());
+                });
+            }
 
             drop(config);
 

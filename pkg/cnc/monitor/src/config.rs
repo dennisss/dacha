@@ -6,7 +6,7 @@ use cnc_monitor_proto::cnc::MachineConfig;
 use crypto::random::RngExt;
 use protobuf::{Message, MessageReflection};
 
-use crate::{protobuf_table::ProtobufDB, tables::MACHINE_TABLE_TAG};
+use crate::db::ProtobufDB;
 
 /// Stores the configuration for a machine.
 ///

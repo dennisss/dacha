@@ -54,8 +54,7 @@ pub use merge::*;
 pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage};
 #[cfg(feature = "std")]
 pub use reflection::{FieldDescriptorShort, MessageReflection, StringPtr};
-pub use types::FieldNumber;
-pub use types::{EnumValue, ExtensionNumberType};
+pub use types::{EnumValue, ExtensionNumberType, FieldNumber, TypedFieldNumber};
 #[cfg(feature = "std")]
 pub use unknown::UnknownFieldSet;
 #[cfg(feature = "std")]

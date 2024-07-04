@@ -11,8 +11,9 @@ use file::{LocalPath, LocalPathBuf};
 use media_web::camera_manager::{CameraFrameData, CameraManager, CameraSubscriber};
 use video::mp4::{self, MP4Builder, MP4BuilderOptions};
 
-use crate::tables::MEDIA_FRAGMENT_TABLE_TAG;
-use crate::{config::MachineConfigContainer, player::Player, protobuf_table::ProtobufDB};
+use crate::db::ProtobufDB;
+use crate::tables::MediaFragmentTable;
+use crate::{config::MachineConfigContainer, player::Player};
 
 const MAX_FRAGMENT_FRAMES: usize = 30 * 10; // 10 seconds at 30 fps.
 
@@ -210,10 +211,10 @@ impl CameraRecorder {
                     .unwrap();
                 let end_time = start_time + (user_time_range.end - user_time_range.start);
 
-                fragment_proto.set_start_time(start_time.as_millis() as u64);
-                fragment_proto.set_end_time(end_time.as_millis() as u64);
+                fragment_proto.set_start_time(start_time.as_micros() as u64);
+                fragment_proto.set_end_time(end_time.as_micros() as u64);
 
-                fragment_proto.set_relative_time(time_range.start.as_millis() as u64);
+                fragment_proto.set_relative_time(time_range.start.as_micros() as u64);
 
                 fragment_proto.set_init_data(init_data);
                 fragment_proto.set_data(data_proto);
@@ -221,7 +222,7 @@ impl CameraRecorder {
                 fragment_proto.set_mime_type(mp4_builder.mime_type()?);
 
                 self.db
-                    .insert(&MEDIA_FRAGMENT_TABLE_TAG, &fragment_proto)
+                    .insert::<MediaFragmentTable>(&fragment_proto)
                     .await?;
             }
         }
@@ -233,7 +234,7 @@ impl CameraRecorder {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64;
+            .as_micros() as u64;
 
         // TODO: Just hex encode the number.
         let path = camera_data_dir.join(format!("{}.mp4", timestamp));

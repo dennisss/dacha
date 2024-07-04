@@ -115,7 +115,7 @@ impl UdpSocket {
 
         let mut addr_buf = MessageHeaderSocketAddrBuffer::new();
 
-        let mut header = MessageHeaderMut::new(&data_slices, Some(&mut addr_buf));
+        let mut header = MessageHeaderMut::new(&data_slices, Some(&mut addr_buf), None);
 
         let n = {
             let op = ExecutorOperation::submit(IoUringOp::ReceiveMessage {

@@ -59,6 +59,48 @@ impl KeyEncoder {
         Ok((input, &[]))
     }
 
+    pub fn encode_u32(mut value: u32, inverted: bool, out: &mut Vec<u8>) {
+        if inverted {
+            value = !value;
+        }
+
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    pub fn decode_u32(input: &[u8], inverted: bool) -> Result<(u32, &[u8])> {
+        if input.len() < 4 {
+            return Err(err_msg("Expected at least 4 more bytes"));
+        }
+
+        let mut v = u32::from_be_bytes(*array_ref![input, 0, 4]);
+        if inverted {
+            v = !v;
+        }
+
+        Ok((v, &input[4..]))
+    }
+
+    pub fn encode_u64(mut value: u64, inverted: bool, out: &mut Vec<u8>) {
+        if inverted {
+            value = !value;
+        }
+
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    pub fn decode_u64(input: &[u8], inverted: bool) -> Result<(u64, &[u8])> {
+        if input.len() < 8 {
+            return Err(err_msg("Expected at least 8 more bytes"));
+        }
+
+        let mut v = u64::from_be_bytes(*array_ref![input, 0, 8]);
+        if inverted {
+            v = !v;
+        }
+
+        Ok((v, &input[8..]))
+    }
+
     /*
     TODO:
     Representing signed integers:
@@ -214,4 +256,11 @@ mod tests {
         run_encode_varuint_test(false);
         run_encode_varuint_test(true);
     }
+
+    /*
+    Fixed length numbers
+
+
+
+    */
 }

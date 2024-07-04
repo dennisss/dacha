@@ -35,6 +35,14 @@ message FileProto {
     ProgramSummaryProto program = 8;
 
     bool has_thumbnail = 9;
+
+    // Set on demand when looking up files via an RPC call.
+    FileUrls urls = 10;
+}
+
+message FileUrls {
+    string raw_url = 1;
+    string thumbnail_url = 2; 
 }
 
 message ProgramSummaryProto {

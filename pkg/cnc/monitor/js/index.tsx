@@ -6,6 +6,7 @@ import { MachinePage } from "./machine";
 import { MachinesPage } from "./machines";
 import { ModalContainerComponent } from "pkg/web/lib/modal";
 import { PageComponent, PageContext } from "./page";
+import { ProgramRunPage } from "./run";
 
 // TODO: Set a background-color: #fcfcfc on the body.
 
@@ -28,7 +29,13 @@ const ROUTES = [
         render: (path: string, params: PathParams, context: PageContext) => {
             return <MachinePage id={params['id']} context={context} />;
         }
-    }
+    },
+    {
+        path: '/ui/machines/:machine_id/runs/:run_id',
+        render: (path: string, params: PathParams, context: PageContext) => {
+            return <ProgramRunPage machine_id={params['machine_id']} run_id={params['run_id']} context={context} />;
+        }
+    },
 ]
 
 

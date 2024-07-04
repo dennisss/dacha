@@ -73,3 +73,112 @@
     animation: spin 2s linear infinite;
     -webkit-animation: spin 2s linear infinite;
 }
+
+.figure-series-button {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.figure-series-button:hover {
+    background-color: #eee;
+}
+
+.figure-tooltip {
+    position: absolute;
+    padding: 5px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    font-size: 12px;
+}
+
+.video-player {
+    user-select: none;
+}
+
+.video-player:not(.active) {
+    cursor: none;
+}
+
+.video-player video {
+    display: block;
+    width: 100%;
+}
+
+.video-player.active video {
+    cursor: pointer;
+}
+
+
+.video-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 0 5px;
+    text-shadow: 0 0 2px rgba(0, 0, 0, .5);
+    transition: opacity .25s cubic-bezier(0, 0, .2, 1);
+    color: #fff;
+    font-size: 0;
+    opacity: 0;
+}
+
+.video-player.active .video-controls {
+    opacity: 1;
+}
+
+.video-controls-gradient {
+    background: rgb(0, 0, 0);
+    background: linear-gradient(0deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 100%);
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+}
+
+.video-controls-seek-bar {
+    width: 100%;
+    height: 5px;
+    /* extra padding at the top to make the bar more easily clickable*/
+    padding-top: 20px;
+    /* z-index becomes above the gradient */
+    position: relative;
+}
+
+.video-player.active .video-controls-seek-bar {
+    cursor: pointer;
+}
+
+.video-controls-seek-bar>.bar {
+    width: 100%;
+    height: 5px;
+    background-color: #444;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+}
+
+.video-controls-button-bar {
+    /* z-index becomes above the gradient */
+    position: relative;
+}
+
+.video-controls-button-bar>div>div {
+    vertical-align: bottom;
+}
+
+
+.video-controls-button {
+    display: inline-block;
+    font-size: 24px;
+    width: 48px;
+    padding: 5px 5px 4px 5px;
+    text-align: center;
+}
+
+.video-player.active .video-controls-button {
+    cursor: pointer;
+}

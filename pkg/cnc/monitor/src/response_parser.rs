@@ -2,6 +2,7 @@
 
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
+use common::fixed::vec::FixedVec;
 
 // TODO: Allow either "error" or "errors"?
 regexp!(RESPONSE_STATUS_PREFIX => "^(?:(ok)|(error))(?:\\s|:|$)", "i");
@@ -21,11 +22,20 @@ regexp!(RPM_PATTERN => "^\\s*RPM");
 #[derive(Clone, Debug)]
 pub enum ResponseEvent {
     Ok,
-    Error { message: String },
-    Echo { message: String },
-    Capability { name: String, present: bool },
-    // TODO: Use a small vec/string
-    AxisValue { id: String, values: Vec<f32> },
+    Error {
+        message: String,
+    },
+    Echo {
+        message: String,
+    },
+    Capability {
+        name: String,
+        present: bool,
+    },
+    AxisValue {
+        id: String,
+        values: FixedVec<f32, 2>,
+    },
 }
 
 pub fn parse_response_line(
@@ -86,7 +96,7 @@ pub fn parse_response_line(
                 None => break,
             };
 
-            let mut values = vec![];
+            let mut values = FixedVec::new();
 
             let (v, rest) = parse_float(line)?;
             line = rest;

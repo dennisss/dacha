@@ -2,12 +2,13 @@ import React from "react";
 import { PageContext } from "../page";
 import { DeviceSelectorInput } from "../device_selector";
 import { run_machine_command } from "../rpc_utils";
-import { VideoPlayer } from "pkg/media/web/js/player";
 import { PropertiesTable } from "../properties_table";
 import { Button } from "pkg/web/lib/button";
 import { deep_copy } from "pkg/web/lib/utils";
 import { CardError } from "../card_error";
 import { Card } from "../card";
+import { VideoPlayer } from "pkg/web/lib/video";
+import { VideoSourceKind } from "pkg/web/lib/video/types";
 
 
 export class CamerasBox extends React.Component<{ machine: any, context: PageContext }> {
@@ -210,7 +211,10 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
 
                 {page == 'LIVE' ? (
                     <div>
-                        <VideoPlayer src={`/api/machines/${machine.id}/cameras/${camera.id}/stream`} />
+                        <VideoPlayer source={{
+                            kind: VideoSourceKind.Live,
+                            url: `/api/machines/${machine.id}/cameras/${camera.id}/stream`
+                        }} />
                     </div>
                 ) : null}
 

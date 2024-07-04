@@ -6,6 +6,14 @@ cargo run --bin builder -- build //pkg/cnc/monitor:app
 cargo run --bin cnc_monitor -- --rpc_port=8001 --web_port=8000 --local_data_dir=/tmp/cnc_data
 
 
+HTTP Paths:
+- '/', '/ui/.*' : Redirect to the HTML page
+- '/api' : Internally processed
+- '/assets' : Static non-private data linked with the
+    - TODO: Ideally disallow most things to be downloaded aside from legitate assets
+- '/data/'
+    - TODO: Limit me to just the files and camera data
+    - Eventually will require strict authentication
 
 */
 
@@ -22,7 +30,10 @@ use cnc_monitor_proto::cnc::MonitorIntoService;
 use common::map;
 use executor_multitask::RootResource;
 use file::{project_path, LocalPathBuf};
-use http::{static_file_handler::StaticFileBody, ServerHandler};
+use http::{
+    static_file_handler::{StaticFileBody, StaticFileHandler},
+    ServerHandler,
+};
 use parsing::ascii::AsciiString;
 use rpc_util::NamedPortArg;
 use web::WebServerHandler;
@@ -105,6 +116,7 @@ struct Args {
 struct HttpHandler {
     instance: Arc<MonitorImpl>,
     inner: WebServerHandler,
+    data_handler: StaticFileHandler,
 }
 
 impl HttpHandler {
@@ -155,6 +167,7 @@ impl HttpHandler {
                 .build();
         }
 
+        /*
         if let Some(mut params) = extract_path_params(path, "/api/files/:file_id/thumbnail") {
             let file_id = match params.remove("file_id").unwrap().parse::<u64>() {
                 Ok(v) => v,
@@ -174,6 +187,7 @@ impl HttpHandler {
                 .body(Box::new(body))
                 .build();
         }
+        */
 
         /*
         /api/files/:file_id/raw
@@ -230,6 +244,11 @@ impl HttpHandler {
     ) -> http::Response {
         if request.head.uri.path.as_str().starts_with("/api/") {
             return self.handle_api_request(request).await;
+        }
+
+        if let Some(path) = request.head.uri.path.as_str().strip_prefix("/data/") {
+            request.head.uri.path = AsciiString::new(&format!("/{}", path));
+            return self.data_handler.handle_request(request, context).await;
         }
 
         if request.head.uri.path.as_str().starts_with("/ui/") {
@@ -367,6 +386,7 @@ async fn main() -> Result<()> {
             let handler = HttpHandler {
                 instance: monitor,
                 inner: web_handler,
+                data_handler: StaticFileHandler::new(&args.local_data_dir),
             };
 
             let mut options = http::ServerOptions::default();

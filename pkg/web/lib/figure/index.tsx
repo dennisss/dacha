@@ -1,5 +1,5 @@
 import React from "react";
-import { Tooltip, TooltipData } from "./tooltip";
+import { Tooltip, TooltipData, TooltipDataContainer } from "./tooltip";
 import { Rect, Point, FigureOptions, EntityKind, LineGraphEntity, CircleEntity, LineEntity } from "./types";
 
 export interface FigureProps {
@@ -11,13 +11,11 @@ export interface FigureProps {
 
 interface FigureState {
     // Dimensions of the entire canvas.
-    canvas_height?: number,
-    canvas_width?: number,
+    canvas_height: number | null,
+    canvas_width: number | null,
 
     // Relative to the top-left corner of the canvas, the location of the coordinate system in which we will plot user points.
-    graph_rect?: Rect,
-
-    tooltip?: TooltipData
+    graph_rect: Rect | null,
 }
 
 export class Figure extends React.Component<FigureProps, FigureState> {
@@ -30,17 +28,18 @@ export class Figure extends React.Component<FigureProps, FigureState> {
     // If the user's mouse is hovering over the graph, then this will be the mouse position in the canvas coordinate system. 
     _mouse_canvas_pos?: Point = null;
 
-    state = {
-        canvas_height: null,
-        canvas_width: null,
-        graph_rect: null,
-        tooltip: null
-    };
+    // Since we re-draw the frame on componentDidUpdate, we update the tooltip in a second pass after that.
+    _tooltip_data = new TooltipDataContainer();
 
     constructor(props: FigureProps) {
         // TODO: Subscribe to window resize events.
-
         super(props);
+
+        this.state = {
+            canvas_height: null,
+            canvas_width: null,
+            graph_rect: null,
+        };
     }
 
     componentDidMount() {
@@ -52,8 +51,8 @@ export class Figure extends React.Component<FigureProps, FigureState> {
 
         let options = this.props.options;
 
-        let x_margin = options.margin.top + options.margin.bottom;
-        let y_margin = options.margin.left + options.margin.right;
+        let x_margin = options.margin.left + options.margin.right;
+        let y_margin = options.margin.top + options.margin.bottom;
 
         let canvas_height = -1;
         let canvas_width = -1;
@@ -192,9 +191,16 @@ export class Figure extends React.Component<FigureProps, FigureState> {
             this._ctx.fillText(tick.label, this.state.graph_rect.x - dims.width - 10, y_canvas + h / 2);
         })
 
+        let tooltip: TooltipData = {
+            position: { x: 0, y: 0 },
+            right_align: false,
+            x_value: '',
+            lines: []
+        }
+
         opts.entities.map((entity) => {
             if (entity.kind == EntityKind.LineGraph) {
-                this._draw_line_graph(entity);
+                this._draw_line_graph(entity, tooltip);
             } else if (entity.kind == EntityKind.Circle) {
                 this._draw_circle(entity);
             } else if (entity.kind == EntityKind.Line) {
@@ -204,49 +210,23 @@ export class Figure extends React.Component<FigureProps, FigureState> {
             }
         });
 
-
-        /*
-        if (closest_graph_pt !== null) {
-            let pt = this._to_canvas_pt(closest_graph_pt);
-
-            this._ctx.beginPath();
-            this._ctx.ellipse(pt.x, pt.y, 3, 3, 0, 0, 2 * Math.PI);
-            this._ctx.fill();
-
-
-            let position = {
-                x: this._mouse_canvas_pos.x + 20,
-                y: this._mouse_canvas_pos.y + 20
-            }
-
-            this.setState({
-                tooltip: {
-                    position,
-                    right_align: false,
-
-                    x_value: round_digits(closest_graph_pt.x, 2) + '',
-
-                    lines: [
-                        {
-                            label: 'Sensor 1',
-                            y_value: round_digits(closest_graph_pt.y, 2) + '',
-                            color: '#4af'
-                        }
-                    ]
-                }
-            })
-        } else if (this.state.tooltip) {
-            this.setState({ tooltip: null })
+        if (tooltip.lines.length == 0) {
+            tooltip = null;
         }
-        */
+
+        this._tooltip_data.update(tooltip);
 
         this._ctx.restore();
     }
 
-    _draw_line_graph(line: LineGraphEntity) {
+    _draw_line_graph(line: LineGraphEntity, tooltip: TooltipData) {
+        if (line.width === 0) {
+            return;
+        }
+
         this._ctx.strokeStyle = line.color;
         this._ctx.fillStyle = line.color;
-        this._ctx.lineWidth = 1;
+        this._ctx.lineWidth = line.width || 1;
 
         this._ctx.beginPath();
         this._ctx.rect(this.state.graph_rect.x, this.state.graph_rect.y, this.state.graph_rect.width, this.state.graph_rect.height);
@@ -257,17 +237,18 @@ export class Figure extends React.Component<FigureProps, FigureState> {
         let closest_graph_pt = null;
         let closest_distance = 10; // Must be within 10 pixels to allow a match at all.
 
-        let is_first = true;
+        let last_x = null;
 
         line.data.map((graph_pt) => {
             let pt = this._to_canvas_pt(graph_pt);
 
-            if (is_first) {
+            if (last_x == null || (line.max_interpolation_gap && Math.abs(last_x - graph_pt.x) > line.max_interpolation_gap)) {
                 this._ctx.moveTo(pt.x, pt.y);
-                is_first = false;
             } else {
                 this._ctx.lineTo(pt.x, pt.y);
             }
+
+            last_x = graph_pt.x;
 
             // TODO: Also require a minimum y match.
             if (this._mouse_canvas_pos !== null) {
@@ -279,6 +260,33 @@ export class Figure extends React.Component<FigureProps, FigureState> {
             }
         });
         this._ctx.stroke();
+
+        if (closest_graph_pt != null) {
+            let pt = this._to_canvas_pt(closest_graph_pt);
+
+            this._ctx.beginPath();
+            this._ctx.ellipse(pt.x, pt.y, 3, 3, 0, 0, 2 * Math.PI);
+            this._ctx.fill();
+
+
+            // NOTE: We assume that all the lines are aligned to the same x interval, so we just pick the x position based on the first point.
+            if (tooltip.lines.length == 0) {
+
+                // NOTE: The rounding here is meant to reduce the update rate.
+                tooltip.position = {
+                    x: Math.round(this._mouse_canvas_pos.x) + 20,
+                    y: Math.round(this._mouse_canvas_pos.y) + 20
+                };
+
+                tooltip.x_value = (this.props.options.x_axis.renderer)(closest_graph_pt.x);
+            }
+
+            tooltip.lines.push({
+                label: line.label,
+                y_value: (this.props.options.y_axis.renderer)(closest_graph_pt.y),
+                color: line.color
+            });
+        }
     }
 
     _draw_circle(circle: CircleEntity) {
@@ -355,7 +363,7 @@ export class Figure extends React.Component<FigureProps, FigureState> {
                         style={{ cursor: 'pointer' }} />
                 </div>
 
-                {this.state.tooltip ? <Tooltip data={this.state.tooltip} /> : null}
+                <Tooltip data={this._tooltip_data} />
             </div>
         );
     }

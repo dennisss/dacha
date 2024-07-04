@@ -114,10 +114,10 @@ export class Channel {
     }
 
     async call(
-        service_name: String, method_name: String, request: any
+        service_name: String, method_name: String, request: any, options: RequestOptions = {}
     ): Promise<{ status: Status, responses: any[], trailers: Map<String, String> }> {
 
-        let res = this.call_streaming(service_name, method_name, request);
+        let res = this.call_streaming(service_name, method_name, request, options);
 
         let responses = [];
         while (true) {

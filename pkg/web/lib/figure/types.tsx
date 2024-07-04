@@ -67,6 +67,11 @@ export interface LineGraphEntity {
     label: string;
     color: string;
 
+    width?: number;
+
+    // If present, the maximum 'x' distance between two poitns for drawing a line.
+    max_interpolation_gap?: number;
+
     // TODO: Should always be sorted by x coordinate.
     data: Point[];
 }

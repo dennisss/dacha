@@ -344,7 +344,7 @@ impl Compiler {
                     .get(&file_index)
                     // This may fail in cases where we didn't directly import the proto (transitive
                     // dependency).
-                    .expect("Type not in an imported proto");
+                    .expect(&format!("Type not in an imported proto: {}", absolute_name));
 
                 (
                     imported_proto.proto.proto().package(),
@@ -1528,10 +1528,11 @@ impl Compiler {
         {
             for field in msg.fields() {
                 lines.add(format!(
-                    "pub const {field_name}_FIELD_NUM: {pkg}::FieldNumber = {num};",
+                    "pub const {field_name}_FIELD_NUM: {pkg}::TypedFieldNumber<{typ}> = {pkg}::TypedFieldNumber::new({num});",
                     field_name = escape_rust_identifier(field.proto().name()).to_uppercase(),
                     pkg = self.options.runtime_package,
-                    num = field.proto().number()
+                    num = field.proto().number(),
+                    typ = fullname
                 ));
             }
 

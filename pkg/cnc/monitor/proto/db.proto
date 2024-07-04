@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package cnc;
+
+
+message TableSchema {
+    uint32 table_id = 1;
+    string table_name = 2;
+}

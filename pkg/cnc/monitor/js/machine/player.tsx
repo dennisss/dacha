@@ -52,12 +52,12 @@ class PlayerLoaded extends React.Component<PlayerBoxProps> {
         }
 
         let can_play = state == 'STOPPED' || state == 'DONE' || state == 'PAUSED' || state == 'ERROR';
-        let is_playing = state == 'PLAYING';
+        let is_playing = state == 'PLAYING' || state == 'STARTING';
 
-        let can_pause = state == 'PLAYING';
+        let can_pause = state == 'PLAYING' || state == 'STARTING';
         let is_paused = state == 'PAUSING' || state == 'PAUSED';
 
-        let can_stop = state == 'PLAYING' || state == 'PAUSING' || state == 'PAUSED';
+        let can_stop = state == 'PLAYING' || state == 'PAUSING' || state == 'PAUSED' || state == 'STARTING';
         let is_stopped = state == 'DONE' || state == 'STOPPED' || state == 'ERROR';
 
         let properties = get_player_properties(machine);
@@ -98,11 +98,15 @@ class PlayerLoaded extends React.Component<PlayerBoxProps> {
 }
 
 export function get_player_properties(machine: any, thin: boolean = false): Property[] {
+    return get_program_run_properties(machine.state.running_program, machine.state.loaded_program.file, thin);
+}
+
+export function get_program_run_properties(run: any | null, file: any | null, thin: boolean = false): Property[] {
 
     // TODO: Dedup this.
     let state = 'STOPPED';
-    if (machine.state.running_program) {
-        state = machine.state.running_program.status;
+    if (run) {
+        state = run.status;
     }
     let is_stopped = state == 'DONE' || state == 'STOPPED' || state == 'ERROR';
 
@@ -110,7 +114,7 @@ export function get_player_properties(machine: any, thin: boolean = false): Prop
     let properties = [
         {
             name: 'File:',
-            value: machine.state.loaded_program.file.name
+            value: file.name
         },
     ];
 
@@ -126,21 +130,19 @@ export function get_player_properties(machine: any, thin: boolean = false): Prop
         });
     }
 
-    if (machine.state.running_program) {
-        let r = machine.state.running_program;
-
+    if (run) {
         // TODO: Switch to a CardError?
-        if (r.status_message) {
+        if (run.status_message) {
             properties.push({
                 name: 'Message:',
-                value: r.status_message.text || ''
+                value: run.status_message.text || ''
             });
         }
 
-        let percentage = Math.round((r.progress || 0) * 100);
+        let percentage = Math.round((run.progress || 0) * 100);
 
-        let line_number = r.line_number || 0;
-        let num_lines = machine.state.loaded_program.file.program.num_lines;
+        let line_number = run.line_number || 0;
+        let num_lines = file.program.num_lines;
 
         // TODO: bg-primary if DONE
         // TODO: bg-info is PAUSED
@@ -159,27 +161,16 @@ export function get_player_properties(machine: any, thin: boolean = false): Prop
             )
         });
 
+        // TODO: Start showing the wall time in addition to the playing time (by checking the segments.)
         {
-
-            let value = '<unknown>';
-            let start_time = timestamp_proto_to_millis(r.start_time);
-            if (r.end_time) {
-                let end_time = timestamp_proto_to_millis(r.end_time);
-                value = format_duration_secs((end_time - start_time) / 1000, TimeUnit.Minute);
-            } else {
-                let end_time = (new Date()).getTime();
-                value = format_duration_secs((end_time - start_time) / 1000, TimeUnit.Minute);
-            }
-
             properties.push({
                 name: 'Elapsed:',
-                value: value
+                value: run_elapsed_time(run)
             });
-
         }
 
-        if (!is_stopped && r.estimated_remaining_time) {
-            let v = format_duration_proto(r.estimated_remaining_time, TimeUnit.Minute);
+        if (!is_stopped && run.estimated_remaining_time) {
+            let v = format_duration_proto(run.estimated_remaining_time, TimeUnit.Minute);
 
             if (thin) {
                 properties[properties.length - 1].value += ' (' + v + ' remaining)';
@@ -193,6 +184,20 @@ export function get_player_properties(machine: any, thin: boolean = false): Prop
     }
 
     return properties;
+}
+
+export function run_elapsed_time(run: any): string {
+    let value = '<unknown>';
+    let start_time = timestamp_proto_to_millis(run.start_time);
+    if (run.end_time) {
+        let end_time = timestamp_proto_to_millis(run.end_time);
+        value = format_duration_secs((end_time - start_time) / 1000, TimeUnit.Minute);
+    } else {
+        let end_time = (new Date()).getTime();
+        value = format_duration_secs((end_time - start_time) / 1000, TimeUnit.Minute);
+    }
+
+    return value;
 }
 
 class PlayerButton extends React.Component<{ active: boolean, disabled: boolean, onClick: any }> {

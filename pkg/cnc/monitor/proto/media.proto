@@ -24,10 +24,10 @@ message MediaStream {
 message MediaFragment {
     fixed64 camera_id = 1;
 
-    // Start time in milliseconds relative to the start of the stream.
+    // Start time in microseconds relative to the start of the stream.
     uint64 start_time = 2;
 
-    // End time in milliseconds relative to the start of the stream.
+    // End time in microseconds relative to the start of the stream.
     uint64 end_time = 3;
 
     // If present, location of the init data needed to initialize the codecs used in this fragment. If not present, then this fragment can be played independently. 
@@ -36,7 +36,8 @@ message MediaFragment {
     // Location of the main media data unique to this fragment.
     MediaSegmentData data = 5;
 
-    // Start time of this fragment relative to the overall MP4 stream in which it was generated (if not the same as start_time).
+    // Start time of this fragment relative to the overall MP4 stream in which it was generated.
+    // When there is no init_data, this should be 0.
     uint64 relative_time = 6;
 
     // MIME type for the data. This will be constant across all fragments sharing the same init data. 
@@ -51,6 +52,10 @@ message MediaSegmentData {
     // Byte offsets within the segment file between which this data is located.
     // If not present, then we are referencing the whole file.
     ByteRange byte_range = 2;
+
+    // URL which can be GET requested to get the contents of the segment.
+    // Populated when this segment is queried by a client over RPC.
+    string segment_url = 3;
 }
 
 message ByteRange {

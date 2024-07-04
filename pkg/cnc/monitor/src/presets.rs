@@ -72,9 +72,9 @@ pub fn get_prusa_i3_mk3sp_config() -> Result<MachineConfig> {
             { id: "E0@" type: FAN_PWM_VALUE },
             { id: "PRN1@" type: FAN_PWM_VALUE },
 
-            { id: "T" type: HEATER name: "Hotend"  },
+            { id: "T" type: HEATER name: "Hotend" collect { min_value: 30 } },
             { id: "T0" type: HEATER name: "T0" hide: true  },
-            { id: "B" type: HEATER name: "Bed"  },
+            { id: "B" type: HEATER name: "Bed" collect { min_value: 30 }  },
             { id: "@" type: GENERIC_SENSOR name: "Hotend Power" },
             { id: "B@" type: GENERIC_SENSOR name: "Bed Power" },
             { id: "P" type: GENERIC_SENSOR name: "PINDAv2" },

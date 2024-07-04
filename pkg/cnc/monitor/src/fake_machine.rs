@@ -12,7 +12,7 @@ use crate::serial_receiver_buffer::SerialReceiverBuffer;
 
 const AMBIENT_TEMPERATURE: f32 = 25.0;
 const MAX_TEMPERATURE: f32 = 400.0;
-const TEMP_CHANGE_PER_SECOND: f32 = 10.0;
+const TEMP_CHANGE_PER_SECOND: f32 = 4.0;
 const PART_COOLING_FAN_MAX_RPM: f32 = 4000.0;
 
 /// Fake machine implementation which can be interacted with over an in-process
@@ -562,7 +562,9 @@ impl FakeMachine {
     }
 
     fn next_temperature(current_temp: f32, target_temp: f32, dt: f32) -> f32 {
-        let mut t = current_temp + (target_temp - current_temp) * dt;
+        // TODO: Add some smoothing when we approach the target.
+        let mut t =
+            current_temp + (target_temp - current_temp).signum() * TEMP_CHANGE_PER_SECOND * dt;
         t = f32::min(t, MAX_TEMPERATURE);
         t = f32::max(t, AMBIENT_TEMPERATURE);
 

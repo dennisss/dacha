@@ -20,13 +20,14 @@ use protobuf::Message;
 use crate::camera_controller::CameraController;
 use crate::change::{ChangeDistributer, ChangeEvent};
 use crate::config::MachineConfigContainer;
+use crate::db::{ProtobufDB, Query, QueryAllOf, QueryOperation, QueryValue};
 use crate::devices::*;
 use crate::files::{FileManager, FileReference};
+use crate::metric::MetricStore;
 use crate::player::Player;
 use crate::program::ProgramSummary;
-use crate::protobuf_table::ProtobufDB;
 use crate::serial_controller::DEFAULT_COMMAND_TIMEOUT;
-use crate::tables::{FILE_TABLE_TAG, MACHINE_TABLE_TAG};
+use crate::tables::{FileTable, MachineTable, MediaFragmentTable, ProgramRunTable};
 use crate::{presets::get_machine_presets, serial_controller::SerialController};
 
 const RETRY_BACKOFF: Duration = Duration::from_secs(10);
@@ -54,6 +55,7 @@ struct Shared {
     camera_manager: Arc<CameraManager>,
     db: Arc<ProtobufDB>,
     files: FileManager,
+    metric_store: MetricStore,
     state: AsyncMutex<State>,
     force_reconcile: channel::Sender<()>,
 }
@@ -210,7 +212,7 @@ impl MonitorImpl {
             config_presets.push(fake_config);
         }
 
-        let machines = db.list(&MACHINE_TABLE_TAG).await?;
+        let machines = db.list::<MachineTable>().await?;
         for machine in machines {
             let preset = config_presets
                 .iter()
@@ -237,6 +239,9 @@ impl MonitorImpl {
 
         let (reconcile_sender, reconcile_receiver) = channel::bounded(1);
 
+        // TODO: Add this and the database to the watched resources.
+        let metric_store = MetricStore::new(db.clone());
+
         let shared = Arc::new(Shared {
             local_data_dir: local_data_dir.to_owned(),
             changes,
@@ -244,6 +249,7 @@ impl MonitorImpl {
             state: AsyncMutex::new(state),
             db,
             files,
+            metric_store,
             force_reconcile: reconcile_sender,
             camera_manager: Arc::new(CameraManager::default()),
         });
@@ -457,7 +463,7 @@ impl MonitorImpl {
                             let mut machine_proto = MachineProto::default();
                             machine_proto.set_id(id);
                             machine_proto.set_config(diff.clone());
-                            shared.db.insert(&MACHINE_TABLE_TAG, &machine_proto).await?;
+                            shared.db.insert::<MachineTable>(&machine_proto).await?;
                         }
 
                         state.machines.insert(id, MachineEntry::new(id, config));
@@ -560,6 +566,7 @@ impl MonitorImpl {
                 reader,
                 writer,
                 shared.changes.publisher(),
+                &shared.metric_store,
             )
             .await?,
         );
@@ -1162,7 +1169,7 @@ impl MonitorImpl {
                     machine_proto.set_config(diff);
                     self.shared
                         .db
-                        .insert(&MACHINE_TABLE_TAG, &machine_proto)
+                        .insert::<MachineTable>(&machine_proto)
                         .await?;
                 }
 
@@ -1302,6 +1309,7 @@ impl MonitorImpl {
                     file_ref.clone(),
                     serial_controller.clone(),
                     shared.changes.publisher(),
+                    shared.db.clone(),
                 )
                 .await?,
             );
@@ -1403,6 +1411,170 @@ impl MonitorImpl {
 
         media_web::camera_stream::respond_with_camera_stream(subscriber).await
     }
+
+    pub async fn get_camera_playback_impl(
+        &self,
+        request: &GetCameraPlaybackRequest,
+    ) -> Result<GetCameraPlaybackResponse> {
+        // TODO: Validate that the camera is defined in the config.
+
+        let mut start_time = request.start_time();
+
+        // Look up extra fragments before the first one since we index by the
+        // start_time, but a fragment may have started before the requested start time.
+        let start_buffer = Duration::from_secs(20).as_micros() as u64;
+        if start_time >= start_buffer {
+            start_time -= start_buffer;
+        }
+
+        let mut query = Query::default();
+        let mut a = QueryAllOf::default();
+        a.and(
+            MediaFragment::CAMERA_ID_FIELD_NUM.raw(),
+            QueryOperation::Eq(QueryValue::U64(request.camera_id())),
+        )
+        .and(
+            MediaFragment::START_TIME_FIELD_NUM.raw(),
+            QueryOperation::LessThan(QueryValue::U64(request.end_time())),
+        )
+        .and(
+            MediaFragment::START_TIME_FIELD_NUM.raw(),
+            QueryOperation::GreaterThanOrEqual(QueryValue::U64(start_time)),
+        );
+        query.or(a);
+
+        let mut fragments = self.shared.db.query::<MediaFragmentTable>(&query).await?;
+
+        let mut out = GetCameraPlaybackResponse::default();
+        for mut fragment in fragments.into_iter().rev() {
+            // TODO: Filter any fragments completely outside of the time range (ideally in
+            // the database layer)
+
+            self.add_segment_urls(fragment.camera_id(), fragment.data_mut());
+
+            if fragment.has_init_data() {
+                self.add_segment_urls(fragment.camera_id(), fragment.init_data_mut());
+            }
+
+            out.add_fragments(fragment);
+        }
+
+        Ok(out)
+    }
+
+    // TODO: Dedup this path logic.
+    fn add_segment_urls(&self, camera_id: u64, data: &mut MediaSegmentData) {
+        data.set_segment_url(format!(
+            "/data/camera/{:08x}/{}.mp4",
+            camera_id,
+            data.segment_id()
+        ));
+    }
+
+    pub async fn get_run_history_impl(
+        &self,
+        request: &GetRunHistoryRequest,
+    ) -> Result<GetRunHistoryResponse> {
+        // TODO: Allow retrieving a single run.
+
+        let mut query = Query::default();
+        let mut a = QueryAllOf::default();
+        a.and(
+            ProgramRun::MACHINE_ID_FIELD_NUM.raw(),
+            QueryOperation::Eq(QueryValue::U64(request.machine_id())),
+        );
+        query.or(a);
+
+        let runs = self.shared.db.query::<ProgramRunTable>(&query).await?;
+
+        let mut out = GetRunHistoryResponse::default();
+        for mut run in runs {
+            // TODO: Must verify it is the not-found error.
+            if let Ok(file_ref) = self.shared.files.lookup(run.file_id()) {
+                run.set_file(file_ref.proto_with_urls());
+            }
+
+            out.add_runs(run);
+        }
+
+        Ok(out)
+    }
+
+    pub async fn query_metric_impl(
+        &self,
+        request: &QueryMetricRequest,
+        response: &mut rpc::ServerStreamResponse<'_, QueryMetricResponse>,
+    ) -> Result<()> {
+        // TODO: NEed to eventually clean up any unused streams.
+        let mut streams = vec![];
+        for resource in request.resource() {
+            streams.push(self.shared.metric_store.stream(resource).await?);
+        }
+
+        let mut start_time = SystemTime::UNIX_EPOCH + Duration::from_micros(request.start_time());
+
+        // TODO: Need to compress values.
+
+        loop {
+            let end_time = {
+                if request.has_end_time() {
+                    SystemTime::UNIX_EPOCH + Duration::from_micros(request.end_time())
+                } else {
+                    SystemTime::now()
+                }
+            };
+
+            let mut out = QueryMetricResponse::default();
+
+            // TODO: Need a concept of a waterline (the largest time at which we are
+            // guaranteed to probably have all data). Note that if we are dealing with
+            // streams originating from single tasks, then we can get precise waterlines
+            // quickly if the collection thread prioritizes dumping oldest samples first.
+            out.set_end_time(
+                end_time
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_micros() as u64,
+            );
+
+            // TODO: Parallelize.
+            // TODO: Compress timestamps and only send them once in this aligned mode.
+            for stream in &streams {
+                let mut out = out.new_streams();
+
+                // TODO: To make the aligned time points continous, we need to allow for some
+                // time window overlap with the previous query.
+                let samples = stream
+                    .query(
+                        start_time,
+                        end_time,
+                        if request.has_alignment() {
+                            Some(Duration::from_micros(request.alignment()))
+                        } else {
+                            None
+                        },
+                    )
+                    .await?;
+
+                for mut sample in samples {
+                    sample.clear_resource_key();
+                    out.add_samples(sample);
+                }
+            }
+
+            response.send(out).await?;
+
+            if request.has_end_time() {
+                break;
+            }
+
+            start_time = end_time;
+
+            executor::sleep(Duration::from_secs(10)).await?;
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -1448,6 +1620,33 @@ impl MonitorService for MonitorImpl {
         response: &mut rpc::ServerResponse<DeleteFileResponse>,
     ) -> Result<()> {
         self.delete_file_impl(&request.value).await?;
+        Ok(())
+    }
+
+    async fn GetCameraPlayback(
+        &self,
+        request: rpc::ServerRequest<GetCameraPlaybackRequest>,
+        response: &mut rpc::ServerResponse<GetCameraPlaybackResponse>,
+    ) -> Result<()> {
+        response.value = self.get_camera_playback_impl(&request.value).await?;
+        Ok(())
+    }
+
+    async fn GetRunHistory(
+        &self,
+        request: rpc::ServerRequest<GetRunHistoryRequest>,
+        response: &mut rpc::ServerResponse<GetRunHistoryResponse>,
+    ) -> Result<()> {
+        response.value = self.get_run_history_impl(&request.value).await?;
+        Ok(())
+    }
+
+    async fn QueryMetric(
+        &self,
+        request: rpc::ServerRequest<QueryMetricRequest>,
+        response: &mut rpc::ServerStreamResponse<QueryMetricResponse>,
+    ) -> Result<()> {
+        self.query_metric_impl(&request.value, response).await?;
         Ok(())
     }
 }

@@ -15,18 +15,25 @@ May make sense to group things be:
 
 */
 
-message MetricResourceEntry {
-    fixed64 key = 1;
+message MetricStreamProto {
+    fixed64 resource_key = 1;
     MetricResource resource = 2;
 }
 
+// TODO: Split up the concept of resource and metric descriptor 
 message MetricResource {
     fixed64 machine_id = 1;
-    string axis = 2;
+    MetricKind kind = 2; 
+    string axis_id = 3;
+    uint32 value_index = 4;
 }
 
-message MetricValue {
-    // TODO: Ideally we would still keep similar data together (e.g. data from the same source machine)
+enum MetricKind {
+    UNKNOWN = 0;
+    MACHINE_AXIS_VALUE = 1;
+}
+
+message MetricSample {
     fixed64 resource_key = 1;
 
     // Time at which this measurement was made (in microseconds since unix epoch)

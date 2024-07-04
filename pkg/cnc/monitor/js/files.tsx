@@ -232,6 +232,16 @@ class FileBox extends React.Component<FileBoxProps> {
         done();
     }
 
+    _on_click_download = (done) => {
+        done();
+
+        let file = this.props.file;
+        var link = document.createElement('a');
+        link.href = file.urls.raw_url;
+        link.download = file.name;
+        link.click();
+    }
+
     _on_click_reprocess = async (done: any) => {
         // TODO:
     }
@@ -295,8 +305,8 @@ class FileBox extends React.Component<FileBoxProps> {
             <div style={{ padding: 10, border: '1px solid #888', marginBottom: 10 }}>
                 <div style={{ display: "flex" }}>
                     <div style={{ flexShrink: 1 }}>
-                        {file['has_thumbnail'] ? (
-                            <img src={'/api/files/' + file['id'] + '/thumbnail'} style={{ width: 200 }} />
+                        {file.has_thumbnail ? (
+                            <img src={file.urls.thumbnail_url} style={{ width: 200 }} />
                         ) : (
                             <div style={{ width: 200, height: 200 * (9 / 16), backgroundColor: "#ccc" }}></div>
                         )}
@@ -308,7 +318,7 @@ class FileBox extends React.Component<FileBoxProps> {
 
                     <div style={{ flexShrink: 1 }}>
                         <Button preset="primary" onClick={this._on_click_load} style={button_style} disabled={!ready}>Load</Button>
-                        <Button preset="light" onClick={() => { }} style={button_style} disabled={!ready}>Download</Button>
+                        <Button preset="light" onClick={this._on_click_download} style={button_style} disabled={!ready}>Download</Button>
                         <Button preset="light" onClick={this._on_click_delete} style={button_style}>Delete</Button>
                         <Button preset="link" onClick={this._on_click_reprocess} disabled={!ready} style={button_style}>Re-process</Button>
 

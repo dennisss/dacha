@@ -10,6 +10,8 @@ import { SettingsComponent } from "./settings";
 import { CamerasBox } from "./camera";
 import { Title } from "pkg/web/lib/title";
 import { Navbar } from "../navbar";
+import { HistoryComponent } from "./history";
+import { MetricsBox } from "./metrics";
 
 interface MachinePageProps {
     id: string
@@ -58,7 +60,7 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
             },
             {
                 name: 'History',
-                view: <div></div>
+                view: <HistoryComponent machine={machine} context={this.props.context} />
             },
             {
                 name: 'Settings',
@@ -87,6 +89,7 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
                         </div>
                         <div className="col col-md-6">
                             <PositionBox machine={machine} context={this.props.context} />
+                            <MetricsBox machine={machine} context={this.props.context} />
                         </div>
                         <div className="col col-md-3">
                             <div style={{ marginBottom: 15 }}>

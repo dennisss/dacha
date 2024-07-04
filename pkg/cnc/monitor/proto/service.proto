@@ -6,6 +6,9 @@ import "google/protobuf/timestamp.proto";
 import "pkg/cnc/monitor/proto/machine_config.proto";
 import "pkg/cnc/monitor/proto/machine.proto";
 import "pkg/cnc/monitor/proto/file.proto";
+import "pkg/cnc/monitor/proto/media.proto";
+import "pkg/cnc/monitor/proto/metric.proto";
+import "pkg/cnc/monitor/proto/run.proto";
 
 service Monitor {
     // This will always return one response message immediately and may follow up with more if
@@ -20,6 +23,62 @@ service Monitor {
     rpc StartFileUpload (StartFileUploadRequest) returns (StartFileUploadResponse);
 
     rpc DeleteFile (DeleteFileRequest) returns (DeleteFileResponse);
+
+    rpc GetCameraPlayback (GetCameraPlaybackRequest) returns (GetCameraPlaybackResponse);
+
+    rpc GetRunHistory (GetRunHistoryRequest) returns (GetRunHistoryResponse);
+
+    rpc QueryMetric (QueryMetricRequest) returns (stream QueryMetricResponse);
+}
+
+message GetCameraPlaybackRequest {
+    fixed64 machine_id = 1;
+
+    fixed64 camera_id = 2;
+
+    // Start time in microseconds since epoch.
+    uint64 start_time = 3;
+
+    // End time in microseconds since epoch
+    uint64 end_time = 4;
+}
+
+message GetCameraPlaybackResponse {
+    repeated MediaFragment fragments = 1;
+}
+
+message GetRunHistoryRequest {
+    fixed64 machine_id = 1;
+}
+
+message GetRunHistoryResponse {
+    repeated ProgramRun runs = 1;
+}
+
+message QueryMetricRequest {
+    repeated MetricResource resource = 1;
+
+    // Start time in microseconds since epoch.
+    optional uint64 start_time = 2;
+
+    // End time in microseconds since epoch.
+    // If not set, continously get new entries.
+    optional uint64 end_time = 3;
+
+    // If set, sample data at an interval of this number of microseconds since epoch.
+    // Specifically we will emit the nearest point to each time or none if there no point within 'alignment / 2' of a time.
+    optional uint64 alignment = 4;
+}
+
+message QueryMetricResponse {
+    uint64 end_time = 1;
+
+    message Stream {
+        repeated MetricSample samples = 1;
+    }
+
+    // This will contain one entry per requested resource.
+    repeated Stream streams = 2;
 }
 
 message ReadSerialLogRequest {

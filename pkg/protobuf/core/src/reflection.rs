@@ -17,7 +17,7 @@ use crate::extension::ExtensionSet;
 use crate::message::Enum;
 use crate::types::FieldNumber;
 use crate::unknown::UnknownFieldSet;
-use crate::Message;
+use crate::{Message, WireError, WireResult};
 
 // TODO: Rename to align with the protobuf types.
 pub enum Reflection<'a> {
@@ -55,6 +55,71 @@ pub enum ReflectionMut<'a> {
                                           * a new default value.
                                           * TODO: Support controlling presence with reflection?
                                           * Option(Option<&'a mut dyn Reflect>) */
+}
+
+impl<'a> ReflectionMut<'a> {
+    pub fn clone_from<'b>(&mut self, refl: Reflection<'b>) -> WireResult<()> {
+        match self {
+            ReflectionMut::F32(v) => {
+                match refl {
+                    Reflection::F32(y) => **v = *y,
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::F64(v) => {
+                match refl {
+                    Reflection::F64(y) => **v = *y,
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::I32(v) => {
+                match refl {
+                    Reflection::I32(y) => **v = *y,
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::I64(v) => {
+                match refl {
+                    Reflection::I64(y) => **v = *y,
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::U32(v) => {
+                match refl {
+                    Reflection::U32(y) => **v = *y,
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::U64(v) => {
+                match refl {
+                    Reflection::U64(y) => **v = *y,
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::Bool(v) => {
+                match refl {
+                    Reflection::Bool(y) => **v = *y,
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::String(v) => {
+                match refl {
+                    Reflection::String(y) => {
+                        v.clear();
+                        v.push_str(y);
+                    }
+                    _ => return Err(WireError::UnexpectedWireType.into()),
+                };
+            }
+            ReflectionMut::Bytes(_) => todo!(),
+            ReflectionMut::Repeated(_) => todo!(),
+            ReflectionMut::Message(_) => todo!(),
+            ReflectionMut::Enum(_) => todo!(),
+            ReflectionMut::Set(_) => todo!(),
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]

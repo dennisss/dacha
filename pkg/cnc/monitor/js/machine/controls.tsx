@@ -73,7 +73,6 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
                                     <th>Work Position</th>
                                     <th>Machine Position</th>
                                 </tr>
-
                             </thead>
                             <tbody>
                                 {machine.config.axes.map((axis) => {
@@ -83,6 +82,7 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
 
                                     let machine_pos = axis_values[axis.id][1];
 
+                                    // TODO: Render all the numbers at fixed precision and with right alignment.
                                     return (
                                         <tr key={axis.id}>
                                             <td>{axis.name || axis.id}</td>
@@ -228,15 +228,18 @@ class JogButtons extends React.Component<{ machine: any, context: PageContext }>
                 </div>
 
                 {/* TODO: Hide if not a milling machine */}
-                <div style={{ width: 140, display: 'inline-block', marginRight: 10 }}>
-                    <div style={{ fontSize: '0.8em' }}>
-                        Spindle (RPM):
+                {false ? (
+                    <div style={{ width: 140, display: 'inline-block', marginRight: 10 }}>
+                        <div style={{ fontSize: '0.8em' }}>
+                            Spindle (RPM):
+                        </div>
+                        <div className="input-group mb-3">
+                            <input type="text" className="form-control" placeholder="10000" />
+                            <button className="btn btn-outline-secondary" type="button" id="button-addon2">x</button>
+                        </div>
                     </div>
-                    <div className="input-group mb-3">
-                        <input type="text" className="form-control" placeholder="10000" />
-                        <button className="btn btn-outline-secondary" type="button" id="button-addon2">x</button>
-                    </div>
-                </div>
+                ) : null}
+
             </div>
         );
     }
@@ -302,8 +305,6 @@ class TemperaturesBox extends React.Component<{ machine: any, context: PageConte
         return (
             <Card id="temps" header="Temperatures" style={{ marginBottom: 10 }}>
                 <CardBody>
-                    {/* <Figure /> */}
-
                     <div>
                         <table className="table" style={{ verticalAlign: 'baseline', margin: 0 }}>
                             <thead>

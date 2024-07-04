@@ -59,7 +59,26 @@ async fn main() -> Result<()> {
 
     let paint = Paint::color(Color::hex(0));
 
+    if text2.is_empty() {
     font_renderer.fill_text(0.0, height / 2.0, text, &font_style, &paint, &mut canvas)?;
+    } else {
+        font_renderer.fill_text(
+            0.0,
+            1.0 * height / 4.0,
+            text,
+            &font_style,
+            &paint,
+            &mut canvas,
+        )?;
+        font_renderer.fill_text(
+            0.0,
+            3.0 * height / 4.0,
+            text2,
+            &font_style,
+            &paint,
+            &mut canvas,
+        )?;
+    }
 
     canvas.drawing_buffer.show().await?;
 

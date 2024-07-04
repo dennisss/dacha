@@ -1,3 +1,4 @@
+use core::fmt::Debug;
 use core::iter::Iterator;
 use core::marker::PhantomData;
 use core::mem::zeroed;
@@ -148,6 +149,12 @@ impl<T, const LEN: usize> DerefMut for FixedVec<T, LEN> {
     }
 }
 
+impl<T, const LEN: usize> AsRef<[T]> for FixedVec<T, LEN> {
+    fn as_ref(&self) -> &[T] {
+        &*self
+    }
+}
+
 impl<T: Clone, const LEN: usize> Clone for FixedVec<T, LEN> {
     fn clone(&self) -> Self {
         let mut out = Self::new();
@@ -163,6 +170,12 @@ impl<T: PartialEq, const LEN: usize> PartialEq for FixedVec<T, LEN> {
     fn eq(&self, other: &Self) -> bool {
         // Use slice comparison.
         *self == *other
+    }
+}
+
+impl<T: Debug, const LEN: usize> Debug for FixedVec<T, LEN> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.as_ref().fmt(f)
     }
 }
 
