@@ -68,7 +68,7 @@ If your machine was defined in the presets directory, it will automatically conn
 
 Big picture of what the code looks like:
 
-![](images/architecture.png)
+![](images/architecture.jpg)
 
 ## References
 
