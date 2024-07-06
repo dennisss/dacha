@@ -3,8 +3,38 @@ import { PageContext } from "../page";
 import { Card, CardBody } from "../card";
 import { PropertiesTable } from "../properties_table";
 import { Button } from "pkg/web/lib/button";
+import { pick_machine } from "../machine_picker";
+import { Router } from "pkg/web/lib/router";
 
 export class ProgramRunFileBox extends React.Component<{ run: any, context: PageContext }> {
+
+    // TODO: Dedup this code.
+    _on_click_load = async (done: any) => {
+        done();
+
+        let ctx = this.props.context;
+
+        try {
+            let machine_id = await pick_machine(ctx.channel, this.props.run.machine_id);
+
+            let res = await ctx.channel.call('cnc.Monitor', 'RunMachineCommand', {
+                machine_id: machine_id,
+                load_program: {
+                    file_id: this.props.run.file_id
+                }
+            });
+
+            if (!res.status.ok()) {
+                throw res.status.toString();
+            }
+
+            Router.global().goto('/ui/machines/' + machine_id);
+
+        } catch (e) {
+            console.error(e);
+            // TODO: Make notification
+        }
+    }
 
     render() {
         let run = this.props.run;
@@ -42,7 +72,7 @@ export class ProgramRunFileBox extends React.Component<{ run: any, context: Page
                 <CardBody>
                     <PropertiesTable properties={properties} />
 
-                    <Button preset="outline-primary" style={{ width: '100%' }} onClick={() => { }}>
+                    <Button preset="outline-primary" style={{ width: '100%' }} onClick={this._on_click_load}>
                         Re-Load
                     </Button>
                 </CardBody>

@@ -24,6 +24,7 @@ message FileProto {
     // How much of the current state's work is done (from 0 to 1).
     float state_progress = 5;
 
+    // Time the file was uploaded. Measured as the time when the final byte was written to disk.
     google.protobuf.Timestamp upload_time = 6;
 
     // TODO: Implement me.
@@ -38,6 +39,10 @@ message FileProto {
 
     // Set on demand when looking up files via an RPC call.
     FileUrls urls = 10;
+
+    // When set in the READY state, this implies that the last attempt to process the file was
+    // unsuccessful.
+    string processing_error = 11;
 }
 
 message FileUrls {
@@ -59,6 +64,9 @@ message ProgramSummaryProto {
     optional float max_bed_temperature = 6;
 
     repeated string unique_commands = 8;
+
+    // Up to the first 5 errors seen while parsing the file.
+    repeated string first_failures = 9;
 }
 
 message ProgramToolSummary {

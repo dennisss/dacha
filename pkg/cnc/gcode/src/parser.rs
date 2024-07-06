@@ -1,10 +1,11 @@
 use base_error::*;
 
 use crate::decimal::Decimal;
+use crate::hints::*;
 
-/// Maximum of 2048 bytes per line if the larger line ending of '\r\n' is used.
+/// Maximum of 32768 bytes per line if the larger line ending of '\r\n' is used.
 /// 3d printer slicing software likes to put very large comments into the files.
-const MAX_LINE_LENGTH: usize = 2048 - 2;
+const MAX_LINE_LENGTH: usize = 32768 - 2;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Word {
@@ -75,6 +76,9 @@ pub struct Parser {
     /// Start position of the current line.
     line_offset: usize,
 
+    /// NOTE: This is reset to None at the start of each line.
+    line_hints: Option<WordValueHintLookup>,
+
     buffer: Vec<u8>,
 
     word_key: u8,
@@ -82,6 +86,7 @@ pub struct Parser {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ParserState {
+    /// We are waiting for the first character in a new line.
     StartOfLine,
 
     /// We are ignoring all bytes until we reach the next line.
@@ -105,6 +110,8 @@ enum ParserState {
     /// We have seen a starting quote and
     InWordQuotedValue,
 
+    InWordEndTerminatedValue,
+
     InParenComment,
 
     /// We are currently reading a semi-colon delimited comment into 'buffer'.
@@ -121,6 +128,7 @@ impl Parser {
             state: ParserState::StartOfLine,
             line_number: 1,
             line_offset: 0,
+            line_hints: None,
             buffer,
             word_key: 0,
             offset: 0,
@@ -140,12 +148,6 @@ impl Parser {
     }
 
     /// Parses more data from the input gcode stream.
-    ///
-    ///
-    /// Passing an empty 'data' parameter implies that all inputs have been
-    /// consumed and none will be received in the future. next() must be called
-    /// exactly once with an empty 'data' parameter to flush any partial parsing
-    /// that was done.
     ///
     /// Returns the next event emitted by the parser and the number of bytes
     /// consumed in the input data. Each call of next() will either emit an
@@ -190,20 +192,6 @@ impl Parser {
                 }
             }
 
-            // assert!(last_size != data.len());
-            // last_size = data.len();
-
-            // match
-
-            /*
-            TODO: Limit to 256 characters per line.
-
-            If it is too much
-
-            If we haven't fired an Error, fire one once for the line.
-
-            */
-
             match self.state {
                 ParserState::StartOfLine => {
                     // Skip whitespace
@@ -228,6 +216,7 @@ impl Parser {
                         event = Some(Event::EndLine);
                         self.line_number += 1;
                         self.line_offset = self.offset + i;
+                        self.line_hints = None;
                         self.state = ParserState::StartOfLine;
                         break;
                     }
@@ -247,6 +236,7 @@ impl Parser {
 
                     self.line_number += 1;
                     self.line_offset = self.offset + i;
+                    self.line_hints = None;
                     event = Some(Event::EndLine);
                     self.state = ParserState::StartOfLine;
                     break;
@@ -276,6 +266,16 @@ impl Parser {
                         i += 1;
                         self.state = ParserState::InWordStart;
                         self.word_key = c;
+
+                        if let Some(hints) = &self.line_hints {
+                            match hints(c) {
+                                WordValueTypeHint::Unknown => {}
+                                WordValueTypeHint::EndTerminatedString => {
+                                    self.state = ParserState::InWordEndTerminatedValue;
+                                    self.buffer.clear();
+                                }
+                            }
+                        }
                         continue;
                     }
 
@@ -364,6 +364,10 @@ impl Parser {
                     if Self::is_word_value_terminator(c) {
                         let value = {
                             if let Some(v) = Decimal::parse_complete(&self.buffer) {
+                                if let Some(h) = default_gcode_hints(self.word_key, v) {
+                                    self.line_hints = Some(h);
+                                }
+
                                 WordValue::RealValue(v)
                             } else {
                                 let s = match String::from_utf8(self.buffer.clone()) {
@@ -427,6 +431,30 @@ impl Parser {
                     i += 1;
                 }
 
+                ParserState::InWordEndTerminatedValue => {
+                    if c == b'\r' || c == b'\n' {
+                        self.state = ParserState::SkipLine;
+
+                        let s = match String::from_utf8(self.buffer.clone()) {
+                            Ok(v) => v,
+                            Err(_) => {
+                                event =
+                                    Some(Event::ParseError(ParseErrorKind::InvalidUTF8InString));
+                                break;
+                            }
+                        };
+
+                        event = Some(Event::Word(Word {
+                            key: self.word_key as char,
+                            value: WordValue::UnquotedString(s),
+                        }));
+                        break;
+                    }
+
+                    self.buffer.push(c);
+                    i += 1;
+                }
+
                 ParserState::InParenComment => {
                     // - It is an error to get a '(' while in a comment.
                     // - It is also an error to hit the end of a line without closing the comment.
@@ -482,10 +510,6 @@ impl Parser {
     pub fn current_line_number(&self) -> usize {
         self.line_number
     }
-
-    // pub fn offset(&self) -> usize {
-    //     self.data.len() - self.remaining.len()
-    // }
 }
 
 pub struct ParserIterator<'a, 'b> {
@@ -791,7 +815,7 @@ mod tests {
                         key: 'G',
                         value: WordValue::RealValue(1.into()),
                     }),
-                    Event::ParseError,
+                    Event::ParseError(ParseErrorKind::InvalidComponentKey),
                     Event::EndLine,
                 ],
             ),
@@ -885,12 +909,22 @@ mod tests {
             ),
             (
                 "N1 N2",
-                vec![Event::LineNumber(1), Event::ParseError, Event::EndLine],
+                vec![
+                    Event::LineNumber(1),
+                    Event::ParseError(ParseErrorKind::InvalidComponentKey),
+                    Event::EndLine,
+                ],
             ),
             ("N10000", vec![Event::LineNumber(10000), Event::EndLine]),
             ("N99999", vec![Event::LineNumber(99999), Event::EndLine]),
             ("N00010", vec![Event::LineNumber(10), Event::EndLine]),
-            ("N123456", vec![Event::ParseError, Event::EndLine]),
+            (
+                "N123456",
+                vec![
+                    Event::ParseError(ParseErrorKind::InvalidLineNumber),
+                    Event::EndLine,
+                ],
+            ),
             (
                 "XY",
                 vec![
@@ -935,8 +969,20 @@ mod tests {
                     Event::EndLine,
                 ],
             ),
-            ("(hello", vec![Event::ParseError, Event::EndLine]),
-            ("(hello\n", vec![Event::ParseError, Event::EndLine]),
+            (
+                "(hello",
+                vec![
+                    Event::ParseError(ParseErrorKind::UnterminatedComment),
+                    Event::EndLine,
+                ],
+            ),
+            (
+                "(hello\n",
+                vec![
+                    Event::ParseError(ParseErrorKind::UnterminatedComment),
+                    Event::EndLine,
+                ],
+            ),
             (
                 "g0x +0. 12 34y 7",
                 vec![
@@ -999,6 +1045,36 @@ mod tests {
                     Event::Word(Word {
                         key: 'X',
                         value: WordValue::RealValue("0.2".parse().unwrap()),
+                    }),
+                    Event::EndLine,
+                ],
+            ),
+            // This requires a big edge case in the code to handle since it is really stretching
+            // the limits of what is 'valid' gcode.
+            (
+                "M486 A3DBenchy.stl",
+                vec![
+                    Event::Word(Word {
+                        key: 'M',
+                        value: WordValue::RealValue(486.into()),
+                    }),
+                    Event::Word(Word {
+                        key: 'A',
+                        value: WordValue::UnquotedString("3DBenchy.stl".to_string()),
+                    }),
+                    Event::EndLine,
+                ],
+            ),
+            (
+                "M486 AUntitled 123.stl",
+                vec![
+                    Event::Word(Word {
+                        key: 'M',
+                        value: WordValue::RealValue(486.into()),
+                    }),
+                    Event::Word(Word {
+                        key: 'A',
+                        value: WordValue::UnquotedString("Untitled 123.stl".to_string()),
                     }),
                     Event::EndLine,
                 ],

@@ -224,8 +224,8 @@ mod tests {
     */
 
     #[testcase]
-    fn error_parse() -> Result<()> {
-        let config = get_prusa_i3_mk3sp_config()?;
+    async fn error_parse() -> Result<()> {
+        let config = get_prusa_i3_mk3sp_config().await?;
 
         let line = b"error: Invalid line received";
 
@@ -241,7 +241,7 @@ mod tests {
 
     #[testcase]
     async fn prusa_i3_log_parsing() -> Result<()> {
-        let config = get_prusa_i3_mk3sp_config()?;
+        let config = get_prusa_i3_mk3sp_config().await?;
 
         // Grabbed from a Prusa I3 MK3s on startup and issuing a a few commands.
         let log: &'static [&'static [u8]] = &[

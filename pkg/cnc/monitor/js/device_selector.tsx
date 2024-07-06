@@ -1,6 +1,7 @@
 import React from "react";
 import { PageContext } from "./page";
 import { watch_entities } from "./rpc_utils";
+import { compare_values } from "pkg/web/lib/utils";
 
 export interface DevicePickerProps {
     context: PageContext;
@@ -53,9 +54,7 @@ export class DeviceSelectorInput extends React.Component<DevicePickerProps, Devi
 
         watch_entities(props.context, { entity_type: 'DEVICE' }, (msg) => {
             let devices = msg.devices || [];
-            devices.sort((a, b) => {
-                a.id < b.id
-            });
+            devices.sort((a, b) => compare_values(a.id, b.id));
 
             this.setState({ _devices: devices });
         }, { abort_signal: this._abort_controller.signal });

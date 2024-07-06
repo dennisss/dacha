@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use common::errors::*;
 use compression::tar::{AppendFileOptions, FileMetadataMask};
 use crypto::hasher::Hasher;
@@ -109,6 +111,10 @@ impl BuildTarget for Bundle {
                     out.append_file(&file.location, &options).await?;
                 }
             }
+
+            // Marker so that file::project_dir() can locate files.
+            out.append_regular_file("WORKSPACE", 0, &mut Cursor::new(&[]))
+                .await?;
 
             // TODO: Given the entire archive will be passing through memory, can we hash it
             // while we are writing it to disk?

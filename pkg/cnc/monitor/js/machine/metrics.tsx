@@ -6,7 +6,7 @@ import { LabeledCheckbox } from "pkg/web/lib/checkbox";
 import { Card, CardBody } from "../card";
 import { Figure } from "pkg/web/lib/figure";
 import { EntityKind, FigureOptions } from "pkg/web/lib/figure/types";
-import { deep_copy, shallow_copy } from "pkg/web/lib/utils";
+import { compare_values, deep_copy, shallow_copy } from "pkg/web/lib/utils";
 import { round_digits } from "pkg/web/lib/formatting";
 
 
@@ -296,9 +296,7 @@ export class MetricsBox extends React.Component<MetricsBoxProps, MetricsBoxState
 
                 // TODO: This should simply require a reverse operation.
                 // Or just do this operation on the server.
-                new_samples.sort((a, b) => {
-                    return a.x - b.x;
-                });
+                new_samples.sort((a, b) => compare_values(a.x, b.x));
 
                 // TODO: If we exceed the interpolation gap between 3 adjacent points, we still want to render the middle point with a line rather than it just showing up as a point (as we only use moveTo). Conceptually we can think of it as a line of the 'alignment_size length' which 'ends' at the point time. 
                 let combined_data = (is_first ? [] : data.entries[stream_i].data).concat(new_samples);

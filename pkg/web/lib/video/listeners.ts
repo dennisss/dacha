@@ -38,14 +38,13 @@ export class VideoEventListener {
         }
 
         if (e.type == 'stalled' || e.type == 'waiting') {
-            console.log(e.type);
             this._loaded = false;
         }
         if (e.type == 'canplay' || e.type == 'canplaythrough') {
             this._loaded = true;
         }
         if (e.type == 'timeupdate' && !this._video.paused && !this._video.seeking) {
-            this._loaded = false;
+            this._loaded = true;
         }
 
         this._callback();

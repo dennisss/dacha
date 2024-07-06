@@ -252,7 +252,7 @@ impl FakeMachine {
                 params.clear();
             }
 
-            // Prusa sopecific mesh based z-probe
+            // Prusa specific mesh based z-probe
             "G80" => {
                 params.clear();
             }

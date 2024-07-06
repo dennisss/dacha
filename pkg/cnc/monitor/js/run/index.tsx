@@ -9,6 +9,8 @@ import { ProgramRunStatsBox } from "./stats";
 import { MetricsBox } from "../machine/metrics";
 import { ProgramRunVideoBox } from "./video";
 import { ProgramRunTimelineBox } from "./timeline";
+import { Card } from "../card";
+import { Router } from "pkg/web/lib/router";
 
 
 interface ProgramRunPageProps {
@@ -69,13 +71,15 @@ export class ProgramRunPage extends React.Component<ProgramRunPageProps, Program
 
         let context = this.props.context;
 
-        // let active_tab = tabs[this.state._right_tab];
-
         let start_time = new Date(timestamp_proto_to_millis(run.start_time));
         let end_time = run.end_time ? new Date(timestamp_proto_to_millis(run.end_time)) : undefined;
 
+        let machine_name = machine.config.name || 'Untitled Machine';
+
         // TODO: If today's date, show the time string.
-        let title = (machine.config.name || 'Untitled Machine') + ' @ ' + start_time.toLocaleDateString();
+        let title = machine_name + ' @ ' + start_time.toLocaleDateString();
+
+        let machine_link = '/ui/machines/' + machine.id;
 
         return (
             <div>
@@ -88,6 +92,18 @@ export class ProgramRunPage extends React.Component<ProgramRunPageProps, Program
                 <div className="container-fluid">
                     <div className="row" style={{ padding: '10px 0' }}>
                         <div className="col col-md-3">
+                            <a className="nostyle" href={machine_link} onClick={(e) => {
+                                e.preventDefault();
+                                Router.global().goto(machine_link);
+                            }}>
+                                <div className="card card-link" style={{ cursor: 'pointer', marginBottom: 10 }}>
+                                    <div className="card-header">
+                                        Machine: {machine_name}
+                                    </div>
+                                </div>
+                            </a>
+
+
                             <ProgramRunFileBox run={run} context={context} />
                             <ProgramRunStatsBox run={run} context={context} />
                         </div>

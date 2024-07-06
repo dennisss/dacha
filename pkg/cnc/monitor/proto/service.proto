@@ -24,6 +24,9 @@ service Monitor {
 
     rpc DeleteFile (DeleteFileRequest) returns (DeleteFileResponse);
 
+    // NOTE: This doesn't wait for re-processing to finish. Only for it to start.
+    rpc ReprocessFile (ReprocessFileRequest) returns (ReprocessFileResponse);
+
     rpc GetCameraPlayback (GetCameraPlaybackRequest) returns (GetCameraPlaybackResponse);
 
     rpc GetRunHistory (GetRunHistoryRequest) returns (GetRunHistoryResponse);
@@ -180,8 +183,8 @@ message RunMachineCommandRequest {
         // state.
         //
         // - All enqueued commands will be dropped if possible.
-        // - All other operations will be ignored for 5 seconds after this is triggered.
-        bool emergency_stop = 4;
+        // - All other operations will be ignored for 30 seconds after this is triggered.
+        bool full_stop = 4;
 
         // Sends a raw gcode command to a machine (single line without \n).
         // Note that this only blocks for the command to get enqueued. THe command will be sent and
@@ -212,13 +215,15 @@ message RunMachineCommandRequest {
 
         bool home_y = 14;
 
-        bool probe_z = 15;
+        bool home_all = 15;
 
         bool mesh_level = 16;
 
         GotoCommand goto = 17;
 
         JogCommand jog = 18;
+
+        bool delete_machine = 19;
     }
 }
 
@@ -268,5 +273,13 @@ message DeleteFileRequest {
 }
 
 message DeleteFileResponse {
+
+}
+
+message ReprocessFileRequest {
+    fixed64 file_id = 1;
+}
+
+message ReprocessFileResponse {
 
 }

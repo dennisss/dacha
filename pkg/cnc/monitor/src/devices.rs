@@ -47,10 +47,6 @@ impl AvailableDevice {
             }));
         }
 
-        for i in 0..4 {
-            out.push(AvailableDevice::Fake(i));
-        }
-
         Ok(out)
     }
 
@@ -106,7 +102,7 @@ impl AvailableDevice {
             }
         }
 
-        if selector.fake() != 0 {
+        if selector.has_fake() {
             let i = match self {
                 Self::Fake(i) => i,
                 _ => return false,

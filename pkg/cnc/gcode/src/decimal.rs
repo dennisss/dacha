@@ -46,7 +46,68 @@ impl Decimal {
     ///
     /// Returns the parsed decimal and any bytes remaining after parsing the
     /// decimal.
-    pub fn parse<'a>(data: &'a [u8]) -> Option<(Self, &'a [u8])> {
+    pub fn parse<'a>(mut data: &'a [u8]) -> Option<(Self, &'a [u8])> {
+        let mut sign = 1;
+        let mut num_digits = 0;
+
+        if data.len() > 0 {
+            match data[0] {
+                b'+' => {
+                    sign = 1;
+                    data = &data[1..];
+                }
+                b'-' => {
+                    sign = -1;
+                    data = &data[1..];
+                }
+                _ => {} // Retry later as a digit.
+            }
+        }
+
+        // TODO: Limit the max size of this integer part to avoid overflow later.
+        let mut integer = 0;
+        while data.len() > 0 {
+            let digit = data[0];
+            if digit < b'0' || digit > b'9' {
+                break;
+            }
+
+            // Overflow
+            if num_digits == 9 {
+                return None;
+            }
+
+            let v = (digit - b'0') as i64;
+            integer = 10 * integer + v;
+            num_digits += 1;
+            data = &data[1..];
+        }
+
+        let mut num_dots = 0;
+        while data.len() > 0 && data[0] == b'.' {
+            num_dots += 1;
+            data = &data[1..];
+        }
+
+        let mut fraction = 0;
+        if num_dots > 0 {
+            let mut overflow = false;
+
+            fraction = match Self::parse_fraction(data, &mut num_digits, &mut overflow) {
+                Some((v, r)) => {
+                    data = r;
+                    v
+                }
+                None => 0,
+            };
+
+            if overflow {
+                return None;
+            }
+        }
+
+        // Old slow version
+        /*
         let m = match DECIMAL.exec(data) {
             Some(v) => v,
             None => return None,
@@ -82,6 +143,7 @@ impl Decimal {
                 None => return None,
             }
         };
+        */
 
         if num_digits == 0 {
             return None;
@@ -94,32 +156,43 @@ impl Decimal {
             value: integer * Self::UNITS_PER_INTEGER + fraction,
         };
 
-        Some((v, &data[m.last_index()..]))
+        Some((v, data))
+
+        // Some((v, &data[m.last_index()..]))
     }
 
-    fn parse_fraction(digits: &[u8]) -> Option<i64> {
+    fn parse_fraction<'a>(
+        mut digits: &'a [u8],
+        num_digits: &mut usize,
+        overflow: &mut bool,
+    ) -> Option<(i64, &'a [u8])> {
         let mut value = 0;
 
         let mut scale = Self::UNITS_PER_INTEGER;
 
-        for digit in digits.iter().cloned() {
+        while digits.len() > 0 {
+            let digit = digits[0];
+
             scale /= 10;
             if scale == 0 {
+                *overflow = true;
                 return None;
             }
 
             let v = {
                 if digit < b'0' || digit > b'9' {
-                    return None;
+                    break;
                 }
 
                 (digit - b'0') as i64
             };
 
             value += v * scale;
+            digits = &digits[1..];
+            *num_digits += 1;
         }
 
-        Some(value)
+        Some((value, digits))
     }
 
     fn stringify_fraction(&self, out: &mut String) {
@@ -213,11 +286,15 @@ impl Sub for Decimal {
 mod tests {
     use super::*;
 
+    // TODO: Test the largest possible parseable numbers and verify verify that
+    // parsing can't crash if we overflow.s
+
+    // 000000000
+
     #[test]
     fn decimal_works() {
         let (v, rest) = Decimal::parse(b"1.5").unwrap();
-        // assert_eq!(v.integer, 1);
-        // assert_eq!(v.fraction, 500000000);
+        assert_eq!(v.value, 1500000000);
         assert_eq!(rest, b"");
 
         assert_eq!(v.to_string(), "1.5");
@@ -243,11 +320,40 @@ mod tests {
     #[test]
     fn negative_point_five() {
         let (v, rest) = Decimal::parse(b"-0.5").unwrap();
-        // assert_eq!(v.integer, 0);
-        // assert_eq!(v.fraction, -500000000);
+        assert_eq!(v.value, -500000000);
         assert_eq!(rest, b"");
-
         assert_eq!(format!("{}", v), "-0.5");
+    }
+
+    #[test]
+    fn parsing_overflow() {
+        assert_eq!(
+            Decimal::parse(b"0.999999999"),
+            Some((Decimal { value: 999999999 }, &b""[..]))
+        );
+        assert_eq!(Decimal::parse(b"0.9999999999"), None);
+
+        assert_eq!(
+            Decimal::parse(b"999999999"),
+            Some((
+                Decimal {
+                    value: 999999999000000000
+                },
+                &b""[..]
+            ))
+        );
+
+        assert_eq!(Decimal::parse(b"9999999999"), None);
+    }
+
+    #[test]
+    fn parsing_invalid() {
+        assert_eq!(Decimal::parse(b""), None);
+        assert_eq!(Decimal::parse(b"+"), None);
+        assert_eq!(Decimal::parse(b"-"), None);
+        assert_eq!(Decimal::parse(b"-."), None);
+        assert_eq!(Decimal::parse(b"."), None);
+        assert_eq!(Decimal::parse(b"..."), None);
     }
 
     #[test]

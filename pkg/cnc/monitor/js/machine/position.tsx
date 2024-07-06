@@ -16,6 +16,8 @@ function clean_range(v: any): Range {
 
 export class PositionBox extends React.Component<{ machine: any, context: PageContext }> {
 
+    // TODO: Also have a Z graph which we can click on.
+
     _get_figure_options(): FigureOptions {
 
         let machine = this.props.machine;

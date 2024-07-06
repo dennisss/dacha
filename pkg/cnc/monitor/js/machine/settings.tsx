@@ -20,11 +20,24 @@ import { shallow_copy } from "pkg/web/lib/utils";
 import { EditInput } from "pkg/web/lib/input";
 import { PropertiesTable } from "../properties_table";
 import { run_machine_command } from "../rpc_utils";
+import { Router } from "pkg/web/lib/router";
 
 export class SettingsComponent extends React.Component<{ machine: any, context: PageContext }> {
 
     _run_command = (command, done) => {
         run_machine_command(this.props.context, this.props.machine, command, done);
+    }
+
+    _delete_machine = (done) => {
+        // TODO: This needs confirmation followed by navigating away from the current page.
+
+        run_machine_command(this.props.context, this.props.machine, { delete_machine: true }, (success) => {
+            if (success) {
+                Router.global().goto('/');
+            } else {
+                done();
+            }
+        });
     }
 
     render() {
@@ -51,8 +64,7 @@ export class SettingsComponent extends React.Component<{ machine: any, context: 
                         <PropertiesTable properties={properties} style={{ verticalAlign: 'baseline' }} />
 
                         <div>
-                            {/* TODO: This needs confirmation followed by navigating away from the current page. */}
-                            <Button onClick={(done) => { }} preset="danger">Delete Machine</Button>
+                            <Button onClick={this._delete_machine} preset="danger">Delete Machine</Button>
                         </div>
                     </div>
                 </div>

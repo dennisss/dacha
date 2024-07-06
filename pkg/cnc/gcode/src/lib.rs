@@ -6,6 +6,7 @@ use decimal::Decimal;
 extern crate regexp_macros;
 
 mod decimal;
+mod hints;
 mod line;
 mod parser;
 

@@ -89,7 +89,9 @@ export function watch_entities(ctx: PageContext, request: any, callback: (res: o
     sync_loop();
 }
 
-export async function run_machine_command(ctx: PageContext, machine: any, command: any, done: any) {
+export async function run_machine_command(ctx: PageContext, machine: any, command: any, done: (success: boolean) => void) {
+    let success = false;
+
     try {
         let req = shallow_copy(command);
         req.machine_id = machine.id;
@@ -100,11 +102,13 @@ export async function run_machine_command(ctx: PageContext, machine: any, comman
             throw res.status.toString();
         }
 
+        success = true;
+
     } catch (e) {
         // TODO: Notification
         console.error(e);
     }
 
-    done();
+    done(success);
 }
 

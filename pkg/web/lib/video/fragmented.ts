@@ -1,3 +1,4 @@
+import { compare_values } from "../utils";
 import { ByteRange, FragmentedVideoSourceOptions, MediaFragment, MediaSegmentData, VideoSource, VideoState, VideoStateChangeHandler } from "./types";
 
 // The largest gap in buffered segments that the browser will automatically skip over without
@@ -52,9 +53,7 @@ export class FragmentedVideoSource extends VideoSource {
         this._on_state_change = on_state_change;
 
         // TODO: Should do this whenever we get new options.
-        this._options.fragments.sort((a, b) => {
-            return a.start_time - b.start_time;
-        });
+        this._options.fragments.sort((a, b) => compare_values(a.start_time, b.start_time));
 
         this._run(video);
     }

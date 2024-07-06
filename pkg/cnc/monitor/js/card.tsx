@@ -8,6 +8,7 @@ export interface CardProps {
     error?: any
     style?: any
     onClick?: any
+    className?: string
 }
 
 interface CardState {
@@ -59,7 +60,7 @@ export class Card extends React.Component<CardProps, CardState> {
 
     render() {
         return (
-            <div className="card" style={this.props.style} onClick={this.props.onClick}>
+            <div className={"card" + (this.props.className ? ' ' + this.props.className : '')} style={this.props.style} onClick={this.props.onClick}>
                 <div className="card-header" style={{ cursor: this.props.id ? 'pointer' : null }} onClick={this._toggle_open}>
                     {this.props.header}
                 </div>

@@ -6,6 +6,7 @@ import { PropertiesTable } from "./properties_table";
 import { get_player_properties } from "./machine/player";
 import { Title } from "pkg/web/lib/title";
 import { Navbar } from "./navbar";
+import { compare_values } from "pkg/web/lib/utils";
 
 
 export interface MachinesPageProps {
@@ -27,9 +28,7 @@ export class MachinesPage extends React.Component<MachinesPageProps, MachinesPag
 
         watch_entities(props.context, { entity_type: 'MACHINE' }, (msg) => {
             let machines = msg.machines || [];
-            machines.sort((a, b) => {
-                a['id'] < b['id']
-            });
+            machines.sort((a, b) => compare_values(a.id, b.id));
 
             this.setState({ _machines: machines });
         });
@@ -58,6 +57,10 @@ export class MachinesPage extends React.Component<MachinesPageProps, MachinesPag
                     </div>
 
                     {machines.map((machine) => {
+                        if (machine.state.connection_state == 'MISSING') {
+                            return null;
+                        }
+
                         return <MachineCard key={machine['id']} machine={machine} />;
                     })}
 
@@ -66,6 +69,14 @@ export class MachinesPage extends React.Component<MachinesPageProps, MachinesPag
                     <div style={{ fontWeight: 'bold', paddingBottom: 15 }}>
                         Disconnected Machines:
                     </div>
+
+                    {machines.map((machine) => {
+                        if (machine.state.connection_state != 'MISSING') {
+                            return null;
+                        }
+
+                        return <MachineCard key={machine['id']} machine={machine} />;
+                    })}
                 </div>
             </div>
         );
@@ -114,21 +125,23 @@ class MachineCard extends React.Component<MachineCardProps> {
         }
 
         return (
-            <div className="card" style={{ marginBottom: 20, cursor: 'pointer' }} onClick={this._on_click}>
-                <div className="card-header">
-                    {m.config.name || 'Unnamed Machine'}
+            <a className="nostyle" href={'/ui/machines/' + this.props.machine['id']} onClick={this._on_click}>
+                <div className="card card-link" style={{ marginBottom: 20, cursor: 'pointer' }}>
+                    <div className="card-header">
+                        {m.config.name || 'Unnamed Machine'}
 
-                    <div style={{ float: 'right' }}>Id: {m['id']}</div>
-                </div>
-                <div className="card-body">
-                    <PropertiesTable keyWidth={200} properties={properties} />
+                        <div style={{ float: 'right' }}>Id: {m['id']}</div>
+                    </div>
+                    <div className="card-body">
+                        <PropertiesTable keyWidth={200} properties={properties} />
 
-                    {/*
-                    - Maybe an error message 'alert' if there is an issue.
-                
-                    */}
+                        {/*
+                        - Maybe an error message 'alert' if there is an issue.
+                    
+                        */}
+                    </div>
                 </div>
-            </div>
+            </a>
         );
 
     }

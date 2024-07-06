@@ -1,0 +1,54 @@
+# proto-file: pkg/cnc/monitor/proto/machine_config.proto
+# proto-message: MachineConfig
+
+# Config for a Prusa i3 MK3s+.
+#
+# When connected via USB, it shows up as `/dev/ttyACM0` with baud rate 115200.
+#
+# Sample lsusb information:
+#   idVendor           0x2c99 Prusa
+#   idProduct          0x0002
+#   bcdDevice            1.30
+#   iManufacturer           1 Prusa Research (prusa3d.com)
+#   iProduct                2 Original Prusa i3 MK3
+#   iSerial                 3 CZPX1419X004XK19470
+
+model_name: "Prusa i3 MK3s+"
+auto_connect: true
+
+work_area {
+    x_range { min: 0 max: 250 }
+    y_range { min: 0 max: 210 }
+}
+
+device {
+    usb {
+        vendor: 0x2c99
+        product: 0x0002
+    }
+}
+
+firmware: MARLIN
+baud_rate: 115200
+reset_using_dtr: true
+silent_mode: true
+
+axes: [
+    { id: "X" type: POSITION range { min: 0 max: 255 } },
+    { id: "Y" type: POSITION range { min: -4 max: 212.5 } },
+    { id: "Z" type: POSITION range { min: 0.15 max: 210 } },
+    { id: "E" type: POSITION },
+    
+    { id: "E0" type: FAN_TACHOMETER_RPM name: "Extruder Fan (RPM)" },
+    { id: "PRN1" type: FAN_TACHOMETER_RPM name: "Part Cooling Fan (RPM)" },
+    { id: "E0@" type: FAN_PWM_VALUE },
+    { id: "PRN1@" type: FAN_PWM_VALUE },
+
+    { id: "T" type: HEATER name: "Hotend" collect { min_value: 30 } },
+    { id: "T0" type: HEATER name: "T0" hide: true  },
+    { id: "B" type: HEATER name: "Bed" collect { min_value: 30 }  },
+    { id: "@" type: GENERIC_SENSOR name: "Hotend Power" },
+    { id: "B@" type: GENERIC_SENSOR name: "Bed Power" },
+    { id: "P" type: GENERIC_SENSOR name: "PINDAv2" },
+    { id: "A" type: GENERIC_SENSOR name: "Ambient" }
+]

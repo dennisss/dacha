@@ -111,6 +111,9 @@ struct Args {
     rpc_port: NamedPortArg,
     web_port: NamedPortArg,
     local_data_dir: LocalPathBuf,
+
+    #[arg(default = false)]
+    make_fake_machines: bool,
 }
 
 struct HttpHandler {
@@ -351,15 +354,10 @@ async fn main() -> Result<()> {
 
     let args = common::args::parse_args::<Args>()?;
 
-    /*
-        TODO:
-
-    Error: ErrorMessage { msg: "Resource Root failed: FileError { kind: NotFound, message: \"Failed to open local file at path: /sys/bus/usb/devices/7-3.2.4.4\" }" }
-    */
-
     let service = RootResource::new();
 
-    let monitor = Arc::new(MonitorImpl::create(&args.local_data_dir).await?);
+    let monitor =
+        Arc::new(MonitorImpl::create(&args.local_data_dir, args.make_fake_machines).await?);
     service.register_dependency(monitor.clone()).await;
 
     let mut rpc_server = rpc::Http2Server::new(Some(args.rpc_port.value()));

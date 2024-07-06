@@ -141,8 +141,6 @@ export class LiveVideoSource extends VideoSource {
             // Loading...
             this._emit_state();
 
-            console.log('Start attempt');
-
             this._attempt_abort_controller = new AbortController();
             let attempt_abort_signal: AbortSignal = AbortSignal.any([
                 this._abort_signal,

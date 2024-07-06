@@ -13,7 +13,7 @@ export class Navbar extends React.Component<{ extraLink?: NavbarLinkOptions }> {
         return (
             <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
                 <div className="container">
-                    <a className="navbar-brand" href="#" onClick={(e) => {
+                    <a className="navbar-brand" href="/" onClick={(e) => {
                         e.preventDefault();
                         Router.global().goto('/');
                     }}>
@@ -64,7 +64,7 @@ class NavbarLink extends React.Component<NavbarLinkProps> {
     render() {
         let active = this.props.to == Router.global().current_path();
         return (
-            <a className={"nav-link" + (active ? " active" : "")} href="#" onClick={this._on_click}>{this.props.children}</a>
+            <a className={"nav-link" + (active ? " active" : "")} href={this.props.to} onClick={this._on_click}>{this.props.children}</a>
         );
     }
 }

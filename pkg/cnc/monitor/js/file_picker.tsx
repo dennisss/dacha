@@ -1,6 +1,7 @@
 import React from "react";
 import { Channel } from "pkg/web/lib/rpc";
 import { ModalStore } from "pkg/web/lib/modal";
+import { get_file_errors, sort_files_list } from "./files";
 
 export async function pick_file(channel: Channel): Promise<string> {
 
@@ -10,6 +11,11 @@ export async function pick_file(channel: Channel): Promise<string> {
     }
 
     let files = files_res.responses[0].files || [];
+    sort_files_list(files);
+
+    files = files.filter((f) => {
+        return get_file_errors(f).length == 0;
+    });
 
     // TODO: Need to display a custom message if no files are available
 

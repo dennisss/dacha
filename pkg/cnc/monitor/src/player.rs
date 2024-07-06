@@ -287,7 +287,7 @@ impl Player {
                     if need_new_segment {
                         let line_num = state.proto.line_number();
                         let seg = state.proto.new_playing_segments();
-                        seg.set_start_line(line_num);
+                        seg.set_start_line(line_num + 1);
                         seg.set_start_time(SystemTime::now());
                         state_changed = true;
                     }
@@ -541,7 +541,8 @@ impl Player {
             // M862.3 P "MK3S" ; printer model check
             // M862.1 P0.4 ; nozzle diameter check
             // M115 U3.13.2 ; tell printer latest fw version
-            "M862.3" | "M862.1" | "M115" => {
+            // M486 <- For object labeling. Doesn't format nicely as gcode.
+            "M862.3" | "M862.1" | "M115" | "M486" => {
                 return Ok(());
             }
 
@@ -623,7 +624,6 @@ impl Player {
                 // Don't send the regular command.
                 return Ok(());
             }
-
             _ => {}
         }
 

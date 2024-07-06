@@ -8,4 +8,4 @@ Some interesting notes on syntax:
 
 - Per the NIST spec, whitespace and upper/lower case is ignored outside of comments.
 - Comments can't be present between work keys and values. e.g. `X (hello) 1` is invalid.
- 
+- TODO: Implement: per the NIST spec "(the words) may be reordered in any way without changing the meaning of the line" 

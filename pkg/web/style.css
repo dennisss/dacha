@@ -182,3 +182,15 @@
 .video-player.active .video-controls-button {
     cursor: pointer;
 }
+
+/* https://stackoverflow.com/questions/6868009/html-anchor-disable-style */
+a.nostyle:link,
+a.nostyle:visited {
+    text-decoration: inherit;
+    color: inherit;
+    cursor: auto;
+}
+
+.card-link:hover .card-header {
+    text-decoration: underline;
+}

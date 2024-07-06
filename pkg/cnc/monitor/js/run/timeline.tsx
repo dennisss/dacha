@@ -48,7 +48,7 @@ export class ProgramRunTimelineBox extends React.Component<{ run: any, context: 
             }
 
             rows.push({
-                line: segment.line || 0,
+                line: segment.start_line || 0,
                 start: start_time,
                 end: end_time,
                 type: 'PLAYING'

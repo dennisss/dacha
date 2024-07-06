@@ -51,15 +51,15 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
                     <div style={{ display: 'flex' }}>
                         <JogButtons machine={machine} context={this.props.context} />
                         <div style={{ paddingTop: 3 }}>
-                            <Button onClick={(done) => this._run_command({}, done)}
+                            <Button onClick={(done) => this._run_command({ full_stop: true }, done)}
                                 preset="danger" style={{ width: '100%', marginBottom: 5 }}>Stop!</Button>
                             <Button onClick={(done) => this._run_command({ home_x: true }, done)}
                                 preset="outline-dark" style={{ width: '100%', marginBottom: 5 }}>Home X</Button>
                             <Button onClick={(done) => this._run_command({ home_y: true }, done)}
                                 preset="outline-dark" style={{ width: '100%', marginBottom: 5 }}>Home Y</Button>
-                            <Button onClick={(done) => this._run_command({}, done)}
-                                preset="outline-dark" style={{ width: '100%', marginBottom: 5 }}>Probe Z</Button>
-                            <Button onClick={(done) => this._run_command({}, done)}
+                            <Button onClick={(done) => this._run_command({ home_all: true }, done)}
+                                preset="outline-dark" style={{ width: '100%', marginBottom: 5 }}>Home All</Button>
+                            <Button onClick={(done) => this._run_command({ mesh_level: true }, done)}
                                 preset="outline-dark" style={{ width: '100%', marginBottom: 5 }}>Mesh Level</Button>
                         </div>
                     </div>

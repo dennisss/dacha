@@ -35,6 +35,8 @@ const RETRY_BACKOFF: Duration = Duration::from_secs(10);
 /// Maximum number of locally connected machines.
 const MAX_NUM_MACHINES: usize = 10;
 
+const FULL_STOP_LOCK_TIME: Duration = Duration::from_secs(30);
+
 type MachineId = u64;
 
 type FileId = u64;
@@ -58,6 +60,7 @@ struct Shared {
     metric_store: MetricStore,
     state: AsyncMutex<State>,
     force_reconcile: channel::Sender<()>,
+    make_fake_machines: bool,
 }
 
 #[derive(Default)]
@@ -154,6 +157,10 @@ struct SerialEntry {
     /// If true, we have issues a cancellation on the 'controller' resource.
     /// The disconnect will be complete once the 'watcher_task'
     shutting_down: bool,
+
+    /// If yes, we will under no condition create new connections or terminate
+    /// old ones until this point in time.
+    lock_until: Option<Instant>,
 }
 
 struct PlayerEntry {
@@ -196,20 +203,23 @@ enum DeviceRole {
 impl MonitorImpl {
     // TODO: Eliminate possibly slow init logic like this that blocks the rest of
     // main() to run.
-    pub async fn create(local_data_dir: &LocalPath) -> Result<Self> {
+    pub async fn create(local_data_dir: &LocalPath, make_fake_machines: bool) -> Result<Self> {
         let changes = ChangeDistributer::create();
 
         let db = Arc::new(ProtobufDB::create(&local_data_dir.join("db")).await?);
 
         let mut state = State::default();
 
-        let mut config_presets = get_machine_presets()?;
-        for i in 0..config_presets.len() {
-            let mut fake_config = config_presets[i].clone();
-            fake_config.set_base_config(format!("{}_fake", fake_config.base_config()));
-            fake_config.clear_device();
-            fake_config.device_mut().set_fake((i + 1) as u32);
-            config_presets.push(fake_config);
+        let mut config_presets = get_machine_presets().await?;
+
+        if make_fake_machines {
+            for i in 0..config_presets.len() {
+                let mut fake_config = config_presets[i].clone();
+                fake_config.set_base_config(format!("{}_fake", fake_config.base_config()));
+                fake_config.clear_device();
+                fake_config.device_mut().set_fake(i as u32);
+                config_presets.push(fake_config);
+            }
         }
 
         let machines = db.list::<MachineTable>().await?;
@@ -252,6 +262,7 @@ impl MonitorImpl {
             metric_store,
             force_reconcile: reconcile_sender,
             camera_manager: Arc::new(CameraManager::default()),
+            make_fake_machines,
         });
 
         let task_resource = TaskResource::spawn_interruptable(
@@ -312,7 +323,13 @@ impl MonitorImpl {
     }
 
     async fn run_once(shared: &Arc<Shared>, usb_context: &usb::Context) -> Result<bool> {
-        let devices = AvailableDevice::list_all(&usb_context).await?;
+        let mut devices = AvailableDevice::list_all(&usb_context).await?;
+
+        if shared.make_fake_machines {
+            for i in 0..4 {
+                devices.push(AvailableDevice::Fake(i));
+            }
+        }
 
         let mut device_usage: HashMap<usize, MachineId> = HashMap::new();
 
@@ -503,6 +520,17 @@ impl MonitorImpl {
         // TODO: If we don't have auto_connect enabled, should we do any
         // auto-disconnects.
 
+        if let Some(locked_until) = machine.serial.lock_until {
+            if let Some(remaining) = locked_until.checked_duration_since(Instant::now()) {
+                machine.serial.last_error =
+                    Some(format!("Serial port is locked for {:?}", remaining));
+
+                return Ok(());
+            } else {
+                machine.serial.lock_until = None;
+            }
+        }
+
         if let Some(old_device) = &machine.serial.device {
             let changed = device.is_none() || old_device.path() != device.unwrap().path();
 
@@ -626,7 +654,7 @@ impl MonitorImpl {
             entry.serial.shutting_down = false;
 
             if let Some(error) = error {
-                eprintln!("Seiral Controller Failure: {}", error);
+                eprintln!("Serial Controller Failure: {}", error);
                 entry.serial.start_after = Some(Instant::now() + RETRY_BACKOFF);
                 entry.serial.last_error = Some(error.to_string());
             } else {
@@ -989,6 +1017,11 @@ impl MonitorImpl {
         Ok(())
     }
 
+    async fn reprocess_file_impl(&self, request: &ReprocessFileRequest) -> Result<()> {
+        self.shared.files.reprocess_file(request.file_id()).await?;
+        Ok(())
+    }
+
     // TODO: Ideally this would send back some revision metadata so that any
     // QueryEntitites requests from the client can wait for the result of the
     // command to propagate.
@@ -1055,7 +1088,24 @@ impl MonitorImpl {
 
                 let _ = self.shared.force_reconcile.try_send(());
             }
-            RunMachineCommandRequestCommandCase::EmergencyStop(_) => todo!(),
+            RunMachineCommandRequestCommandCase::FullStop(_) => {
+                let serial_controller = lock!(state <= self.shared.state.lock().await?, {
+                    let entry = state
+                        .machines
+                        .get_mut(&request.machine_id())
+                        .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
+
+                    entry.serial.lock_until = Some(Instant::now() + FULL_STOP_LOCK_TIME);
+                    Ok::<_, Error>(entry.serial.controller.clone())
+                })?;
+
+                if let Some(controller) = serial_controller {
+                    // NOTE: It is likely to fail, so we will mainly wait for it to fully finish.
+                    if let Err(e) = controller.full_stop().await {
+                        eprintln!("Full stop error: {}", e);
+                    }
+                }
+            }
             RunMachineCommandRequestCommandCase::SendSerialCommand(cmd) => {
                 // TODO: While we are sending commands, we should disable the player to be
                 // created.
@@ -1065,7 +1115,7 @@ impl MonitorImpl {
                 let cmd = cmd.replace("\n", " ").replace("\r", " ");
 
                 serial_controller
-                    .send_command(format!("{}\n", cmd), Duration::from_secs(10))
+                    .send_command(format!("{}\n", cmd), Duration::from_secs(80))
                     .await?;
             }
             RunMachineCommandRequestCommandCase::PlayProgram(_) => {
@@ -1080,6 +1130,13 @@ impl MonitorImpl {
 
             RunMachineCommandRequestCommandCase::LoadProgram(cmd) => {
                 let file_ref = self.shared.files.lookup(cmd.file_id())?;
+
+                if !file_ref.can_load_as_program() {
+                    return Err(rpc::Status::failed_precondition(
+                        "File is not a program or has errors.",
+                    )
+                    .into());
+                }
 
                 // TODO: Verify there were no errors while processing the file (also need to
                 // handle machine gcode compatibility )
@@ -1200,8 +1257,16 @@ impl MonitorImpl {
                 let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
                 serial_controller.home_y().await?;
             }
-            RunMachineCommandRequestCommandCase::ProbeZ(_) => todo!(),
-            RunMachineCommandRequestCommandCase::MeshLevel(_) => todo!(),
+            RunMachineCommandRequestCommandCase::HomeAll(_) => {
+                // NOTE: We generally may not be able to probe Z independently
+                // if we are in a position above which the probe works.
+                let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
+                serial_controller.home_all().await?;
+            }
+            RunMachineCommandRequestCommandCase::MeshLevel(_) => {
+                let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
+                serial_controller.mesh_level().await?;
+            }
             RunMachineCommandRequestCommandCase::Goto(cmd) => {
                 let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
 
@@ -1236,6 +1301,49 @@ impl MonitorImpl {
                 serial_controller
                     .send_command(command, DEFAULT_COMMAND_TIMEOUT)
                     .await?;
+            }
+            RunMachineCommandRequestCommandCase::DeleteMachine(_) => {
+                // TODO: Make this cancel safe.
+
+                // TODO: Also delete all data related to the machine.
+
+                // TODO: Explicitly kill all the background tasks.
+
+                lock!(state <= self.shared.state.lock().await?, {
+                    let entry = state
+                        .machines
+                        .get_mut(&request.machine_id())
+                        .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
+
+                    if let Some(player) = &entry.player {
+                        if !player.player.terminated() {
+                            return Err(rpc::Status::failed_precondition(
+                                "Machine still has an active player instance.",
+                            )
+                            .into());
+                        }
+                    }
+
+                    state.machines.remove(&request.machine_id());
+
+                    Ok::<_, Error>(())
+                })?;
+
+                {
+                    let mut machine_proto = MachineProto::default();
+                    machine_proto.set_id(request.machine_id());
+                    self.shared
+                        .db
+                        .remove::<MachineTable>(&machine_proto)
+                        .await?;
+                }
+
+                // TODO: This also effects the list of available devices.
+                self.shared.changes.publisher().publish(ChangeEvent::new(
+                    EntityType::MACHINE,
+                    Some(request.machine_id()),
+                    true,
+                ));
             }
         }
 
@@ -1620,6 +1728,15 @@ impl MonitorService for MonitorImpl {
         response: &mut rpc::ServerResponse<DeleteFileResponse>,
     ) -> Result<()> {
         self.delete_file_impl(&request.value).await?;
+        Ok(())
+    }
+
+    async fn ReprocessFile(
+        &self,
+        request: rpc::ServerRequest<ReprocessFileRequest>,
+        response: &mut rpc::ServerResponse<ReprocessFileResponse>,
+    ) -> Result<()> {
+        self.reprocess_file_impl(&request.value).await?;
         Ok(())
     }
 

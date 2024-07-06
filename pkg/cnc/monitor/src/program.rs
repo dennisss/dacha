@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
@@ -8,10 +9,62 @@ use cnc_monitor_proto::cnc::*;
 use common::{bytes::Bytes, io::Readable};
 use executor::{
     bundle::TaskResultBundle,
-    channel::{self, oneshot},
+    channel::{self, oneshot, spsc},
+    sync::SyncMutex,
 };
 use file::{LocalFile, LocalPath};
 use image::{format::jpeg::encoder::JPEGEncoder, types::ImageType, Image};
+
+pub struct ProgressSender {
+    state: Arc<SyncMutex<f32>>,
+    sender: spsc::Sender<()>,
+}
+
+impl ProgressSender {
+    pub fn update(&mut self, progress: f32) {
+        self.state
+            .apply(|v| {
+                *v = progress;
+            })
+            .unwrap();
+        let _ = self.sender.try_send(());
+    }
+}
+
+pub struct ProgressReceiver {
+    state: Arc<SyncMutex<f32>>,
+    receiver: spsc::Receiver<()>,
+}
+
+impl ProgressReceiver {
+    pub fn current(&self) -> f32 {
+        self.state.read().unwrap()
+    }
+
+    /// When this returns None, it means that there will be no more updates.
+    pub async fn wait(&mut self) -> Option<f32> {
+        match self.receiver.recv().await {
+            Ok(()) => Some(self.current()),
+            Err(_) => None,
+        }
+    }
+}
+
+/// TODO: Generalize this pattern since we tend to have bounded(1) channels
+/// fairly frequently.
+pub fn new_progress_tracker() -> (ProgressSender, ProgressReceiver) {
+    let (sender, receiver) = spsc::bounded(1);
+
+    let state = Arc::new(SyncMutex::new(0.0));
+
+    (
+        ProgressSender {
+            state: state.clone(),
+            sender,
+        },
+        ProgressReceiver { state, receiver },
+    )
+}
 
 #[derive(Default, Debug)]
 pub struct ProgramSummary {
@@ -39,7 +92,11 @@ pub struct ProgramToolSummary {
 }
 
 impl ProgramSummary {
-    pub async fn create(file_path: &LocalPath) -> Result<Self> {
+    pub async fn create(
+        file_path: &LocalPath,
+        file_size: u64,
+        progress_reporter: ProgressSender,
+    ) -> Result<Self> {
         let mut bundle = TaskResultBundle::new();
 
         let (reader, chunks) = ChunkedFileReader::create(file_path).await?;
@@ -51,7 +108,10 @@ impl ProgramSummary {
         bundle.add("LineSplitter", splitter.run());
 
         let (summarizer, summary) = ProgramSummarizer::create(lines);
-        bundle.add("ProgramSummarizer", summarizer.run());
+        bundle.add(
+            "ProgramSummarizer",
+            summarizer.run(file_size, progress_reporter),
+        );
 
         bundle.join().await?;
 
@@ -239,7 +299,13 @@ impl ProgramSummarizer {
         (inst, receiver)
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(
+        mut self,
+        file_size: u64,
+        mut progress_reporter: ProgressSender,
+    ) -> Result<()> {
+        let mut total_bytes_processed = 0;
+
         loop {
             // TODO: Need to parse the final line with end_of_input
 
@@ -252,9 +318,18 @@ impl ProgramSummarizer {
             *self.summary.proto.num_lines_mut() += 1;
 
             if let Err(e) = self.interpret_line(&line[..]) {
-                eprintln!("{}", e);
+                if self.summary.proto.first_failures_len() < 5 {
+                    let l = self.summary.proto.num_lines();
+                    self.summary
+                        .proto
+                        .add_first_failures(format!("Line {}: {}", l, e));
+                }
+
                 *self.summary.proto.num_invalid_lines_mut() += 1;
             }
+
+            // TODO: Need to ideally run through the same code as the
+            // Player/FakeMachine to ensure that we can handle all gcodes.
 
             /*
             Gcodes to handle:
@@ -287,10 +362,19 @@ impl ProgramSummarizer {
 
             // Requirements such as tool types and build volume.
 
-            //
+            total_bytes_processed += line.len();
+
+            let progress = ((total_bytes_processed as f64) / (file_size as f64)) as f32;
+            progress_reporter.update(progress);
         }
 
         if self.partial_summary.thumbnail.is_some() {
+            if self.summary.proto.first_failures_len() < 5 {
+                self.summary.proto.add_first_failures(
+                    "Hit the end of the file before parsing the entire thumbnail.".into(),
+                );
+            }
+
             *self.summary.proto.num_invalid_lines_mut() += 1;
         }
 
@@ -317,12 +401,13 @@ impl ProgramSummarizer {
                                 return Ok(());
                             }
 
+                            // TODO: Verify that we are using consecutive lines for the comment.
                             self.parse_thumbnail_comment(data)?;
                             return Ok(());
                         }
                     }
-                    gcode::Event::ParseError(_) => {
-                        return Err(err_msg("ParseError in line"));
+                    gcode::Event::ParseError(e) => {
+                        return Err(format_err!("Parsing error in line: {:?}", e));
                     }
                     gcode::Event::EndLine => {
                         // event_index = 0;

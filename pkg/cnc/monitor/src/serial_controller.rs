@@ -291,7 +291,9 @@ impl SerialController {
                 return Err(err_msg("Taking too long for the machine to connect"));
             }
 
-            let res = Self::send_command_inner(&shared, "G21\n", IDLE_COMMAND_TIMEOUT).await;
+            let res =
+                Self::send_command_inner(&shared, "G21\n", IDLE_COMMAND_TIMEOUT, false, false)
+                    .await;
             eprintln!("{:?}", res);
             match res {
                 Ok(()) => break,
@@ -318,7 +320,7 @@ impl SerialController {
 
         eprintln!("Start up done!");
 
-        Self::send_command_inner(&shared, "M115\n", IDLE_COMMAND_TIMEOUT).await?;
+        Self::send_command_inner(&shared, "M115\n", IDLE_COMMAND_TIMEOUT, false, false).await?;
 
         let supports_autoreport = lock!(state <= shared.state.lock().await?, {
             /*
@@ -339,11 +341,19 @@ impl SerialController {
         Self::send_command_inner(&shared, "M111 S8\n", IDLE_COMMAND_TIMEOUT).await?;
         */
 
+        // TODO: Configure 'silent_mode' (either enable or disable if supported).
+
         if supports_autoreport {
             // Setup reporting of everything (temp/position/fans) every 1 seconds.
             // TODO: Check result.
-            Self::send_command_inner(&shared, format!("M155 S1 C7\n"), IDLE_COMMAND_TIMEOUT)
-                .await?;
+            Self::send_command_inner(
+                &shared,
+                format!("M155 S1 C7\n"),
+                IDLE_COMMAND_TIMEOUT,
+                false,
+                false,
+            )
+            .await?;
         }
 
         let polling_start_time = Instant::now();
@@ -359,28 +369,29 @@ impl SerialController {
                 let mut time = None;
 
                 for axis in state.axes.values() {
-                    if let Some(t) = axis.last_update {
-                        if time.is_none() || t < time.unwrap() {
-                            time = Some(t);
-                        }
+                    let t = match axis.last_update {
+                        Some(t) => t,
+                        None => return None,
+                    };
+
+                    if time.is_none() || t < time.unwrap() {
+                        time = Some(t);
                     }
                 }
 
-                if time.is_some() {
-                    if !state.connected {
-                        eprintln!("Connected!");
-
-                        shared.change_publisher.publish(ChangeEvent::new(
-                            EntityType::MACHINE,
-                            Some(shared.machine_id),
-                            false,
-                        ));
-                    }
-
-                    state.connected = true;
+                if !state.connected {
+                    shared.change_publisher.publish(ChangeEvent::new(
+                        EntityType::MACHINE,
+                        Some(shared.machine_id),
+                        false,
+                    ));
                 }
 
-                time
+                state.connected = true;
+
+                // If we reached this point, then we either have no axes defined or all of them
+                // had a time.
+                Some(time.unwrap_or(now))
             });
 
             if last_received_complete_state.unwrap_or(polling_start_time) + KEEP_ALIVE_TIMEOUT < now
@@ -502,13 +513,13 @@ impl SerialController {
 
     async fn request_state_report_impl(shared: &Shared) -> Result<()> {
         // Get position
-        Self::send_command_inner(&shared, "M114\n", DEFAULT_COMMAND_TIMEOUT).await?;
+        Self::send_command_inner(&shared, "M114\n", DEFAULT_COMMAND_TIMEOUT, true, false).await?;
         // Get extruder temperatures
-        Self::send_command_inner(&shared, "M105\n", DEFAULT_COMMAND_TIMEOUT).await?;
+        Self::send_command_inner(&shared, "M105\n", DEFAULT_COMMAND_TIMEOUT, true, false).await?;
 
         // TODO: Only do if Marlin/Prusa firmware
         // M123
-        Self::send_command_inner(&shared, "M123\n", DEFAULT_COMMAND_TIMEOUT).await?;
+        Self::send_command_inner(&shared, "M123\n", DEFAULT_COMMAND_TIMEOUT, true, false).await?;
 
         // TODO: Send 'T\n' to get the current tool index.
 
@@ -556,10 +567,18 @@ impl SerialController {
         self.send_command("G28 Y\n", DEFAULT_COMMAND_TIMEOUT).await
     }
 
+    pub async fn home_all(&self) -> Result<()> {
+        self.send_command("G28 W\n", DEFAULT_COMMAND_TIMEOUT).await
+    }
+
+    pub async fn mesh_level(&self) -> Result<()> {
+        self.send_command("G28\n", DEFAULT_COMMAND_TIMEOUT).await
+    }
+
     pub async fn send_command<D: Into<Bytes>>(&self, line: D, timeout: Duration) -> Result<()> {
         self.check_clear_to_send().await?;
 
-        Self::send_command_inner(&self.shared, line, timeout).await?;
+        Self::send_command_inner(&self.shared, line, timeout, false, false).await?;
         Ok(())
     }
 
@@ -581,12 +600,9 @@ impl SerialController {
         shared: &Shared,
         line: D,
         timeout: Duration,
+        skip_line: bool,
+        stop_after: bool,
     ) -> Result<(), SendCommandError> {
-        /*
-        TODO: If the background tasks fail, then this may never terminate.
-
-        */
-
         let (sender, receiver) = oneshot::channel();
 
         let deadline = Instant::now() + timeout;
@@ -607,7 +623,19 @@ impl SerialController {
                 return Err(SendCommandError::AbruptCancellation);
             }
 
-            queue.pending_send.push_back(entry);
+            if stop_after {
+                queue.stopped = true;
+                if skip_line {
+                    queue.pending_send.clear();
+                }
+            }
+
+            if skip_line {
+                queue.pending_send.push_front(entry);
+            } else {
+                queue.pending_send.push_back(entry);
+            }
+
             queue.notify_all();
 
             Ok::<_, SendCommandError>(())
@@ -619,6 +647,15 @@ impl SerialController {
             .map_err(|_| SendCommandError::AbruptCancellation)?;
 
         res
+    }
+
+    pub async fn full_stop(&self) -> Result<(), SendCommandError> {
+        // TODO: Also implement reset_using_dtr in parallel to this (wait for both
+        // futures to complete regardless of success).
+
+        // Skips all other entries in line and after stops any command from running
+        // after this one.
+        Self::send_command_inner(&self.shared, "M112\n", Duration::from_secs(120), true, true).await
     }
 
     async fn serial_writer_thread(
@@ -863,7 +900,7 @@ impl SerialController {
                 shared.change_publisher.publish(ChangeEvent::new(
                     EntityType::MACHINE,
                     Some(shared.machine_id),
-                    false,
+                    true,
                 ));
             }
 

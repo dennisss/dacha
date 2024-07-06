@@ -181,7 +181,7 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
             }
         ]
 
-        if (camera) {
+        if (camera_state) {
             settings_properties.splice(0, 0, {
                 name: 'Id',
                 value: camera.id
@@ -265,7 +265,7 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
                             </Button>
                         ) : null)}
 
-                        {camera_state ? (
+                        {/* camera_state ? (
                             <div style={{ paddingTop: 20 }}>
                                 <Button preset="danger" onClick={(done) => { }}
                                     style={{ width: '100%' }}>
@@ -273,7 +273,7 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
                                 </Button>
                             </div>
 
-                        ) : null}
+                        ) : null */}
                     </div>
 
                 ) : null}

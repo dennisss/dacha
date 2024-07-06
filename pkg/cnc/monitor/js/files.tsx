@@ -18,6 +18,23 @@ export interface FilesPageProps {
     context: PageContext
 }
 
+export function sort_files_list(files: any[]) {
+    let now = (new Date()).getTime();
+    files.sort((a, b) => {
+        let a_time = now;
+        if (a.upload_time) {
+            a_time = timestamp_proto_to_millis(a.upload_time);
+        }
+
+        let b_time = now;
+        if (b.upload_time) {
+            b_time = timestamp_proto_to_millis(b.upload_time);
+        }
+
+        return b_time - a_time;
+    })
+}
+
 export class FilesPage extends React.Component<FilesPageProps, FilesPageState> {
     state = {
         _files: null,
@@ -28,23 +45,8 @@ export class FilesPage extends React.Component<FilesPageProps, FilesPageState> {
         super(props);
 
         watch_entities(this.props.context, { entity_type: 'FILE' }, (msg) => {
-            let now = (new Date()).getTime();
-
             let files = msg.files || [];
-            files.sort((a, b) => {
-                let a_time = now;
-                if (a.upload_time) {
-                    a_time = timestamp_proto_to_millis(a.upload_time);
-                }
-
-                let b_time = now;
-                if (b.upload_time) {
-                    b_time = timestamp_proto_to_millis(b.upload_time);
-                }
-
-                return b_time - a_time;
-            })
-
+            sort_files_list(files);
             this.setState({ _files: files });
         });
     }
@@ -109,7 +111,7 @@ export class FilesPage extends React.Component<FilesPageProps, FilesPageState> {
                 <Navbar />
 
                 <div className="container" style={{ paddingTop: 20, paddingBottom: 20, position: 'relative' }}>
-                    <div style={{ textAlign: 'right', marginBottom: 16 }}>
+                    {/* <div style={{ textAlign: 'right', marginBottom: 16 }}>
                         <div className="row g-3 align-items-center">
                             <div className="col-auto">
                                 <label className="col-form-label">Search</label>
@@ -118,7 +120,7 @@ export class FilesPage extends React.Component<FilesPageProps, FilesPageState> {
                                 <input type="text" className="form-control" />
                             </div>
                         </div>
-                    </div>
+                    </div> */}
 
                     {/* TODO: Hide while searching */}
                     <div>
@@ -164,12 +166,36 @@ class UploadBox extends React.Component<UploadBoxProps> {
         this.props.onPickFile(file);
     }
 
+    _on_drop = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (e.dataTransfer.items) {
+            [...e.dataTransfer.items].forEach((item, i) => {
+                // If dropped items aren't files, reject them
+                if (item.kind === "file") {
+                    const file = item.getAsFile();
+                    this.props.onPickFile(file);
+                }
+            });
+        } else {
+            [...e.dataTransfer.files].forEach((file, i) => {
+                this.props.onPickFile(file);
+            });
+        }
+    }
+
+    _on_drag_event = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
     render() {
 
         return (
-            <div style={{ padding: "20px 10px", border: '1px dashed #ccc', cursor: 'pointer', borderRadius: 5, marginBottom: 10 }} onClick={this._on_click_outer}>
+            <div style={{ padding: "20px 10px", border: '1px dashed #ccc', cursor: 'pointer', borderRadius: 5, marginBottom: 10 }} onClick={this._on_click_outer} onDrop={this._on_drop} onDragOver={this._on_drag_event} onDragEnter={this._on_drag_event} onDragLeave={this._on_drag_event}>
                 <div style={{ textAlign: 'center', color: '#aaa' }}>
-                    Click to upload a file
+                    Click/drop to upload a file
                 </div>
 
                 <input value="" type="file" multiple style={{ display: 'none' }} ref={this._input_el} onChange={this._on_input_change} />
@@ -243,7 +269,21 @@ class FileBox extends React.Component<FileBoxProps> {
     }
 
     _on_click_reprocess = async (done: any) => {
-        // TODO:
+        let ctx = this.props.context;
+        try {
+            let res = await ctx.channel.call('cnc.Monitor', 'ReprocessFile', { file_id: this.props.file.id });
+            if (!res.status.ok()) {
+                throw res.status.toString();
+            }
+        } catch (e) {
+            ctx.notifications.add({
+                text: 'Failed to start reprocessing of file: ' + e,
+                preset: 'danger',
+                cancellable: true
+            });
+        }
+
+        done();
     }
 
     render() {
@@ -259,6 +299,8 @@ class FileBox extends React.Component<FileBoxProps> {
             type = 'Program';
         }
 
+        let percentage = ((file.state_progress || 0) * 100);
+
         let properties = [
             {
                 name: 'Name:',
@@ -268,16 +310,20 @@ class FileBox extends React.Component<FileBoxProps> {
             {
                 name: 'State:',
                 /* Possibly swap with a progress bar if loading */
-                value: file['state']
+                value: (file.state == 'READY' ? file.state : (
+                    <div>
+                        <div className="progress">
+                            <div className="progress-bar" style={{ width: percentage + '%', minWidth: 10 }}></div>
+                        </div>
+                        <div style={{ fontSize: '0.8em' }}>{file.state}:&nbsp;{Math.floor(percentage)}%</div>
+                    </div>
+                )),
             },
             {
                 name: 'Size:',
                 value: format_bytes_size(file['size'])
             },
         ];
-
-
-
 
         if (file['program']) {
             let dur = format_duration_proto(file['program']['normal_duration']);
@@ -294,6 +340,8 @@ class FileBox extends React.Component<FileBoxProps> {
         let button_style = { display: "block", marginBottom: 10, width: '100%' };
 
         let ready = file.state == 'READY';
+
+        let errors = get_file_errors(file);
 
         // TODO: Show an error if there are invalid lines in the file.
 
@@ -314,18 +362,57 @@ class FileBox extends React.Component<FileBoxProps> {
 
                     <div style={{ flexGrow: 1, padding: '0 10px' }}>
                         <PropertiesTable properties={properties} />
+                        {errors.length > 0 && ready ? (
+
+                            <div className="alert alert-danger" style={{ fontSize: '0.8em' }}>
+                                File can't be loaded since it has processing errors:
+                                <ul style={{ margin: 0 }}>
+                                    {errors.map((e, i) => {
+                                        return <li key={i}>{e}</li>
+                                    })}
+                                </ul>
+                            </div>
+                        ) : null}
                     </div>
 
                     <div style={{ flexShrink: 1 }}>
-                        <Button preset="primary" onClick={this._on_click_load} style={button_style} disabled={!ready}>Load</Button>
+                        <Button preset="primary" onClick={this._on_click_load} style={button_style} disabled={!ready || errors.length != 0}>Load</Button>
                         <Button preset="light" onClick={this._on_click_download} style={button_style} disabled={!ready}>Download</Button>
                         <Button preset="light" onClick={this._on_click_delete} style={button_style}>Delete</Button>
-                        <Button preset="link" onClick={this._on_click_reprocess} disabled={!ready} style={button_style}>Re-process</Button>
-
+                        <Button preset="light" onClick={this._on_click_reprocess} disabled={!ready} style={button_style}>Re-process</Button>
                     </div>
                 </div>
             </div>
         );
     }
+}
 
+// TODO: Move this server side once we have a better file compatibility checking system.
+export function get_file_errors(file: any) {
+    let errors: string[] = [];
+    if (file.state != 'READY') {
+        errors.push('File is not still processing.');
+        return errors;
+    }
+
+    if (file.processing_error) {
+        errors.push('Failure while procesing the file: ' + file.processing_error);
+        return errors;
+    }
+
+    if (!file.program) {
+        errors.push('File is not a GCode program.');
+        return errors;
+    }
+
+    let program = file.program;
+
+    if ((program.num_invalid_lines || 0) > 0) {
+        let s = program.num_invalid_lines > 1 ? 's' : '';
+        errors.push('Failed to interpret ' + program.num_invalid_lines + ` line${s} in the file.`);
+    }
+
+    errors = errors.concat(program.first_failures || []);
+
+    return errors;
 }
