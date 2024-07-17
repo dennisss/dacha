@@ -10,7 +10,7 @@ use sys::MappedMemory;
 use crate::bindings::*;
 use crate::buffer::*;
 use crate::device::DeviceHandle;
-use crate::format::{Format, FormatDefinition};
+use crate::format::{Format, FormatDefinition, PixelFormat};
 use crate::io::*;
 use crate::utils::read_null_terminated_string;
 
@@ -21,7 +21,9 @@ pub struct UnconfiguredStream {
 }
 
 impl UnconfiguredStream {
-    /// TODO: The list can change if we switch inputs/outputs.
+    /// Lists the formats supported by this stream.
+    ///
+    /// NOTE: This may change if the active input/output is changed.
     pub async fn list_formats(&self) -> Result<Vec<FormatDefinition>> {
         let file = self.device.shared.file.lock().await?.read_exclusive();
 
@@ -43,7 +45,7 @@ impl UnconfiguredStream {
             out.push(FormatDefinition {
                 description: read_null_terminated_string(&fmt.description)?,
                 flags: fmt.flags,
-                pixelformat: fmt.pixelformat,
+                pixelformat: PixelFormat(fmt.pixelformat),
             });
         }
 

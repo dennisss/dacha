@@ -98,7 +98,11 @@ impl BuildTarget for RustBinary {
         cmd.env("RUSTFLAGS", rust_flags);
 
         for var in self.attrs.env() {
-            cmd.env(var.key(), var.value());
+            cmd.env(
+                var.key(),
+                var.value()
+                    .replace("$PROJECT_DIR", file::project_dir().as_str()),
+            );
         }
 
         // TODO: Assert this is always

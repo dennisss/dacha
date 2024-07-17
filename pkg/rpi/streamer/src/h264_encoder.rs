@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use executor::channel::queue::ConcurrentQueue;
+use v4l2::v4l2_plane_pix_format;
 
 use crate::camera::CameraModuleFrame;
 
@@ -49,6 +50,15 @@ pub struct H264EncoderOptions {
     pub queue_length: usize,
 }
 
+/*
+Info on the Raspberry Pi 4 encoder:
+    Device: /dev/video11
+    Driver: bcm2835-codec
+    Card: bcm2835-codec-encode
+    Bus Info: platform:bcm2835-codec
+
+*/
+
 pub struct H264Encoder {
     device: v4l2::Device,
 
@@ -64,63 +74,82 @@ pub struct H264Encoder {
 impl H264Encoder {
     /// Creates and starts up an H264 encoder.
     pub async fn create(options: H264EncoderOptions) -> Result<Self> {
-        let mut dev = v4l2::Device::open("/dev/video11")?;
+        // TODO: When we eventually do enumeration of these, we need to skip devices
+        // that are already opened by other parts of the application since we will get
+        // access errors with opening them twice (but need to verify).
+
+        let mut dev = {
+            let mut found_device = None;
+
+            let mut devices = v4l2::Device::list().await?;
+
+            for device in devices {
+                if !device.is_m2m() {
+                    continue;
+                }
+
+                let formats = device.new_capture_stream()?.list_formats().await?;
+                for format in formats {
+                    if format.pixelformat.to_string() == "H264" {
+                        if found_device.is_some() {
+                            return Err(err_msg("Found multiple H264 encoding devices"));
+                        }
+
+                        found_device = Some(device);
+                        break;
+                    }
+                }
+            }
+
+            found_device.ok_or_else(|| err_msg("Couldn't find a V4L2 H264 encoding device"))?
+        };
 
         // TODO: Explicitly set the H264 profile?
 
-        let mut output_stream =
-            dev.new_stream(v4l2::v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)?;
+        let mut output_stream = dev.new_output_stream()?;
         {
-            let mut format = v4l2::v4l2_format::default();
-            format.fmt.pix_mp.width = options.width as u32;
-            format.fmt.pix_mp.height = options.height as u32;
-            format.fmt.pix_mp.pixelformat = v4l2::V4L2_PIX_FMT_YUV420;
-            unsafe { format.fmt.pix_mp.plane_fmt[0].bytesperline = options.stride as u32 };
-            format.fmt.pix_mp.field = v4l2::v4l2_field::V4L2_FIELD_ANY.0;
-            format.fmt.pix_mp.colorspace = v4l2::v4l2_colorspace::V4L2_COLORSPACE_REC709.0;
-            format.fmt.pix_mp.num_planes = 1;
-
-            /*
             let mut format = output_stream.get_format().await?;
-            format.fmt.pix_mp.width = 800;
-            format.fmt.pix_mp.height = 600;
-            format.fmt.pix_mp.pixelformat = v4l2::V4L2_PIX_FMT_YUV420;
-            */
+            format.set_width(options.width as u32);
+            format.set_height(options.height as u32);
+            format.set_pixelformat(v4l2::V4L2_PIX_FMT_YUV420);
+            format.set_field(v4l2::v4l2_field::V4L2_FIELD_ANY.0);
+            format.set_colorspace(v4l2::v4l2_colorspace::V4L2_COLORSPACE_REC709.0);
+
+            format.set_num_planes(1);
+            format.set_plane_format(0, {
+                let mut f = v4l2_plane_pix_format::default();
+                f.bytesperline = options.stride as u32;
+                f.sizeimage = 0;
+                f
+            });
 
             output_stream.set_format(format).await?;
 
             // Set frame rate
+            // TODO: Improve the safety of this.
             let mut param = v4l2::v4l2_streamparm::default();
             param.parm.output.timeperframe.numerator = 1;
             param.parm.output.timeperframe.denominator = options.framerate as u32;
             output_stream.set_streaming_params(param).await?;
         }
 
-        let mut capture_stream =
-            dev.new_stream(v4l2::v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)?;
+        let mut capture_stream = dev.new_capture_stream()?;
         {
-            let mut format = v4l2::v4l2_format::default();
-            format.fmt.pix_mp.width = options.width as u32;
-            format.fmt.pix_mp.height = options.height as u32;
-            format.fmt.pix_mp.pixelformat = v4l2::V4L2_PIX_FMT_H264;
-            format.fmt.pix_mp.field = v4l2::v4l2_field::V4L2_FIELD_ANY.0;
-            format.fmt.pix_mp.colorspace = v4l2::v4l2_colorspace::V4L2_COLORSPACE_DEFAULT.0;
-            format.fmt.pix_mp.num_planes = 1;
-            unsafe {
-                format.fmt.pix_mp.plane_fmt[0].bytesperline = 0;
-                format.fmt.pix_mp.plane_fmt[0].sizeimage = 512 << 10;
-            }
-
-            /*
             let mut format = capture_stream.get_format().await?;
-            println!("Capture format: {}", unsafe {
-                // Should be the 'H264' four-CC code
-                format.fmt.pix_mp.pixelformat
-            });
 
-            format.fmt.pix_mp.width = 800;
-            format.fmt.pix_mp.height = 600;
-            */
+            format.set_width(options.width as u32);
+            format.set_height(options.height as u32);
+            format.set_pixelformat(v4l2::V4L2_PIX_FMT_H264);
+            format.set_field(v4l2::v4l2_field::V4L2_FIELD_ANY.0);
+            format.set_colorspace(v4l2::v4l2_colorspace::V4L2_COLORSPACE_DEFAULT.0);
+
+            format.set_num_planes(1);
+            format.set_plane_format(0, {
+                let mut f = v4l2_plane_pix_format::default();
+                f.bytesperline = 0;
+                f.sizeimage = 512 << 10; // 512 KiB
+                f
+            });
 
             capture_stream.set_format(format).await?;
         }

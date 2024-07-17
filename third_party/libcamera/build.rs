@@ -134,18 +134,6 @@ fn compile_controls(namespace: &str, in_path: &str, out_dir: &Path) {
 }
 
 fn main() {
-    /*
-
-
-    PKG_CONFIG_PATH_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu/pkgconfig PKG_CONFIG_SYSROOT_DIR_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="--sysroot=/opt/dacha/pi/rootfs"  cargo build --target aarch64-unknown-linux-gnu --release --bin libcamera
-
-
-    scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/libcamera cluster-user@10.1.0.112:~
-
-    scp -i ~/.ssh/id_cluster cluster-user@10.1.0.112:~/image.rgb .
-
-    */
-
     let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     let lib = pkg_config::probe_library("libcamera").unwrap();

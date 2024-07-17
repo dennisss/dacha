@@ -21,7 +21,9 @@ export class PageComponent extends React.Component<PageComponentProps> {
     constructor(props: PageComponentProps) {
         super(props);
 
-        let channel = new Channel("http://localhost:8001");
+        // TODO: Dedup this code.
+        let channel = new Channel(`${window.location.protocol}//${window.location.hostname}:${global.vars.rpc_port}`);
+
         this._abort_controller = new AbortController();
         channel.add_abort_signal(this._abort_controller.signal);
 

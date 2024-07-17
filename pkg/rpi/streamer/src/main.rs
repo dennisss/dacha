@@ -1,19 +1,17 @@
 #[macro_use]
 extern crate macros;
 
-use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
-use executor::sync::Mutex;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath};
 use sys::MappedMemory;
 
 use rpi_streamer::*;
-use video::mp4::MP4Builder;
+use video::mp4::{MP4Builder, MP4BuilderOptions};
 
 /*
 
@@ -85,7 +83,7 @@ Properties: ControlList {
  */
 
 const CAMERA_QUEUE_LENGTH: usize = 4;
-const FRAME_RATE: usize = 24;
+const FRAME_RATE: usize = 30;
 
 const NUM_FRAMES: usize = FRAME_RATE * 20;
 
@@ -159,6 +157,8 @@ impl Streamer {
                 stream_id: camera_stream_id,
             };
 
+            // frame..
+
             /*
             if let Some(last_frame_value) = last_frame.take() {
                 let frame_buf = frame
@@ -212,7 +212,8 @@ impl Streamer {
 
             let capture_buffer = encoder.dequeue_data().await?;
 
-            mp4_builder.append(capture_buffer.used_memory())?;
+            // TODO: Propagate the frame timestamps.
+            mp4_builder.append(capture_buffer.used_memory(), None, false)?;
 
             encoder.return_buffer(capture_buffer).await?;
 
@@ -224,7 +225,14 @@ impl Streamer {
             }
         }
 
-        file::write("image.mp4", mp4_builder.finish()?).await?;
+        mp4_builder.append(&[], None, true)?;
+
+        let mut out = vec![];
+        while let Some(event) = mp4_builder.consume() {
+            out.extend_from_slice(&event.data);
+        }
+
+        file::write("image.mp4", out).await?;
 
         println!("Done outfeed");
 
@@ -268,7 +276,12 @@ async fn record_camera() -> Result<()> {
         .await?,
     );
 
-    let mp4_builder = MP4Builder::new(width as u32, height as u32, FRAME_RATE as u32)?;
+    let mp4_builder = MP4Builder::new(
+        width as u32,
+        height as u32,
+        FRAME_RATE as u32,
+        MP4BuilderOptions::default(),
+    )?;
 
     let mut bundle = TaskResultBundle::new();
 

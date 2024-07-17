@@ -10,6 +10,7 @@ common = { path = "../../common" }
 perf = { path = "../../perf" }
 executor = { path = "../../executor" }
 file = { path = "../../file" }
+protobuf = { path = "../../protobuf" }
 
 [features]
 default = ["std", "alloc"]

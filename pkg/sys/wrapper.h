@@ -19,5 +19,6 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
+#include <linux/loop.h>
 
 // #include <asm/prctl.h>

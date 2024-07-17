@@ -30,6 +30,7 @@ impl TempDir {
                 .as_nanos();
             let path = LocalPath::new("/tmp/dacha").join(time.to_string());
 
+            // TODO: Always perform this as the real user and not as root if we are sudo'ed.
             let _ = std::fs::create_dir("/tmp/dacha");
 
             if let Err(e) = std::fs::create_dir(&path) {

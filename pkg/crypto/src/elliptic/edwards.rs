@@ -40,6 +40,14 @@ pub struct EdwardsCurveGroup {
     /// Integers in the range [0, p) MUST be representable with 'b - 1' bits.
     /// The hash function must be able to generate '2*b' bits.
     encoding_bits: usize,
+
+    derived: Derived,
+}
+
+struct Derived {
+    r_0: EdwardsCurveProjectivePoint,
+    a: SecureBigUint,
+    d: SecureBigUint,
 }
 
 impl EdwardsCurveGroup {
@@ -47,37 +55,65 @@ impl EdwardsCurveGroup {
         let bits = 255;
         let p = {
             let working_bits = 256;
-            let mut v = SecureBigUint::exp2(255, working_bits)
-                - SecureBigUint::from_usize(19, working_bits);
+            let mut v = SecureBigUint::exp2(255, working_bits, &mut HeapAllocator {})
+                - SecureBigUint::from_constant(19);
             v.truncate(bits);
             v
         };
 
         // -1
-        let a = SecureModulo::new(&p).negate(&SecureBigUint::from_usize(1, bits));
+        let a = SecureModulo::new(&p).negate(
+            &SecureBigUint::from_usize(1, bits, &mut HeapAllocator {}),
+            &mut HeapAllocator {},
+        );
 
         //-121665/121666
         let d = SecureBigUint::from_str(
             "37095705934669439343138083508754565189542113879843219016388785533085940283555",
             bits,
+            &mut HeapAllocator {},
         )
         .unwrap();
 
-        let mut order = SecureBigUint::exp2(252, bits)
-            + &SecureBigUint::from_str("27742317777372353535851937790883648493", bits).unwrap();
+        let mut order = SecureBigUint::exp2(252, bits, &mut HeapAllocator {})
+            + &SecureBigUint::from_str(
+                "27742317777372353535851937790883648493",
+                bits,
+                &mut HeapAllocator {},
+            )
+            .unwrap();
         order.truncate(253);
 
         let base_point = EdwardsCurvePoint {
             x: SecureBigUint::from_str(
                 "15112221349535400772501151409588531511454012693041857206046113283949847762202",
                 bits,
+                &mut HeapAllocator {},
             )
             .unwrap(),
             y: SecureBigUint::from_str(
                 "46316835694926478169428394003475163141307993866256225615783033603165251855960",
                 bits,
+                &mut HeapAllocator {},
             )
             .unwrap(),
+        };
+
+        let derived = {
+            let modulo = SecureMontgomeryModulo::new(&p);
+
+            let mut r_0 = EdwardsCurvePoint::neutral(&p).to_projective();
+            modulo.to_montgomery_form(&mut r_0.x, &mut HeapAllocator {});
+            modulo.to_montgomery_form(&mut r_0.y, &mut HeapAllocator {});
+            modulo.to_montgomery_form(&mut r_0.z, &mut HeapAllocator {});
+
+            let mut a = a.clone();
+            modulo.to_montgomery_form(&mut a, &mut HeapAllocator {});
+
+            let mut d = d.clone();
+            modulo.to_montgomery_form(&mut d, &mut HeapAllocator {});
+
+            Derived { r_0, a, d }
         };
 
         Self {
@@ -87,6 +123,7 @@ impl EdwardsCurveGroup {
             order,
             base_point,
             encoding_bits: 256,
+            derived,
         }
     }
 
@@ -102,8 +139,11 @@ impl EdwardsCurveGroup {
 
     /// Expands a private key to a public key which can be used to
     pub fn public_key(&self, private_key: &[u8]) -> Result<Vec<u8>> {
+        let mut arena = Arena::new(8192);
+        let mut allocator = arena.allocator();
+
         let (secret_scalar, prefix) = self.expand_private_key(private_key)?;
-        let public_value = self.scalar_mul_point(&secret_scalar, &self.base_point);
+        let public_value = self.scalar_mul_point(&secret_scalar, &self.base_point, &mut allocator);
         let public_key = self.encode_point(&public_value);
         Ok(public_key)
     }
@@ -111,9 +151,12 @@ impl EdwardsCurveGroup {
     /// See RFC 8032
     /// TODO: Also support
     pub fn create_signature(&self, private_key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
+        let mut arena = Arena::new(8192);
+        let mut allocator = arena.allocator();
+
         let (secret_scalar, prefix) = self.expand_private_key(private_key)?;
 
-        let public_value = self.scalar_mul_point(&secret_scalar, &self.base_point);
+        let public_value = self.scalar_mul_point(&secret_scalar, &self.base_point, &mut allocator);
 
         let public_key = self.encode_point(&public_value);
 
@@ -122,11 +165,12 @@ impl EdwardsCurveGroup {
             hasher.update(&prefix);
             let hash = hasher.finish_with(data);
 
-            SecureBigUint::from_le_bytes(&hash) % &self.order
+            SecureBigUint::from_le_bytes(&hash, &mut allocator).rem(&self.order, &mut allocator)
         };
 
-        let r_s = self.encode_point(&self.scalar_mul_point(&r, &self.base_point));
+        let r_s = self.encode_point(&self.scalar_mul_point(&r, &self.base_point, &mut allocator));
 
+        // S = (r + k * s) mod L
         let mut s = {
             let h = {
                 let mut hasher = SHA512Hasher::default();
@@ -134,15 +178,19 @@ impl EdwardsCurveGroup {
                 hasher.update(&public_key);
                 let hash = hasher.finish_with(data);
 
-                SecureBigUint::from_le_bytes(&hash) % &self.order
+                SecureBigUint::from_le_bytes(&hash, &mut allocator).rem(&self.order, &mut allocator)
             };
 
-            (r + &(h * &secret_scalar)) % &self.order
+            let num = r.add(&(h.mul(&secret_scalar, &mut allocator)), &mut allocator);
+
+            num.rem(&self.order, &mut allocator)
         };
 
         let mut out = vec![];
         out.extend_from_slice(&r_s);
         out.extend_from_slice(&s.to_le_bytes());
+
+        drop(allocator);
 
         Ok(out)
     }
@@ -153,7 +201,10 @@ impl EdwardsCurveGroup {
         signature: &[u8],
         data: &[u8],
     ) -> Result<bool> {
-        let public_point = self.decode_point(&public_key)?;
+        let mut arena = Arena::new(8192);
+        let mut allocator = arena.allocator();
+
+        let public_point = self.decode_point(&public_key, &mut allocator)?;
 
         let n = self.encoding_bytes();
         if signature.len() != 2 * n {
@@ -161,9 +212,9 @@ impl EdwardsCurveGroup {
         }
 
         let r_s = &signature[0..n];
-        let r = self.decode_point(r_s)?;
+        let r = self.decode_point(r_s, &mut allocator)?;
 
-        let s = SecureBigUint::from_le_bytes(&signature[n..]);
+        let s = SecureBigUint::from_le_bytes(&signature[n..], &mut allocator);
         if s >= self.order {
             return Err(err_msg("Invalid signature"));
         }
@@ -174,31 +225,32 @@ impl EdwardsCurveGroup {
             hasher.update(public_key);
             let hash = hasher.finish_with(data);
 
-            SecureBigUint::from_le_bytes(&hash) % &self.order
+            SecureBigUint::from_le_bytes(&hash, &mut allocator.sub_allocator())
+                .rem(&self.order, &mut HeapAllocator {})
         };
 
-        let s_b = self.scalar_mul_point(&s, &self.base_point);
-        let h_a = self.scalar_mul_point(&h, &public_point);
+        let s_b = self.scalar_mul_point(&s, &self.base_point, &mut allocator);
+        let h_a = self.scalar_mul_point(&h, &public_point, &mut allocator);
 
         // 'R + hA'
         let expected = {
             let mut modulo = SecureMontgomeryModulo::new(&self.p);
             let mut r = r.to_projective();
             let mut h_a = h_a.to_projective();
-            modulo.to_montgomery_form(&mut r.x);
-            modulo.to_montgomery_form(&mut r.y);
-            modulo.to_montgomery_form(&mut r.z);
-            modulo.to_montgomery_form(&mut h_a.x);
-            modulo.to_montgomery_form(&mut h_a.y);
-            modulo.to_montgomery_form(&mut h_a.z);
+            modulo.to_montgomery_form(&mut r.x, &mut allocator);
+            modulo.to_montgomery_form(&mut r.y, &mut allocator);
+            modulo.to_montgomery_form(&mut r.z, &mut allocator);
+            modulo.to_montgomery_form(&mut h_a.x, &mut allocator);
+            modulo.to_montgomery_form(&mut h_a.y, &mut allocator);
+            modulo.to_montgomery_form(&mut h_a.z, &mut allocator);
 
-            let out = self.add_points(&r, &h_a, &modulo);
+            let out = self.add_points(&r, &h_a, &modulo, &mut allocator);
 
-            let p = EdwardsCurvePoint::from_projective(&out, &modulo);
+            let p = EdwardsCurvePoint::from_projective(&out, &modulo, &mut allocator);
 
             EdwardsCurvePoint {
-                x: modulo.from_montgomery_form(&p.x),
-                y: modulo.from_montgomery_form(&p.y),
+                x: modulo.from_montgomery_form(&p.x, &mut HeapAllocator {}),
+                y: modulo.from_montgomery_form(&p.y, &mut HeapAllocator {}),
             }
         };
 
@@ -231,7 +283,10 @@ impl EdwardsCurveGroup {
         h[31] &= !(1 << 7); // Clear highest bit of last octet
         h[31] |= (1 << 6); // Set the second highest bit of last octet.
 
-        Ok((SecureBigUint::from_le_bytes(&h[0..n]), h[n..].to_vec()))
+        Ok((
+            SecureBigUint::from_le_bytes(&h[0..n], &mut HeapAllocator {}),
+            h[n..].to_vec(),
+        ))
     }
 
     /// Points are encoded as the 'y' coordinate in little endian with the top
@@ -244,11 +299,17 @@ impl EdwardsCurveGroup {
         data
     }
 
-    fn decode_point(&self, data: &[u8]) -> Result<EdwardsCurvePoint> {
+    fn decode_point<'a, A: Allocator<'a>>(
+        &self,
+        data: &[u8],
+        allocator: &mut A,
+    ) -> Result<EdwardsCurvePoint> {
         let n = self.encoding_bytes();
         if n != data.len() {
             return Err(err_msg("Encoded point is wrong size"));
         }
+
+        let mut allocator = allocator.sub_allocator();
 
         let mut data = data.to_vec();
 
@@ -258,7 +319,7 @@ impl EdwardsCurveGroup {
         let n = data.len();
         data[n - 1] &= !(1 << 7);
 
-        let mut y = SecureBigUint::from_le_bytes(&data);
+        let mut y = SecureBigUint::from_le_bytes(&data, &mut HeapAllocator {});
         if y >= self.p {
             return Err(err_msg("Y coordinate out of range"));
         }
@@ -268,33 +329,36 @@ impl EdwardsCurveGroup {
         let x2 = {
             let modulo = SecureMontgomeryModulo::new(&self.p);
 
-            let mut one = SecureBigUint::from_usize(1, self.p.bit_width());
+            let mut one = SecureBigUint::from_usize(1, self.p.bit_width(), &mut HeapAllocator {});
             let mut y = y.clone();
-            let mut a = self.a.clone();
-            let mut d = self.d.clone();
+            modulo.to_montgomery_form(&mut one, &mut allocator);
+            modulo.to_montgomery_form(&mut y, &mut allocator);
 
-            modulo.to_montgomery_form(&mut one);
-            modulo.to_montgomery_form(&mut y);
-            modulo.to_montgomery_form(&mut a);
-            modulo.to_montgomery_form(&mut d);
+            let y2 = modulo.mul(&y, &y, &mut HeapAllocator {});
 
-            let y2 = modulo.mul(&y, &y);
+            let numerator = modulo.sub(&one, &y2, &mut HeapAllocator {});
+            let denominator = modulo.sub(
+                &self.derived.a,
+                &modulo.mul(&self.derived.d, &y2, &mut HeapAllocator {}),
+                &mut HeapAllocator {},
+            );
 
-            let numerator = modulo.sub(&one, &y2);
-            let denominator = modulo.sub(&a, &modulo.mul(&d, &y2));
+            let res = modulo.mul(
+                &numerator,
+                &modulo.inv_public_prime_mod(&denominator, &mut HeapAllocator {}),
+                &mut HeapAllocator {},
+            );
 
-            let res = modulo.mul(&numerator, &modulo.inv_prime_mod(&denominator));
-
-            modulo.from_montgomery_form(&res)
+            modulo.from_montgomery_form(&res, &mut HeapAllocator {})
         };
 
-        let mut x = match SecureModulo::new(&self.p).isqrt(&x2) {
+        let mut x = match SecureModulo::new(&self.p).isqrt(&x2, &mut HeapAllocator {}) {
             Some(v) => v,
             None => return Err(err_msg("X has no root")),
         };
 
         if (x.bit(0) as u8) != x_sign {
-            x = SecureModulo::new(&self.p).negate(&x);
+            x = SecureModulo::new(&self.p).negate(&x, &mut HeapAllocator {});
         }
 
         // Should only be possible if x = 0, but a sign of '1' was encoded.
@@ -305,34 +369,45 @@ impl EdwardsCurveGroup {
         Ok(EdwardsCurvePoint { x, y })
     }
 
-    fn scalar_mul_point(&self, s: &SecureBigUint, p: &EdwardsCurvePoint) -> EdwardsCurvePoint {
+    fn scalar_mul_point<'a, A: Allocator<'a>, S: StorageType>(
+        &self,
+        s: &SecureBigUint<S>,
+        p: &EdwardsCurvePoint,
+        allocator: &mut A,
+    ) -> EdwardsCurvePoint {
+        let mut allocator = allocator.sub_allocator();
+
         let mut modulo = SecureMontgomeryModulo::new(&self.p);
 
         let mut p = p.to_projective();
-        modulo.to_montgomery_form(&mut p.x);
-        modulo.to_montgomery_form(&mut p.y);
-        modulo.to_montgomery_form(&mut p.z);
+        modulo.to_montgomery_form(&mut p.x, &mut allocator);
+        modulo.to_montgomery_form(&mut p.y, &mut allocator);
+        modulo.to_montgomery_form(&mut p.z, &mut allocator);
 
-        let out = self.scalar_mul_point_inner(s, &p, &modulo);
+        let out = self.scalar_mul_point_inner(s, &p, &modulo, &mut allocator);
 
-        let out = EdwardsCurvePoint::from_projective(&out, &modulo);
+        let out = EdwardsCurvePoint::from_projective(&out, &modulo, &mut allocator);
 
         EdwardsCurvePoint {
-            x: modulo.from_montgomery_form(&out.x),
-            y: modulo.from_montgomery_form(&out.y),
+            x: modulo.from_montgomery_form(&out.x, &mut HeapAllocator {}),
+            y: modulo.from_montgomery_form(&out.y, &mut HeapAllocator {}),
         }
     }
 
-    fn scalar_mul_point_inner(
+    fn scalar_mul_point_inner<'a, A: Allocator<'a>, S: StorageType>(
         &self,
-        s: &SecureBigUint,
+        s: &SecureBigUint<S>,
         p: &EdwardsCurveProjectivePoint,
         modulo: &SecureMontgomeryModulo,
+        allocator: &mut A,
     ) -> EdwardsCurveProjectivePoint {
+        /*
         let mut r_0 = EdwardsCurvePoint::neutral(&self.p).to_projective();
-        modulo.to_montgomery_form(&mut r_0.x);
-        modulo.to_montgomery_form(&mut r_0.y);
-        modulo.to_montgomery_form(&mut r_0.z);
+        modulo.to_montgomery_form(&mut r_0.x, allocator);
+        modulo.to_montgomery_form(&mut r_0.y, allocator);
+        modulo.to_montgomery_form(&mut r_0.z, allocator);
+        */
+        let mut r_0 = self.derived.r_0.clone();
 
         let mut r_1 = p.clone();
 
@@ -347,8 +422,8 @@ impl EdwardsCurveGroup {
             r_0.z.swap_if(&mut r_1.z, swap);
             swap = s_i;
 
-            r_1 = self.add_points(&r_0, &r_1, modulo);
-            r_0 = self.add_points(&r_0, &r_0, modulo);
+            r_1 = self.add_points(&r_0, &r_1, modulo, allocator);
+            r_0 = self.add_points(&r_0, &r_0, modulo, allocator);
         }
 
         r_0.x.swap_if(&mut r_1.x, swap);
@@ -358,58 +433,78 @@ impl EdwardsCurveGroup {
         r_0
     }
 
-    fn add_points(
+    fn add_points<'a, A: Allocator<'a>>(
         &self,
         p: &EdwardsCurveProjectivePoint,
         q: &EdwardsCurveProjectivePoint,
         modulo: &SecureMontgomeryModulo,
+        allocator: &mut A,
     ) -> EdwardsCurveProjectivePoint {
+        let mut allocator = allocator.sub_allocator();
+
         // A = Z1*Z2
-        let a = modulo.mul(&p.z, &q.z);
+        let a = modulo.mul(&p.z, &q.z, &mut allocator);
 
         // B = A^2
-        let b = modulo.mul(&a, &a);
+        let b = modulo.mul(&a, &a, &mut allocator);
 
         // C = X1*X2
-        let c = modulo.mul(&p.x, &q.x);
+        let c = modulo.mul(&p.x, &q.x, &mut allocator);
 
         // D = Y1*Y2
-        let d = modulo.mul(&p.y, &q.y);
-
-        let mut self_d = self.d.clone();
-        modulo.to_montgomery_form(&mut self_d);
+        let d = modulo.mul(&p.y, &q.y, &mut allocator);
 
         // E = d*C*D
-        // TODO: Convert 'self.d' to montgomery form.
-        let e = modulo.mul(&self_d, &modulo.mul(&c, &d));
+        let e = {
+            let mut allocator = allocator.sub_allocator();
+            let tmp = modulo.mul(&c, &d, &mut allocator);
+            modulo.mul(&self.derived.d, &tmp, &mut HeapAllocator {})
+        };
 
         // F = B-E
-        let f = modulo.sub(&b, &e);
+        let f = modulo.sub(&b, &e, &mut HeapAllocator {});
 
         // G = B+E
-        let g = modulo.add(&b, &e);
+        let g = modulo.add(&b, &e, &mut HeapAllocator {});
 
         // H = (X1+Y1)*(X2+Y2)
-        let h = modulo.mul(&modulo.add(&p.x, &p.y), &modulo.add(&q.x, &q.y));
+        let h = {
+            let mut allocator = allocator.sub_allocator();
+            let one = modulo.add(&p.x, &p.y, &mut allocator);
+            let two = modulo.add(&q.x, &q.y, &mut allocator);
+            modulo.mul(&one, &two, &mut HeapAllocator {})
+        };
 
         // X3 = A*F*(H-C-D)
         let x = {
-            let tmp = modulo.sub(&h, &modulo.add(&c, &d));
-            modulo.mul(&a, &modulo.mul(&f, &tmp))
+            let tmp = modulo.sub(
+                &h,
+                &modulo.add(&c, &d, &mut HeapAllocator {}),
+                &mut HeapAllocator {},
+            );
+            modulo.mul(
+                &a,
+                &modulo.mul(&f, &tmp, &mut HeapAllocator {}),
+                &mut HeapAllocator {},
+            )
         };
 
         // Y3 = A*G*(D-aC)
         let y = {
-            let mut self_a = self.a.clone();
-            modulo.to_montgomery_form(&mut self_a);
-
-            // TODO: Convert 'self.a' into montgomery form.
-            let tmp = modulo.sub(&d, &modulo.mul(&self_a, &c));
-            modulo.mul(&a, &modulo.mul(&g, &tmp))
+            let tmp = modulo.sub(
+                &d,
+                &modulo.mul(&self.derived.a, &c, &mut HeapAllocator {}),
+                &mut HeapAllocator {},
+            );
+            modulo.mul(
+                &a,
+                &modulo.mul(&g, &tmp, &mut HeapAllocator {}),
+                &mut HeapAllocator {},
+            )
         };
 
         // Z3 = F*G
-        let z = modulo.mul(&f, &g);
+        let z = modulo.mul(&f, &g, &mut HeapAllocator {});
 
         EdwardsCurveProjectivePoint { x, y, z }
     }
@@ -424,8 +519,8 @@ struct EdwardsCurvePoint {
 impl EdwardsCurvePoint {
     fn neutral(p: &SecureBigUint) -> Self {
         Self {
-            x: SecureBigUint::from_usize(0, p.bit_width()),
-            y: SecureBigUint::from_usize(1, p.bit_width()),
+            x: SecureBigUint::from_usize(0, p.bit_width(), &mut HeapAllocator {}),
+            y: SecureBigUint::from_usize(1, p.bit_width(), &mut HeapAllocator {}),
         }
     }
 
@@ -433,21 +528,25 @@ impl EdwardsCurvePoint {
         EdwardsCurveProjectivePoint {
             x: self.x.clone(),
             y: self.y.clone(),
-            z: SecureBigUint::from_usize(1, self.x.bit_width()),
+            z: SecureBigUint::from_usize(1, self.x.bit_width(), &mut HeapAllocator {}),
         }
     }
 
     /// x = X/Z, y = Y/Z
-    fn from_projective(
+    fn from_projective<'a, A: Allocator<'a>>(
         point: &EdwardsCurveProjectivePoint,
         modulo: &SecureMontgomeryModulo,
+        allocator: &mut A,
     ) -> Self {
+        // Mainly because inv_public_prime_mod doesn't clean up well.
+        let mut allocator = allocator.sub_allocator();
+
         // TODO: Use fast inverse for prime modulus/
-        let z_inv = modulo.inv_prime_mod(&point.z);
+        let z_inv = modulo.inv_public_prime_mod(&point.z, &mut allocator);
 
         Self {
-            x: modulo.mul(&point.x, &z_inv),
-            y: modulo.mul(&point.y, &z_inv),
+            x: modulo.mul(&point.x, &z_inv, &mut HeapAllocator {}),
+            y: modulo.mul(&point.y, &z_inv, &mut HeapAllocator {}),
         }
     }
 
@@ -455,8 +554,8 @@ impl EdwardsCurvePoint {
         EdwardsCurveExtendedPoint {
             x: self.x.clone(),
             y: self.y.clone(),
-            z: SecureBigUint::from_usize(1, p.bit_width()),
-            t: SecureModulo::new(p).mul(&self.x, &self.y),
+            z: SecureBigUint::from_usize(1, p.bit_width(), &mut HeapAllocator {}),
+            t: SecureModulo::new(p).mul(&self.x, &self.y, &mut HeapAllocator {}),
         }
     }
 
@@ -465,20 +564,20 @@ impl EdwardsCurvePoint {
         let modulo = SecureModulo::new(p);
 
         // TODO: Use fast inverse for prime modulus/
-        let z_inv = modulo.inv(&point.z);
+        let z_inv = modulo.inv(&point.z, &mut HeapAllocator {});
 
         Self {
-            x: modulo.mul(&point.x, &z_inv),
-            y: modulo.mul(&point.y, &z_inv),
+            x: modulo.mul(&point.x, &z_inv, &mut HeapAllocator {}),
+            y: modulo.mul(&point.y, &z_inv, &mut HeapAllocator {}),
         }
     }
 }
 
 #[derive(Clone)]
-struct EdwardsCurveProjectivePoint {
-    x: SecureBigUint,
-    y: SecureBigUint,
-    z: SecureBigUint,
+struct EdwardsCurveProjectivePoint<S: StorageType = Vec<u32>> {
+    x: SecureBigUint<S>,
+    y: SecureBigUint<S>,
+    z: SecureBigUint<S>,
 }
 
 #[derive(Clone)]

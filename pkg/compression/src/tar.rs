@@ -693,7 +693,7 @@ impl<Output: Writeable> Writer<Output> {
         let metadata = FileMetadata {
             header: Header {
                 file_name: name.to_string(),
-                file_mode: None,
+                file_mode: Some(0644),
                 owner_id: None,
                 group_id: None,
                 file_size: Some(size),

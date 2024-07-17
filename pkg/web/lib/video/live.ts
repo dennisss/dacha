@@ -107,8 +107,6 @@ export class LiveVideoSource extends VideoSource {
 
         this._listeners = new VideoEventListener(this._video, this._abort_signal, () => {
             if (this._video.paused && this._attempt_abort_controller !== null) {
-                console.log('Cancel on pause');
-
                 this._attempt_abort_controller.abort();
                 this._attempt_abort_controller = null;
             }

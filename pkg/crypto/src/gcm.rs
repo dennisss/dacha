@@ -4,7 +4,7 @@ use std::string::ToString;
 use std::vec::Vec;
 
 use common::errors::*;
-use math::big::BigUint;
+use math::big::{Allocator, BigUint, HeapAllocator};
 use math::integer::Integer;
 use math::number::Zero;
 
@@ -42,7 +42,7 @@ impl GaloisField2 {
     pub fn new(m: usize, poly: SecureBigUint) -> Self {
         let poly_wide = {
             let mut p = poly.clone();
-            p.extend(2 * m);
+            p.extend(2 * m, &mut HeapAllocator {});
 
             // Add back the x^m coefficient.
             p.set_bit(m, 1);
@@ -63,7 +63,7 @@ impl GaloisField2 {
     /// Reduces by the polynomial 'x^128 + x^7 + x^2 + x + 1'
     pub fn gcm128() -> Self {
         let p = {
-            let mut n = SecureBigUint::from_usize(0, 128);
+            let mut n = SecureBigUint::from_usize(0, 128, &mut HeapAllocator {});
             // n.set_bit(128, 1);
             n.set_bit(7, 1);
             n.set_bit(2, 1);
@@ -107,7 +107,7 @@ impl GaloisField2 {
     ///
     /// The intermediate multiplication pre-reduction will reach
     pub fn mul(&self, mut a: SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
-        let mut out = SecureBigUint::from_usize(0, 2 * self.m - 1);
+        let mut out = SecureBigUint::from_usize(0, 2 * self.m - 1, &mut HeapAllocator {});
         a.carryless_mul_to(b, &mut out);
         self.reduce(&out)
     }
@@ -160,7 +160,7 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
             let data = [0u8; 16];
             let mut enc = [0u8; 16];
             cipher.encrypt_block(&data, &mut enc);
-            SecureBigUint::from_be_bytes(&enc)
+            SecureBigUint::from_be_bytes(&enc, &mut HeapAllocator {})
         };
 
         let counter = if iv.len() == 12 {
@@ -370,7 +370,7 @@ impl GHasher {
         h.reverse_bits();
 
         Self {
-            x: SecureBigUint::from_usize(0, 128),
+            x: SecureBigUint::from_usize(0, 128, &mut HeapAllocator {}),
             h,
             field: GaloisField2::gcm128(),
         }
@@ -381,7 +381,7 @@ impl GHasher {
     }
 
     fn update_with(&self, x: &SecureBigUint, block: &Block) -> SecureBigUint {
-        let mut b = SecureBigUint::from_be_bytes(block);
+        let mut b = SecureBigUint::from_be_bytes(block, &mut HeapAllocator {});
         b.reverse_bits();
         b ^= x; // GF(2^m) addition.
 
@@ -435,9 +435,18 @@ mod tests {
         // b = 0x48692853686179295b477565726f6e5d
         // GFMUL128 (a, b) = 0x40229a09a5ed12e7e4e10da323506d2
 
-        let a = SecureBigUint::from_be_bytes(&hex!("7b5b54657374566563746f725d53475d"));
-        let b = SecureBigUint::from_be_bytes(&hex!("48692853686179295b477565726f6e5d"));
-        let c = SecureBigUint::from_be_bytes(&hex!("040229a09a5ed12e7e4e10da323506d2"));
+        let a = SecureBigUint::from_be_bytes(
+            &hex!("7b5b54657374566563746f725d53475d"),
+            &mut HeapAllocator {},
+        );
+        let b = SecureBigUint::from_be_bytes(
+            &hex!("48692853686179295b477565726f6e5d"),
+            &mut HeapAllocator {},
+        );
+        let c = SecureBigUint::from_be_bytes(
+            &hex!("040229a09a5ed12e7e4e10da323506d2"),
+            &mut HeapAllocator {},
+        );
 
         let field = GaloisField2::gcm128();
         assert_eq!(field.mul(a, &b).to_string(), c.to_string());

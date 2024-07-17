@@ -10,6 +10,7 @@ extern crate file;
 use alloc::boxed::Box;
 use crypto::pem::PEMBuilder;
 use crypto::pem::PEM_CERTIFICATE_REQUEST_LABEL;
+use math::big::HeapAllocator;
 use pkix::PKIX1Explicit88;
 use std::io::Read;
 use std::num::Wrapping;
@@ -118,17 +119,20 @@ async fn rsa_bench() -> Result<()> {
 
             println!(
                 "MOD: {}",
-                SecureBigUint::from_be_bytes(&modulus).bit_width()
+                SecureBigUint::from_be_bytes(&modulus, &mut HeapAllocator {}).bit_width()
             );
 
             private_key = Some(RSAPrivateKey::new(
-                SecureBigUint::from_be_bytes(&modulus),
-                SecureBigUint::from_be_bytes(&private_exponent),
+                SecureBigUint::from_be_bytes(&modulus, &mut HeapAllocator {}),
+                SecureBigUint::from_be_bytes(&private_exponent, &mut HeapAllocator {}),
             ));
 
             public_key = Some(RSAPublicKey {
-                modulus: SecureBigUint::from_be_bytes(&modulus),
-                public_exponent: SecureBigUint::from_be_bytes(&public_exponent),
+                modulus: SecureBigUint::from_be_bytes(&modulus, &mut HeapAllocator {}),
+                public_exponent: SecureBigUint::from_be_bytes(
+                    &public_exponent,
+                    &mut HeapAllocator {},
+                ),
             });
 
             continue;

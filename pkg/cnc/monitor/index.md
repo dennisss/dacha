@@ -93,3 +93,8 @@ Serial protocol documentation:
 - GRBL real time API:
     - https://github.com/gnea/grbl/blob/master/doc/markdown/commands.md#ascii-realtime-command-descriptions
 
+Time lapsing:
+
+- https://plugins.octoprint.org/plugins/octolapse/
+- https://wiki.bambulab.com/en/software/bambu-studio/Timelapse
+

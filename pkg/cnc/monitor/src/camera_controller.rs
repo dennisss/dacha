@@ -174,8 +174,6 @@ impl CameraController {
     async fn run_thread(shared: Arc<Shared>) -> Result<()> {
         let res = Self::run_thread_inner(&shared).await;
 
-        println!("Camera Controller exited!");
-
         lock!(state <= shared.state.lock().await?, {
             state.stopped = true;
             state.notify_all();

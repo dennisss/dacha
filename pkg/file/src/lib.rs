@@ -14,6 +14,7 @@ extern crate common;
 extern crate macros;
 
 pub mod allocate_soft;
+mod copy;
 pub mod dir_lock;
 mod error;
 mod glob;
@@ -24,6 +25,7 @@ pub mod sync;
 pub mod temp;
 mod utils;
 
+pub use copy::*;
 pub use error::*;
 pub use glob::*;
 pub use local::*;

@@ -10,6 +10,7 @@ use crate::tls::record::*;
 use crate::tls::transcript::Transcript;
 
 use super::cipher::CipherEndpointSpec;
+use super::parsing::exp2;
 
 // TODO: Also include information on the hinted legacy version.
 #[derive(Debug)]
@@ -335,8 +336,31 @@ impl RecordWriter {
     }
 
     async fn send_record(&mut self, inner: RecordInner) -> Result<()> {
+        // TODO: All records can be sent in all underlying write_all() call.
+
+        let mut i = 0;
+        while i < inner.data.len() {
+            let j = core::cmp::min(i + exp2(14), inner.data.len());
+            let data = inner.data.slice(i..j);
+
+            let r = RecordInner {
+                typ: inner.typ,
+                data,
+            };
+
+            self.send_single_record(r).await?;
+
+            i = j;
+        }
+
+        Ok(())
+    }
+
+    async fn send_single_record(&mut self, inner: RecordInner) -> Result<()> {
         // All encrypted records will be sent with an outer version of
         // TLS 1.2 for backwards compatibility.
+        //
+        // TODO: Move this to send_record?
         let legacy_record_version = {
             // rfc8446: 'In order to maximize backward compatibility, a record containing an
             // initial ClientHello SHOULD have version 0x0301 (reflecting TLS 1.0) and a

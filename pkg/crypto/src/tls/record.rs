@@ -100,6 +100,7 @@ impl Record {
         let length = u16::from_be_bytes(*array_ref![buf, 3, 2]);
 
         if length > (exp2(14) + 256) as u16 {
+            // TODO: Send to the remote end.
             return Err(err_msg("alert: record_overflow"));
         }
 

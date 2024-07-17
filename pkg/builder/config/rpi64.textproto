@@ -11,6 +11,7 @@ rule_defaults {
         compiler: CARGO
         profile: "release"
         target: "aarch64-unknown-linux-gnu"
+        rustflags: "-Clink-arg=-Wl,-rpath-link,/opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu -Clink-arg=--sysroot=/opt/dacha/pi/rootfs"
         env: [
             {
                 key: "PKG_CONFIG_PATH_aarch64_unknown_linux_gnu"
@@ -25,8 +26,9 @@ rule_defaults {
                 value: "--sysroot=/opt/dacha/pi/rootfs"
             },
             {
+                # NOTE: This file also contains a reference to "/opt/dacha/pi/rootfs"
                 key: "CMAKE_TOOLCHAIN_FILE_aarch64_unknown_linux_gnu"
-                value: "pkg/rpi/toolchain.cmake"
+                value: "$PROJECT_DIR/pkg/rpi/toolchain.cmake"
             }
         ]
     }

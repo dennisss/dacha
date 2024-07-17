@@ -102,39 +102,44 @@ This section explains how to cross compile programs to run on the Raspberry Pi (
 
 **Step 2**: Set up a sysroot
 
-First manually mount the SDCard image onto your machined. We'll assume that the rootfs partition has been mounted to `/media/$USER/rootfs`.
+We will extract the Raspbian image's root filesystem to a local directory so that we can reference headers/libraries in it during cross compilation.
 
-The copy the rootfs to your computer's main filesystem:
+Find the path to the uncompressed `.img` file you wrote to Pi SDCards (you may need to manually extract it) and then modify and run the below commands to extract it. The `output_dir` can't be changed:
 
 ```
-sudo mkdir -p /opt/dacha/pi
-sudo chown -R $USER:$USER /opt/dacha
+cargo build --bin rpi_imager
 
-cargo run --bin file --release -- \
-	copy /media/$USER/rootfs /opt/dacha/pi/rootfs \
-	--skip_permission_denied --symlink_root=/opt/dacha/pi/rootfs
+sudo ./target/debug/rpi_imager extract \
+	--image=/path/to/raspbian.img \
+	--output_dir=/opt/dacha/pi/rootfs
 ```
 
-Note that the mounted image can't be used directly as many libraries like `/lib/aarch64-linux-gnu/libpthread.so.0` are setup as absolute symlinks which won't resolve correctly. The copy tool mentioned above will re-create the symlinks relative to the new rootfs directory.
+Note that using a mounted image directly doesn't work as many libraries like `/lib/aarch64-linux-gnu/libpthread.so.0` are setup as absolute symlinks which won't resolve correctly. The copy tool mentioned above will re-create the symlinks relative to the new rootfs directory.
 
 **Step 3**: Compile
 
-Use a command like the following to compile a program:
+Ensure that you have a rust binary defined in a BUILD directory. e.g. in `pkg/rpi/streamer/BUILD` we have:
 
-```bash
-PKG_CONFIG_PATH_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs/usr/lib/aarch64-linux-gnu/pkgconfig \
-PKG_CONFIG_SYSROOT_DIR_aarch64_unknown_linux_gnu=/opt/dacha/pi/rootfs \
-BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="--sysroot=/opt/dacha/pi/rootfs" \
-CMAKE_TOOLCHAIN_FILE_aarch64_unknown_linux_gnu=$PWD/pkg/rpi/toolchain.cmake \
-cargo build --target aarch64-unknown-linux-gnu --release --bin rpi_streamer
+```python
+rust_binary(
+    name = "rpi_streamer",
+    bin = "rpi_streamer"
+)
 ```
 
-## References References
+Then you can build using the rpi64 config (which is internally configured to use the precreated sysroot):
+
+```bash
+cargo run --bin builder -- \
+	build //pkg/rpi/streamer:rpi_streamer \
+	--config=//pkg/builder/config:rpi64
+```
+
+## References
 
 Cross Implementation
 - https://github.com/cross-rs/cross/blob/main/docker/Dockerfile.aarch64-unknown-linux-gnu
 - https://github.com/cross-rs/cross/blob/main/docker/toolchain.cmake
-
 
 Example of how to make a memory driver:
 - https://github.com/raspberrypi/linux/blob/rpi-5.15.y/drivers/char/broadcom/bcm2835-gpiomem.c

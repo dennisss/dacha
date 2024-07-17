@@ -1,3 +1,5 @@
+#![feature(trait_alias)]
+
 // Utilities for creating test cases.
 
 use core::marker::PhantomData;
@@ -387,7 +389,7 @@ pub fn typical_boundary_buffers(length: usize) -> Vec<Vec<u8>> {
         });
     }
 
-    let mut rng = crate::random::MersenneTwisterRng::mt19937();
+    let mut rng = crypto::random::MersenneTwisterRng::mt19937();
     rng.seed_u32(1234);
 
     // A few random buffers.

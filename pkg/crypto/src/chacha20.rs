@@ -681,7 +681,6 @@ impl AuthEncAD for ChaCha20Poly1305 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::*;
     use std::str::FromStr;
 
     #[test]

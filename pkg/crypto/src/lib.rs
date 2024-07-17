@@ -31,7 +31,6 @@ extern crate asn;
 extern crate generic_array;
 #[cfg(feature = "std")]
 extern crate pkix;
-extern crate typenum;
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate file;
@@ -81,8 +80,6 @@ pub fn constant_eq(a: &[u8], b: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use crate::test::*;
 
     use std::println;
     use std::vec;

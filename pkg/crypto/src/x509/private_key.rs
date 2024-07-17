@@ -18,6 +18,7 @@ use crate::x509::signature_algorithm::*;
 use crate::x509::signature_key::*;
 use crate::x509::PublicKey;
 
+#[derive(Debug)]
 pub enum PrivateKeyType {
     Ed25519,
     ECDSA_SECP256R1,

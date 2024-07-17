@@ -356,6 +356,9 @@ async fn main() -> Result<()> {
 
     let service = RootResource::new();
 
+    println!("Starting...");
+    let start_time = Instant::now();
+
     let monitor =
         Arc::new(MonitorImpl::create(&args.local_data_dir, args.make_fake_machines).await?);
     service.register_dependency(monitor.clone()).await;
@@ -369,7 +372,7 @@ async fn main() -> Result<()> {
     service
         .register_dependency({
             let vars = json::Value::Object(map!(
-                "rpc_port" => &json::Value::Number(1000.0)
+                "rpc_port" => &json::Value::Number(args.rpc_port.value() as f64)
             ));
 
             let web_handler = web::WebServerHandler::new(web::WebServerOptions {
@@ -395,6 +398,12 @@ async fn main() -> Result<()> {
             Arc::new(web_server.start())
         })
         .await;
+
+    // TODO: Actually wait for resource readiness and make this a standard metric
+    // that we report.
+    let end_time = Instant::now();
+
+    println!("Ready! Startup took {:?}", end_time - start_time);
 
     service.wait().await
 }

@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
             rpc_server.add_service(rpc_test::AdderImpl::create(None).await?.into_service())?;
             rpc_server.add_request_handler("/null", http::HttpFn(null_handler));
             rpc_server.enable_cors();
-            rpc_server.allow_http1();
+            rpc_server.http_options_mut().force_http2 = false;
             rpc_server.start()
         })
         .await;

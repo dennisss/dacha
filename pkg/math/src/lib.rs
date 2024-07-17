@@ -1,4 +1,9 @@
-#![feature(trait_alias, specialization, generic_const_exprs)]
+#![feature(
+    trait_alias,
+    specialization,
+    generic_const_exprs,
+    associated_type_defaults
+)]
 #![no_std]
 
 #[cfg(feature = "alloc")]

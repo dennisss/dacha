@@ -99,6 +99,7 @@ mod io {
 }
 
 mod buffer;
+mod control;
 mod device;
 mod format;
 mod stream;
@@ -106,6 +107,7 @@ mod utils;
 
 pub use bindings::*;
 pub use buffer::*;
+pub use control::*;
 pub use device::*;
 pub use format::*;
 pub use stream::*;

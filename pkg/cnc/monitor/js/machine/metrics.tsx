@@ -202,6 +202,8 @@ export class MetricsBox extends React.Component<MetricsBoxProps, MetricsBoxState
             end_time = this.props.endTime.getTime();
             bounded_end_time = true;
         } else {
+            // TODO: If this is viewed from the run history view while the run is still running, this will refresh to realtime end time and won't look good since the duration may be weird.
+
             end_time = new Date().getTime();
             bounded_end_time = false;
         }

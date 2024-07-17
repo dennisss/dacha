@@ -5,6 +5,7 @@ use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::AsyncVariable;
 use executor::ExecutorPollingContext;
+use file::LocalPathBuf;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath};
 use sys::EpollEvents;
 use sys::Errno;
@@ -13,6 +14,7 @@ use crate::bindings::*;
 use crate::io::*;
 use crate::stream::*;
 use crate::utils::read_null_terminated_string;
+use crate::ControlDefinition;
 
 pub struct Device {
     handle: Arc<DeviceHandle>,
@@ -39,11 +41,40 @@ pub(crate) struct DeviceShared {
     /// See also https://stackoverflow.com/questions/10217779/how-thread-safe-is-v4l2#:~:text=ioctl()%20is%20not%20one,once%20it%20reaches%20ioctl()
     pub file: AsyncVariable<LocalFile>,
 
+    pub path: LocalPathBuf,
+
     pub capability: v4l2_capability,
 }
 
 impl Device {
+    /// Enumerates all devices registered in the system.
+    ///
+    /// Note that V4L2 devices have global properties so one device can't be
+    /// shared across multiple processes. But, V4L2 won't stop us from opening
+    /// and reading from a device even if another application already has it
+    /// open. The main exception to this is M2M devices which do have
+    /// per-instance properties.
+    pub async fn list() -> Result<Vec<Self>> {
+        let mut out = vec![];
+        for entry in file::read_dir("/dev")? {
+            if !entry.name().starts_with("video") {
+                continue;
+            }
+
+            let path = LocalPath::new("/dev").join(entry.name());
+
+            out.push(Self::open(path).await?);
+        }
+
+        // TODO: Sort by the number.
+
+        out.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
+
+        Ok(out)
+    }
+
     pub async fn open<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
         let file = file::LocalFile::open_with_options(
             path,
             &LocalFileOpenOptions::new()
@@ -58,10 +89,12 @@ impl Device {
         let shared = Arc::new(DeviceShared {
             file: AsyncVariable::new(file),
             capability,
+            path: path.to_owned(),
         });
 
         Ok(Self {
             handle: Arc::new(DeviceHandle {
+                // TODO: We don't need to start polling until we have at least one stream open.
                 polling_task: ChildTask::spawn(Self::polling_thread(shared.clone())),
                 shared,
             }),
@@ -69,11 +102,12 @@ impl Device {
         })
     }
 
+    pub fn path(&self) -> &LocalPath {
+        &self.handle.shared.path
+    }
+
     pub async fn print_capabiliites(&self) -> Result<()> {
         let file = self.handle.shared.file.lock().await?.read_exclusive();
-
-        let mut caps = v4l2_capability::default();
-        unsafe { vidioc_querycap(file.as_raw_fd(), &mut caps) }?;
 
         /*
         Important things in caps.device_caps:
@@ -89,38 +123,48 @@ impl Device {
 
         */
 
+        let caps = &self.handle.shared.capability;
+
         println!("Driver: {}", read_null_terminated_string(&caps.driver)?);
         println!("Card: {}", read_null_terminated_string(&caps.card)?);
         println!("Bus Info: {}", read_null_terminated_string(&caps.bus_info)?);
 
-        /*
-            TODO: Also want to find the serial number
+        println!(
+            "Driver Version: {}.{}.{}",
+            (caps.version >> 16) & 0xFF,
+            (caps.version >> 8) & 0xFF,
+            caps.version & 0xFF
+        );
 
-            Media Driver Info:
-        Driver name      : uvcvideo
-        Model            : H264 USB Camera: H264 USB Camer
-        Serial           : 2020052801
-        Bus info         : usb-0000:0c:00.3-3.2.1.4
-        Media version    : 6.5.13
-        Hardware revision: 0x00000100 (256)
-        Driver version   : 6.5.13
+        println!("Capabilities: {}", caps.capabilities);
+        println!("Device Capabilities: {}", caps.device_caps);
 
-
-            */
+        if self.is_m2m() {
+            println!("Memory to Memory!");
+        }
 
         Ok(())
     }
 
+    /// Checks if this is an M2M device. M2M devices can be opened multiple
+    /// times by different application.
+    ///
+    /// See https://www.kernel.org/doc/html/v5.6/media/uapi/v4l/dev-mem2mem.html
+    pub fn is_m2m(&self) -> bool {
+        let caps = self.handle.shared.capability.capabilities;
+        caps & (V4L2_CAP_VIDEO_M2M | V4L2_CAP_VIDEO_M2M_MPLANE) != 0
+    }
+
     pub fn supports_capture_stream(&self) -> bool {
         let caps = self.handle.shared.capability.capabilities;
-        caps & (V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_CAPTURE_MPLANE) != 0
+        (caps & (V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_CAPTURE_MPLANE) != 0) || self.is_m2m()
     }
 
     pub fn new_capture_stream(&mut self) -> Result<UnconfiguredStream> {
         let caps = self.handle.shared.capability.capabilities;
 
         let typ = {
-            if caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE != 0 {
+            if caps & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_M2M_MPLANE) != 0 {
                 v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
             } else {
                 v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_CAPTURE
@@ -132,14 +176,14 @@ impl Device {
 
     pub fn supports_output_stream(&self) -> bool {
         let caps = self.handle.shared.capability.capabilities;
-        caps & (V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_OUTPUT_MPLANE) != 0
+        (caps & (V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_OUTPUT_MPLANE) != 0) || self.is_m2m()
     }
 
     pub fn new_output_stream(&mut self) -> Result<UnconfiguredStream> {
         let caps = self.handle.shared.capability.capabilities;
 
         let typ = {
-            if caps & V4L2_CAP_VIDEO_OUTPUT_MPLANE != 0 {
+            if caps & (V4L2_CAP_VIDEO_OUTPUT_MPLANE | V4L2_CAP_VIDEO_M2M_MPLANE) != 0 {
                 v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE
             } else {
                 v4l2_buf_type::V4L2_BUF_TYPE_VIDEO_OUTPUT
@@ -165,6 +209,31 @@ impl Device {
         })
     }
 
+    pub async fn list_inputs(&self) -> Result<Vec<v4l2_input>> {
+        let file = self.handle.shared.file.lock().await?.read_exclusive();
+
+        let mut out = vec![];
+
+        loop {
+            let mut raw = v4l2_input::default();
+            raw.index = out.len() as u32;
+
+            match unsafe { vidioc_enuminput(file.as_raw_fd(), &mut raw) } {
+                Ok(i) => {
+                    assert_eq!(i, 0);
+                }
+                Err(Errno::EINVAL) => break,
+                Err(e) => return Err(e.into()),
+            }
+
+            println!("GOT INPUT");
+
+            out.push(raw);
+        }
+
+        Ok(out)
+    }
+
     pub async fn list_frame_sizes(&self, pixel_format: u32) -> Result<Vec<FrameSizeRange>> {
         let file = self.handle.shared.file.lock().await?.read_exclusive();
 
@@ -180,7 +249,7 @@ impl Device {
                     assert_eq!(i, 0);
                 }
                 Err(Errno::EINVAL) => break,
-                Err(e) => return Err(e.into()),
+                Err(e) => break,
             };
 
             let el = unsafe {
@@ -211,8 +280,52 @@ impl Device {
         Ok(out)
     }
 
+    // TODO: Also implement ext_ctrl enumeration.
+
+    /// See https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/control.html
+    pub async fn list_controls(&self) -> Result<Vec<ControlDefinition>> {
+        let file = self.handle.shared.file.lock().await?.read_exclusive();
+
+        let mut out = vec![];
+
+        let mut raw = v4l2_queryctrl::default();
+        raw.id = 0 | V4L2_CTRL_FLAG_NEXT_CTRL;
+
+        loop {
+            match unsafe { vidioc_queryctrl(file.as_raw_fd(), &mut raw) } {
+                Ok(i) => {
+                    assert_eq!(i, 0);
+                }
+                Err(Errno::EINVAL) => break,
+                Err(e) => break,
+            };
+
+            let mut menu_items = vec![];
+            if raw.type_ == v4l2_ctrl_type::V4L2_CTRL_TYPE_MENU.0
+                || raw.type_ == v4l2_ctrl_type::V4L2_CTRL_TYPE_INTEGER_MENU.0
+            {
+                let mut menu_item = v4l2_querymenu::default();
+                menu_item.id = raw.id;
+
+                for index in raw.minimum..(raw.maximum + 1) {
+                    menu_item.index = index as u32;
+                    match unsafe { vidioc_querymenu(file.as_raw_fd(), &mut menu_item) } {
+                        Ok(v) => {}
+                        Err(e) => continue,
+                    }
+
+                    menu_items.push(menu_item.clone());
+                }
+            }
+
+            out.push(ControlDefinition { raw, menu_items });
+            raw.id |= V4L2_CTRL_FLAG_NEXT_CTRL
+        }
+
+        Ok(out)
+    }
+
     // vidioc_enumaudio
-    // vidioc_enum_framesizes
     // vidioc_enum_frameintervals
     // vidioc_g_audio
 
@@ -253,8 +366,9 @@ impl Device {
             if events != EpollEvents::empty() {
                 // We will get an EPOLLERR until all the streams are turned up.
                 // TODO: Get back to a state where we can return these errors.s
-                // (Also ensure all Rust side waiters are aware when this happens).
-                eprintln!("Unknown poll events received: {:?}", events);
+                // (Also ensure all Rust side waiters are aware when this
+                // happens). eprintln!("Unknown poll events
+                // received: {:?}", events);
             }
         }
     }

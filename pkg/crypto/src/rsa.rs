@@ -5,10 +5,10 @@ use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{Any, DERWriteable};
 use common::errors::*;
 use common::LeftPad;
-use math::big::SecureBigUint;
-use math::big::SecureModulo;
+use math::big::{Allocator, SecureModulo};
 use math::big::{BigInt, Modulo};
 use math::big::{BigUint, SecureMontgomeryModulo};
+use math::big::{HeapAllocator, SecureBigUint, StorageType};
 use math::integer::Integer;
 use pkix::{
     PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88, NIST_SHA2, PKCS_1,
@@ -66,9 +66,13 @@ impl std::convert::TryFrom<PKCS_1::RSAPublicKey> for RSAPublicKey {
         // represent them as signed integers.
 
         Ok(Self {
-            modulus: SecureBigUint::from_le_bytes(&value.modulus.to_uint()?.to_le_bytes()),
+            modulus: SecureBigUint::from_le_bytes(
+                &value.modulus.to_uint()?.to_le_bytes(),
+                &mut HeapAllocator {},
+            ),
             public_exponent: SecureBigUint::from_le_bytes(
                 &value.publicExponent.to_uint()?.to_le_bytes(),
+                &mut HeapAllocator {},
             ),
         })
     }
@@ -95,7 +99,7 @@ pub struct RSAPrivateKey {
 impl RSAPrivateKey {
     pub fn new(modulus: SecureBigUint, mut private_exponent: SecureBigUint) -> Self {
         // Avoid leaking the exact size of the private exponent as its length can vary.
-        private_exponent.extend(modulus.bit_width());
+        private_exponent.extend(modulus.bit_width(), &mut HeapAllocator {});
 
         Self {
             modulus,
@@ -114,10 +118,15 @@ impl std::convert::TryFrom<&PKCS_1::RSAPrivateKey> for RSAPrivateKey {
         // NOTE: ASN.1 transfers integers with the minimum number of bytes necessary to
         // represent them as signed integers.
 
-        let modulus = SecureBigUint::from_le_bytes(&value.modulus.to_uint()?.to_le_bytes());
+        let modulus = SecureBigUint::from_le_bytes(
+            &value.modulus.to_uint()?.to_le_bytes(),
+            &mut HeapAllocator {},
+        );
 
-        let private_exponent =
-            SecureBigUint::from_le_bytes(&value.privateExponent.to_uint()?.to_le_bytes());
+        let private_exponent = SecureBigUint::from_le_bytes(
+            &value.privateExponent.to_uint()?.to_le_bytes(),
+            &mut HeapAllocator {},
+        );
 
         Ok(Self::new(modulus, private_exponent))
     }
@@ -188,7 +197,7 @@ impl RSASSA_PSS {
             return Ok(false);
         }
 
-        let s = SecureBigUint::from_be_bytes(signature);
+        let s = SecureBigUint::from_be_bytes(signature, &mut HeapAllocator {});
 
         let message = rsavp1(&public_key.modulus, &public_key.public_exponent, &s)?;
 
@@ -249,7 +258,7 @@ impl RSASSA_PKCS_v1_5 {
         )?;
 
         // Step 2.a
-        let m = SecureBigUint::from_be_bytes(&em);
+        let m = SecureBigUint::from_be_bytes(&em, &mut HeapAllocator {});
 
         // Step 2.b
         let s = rsasp1(private_key, &m)?;
@@ -279,7 +288,7 @@ impl RSASSA_PKCS_v1_5 {
         let n = &public_key.modulus;
 
         // TODO: Be I need to verify that it is not negative
-        let s = SecureBigUint::from_be_bytes(signature);
+        let s = SecureBigUint::from_be_bytes(signature, &mut HeapAllocator {});
 
         // Step 2.b
         let m = rsavp1(n, e, &s)?;
@@ -307,7 +316,7 @@ fn i2osp(x: &SecureBigUint, x_len: usize) -> Vec<u8> {
 
 /// RFC 8017: Section 4.2
 fn os2ip(x: &[u8]) -> SecureBigUint {
-    SecureBigUint::from_be_bytes(x)
+    SecureBigUint::from_be_bytes(x, &HeapAllocator {})
 }
 
 /// Signs a message using the RSA private key.
@@ -325,8 +334,11 @@ fn rsasp1(private_key: &RSAPrivateKey, message: &SecureBigUint) -> Result<Secure
     }
 
     // s = m^d mod n
-    let signature =
-        SecureModulo::new(&private_key.modulus).pow(message, &private_key.private_exponent);
+    let signature = SecureModulo::new(&private_key.modulus).pow(
+        message,
+        &private_key.private_exponent,
+        &mut HeapAllocator {},
+    );
     Ok(signature)
 }
 
@@ -346,11 +358,11 @@ fn rsavp1(n: &SecureBigUint, e: &SecureBigUint, s: &SecureBigUint) -> Result<Sec
     let modulo = SecureMontgomeryModulo::new(n);
 
     let mut s = s.clone();
-    modulo.to_montgomery_form(&mut s);
+    modulo.to_montgomery_form(&mut s, &mut HeapAllocator {});
 
-    let message = modulo.pow_with_public_exponent(&s, e);
+    let message = modulo.pow_with_public_exponent(&s, e, &mut HeapAllocator {});
 
-    Ok(modulo.from_montgomery_form(&message))
+    Ok(modulo.from_montgomery_form(&message, &mut HeapAllocator {}))
 
     // let message = SecureModulo::new(n).pow(s, e);
     // Ok(message)
@@ -638,13 +650,16 @@ mod tests {
                 let private_exponent = block.binary_field("D")?;
 
                 private_key = Some(RSAPrivateKey::new(
-                    SecureBigUint::from_be_bytes(&modulus),
-                    SecureBigUint::from_be_bytes(&private_exponent),
+                    SecureBigUint::from_be_bytes(&modulus, &mut HeapAllocator {}),
+                    SecureBigUint::from_be_bytes(&private_exponent, &mut HeapAllocator {}),
                 ));
 
                 public_key = Some(RSAPublicKey {
-                    modulus: SecureBigUint::from_be_bytes(&modulus),
-                    public_exponent: SecureBigUint::from_be_bytes(&public_exponent),
+                    modulus: SecureBigUint::from_be_bytes(&modulus, &mut HeapAllocator {}),
+                    public_exponent: SecureBigUint::from_be_bytes(
+                        &public_exponent,
+                        &mut HeapAllocator {},
+                    ),
                 });
 
                 continue;
@@ -715,13 +730,16 @@ mod tests {
                 let private_exponent = block.binary_field("D")?;
 
                 private_key = Some(RSAPrivateKey::new(
-                    SecureBigUint::from_be_bytes(&modulus),
-                    SecureBigUint::from_be_bytes(&private_exponent),
+                    SecureBigUint::from_be_bytes(&modulus, &mut HeapAllocator {}),
+                    SecureBigUint::from_be_bytes(&private_exponent, &mut HeapAllocator {}),
                 ));
 
                 public_key = Some(RSAPublicKey {
-                    modulus: SecureBigUint::from_be_bytes(&modulus),
-                    public_exponent: SecureBigUint::from_be_bytes(&public_exponent),
+                    modulus: SecureBigUint::from_be_bytes(&modulus, &mut HeapAllocator {}),
+                    public_exponent: SecureBigUint::from_be_bytes(
+                        &public_exponent,
+                        &mut HeapAllocator {},
+                    ),
                 });
 
                 continue;

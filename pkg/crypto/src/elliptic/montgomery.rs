@@ -55,13 +55,13 @@ impl MontgomeryCurveGroup<X25519> {
         let bits = 255;
         let p = {
             let working_bits = 256;
-            let mut v = SecureBigUint::exp2(255, working_bits)
-                - SecureBigUint::from_usize(19, working_bits);
+            let mut v = SecureBigUint::exp2(255, working_bits, &mut HeapAllocator {})
+                - SecureBigUint::from_usize(19, working_bits, &mut HeapAllocator {});
             v.truncate(bits);
             v
         };
-        let u = SecureBigUint::from_usize(9, bits);
-        let a24 = SecureBigUint::from_usize(121665, bits);
+        let u = SecureBigUint::from_usize(9, bits, &mut HeapAllocator {});
+        let a24 = SecureBigUint::from_usize(121665, bits, &mut HeapAllocator {});
         Self::new(p, u, bits, a24)
     }
 }
@@ -71,14 +71,14 @@ impl MontgomeryCurveGroup<X448> {
         let bits = 448;
         let p = {
             let working_bits = 449;
-            let mut v = SecureBigUint::exp2(448, working_bits)
-                - SecureBigUint::exp2(224, working_bits)
-                - SecureBigUint::from_usize(1, working_bits);
+            let mut v = SecureBigUint::exp2(448, working_bits, &mut HeapAllocator {})
+                - SecureBigUint::exp2(224, working_bits, &mut HeapAllocator {})
+                - SecureBigUint::from_usize(1, working_bits, &mut HeapAllocator {});
             v.truncate(bits);
             v
         };
-        let u = SecureBigUint::from_usize(5, bits);
-        let a24 = SecureBigUint::from_usize(39081, bits);
+        let u = SecureBigUint::from_usize(5, bits, &mut HeapAllocator {});
+        let a24 = SecureBigUint::from_usize(39081, bits, &mut HeapAllocator {});
         Self::new(p, u, bits, a24)
     }
 }
@@ -109,7 +109,7 @@ impl<C: MontgomeryCurveCodec + Send + Sync> DiffieHellmanFn for MontgomeryCurveG
         // NOTE: The RFC specified that we should accept out of range values as their
         // 'mod p' equivalent.
         let mut u = C::decode_u_cord(remote_public);
-        u.reduce_once(&self.p); // TODO: Check this is sufficient reduction.
+        u.reduce_once(&self.p, &mut HeapAllocator {}); // TODO: Check this is sufficient reduction.
 
         let k = C::decode_scalar(local_secret);
 
@@ -144,7 +144,7 @@ impl MontgomeryCurveCodec for X25519 {
         sdata[31] &= 127;
         sdata[31] |= 64;
 
-        SecureBigUint::from_le_bytes(&sdata)
+        SecureBigUint::from_le_bytes(&sdata, &mut HeapAllocator {})
     }
 
     // TODO: Must assert that it is 32 bytes and error out if it isn't.
@@ -155,7 +155,7 @@ impl MontgomeryCurveCodec for X25519 {
         // Mask MSB in last byte (only applicable to X25519).
         sdata[31] &= 0x7f;
 
-        SecureBigUint::from_le_bytes(&sdata)
+        SecureBigUint::from_le_bytes(&sdata, &mut HeapAllocator {})
     }
 
     fn encode_u_cord(u: &SecureBigUint) -> Vec<u8> {
@@ -177,12 +177,12 @@ impl MontgomeryCurveCodec for X448 {
         sdata[0] &= 252;
         sdata[55] |= 128;
 
-        SecureBigUint::from_le_bytes(&sdata)
+        SecureBigUint::from_le_bytes(&sdata, &mut HeapAllocator {})
     }
 
     fn decode_u_cord(data: &[u8]) -> SecureBigUint {
         assert_eq!(data.len(), 56);
-        SecureBigUint::from_le_bytes(data)
+        SecureBigUint::from_le_bytes(data, &mut HeapAllocator {})
     }
 
     fn encode_u_cord(u: &SecureBigUint) -> Vec<u8> {
@@ -209,19 +209,19 @@ fn curve_mul(
     let modulo = SecureMontgomeryModulo::new(p);
 
     let mut x_1 = u.clone();
-    let mut x_2 = SecureBigUint::from_usize(1, p.bit_width());
-    let mut z_2 = SecureBigUint::from_usize(0, p.bit_width());
+    let mut x_2 = SecureBigUint::from_usize(1, p.bit_width(), &mut HeapAllocator {});
+    let mut z_2 = SecureBigUint::from_usize(0, p.bit_width(), &mut HeapAllocator {});
     let mut x_3 = u.clone();
-    let mut z_3 = SecureBigUint::from_usize(1, p.bit_width());
+    let mut z_3 = SecureBigUint::from_usize(1, p.bit_width(), &mut HeapAllocator {});
 
     let mut a24_mont = a24.clone();
 
-    modulo.to_montgomery_form(&mut x_1);
-    modulo.to_montgomery_form(&mut x_2);
-    modulo.to_montgomery_form(&mut z_2);
-    modulo.to_montgomery_form(&mut x_3);
-    modulo.to_montgomery_form(&mut z_3);
-    modulo.to_montgomery_form(&mut a24_mont);
+    modulo.to_montgomery_form(&mut x_1, &mut HeapAllocator {});
+    modulo.to_montgomery_form(&mut x_2, &mut HeapAllocator {});
+    modulo.to_montgomery_form(&mut z_2, &mut HeapAllocator {});
+    modulo.to_montgomery_form(&mut x_3, &mut HeapAllocator {});
+    modulo.to_montgomery_form(&mut z_3, &mut HeapAllocator {});
+    modulo.to_montgomery_form(&mut a24_mont, &mut HeapAllocator {});
 
     let mut swap = false;
 
@@ -233,42 +233,54 @@ fn curve_mul(
         z_2.swap_if(&mut z_3, swap);
         swap = k_t;
 
-        let A = modulo.add(&x_2, &z_2);
-        let AA = modulo.mul(&A, &A);
-        let B = modulo.sub(&x_2, &z_2);
+        let A = modulo.add(&x_2, &z_2, &mut HeapAllocator {});
+        let AA = modulo.mul(&A, &A, &mut HeapAllocator {});
+        let B = modulo.sub(&x_2, &z_2, &mut HeapAllocator {});
 
-        let BB = modulo.mul(&B, &B); // B.pow(&2.into());
-        let E = modulo.sub(&AA, &BB);
-        let C = modulo.add(&x_3, &z_3);
-        let D = modulo.sub(&x_3, &z_3);
-        let DA = modulo.mul(&D, &A);
-        let CB = modulo.mul(&C, &B);
+        let BB = modulo.mul(&B, &B, &mut HeapAllocator {}); // B.pow(&2.into());
+        let E = modulo.sub(&AA, &BB, &mut HeapAllocator {});
+        let C = modulo.add(&x_3, &z_3, &mut HeapAllocator {});
+        let D = modulo.sub(&x_3, &z_3, &mut HeapAllocator {});
+        let DA = modulo.mul(&D, &A, &mut HeapAllocator {});
+        let CB = modulo.mul(&C, &B, &mut HeapAllocator {});
         x_3 = {
-            let tmp = modulo.add(&DA, &CB);
-            modulo.mul(&tmp, &tmp)
+            let tmp = modulo.add(&DA, &CB, &mut HeapAllocator {});
+            modulo.mul(&tmp, &tmp, &mut HeapAllocator {})
         };
         // TODO: Here we can do a subtraction without cloning by taking ownership
-        z_3 = modulo.mul(&x_1, {
-            let tmp = modulo.sub(&DA, &CB);
-            &modulo.mul(&tmp, &tmp)
+        z_3 = modulo.mul(
+            &x_1,
+            {
+                let tmp = modulo.sub(&DA, &CB, &mut HeapAllocator {});
+                &modulo.mul(&tmp, &tmp, &mut HeapAllocator {})
 
-            // &modulo.sub(&DA, &CB).pow(&two)
-        });
-        x_2 = modulo.mul(&AA, &BB);
-        z_2 = modulo.mul(&E, &{
-            // AA + (a24 * E)
-            let tmp = modulo.mul(&a24_mont, &E);
-            let tmp2 = modulo.add(&AA, &tmp);
-            tmp2
-        });
+                // &modulo.sub(&DA, &CB).pow(&two)
+            },
+            &mut HeapAllocator {},
+        );
+        x_2 = modulo.mul(&AA, &BB, &mut HeapAllocator {});
+        z_2 = modulo.mul(
+            &E,
+            &{
+                // AA + (a24 * E)
+                let tmp = modulo.mul(&a24_mont, &E, &mut HeapAllocator {});
+                let tmp2 = modulo.add(&AA, &tmp, &mut HeapAllocator {});
+                tmp2
+            },
+            &mut HeapAllocator {},
+        );
     }
 
     x_2.swap_if(&mut x_3, swap);
     z_2.swap_if(&mut z_3, swap);
 
-    let res = modulo.mul(&x_2, &modulo.inv_prime_mod(&z_2));
+    let res = modulo.mul(
+        &x_2,
+        &modulo.inv_public_prime_mod(&z_2, &mut HeapAllocator {}),
+        &mut HeapAllocator {},
+    );
 
-    modulo.from_montgomery_form(&res)
+    modulo.from_montgomery_form(&res, &mut HeapAllocator {})
 }
 
 #[cfg(test)]
@@ -293,11 +305,13 @@ mod tests {
         let scalar = SecureBigUint::from_str(
             "31029842492115040904895560451863089656472772604678260265531221036453811406496",
             256,
+            &mut HeapAllocator {},
         )
         .unwrap();
         let u_in = SecureBigUint::from_str(
             "34426434033919594451155107781188821651316167215306631574996226621102155684838",
             256,
+            &mut HeapAllocator {},
         )
         .unwrap();
 

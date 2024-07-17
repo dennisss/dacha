@@ -144,6 +144,8 @@ impl IoSubmissionUring {
     /// Note that this only returns once the kernel has consumed the
     /// request, but any references in 'op' must stay alive until the operation
     /// has been marked as completed.
+    ///
+    /// This WILL PANIC if there is no space in the ring.
     pub unsafe fn submit(&mut self, op: IoUringOp, user_data: u64) -> Result<()> {
         self.submit_impl(op, user_data)
     }

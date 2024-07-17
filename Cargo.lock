@@ -860,6 +860,7 @@ dependencies = [
  "file",
  "macros",
  "perf",
+"protobuf",
 ]
 
 [[package]]
@@ -1870,6 +1871,7 @@ dependencies = [
  "file",
  "http",
  "json",
+"libcamera",
  "macros",
  "math",
  "parsing",
@@ -3010,6 +3012,7 @@ checksum = "ef5430c8e36b713e13b48a9f709cc21e046723fe44ce34587b73a830203b533e"
 name = "storage"
 version = "0.1.0"
 dependencies = [
+"base_units",
  "common",
  "compression",
  "crypto",

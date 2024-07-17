@@ -17,7 +17,6 @@ pub enum AvailableDevice {
 pub struct AvailableUSBDevice {
     pub usb_entry: usb::DeviceEntry,
     pub device_descriptor: usb::descriptors::DeviceDescriptor,
-    /// Serial number.
     pub serial_number: String,
     pub driver_devices: Vec<usb::DriverDevice>,
 

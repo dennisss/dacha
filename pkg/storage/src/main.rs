@@ -58,13 +58,24 @@ async fn main() -> Result<()> {
      */
 
     // let mut disk = File::open("disk.img")?;
-    let mut disk = File::open("/home/dennis/workspace/pi-gen/deploy/2023-02-05-Daspbian-lite.img")?;
+    let mut disk = File::open("/home/dennis/workspace/pi-gen/deploy/2024-07-06-Daspbian-lite.img")?;
 
     let mut first_sector = [0u8; LOGICAL_BLOCK_SIZE];
     disk.read_exact(&mut first_sector)?;
 
     let mbr = mbr::parse_mbr(&first_sector)?;
     println!("{:#?}", mbr);
+
+    {
+        let partition = &mbr.partition_entries[1];
+
+        let offset = partition.first_absolute_sector_lba as usize * LOGICAL_BLOCK_SIZE;
+        let size = partition.num_sectors as usize * LOGICAL_BLOCK_SIZE;
+
+        println!("{} :  {:?}", offset, base_units::ByteCount::from(size));
+
+        return Ok(());
+    }
 
     let partition = &mbr.partition_entries[0];
 

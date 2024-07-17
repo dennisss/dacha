@@ -102,17 +102,14 @@ export class HistoryComponent extends React.Component<HistoryComponentProps, His
                     }
 
                     return (
-                        <a href={url} className="nostyle" onClick={on_click}>
+                        <a key={run.id} href={url} className="nostyle" onClick={on_click}>
                             <Card key={run.run_id} header={start_time.toLocaleString()} style={{ overflow: 'hidden', cursor: 'pointer', marginBottom: 10 }} className="card-link">
                                 <div style={{ padding: '0 8px', marginBottom: '-1px' }}>
                                     <PropertiesTable properties={properties} style={{ margin: 0, }} />
                                 </div>
                             </Card>
                         </a>
-
-
                     );
-
                 })}
 
             </div>
