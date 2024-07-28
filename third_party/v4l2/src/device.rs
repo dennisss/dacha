@@ -10,11 +10,11 @@ use file::{LocalFile, LocalFileOpenOptions, LocalPath};
 use sys::EpollEvents;
 use sys::Errno;
 
-use crate::bindings::*;
 use crate::io::*;
 use crate::stream::*;
 use crate::utils::read_null_terminated_string;
 use crate::ControlDefinition;
+use crate::{bindings::*, ControlMenuItem};
 
 pub struct Device {
     handle: Arc<DeviceHandle>,
@@ -314,7 +314,10 @@ impl Device {
                         Err(e) => continue,
                     }
 
-                    menu_items.push(menu_item.clone());
+                    menu_items.push(ControlMenuItem {
+                        control_type: raw.type_,
+                        raw: menu_item.clone(),
+                    });
                 }
             }
 
@@ -323,6 +326,36 @@ impl Device {
         }
 
         Ok(out)
+    }
+
+    pub async fn get_control_value(&self, control_definition: &ControlDefinition) -> Result<i32> {
+        let file = self.handle.shared.file.lock().await?.read_exclusive();
+
+        let mut ctrl = v4l2_control {
+            id: control_definition.raw.id,
+            value: 0,
+        };
+
+        unsafe { vidioc_g_ctrl(file.as_raw_fd(), &mut ctrl) }?;
+
+        Ok(ctrl.value)
+    }
+
+    pub async fn set_control_value(
+        &self,
+        control_definition: &ControlDefinition,
+        value: i32,
+    ) -> Result<()> {
+        let file = self.handle.shared.file.lock().await?.read_exclusive();
+
+        let mut ctrl = v4l2_control {
+            id: control_definition.raw.id,
+            value,
+        };
+
+        unsafe { vidioc_s_ctrl(file.as_raw_fd(), &mut ctrl) }?;
+
+        Ok(())
     }
 
     // vidioc_enumaudio

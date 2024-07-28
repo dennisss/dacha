@@ -23,7 +23,7 @@ pub struct LocalChannel {
 impl LocalChannel {
     pub fn new(service: Arc<dyn Service>) -> Self {
         Self {
-            handler: Arc::new(Http2RequestHandler::new(service, false)),
+            handler: Arc::new(Http2RequestHandler::new_single_service(service, false)),
         }
     }
 

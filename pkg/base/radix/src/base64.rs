@@ -3,14 +3,14 @@ use alloc::vec::Vec;
 
 use crate::{DecodeRadixError, DecodeRadixErrorKind};
 
-struct Base64Options {
+pub struct Base64Options {
     pub alphabet: [u8; 64],
     pub inverse_alphabet: [u8; 256],
     pub padding: Option<char>,
 }
 
 impl Base64Options {
-    const fn new(alphabet: [u8; 64], padding: Option<char>) -> Self {
+    pub const fn new(alphabet: [u8; 64], padding: Option<char>) -> Self {
         let mut v = [255u8; 256];
 
         let mut i = 0;
@@ -27,11 +27,17 @@ impl Base64Options {
     }
 }
 
+// See variants in https://en.wikipedia.org/wiki/Base64#Variants_summary_table
+
+/// RFC 4648
+/// TODO: Padding should be optional.
 const STANDARD_ALPHABET: Base64Options = Base64Options::new(
     *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
     Some('='),
 );
 
+/// RFC 4648
+/// TODO: Padding should be optional.
 const URLSAFE_ALPHABET: Base64Options = Base64Options::new(
     *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
     None,
@@ -46,7 +52,7 @@ pub fn base64url_encode(data: &[u8]) -> String {
     base64_encode_with(data, &URLSAFE_ALPHABET)
 }
 
-fn base64_encode_with(data: &[u8], options: &Base64Options) -> String {
+pub fn base64_encode_with(data: &[u8], options: &Base64Options) -> String {
     let mut out = String::new();
     out.reserve_exact(base64_encoded_len(data.len()));
 
@@ -60,6 +66,7 @@ fn base64_encode_with(data: &[u8], options: &Base64Options) -> String {
             group24 |= chunk[2] as u32;
         }
 
+        // Number of non-padding base64 characters we need to represent this chunk.
         let n = chunk.len() + 1;
 
         for i in 0..n {
@@ -101,9 +108,11 @@ pub fn base64url_decode(data: &str) -> Result<Vec<u8>, DecodeRadixError> {
     base64_decode_with(data, &URLSAFE_ALPHABET)
 }
 
-fn base64_decode_with(data: &str, options: &Base64Options) -> Result<Vec<u8>, DecodeRadixError> {
-    // TODO: Not required if there is no pad character?
-    if data.len() % 4 != 0 {
+pub fn base64_decode_with(
+    data: &str,
+    options: &Base64Options,
+) -> Result<Vec<u8>, DecodeRadixError> {
+    if options.padding.is_some() && data.len() % 4 != 0 {
         return Err(DecodeRadixError {
             input_position: data.len(),
             kind: DecodeRadixErrorKind::InvalidNumberOfDigits,
@@ -111,7 +120,16 @@ fn base64_decode_with(data: &str, options: &Base64Options) -> Result<Vec<u8>, De
     }
 
     let mut out = vec![];
+    let mut had_padding = false;
     for (chunk_i, chunk) in data.as_bytes().chunks(4).enumerate() {
+        // Only the last chunk can have padding.
+        if had_padding {
+            return Err(DecodeRadixError {
+                input_position: 4 * chunk_i,
+                kind: DecodeRadixErrorKind::UnsupportedDigit,
+            });
+        }
+
         let mut group24 = 0;
         let mut paddings = 0;
         for i in 0..chunk.len() {
@@ -120,6 +138,8 @@ fn base64_decode_with(data: &str, options: &Base64Options) -> Result<Vec<u8>, De
                     paddings += 1;
                     0
                 } else if paddings > 0 {
+                    // Once we see a padding character, all future characters in the group also need
+                    // to be the padding character.
                     return Err(DecodeRadixError {
                         input_position: 4 * chunk_i + i,
                         kind: DecodeRadixErrorKind::UnsupportedDigit,
@@ -144,7 +164,15 @@ fn base64_decode_with(data: &str, options: &Base64Options) -> Result<Vec<u8>, De
             out.push((group24 >> (24 - 8 * (i + 1)) & 0xFF) as u8);
         }
 
-        // TODO: Check that the remainder of the group24 is zeros.
+        // Extra bits should be zero.
+        if group24 >> 24 != 0 {
+            return Err(DecodeRadixError {
+                input_position: 4 * chunk_i,
+                kind: DecodeRadixErrorKind::BadPadding,
+            });
+        }
+
+        had_padding |= paddings > 0;
     }
 
     Ok(out)

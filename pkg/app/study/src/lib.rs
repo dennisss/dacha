@@ -71,31 +71,6 @@ impl MetricService for MetricServiceImpl {
 */
 
 /*
-First task:
-
-- You go to dacha.dev
-    - 301 redirects to `www.dacha.dev`
-- See just a portal page with a login button
-- Click the button to start oauth
-- Goes to `www.dacha.dev/auth/google/oauth2_begin?return_url=https://` which redirects to Google with the right state set.
-- Eventually returned to www.dacha.dev/auth/google/oauth2_callback?
-    - Server verifies it and sets the cookies 'HttpOnly Secure Domain=.dacha.dev'
--
-
-- Normally [domain].dacha.dev/api/ is used for gRPC endpoints.
-    - TODO: Verify that we are using a standard protobuf json format.
-    - Will need to check this against a javascript/typescript style guide
-
-Generally the server will authenticate that every request path is either allowlisted or allowed based on user id.
-
-
-Cookie Usage
-- X-Client-Id
-- X-Session-Key
-
-dacha.dev/blog/
-
-
 Some other important things:
 - HTTP2 pings
     - One per hour
@@ -211,7 +186,7 @@ pub async fn run() -> Result<()> {
             .into_service(),
         )?;
         rpc_server.enable_cors();
-        rpc_server.allow_http1();
+        rpc_server.http_options_mut().force_http2 = false;
         rpc_server.run(8001)
     });
 

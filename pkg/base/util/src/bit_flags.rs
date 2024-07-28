@@ -35,6 +35,38 @@ macro_rules! define_bit_flags {
             pub const fn remove(self, value: Self) -> Self {
                 Self::from_raw(self.value & !value.value)
             }
+
+            #[cfg(feature = "alloc")]
+            pub fn to_string(&self) -> ::alloc::string::String {
+                let mut out = ::alloc::string::String::new();
+
+                let mut value = *self;
+                let mut first = true;
+                $(
+                if value.contains(Self::$name) {
+                    if first {
+                        first = false;
+                    } else {
+                        out.push_str(" | ");
+                    }
+
+                    out.push_str(stringify!($name));
+                    value = value.remove(Self::$name);
+                }
+                )*
+
+                if value.value != 0 {
+                    if !first {
+                        out.push_str(" | ");
+                    }
+
+                    out.push_str(&format!("{:b}", value.value));
+                }
+
+                out
+            }
+
+
         }
 
         impl ::core::convert::From<$t> for $struct {

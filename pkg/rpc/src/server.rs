@@ -31,34 +31,27 @@ type StartCallback = Box<dyn FnOnce(Arc<dyn ServiceResource>) + Send + Sync + 's
 
 /// RPC server implemented on top of an HTTP2 server.
 pub struct Http2Server {
+    http_options: http::ServerOptions,
     handler: Http2RequestHandler,
     start_callbacks: Vec<StartCallback>,
-    allow_http1: bool,
-    port: Option<u16>,
 }
 
 impl Http2Server {
     pub fn new(port: Option<u16>) -> Self {
+        let mut http_options = http::ServerOptions::default();
+        http_options.port = port;
+        http_options.name = "rpc::Http2Server".to_string();
+        http_options.force_http2 = true;
+
         Self {
-            handler: Http2RequestHandler {
-                request_handlers: HashMap::new(),
-                services: HashMap::new(),
-                codec_options: Arc::new(ServerCodecOptions::default()),
-                enable_cors: false,
-            },
+            http_options,
+            handler: Http2RequestHandler::new(),
             start_callbacks: vec![],
-            allow_http1: false,
-            port,
         }
     }
 
     pub fn add_service(&mut self, service: Arc<dyn Service>) -> Result<()> {
-        let service_name = service.service_name().to_string();
-        if self.handler.services.contains_key(&service_name) {
-            return Err(err_msg("Adding duplicate service to RPCServer"));
-        }
-
-        self.handler.services.insert(service_name, service);
+        self.handler.add_service(service);
         Ok(())
     }
 
@@ -92,8 +85,8 @@ impl Http2Server {
         self.handler.enable_cors = true;
     }
 
-    pub fn allow_http1(&mut self) {
-        self.allow_http1 = true;
+    pub fn http_options_mut(&mut self) -> &mut http::ServerOptions {
+        &mut self.http_options
     }
 
     pub fn codec_options_mut(&mut self) -> &mut ServerCodecOptions {
@@ -105,12 +98,8 @@ impl Http2Server {
     }
 
     fn to_inner_server(self) -> (http::Server, Vec<StartCallback>) {
-        let mut options = http::ServerOptions::default();
-        options.force_http2 = !self.allow_http1;
-        options.port = self.port;
-        options.name = "rpc::Http2Server".to_string();
         (
-            http::Server::new(self.handler, options),
+            http::Server::new(self.handler, self.http_options),
             self.start_callbacks,
         )
     }
@@ -156,10 +145,7 @@ impl BoundHttp2Server {
 }
 
 /// Implementation of the HTTP2 request handler for processing RPC requests.
-///
-/// NOTE: This is mainly pub(crate) to support the LocalChannel implementation.
-/// TODO: Eventually make this private again.
-pub(crate) struct Http2RequestHandler {
+pub struct Http2RequestHandler {
     request_handlers: HashMap<String, Box<dyn http::ServerHandler>>,
 
     services: HashMap<String, Arc<dyn Service>>,
@@ -170,7 +156,16 @@ pub(crate) struct Http2RequestHandler {
 }
 
 impl Http2RequestHandler {
-    pub(crate) fn new(service: Arc<dyn Service>, enable_cors: bool) -> Self {
+    pub fn new() -> Self {
+        Self {
+            request_handlers: HashMap::new(),
+            services: HashMap::new(),
+            codec_options: Arc::new(ServerCodecOptions::default()),
+            enable_cors: false,
+        }
+    }
+
+    pub(crate) fn new_single_service(service: Arc<dyn Service>, enable_cors: bool) -> Self {
         let mut services = HashMap::new();
         services.insert(service.service_name().to_string(), service);
 
@@ -180,6 +175,16 @@ impl Http2RequestHandler {
             codec_options: Arc::new(ServerCodecOptions::default()),
             services,
         }
+    }
+
+    pub fn add_service(&mut self, service: Arc<dyn Service>) -> Result<()> {
+        let service_name = service.service_name().to_string();
+        if self.services.contains_key(&service_name) {
+            return Err(err_msg("Adding duplicate service to RPCServer"));
+        }
+
+        self.services.insert(service_name, service);
+        Ok(())
     }
 
     async fn handle_request_impl<'a>(

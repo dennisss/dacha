@@ -255,7 +255,7 @@ async fn main() -> Result<()> {
             let mut rpc_server = rpc::Http2Server::new(Some(args.rpc_port.value()));
             rpc_server.add_service(service.clone().into_service())?;
             rpc_server.enable_cors();
-            rpc_server.allow_http1();
+            rpc_server.http_options_mut().force_http2 = false;
             rpc_server.codec_options_mut().json_parser.message_factory =
                 Some(message_factory.clone());
             rpc_server

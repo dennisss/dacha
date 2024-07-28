@@ -634,7 +634,7 @@ fn serialize_message(message: &dyn MessageReflection, indent: &str, out: &mut St
 
         let value_start_idx = out.len();
 
-        serialize_reflection(refl, indent, out, true);
+        serialize_reflection(refl, indent, out);
 
         // Empty value
         if out.len() == value_start_idx {
@@ -646,51 +646,28 @@ fn serialize_message(message: &dyn MessageReflection, indent: &str, out: &mut St
     }
 }
 
-fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse: bool) {
+fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
     match refl {
         // TODO: Check these float cases.
-        // TODO: Ignore fields with default values?
         Reflection::F32(v) => {
-            if sparse && *v == 0.0 {
-                return;
-            }
             out.push_str(&v.to_string());
         }
         Reflection::F64(v) => {
-            if sparse && *v == 0.0 {
-                return;
-            }
             out.push_str(&v.to_string());
         }
         Reflection::I32(v) => {
-            if sparse && *v == 0 {
-                return;
-            }
             out.push_str(&v.to_string());
         }
         Reflection::I64(v) => {
-            if sparse && *v == 0 {
-                return;
-            }
             out.push_str(&v.to_string());
         }
         Reflection::U32(v) => {
-            if sparse && *v == 0 {
-                return;
-            }
             out.push_str(&v.to_string());
         }
         Reflection::U64(v) => {
-            if sparse && *v == 0 {
-                return;
-            }
             out.push_str(&v.to_string());
         }
         Reflection::Bool(v) => {
-            if sparse && !v {
-                return;
-            }
-
             if *v {
                 out.push_str("true");
             } else {
@@ -698,23 +675,12 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
             }
         }
         Reflection::String(v) => {
-            if sparse && v.is_empty() {
-                return;
-            }
-
             serialize_str_lit(v.as_bytes(), out);
         }
         Reflection::Bytes(v) => {
-            if sparse && v.is_empty() {
-                return;
-            }
             serialize_str_lit(v, out);
         }
         Reflection::Repeated(v) => {
-            if sparse && v.reflect_len() == 0 {
-                return;
-            }
-
             out.push_str("[\n");
 
             let inner_indent = format!("{}    ", indent);
@@ -722,7 +688,7 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
             for i in 0..v.reflect_len() {
                 out.push_str(&inner_indent);
                 let r = v.reflect_get(i).unwrap();
-                serialize_reflection(r, &inner_indent, out, false);
+                serialize_reflection(r, &inner_indent, out);
 
                 if i != v.reflect_len() - 1 {
                     out.push(',');
@@ -733,10 +699,6 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
             out.push_str(&format!("{}]", indent));
         }
         Reflection::Set(s) => {
-            if sparse && s.len() == 0 {
-                return;
-            }
-
             out.push_str("[\n");
 
             let inner_indent = format!("{}    ", indent);
@@ -751,7 +713,7 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
                 first = false;
 
                 out.push_str(&inner_indent);
-                serialize_reflection(r, &inner_indent, out, false);
+                serialize_reflection(r, &inner_indent, out);
             }
 
             out.push_str(&format!("\n{}]", indent));
@@ -772,9 +734,6 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
             }
         }
         Reflection::Enum(v) => {
-            if v.value() == 0 {
-                return;
-            }
             out.push_str(v.name());
         }
     }

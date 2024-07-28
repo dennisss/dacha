@@ -72,6 +72,21 @@ unsafe impl ExternType for bindings::ColorSpace {
     type Kind = cxx::kind::Trivial;
 }
 
+unsafe impl ExternType for bindings::SensorConfiguration {
+    type Id = type_id!("libcamera::SensorConfiguration");
+    type Kind = cxx::kind::Trivial;
+}
+
+unsafe impl ExternType for bindings::Orientation {
+    type Id = type_id!("libcamera::Orientation");
+    type Kind = cxx::kind::Trivial;
+}
+
+unsafe impl ExternType for bindings::LoggingTarget {
+    type Id = type_id!("libcamera::LoggingTarget");
+    type Kind = cxx::kind::Trivial;
+}
+
 #[cxx::bridge]
 mod ffi {
     /// A mirror of libcamera::FrameBuffer::Plane
@@ -149,6 +164,11 @@ mod ffi {
         type ControlType = crate::bindings::ControlType;
         type Rectangle = crate::bindings::Rectangle;
         type ColorSpace = crate::bindings::ColorSpace;
+        type SensorConfiguration = crate::bindings::SensorConfiguration;
+        type Orientation = crate::bindings::Orientation;
+        type LoggingTarget = crate::bindings::LoggingTarget;
+
+        fn logSetTarget(target: LoggingTarget) -> i32;
 
         //////////////////////////////////////
 
@@ -252,6 +272,21 @@ mod ffi {
         fn size(self: &CameraConfiguration) -> usize;
 
         fn validate(self: Pin<&mut CameraConfiguration>) -> CameraConfigurationStatus;
+
+        fn camera_config_orientation(config: &CameraConfiguration) -> Orientation;
+        fn camera_config_set_orientation(config: Pin<&mut CameraConfiguration>, value: Orientation);
+
+        fn camera_config_has_sensor_config(config: &CameraConfiguration) -> bool;
+        fn camera_config_sensor_config(config: &CameraConfiguration) -> SensorConfiguration;
+        fn camera_config_set_sensor_config(
+            config: Pin<&mut CameraConfiguration>,
+            value: SensorConfiguration,
+        );
+        fn camera_config_clear_sensor_config(config: Pin<&mut CameraConfiguration>);
+
+        //////////////////////////////////////
+
+        fn new_sensor_config() -> SensorConfiguration;
 
         //////////////////////////////////////
 

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 sys = { path = "../../pkg/sys" }
 base_error = { path = "../../pkg/base/error" }
+base_util = { path = "../../pkg/base/util" }
 file = { path = "../../pkg/file" }
 executor = { path = "../../pkg/executor" }
 macros = { path = "../../pkg/macros" }
@@ -14,3 +15,8 @@ macros = { path = "../../pkg/macros" }
 bindgen = "0.63.0"
 automata = { path = "../../pkg/automata" }
 regexp_macros = { path = "../../pkg/automata/regexp_macros" }
+
+[features]
+default = ["std"]
+alloc = []
+std = ["alloc"]

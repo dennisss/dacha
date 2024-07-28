@@ -7,6 +7,7 @@ use crate::ffi;
 use crate::stream_configuration::StreamConfiguration;
 
 pub use crate::ffi::CameraConfigurationStatus;
+use crate::SensorConfiguration;
 
 pub struct CameraConfiguration {
     /// This is public to allow the Camera to configure itself.
@@ -42,5 +43,23 @@ impl CameraConfiguration {
 
     pub fn validate(&mut self) -> CameraConfigurationStatus {
         self.raw.as_mut().unwrap().validate()
+    }
+
+    pub fn sensor_config(&self) -> Option<SensorConfiguration> {
+        if ffi::camera_config_has_sensor_config(&self.raw) {
+            Some(ffi::camera_config_sensor_config(&self.raw))
+        } else {
+            None
+        }
+    }
+
+    pub fn set_sensor_config(&mut self, value: Option<SensorConfiguration>) {
+        let raw = self.raw.as_mut().unwrap();
+
+        if let Some(value) = value {
+            ffi::camera_config_set_sensor_config(raw, value);
+        } else {
+            ffi::camera_config_clear_sensor_config(raw);
+        }
     }
 }

@@ -14,6 +14,7 @@ mod frame_buffer;
 mod frame_buffer_allocator;
 mod pixel_format;
 mod request;
+mod sensor_configuration;
 mod stream;
 mod stream_configuration;
 mod stream_formats;
@@ -33,7 +34,7 @@ mod bindings {
     pub use raw::root::libcamera::*;
 }
 
-pub use bindings::{formats, Rectangle, Size, SizeRange, StreamRole};
+pub use bindings::{formats, Orientation, Rectangle, Size, SizeRange, StreamRole};
 pub use camera::*;
 pub use camera_configuration::*;
 pub use camera_manager::*;
@@ -51,6 +52,30 @@ pub use frame_buffer::*;
 pub use frame_buffer_allocator::*;
 pub use pixel_format::*;
 pub use request::*;
+pub use sensor_configuration::*;
 pub use stream::*;
 pub use stream_configuration::*;
 pub use stream_formats::*;
+
+pub fn disable_logging() {
+    ffi::logSetTarget(bindings::LoggingTarget::LoggingTargetNone);
+}
+
+/// A terrible hack borrowed from
+/// https://github.com/raspberrypi/rpicam-apps/blob/a2b156fc7607ecd2de8d389767924ef9f66588cd/core/rpicam_app.hpp#L90
+pub fn pixel_format_bit_depth(format: PixelFormat) -> usize {
+    let name = format.to_string();
+    if name.contains("8") {
+        return 8;
+    }
+
+    if name.contains("10") {
+        return 10;
+    }
+
+    if name.contains("12") {
+        return 12;
+    }
+
+    16
+}

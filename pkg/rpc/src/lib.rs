@@ -41,7 +41,7 @@ pub use local_channel::LocalChannel;
 pub use metadata::Metadata;
 pub use pipe::pipe;
 pub use retrying::RetryingOptions;
-pub use server::Http2Server;
+pub use server::{Http2RequestHandler, Http2Server};
 pub use server_types::*;
 pub use service::Service;
 pub use status::*;

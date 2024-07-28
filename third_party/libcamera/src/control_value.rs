@@ -144,11 +144,21 @@ impl AssignToControlValue for String {
 
 // TODO: AssignToControlValue for &[String]
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ControlValueEnum {
     None,
     Primitive(ControlPrimitiveValue),
     Array(ControlArrayValue),
+}
+
+impl Debug for ControlValueEnum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "None"),
+            Self::Primitive(v) => write!(f, "{:?}", v),
+            Self::Array(v) => write!(f, "{:?}", v),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

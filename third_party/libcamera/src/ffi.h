@@ -83,6 +83,44 @@ std::unique_ptr<RequestCompleteSlot> camera_connect_request_completed(
     rust::Box<::RequestCompleteContext> context);
 
 ////////////////////////////////////////////////////////////////////////////////
+// CameraConfiguration
+////////////////////////////////////////////////////////////////////////////////
+
+inline Orientation camera_config_orientation(
+    const CameraConfiguration &config) {
+  return config.orientation;
+}
+
+inline void camera_config_set_orientation(CameraConfiguration &config,
+                                          Orientation value) {
+  config.orientation = value;
+}
+
+inline bool camera_config_has_sensor_config(const CameraConfiguration &config) {
+  return config.sensorConfig.has_value();
+}
+
+inline SensorConfiguration camera_config_sensor_config(
+    const CameraConfiguration &config) {
+  return config.sensorConfig.value();
+}
+
+inline void camera_config_set_sensor_config(CameraConfiguration &config,
+                                            SensorConfiguration value) {
+  config.sensorConfig = value;
+}
+
+inline void camera_config_clear_sensor_config(CameraConfiguration &config) {
+  config.sensorConfig.reset();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// SensorConfiguration
+////////////////////////////////////////////////////////////////////////////////
+
+inline SensorConfiguration new_sensor_config() { return SensorConfiguration(); }
+
+////////////////////////////////////////////////////////////////////////////////
 // StreamConfiguration
 ////////////////////////////////////////////////////////////////////////////////
 

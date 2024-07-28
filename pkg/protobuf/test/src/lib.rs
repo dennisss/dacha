@@ -80,4 +80,19 @@ mod test {
             "name: \"Hi there!\"\nid: 123\n"
         );
     }
+
+    #[test]
+    fn test_optional_field() {
+        let mut msg = MessageWithOptional::default();
+
+        assert!(!msg.has_number());
+        assert!(!msg.has_field_with_number(1));
+
+        msg.set_number(0u32);
+
+        assert!(msg.has_number());
+        assert!(msg.has_field_with_number(1));
+
+        assert_eq!(serialize_text_proto(&msg), "number: 0\n");
+    }
 }

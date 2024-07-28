@@ -306,6 +306,14 @@ impl ConfiguredCamera {
 
         RunningCamera::create(self.camera)
     }
+
+    /// TODO: Prevent having living requests/allocators. from the previous time
+    /// it was configured.
+    pub fn unconfigure(self) -> AcquiredCamera {
+        AcquiredCamera {
+            camera: self.camera,
+        }
+    }
 }
 
 pub struct RunningCamera {

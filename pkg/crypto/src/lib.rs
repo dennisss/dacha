@@ -173,11 +173,17 @@ pub mod aead;
 pub mod aes;
 #[cfg(feature = "std")]
 mod aes_generic;
+#[cfg(feature = "std")]
+pub mod bcrypt;
+#[cfg(feature = "std")]
+pub mod blowfish;
 pub mod ccm;
 #[cfg(feature = "std")]
 pub mod chacha20;
 pub mod checksum;
 pub mod cipher;
+#[cfg(feature = "std")]
+pub mod cipher_modes;
 #[cfg(feature = "std")]
 pub mod des;
 #[cfg(feature = "std")]

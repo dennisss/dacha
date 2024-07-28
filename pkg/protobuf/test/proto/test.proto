@@ -31,3 +31,6 @@ message ShoppingList {
     // map<string, int32> table = 6;
 }
 
+message MessageWithOptional {
+    optional uint32 number = 1;
+}

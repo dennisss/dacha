@@ -40,6 +40,7 @@ impl core::fmt::Display for DecodeRadixError {
 pub enum DecodeRadixErrorKind {
     InvalidNumberOfDigits,
     UnsupportedDigit,
+    BadPadding,
 }
 
 pub fn hex_encode(data: &[u8]) -> String {

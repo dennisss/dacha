@@ -48,18 +48,21 @@ impl ControlList {
 
     /// May return None if the control is missing from the list or there is a
     /// type mismatch.
-    pub fn get<'a, T: FromControlValue<'a>>(&'a self, control: Control<T>) -> Option<T::Target> {
+    pub fn get<'a, T: FromControlValue<'a> + ?Sized>(
+        &'a self,
+        control: Control<T>,
+    ) -> Option<T::Target> {
         self.get_by_num::<T>(control.id())
     }
 
-    pub fn get_by_id<'a, T: FromControlValue<'a>>(
+    pub fn get_by_id<'a, T: FromControlValue<'a> + ?Sized>(
         &'a self,
         control_id: &ControlId,
     ) -> Option<T::Target> {
         self.get_by_num::<T>(control_id.id())
     }
 
-    pub fn get_by_num<'a, T: FromControlValue<'a>>(
+    pub fn get_by_num<'a, T: FromControlValue<'a> + ?Sized>(
         &'a self,
         control_num: u32,
     ) -> Option<T::Target> {
