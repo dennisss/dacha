@@ -1,8 +1,10 @@
+use std::{collections::HashSet, sync::Arc};
+
 use base_error::*;
 use cnc_monitor_proto::cnc::DeviceSelector;
 use common::io::{Readable, Writeable};
 use file::{LocalPath, LocalPathBuf};
-use media_web::camera_manager::{CameraManager, CameraSubscriber};
+use media_camera::camera_manager::{CameraManager, CameraSubscriber};
 use peripherals::serial::SerialPort;
 
 use crate::fake_machine::FakeMachine;
@@ -11,6 +13,7 @@ use crate::fake_machine::FakeMachine;
 pub enum AvailableDevice {
     USB(AvailableUSBDevice),
     Fake(usize),
+    Libcamera(libcamera::AvailableCamera),
 }
 
 #[derive(Clone)]
@@ -25,8 +28,13 @@ pub struct AvailableUSBDevice {
 }
 
 impl AvailableDevice {
-    pub async fn list_all(usb_context: &usb::Context) -> Result<Vec<Self>> {
+    pub async fn list_all(
+        usb_context: &usb::Context,
+        libcamera_manager: &Arc<libcamera::CameraManager>,
+    ) -> Result<Vec<Self>> {
         let mut out = vec![];
+
+        let mut seen_system_devices = HashSet::new();
 
         let devices = usb_context.enumerate_devices().await?;
         for device in devices {
@@ -36,6 +44,11 @@ impl AvailableDevice {
             let vendor_name = device.manufacturer().await?;
             let product_name = device.product().await?;
 
+            for driver_device in &driver_devices {
+                let meta = file::metadata_sync(&driver_device.path)?;
+                seen_system_devices.insert(meta.st_dev());
+            }
+
             out.push(AvailableDevice::USB(AvailableUSBDevice {
                 usb_entry: device,
                 device_descriptor,
@@ -44,6 +57,30 @@ impl AvailableDevice {
                 vendor_name,
                 product_name,
             }));
+        }
+
+        for camera in libcamera_manager.cameras() {
+            // We will not use libcamera for any USB cameras.
+            if let Some(system_devices) = camera
+                .properties()
+                .get(libcamera::properties::SystemDevices)
+            {
+                let mut should_skip = false;
+
+                for dev_id in system_devices {
+                    let dev_id = *dev_id as u64;
+                    if seen_system_devices.contains(&dev_id) {
+                        should_skip = true;
+                        break;
+                    }
+                }
+
+                if should_skip {
+                    continue;
+                }
+            }
+
+            out.push(AvailableDevice::Libcamera(camera));
         }
 
         Ok(out)
@@ -57,10 +94,13 @@ impl AvailableDevice {
     ///
     /// NOTE: This is not long term stable. e.g. switching a USB device from one
     /// port to another will change its path.
-    pub fn path(&self) -> LocalPathBuf {
+    pub fn path(&self) -> String {
         match self {
-            Self::USB(dev) => dev.usb_entry.sysfs_dir().to_owned(),
-            Self::Fake(i) => LocalPath::new(&format!("/fake/{}", *i)).to_owned(),
+            Self::USB(dev) => dev.usb_entry.sysfs_dir().to_string(),
+            Self::Fake(i) => format!("fake:{}", *i),
+            Self::Libcamera(dev) => {
+                format!("libcamera:{}", dev.id())
+            }
         }
     }
 
@@ -76,10 +116,16 @@ impl AvailableDevice {
             Self::Fake(i) => {
                 format!("Fake #{}", i)
             }
+            Self::Libcamera(dev) => {
+                format!("Libcamera: {}", dev.id())
+            }
         }
     }
 
     pub fn matches(&self, selector: &DeviceSelector) -> bool {
+        // TODO: Currently not everything selectable in the UI (things in verbose_proto)
+        // as matchable here.
+
         if selector.has_usb() {
             let dev = match self {
                 Self::USB(d) => d,
@@ -112,6 +158,17 @@ impl AvailableDevice {
             }
         }
 
+        if !selector.libcamera().id().is_empty() {
+            let self_id = match self {
+                Self::Libcamera(dev) => dev.id(),
+                _ => return false,
+            };
+
+            if selector.libcamera().id() != self_id {
+                return false;
+            }
+        }
+
         true
     }
 
@@ -129,6 +186,9 @@ impl AvailableDevice {
             Self::Fake(i) => {
                 sel.set_fake(*i as u32);
             }
+            Self::Libcamera(dev) => {
+                sel.libcamera_mut().set_id(dev.id());
+            }
         }
 
         sel
@@ -137,7 +197,7 @@ impl AvailableDevice {
     pub fn verbose_proto(&self) -> DeviceSelector {
         let mut sel = DeviceSelector::default();
 
-        sel.set_path(self.path().as_str());
+        sel.set_path(self.path());
 
         match self {
             Self::USB(dev) => {
@@ -171,6 +231,13 @@ impl AvailableDevice {
                 sel.set_fake(*i as u32);
                 sel.add_serial_path(format!("/fake/{}", *i));
             }
+            Self::Libcamera(dev) => {
+                sel.libcamera_mut().set_id(dev.id());
+
+                if let Some(model) = dev.properties().get(libcamera::properties::Model2) {
+                    sel.libcamera_mut().set_model(model);
+                }
+            }
         };
 
         sel
@@ -203,6 +270,9 @@ impl AvailableDevice {
                 Ok((serial_reader, serial_writer))
             }
             Self::Fake(i) => FakeMachine::create().await,
+            Self::Libcamera(device) => {
+                return Err(err_msg("Can't be opened as a serial port"));
+            }
         }
     }
 
@@ -210,7 +280,16 @@ impl AvailableDevice {
         match self {
             Self::USB(device) => {
                 camera_manager
-                    .open_usb_camera(device.usb_entry.clone())
+                    .open(media_camera::camera_manager::CameraEntry::USB(
+                        device.usb_entry.clone(),
+                    ))
+                    .await
+            }
+            Self::Libcamera(device) => {
+                camera_manager
+                    .open(media_camera::camera_manager::CameraEntry::Libcamera(
+                        device.clone(),
+                    ))
                     .await
             }
             _ => return Err(err_msg("Unsupported device type for camera")),

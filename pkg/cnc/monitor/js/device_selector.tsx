@@ -159,7 +159,13 @@ export class DeviceSelectorInput extends React.Component<DevicePickerProps, Devi
                             let usb = device.info.usb;
                             name = `[USB ${format_fixed_width_hex(usb.vendor, 2)}:${format_fixed_width_hex(usb.product, 2)}] ${usb.vendor_name || ''} | ${usb.product_name || ''}`;
                         } else if (device.info.fake !== undefined) {
-                            name = 'Fake Device #' + device.info.fake;
+                            name = '[Fake] Device #' + device.info.fake;
+                        } else if (device.info.libcamera) {
+                            if (device.info.libcamera.model) {
+                                name = '[libcamera] ' + device.info.libcamera.model;
+                            } else {
+                                name = '[libcamera] ' + device.info.libcamera.id;
+                            }
                         } else {
                             console.error('Unknown device', device);
                         }
@@ -211,13 +217,14 @@ interface DeviceSelectorField {
     formatter?: (v: any) => string;
 }
 
-// TODO: Format the number fields as hex.
 const SUPPORTED_FIELDS: DeviceSelectorField[] = [
     { path: 'usb.product', default: true, formatter: (v) => format_fixed_width_hex(v, 2) },
     { path: 'usb.product_name' },
     { path: 'usb.vendor', default: true, formatter: (v) => format_fixed_width_hex(v, 2) },
     { path: 'usb.vendor_name' },
     { path: 'usb.serial_number', default: true },
+    { path: 'libcamera.id', default: true },
+    { path: 'libcamera.model' },
     { path: 'fake' }
 ]
 

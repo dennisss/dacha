@@ -448,8 +448,6 @@ mod ffi {
 
         fn control_value_set_string(value: Pin<&mut ControlValue>, s: &String);
 
-        fn control_value_get_string_array(value: &ControlValue) -> Vec<String>;
-
         fn control_value_to_string(value: &ControlValue) -> String;
 
         //////////////////////////////////////

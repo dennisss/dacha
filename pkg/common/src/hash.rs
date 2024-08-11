@@ -46,7 +46,11 @@ impl core::hash::Hasher for FastHasher {
     }
 
     fn write(&mut self, bytes: &[u8]) {
-        todo!()
+        for chunk in bytes.chunks(8) {
+            let mut num = [0u8; 8];
+            num[0..chunk.len()].copy_from_slice(chunk);
+            self.write_u64(u64::from_ne_bytes(num));
+        }
     }
 
     // Not setting to SSE4.2 do to the sheer incompetance of cargo to correctly

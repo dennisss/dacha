@@ -139,11 +139,20 @@ impl Device {
         println!("Capabilities: {}", caps.capabilities);
         println!("Device Capabilities: {}", caps.device_caps);
 
+        if self.supports_streaming() {
+            println!("Streaming!");
+        }
+
         if self.is_m2m() {
             println!("Memory to Memory!");
         }
 
         Ok(())
+    }
+
+    pub fn supports_streaming(&self) -> bool {
+        let caps = self.handle.shared.capability.capabilities;
+        caps & V4L2_CAP_STREAMING != 0
     }
 
     /// Checks if this is an M2M device. M2M devices can be opened multiple
@@ -160,7 +169,7 @@ impl Device {
         (caps & (V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_CAPTURE_MPLANE) != 0) || self.is_m2m()
     }
 
-    pub fn new_capture_stream(&mut self) -> Result<UnconfiguredStream> {
+    pub fn new_capture_stream(&self) -> Result<UnconfiguredStream> {
         let caps = self.handle.shared.capability.capabilities;
 
         let typ = {
@@ -179,7 +188,7 @@ impl Device {
         (caps & (V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_OUTPUT_MPLANE) != 0) || self.is_m2m()
     }
 
-    pub fn new_output_stream(&mut self) -> Result<UnconfiguredStream> {
+    pub fn new_output_stream(&self) -> Result<UnconfiguredStream> {
         let caps = self.handle.shared.capability.capabilities;
 
         let typ = {
@@ -195,13 +204,13 @@ impl Device {
 
     // NOTE: We don't expose this directly to users to ensure that the other methods
     // that normalize usage of _MPLANE types when available are used.
-    fn new_stream(&mut self, typ: v4l2_buf_type) -> Result<UnconfiguredStream> {
-        if !self.streams.insert(typ) {
-            return Err(format_err!(
-                "Already configuring a stream with buffer type {:?}",
-                typ
-            ));
-        }
+    fn new_stream(&self, typ: v4l2_buf_type) -> Result<UnconfiguredStream> {
+        // if !self.streams.insert(typ) {
+        //     return Err(format_err!(
+        //         "Already configuring a stream with buffer type {:?}",
+        //         typ
+        //     ));
+        // }
 
         Ok(UnconfiguredStream {
             device: self.handle.clone(),

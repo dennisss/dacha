@@ -92,8 +92,6 @@ impl ClientOptions {
                 NamedGroup::secp384r1,
             ],
             supported_signature_algorithms: vec![
-                // TODO: Also add ed2519
-
                 // TLS 1.3: These three are the minimum required set to implement.
                 SignatureScheme::ecdsa_secp256r1_sha256,
                 SignatureScheme::rsa_pss_rsae_sha256,
@@ -101,6 +99,8 @@ impl ClientOptions {
                 // Extra to allow old TLS 1.2 servers to have a decent fallback.
                 SignatureScheme::rsa_pkcs1_sha384,
                 SignatureScheme::rsa_pkcs1_sha512,
+                // Extra that we allow.
+                SignatureScheme::ed25519,
             ],
 
             certificate_request: CertificateRequestOptions {

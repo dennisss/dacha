@@ -15,3 +15,5 @@ executor = { path = "../../executor" }
 file = { path = "../../file" }
 image = { path = "../" }
 graphics = { path = "../../graphics" }
+protobuf = { path = "../../protobuf" }
+perf = { path = "../../perf" }

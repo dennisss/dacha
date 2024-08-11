@@ -116,23 +116,11 @@ impl<'a> FromControlValue<'a> for String {
     type Target = Self;
 
     fn from_value(value: &'a ControlValue) -> Option<Self::Target> {
-        if value.typ() != ControlType::ControlTypeString || value.is_array() {
+        if value.typ() != ControlType::ControlTypeString {
             return None;
         }
 
         Some(value.get_string())
-    }
-}
-
-impl<'a> FromControlValue<'a> for Vec<String> {
-    type Target = Self;
-
-    fn from_value(value: &'a ControlValue) -> Option<Self::Target> {
-        if value.typ() != ControlType::ControlTypeString || !value.is_array() {
-            return None;
-        }
-
-        Some(ffi::control_value_get_string_array(value))
     }
 }
 
@@ -182,7 +170,6 @@ pub enum ControlArrayValue {
     Float(Vec<f32>),
     Rectangle(Vec<Rectangle>),
     Size(Vec<Size>),
-    String(Vec<String>),
 }
 
 impl ControlValueEnum {
@@ -218,7 +205,9 @@ impl<'a> FromControlValue<'a> for ControlValueEnum {
                     ControlArrayValue::Float(value.cast::<[f32]>().unwrap().to_vec())
                 }
                 ControlType::ControlTypeString => {
-                    ControlArrayValue::String(value.cast::<Vec<String>>().unwrap())
+                    return Some(ControlValueEnum::Primitive(ControlPrimitiveValue::String(
+                        value.cast::<String>().unwrap(),
+                    )));
                 }
                 ControlType::ControlTypeRectangle => {
                     ControlArrayValue::Rectangle(value.cast::<[Rectangle]>().unwrap().to_vec())
@@ -247,7 +236,8 @@ impl<'a> FromControlValue<'a> for ControlValueEnum {
                     ControlPrimitiveValue::Float(value.cast::<f32>().unwrap())
                 }
                 ControlType::ControlTypeString => {
-                    ControlPrimitiveValue::String(value.cast::<String>().unwrap())
+                    // Strings are always arrays
+                    todo!()
                 }
                 ControlType::ControlTypeRectangle => {
                     ControlPrimitiveValue::Rectangle(value.cast::<Rectangle>().unwrap())

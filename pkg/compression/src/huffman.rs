@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use common::algorithms::merge_by;
 use common::bits::*;
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 
 // TODO: Remove debug from these
 #[derive(Debug)]
@@ -148,15 +149,17 @@ impl HuffmanTree {
         }
     }
 
-    // Builds a huffman encoding for some data under the constraint that code
-    // lengths are <= a requested maximum length.
-    //
-    // It is still more useful to have the raw lens
-    // TODO: Rename as we aren't actually building a tree?
-    //
-    // TODO: Support taking as input directly the set of frequencies of each symbol.
-    //
-    // Output is pairs of Symbol, Codelength
+    /// Builds a huffman encoding for some data under the constraint that code
+    /// lengths are <= a requested maximum length.
+    ///
+    /// It is still more useful to have the raw lens
+    /// TODO: Rename as we aren't actually building a tree?
+    ///
+    /// TODO: Support taking as input directly the set of frequencies of each
+    /// symbol.
+    ///
+    /// Output is pairs of Symbol, Codelength
+    #[inline(never)]
     pub fn build_length_limited_tree(
         symbols: &[usize],
         max_code_length: usize,
@@ -175,7 +178,7 @@ impl HuffmanTree {
 
         // Get frequencies of symbols.
         // TODO: Should support raw input of a histogram.
-        let mut freqs_map = std::collections::HashMap::new();
+        let mut freqs_map = std::collections::HashMap::<_, _, FastHasherBuilder>::default();
         for s in symbols {
             let mut f = freqs_map.get(s).cloned().unwrap_or(0);
             f += 1;
@@ -264,7 +267,7 @@ impl HuffmanTree {
         }
 
         // Map of how many times coins occur with each symbol.
-        let mut count_map = std::collections::HashMap::new();
+        let mut count_map = std::collections::HashMap::<_, _, FastHasherBuilder>::default();
 
         let mut total = 0;
         let desired_total = (freqs.len() - 1) * (1 << max_code_length);

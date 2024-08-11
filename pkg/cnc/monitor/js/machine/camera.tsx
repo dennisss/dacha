@@ -234,7 +234,7 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
 
                             <DeviceSelectorInput
                                 context={this.props.context}
-                                filter={(device) => device.video_path ? true : false}
+                                filter={(device) => (device.video_path || device.libcamera) ? true : false}
                                 selector={camera.device}
                                 device={this.state._selected_device || (camera_state ? camera_state.device : null)}
                                 connected_device={camera_state ? camera_state.device : null}

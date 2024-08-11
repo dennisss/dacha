@@ -8,7 +8,8 @@ use executor::lock;
 use executor::sync::{AsyncMutex, AsyncRwLock, AsyncVariable};
 use executor_multitask::{impl_resource_passthrough, TaskResource};
 use file::{LocalPath, LocalPathBuf};
-use media_web::camera_manager::{CameraFrameData, CameraManager, CameraSubscriber};
+use media_camera::camera_manager::{CameraManager, CameraSubscriber};
+use media_camera::frame::{ImageFormat, ImageFrame};
 use video::mp4::{self, MP4Builder, MP4BuilderOptions};
 
 use crate::db::ProtobufDB;
@@ -108,7 +109,7 @@ impl CameraRecorder {
         self.record_data(Some(frame)).await
     }
 
-    async fn record_data(&mut self, frame: Option<CameraFrameData>) -> Result<()> {
+    async fn record_data(&mut self, frame: Option<ImageFrame>) -> Result<()> {
         let mp4_builder = match &mut self.mp4_builder {
             Some(v) => v,
             None => {
@@ -126,7 +127,7 @@ impl CameraRecorder {
                 self.mp4_builder.insert(MP4Builder::new(
                     frame.format.width,
                     frame.format.height,
-                    frame.format.framerate,
+                    frame.format.frame_rate,
                     options,
                 )?)
             }
@@ -148,7 +149,11 @@ impl CameraRecorder {
         };
 
         if let Some(frame) = frame {
-            mp4_builder.append(&frame.data, Some(frame.monotonic_timestamp), false)?;
+            mp4_builder.append(
+                frame.data.data().unwrap(),
+                Some(frame.monotonic_timestamp),
+                false,
+            )?;
         } else {
             mp4_builder.append(b"", None, true)?;
         }

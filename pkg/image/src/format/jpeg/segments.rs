@@ -310,8 +310,8 @@ impl<'a> DefineQuantizationTable<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TableClass {
-    DC,
-    AC,
+    DC = 0,
+    AC = 1,
 }
 
 #[derive(Debug)]
@@ -375,13 +375,7 @@ impl<'a> DefineHuffmanTableSegment<'a> {
         // TODO: Support serializing multiple tables into one segment.
 
         serialize_segment(DHT, out, |out| {
-            out.push(
-                (match self.table_class {
-                    TableClass::DC => 0,
-                    TableClass::AC => 1,
-                } << 4)
-                    | (self.table_dest_id as u8),
-            );
+            out.push(((self.table_class as u8) << 4) | (self.table_dest_id as u8));
 
             assert_eq!(self.length_counts.len(), 16);
             out.extend_from_slice(self.length_counts);
@@ -389,6 +383,7 @@ impl<'a> DefineHuffmanTableSegment<'a> {
         });
     }
 
+    #[inline(never)]
     pub fn create_codes(&self) -> Vec<BitVector> {
         // Based on Annex C of T.81
 

@@ -194,6 +194,7 @@ impl Camera {
 }
 
 /// A reference to a camera which may be acquired for exclusive access.
+#[derive(Clone)]
 pub struct AvailableCamera {
     camera: Arc<Camera>,
 }

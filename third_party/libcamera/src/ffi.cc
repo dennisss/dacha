@@ -106,16 +106,6 @@ void control_value_set_string(ControlValue &value, const rust::String &s) {
   value.set<std::string>(std::string(s));
 }
 
-rust::Vec<rust::String> control_value_get_string_array(
-    const ControlValue &value) {
-  rust::Vec<rust::String> out;
-  for (const auto &v : value.get<Span<const std::string>>()) {
-    out.push_back(v);
-  }
-
-  return out;
-}
-
 rust::String control_value_to_string(const ControlValue &value) {
   return rust::String(value.toString());
 }

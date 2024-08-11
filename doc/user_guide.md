@@ -17,7 +17,8 @@ To setup all dependencies for this project, do the following:
     - This should install from the `rust-toolchain.toml` directory in the root of the repository.
 - For supporting Raspberry Pi and embedded programs, also install these:
     - `sudo apt install gcc-arm-none-eabi g++-aarch64-linux-gnu`
-
+- For supporting AVR applications:
+    - `sudo apt install gcc-avr avr-libc`
 
 ## Cluster Setup
 

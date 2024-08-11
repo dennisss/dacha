@@ -2,6 +2,7 @@ mod coefficient;
 pub mod color;
 mod constants;
 mod dct;
+mod default_tables;
 pub mod encoder;
 mod markers;
 mod quantization;

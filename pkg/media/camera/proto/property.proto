@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package media.camera;
+
+message Properties {
+    repeated Property properties = 1;
+}
+
+message Property {
+    // Unique id identifying this setting
+    // (unique across the entire pipeline for a single camera).
+    string id = 1;
+
+    PropertySpec spec = 2;
+
+    PropertyValue current_value = 3;
+
+    // Only present for GROUP types.
+    repeated Property children = 4;
+}
+
+message PropertySpec {
+    enum Type {
+        UNKNOWN = 0;
+        // For this type of property, there is no value.
+        GROUP = 1;
+        BOOL = 2;
+        // For this type of value, the int32_value is used.
+        ENUM = 3;
+        INT32 = 4;
+        FLOAT32 = 5;
+    }
+    
+    Type type = 1;
+
+    // Human readable name of this property.
+    string name = 2;
+
+    // If set, the minimum value allowed by this property 
+    PropertyValue min_value = 3;
+
+    PropertyValue max_value = 4;
+
+    PropertyValue default_value = 5;
+
+    PropertyValue step = 6;
+
+    // Discrete set of allowed values that this property can take.
+    // Always present for 'enum' type properteis with each value having a name in that case.
+    repeated PropertyValue values = 7;
+
+    // If true, this setting can be changed on the fly without significant re-initialization.
+    bool interactive = 8;
+
+    // If true, the value of this property can be changed.
+    bool mutable = 9;
+}
+
+message PropertyValue {
+    // For enums, this 
+    string value_name = 1;
+
+    oneof value {
+        int32 int32_value = 2;
+        bool bool_value = 3;
+        string string_value = 4;
+        float float_value = 5;
+    }
+}
+

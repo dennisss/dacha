@@ -154,12 +154,6 @@ async fn main() -> Result<()> {
 }
 
 /*
-General plan:
-
-- dacha.dev is the main domain
-    - Has a Cookie for '.dacha.dev' containing the main credential
--
-
 
   options.apiEndpoint ||
         options.servicePath ||

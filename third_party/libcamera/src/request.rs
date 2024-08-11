@@ -148,6 +148,9 @@ impl DerefMut for NewRequest {
 ///
 /// TODO: Verify that if this is dropped before it finishes executing that we
 /// clean up the entry in the camera.
+///
+/// TODO: If a pending request is dropped, we must not drop the frame buffer
+/// since it is still in use by the device.
 pub struct PendingRequest {
     request: Option<Request>,
     entry: Arc<Mutex<RequestQueueEntry>>,

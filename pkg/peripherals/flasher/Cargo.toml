@@ -1,0 +1,13 @@
+[package]
+name = "flasher"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+usb = { path = "../../usb" }
+elf = { path = "../../elf" }
+uf2 = { path = "./uf2" }
+macros = { path = "../../macros" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }

@@ -96,7 +96,7 @@ impl UnconfiguredStream {
         Ok(())
     }
 
-    /// Creates a new buffer with newly allocated memory (allocated by the
+    /// Creates new buffers with newly allocated memory (allocated by the
     /// driver) which is mmap'ed into the current process.
     pub async fn configure_mmap(
         mut self,
@@ -376,7 +376,8 @@ impl<B: Buffer> Stream<B> {
         Ok(())
     }
 
-    pub async fn turn_off(&mut self) -> Result<()> {
+    /// TODO: Require '&mut self'
+    pub async fn turn_off(&self) -> Result<()> {
         let dev = self.device.shared.file.lock().await?.read_exclusive();
         unsafe { vidioc_streamoff(dev.as_raw_fd(), &self.typ.0) }?;
 

@@ -10,6 +10,9 @@ pub struct CameraManager {
     raw: UniquePtr<ffi::CameraManager>,
 }
 
+unsafe impl Sync for CameraManager {}
+unsafe impl Send for CameraManager {}
+
 impl CameraManager {
     /// Creates and starts a CameraManager instance.
     pub fn create() -> Result<Arc<Self>> {

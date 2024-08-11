@@ -285,7 +285,7 @@ pub async fn run() -> Result<()> {
             .into_service(),
         )?;
         rpc_server.enable_cors();
-        rpc_server.allow_http1();
+        rpc_server.http_options_mut().force_http2 = false;
         rpc_server.run(8001)
     });
 

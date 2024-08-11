@@ -30,8 +30,9 @@ gcode = { path = "../gcode" }
 math = { path = "../../math" }
 datastore_meta_client = { path = "../../datastore/meta/client" }
 sstable = { path = "../../sstable" }
-media_web = { path = "../../media/web" }
+media_camera = { path = "../../media/camera" }
 video = { path = "../../media/video" }
+libcamera = { path = "../../../third_party/libcamera" }
 
 [features]
 default = ["std"]

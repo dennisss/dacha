@@ -103,4 +103,11 @@ pub mod properties {
     use super::*;
 
     include!(concat!(env!("OUT_DIR"), "/properties.rs"));
+
+    extern "C" {
+        #[link_name = "_ZN9libcamera10properties5ModelB5cxx11E"]
+        static RAW_MODEL_CONTROL: i64;
+    }
+
+    control!(Model2, String, crate::properties::RAW_MODEL_CONTROL);
 }

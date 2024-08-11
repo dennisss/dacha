@@ -253,6 +253,15 @@ impl BitVector {
 
         (left, right)
     }
+
+    pub fn to_string(&self) -> String {
+        let mut s = String::new();
+        for i in 0..self.len() {
+            s += &self.get(i).unwrap().to_string();
+        }
+
+        s
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -275,12 +284,7 @@ impl std::convert::AsRef<[u8]> for BitVector {
 
 impl std::fmt::Debug for BitVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
-        for i in 0..self.len() {
-            s += &self.get(i).unwrap().to_string();
-        }
-
-        write!(f, "'{}'", s)
+        write!(f, "'{}'", self.to_string())
     }
 }
 

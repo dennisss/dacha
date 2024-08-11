@@ -22,7 +22,7 @@ export class PageComponent extends React.Component<PageComponentProps> {
         super(props);
 
         // TODO: Dedup this code.
-        let channel = new Channel(`${window.location.protocol}//${window.location.hostname}:${global.vars.rpc_port}`);
+        let channel = new Channel('/rpc');
 
         this._abort_controller = new AbortController();
         channel.add_abort_signal(this._abort_controller.signal);

@@ -1,5 +1,5 @@
-// Tool for benchmarking crypto functions and also validating constant time
-// behavior of them.
+// Tool for benchmarking crypto functions and also 'validating' that 'probably'
+// have constant time behavior of them.
 //
 // This is essentially an integration test but not defined in #[cfg(test)] as:
 // - It is very long running and doesn't test general correctness.
@@ -23,15 +23,19 @@ TODOs for making this less noisy:
 TODO: Maybe also extend this into a generic fuzzing integration where we have functions with well defined input signatures.
 */
 
-extern crate common;
-extern crate crypto;
+#[macro_use]
+extern crate macros;
 
-use common::errors::*;
+use std::time::{Duration, Instant};
+
 use common::iter::cartesian_product;
+use common::{bool_to_num, errors::*};
 use crypto::chacha20::Poly1305;
 use crypto::dh::DiffieHellmanFn;
-use crypto::elliptic::{MontgomeryCurveCodec, MontgomeryCurveGroup};
-use crypto::test::*;
+use crypto::elliptic::{EllipticCurveGroup, MontgomeryCurveCodec, MontgomeryCurveGroup};
+use crypto_test::*;
+use file::project_path;
+use protobuf::Message;
 
 fn constant_eq_test() -> Result<()> {
     let mut gen = TimingLeakTest::new_generator();
@@ -130,7 +134,90 @@ fn poly1305_test() {
     println!("");
 }
 
-fn main() -> Result<()> {
+async fn signature_benchmark(typ: crypto::x509::PrivateKeyType) -> Result<()> {
+    println!("{:?}", typ);
+
+    let pkey = crypto::x509::PrivateKey::generate(typ).await?;
+
+    let signature_algorithm = pkey.default_signature_algorithm();
+    let constraints = crypto::x509::SignatureKeyConstraints::default();
+
+    {
+        let start = Instant::now();
+        let mut n = 0;
+        for _ in 0..100 {
+            n += pkey
+                .create_signature(&[1, 2, 3], &signature_algorithm, &constraints)
+                .await?
+                .len();
+        }
+        let end = Instant::now();
+
+        assert!(n > 0);
+
+        eprintln!("create_signature: {:?}", (end - start) / 100);
+    }
+
+    {
+        let signature = pkey
+            .create_signature(&[1, 2, 3], &signature_algorithm, &constraints)
+            .await?;
+
+        let public_key = pkey.public_key()?;
+
+        let start = Instant::now();
+        let mut n = 0;
+        for _ in 0..100 {
+            n += bool_to_num!(public_key.verify_signature(
+                &[1, 2, 3],
+                &signature,
+                &signature_algorithm,
+                &constraints
+            )?);
+        }
+        let end = Instant::now();
+
+        assert!(n > 0);
+
+        eprintln!("verify_signature: {:?}", (end - start) / 100);
+    }
+
+    Ok(())
+}
+
+async fn key_exchange_benchmark(f: &dyn DiffieHellmanFn) -> Result<()> {
+    let start = Instant::now();
+
+    let mut n = 0;
+    for _ in 0..100 {
+        let secret = f.secret_value().await?;
+
+        let public = f.public_value(&secret)?;
+
+        let out = f.shared_secret(&public, &secret)?;
+
+        n += out.len();
+    }
+
+    let end = Instant::now();
+
+    assert!(n > 0);
+
+    eprintln!("key_exchange: {:?}", (end - start) / 100);
+
+    Ok(())
+}
+
+/*
+Want performance numbers on the whole Chacha20 + Poly1305 AEAD flow.
+
+*/
+
+#[executor_main]
+async fn main() -> Result<()> {
+    // TODO: Wait for this thing to start profiling.
+    let profile = executor::spawn(perf::profile_self(Duration::from_secs(20)));
+
     // println!("constant_eq:");
     // println!("=> {:?}", constant_eq_test());
     // println!("");
@@ -141,8 +228,18 @@ fn main() -> Result<()> {
     // println!("x448:");
     // montgomery_group_test(MontgomeryCurveGroup::x448(), 56);
 
-    println!("poly1305:");
-    poly1305_test();
+    // println!("poly1305:");
+    // poly1305_test();
+
+    signature_benchmark(crypto::x509::PrivateKeyType::Ed25519).await?;
+    key_exchange_benchmark(&MontgomeryCurveGroup::x25519()).await?;
+
+    signature_benchmark(crypto::x509::PrivateKeyType::ECDSA_SECP256R1).await?;
+    key_exchange_benchmark(&EllipticCurveGroup::secp256r1()).await?;
+
+    let profile = profile.join().await?;
+
+    file::write(project_path!("perf.pb"), profile.serialize()?).await?;
 
     /*
     secp256r1

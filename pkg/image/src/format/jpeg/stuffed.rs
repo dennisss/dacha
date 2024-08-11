@@ -57,7 +57,7 @@ impl<'a, T: Write> Write for StuffedWriter<'a, T> {
         for v in buf.iter().cloned() {
             self.inner.write(&[v])?;
 
-            if v == 0xff {
+            if std::intrinsics::unlikely(v == 0xff) {
                 self.inner.write(&[0])?;
             }
         }

@@ -7,3 +7,4 @@ edition = "2018"
 common = { path = "../common" }
 cpal = { git = "https://github.com/RustAudio/cpal" }
 graphics = { path = "../graphics" }
+file = { path = "../file" }

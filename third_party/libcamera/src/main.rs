@@ -23,11 +23,9 @@ fn print_camera_info(camera: libcamera::AvailableCamera) -> Result<()> {
     let mut camera = camera.acquire()?;
     println!("Acquired!");
 
-    /*
-    if let Some(model) = camera.properties().get(libcamera::properties::Model) {
+    if let Some(model) = camera.properties().get(libcamera::properties::Model2) {
         println!("Model: {}", model);
     }
-    */
 
     if let Some(area) = camera
         .properties()
