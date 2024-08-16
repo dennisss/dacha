@@ -20,5 +20,6 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <linux/loop.h>
+#include <linux/gpio.h>
 
 // #include <asm/prctl.h>

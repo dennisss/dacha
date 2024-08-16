@@ -14,7 +14,7 @@ executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 rpc = { path = "../../rpc" }
-rpc_util = { path = "../../rpc_util" }
+rpc_util = { path = "../../rpc/util" }
 usb = { path = "../../usb" }
 http = { path = "../../http" }
 web = { path = "../../web" }

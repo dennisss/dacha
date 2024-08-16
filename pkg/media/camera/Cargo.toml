@@ -16,7 +16,7 @@ crypto = { path = "../../crypto" }
 web = { path = "../../web" }
 rpc = { path = "../../rpc" }
 http = { path = "../../http" }
-rpc_util = { path = "../../rpc_util" }
+rpc_util = { path = "../../rpc/util" }
 json = { path = "../../format/json" }
 video = { path = "../video" }
 v4l2 = { path = "../../../third_party/v4l2" }

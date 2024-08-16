@@ -11,3 +11,4 @@ uf2 = { path = "./uf2" }
 macros = { path = "../../macros" }
 executor = { path = "../../executor" }
 file = { path = "../../file" }
+peripherals = { path = ".." }

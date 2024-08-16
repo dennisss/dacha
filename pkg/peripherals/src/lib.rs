@@ -18,6 +18,9 @@ extern crate std;
 
 #[cfg(feature = "std")]
 #[macro_use]
+extern crate sys;
+#[cfg(feature = "std")]
+#[macro_use]
 extern crate nix;
 
 pub mod raw {

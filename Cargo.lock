@@ -271,6 +271,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "avr"
+version = "0.1.0"
+
+[[package]]
 name = "backtrace"
 version = "0.3.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -313,8 +317,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "base_time"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+ "sys",
+]
+
+[[package]]
 name = "base_units"
 version = "0.0.0"
+
+[[package]]
+name = "base_util"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+]
 
 [[package]]
 name = "bindgen"
@@ -604,9 +623,10 @@ dependencies = [
  "http",
  "image",
  "json",
+ "libcamera",
  "macros",
  "math",
- "media_web",
+ "media_camera",
  "parsing",
  "peripherals",
  "protobuf",
@@ -664,6 +684,7 @@ dependencies = [
  "base64",
  "base_args",
  "base_error",
+ "base_util",
  "bytes",
  "chrono",
  "failure",
@@ -860,7 +881,7 @@ dependencies = [
  "file",
  "macros",
  "perf",
-"protobuf",
+ "protobuf",
 ]
 
 [[package]]
@@ -1028,6 +1049,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "cpal",
+ "file",
  "graphics",
 ]
 
@@ -1106,6 +1128,20 @@ dependencies = [
  "executor",
  "macros",
  "sys",
+]
+
+[[package]]
+name = "flasher"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "elf",
+ "executor",
+ "file",
+ "macros",
+ "peripherals",
+ "uf2",
+ "usb",
 ]
 
 [[package]]
@@ -1597,6 +1633,8 @@ dependencies = [
  "macros",
  "math",
  "parsing",
+ "perf",
+ "protobuf",
  "reflection",
 ]
 
@@ -1837,6 +1875,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 
 [[package]]
+name = "media_camera"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "compression",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "json",
+ "libcamera",
+ "macros",
+ "math",
+ "media_camera_proto",
+ "parsing",
+ "protobuf",
+ "rpc",
+ "rpc_util",
+ "usb",
+ "v4l2",
+ "video",
+ "web",
+]
+
+[[package]]
+name = "media_camera_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "rpc",
+]
+
+[[package]]
 name = "media_downloader"
 version = "0.0.0"
 dependencies = [
@@ -1857,31 +1933,6 @@ dependencies = [
  "uuid",
  "video",
  "xml",
-]
-
-[[package]]
-name = "media_web"
-version = "0.0.0"
-dependencies = [
- "common",
- "compression",
- "crypto",
- "executor",
- "executor_multitask",
- "file",
- "http",
- "json",
-"libcamera",
- "macros",
- "math",
- "parsing",
- "reflection",
- "rpc",
- "rpc_util",
- "usb",
- "v4l2",
- "video",
- "web",
 ]
 
 [[package]]
@@ -2268,6 +2319,7 @@ dependencies = [
  "macros",
  "nix 0.21.0",
  "peripherals_raw",
+ "sys",
 ]
 
 [[package]]
@@ -2770,27 +2822,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rpi_streamer"
-version = "0.0.0"
-dependencies = [
- "base_radix",
- "base_units",
- "common",
- "crypto",
- "executor",
- "file",
- "graphics",
- "image",
- "libcamera",
- "macros",
- "parsing",
- "storage",
- "sys",
- "v4l2",
- "video",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3012,7 +3043,7 @@ checksum = "ef5430c8e36b713e13b48a9f709cc21e046723fe44ce34587b73a830203b533e"
 name = "storage"
 version = "0.1.0"
 dependencies = [
-"base_units",
+ "base_units",
  "common",
  "compression",
  "crypto",
@@ -3240,6 +3271,7 @@ version = "0.0.0"
 dependencies = [
  "automata",
  "base_error",
+ "base_util",
  "bindgen 0.63.0",
  "executor",
  "file",

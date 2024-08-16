@@ -1,3 +1,10 @@
+#![feature(
+    const_for,
+    const_trait_impl,
+    core_intrinsics,
+    const_fn_floating_point_arithmetic
+)]
+
 #[macro_use]
 extern crate common;
 #[macro_use]

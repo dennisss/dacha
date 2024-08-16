@@ -248,6 +248,10 @@ impl LocalFile {
         **self.file.as_raw_fd()
     }
 
+    pub unsafe fn into_raw_handle(self) -> FileHandle {
+        self.file
+    }
+
     pub async fn metadata(&self) -> Result<Metadata> {
         let mut stat = sys::bindings::stat::default();
         unsafe { sys::fstat(self.as_raw_fd(), &mut stat) }

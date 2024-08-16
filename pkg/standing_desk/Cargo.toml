@@ -13,5 +13,5 @@ cluster_client = { path = "../container/client" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }
 nordic_tools_proto = { path = "../nordic/tools/proto" }
-rpc_util = { path = "../rpc_util" }
+rpc_util = { path = "../rpc/util" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }

@@ -7,13 +7,19 @@ extern crate usb;
 extern crate macros;
 extern crate file;
 
-use common::errors::*;
+mod attiny;
+
+use attiny::ATTinyProgrammer;
+use common::{ceil_div, errors::*};
+use file::LocalPathBuf;
+use peripherals::gpio::*;
+use peripherals::spi::SPIDevice;
 use uf2::*;
 
 /*
 Usage:
 cargo run --bin builder --  build //pkg/nordic:nordic_blink --config=//pkg/nordic:nrf52840
-cargo run --bin flasher built/pkg/nordic/nordic_blink
+cargo run --bin flasher built/pkg/nordic/nordic_blink uf2-dfu
 
 da build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 cargo run --bin flasher
@@ -34,7 +40,21 @@ struct Args {
     #[arg(positional)]
     path: String,
 
+    protocol: Protocol,
+
     usb_selector: usb::DeviceSelector,
+}
+
+#[derive(Args, Clone)]
+enum Protocol {
+    #[arg(name = "uf2-dfu")]
+    UF2OverDFU,
+
+    #[arg(name = "attiny")]
+    ATTiny {
+        reset_pin: u32,
+        spi_device: LocalPathBuf,
+    },
 }
 
 // TODO: Also bring in support for
@@ -80,11 +100,11 @@ async fn main() -> Result<()> {
     let data = file::read(&args.path).await?;
     let elf = elf::ELF::parse(data)?;
 
-    let mut firmware_builder = UF2Builder::new();
-
     let mut total_written = 0;
 
-    for program_header in &elf.program_headers {
+    let mut segments = vec![];
+
+    for (i, program_header) in elf.program_headers.iter().enumerate() {
         if program_header.typ != elf::ProgramHeaderType::PT_LOAD.to_value() {
             continue;
         }
@@ -99,20 +119,74 @@ async fn main() -> Result<()> {
             program_header.paddr + program_header.file_size
         );
 
-        let data = &elf.file[(program_header.offset as usize)
-            ..(program_header.offset as usize + program_header.file_size as usize)];
+        let data = elf.program_data(i);
 
-        firmware_builder.write(program_header.paddr as u32, data);
+        segments.push((program_header.paddr as u32, data));
 
         total_written += data.len();
     }
 
     println!("Flash Space Used: {}", total_written);
-    println!("Firmware UF2 size: {}", firmware_builder.data.len());
 
-    let mut host = usb::dfu::DFUHost::create(args.usb_selector)?;
+    match args.protocol {
+        Protocol::UF2OverDFU => {
+            let mut firmware_builder = UF2Builder::new();
+            for (offset, data) in segments {
+                firmware_builder.write(offset, data);
+            }
 
-    host.download(&firmware_builder.data).await?;
+            println!("Firmware UF2 size: {}", firmware_builder.data.len());
+
+            let mut host = usb::dfu::DFUHost::create(args.usb_selector)?;
+
+            host.download(&firmware_builder.data).await?;
+        }
+        Protocol::ATTiny {
+            reset_pin,
+            spi_device,
+        } => {
+            let gpio = GPIOChip::default_chip().unwrap();
+
+            let pin = gpio.pin(reset_pin)?;
+
+            let mut programmer = ATTinyProgrammer::new(SPIDevice::open("/dev/spidev0.0")?, pin)?;
+
+            programmer.enter_programming_mode().await?;
+
+            programmer.erase_chip().await?;
+
+            let page_size = programmer.flash_page_size_bytes()?;
+
+            let mut last_offset = 0;
+            for (offset, data) in segments {
+                if offset > last_offset {
+                    return Err(err_msg("Overlapping writes"));
+                }
+
+                if offset % (page_size as u32) != 0 {
+                    return Err(err_msg("Unaligned write"));
+                }
+
+                let mut padded_data = vec![0u8; ceil_div(data.len(), page_size) * page_size];
+                padded_data[0..data.len()].copy_from_slice(data);
+
+                programmer
+                    .flash_write(offset as usize, &padded_data)
+                    .await?;
+
+                let mut read_data = vec![0u8; padded_data.len()];
+                programmer
+                    .flash_read(offset as usize, &mut read_data)
+                    .await?;
+
+                assert_eq!(&read_data, &padded_data);
+
+                last_offset = offset + (padded_data.len() as u32);
+            }
+
+            programmer.exit_programming_mode().await?;
+        }
+    }
 
     Ok(())
 }

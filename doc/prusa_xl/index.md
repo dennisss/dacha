@@ -31,3 +31,9 @@ Installation:
         - Use 2 cable holders attached to the door using M4 10mm screws (replacing existing M4 8mm screws)
         - Use 1 cable holders attached to the top left of the enclosure using an M3 6mm screw and nut into an empty hole.
 
+There is an optional `fan-lid.stl` that can be printed to mount an extra 30mm 5V fan on top of the camera to prevent overheating. To use it:
+
+- Splice a 30mm fan's power cable into the camera's USB cable.
+- Print a `fan-lid.stl`
+- Replace camera mounting screws with 4 x M2 8mm screws
+- Add 4 x M3 12mm screws and 4 x M3 nuts for the fan
