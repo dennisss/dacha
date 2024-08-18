@@ -11,7 +11,7 @@ macros = { path = "../../macros" }
 executor = { path = "../../executor" }
 rpc = { path = "../../rpc" }
 http = { path = "../../http" }
-rpc_util = { path = "../../rpc_util" }
+rpc_util = { path = "../../rpc/util" }
 web = { path = "../../web" }
 file = { path = "../../file" }
 google_auth = { path = "../../api/google/auth" }

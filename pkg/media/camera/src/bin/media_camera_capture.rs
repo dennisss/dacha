@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
                 MP4BuilderOptions::default(),
             )?;
 
-            for i in 0..(20 * format.frame_rate) {
+            for i in 0..(5 * format.frame_rate) {
                 if i % format.frame_rate == 0 {
                     println!("{}", i / format.frame_rate);
                 }

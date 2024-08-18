@@ -23,7 +23,7 @@ Other safe simplifications:
 */
 
 /// A node in the tree
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RegExpNode {
     /// Alternation. e.g. 'a|b|c|d'
     Alt(Vec<RegExpNodePtr>),
@@ -384,7 +384,7 @@ impl Char {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Quantifier {
     /// e.g. 'A?'
     ZeroOrOne,

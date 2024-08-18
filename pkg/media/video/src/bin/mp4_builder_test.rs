@@ -118,8 +118,6 @@ async fn run_test(
 
     // TODO: Also test other fields in this.
     while let Some(event) = mp4_builder.consume() {
-        println!("- Segment : {}", event.segment_index);
-
         out.extend_from_slice(&event.data);
     }
 
@@ -128,11 +126,13 @@ async fn run_test(
         return Ok(());
     }
 
+    /*
     let test_output = golden_path
         .parent()
         .unwrap()
         .join(format!("{}-test.mp4", golden_path.file_stem().unwrap()));
     file::write(&test_output, &out).await?;
+    */
 
     if !file::exists(&golden_path).await? {
         println!("=> NO GOLDEN");

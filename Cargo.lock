@@ -1022,6 +1022,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "dev_source"
+version = "0.1.0"
+dependencies = [
+ "base_radix",
+ "common",
+ "crypto",
+ "dev_source_proto",
+ "executor",
+ "file",
+ "google_auth",
+ "google_storage",
+ "http",
+ "macros",
+ "protobuf",
+]
+
+[[package]]
+name = "dev_source_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
+]
+
+[[package]]
 name = "either"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

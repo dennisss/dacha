@@ -1,0 +1,132 @@
+files: [
+    {
+        path: "doc/keyboard/case-r1/parts/bottom.stl"
+        size: 1849185
+        sha256_sum: "fe7b3ed090782be69be0de19a8109fcb07c40a57523e0494b675b178fdcb1dce"
+    },
+    {
+        path: "doc/keyboard/case-r1/parts/nut_holder.stl"
+        size: 56927
+        sha256_sum: "50dbb3d929499ae45f4811f6ff2c8fe0661ca4134ebf623a708b3ae4ff7fb0a5"
+    },
+    {
+        path: "doc/keyboard/case-r1/parts/oled_holder.stl"
+        size: 3609
+        sha256_sum: "b814ebfa616b204b259a42bdc856a11cab32815ae2e4f308bcf46f9cb826cbb1"
+    },
+    {
+        path: "doc/keyboard/case-r1/parts/side_diffuser.stl"
+        size: 710980
+        sha256_sum: "e86143eaa52266034572bfe54db3be3d1841b48565efd1ff38dc06c8e020aadc"
+    },
+    {
+        path: "doc/keyboard/case-r1/parts/top.stl"
+        size: 2193125
+        sha256_sum: "9a0a1c8649649089cdc664f39d75f35cd16558bd5a728140653978f6a1809360"
+    },
+    {
+        path: "doc/monitor_stick/images/clamp.jpg"
+        size: 117504
+        sha256_sum: "15f9bf7e6abededc65e5cbe3dbe24f8721dad34989c642a863e0b9033d3ad2d3"
+    },
+    {
+        path: "doc/monitor_stick/images/main.jpg"
+        size: 108782
+        sha256_sum: "65d30206e86356f6d5d27c606679cd0b5de07bc662005ecdeb825b05b53034b6"
+    },
+    {
+        path: "doc/monitor_stick/images/vesa-attached.jpg"
+        size: 132637
+        sha256_sum: "c992ed8e44d4aa783d8cd2f4ad356e160826fcf4a075043cb318b53d4e0fddef"
+    },
+    {
+        path: "doc/monitor_stick/images/vesa-tnut.jpg"
+        size: 126249
+        sha256_sum: "1918064d513900dff211ca0fe92f08f5031853aaaa7e7a7e76f5832ec423e538"
+    },
+    {
+        path: "doc/monitor_stick/parts/monitor-arm-table-clamp.stl"
+        size: 267584
+        sha256_sum: "2c25c482c81144d31d8f2b2dde91f6651c2d89c948704e4768dae05f5e42f06d"
+    },
+    {
+        path: "doc/monitor_stick/parts/monitor-arm-vesa-half.stl"
+        size: 118084
+        sha256_sum: "8ef5ec1a249308e1ff83656e8987ec6c4c090ae61eaebb10c4c84cedd68c0ca2"
+    },
+    {
+        path: "doc/prusa_xl/images/3d-print-supports.png"
+        size: 892059
+        sha256_sum: "c6531fc463bf3ea796653486386ee78876dae57230bb5c2169e16b274f093888"
+    },
+    {
+        path: "doc/prusa_xl/images/camera-sample-frame.png"
+        size: 890135
+        sha256_sum: "19f79e7d30077f9e4bb36a9f884f984e633a5f6a3cadc0e39fb161667380d3a5"
+    },
+    {
+        path: "doc/prusa_xl/images/mount-above.jpg"
+        size: 233439
+        sha256_sum: "a1130431cbc992ae1420c1623e104e3340c806bf6d948fe7e307f98e2f5b06d8"
+    },
+    {
+        path: "doc/prusa_xl/images/mount-back.jpg"
+        size: 214154
+        sha256_sum: "5ddcb9cdae81879aff867e335a2eb5022bde1ec249d9b0e6a0faa09313fb7387"
+    },
+    {
+        path: "doc/prusa_xl/images/mount-fan.jpg"
+        size: 192375
+        sha256_sum: "d103e2b53a1894df13b78f1fbcc70f3ae9b3cf7b85443ef8b6981926aa3315bb"
+    },
+    {
+        path: "doc/prusa_xl/images/mount-front.jpg"
+        size: 232764
+        sha256_sum: "1574b9115c3fd81754f5a39640187a473fc6df1d9c9b92e24a29f126494c1e9d"
+    },
+    {
+        path: "doc/prusa_xl/images/mount-top-wire.jpg"
+        size: 163825
+        sha256_sum: "e496df87eb4c0b556db891bb22896f3f5165a454bde8fc3567a728378bb988a2"
+    },
+    {
+        path: "doc/prusa_xl/parts/fan-lid.stl"
+        size: 416284
+        sha256_sum: "10b9548bbd8894d15f01b6cb2dfcdbe8ddb88b917a5a3187a2e47e409e04b7a4"
+    },
+    {
+        path: "doc/prusa_xl/parts/xl-camera-mount.stl"
+        size: 419784
+        sha256_sum: "17546257b5d209961da83795606231990518a2c32d1d1df809569b44a30f68fa"
+    },
+    {
+        path: "testdata/image/nyhavn-1920x1080.jpg"
+        size: 2233318
+        sha256_sum: "efff00112378c4e81d230085168448aefe2c6043240b0492ead36984f92f528a"
+    },
+    {
+        path: "testdata/video/clock-5s.h264"
+        size: 3956867
+        sha256_sum: "48de559b8b897c90106285bca08539f63e34d9b8d55e4ee246f1c3a247237aee"
+    },
+    {
+        path: "testdata/video/derived/clock-5s-basic.mp4"
+        size: 3954690
+        sha256_sum: "abd39204b064709b1b598abca84a14bf842b82e43f209ed518008aa500a6b20d"
+    },
+    {
+        path: "testdata/video/derived/clock-5s-fragmented.mp4"
+        size: 3955258
+        sha256_sum: "0b768b3891a6208dda3dbffdbc94eb1737a4dcfd2ce7efd6b8472a29c18e10ad"
+    },
+    {
+        path: "testdata/video/derived/clock-5s-multi-seg-fragmented.mp4"
+        size: 3955258
+        sha256_sum: "0b768b3891a6208dda3dbffdbc94eb1737a4dcfd2ce7efd6b8472a29c18e10ad"
+    },
+    {
+        path: "testdata/video/derived/clock-5s-multi-seg-independent-fragmented.mp4"
+        size: 3957918
+        sha256_sum: "b15bcb224575c17c5515fdf7c6a9b0ac3de1f5b485101db31c23b056680e56ac"
+    }
+]

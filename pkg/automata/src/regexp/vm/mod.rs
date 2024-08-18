@@ -17,6 +17,7 @@ mod tests {
 
     use super::compiler::*;
     use super::executor::*;
+    use super::flags::Flags;
     use super::instruction::*;
 
     use common::errors::*;
@@ -25,8 +26,11 @@ mod tests {
 
     // Helper for running a program through an executor.
     fn run(prog: &[Instruction], inputs: &[u8]) -> Option<Vec<Option<usize>>> {
-        let mut exec = Executor::new(ReferencedProgram::new(prog));
-        exec.run(inputs, 0).map(|v| v.to_vec())
+        let mut exec = Executor::new(ReferencedProgram::new(prog, Flags::empty()));
+        match exec.run(inputs, 0, true) {
+            ExecutorStepResult::Matched(v) => Some(v.to_vec()),
+            _ => None,
+        }
     }
 
     #[test]
@@ -60,7 +64,7 @@ mod tests {
     fn vm_compile_test() -> Result<()> {
         let node = RegExpNode::parse("^a(b|c)d$")?;
 
-        let prog = Compiler::compile(node.as_ref())?;
+        let prog = Compiler::compile(node.as_ref(), Flags::empty())?;
 
         println!("{}", prog.assembly());
 
@@ -77,7 +81,7 @@ mod tests {
     fn vm_optimize_test() -> Result<()> {
         let node = RegExpNode::parse(".*(a)")?;
 
-        let prog = Compiler::compile(node.as_ref())?;
+        let prog = Compiler::compile(node.as_ref(), Flags::empty())?;
 
         println!("{}", prog.assembly());
 
@@ -112,7 +116,7 @@ mod tests {
     fn vm_compile_range_test() -> Result<()> {
         let node = RegExpNode::parse("[a-b]")?;
 
-        let prog = Compiler::compile(node.as_ref())?;
+        let prog = Compiler::compile(node.as_ref(), Flags::empty())?;
 
         assert_eq!(
             prog.program.instructions(),

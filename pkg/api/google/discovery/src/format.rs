@@ -56,6 +56,9 @@ pub struct RestMethod {
     pub supportsMediaDownload: bool,
 
     #[parse(sparse = true)]
+    pub useMediaDownloadService: bool,
+
+    #[parse(sparse = true)]
     pub supportsMediaUpload: bool,
 
     pub mediaUpload: Option<MediaUpload>,

@@ -2,7 +2,7 @@ mod alphabet;
 mod encoding;
 mod instance;
 mod r#match;
-mod node;
+pub mod node;
 mod rune;
 mod state_machine;
 mod symbol;

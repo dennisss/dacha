@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package dev;
+
+message ExternalSourceFiles {
+    repeated ExternalSourceFile files = 1;
+}
+
+message ExternalSourceFile {
+    string path = 1;
+    
+    uint64 size = 2;
+
+    // Hex string containing a SHA256 hash of this file.
+    string sha256_sum = 3;
+}

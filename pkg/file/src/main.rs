@@ -2,7 +2,7 @@
 extern crate macros;
 
 use common::{errors::*, io::Readable};
-use file::{FileErrorKind, LocalFile, LocalPath, LocalPathBuf};
+use file::{FileErrorKind, GlobIterator, LocalFile, LocalPath, LocalPathBuf};
 
 #[derive(Args)]
 struct Args {
@@ -11,15 +11,25 @@ struct Args {
 
 #[derive(Args)]
 enum Command {
-    #[arg(name = "copy")]
-    Copy(CopyCommand),
-
+    // #[arg(name = "copy")]
+    // Copy(CopyCommand),
     #[arg(name = "realpath")]
     RealPath(RealPathCommand),
+
+    /// Lists all files matching the given glob pattern relative to the current
+    /// directory.
+    #[arg(name = "glob")]
+    Glob(GlobCommand),
 }
 
 #[derive(Args)]
 struct RealPathCommand {
+    #[arg(positional)]
+    path: LocalPathBuf,
+}
+
+#[derive(Args)]
+struct GlobCommand {
     #[arg(positional)]
     path: LocalPathBuf,
 }
@@ -35,8 +45,17 @@ async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     match args.command {
-        Command::Copy(cmd) => file::run_copy_command(cmd).await,
+        // Command::Copy(cmd) => file::run_copy_command(cmd).await,
         Command::RealPath(cmd) => run_realpath_command(cmd).await,
+        Command::Glob(cmd) => {
+            let mut iter = GlobIterator::create(&cmd.path)?;
+
+            while let Some(path) = iter.next().await? {
+                println!("{}", path.as_str());
+            }
+
+            Ok(())
+        }
     }
 
     /*

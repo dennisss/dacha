@@ -70,6 +70,10 @@ impl Metadata {
     pub fn st_mode(&self) -> u32 {
         self.inner.st_mode
     }
+
+    pub fn st_dev(&self) -> sys::dev_t {
+        self.inner.st_dev
+    }
 }
 
 /// Includes file mode (set-user-id, set-group-id, sticky bits) and the

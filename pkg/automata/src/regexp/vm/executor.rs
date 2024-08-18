@@ -14,11 +14,11 @@ macro_rules! step {
     ($executor:ident, $input_value:expr, $i:expr, $j:expr) => {
         match $executor.step($input_value, $i, $j) {
             ExecutorStepResult::Matched(v) => {
-                return Some(v);
+                return ExecutorStepResult::Matched(v);
             }
             ExecutorStepResult::NeedMoreInput => {}
             ExecutorStepResult::Terminated => {
-                return None;
+                return ExecutorStepResult::Terminated;
             }
         };
     };
@@ -40,6 +40,8 @@ macro_rules! next_character {
     };
 }
 
+/// Note that there needs to be one executor instance per input string we are
+/// trying to match against.
 pub struct Executor<P> {
     program: P,
 
@@ -79,7 +81,8 @@ impl<P: Program + Copy> Executor<P> {
         &mut self,
         input: &[u8],
         start_index: usize, /* , encoding: CharacterEncoding */
-    ) -> Option<SavedStringPointers> {
+        end_of_input: bool,
+    ) -> ExecutorStepResult {
         let mut i = start_index;
 
         // TODO: Deal with infinite regular expressions.
@@ -98,8 +101,9 @@ impl<P: Program + Copy> Executor<P> {
             i += 1;
         }
 
-        // TODO: Only perform this if there actually inputs?
-        step!(self, InputValue::Special(SpecialSymbol::EndOfString), i, i);
+        if end_of_input {
+            step!(self, InputValue::Special(SpecialSymbol::EndOfString), i, i);
+        }
 
         // Required in order to run any Match instructions immediately after a $ symbol.
         self.final_step();
@@ -108,10 +112,10 @@ impl<P: Program + Copy> Executor<P> {
         // This handles the case of performing a greedy match has accepted up to the
         // end of the string and wants to accept more if available.
         if let Some(m) = self.best_match.take() {
-            return Some(m.as_ref().clone());
+            return ExecutorStepResult::Matched(m.as_ref().clone());
         }
 
-        None
+        ExecutorStepResult::NeedMoreInput
     }
 
     /// Runs the VM on one input character value.

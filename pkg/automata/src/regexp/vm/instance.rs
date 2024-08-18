@@ -37,6 +37,10 @@ impl RegExp {
 
         let root = RegExpNode::parse(&s)?;
         let flags = Flags::parse_from(flags)?;
+        Self::new_from_parsed(root, flags)
+    }
+
+    pub fn new_from_parsed(root: Box<RegExpNode>, flags: Flags) -> Result<Self> {
         let compilation = Compiler::compile(&root, flags)?;
         Ok(Self { compilation })
     }
@@ -44,9 +48,18 @@ impl RegExp {
     /// Returns true if and only if a match for the given regular expression is
     /// found somewhere in the given input string.
     pub fn test<T: AsRef<[u8]>>(&self, input: T) -> bool {
+        self.exec(&input).is_some()
+    }
+
+    /// Tests a partially available input string. Returns true if the regular
+    /// expression could match strings with this input string as a prefix.
+    pub fn test_prefix<T: AsRef<[u8]>>(&self, input: T) -> bool {
         let mut executor = Executor::new(self.compilation.program.as_referenced_program());
-        let results = executor.run(input.as_ref(), 0);
-        results.is_some()
+
+        match executor.run(input.as_ref(), 0, false) {
+            ExecutorStepResult::Matched(_) | ExecutorStepResult::NeedMoreInput => true,
+            ExecutorStepResult::Terminated => false,
+        }
     }
 
     pub fn exec<'a, 'b, T: 'b + AsRef<[u8]> + ?Sized>(
@@ -110,18 +123,20 @@ pub struct RegExpMatch<'a, P> {
 impl<'a, P: Program + Copy> RegExpMatch<'a, P> {
     pub fn next(mut self) -> Option<Self> {
         let mut executor = Executor::new(self.program);
-        let string_pointers = match executor.run(self.input, self.last_index) {
-            Some(v) => v,
-            None => {
-                return None;
-            }
+        let string_pointers = match executor.run(self.input, self.last_index, true) {
+            ExecutorStepResult::Matched(v) => v,
+            _ => return None,
         };
 
         // TODO: Need to avoid infinite matches.
 
         // Add the offset
-        self.index = string_pointers.get(0).unwrap();
-        self.last_index = string_pointers.get(1).unwrap();
+        // NOTE: The defaults will be used if the regex was user generated with
+        // new_with_parsed.
+        // TODO: Ideally make this work without depending on there being a group in the
+        // pattern.
+        self.index = string_pointers.get(0).unwrap_or(0);
+        self.last_index = string_pointers.get(1).unwrap_or(0);
         self.string_pointers = string_pointers;
 
         Some(self)
@@ -216,9 +231,7 @@ impl StaticRegExp {
     }
 
     pub fn test<T: AsRef<[u8]>>(&self, input: T) -> bool {
-        let mut executor = Executor::new(self.program);
-        let results = executor.run(input.as_ref(), 0);
-        results.is_some()
+        self.exec(&input).is_some()
     }
 
     pub fn exec<'a, 'b, T: 'b + AsRef<[u8]> + ?Sized>(

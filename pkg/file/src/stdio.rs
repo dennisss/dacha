@@ -53,3 +53,16 @@ impl Writeable for Stdout {
         Ok(())
     }
 }
+
+pub async fn read_user_confirmation() -> Result<bool> {
+    let mut stdin = Stdin::get();
+
+    let mut buf = [0u8; 1];
+    let n = stdin.read(&mut buf[..]).await?;
+
+    Ok(if n == 1 && buf[0].to_ascii_lowercase() == b'y' {
+        true
+    } else {
+        false
+    })
+}

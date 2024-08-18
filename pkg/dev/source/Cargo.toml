@@ -1,0 +1,17 @@
+[package]
+name = "dev_source"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+executor = { path = "../../executor" }
+macros = { path = "../../macros" }
+file = { path = "../../file" }
+http = { path = "../../http" }
+crypto = { path = "../../crypto" }
+base_radix = { path = "../../base/radix" }
+protobuf = { path = "../../protobuf" }
+dev_source_proto = { path = "./proto" }
+google_auth = { path = "../../api/google/auth" }
+google_storage = { path = "../../api/google/storage" }

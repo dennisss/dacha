@@ -205,6 +205,8 @@ impl Device {
     // NOTE: We don't expose this directly to users to ensure that the other methods
     // that normalize usage of _MPLANE types when available are used.
     fn new_stream(&self, typ: v4l2_buf_type) -> Result<UnconfiguredStream> {
+        // TOOD: Add back this check (ideally while still only requiring &self access).
+
         // if !self.streams.insert(typ) {
         //     return Err(format_err!(
         //         "Already configuring a stream with buffer type {:?}",

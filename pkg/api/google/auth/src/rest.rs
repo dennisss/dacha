@@ -82,6 +82,51 @@ impl GoogleRestClient {
         Ok(object)
     }
 
+    pub async fn request_download<Request: SerializeTo>(
+        &self,
+        method: http::Method,
+        url: &str,
+        query: &str,
+        request_body: &Request,
+    ) -> Result<Box<dyn http::Body>> {
+        let mut uri = http::uri::Uri::try_from(url)?;
+        if uri.query.is_some() {
+            return Err(err_msg("Did not expect the uri to already contain a query"));
+        }
+
+        if !query.is_empty() {
+            uri.query = Some(AsciiString::new(query));
+        }
+
+        let request = http::RequestBuilder::new()
+            .method(method)
+            .uri2(uri)
+            .header(
+                "Authorization",
+                self.credentials.get_authorization_value().await?,
+            )
+            .header("Content-Type", "application/json; charset=UTF-8")
+            .body(http::BodyFromData(Bytes::from(json::stringify(
+                request_body,
+            )?)))
+            .build()?;
+
+        let res = self
+            .http_client
+            .request_raw(request, http::ClientRequestContext::default())
+            .await?;
+
+        // TODO: Parse the error payload as in https://cloud.google.com/apis/design/errors
+        // For this we will need to support parsing Any protos from JSON.
+        if res.head.status_code != http::status_code::OK {
+            // println!("{:?}", res.head);
+
+            return Err(format_err!("RPC failed!"));
+        }
+
+        Ok(res.body)
+    }
+
     /// Performs a media upload (mainly relevant to GCS object uploads).
     ///
     /// 1. For small objects that don't require any special metadata we will use
@@ -126,16 +171,20 @@ impl GoogleRestClient {
             uri.query = Some(query);
         }
 
-        let request = http::RequestBuilder::new()
+        let mut request_builder = http::RequestBuilder::new()
             .method(method)
             .uri2(uri)
             .header(
                 "Authorization",
                 self.credentials.get_authorization_value().await?,
             )
-            .header("Content-Type", content_type)
-            .body(data)
-            .build()?;
+            .body(data);
+
+        if !content_type.is_empty() {
+            request_builder = request_builder.header("Content-Type", content_type)
+        }
+
+        let request = request_builder.build()?;
 
         let mut res = self
             .http_client
@@ -145,6 +194,12 @@ impl GoogleRestClient {
         // TODO: Parse the error payload as in https://cloud.google.com/apis/design/errors
         // For this we will need to support parsing Any protos from JSON.
         if res.head.status_code != http::status_code::OK {
+            println!("{:?}", res.head);
+
+            let mut s = String::new();
+            res.body.read_to_string(&mut s).await?;
+            println!("{}", s);
+
             return Err(err_msg("RPC failed!"));
         }
 

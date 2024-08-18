@@ -1,17 +1,21 @@
 use std::collections::{BTreeMap, HashMap};
 
 use common::{errors::*, line_builder::LineBuilder};
+use http::uri::Uri;
+use parsing::ascii::AsciiString;
 
 use crate::format::*;
 
-pub struct Compiler {
+pub struct Compiler<'a> {
     lines: LineBuilder,
+    desc: &'a RestDescription,
 }
 
-impl Compiler {
-    pub fn compile(desc: &RestDescription) -> Result<String> {
+impl<'a> Compiler<'a> {
+    pub fn compile(desc: &'a RestDescription) -> Result<String> {
         let mut c = Self {
             lines: LineBuilder::new(),
+            desc,
         };
 
         for (name, s) in &desc.schemas {
@@ -175,7 +179,7 @@ impl Compiler {
                     {query_building}
                     self.rest_client.request_json::<_, {return_typ}>(
                         ::http::Method::{http_method},
-                        &format!("{{base_url}}{path}", base_url = Self::BASE_URL{path_args}),
+                        &format!({path}{path_args}),
                         query_builder.build().as_str(),
                         {request_ref}
                     ).await
@@ -189,7 +193,7 @@ impl Compiler {
                 ),
                 return_typ = return_typ,
                 http_method = method.httpMethod,
-                path = self.clean_path(&method.path),
+                path = self.path_format_string(&method.path, false)?,
                 path_args = path_args,
                 request_ref = request_ref,
                 query_building = query_building,
@@ -214,8 +218,8 @@ impl Compiler {
 
                         self.rest_client.request_upload::<_, {return_typ}>(
                             ::http::Method::{http_method},
-                            &format!("{{base_url}}{simple_path}", base_url = Self::BASE_URL{path_args}),
-                            &format!("{{base_url}}{resumable_path}", base_url = Self::BASE_URL{path_args}),
+                            &format!({simple_path}{path_args}),
+                            &format!({resumable_path}{path_args}),
                             query_builder,
                             &content_type,
                             {request_ref},
@@ -231,13 +235,47 @@ impl Compiler {
                     ),
                     return_typ = return_typ,
                     http_method = method.httpMethod,
-                    simple_path = self.clean_path(&media_upload.protocols.simple.path),
-                    resumable_path = self.clean_path(&media_upload.protocols.resumable.path),
+                    simple_path =
+                        self.path_format_string(&media_upload.protocols.simple.path, false)?,
+                    resumable_path =
+                        self.path_format_string(&media_upload.protocols.resumable.path, false)?,
                     path_args = path_args,
                     request_ref = request_ref,
                     query_building = query_building,
                 ));
             }
+
+            if method.supportsMediaDownload {
+                methods_output.add(format!(
+                    r#"
+                    pub async fn {resource_name}_{method_name}_download(&self{args}) -> Result<Box<dyn http::Body>> {{
+                        let mut query_builder = http::query::QueryParamsBuilder::new();
+                        query_builder.add(b"alt", b"media");
+                        {query_building}
+                        self.rest_client.request_download(
+                            ::http::Method::{http_method},
+                            &format!({path}{path_args}),
+                            query_builder.build().as_str(),
+                            {request_ref}
+                        ).await
+                    }}
+                    "#,
+                    resource_name = resource_name,
+                    method_name = method_name,
+                    args = format!(
+                        "{}{}{}",
+                        method_required_args, method_request_args, method_params_args
+                    ),
+                    http_method = method.httpMethod,
+                    path = self.path_format_string(&method.path, method.useMediaDownloadService)?,
+                    path_args = path_args,
+                    request_ref = request_ref,
+                    query_building = query_building,
+                ));
+            }
+
+            // "supportsMediaDownload": true,
+            // "useMediaDownloadService": true
 
             /*
                     objects_insert_with_upload(required_params, Body, Params)
@@ -259,9 +297,31 @@ impl Compiler {
         Ok(())
     }
 
-    fn clean_path(&self, mut path: &str) -> String {
+    fn path_format_string(&self, mut path: &str, use_download_service: bool) -> Result<String> {
         let mut out = String::new();
 
+        out.push('"');
+
+        let mut base_url = self.desc.baseUrl.parse::<Uri>()?;
+        if use_download_service {
+            base_url.path = AsciiString::new(&format!("/download{}", base_url.path.as_str()));
+        }
+
+        // NOTE: 'path' can't be parsed as a regular Uri since it contains invalid
+        // '{'/'}' characters.
+        let absolute_url = {
+            if path.starts_with("/") {
+                let mut url = base_url.clone();
+                url.path = AsciiString::new("");
+
+                format!("{}{}", url.to_string()?, path)
+            } else {
+                // TODO: Verify baseUrl ends in a '/'
+                format!("{}{}", base_url.to_string()?, path)
+            }
+        };
+
+        let mut path = absolute_url.as_str();
         loop {
             match path.split_once('{') {
                 Some((pre, post)) => {
@@ -282,7 +342,9 @@ impl Compiler {
             }
         }
 
-        out
+        out.push('"');
+
+        Ok(out)
     }
 
     /// Returns the Rust type that can be used to store the given schema.

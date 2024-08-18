@@ -153,6 +153,8 @@ members = [
 	"third_party/googleapis",
 	"third_party/chromium/cdm",
 	"third_party/google/pprof/proto",
+	"pkg/dev/source",
+	"pkg/dev/source/proto",
 ]
 
 [profile.dev]
