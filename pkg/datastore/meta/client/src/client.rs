@@ -69,6 +69,13 @@ impl MetastoreClient {
 
         let resources = ServiceResourceGroup::new("MetastoreClient");
 
+        // TODO: Require the route_store to be initialized for the client to be
+        // considered to be healthy.
+
+        // TODO: A risk if that we discover a server that is broadcasting but hasn't
+        // joined the raft group yet.
+        // - Ideally routes also contain whether or not the server is use-able yet.
+
         /// TODO: With this approach, it may take us up to 2 seconds (the
         /// broadcast interval) to find a server.
         ///
@@ -98,6 +105,12 @@ impl MetastoreClient {
                 .spawn_interruptable("raft::DiscoveryClient", client.run())
                 .await;
         }
+
+        // TODO: If we get rid of the notion of group_ids, then getting rid of this will
+        // mean that the Node reconcile_loop will no longer block for the client to get
+        // a complete set of routes to ge available before attempting to send out
+        // requests.
+
         // TODO: In the resolver, also subscribe to one of the server's CurrentStatus.
         // Whenever the set of members changes, use that info to prune the routes we
         // have on the client side.
@@ -339,6 +352,9 @@ impl MetastoreClient {
 
     /// NOTE: Once this returns, all future changess creates by any other client
     /// will be acounted for.
+    ///
+    /// TODO: Need higher level logic in here for retrying watch failures on new
+    /// leaders when this fails.
     pub async fn watch(&self, key_prefix: &str) -> Result<WatchStream> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
@@ -670,6 +686,7 @@ pub struct WatchStream {
 
 //
 
+// TODO: Improve this (need to specifically check for Aborted errors).
 /// TODO: This needs to detect retryable/cancellation related errors.
 #[macro_export]
 macro_rules! run_transaction {

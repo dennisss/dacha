@@ -35,6 +35,14 @@ File Storage
 - Database should have per-table replication options
     - Tables with the same replication settings can be stored together (but them later can't change replication without splitting them up)
 
+Storing normal metrics:
+- Usecases:
+    - For a single 3d printer, retrieve the temperature time series over time
+    - Across all workers of one job, get the average QPS timeseries
+    - In both cases, it is meaningful to find similar logs from the same host.
+
+- `[Resource (Hash)] [Time Epoch]`
+
 
 What I need:
 

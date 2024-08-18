@@ -135,33 +135,5 @@ async fn main() -> Result<()> {
 
         return Ok(());
     }
-
-    {
-        let data = file::read("image.h264").await?;
-
-        // TODO: Read the width/height from the H264 SPS.
-        let mut builder = MP4Builder::new(1296, 972, 30)?;
-        builder.append(&data)?;
-        let mp4_data = builder.finish()?;
-
-        file::write("generated.mp4", mp4_data).await?;
-
-        return Ok(());
-
-        let mut iter = H264BitStreamIterator::new(&data);
-
-        while let Some(nalu) = iter.next() {
-            println!("NALU: Size {}", nalu.len());
-
-            let (header, rest) = NALUnitHeader::parse(&nalu[..])?;
-            println!("{:?}", header);
-
-            if header.nal_unit_type == NALUnitType::PPS || header.nal_unit_type == NALUnitType::SPS
-            {
-                println!("{:x?}", &nalu[..]);
-            }
-        }
-    }
-
     Ok(())
 }

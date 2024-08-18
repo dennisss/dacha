@@ -37,21 +37,3 @@ _autosave*.sch
 *.kicad_pcb.lck
 *#auto_saved_files#
 
-# Exported KiCad/CAM stuff
-*.nc
-*.gcode
-*.gbr
-**/plot/*.drl
-*.FlatPrj
-**/plot/*.gbl
-**/plot/*.gtp
-**/plot/*.gto
-**/plot/*.g2
-**/plot/*.g3
-**/plot/*.gm1
-**/plot/*.gbp
-**/plot/*.gbo
-**/plot/*.gts
-**/plot/*.gtl
-**/plot/*.gbs
-**/plot.zip

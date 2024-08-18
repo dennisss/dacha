@@ -191,14 +191,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         if cmd.no_confirm {
             println!("[Ignoring]");
         } else {
-            let mut stdin = file::Stdin::get();
-
-            let mut buf = [0u8; 1];
-            let n = stdin.read(&mut buf[..]).await?;
-
-            if n == 1 && buf[0].to_ascii_lowercase() == b'y' {
-                // good
-            } else {
+            if !file::read_user_confirmation().await? {
                 return Ok(());
             }
         }
