@@ -151,6 +151,7 @@ impl ClientConnection {
 
         Ok(async move {
             receiver.recv().await.map_err(|_| {
+                // TODO: We sometimes get this error.
                 Error::from(crate::v2::ProtocolErrorV2 {
                     code: crate::proto::v2::ErrorCode::INTERNAL_ERROR,
                     local: true,
@@ -304,6 +305,10 @@ impl ClientConnectionShared {
                 HttpStreamEvent::MessageHead(h) => h,
                 // TODO: Handle other bad cases such as too large headers.
                 _ => {
+                    // TODO: This may happen if we are talking to a connection that wants to time us
+                    // out. We should make sure that idempotent requests are retried via the
+                    // SimpleClient.
+
                     return Err(err_msg("Connection closed without a complete response"));
                 }
             };
@@ -437,6 +442,9 @@ mod tests {
     use crate::{BodyFromData, Method, RequestBuilder};
 
     use super::*;
+
+    // TODO: Verify that the client sends a Content-Length when there is a static
+    // body.
 
     #[testcase]
     async fn http1_client_connection_works() -> Result<()> {

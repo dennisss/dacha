@@ -1,5 +1,30 @@
 files: [
     {
+        path: "doc/carvera/images/board-cover.jpg"
+        size: 185365
+        sha256_sum: "692266beda951aff99db2c53b31596b06b02572c6583ee633d31aecad959953f"
+    },
+    {
+        path: "doc/carvera/images/board.jpg"
+        size: 296644
+        sha256_sum: "d299b0572a379b33a2465a5161ef1936c30875ec4ed71875411689674087abc6"
+    },
+    {
+        path: "doc/carvera/images/camera-cable-routing.jpg"
+        size: 193133
+        sha256_sum: "ae166287fc531e2319748b6bb646de282bbb7b8bb187b5474a9ca005be73e026"
+    },
+    {
+        path: "doc/carvera/images/camera-inside.jpg"
+        size: 164198
+        sha256_sum: "018272867b72229a5ae43015f5a2cfc9f15ba2807ef4796544028032956fc7e5"
+    },
+    {
+        path: "doc/carvera/images/camera-with-cover.jpg"
+        size: 188511
+        sha256_sum: "ec5a07cd549e6dff723368a581b0ce8f32a18c60bafad5fbcf2d92261d6f9e58"
+    },
+    {
         path: "doc/cnc_controller/board/plot/board-B_Cu.gbl"
         size: 28414
         sha256_sum: "e9f94b91172921bbc576901cb2891bdad2624bebcc3796373b6058cb1de868f1"

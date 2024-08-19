@@ -16,7 +16,7 @@ pub struct ShoppingList {
 
 pub struct ShoppingListView {
     params: ShoppingList,
-    state: Arc<Mutex<ShoppingListState>>,
+    state: Arc<std::sync::Mutex<ShoppingListState>>,
 }
 
 struct ShoppingListState {
@@ -76,10 +76,13 @@ impl VirtualView for ShoppingListView {
         let mut els: Vec<ui::Element> = vec![];
 
         els.push(
-            ui::Block::new(ui::Checkbox {
-                value: false,
-                on_change: None,
-            }.into())
+            ui::Block::new(
+                ui::Checkbox {
+                    value: false,
+                    on_change: None,
+                }
+                .into(),
+            )
             // TODO: Integrate the padding into the checkbox.
             .with_padding(8.) // 0.6em at 16px font.
             .into(),
@@ -105,22 +108,27 @@ impl VirtualView for ShoppingListView {
 
         for (i, item) in state.items.iter().enumerate() {
             els.push(
-                ui::Block::new(ui::Checkbox {
+                ui::Block::new(
+                    ui::Checkbox {
                         value: false,
                         on_change: None,
                     }
-                    .into())
+                    .into(),
+                )
                 // TODO: Integrate the padding into the checkbox.
                 .with_padding(8.) // 0.6em at 16px font.
                 .into(),
             );
             els.push(
-                ui::Block::new(ui::Textbox {
-                    value: item.name.clone(),
-                    font: self.params.font.clone(),
-                    font_size: 16.,
-                    on_change: Some(self.get_on_name_changed(i)),
-                }.into())
+                ui::Block::new(
+                    ui::Textbox {
+                        value: item.name.clone(),
+                        font: self.params.font.clone(),
+                        font_size: 16.,
+                        on_change: Some(self.get_on_name_changed(i)),
+                    }
+                    .into(),
+                )
                 .with_padding(10.)
                 .into(),
             );

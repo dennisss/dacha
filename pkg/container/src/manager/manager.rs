@@ -240,6 +240,17 @@ impl Manager {
         Ok(())
     }
 
+    /*
+    TODO:
+    If there are any nodes that are dead:
+    (haven't seen a heartbeat in a while),
+    - Find all WorkerStateMetadata for the node
+    - Mark all as 'unknown'
+    - Mark NodeMetadata as unknown
+
+
+    */
+
     /// In a single metastore transaction, this adds a job to the cluster.
     async fn start_job_transaction(
         &self,

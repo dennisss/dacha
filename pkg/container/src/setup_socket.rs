@@ -16,6 +16,7 @@ use nix::sys::{
 /// process during setup of the child process.
 pub struct SetupSocket {}
 
+// TODO: Update this code to not use 'nix'
 impl SetupSocket {
     pub fn create() -> Result<(SetupSocketParent, SetupSocketChild)> {
         let (socket_a, socket_b) = socketpair(

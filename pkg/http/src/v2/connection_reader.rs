@@ -185,6 +185,18 @@ impl ConnectionReader {
     // TODO: According to RFC 7540 Section 4.1, undefined flags should be left as
     // zeros.
 
+    /*
+    TODO:
+    Contiguous read buffer:
+    - Always read [size_of_last_payload] + [max_size_of_frame_with_header]
+        - If the second part doesn't fit in the end of the buffer, then read into the start of the buffer
+
+    -
+
+    - Worst case, size_of_last_payload == max_len
+
+    */
+
     // NOTE: Will return an Ok(()) if and only if the
     async fn run_inner(
         &self,

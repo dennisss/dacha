@@ -737,6 +737,7 @@ impl Version {
     }
 }
 
+/// Inclusive range of keys.
 #[derive(Clone, Copy)]
 pub struct KeyRangeRef<'a> {
     pub smallest: &'a [u8],

@@ -11,8 +11,8 @@ use std::convert::TryFrom;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use http::SimpleClientOptions;
 use http::{ClientInterface, ClientRequestContext};
+use http::{ClientResponseContext, SimpleClientOptions};
 use parsing::iso::*;
 
 // TODO: THe Google TLS server will timeout the connection if the SETTINGs
@@ -85,7 +85,13 @@ async fn main() -> Result<()> {
             .header("Accept-Encoding", "gzip")
             .build()?;
 
-        let mut res = client.request(req, ClientRequestContext::default()).await?;
+        let mut res = client
+            .request(
+                req,
+                ClientRequestContext::default(),
+                &mut ClientResponseContext::default(),
+            )
+            .await?;
         println!("{:?}", res.head);
 
         let mut body = http::encoding::decode_content_encoding_body(&res.head.headers, res.body)?;

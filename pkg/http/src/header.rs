@@ -35,6 +35,10 @@ pub const ETAG: &'static str = "ETag";
 
 pub const RANGE: &'static str = "Range";
 
+pub const COOKIE: &'static str = "Cookie";
+
+pub const SET_COOKIE: &'static str = "Set-Cookie";
+
 /// List of headers which are relevant to maintaining the connection at the HTTP
 /// transport layer.
 ///

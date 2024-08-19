@@ -1,0 +1,12 @@
+[package]
+name = "base_time"
+version = "0.0.0"
+
+[dependencies]
+base_error = { path = "../error" }
+sys = { path = "../../sys" }
+
+[features]
+default = ["std"]
+alloc = []
+std = ["alloc"]

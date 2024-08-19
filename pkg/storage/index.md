@@ -1,4 +1,6 @@
 
+TODO: Verify that we don't hit the correctness issue mentioned in https://people.freebsd.org/~gibbs/zfs_doxygenation/html/da/dc9/RaidZ.html
+
 For testing, create a lookback device (1GiB):
 - `dd if=/dev/zero of=disk.img bs=1M count=1024`
 - `sudo losetup /dev/loop100 disk.img`

@@ -5,6 +5,8 @@ use common::args::parse_args;
 use common::errors::*;
 use rpc_util::NamedPortArg;
 
+use crypto::random::{Rng, SharedRng};
+
 // TODO: Test the implementation by repeatably using a transaction to increment
 // a counter.
 // - Then we can verify that all versions of the counter key are monotonic.
@@ -28,7 +30,21 @@ async fn increment_counter(txn: &dyn MetastoreClientInterface) -> Result<()> {
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let client = MetastoreClient::create(&[]).await?;
+    let client = MetastoreClient::create(&[], &[]).await?;
+
+    {
+        let mut data = vec![0; 1024 * 1024];
+
+        let rng = crypto::random::global_rng();
+
+        for i in 0..100 {
+            println!("{}", i);
+            rng.generate_bytes(&mut data).await;
+            client.put(format!("key{}", i).as_bytes(), &data).await?;
+        }
+
+        return Ok(());
+    }
 
     {
         let txn1 = client.new_transaction().await?;

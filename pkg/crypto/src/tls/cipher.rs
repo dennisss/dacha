@@ -107,6 +107,8 @@ impl CipherEndpointSpecTLS13 {
 
         assert_eq!(ciphertext.len(), total_size);
 
+        // TODO: Length of 'data' MUST NOT exceed 2^14 + 256 bytes (also do the same for
+        // TLS 1.2)
         Record {
             legacy_record_version: record.legacy_record_version,
             typ,

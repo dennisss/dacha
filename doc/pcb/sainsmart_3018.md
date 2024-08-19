@@ -32,7 +32,7 @@ For controlling the CNC machine we will install grblcontrol (aka Candle). In som
 ```bash
 # Installing dependencies
 sudo apt update
-sudo apt install qt5-qmake qtbase5-dev build-essential qtcreator qt5-default libqt5serialport5-dev
+sudo apt install qt5-qmake qtbase5-dev build-essential qtcreator libqt5serialport5-dev
 
 git clone https://github.com/Denvi/Candle
 cd Candle
@@ -45,43 +45,15 @@ make -j4
 
 Then instead of the `build` directory, you can start it using `./Candle`.
 
-Next we'll install FlatCAM for generating the GCODE. First download the repository into some directory with the following commands:
+Next we'll install FlatCAM for generating the GCODE. Clone [this fork](https://github.com/dennisss/flatcam) of the application and follow the instructions in the README.
 
-```
-git clone https://bitbucket.org/jpcgt/flatcam
-cd flatcam
-git checkout origin/Beta
-```
+In order to have permission to communicate with USB serial ports, run the following commands and restart your terminal (and re-plug in the machine if you already have it plugged in):
 
-As of writing this, the latest commit is `d4f941335ca8a8d5351aab23b396f99da06a9029`. The following edits need to be manually applied:
+- `sudo adduser $USER dialout`
+- These are mainly relevant if brltty is installed as it may capture serial ports for itself:
+  - `sudo systemctl stop brltty`
+  - `sudo apt remove brltty`
 
-1. Per the guidance [here](https://gist.github.com/natevw/3e6fc929aff358b38c0a), we need to fix vispy at version 0.6.6 by editing `requirements.txt` as follows:
-
-    ```
-    --- a/requirements.txt
-    +++ b/requirements.txt
-    @@ -14,7 +14,7 @@ setuptools
-    dill
-    rtree
-    pyopengl
-    -vispy
-    +vispy==0.6.6
-    ortools>=7.0
-    svg.path>=4.0
-    simplejson
-    ```
-
-2. `chmod +x ./setup_ubuntu.py`
-
-
-Then we can continue installing with:
-
-```bash
-./setup_ubuntu.sh
-pip3 install -r requirements.txt`
-```
-
-Finally we can run it using `python3 FlatCAM.py`.
 
 ## Exporting from KiCad
 
@@ -156,12 +128,13 @@ Fully generate the edge cuts:
 - Double click on `board-Edge_Cuts.gbr`
 - Hit `Cutout Tool`
   - 1.2mm bit (3rd from smallest)
-  - 1.7mm cut depth, 0.5mm per pass (4 passes)
+  - -1.7mm cut depth, 0.5mm per pass (4 passes)
   - 0.1mm margin
   - No gaps
   - 60mm/min XY cutting speed
   - 40mm/min Z cutting speed
   - Travel Z: 2mm
+  - Spindle Speed: 10000 RPM
 
 ## Milling the PCB
 
@@ -174,6 +147,7 @@ Next using the Candle program we will mill out the PCB:
 - Install the engraving bit:
   - Raise the Z until the bit can be inserted.
   - Insert the bit and tighten with a wrench.
+  - WARNING: You must leave at least 2mm of room for the bit to be able to travel downward from its Z0 position without colliding with the bottom endstop.
 - Move up in Z slightly so that the bit is not touching the PCB
 - Hit "Zero X/Y"
   - Note: Make sure that the bit doesn't hit any mounting clamps.
@@ -182,6 +156,7 @@ Next using the Candle program we will mill out the PCB:
   - Attach other end to the bit. 
   - Set up a custom probe command in "Settings > Control"
     - `G90; G21; G38.2 Z-50 F100; G92 Z0; G0 Z10; M30`
+    - Also set "Heightmap probing feed" to "100"
 - Then hit the "Z-probe" button
 - Open the F_Cu gcode file
 - Under "Heightmap" hit "Create"
@@ -202,10 +177,8 @@ Next using the Candle program we will mill out the PCB:
   - Routing bit (outline Gcode)
 - Be sure to re-open and re-enable the height map when switching files.
 
-## Old
+## Notes
 
-Settings using 3018
-- How to do mesh leveling/
 - Engraving settings from 'Teaching Tech'
     - For 20 degree v cutter
     - Tool number 10
@@ -215,7 +188,6 @@ Settings using 3018
     - 1000 RPM
     - 20% step over
 
-
-- By default, speed rates would be from 0-1000
+- By default, the spindle speed range in grbl is 0-1000
     - https://docs.sainsmart.com/article/9m0rbnw6k1-introduction-to-cnc-for-a-total-novice-tuning-gbrl-settings
-    - Could set tothe actual RPM range.
+    - So a spindle speed of '1000' in the GCode is enough to reach the full ~10K speed on the machine.

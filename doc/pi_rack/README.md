@@ -19,6 +19,12 @@ Assembly instructions:
 
 ![](images/tray-assembled.jpg)
 
+## SDCard Recommendation
+
+It is recommended to use an eMMC based SDCard like the [RasPiKey](https://thepihut.com/products/raspikey-plug-and-play-emmc-module-for-raspberry-pi) as the boot device. These should perform better with other clustering software in this repository since most logging 
+
+Note that these eMMC cards don't boot with some older Pi eeprom firmwares. So if you are having issues with booting, update your firmware using a regular SDCard.
+
 ### Assembly
 
 - Single tray

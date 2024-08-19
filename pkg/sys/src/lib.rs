@@ -4,6 +4,7 @@
 extern crate common;
 #[macro_use]
 extern crate regexp_macros;
+extern crate alloc;
 extern crate elf;
 
 #[macro_use]
@@ -23,7 +24,7 @@ mod getcwd;
 mod getdents;
 mod io_uring;
 mod iov;
-mod kernel;
+pub mod kernel; // TODO: Make private
 mod mapped_memory;
 mod poll;
 mod proc;
@@ -174,7 +175,11 @@ syscall!(perf_event_open, bindings::SYS_perf_event_open,
 
 // NOTE: This technically has 3 arguments but the third one is never used in the
 // kernel.
+//
+// TODO: Use the VDSO version.
 syscall!(getcpu, bindings::SYS_getcpu, cpu: *mut c_uint, node: *mut c_uint => Result<()>);
+
+syscall!(clock_gettime, bindings::SYS_clock_gettime, clockid: bindings::clockid_t, tp: *mut kernel::timespec => Result<()>);
 
 syscall!(getpid, bindings::SYS_getpid => Infallible<pid_t>);
 syscall!(getppid, bindings::SYS_getppid => Infallible<pid_t>);

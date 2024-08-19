@@ -119,6 +119,7 @@ impl<R> PendingExecution<R> {
             },
             _ => {
                 // TODO: Distinguish between a Receiver error and a server error.
+                // XXX: yes
 
                 // TODO: In this case, we would like to distinguish between an
                 // operation that was rejected and one that is known to have
@@ -513,6 +514,25 @@ impl<R: Send + 'static> Server<R> {
         Ok(read_index)
     }
 
+    /*
+    In general, I want execute to block until the execution has went through.
+    */
+    /*
+    Bounding the runtime of this:
+
+    - When a candidate, we will only wait for one election cycle.
+    - When a leader, we will step down if we don't get heartbeats from other peers
+        - Still risk of starvation if all the AppendEntries requests are failing.
+    - Require that a leader steps down if it can't replciate its latest entry within 10 seconds
+        - If a 'majority - 1' of peers aren't healthy, then step down
+
+    - also limit in the consensus module how many uncommitted log entries we will allow in the log.
+        - We need this limit somewhere anyway since the log is stored in RAM so
+
+    */
+
+    /// Proposes a new change at the end of the
+    ///
     /// Will propose a new change and will return a future that resolves once
     /// it has either suceeded to be executed, or has failed.
     ///
@@ -550,6 +570,9 @@ impl<R: Send + 'static> Server<R> {
     /// has already been at least optimistically resolved, so checking that
     /// the term hasn't changed since the read started should be good
     /// enough.
+    ///
+    /// TODO: Possibly support passing in a cancellation token if we want to
+    /// limit how long we wait for the enqueue to happen.
     ///
     /// CANCEL SAFE
     pub async fn execute_after_read(
@@ -730,6 +753,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             .identity
             .check_incoming_request_context(req_stream.context(), res_stream.context())?;
 
+        // Basically split into two halves
+
+        /*
+        Main loop:
+        - recv() stuff and call run_tick()
+        -
+
+        */
+
         while let Some(req) = req_stream.recv().await? {
             let c = ServerShared::run_tick(&self.shared, move |state, tick| {
                 state.inst.append_entries(&req, tick)
@@ -901,6 +933,8 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         let r = self.execute(data.clone()).await;
 
+        // TODO: Since the metastore path doesn't go through, I don't think it will be
+        // helping us normally.
         let pending_exec = match r {
             Ok(v) => v,
             Err(ExecuteError::NotLeader) => {

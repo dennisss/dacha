@@ -2,6 +2,7 @@
 
 pub mod connection;
 pub mod content_type;
+pub mod cookie;
 pub mod date;
 pub mod host;
 pub mod range;

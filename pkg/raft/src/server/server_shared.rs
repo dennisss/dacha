@@ -317,6 +317,7 @@ impl<R: Send + 'static> ServerShared<R> {
         // NOTE: We take it so that the finish_tick doesn't re-trigger
         // this loop and prevent sleeping all together
         if let Some(d) = tick.next_tick.take() {
+            // TODO: Set a new wait time.
             let t = tick.time + d;
             state.scheduled_cycle = Some(t.clone());
             t

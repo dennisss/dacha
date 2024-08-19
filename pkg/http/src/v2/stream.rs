@@ -288,6 +288,8 @@ impl Stream {
         self.increment_received_bytes(data.len(), state)?;
 
         if state.local_window < ((data.len() + extra_flow_controlled_bytes) as WindowSize) {
+            // TODO: This is sometimes triggered.
+
             // Send a RST_STREAM
             return Err(StreamError(ProtocolErrorV2 {
                 code: ErrorCode::FLOW_CONTROL_ERROR,

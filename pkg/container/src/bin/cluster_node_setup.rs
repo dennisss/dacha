@@ -167,6 +167,9 @@ async fn main() -> Result<()> {
 
     // TODO: Randomize this here just incase the machine-id wasn't regenerated since
     // imaging the target machine.
+    /*
+    TODO: Make sure that the node runtime uses the same algorithm to derive the node id
+    */
     let machine_id = {
         let hex = run_ssh(&args.addr, "cat /etc/machine-id")?;
         let data = base_radix::hex_decode(hex.trim())?;
@@ -221,6 +224,15 @@ async fn main() -> Result<()> {
         result
     };
 
+    /*
+    TODO:
+
+        In /etc/hosts, find all entries with 'cluster-node' in them and swap them to to the full one.
+        Sample line:
+
+    127.0.1.1               cluster-node
+
+         */
     println!("Setting hostname to: {}", hostname);
     run_ssh(
         &args.addr,
@@ -313,7 +325,9 @@ async fn main() -> Result<()> {
         let mut subgid = String::new();
         subgid.push_str(&format!("{}:400000:65536\n", NODE_USER));
 
-        let target_groups = &["gpio", "plugdev", "dialout", "i2c", "spi", "video"];
+        let target_groups = &[
+            "gpio", "plugdev", "dialout", "i2c", "spi", "video", "audio", "edisk",
+        ];
 
         for group in groups {
             if target_groups.iter().find(|g| *g == &group.name).is_some() {

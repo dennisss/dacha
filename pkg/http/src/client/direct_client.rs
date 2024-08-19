@@ -259,6 +259,8 @@ struct State {
 
     /// Requests which have been given to the client but have not yet been
     /// assigned to a connection to be run.
+    ///
+    /// TODO: KEep this sorted by priority
     unassigned_requests: VecDeque<ClientLocalRequest>,
 
     /// Map from connection id to data for that connection.
@@ -435,6 +437,11 @@ impl ClientInterface for DirectClient {
             // NOTE: All of the below logic must be syncronous to ensure that the request is
             // atomically added without cancellations.
 
+            /*
+            TODO: Issue is that there is no bound on when this will actually get processed.
+
+            */
+
             state.unassigned_requests.push_back(ClientLocalRequest {
                 request,
                 request_context,
@@ -555,6 +562,8 @@ impl DirectClientRunner {
                     state.exit();
                     break;
                 }
+
+                // TODO: Clear unassigend requests.
 
                 for (_, conn) in &mut state.connection_pool {
                     if !conn.shutting_down {
@@ -853,6 +862,10 @@ impl DirectClientRunner {
                 continue;
             }
 
+            /*
+            TODO: If all connections are exceeding the max number of streams, then we should fail here (regardless of wait_for_ready).
+            */
+
             if num_reserved_connections < self.connecting_tasks.len() {
                 // 'Reserve' one of the connecting connections to this request for future use.
                 num_reserved_connections += 1;
@@ -907,7 +920,10 @@ impl DirectClientRunner {
         }
 
         self.current_connect_backoff_end = {
+            // Optimistically assume that the attempt is initially succeeding to allow
+            // backoff cooldown to work.
             self.connect_backoff.end_attempt(true);
+
             match self.connect_backoff.start_attempt() {
                 ExponentialBackoffResult::Start => None,
                 ExponentialBackoffResult::StartAfter(duration) => Some(Instant::now() + duration),
@@ -1078,7 +1094,7 @@ impl DirectClientRunner {
 
         let (mut reader, mut writer) = raw_stream.split();
 
-        reader = Box::new(crate::buffered_reader::BufferedReader::new(reader));
+        reader = Box::new(common::buffered_reader::BufferedReader::new(reader));
 
         let mut start_http2 = shared.options.force_http2;
 

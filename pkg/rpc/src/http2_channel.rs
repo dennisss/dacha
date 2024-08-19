@@ -246,6 +246,10 @@ impl Channel for Http2Channel {
     }
 }
 
+/*
+TODO: Check the current deadline from the context and see if we have enough time left before we perform a sleep().
+*/
+
 /// Worker for sending a single RPC over HTTP2.
 struct Http2RequestSender {
     shared: Arc<Shared>,

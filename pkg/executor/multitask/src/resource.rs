@@ -51,6 +51,8 @@ pub(crate) async fn wait_for_termination(
         match state {
             ServiceResourceState::PermanentFailure => {
                 // TODO: It may be from an error message other than self
+                // TODO: Need to find a more granular name than this (need to reference the
+                // inner most resource that failed).
                 return Err(format_err!(
                     "Resource {} failed: {}",
                     report.resource_name,

@@ -5,6 +5,10 @@ This is an application interfaces with an attached Elgato Stream Deck to perform
 - Switch between different display inputs on a connected monitor (via HDMI DDC).
 - Turn on/off Hue light groups.
 
+TODOs:
+
+- Add wake on LAN
+
 ## User Guide
 
 As a pre-requisite, we assume that you have a Raspberry Pi that has been setup in a [cluster](../../container/index.md) and has attached:
@@ -12,6 +16,7 @@ As a pre-requisite, we assume that you have a Raspberry Pi that has been setup i
 - A Stream Deck via USB
 - A monitor via HDMI
     - Plug into the left HDMI port (nearest the USB-C port) so that it is exposed as `/dev/i2c-20`. 
+    - You can fit it in the rack enclosure by using [this adapter](https://www.adafruit.com/product/3557).
 
 First you need to obtain a Hue bridge username (a secret password to control the lights). Run the following and follow the instructions:
 

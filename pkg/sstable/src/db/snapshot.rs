@@ -17,6 +17,8 @@ use super::merge_iterator::MergeIterator;
 /// This enables consistent reading over the database while encountering new
 /// writes. Note that while this object is alive, it will prevent garbage
 /// collection or compaction of the underlying table data.
+///
+/// TODO: This must internally hold a reference to the LockFile
 pub struct Snapshot {
     pub(crate) options: Arc<EmbeddedDBOptions>,
 

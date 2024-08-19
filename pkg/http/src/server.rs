@@ -351,6 +351,8 @@ impl Server {
     async fn run_impl(shared: Arc<ServerShared>, listener: Option<TcpListener>) {
         let r = Self::run_impl_inner(&shared, listener).await;
 
+        // TODO: Ideally we should drop 'shared' before marking the report as done.
+
         match r {
             Ok(()) => {
                 shared
@@ -420,6 +422,8 @@ impl Server {
                         let connection_id = connection_pool.last_id + 1;
                         connection_pool.last_id = connection_id;
 
+                        // TODO: Switch to a ChildTask if we verify that handle_stream is cancel
+                        // safe.
                         let task_handle =
                             executor::spawn(Self::handle_stream(shared.clone(), connection_id, s));
 
@@ -538,6 +542,8 @@ impl Server {
         };
 
         let (mut read_stream, mut write_stream) = stream.split();
+
+        read_stream = Box::new(common::buffered_reader::BufferedReader::new(read_stream));
 
         let mut negotatied_http11 = false;
         let mut negotiated_http2 = false;
