@@ -78,6 +78,8 @@ pub async fn profile_process(pid: sys::pid_t, duration: Duration) -> Result<Prof
         mapping.set_memory_limit(area.end_address);
         mapping.set_file_offset(area.offset);
 
+        // TODO: These paths are relative to the filesystem of the container. (must
+        // resolve through the mountinfo)
         mapping.set_filename(profile.string_table_len() as i64);
         profile.add_string_table(area.path.clone());
 

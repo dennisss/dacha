@@ -1,6 +1,6 @@
 use base_error::*;
+use gcode_decimal::Decimal;
 
-use crate::decimal::Decimal;
 use crate::hints::*;
 
 /// Maximum of 32768 bytes per line if the larger line ending of '\r\n' is used.
@@ -13,6 +13,12 @@ pub struct Word {
     pub key: char,
 
     pub value: WordValue,
+}
+
+impl Word {
+    pub fn to_string(&self) -> String {
+        format!("{}{}", self.key, self.value.to_string())
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -51,6 +57,7 @@ pub enum Event<'a> {
     EndLine,
     ParseError(ParseErrorKind),
     Comment(&'a [u8], bool),
+    ProgramDelimiter,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -61,6 +68,7 @@ pub enum ParseErrorKind {
     UnterminatedString,
     UnterminatedComment,
     InvalidUTF8InString,
+    ExtraTextAfterProgramDelimiter,
 }
 
 pub struct Parser {
@@ -116,6 +124,8 @@ enum ParserState {
 
     /// We are currently reading a semi-colon delimited comment into 'buffer'.
     InSemiComment,
+
+    InProgramDelimiter,
 }
 
 impl Parser {
@@ -207,7 +217,32 @@ impl Parser {
                         continue;
                     }
 
+                    if c == b'%' {
+                        i += 1;
+                        event = Some(Event::ProgramDelimiter);
+                        self.state = ParserState::InProgramDelimiter;
+                        break;
+                    }
+
                     self.state = ParserState::StartOfLineComponent;
+                }
+
+                ParserState::InProgramDelimiter => {
+                    if Self::is_inline_whitespace(c) {
+                        i += 1;
+                        continue;
+                    }
+
+                    if c == b'\r' || c == b'\n' {
+                        self.state = ParserState::SkipLine;
+                        continue;
+                    }
+
+                    event = Some(Event::ParseError(
+                        ParseErrorKind::ExtraTextAfterProgramDelimiter,
+                    ));
+                    self.state = ParserState::SkipLine;
+                    break;
                 }
 
                 ParserState::SkipLine => {
@@ -509,6 +544,10 @@ impl Parser {
     /// Current line number (incremented when an EndLine event is emitted)
     pub fn current_line_number(&self) -> usize {
         self.line_number
+    }
+
+    pub fn num_bytes_consumed(&self) -> usize {
+        self.offset
     }
 }
 
@@ -1076,6 +1115,27 @@ mod tests {
                         key: 'A',
                         value: WordValue::UnquotedString("Untitled 123.stl".to_string()),
                     }),
+                    Event::EndLine,
+                ],
+            ),
+            ("%", vec![Event::ProgramDelimiter, Event::EndLine]),
+            (
+                " % \nX\n",
+                vec![
+                    Event::ProgramDelimiter,
+                    Event::EndLine,
+                    Event::Word(Word {
+                        key: 'X',
+                        value: WordValue::Empty,
+                    }),
+                    Event::EndLine,
+                ],
+            ),
+            (
+                "%x",
+                vec![
+                    Event::ProgramDelimiter,
+                    Event::ParseError(ParseErrorKind::ExtraTextAfterProgramDelimiter),
                     Event::EndLine,
                 ],
             ),

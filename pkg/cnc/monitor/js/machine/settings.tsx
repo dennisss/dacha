@@ -56,6 +56,15 @@ export class SettingsComponent extends React.Component<{ machine: any, context: 
 
         return (
             <div>
+                <div className="card" style={{ marginBottom: 10 }}>
+                    <div className="card-header">
+                        Base Config
+                    </div>
+                    <div className="card-body">
+                        {machine.config.model_name} ({machine.config.base_config})
+                    </div>
+                </div>
+
                 <div className="card">
                     <div className="card-header">
                         General

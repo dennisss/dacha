@@ -113,6 +113,8 @@ impl FakeMachine {
 
         let mut line_offset = buf.last_line_offset().await?;
 
+        let mut parser = gcode::ProgramParser::default();
+
         // TODO: Throttle this loop.
         loop {
             {
@@ -131,21 +133,13 @@ impl FakeMachine {
                 let line_entry = buf.get_line(line_offset).await?;
                 line_offset += 1;
 
-                let line = match Self::decode_line(&line_entry.data) {
-                    Ok(Some(v)) => v,
-                    Ok(None) => {
-                        lock_async!(writer <= shared.serial_writer.lock().await?, {
-                            writer.write_all(b"ok\n").await
-                        })?;
-                        continue;
-                    }
-                    Err(e) => {
-                        lock_async!(writer <= shared.serial_writer.lock().await?, {
-                            writer.write_all(b"error: Invalid line received\n").await
-                        })?;
-                        continue;
-                    }
-                };
+                let mut line = vec![];
+                if let Err(e) = parser.parse_line(&line_entry.data, &mut line) {
+                    lock_async!(writer <= shared.serial_writer.lock().await?, {
+                        writer.write_all(b"error: Invalid line received\n").await
+                    })?;
+                    continue;
+                }
 
                 if let Err(e) = Self::process_line(&shared, &line).await {
                     eprintln!("FakeMachine Processing Error: {}", e);
@@ -153,361 +147,308 @@ impl FakeMachine {
                     lock_async!(writer <= shared.serial_writer.lock().await?, {
                         writer.write_all(b"error\n").await
                     })?;
-                } else {
-                    lock_async!(writer <= shared.serial_writer.lock().await?, {
-                        writer.write_all(b"ok\n").await
-                    })?;
+                    continue;
                 }
+
+                lock_async!(writer <= shared.serial_writer.lock().await?, {
+                    writer.write_all(b"ok\n").await
+                })?;
             }
         }
-    }
-
-    fn decode_line(line: &[u8]) -> Result<Option<gcode::Line>> {
-        let mut builder = gcode::LineBuilder::new();
-
-        let mut parser = gcode::Parser::new();
-        let mut iter = parser.iter(line, true);
-        while let Some(e) = iter.next() {
-            match e {
-                gcode::Event::ParseError(_) => {
-                    return Err(err_msg("ParseError in line"));
-                }
-                gcode::Event::Word(w) => {
-                    builder.add_word(w)?;
-                }
-                _ => {}
-            }
-        }
-
-        Ok(builder.finish())
     }
 
     /// Applies the effect of an incoming line to the state of the machine.
     ///
     /// Depending on the return result of this, we will either send an 'ok' or
     /// 'error' back to the host.
-    async fn process_line(shared: &Shared, line: &gcode::Line) -> Result<()> {
-        let cmd = line.command().to_string();
-        let mut params = line.params().clone();
+    async fn process_line(shared: &Shared, line: &[gcode::ProgramElement]) -> Result<()> {
+        // TODO: Need to process commands in a consistent order. (e.g. apply coordinate
+        // system changes before doing moves)
+        for el in line {
+            let cmd = match el {
+                gcode::ProgramElement::Command(v) => v,
+                _ => continue,
+            };
 
-        match cmd.as_str() {
-            "G0" | "G1" => {
-                lock!(state <= shared.state.lock().await?, {
-                    let mut new_pos = state.position.clone();
-                    for (i, axis) in ['X', 'Y', 'Z'].into_iter().enumerate() {
-                        if let Some(v) = params.remove(axis) {
-                            if state.position_absolute_mode {
-                                new_pos[i] = v.to_f32()?;
-                            } else {
-                                new_pos[i] += v.to_f32()?;
+            match cmd {
+                gcode::Command::RapidMove(cmd) => {
+                    Self::process_move(shared, &cmd.inner).await?;
+                }
+                gcode::Command::LinearMove(cmd) => {
+                    Self::process_move(shared, &cmd.inner).await?;
+                }
+
+                gcode::Command::Dwell(_) => {
+                    // Machine is idle after each command, so should still be
+                    // idle here.
+                }
+
+                gcode::Command::SetUnitsToInches(_) => {
+                    return Err(err_msg("Inches are not supported"));
+                }
+                gcode::Command::SetUnitsToMillimeters(_) => {}
+
+                gcode::Command::MoveToOriginHome(_) => {
+                    // Ignore params.
+                }
+
+                gcode::Command::G80(_) => {
+                    // Prusa specific mesh based z-probe
+                }
+
+                gcode::Command::SetToAbsoluteMode(_) => {
+                    lock!(state <= shared.state.lock().await?, {
+                        state.position_absolute_mode = true;
+                    });
+                }
+
+                gcode::Command::SetToRelativeMode(_) => {
+                    lock!(state <= shared.state.lock().await?, {
+                        state.position_absolute_mode = false;
+                    });
+                }
+
+                gcode::Command::SetPosition(cmd) => {
+                    lock!(state <= shared.state.lock().await?, {
+                        if state.position != state.position_target
+                            || state.extruder_position_target != state.extruder_position
+                        {
+                            return Err(err_msg("Set position not allowed while moving"));
+                        }
+
+                        let mut some_set = false;
+
+                        let mut new_pos = state.position.clone();
+                        for (i, value) in [cmd.x, cmd.y, cmd.z].into_iter().enumerate() {
+                            if let Some(v) = value {
+                                new_pos[i] = v.to_f32();
+                                some_set = true;
                             }
                         }
-                    }
-                    state.position_target = new_pos;
 
-                    if let Some(v) = params.remove(&'E') {
-                        if state.extruder_absolute_mode {
-                            state.extruder_position_target = v.to_f32()?;
-                        } else {
-                            state.extruder_position_target += v.to_f32()?;
+                        state.position = new_pos.clone();
+                        state.position_target = new_pos;
+
+                        if let Some(v) = cmd.e {
+                            state.extruder_position = v.to_f32();
+                            state.extruder_position_target = v.to_f32();
+                            some_set = true;
                         }
-                    }
 
-                    if let Some(v) = params.remove(&'F') {
-                        state.feed_rate = v.to_f32()?;
-                    }
-
-                    Ok::<_, Error>(())
-                })?;
-
-                // Wait for motion to complete.
-                loop {
-                    let done = lock!(state <= shared.state.lock().await?, {
-                        state.position == state.position_target
-                            && state.extruder_position == state.extruder_position_target
-                    });
-
-                    if done {
-                        break;
-                    }
-
-                    executor::sleep(Duration::from_millis(10)).await?;
-                }
-            }
-            // Dwell
-            "G4" => {
-                // Machine is idle after each command, so should still be idle
-                // here.
-            }
-
-            // Set to inches
-            "G20" => {
-                return Err(err_msg("Inches are not supported"));
-            }
-            // Set to mm units
-            "G21" => {}
-
-            // Move to origin (home)
-            "G28" => {
-                params.clear();
-            }
-
-            // Prusa specific mesh based z-probe
-            "G80" => {
-                params.clear();
-            }
-
-            // Set to absolute positioning
-            "G90" => {
-                lock!(state <= shared.state.lock().await?, {
-                    state.position_absolute_mode = true;
-                });
-            }
-            // Set to relative positioning
-            "G91" => {
-                lock!(state <= shared.state.lock().await?, {
-                    state.position_absolute_mode = false;
-                });
-            }
-
-            // Set position
-            "G92" => {
-                if params.is_empty() {
-                    return Err(err_msg(
-                        "Ambigious behavior when G92 is called without any params",
-                    ));
-                }
-
-                lock!(state <= shared.state.lock().await?, {
-                    if state.position != state.position_target
-                        || state.extruder_position_target != state.extruder_position
-                    {
-                        return Err(err_msg("Set position not allowed while moving"));
-                    }
-
-                    let mut new_pos = state.position.clone();
-                    for (i, axis) in ['X', 'Y', 'Z'].into_iter().enumerate() {
-                        if let Some(v) = params.remove(axis) {
-                            new_pos[i] = v.to_f32()?;
+                        if !some_set {
+                            return Err(err_msg(
+                                "Ambigious behavior when G92 is called without any params",
+                            ));
                         }
-                    }
 
-                    state.position = new_pos.clone();
-                    state.position_target = new_pos;
-
-                    if let Some(v) = params.remove(&'E') {
-                        state.extruder_position = v.to_f32()?;
-                        state.extruder_position_target = v.to_f32()?;
-                    }
-
-                    Ok(())
-                })?;
-            }
-
-            // Set extruder to absolute mode.
-            "M82" => {
-                lock!(state <= shared.state.lock().await?, {
-                    state.extruder_absolute_mode = true;
-                });
-            }
-
-            // Set extruder to relative mode.
-            "M83" => {
-                lock!(state <= shared.state.lock().await?, {
-                    state.extruder_absolute_mode = false;
-                });
-            }
-
-            // Set/get build percentage.
-            "M73" => {
-                params.clear();
-            }
-
-            // Stop motors
-            "M84" => {}
-
-            // Set extruder temperature
-            "M104" => {
-                let temp = params
-                    .remove(&'S')
-                    .ok_or_else(|| err_msg("M109 requires S parameter"))?
-                    .to_f32()?;
-
-                lock!(state <= shared.state.lock().await?, {
-                    state.extruder_target_temperature = temp;
-                });
-            }
-
-            /*
-            M114 - get position
-            M105 - get temp
-            M123 - get tachometer values (prusa/marlin)
-            */
-            "M105" | "M114" | "M123" => {
-                let report = lock!(state <= shared.state.lock().await?, {
-                    Self::generate_state_report(&state)
-                });
-
-                lock_async!(writer <= shared.serial_writer.lock().await?, {
-                    writer.write_all(report.as_bytes()).await
-                })?;
-            }
-
-            // Fan on
-            "M106" => {
-                let speed = params
-                    .remove(&'S')
-                    .ok_or_else(|| err_msg("M106 requires S parameter"))?
-                    .to_f32()?;
-
-                if speed < 0.0 || speed > 255.0 {
-                    return Err(err_msg("Invalid fan speed"));
+                        Ok(())
+                    })?;
                 }
 
-                lock!(state <= shared.state.lock().await?, {
-                    state.part_cooling_fan_value = speed / 255.0;
-                });
-            }
-
-            // Fan off
-            "M107" => {
-                lock!(state <= shared.state.lock().await?, {
-                    state.part_cooling_fan_value = 0.0;
-                });
-            }
-
-            // Set extruder temperature and wait.
-            "M109" => {
-                let temp = params
-                    .remove(&'S')
-                    .ok_or_else(|| err_msg("M109 requires S parameter"))?
-                    .to_f32()?;
-
-                lock!(state <= shared.state.lock().await?, {
-                    state.extruder_target_temperature = temp;
-                });
-
-                loop {
-                    let done = lock!(state <= shared.state.lock().await?, {
-                        state.extruder_temperature == state.extruder_target_temperature
+                gcode::Command::SetExtruderToAbsoluteMode(_) => {
+                    lock!(state <= shared.state.lock().await?, {
+                        state.extruder_absolute_mode = true;
+                    });
+                }
+                gcode::Command::SetExtruderToRelativeMode(_) => {
+                    lock!(state <= shared.state.lock().await?, {
+                        state.extruder_absolute_mode = false;
+                    });
+                }
+                gcode::Command::SetBuildPercentage(_) => {}
+                gcode::Command::StopMotors(_) => {}
+                gcode::Command::SetExtruderTemperature(cmd) => {
+                    Self::process_set_heater(shared, &cmd.inner, false, true).await?;
+                }
+                gcode::Command::SetExtruderTemperatureAndWait(cmd) => {
+                    Self::process_set_heater(shared, &cmd.inner, true, true).await?;
+                }
+                gcode::Command::GetCurrentPosition(_)
+                | gcode::Command::GetExtruderTemperature(_)
+                | gcode::Command::GetTachometerValue(_) => {
+                    let report = lock!(state <= shared.state.lock().await?, {
+                        Self::generate_state_report(&state)
                     });
 
-                    if done {
-                        break;
+                    lock_async!(writer <= shared.serial_writer.lock().await?, {
+                        writer.write_all(report.as_bytes()).await
+                    })?;
+                }
+                gcode::Command::FanOn(cmd) => {
+                    let speed = cmd
+                        .speed
+                        .ok_or_else(|| err_msg("M106 requires S parameter"))?
+                        .to_f32();
+
+                    if speed < 0.0 || speed > 255.0 {
+                        return Err(err_msg("Invalid fan speed"));
                     }
 
-                    executor::sleep(Duration::from_millis(10)).await?;
-                }
-            }
-
-            // Configure debug flags
-            "M111" => {
-                params.clear();
-            }
-
-            // Print capabilitites
-            "M115" => {
-                lock_async!(writer <= shared.serial_writer.lock().await?, {
-                    writer.write_all(b"Cap:AUTOREPORT_TEMP:1\n").await?;
-                    writer.write_all(b"Cap:AUTOREPORT_FANS:1\n").await?;
-                    writer.write_all(b"Cap:AUTOREPORT_POSITION:1\n").await
-                })?;
-            }
-
-            // Set bed temperature
-            "M140" => {
-                let temp = params
-                    .remove(&'S')
-                    .ok_or_else(|| err_msg("M140 requires S parameter"))?
-                    .to_f32()?;
-
-                lock!(state <= shared.state.lock().await?, {
-                    state.heatbed_target_temperature = temp;
-                });
-            }
-
-            // M155 S1 C7
-            "M155" => {
-                let interval_secs = params
-                    .remove(&'S')
-                    .ok_or_else(|| err_msg("M155 requires S parameter"))?
-                    .to_f32()?;
-
-                // TODO: Interpret this value.
-                let flags = params
-                    .remove(&'C')
-                    .ok_or_else(|| err_msg("M155 requires C parameter"))?
-                    .to_f32()?;
-
-                lock!(state <= shared.state.lock().await?, {
-                    state.auto_report_interval = Duration::from_secs_f32(interval_secs);
-                });
-            }
-
-            // Set bed temperature and wait.
-            "M190" => {
-                let temp = params
-                    .remove(&'S')
-                    .ok_or_else(|| err_msg("M190 requires S parameter"))?
-                    .to_f32()?;
-
-                lock!(state <= shared.state.lock().await?, {
-                    state.heatbed_target_temperature = temp;
-                });
-
-                // TODO: Make a helper function for this.
-                loop {
-                    let done = lock!(state <= shared.state.lock().await?, {
-                        state.heatbed_temperature == state.heatbed_target_temperature
+                    lock!(state <= shared.state.lock().await?, {
+                        state.part_cooling_fan_value = speed / 255.0;
                     });
-
-                    if done {
-                        break;
-                    }
-
-                    executor::sleep(Duration::from_millis(10)).await?;
                 }
-            }
+                gcode::Command::FanOff(_) => {
+                    lock!(state <= shared.state.lock().await?, {
+                        state.part_cooling_fan_value = 0.0;
+                    });
+                }
+                gcode::Command::SetDebugLevel(_) => {}
+                gcode::Command::PrintFirmwareCapabilities(_) => {
+                    lock_async!(writer <= shared.serial_writer.lock().await?, {
+                        writer.write_all(b"Cap:AUTOREPORT_TEMP:1\n").await?;
+                        writer.write_all(b"Cap:AUTOREPORT_FANS:1\n").await?;
+                        writer.write_all(b"Cap:AUTOREPORT_POSITION:1\n").await
+                    })?;
+                }
+                gcode::Command::SetBedTemperature(cmd) => {
+                    Self::process_set_heater(shared, &cmd.inner, false, false).await?;
+                }
 
-            // Set max acceleration
-            "M201" => {
-                params.clear();
-            }
-            // Set max feed rate
-            "M203" => {
-                params.clear();
-            }
-            // Set default acceleration
-            "M204" => {
-                params.clear();
-            }
-            // Advanced settings like axis jerk limits.
-            "M205" => {
-                params.clear();
-            }
-            // Extrude factor overrides
-            "M221" => {
-                params.clear();
-            }
-            // Check nozzle diameter (Prusa specific)
-            "M862.1" => {
-                params.clear();
-            }
-            // Linear advance configuration
-            "M900" => {
-                params.clear();
-            }
-            // Motor current trimming
-            "M907" => {
-                params.clear();
-            }
-            _ => {
-                return Err(format_err!("Unknown command: {}", cmd.as_str()));
+                gcode::Command::SetBedTemperatureAndWaitCommand(cmd) => {
+                    Self::process_set_heater(shared, &cmd.inner, true, false).await?;
+                }
+
+                gcode::Command::SetupAutoReport(cmd) => {
+                    // TODO: Interpret the flags.
+
+                    lock!(state <= shared.state.lock().await?, {
+                        state.auto_report_interval =
+                            Duration::from_secs_f32(cmd.interval_secs as f32);
+                    });
+                }
+
+                gcode::Command::SetMaxAcceleration(_)
+                | gcode::Command::SetMaxFeedRate(_)
+                | gcode::Command::SetDefaultAcceleration(_)
+                | gcode::Command::AdvancedSettings(_)
+                | gcode::Command::ExtruderPressureAdvance(_)
+                | gcode::Command::NozzleDiameter(_)
+                | gcode::Command::SetLinearAdvanceScalingFactors(_)
+                | gcode::Command::SetMotorCurrent(_)
+                | gcode::Command::SetExtrudeFactorOverride(_) => {}
+
+                _ => {
+                    return Err(format_err!("Unsupported command: {:?}", cmd));
+                }
             }
         }
 
-        if !params.is_empty() {
-            return Err(err_msg("Unsupported params in command"));
+        Ok(())
+    }
+
+    async fn process_set_heater(
+        shared: &Shared,
+        cmd: &gcode::SetHeaterTemperature,
+        wait: bool,
+        is_extruder: bool,
+    ) -> Result<()> {
+        let mut temp = None;
+
+        if let Some(t) = cmd.min_temperature {
+            temp = Some(t);
+        }
+
+        if let Some(t) = cmd.target_temperature {
+            if let Some(t2) = temp {
+                if t != t2 {
+                    return Err(err_msg("Inconsistent temperature requests"));
+                }
+            }
+
+            if !wait {
+                return Err(err_msg("Target temperature only allowed in wait mode"));
+            }
+
+            temp = Some(t);
+        }
+
+        let temp = match temp {
+            Some(v) => v.to_f32(),
+            None => return Err(err_msg("No temperature in wait request")),
+        };
+
+        if let Some(t) = cmd.tool {
+            if t != 0 || !is_extruder {
+                return Err(err_msg("Invalid tool parameter"));
+            }
+        }
+
+        lock!(state <= shared.state.lock().await?, {
+            if is_extruder {
+                state.extruder_target_temperature = temp;
+            } else {
+                state.heatbed_target_temperature = temp;
+            }
+        });
+
+        if !wait {
+            return Ok(());
+        }
+
+        // TODO: Make a helper function for this.
+        loop {
+            let done = lock!(state <= shared.state.lock().await?, {
+                if is_extruder {
+                    state.extruder_temperature == state.extruder_target_temperature
+                } else {
+                    state.heatbed_temperature == state.heatbed_target_temperature
+                }
+            });
+
+            if done {
+                break;
+            }
+
+            executor::sleep(Duration::from_millis(10)).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn process_move(shared: &Shared, m: &gcode::Move) -> Result<()> {
+        // TODO: Must reject moves with more than then justthe XYZE axes.
+
+        lock!(state <= shared.state.lock().await?, {
+            let mut new_pos = state.position.clone();
+            for (i, value) in [m.x, m.y, m.z].into_iter().enumerate() {
+                if let Some(v) = value {
+                    if state.position_absolute_mode {
+                        new_pos[i] = v.to_f32();
+                    } else {
+                        new_pos[i] += v.to_f32();
+                    }
+                }
+            }
+            state.position_target = new_pos;
+
+            if let Some(v) = m.e {
+                if state.extruder_absolute_mode {
+                    state.extruder_position_target = v.to_f32();
+                } else {
+                    state.extruder_position_target += v.to_f32();
+                }
+            }
+
+            if let Some(v) = m.feed_rate {
+                state.feed_rate = v.to_f32();
+            }
+
+            Ok::<_, Error>(())
+        })?;
+
+        // Wait for motion to complete.
+        loop {
+            let done = lock!(state <= shared.state.lock().await?, {
+                state.position == state.position_target
+                    && state.extruder_position == state.extruder_position_target
+            });
+
+            if done {
+                break;
+            }
+
+            executor::sleep(Duration::from_millis(10)).await?;
         }
 
         Ok(())

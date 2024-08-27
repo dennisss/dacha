@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate regexp_macros;
+
 use core::fmt::{Debug, Display};
 use core::ops::{Add, Sub};
 use core::str::FromStr;
@@ -32,6 +35,20 @@ impl Decimal {
 
     fn is_nonnegative(&self) -> bool {
         self.value >= 0
+    }
+
+    pub const fn from_i32(value: i32) -> Self {
+        Self {
+            value: (value as i64) * Self::UNITS_PER_INTEGER,
+        }
+    }
+
+    pub const fn from_raw(value: i64) -> Self {
+        Self { value }
+    }
+
+    pub const fn to_raw(&self) -> i64 {
+        self.value
     }
 
     pub fn parse_complete(data: &[u8]) -> Option<Self> {

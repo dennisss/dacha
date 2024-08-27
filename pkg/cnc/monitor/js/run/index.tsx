@@ -72,7 +72,7 @@ export class ProgramRunPage extends React.Component<ProgramRunPageProps, Program
         let context = this.props.context;
 
         let start_time = new Date(timestamp_proto_to_millis(run.start_time));
-        let end_time = run.end_time ? new Date(timestamp_proto_to_millis(run.end_time)) : undefined;
+        let end_time = new Date(timestamp_proto_to_millis(run.end_time || run.last_updated));
 
         let machine_name = machine.config.name || 'Untitled Machine';
 

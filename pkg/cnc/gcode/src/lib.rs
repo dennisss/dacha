@@ -1,22 +1,31 @@
 use std::{collections::HashMap, time::Instant};
 
-use decimal::Decimal;
+pub use gcode_decimal::Decimal;
 
 #[macro_use]
 extern crate regexp_macros;
+#[macro_use]
+extern crate gcode_macros;
 
-mod decimal;
+mod command;
 mod hints;
+#[macro_use]
+mod macros;
 mod line;
 mod parser;
+mod program;
 
 use base_error::*;
 
+pub use crate::command::*;
 pub use crate::line::*;
 pub use crate::parser::*;
+pub use crate::program::*;
 
+/// TODO: The gRBL limit is only 128.
 pub const MAX_STANDARD_LINE_LENGTH: usize = 256;
 
+/*
 pub fn tile_gcode(
     initial_gcode: &[u8],
     offset: (f32, f32),
@@ -144,3 +153,4 @@ pub fn tile_gcode(
 
     Ok(out)
 }
+*/

@@ -1,11 +1,6 @@
 #![feature(trait_upcasting)]
 
 /*
-cargo run --bin builder -- build //pkg/cnc/monitor:app
-
-cargo run --bin cnc_monitor -- --rpc_port=8001 --web_port=8000 --local_data_dir=/tmp/cnc_data
-
-
 HTTP Paths:
 - '/', '/ui/.*' : Redirect to the HTML page
 - '/api' : Internally processed
@@ -108,9 +103,11 @@ fn extract_path_params(path: &str, pattern: &str) -> Option<HashMap<String, Stri
 
 #[derive(Args)]
 struct Args {
-    rpc_port: NamedPortArg,
-    web_port: NamedPortArg,
+    port: NamedPortArg,
     local_data_dir: LocalPathBuf,
+
+    tls_certificate: LocalPathBuf,
+    tls_key: LocalPathBuf,
 
     #[arg(default = false)]
     make_fake_machines: bool,
@@ -120,6 +117,7 @@ struct HttpHandler {
     instance: Arc<MonitorImpl>,
     inner: WebServerHandler,
     data_handler: StaticFileHandler,
+    rpc_handler: rpc::Http2RequestHandler,
 }
 
 impl HttpHandler {
@@ -137,7 +135,33 @@ impl HttpHandler {
     }
 
     async fn handle_api_request_impl(&self, request: http::Request) -> Result<http::Response> {
+        /*
+        - Check for 'auth_key' cookie
+        - Base64 decode
+        - Lookup session
+        - Must de
+
+
+        User authentication will be required
+        - An initial user will be created on first launch
+        - Initial password printed to console
+
+
+        */
+
+        // TODO: Finish implementing all
+
+        /*
+        Securing things:
+        1. Switch to a router implementation so that we can ensure each path has access control.
+        2. Lock down which local files can be accessed via the static file handler.
+        */
+
+        // /api/
+        // /api/rpc/
+
         let path = request.head.uri.path.as_str();
+
         if path == "/api/files/upload" {
             if request.head.method != http::Method::POST {
                 return http::ResponseBuilder::new()
@@ -249,6 +273,11 @@ impl HttpHandler {
             return self.handle_api_request(request).await;
         }
 
+        if let Some(path) = request.head.uri.path.as_str().strip_prefix("/rpc/") {
+            request.head.uri.path = AsciiString::new(&format!("/{}", path));
+            return self.rpc_handler.handle_request(request, context).await;
+        }
+
         if let Some(path) = request.head.uri.path.as_str().strip_prefix("/data/") {
             request.head.uri.path = AsciiString::new(&format!("/{}", path));
             return self.data_handler.handle_request(request, context).await;
@@ -257,11 +286,6 @@ impl HttpHandler {
         if request.head.uri.path.as_str().starts_with("/ui/") {
             request.head.uri.path = AsciiString::new("/");
         }
-
-        // if request.head.uri.path.as_str() == "/camera" {
-        //     return
-        // media_web::camera_stream::respond_with_camera_stream(request).await;
-        // }
 
         self.inner.handle_request(request, context).await
     }
@@ -276,6 +300,8 @@ impl http::ServerHandler for HttpHandler {
     ) -> http::Response {
         self.handle_request_impl(request, context).await
     }
+
+    // TODO: Passthrough connection handling to the rpc hnadler.
 }
 
 #[executor_main]
@@ -359,20 +385,23 @@ async fn main() -> Result<()> {
     println!("Starting...");
     let start_time = Instant::now();
 
+    let certificate_file = file::read(args.tls_certificate).await?.into();
+    let private_key_file = file::read(args.tls_key).await?.into();
+
+    let mut tls_options =
+        crypto::tls::ServerOptions::recommended(certificate_file, private_key_file)?;
+
     let monitor =
         Arc::new(MonitorImpl::create(&args.local_data_dir, args.make_fake_machines).await?);
     service.register_dependency(monitor.clone()).await;
 
-    let mut rpc_server = rpc::Http2Server::new(Some(args.rpc_port.value()));
-    rpc_server.add_service(monitor.clone().into_service())?;
-    rpc_server.enable_cors();
-    rpc_server.allow_http1();
-    service.register_dependency(rpc_server.start()).await;
+    let mut rpc_handler = rpc::Http2RequestHandler::new();
+    rpc_handler.add_service(monitor.clone().into_service())?;
 
     service
         .register_dependency({
             let vars = json::Value::Object(map!(
-                "rpc_port" => &json::Value::Number(args.rpc_port.value() as f64)
+                "rpc_port" => &json::Value::Number(args.port.value() as f64)
             ));
 
             let web_handler = web::WebServerHandler::new(web::WebServerOptions {
@@ -388,11 +417,13 @@ async fn main() -> Result<()> {
                 instance: monitor,
                 inner: web_handler,
                 data_handler: StaticFileHandler::new(&args.local_data_dir),
+                rpc_handler,
             };
 
             let mut options = http::ServerOptions::default();
-            options.name = "WebServer".to_string();
-            options.port = Some(args.web_port.value());
+            options.port = Some(args.port.value());
+            options.tls = Some(tls_options.clone());
+            options.force_http2 = true;
 
             let web_server = http::Server::new(handler, options);
             Arc::new(web_server.start())

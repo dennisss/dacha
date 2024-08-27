@@ -11,10 +11,13 @@ macros = { path = "../../macros" }
 math = { path = "../../math", default-features = false }
 common = { path = "../../common", default-features = false }
 base_error = { path = "../../base/error", default-features = false }
+base_radix = { path = "../../base/radix", default-features = false }
+gcode_decimal = { path = "./decimal", default-features = false }
+gcode_macros = { path = "./macros" }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["base_error/alloc", "math/alloc", "common/alloc"]
-std = ["base_error/std", "math/std", "common/std"]
+alloc = ["base_error/alloc", "math/alloc", "common/alloc", "base_radix/alloc", "gcode_decimal/alloc"]
+std = ["base_error/std", "math/std", "common/std", "base_radix/std", "gcode_decimal/std"]

@@ -1,7 +1,7 @@
 // This file data type contains hints for certain special GCode commands which
 // can't be parsed normally since they don't conform to standard GCode syntaxes.
 
-use crate::decimal::Decimal;
+use gcode_decimal::Decimal;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum WordValueTypeHint {

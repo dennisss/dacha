@@ -14,7 +14,7 @@ use executor::sync::AsyncRwLock;
 use executor::{channel, lock, lock_async};
 use executor_multitask::{impl_resource_passthrough, ServiceResource, TaskResource};
 use file::{LocalPath, LocalPathBuf};
-use media_web::camera_manager::CameraManager;
+use media_camera::camera_manager::CameraManager;
 use protobuf::Message;
 
 use crate::camera_controller::CameraController;
@@ -54,6 +54,8 @@ struct Shared {
     local_data_dir: LocalPathBuf,
     config_presets: Vec<MachineConfig>,
     changes: ChangeDistributer,
+    usb_context: usb::Context,
+    libcamera_manager: Arc<libcamera::CameraManager>,
     camera_manager: Arc<CameraManager>,
     db: Arc<ProtobufDB>,
     files: FileManager,
@@ -214,6 +216,10 @@ impl MonitorImpl {
 
         if make_fake_machines {
             for i in 0..config_presets.len() {
+                if config_presets[i].firmware() != MachineConfig_Firmware::MARLIN {
+                    continue;
+                }
+
                 let mut fake_config = config_presets[i].clone();
                 fake_config.set_base_config(format!("{}_fake", fake_config.base_config()));
                 fake_config.clear_device();
@@ -252,6 +258,13 @@ impl MonitorImpl {
         // TODO: Add this and the database to the watched resources.
         let metric_store = MetricStore::new(db.clone());
 
+        let usb_context = usb::Context::create()?;
+        let libcamera_manager = libcamera::CameraManager::create()?;
+        let camera_manager = Arc::new(CameraManager::create(
+            usb_context.clone(),
+            libcamera_manager.clone(),
+        )?);
+
         let shared = Arc::new(Shared {
             local_data_dir: local_data_dir.to_owned(),
             changes,
@@ -261,7 +274,9 @@ impl MonitorImpl {
             files,
             metric_store,
             force_reconcile: reconcile_sender,
-            camera_manager: Arc::new(CameraManager::default()),
+            usb_context,
+            libcamera_manager,
+            camera_manager,
             make_fake_machines,
         });
 
@@ -285,12 +300,10 @@ impl MonitorImpl {
     async fn run(shared: Arc<Shared>, reconcile_receiver: channel::Receiver<()>) -> Result<()> {
         // The main loop has the job of periodically ensuring that we assign
 
-        let usb_context = usb::Context::create()?;
-
         // TODO: Pass in a cancellation token for this part.
 
         loop {
-            let made_new_devices = match Self::run_once(&shared, &usb_context).await {
+            let made_new_devices = match Self::run_once(&shared).await {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!("Device sync loop failed: {}", e);
@@ -322,8 +335,9 @@ impl MonitorImpl {
         }
     }
 
-    async fn run_once(shared: &Arc<Shared>, usb_context: &usb::Context) -> Result<bool> {
-        let mut devices = AvailableDevice::list_all(&usb_context).await?;
+    async fn run_once(shared: &Arc<Shared>) -> Result<bool> {
+        let mut devices =
+            AvailableDevice::list_all(&shared.usb_context, &shared.libcamera_manager).await?;
 
         if shared.make_fake_machines {
             for i in 0..4 {
@@ -1517,7 +1531,7 @@ impl MonitorImpl {
             .open_as_camera(&self.shared.camera_manager)
             .await?;
 
-        media_web::camera_stream::respond_with_camera_stream(subscriber).await
+        media_camera::camera_stream::respond_with_camera_stream(subscriber).await
     }
 
     pub async fn get_camera_playback_impl(

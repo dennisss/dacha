@@ -14,8 +14,12 @@ message ProgramRun {
 
     fixed64 file_id = 3;
 
-    // Last time this ProgramRun was saved to the database.
-    // Mainly used as a liveness check for runs in non-terminal states.
+    // Last time this ProgramRun proto was generated emitted by the Player struct.
+    //
+    // - Always updated when the proto is saved to the database or when requested via an RPC for
+    //   the current machine state.
+    // - This is used a a liveness check when there in a non-terminal state
+    //   (proto has no 'end_time').
     google.protobuf.Timestamp last_updated = 4;
 
     enum PlayerState {
@@ -82,7 +86,7 @@ message ProgramRun {
     float progress = 10;
 
     // Assuming we have been playing since last_progress_update, this is the amount of
-    // wall time remaining remaining
+    // wall time remaining (starting at last_progress_update)
     google.protobuf.Duration estimated_remaining_time = 11;
 
     // Number of lines in the file that have been fully processed (locally).

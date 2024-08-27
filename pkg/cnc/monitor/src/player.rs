@@ -33,7 +33,9 @@ const TEMPERATURE_HOLD_TIME: Duration = Duration::from_secs(4);
 /// When waiting for the temperature of a header to become '>= X', the
 /// temperature will only be considered ok if it is also
 /// '< X + TEMPERATURE_MAX_OVER_MIN'
-const TEMPERATURE_MAX_OVER_MIN: f32 = 10.0;
+const TEMPERATURE_COARSE_MAX_OVER_MIN: f32 = 10.0;
+
+const TEMPERATURE_FINE_MAX_OVER_MIN: f32 = 0.5;
 
 const TEMPERATURE_MIN_UNDER_MIN: f32 = 0.5;
 
@@ -84,6 +86,7 @@ enum LineAction {
     WaitForTemperature {
         axis_name: String,
         min_temperature: f32,
+        min_is_max_temperature: bool,
     },
 }
 
@@ -169,6 +172,8 @@ impl Player {
 
         let mut proto = state.proto.clone();
 
+        proto.set_last_updated(SystemTime::now());
+
         if let Some(message) = &state.status_message {
             proto.status_message_mut().set_text(message);
         }
@@ -246,6 +251,7 @@ impl Player {
 
         // TODO: Need to explicitly turn on/off silent mode somewhere.
 
+        let mut parser = gcode::ProgramParser::default();
         let mut parse_error = false;
         let mut stopping = false;
         let mut current_action = None;
@@ -349,6 +355,7 @@ impl Player {
                     LineAction::WaitForTemperature {
                         axis_name,
                         min_temperature,
+                        min_is_max_temperature,
                     } => {
                         let axis_config = {
                             // TODO: Verify that this axis is a header (ideally in the parsing
@@ -367,17 +374,24 @@ impl Player {
                         };
 
                         status_message = Some(format!(
-                            "Waiting for temperature of {} to be >= {:.1}",
+                            "Waiting for temperature of {} to be {} {:.1}",
                             axis_config.name(),
-                            *min_temperature
+                            if *min_is_max_temperature { "==" } else { ">=" },
+                            *min_temperature,
                         ));
 
                         let current_value = serial_interface.axis_value(&axis_name).await?;
                         if current_value.data.len() >= 1 {
                             let current_temp = current_value.data[0];
 
+                            let upper_threshold = if *min_is_max_temperature {
+                                TEMPERATURE_FINE_MAX_OVER_MIN
+                            } else {
+                                TEMPERATURE_COARSE_MAX_OVER_MIN
+                            };
+
                             if current_temp >= *min_temperature - TEMPERATURE_MIN_UNDER_MIN
-                                && current_temp < *min_temperature + TEMPERATURE_MAX_OVER_MIN
+                                && current_temp < *min_temperature + upper_threshold
                             {
                                 let now = Instant::now();
                                 let first_stable_time = *first_stable_time.get_or_insert(now);
@@ -420,7 +434,7 @@ impl Player {
 
             // TODO: If we can't parse it, we will pause the program and require the user to
             // ignore the line explicitly.
-            if let Err(e) = Self::parse_line(&shared, &line, &mut parsed_line) {
+            if let Err(e) = Self::parse_line(&shared, &mut parser, &line, &mut parsed_line) {
                 eprintln!("Failed to parse gcode: {}", e);
                 parse_error = true;
                 break;
@@ -503,131 +517,138 @@ impl Player {
         // out.state_update.set_last_progress_update(now);
         //             out.state_update
         //
-        // .set_estimated_remaining_time(Duration::from_secs_f32(v.to_f32()? * 60.0));
+        // .set_estimated_remaining_time(Duration::from_secs_f32(v.to_f32() * 60.0));
 
         Ok(())
     }
 
-    fn parse_line(shared: &Shared, line: &[u8], out: &mut ParsedLine) -> Result<()> {
-        // M109
-
-        let mut line_builder = gcode::LineBuilder::new();
-        {
-            let mut parser = gcode::Parser::new();
-            let mut iter = parser.iter(&line, true);
-            while let Some(event) = iter.next() {
-                match event {
-                    gcode::Event::Word(w) => line_builder.add_word(w)?,
-                    gcode::Event::ParseError(_) => {
-                        return Err(err_msg("Failed to parse the gcode line"));
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let line = match line_builder.finish() {
-            Some(v) => v,
-            None => return Ok(()),
-        };
-
-        let cmd = line.command().to_string();
+    fn parse_line(
+        shared: &Shared,
+        parser: &mut gcode::ProgramParser,
+        line: &[u8],
+        out: &mut ParsedLine,
+    ) -> Result<()> {
+        let mut elements = vec![];
+        parser.parse_line(line, &mut elements)?;
 
         let now = SystemTime::now();
 
-        match cmd.as_str() {
-            // Don't send these to the machine.
-            //
-            // M862.3 P "MK3S" ; printer model check
-            // M862.1 P0.4 ; nozzle diameter check
-            // M115 U3.13.2 ; tell printer latest fw version
-            // M486 <- For object labeling. Doesn't format nicely as gcode.
-            "M862.3" | "M862.1" | "M115" | "M486" => {
-                return Ok(());
-            }
+        let mut out_line = gcode::LineBuilder::default();
 
-            "M73" => {
-                let progress_key = if shared.use_silent_mode { 'Q' } else { 'P' };
-                let time_key = if shared.use_silent_mode { 'S' } else { 'R' };
+        for el in elements {
+            let cmd = match el {
+                gcode::ProgramElement::Command(cmd) => cmd,
+                _ => continue,
+            };
 
-                if let Some(v) = line.params().get(&time_key) {
-                    out.state_update.set_last_progress_update(now);
-                    out.state_update
-                        .set_estimated_remaining_time(Duration::from_secs_f32(v.to_f32()? * 60.0));
+            match &cmd {
+                gcode::Command::PrusaModelName(_)
+                | gcode::Command::NozzleDiameter(_)
+                | gcode::Command::PrintFirmwareCapabilities(_)
+                | gcode::Command::CancelObject(_) => {
+                    // Don't send these to the machine.
+                    continue;
                 }
 
-                if let Some(v) = line.params().get(&progress_key) {
-                    out.state_update.set_last_progress_update(now);
-                    out.state_update.set_progress(v.to_f32()? / 100.0);
+                gcode::Command::SetBuildPercentage(cmd) => {
+                    let progress = if shared.use_silent_mode {
+                        &cmd.silent_percentage
+                    } else {
+                        &cmd.normal_percentage
+                    };
+
+                    let time = if shared.use_silent_mode {
+                        &cmd.silent_time_remaining_mins
+                    } else {
+                        &cmd.normal_time_remaining_mins
+                    };
+
+                    if let Some(v) = time {
+                        out.state_update.set_last_progress_update(now);
+                        out.state_update
+                            .set_estimated_remaining_time(Duration::from_secs_f32(
+                                v.to_f32() * 60.0,
+                            ));
+                    }
+
+                    if let Some(v) = progress {
+                        out.state_update.set_last_progress_update(now);
+                        out.state_update.set_progress(v.to_f32() / 100.0);
+                    }
                 }
+
+                gcode::Command::SetExtruderTemperature(_) => {}
+                gcode::Command::SetExtruderTemperatureAndWait(cmd) => {
+                    // TODO: Verify there are no other params.
+                    let temp = cmd
+                        .inner
+                        .target_temperature
+                        .or(cmd.inner.min_temperature)
+                        .ok_or_else(|| err_msg("Missing temperature"))?;
+
+                    // Run without the wait
+                    out_line.add(&gcode::SetExtruderTemperature {
+                        inner: gcode::SetHeaterTemperature {
+                            tool: cmd.inner.tool,
+                            min_temperature: Some(temp),
+                            target_temperature: None,
+                        },
+                    });
+
+                    // TODO: Verify this axis exists.
+                    out.action = Some(LineAction::WaitForTemperature {
+                        axis_name: match cmd.inner.tool {
+                            Some(v) => format!("T{}", v),
+                            None => "T".into(),
+                        },
+                        min_temperature: temp.to_f32(),
+                        min_is_max_temperature: cmd.inner.target_temperature.is_some(),
+                    });
+
+                    // Don't send the regular command.
+                    continue;
+                }
+
+                // TODO: Dedup this code with M109
+                gcode::Command::SetBedTemperature(_) => {}
+                gcode::Command::SetBedTemperatureAndWaitCommand(cmd) => {
+                    // TODO: Verify there are no other params.
+                    let temp = cmd
+                        .inner
+                        .target_temperature
+                        .or(cmd.inner.min_temperature)
+                        .ok_or_else(|| err_msg("Missing temperature"))?;
+
+                    // Run without the wait
+                    out_line.add(&gcode::SetBedTemperature {
+                        inner: gcode::SetHeaterTemperature {
+                            tool: None,
+                            min_temperature: Some(temp),
+                            target_temperature: None,
+                        },
+                    });
+
+                    // TODO: Verify this axis exists.
+                    out.action = Some(LineAction::WaitForTemperature {
+                        axis_name: "B".into(),
+                        min_temperature: temp.to_f32(),
+                        min_is_max_temperature: cmd.inner.target_temperature.is_some(),
+                    });
+
+                    // Don't send the regular command.
+                    continue;
+                }
+
+                _ => {}
             }
 
-            // Set extruder temperature
-            "M104" => {}
-            // Set extruder temperature and wait.
-            "M109" => {
-                // TODO: Verify there are no other params.
-                let temp = line
-                    .params()
-                    .get(&'S')
-                    .ok_or_else(|| err_msg("M109 requires S parameter"))?;
-
-                let mut new_line = gcode::LineBuilder::new();
-                new_line.add_word(gcode::Word {
-                    key: 'M',
-                    value: gcode::WordValue::RealValue(104.into()),
-                })?;
-                new_line.add_word(gcode::Word {
-                    key: 'S',
-                    value: temp.clone(),
-                })?;
-                out.command_to_send = Some(new_line.finish().unwrap().to_string_compact());
-
-                // TODO: Verify this axis exists.
-                out.action = Some(LineAction::WaitForTemperature {
-                    axis_name: "T".into(),
-                    min_temperature: temp.to_f32()?,
-                });
-
-                // Don't send the regular command.
-                return Ok(());
-            }
-
-            // Set bed temperature
-            "M140" => {}
-            // Set bed temperature and wait.
-            // TODO: Dedup this code with M109
-            "M190" => {
-                // TODO: Verify there are no other params.
-                let temp = line
-                    .params()
-                    .get(&'S')
-                    .ok_or_else(|| err_msg("M109 requires S parameter"))?;
-
-                let mut new_line = gcode::LineBuilder::new();
-                new_line.add_word(gcode::Word {
-                    key: 'M',
-                    value: gcode::WordValue::RealValue(140.into()),
-                })?;
-                new_line.add_word(gcode::Word {
-                    key: 'S',
-                    value: temp.clone(),
-                })?;
-                out.command_to_send = Some(new_line.finish().unwrap().to_string_compact());
-
-                // TODO: Verify this axis exists.
-                out.action = Some(LineAction::WaitForTemperature {
-                    axis_name: "B".into(),
-                    min_temperature: temp.to_f32()?,
-                });
-
-                // Don't send the regular command.
-                return Ok(());
-            }
-            _ => {}
+            out_line.add(&cmd);
         }
 
-        out.command_to_send = Some(line.to_string_compact());
+        if !out_line.is_empty() {
+            out.command_to_send = Some(out_line.to_string_compact());
+        }
+
         Ok(())
     }
 

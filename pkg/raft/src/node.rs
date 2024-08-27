@@ -30,6 +30,67 @@ use crate::server::server::*;
 use crate::server::state_machine::*;
 use crate::Log;
 
+/*
+TODO:
+Proper shutdown ordering:
+- Ctrl-C
+- Node sees the shutdown cue
+    - If we are the leader, enter into a 'leader transfer state'
+    - Wait for the current server to no longer be the leader
+    - Mark ourselves as unelegable for becoming a candidate for a while
+    - Mark our RouteStore route as 'not ready' and wait for some propagation period.
+- Stop the RPC server
+    - Wait for all requests to be satisfied
+    - Flush
+- Now all the dependencies can be stopped.
+
+But, if the RPC server is dead, a follower may try to start an election
+But, if the follower stops operating, the RPC server will stale AppendEntry requests.
+
+So, step 1 is for the Node to notice that we are cancelled and notify the consensus module to stop competing for leadership
+Step 2: Wait for the current node to no longer be the leader of the raft group
+    TODO: Don't block if it is impossible to form a new leadership majority with only other healthy members.
+Step 2: RPC Server lame ducks and shuts down
+Step 3: Everything in the server shuts down
+
+So the proper dependency tree is:
+- Root
+    - raft::Node (with a special cleanup task)
+        - rpc::Server
+            - raft::Server
+
+During startup:
+- raft::Node must wait for
+
+- Extra raft states:
+    - Passive
+        -
+
+Note that until the main application server is ready to receive requests, the current
+
+
+*/
+/*
+Basically issue a timed ban ('Drain') on being the leader:
+
+- Mark consensus module as draining
+    - Any new Execute or Propose requests will start to be rejected with a 'Draining' alert
+        - User should block and retry once done draining
+    - If leader, send a TimeoutNow to the most healthy follower after all
+    - There is no stop to heartbeats until we are de-throned.
+
+    DrainState
+        - Draining
+        - Drained (until time)
+        - Undrainable (because there are not enough other followers )
+
+
+    while drained, it will never start an election
+
+*/
+
+// TODO: Rename back to SimpleServer or StandaloneServer.
+
 /// Configuration for creating a SimpleServer instance.
 ///
 /// TODO: Support disabling listening to multi-cast messages.
@@ -329,6 +390,8 @@ impl<R: 'static + Send> Node<R> {
                         route_store.set_local_route(local_route);
                     }
 
+                    // TODO: Verify that in an empty log state, this can't locally become leader.
+
                     server.run().await?;
 
                     Ok(())
@@ -423,6 +486,9 @@ impl ServerInit {
     }
 
     async fn wait_for_init(port: u16) -> Result<()> {
+        // TODO: Because we are using a root resource here, the server won't stop if we
+        // cancelled the wait_for_init future.
+
         let service = RootResource::new();
 
         let (sender, receiver) = channel::bounded(1);

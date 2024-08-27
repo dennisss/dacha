@@ -1,0 +1,20 @@
+[package]
+name = "gcode_test"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+doctest = false
+
+[dependencies]
+macros = { path = "../../../macros" }
+common = { path = "../../../common" }
+base_error = { path = "../../../base/error" }
+file = { path = "../../../file" }
+executor = { path = "../../../executor" }
+gcode = { path = ".." }
+
+[features]
+default = ["std", "alloc"]
+alloc = []
+std = []

@@ -13,6 +13,7 @@ use executor::{
     sync::SyncMutex,
 };
 use file::{LocalFile, LocalPath};
+use gcode::CommandCodec;
 use image::{format::jpeg::encoder::JPEGEncoder, types::ImageType, Image};
 
 pub struct ProgressSender {
@@ -74,16 +75,9 @@ pub struct ProgramSummary {
 
     pub max_bed_temperature: Option<f32>,
 
-    pub thumbnails: Vec<ProgramThumbnail>,
+    pub thumbnails: Vec<gcode::ProgramThumbnail>,
 
     pub unique_commands: HashSet<String>,
-}
-
-#[derive(Debug)]
-pub struct ProgramThumbnail {
-    pub data: Bytes,
-    pub width: usize,
-    pub height: usize,
 }
 
 #[derive(Default, Debug)]
@@ -260,7 +254,7 @@ impl LineSplitter {
 }
 
 pub struct ProgramSummarizer {
-    parser: gcode::Parser,
+    parser: gcode::ProgramParser,
     lines: channel::Receiver<Option<Bytes>>,
     output: oneshot::Sender<ProgramSummary>,
     summary: ProgramSummary,
@@ -270,15 +264,6 @@ pub struct ProgramSummarizer {
 #[derive(Default)]
 struct PartialSummary {
     current_tool: usize,
-    thumbnail: Option<PartialThumbnail>,
-}
-
-struct PartialThumbnail {
-    start_tag: String,
-    width: usize,
-    height: usize,
-    size: usize,
-    data_base64: String,
 }
 
 impl ProgramSummarizer {
@@ -287,7 +272,7 @@ impl ProgramSummarizer {
     ) -> (Self, oneshot::Receiver<ProgramSummary>) {
         let (sender, receiver) = oneshot::channel();
         let mut inst = Self {
-            parser: gcode::Parser::new(),
+            parser: gcode::ProgramParser::default(),
             lines,
             output: sender,
             summary: ProgramSummary::default(),
@@ -368,11 +353,9 @@ impl ProgramSummarizer {
             progress_reporter.update(progress);
         }
 
-        if self.partial_summary.thumbnail.is_some() {
+        if let Err(e) = self.parser.finish() {
             if self.summary.proto.first_failures_len() < 5 {
-                self.summary.proto.add_first_failures(
-                    "Hit the end of the file before parsing the entire thumbnail.".into(),
-                );
+                self.summary.proto.add_first_failures(e.to_string());
             }
 
             *self.summary.proto.num_invalid_lines_mut() += 1;
@@ -384,108 +367,103 @@ impl ProgramSummarizer {
     }
 
     fn interpret_line(&mut self, line: &[u8]) -> Result<()> {
-        let mut builder = gcode::LineBuilder::new();
+        let mut elements = vec![];
+        self.parser.parse_line(line, &mut elements)?;
 
-        let mut event_index = 0;
-        {
-            let mut error_in_line = false;
-            let mut parser = gcode::Parser::new();
-            let mut iter = parser.iter(&line[..], true);
-            while let Some(e) = iter.next() {
-                match e {
-                    gcode::Event::LineNumber(_) => {}
-                    gcode::Event::Comment(data, is_semi_comment) => {
-                        if is_semi_comment && event_index == 0 {
-                            let data = core::str::from_utf8(&data)?.trim();
-                            if data.is_empty() {
-                                return Ok(());
-                            }
+        let mut out_line = gcode::LineBuilder::default();
 
-                            // TODO: Verify that we are using consecutive lines for the comment.
-                            self.parse_thumbnail_comment(data)?;
-                            return Ok(());
+        for element in elements {
+            let command = match element {
+                gcode::ProgramElement::Thumbnail(thumbnail) => {
+                    self.summary.thumbnails.push(thumbnail);
+                    continue;
+                }
+                gcode::ProgramElement::Command(c) => c,
+            };
+
+            match &command {
+                gcode::Command::SetBuildPercentage(cmd) => {
+                    if let Some(v) = cmd.normal_time_remaining_mins {
+                        if !self.summary.proto.has_normal_duration() {
+                            self.summary
+                                .proto
+                                .set_normal_duration(Duration::from_secs_f32(v.to_f32() * 60.0));
                         }
                     }
-                    gcode::Event::ParseError(e) => {
-                        return Err(format_err!("Parsing error in line: {:?}", e));
-                    }
-                    gcode::Event::EndLine => {
-                        // event_index = 0;
-                    }
-                    gcode::Event::Word(w) => {
-                        builder.add_word(w)?;
+
+                    if let Some(v) = cmd.silent_time_remaining_mins {
+                        if !self.summary.proto.has_silent_duration() {
+                            self.summary
+                                .proto
+                                .set_silent_duration(Duration::from_secs_f32(v.to_f32() * 60.0));
+                        }
                     }
                 }
 
-                event_index += 1;
-            }
+                gcode::Command::SetExtruderTemperature(gcode::SetExtruderTemperature { inner })
+                | gcode::Command::SetExtruderTemperatureAndWait(
+                    gcode::SetExtruderTemperatureAndWait { inner },
+                ) => {
+                    let mut tool = self.partial_summary.current_tool;
+                    if let Some(t) = inner.tool {
+                        if t < 0 {
+                            return Err(err_msg("Tool index < 0"));
+                        }
+
+                        tool = t as usize;
+                    }
+
+                    let temp = inner
+                        .target_temperature
+                        .or(inner.min_temperature)
+                        .ok_or_else(|| err_msg("Missing temperature parameter"))?;
+
+                    let t = self.summary.tools.entry(tool).or_default();
+                    t.max_extruder_temperature = Some(f32::max(
+                        t.max_extruder_temperature.unwrap_or(-10000.0),
+                        temp.to_f32(),
+                    ));
+                }
+                gcode::Command::SetBedTemperature(gcode::SetBedTemperature { inner })
+                | gcode::Command::SetBedTemperatureAndWaitCommand(
+                    gcode::SetBedTemperatureAndWaitCommand { inner },
+                ) => {
+                    let temp = inner
+                        .target_temperature
+                        .or(inner.min_temperature)
+                        .ok_or_else(|| err_msg("Missing temperature parameter"))?;
+
+                    self.summary.max_bed_temperature = Some(f32::max(
+                        self.summary.max_bed_temperature.unwrap_or(-10000.0),
+                        temp.to_f32(),
+                    ));
+                }
+                gcode::Command::ToolChange(cmd) => {
+                    let num = cmd.tool as usize;
+                    self.summary.tools.entry(num).or_default();
+                    self.partial_summary.current_tool = num;
+                }
+                gcode::Command::SelectTool(cmd) => {
+                    let num = cmd.index as usize;
+                    self.summary.tools.entry(num).or_default();
+                    self.partial_summary.current_tool = num;
+                }
+                _ => {}
+            };
+
+            let command_word = {
+                let mut words = vec![];
+                command.to_command_words(&mut words);
+                words[0].to_string()
+            };
+
+            self.summary.unique_commands.insert(command_word);
+
+            out_line.add(&command);
         }
 
-        let line = match builder.finish() {
-            Some(v) => v,
-            None => return Ok(()),
-        };
-
-        self.summary
-            .unique_commands
-            .insert(line.command().to_string());
-
-        if line.command().group == 'T' {
-            // TODO: Verify that an integer was provided.
-            let num = line.command().number.to_f32() as usize;
-
-            self.summary.tools.entry(num).or_default();
-            self.partial_summary.current_tool = num;
-        }
-
-        if line.command() == &gcode::Command::new('M', 73) {
-            if let Some(v) = line.params().get(&'R') {
-                if !self.summary.proto.has_normal_duration() {
-                    self.summary
-                        .proto
-                        .set_normal_duration(Duration::from_secs_f32(v.to_f32()? * 60.0));
-                };
-            }
-
-            if let Some(v) = line.params().get(&'S') {
-                if !self.summary.proto.has_silent_duration() {
-                    self.summary
-                        .proto
-                        .set_silent_duration(Duration::from_secs_f32(v.to_f32()? * 60.0));
-                };
-            }
-        }
-
-        // TODO: We should self implement any blocking gcodes in the player.
-        if line.command() == &gcode::Command::new('M', 104)
-            || line.command() == &gcode::Command::new('M', 109)
-        {
-            if let Some(temp) = line.params().get(&'S') {
-                let t = self
-                    .summary
-                    .tools
-                    .get_mut(&self.partial_summary.current_tool)
-                    .unwrap();
-                t.max_extruder_temperature = Some(f32::max(
-                    t.max_extruder_temperature.unwrap_or(-10000.0),
-                    temp.to_f32()?,
-                ));
-            }
-        }
-
-        // TODO: Also interpret the 'precise' temp parameters as well.
-        if line.command() == &gcode::Command::new('M', 140)
-            || line.command() == &gcode::Command::new('M', 190)
-        {
-            if let Some(temp) = line.params().get(&'S') {
-                self.summary.max_bed_temperature = Some(f32::max(
-                    self.summary.max_bed_temperature.unwrap_or(-10000.0),
-                    temp.to_f32()?,
-                ));
-            }
-        }
-
-        if line.to_string_compact().len() > gcode::MAX_STANDARD_LINE_LENGTH {
+        // TODO: gRBL limit is 128?
+        if out_line.to_string_compact().len() > gcode::MAX_STANDARD_LINE_LENGTH {
             return Err(err_msg("Line is too long to send to machines"));
         }
 
@@ -499,79 +477,6 @@ impl ProgramSummarizer {
         M191 <- chamber temperature
 
         */
-
-        Ok(())
-    }
-
-    /*
-    Typically thumbnails are stored in the gcode files with lines that look like the following:
-    ;
-    ; thumbnail begin 160x120 16996
-    ; iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAYAAAB1ovlvAAAxkUlEQVR4Ae2d+ZOc1Xnv33AL55Zvqs
-    ; D32nHZufc6DoTYTqIYkxAMCNAyo32075p9RgsSWhBCbLIQq5DYDWYxqyWM2IwNGNsylRjjuJzEqSQ/
-    ....
-    ; pSr/zJv+nNG3eebM2d5WS5ZEfng06u63T5/le579PKcaHByse3p66uuuu24SrV27th4ZGalnzZpVz5
-    ; thumbnail end
-    ;
-    */
-    fn parse_thumbnail_comment(&mut self, data: &str) -> Result<()> {
-        let parts = data.split_ascii_whitespace().collect::<Vec<_>>();
-
-        if self.partial_summary.thumbnail.is_none()
-            && (parts[0] == "thumbnail"
-                || parts[0] == "thumbnail_QOI"
-                || parts[0] == "thumbnail_JPG")
-            && parts.len() >= 2
-            && parts[1] == "begin"
-        {
-            if parts.len() < 4 {
-                return Err(err_msg(
-                    "Expected at least 4 fields in thumbnail start line",
-                ));
-            }
-
-            let (width_str, height_str) = parts[2]
-                .split_once('x')
-                .ok_or_else(|| err_msg("Invalid image dimensions format"))?;
-            let width = width_str.parse::<usize>()?;
-            let height = height_str.parse::<usize>()?;
-
-            let size = parts[3].parse::<usize>()?;
-
-            self.partial_summary.thumbnail = Some(PartialThumbnail {
-                start_tag: parts[0].to_string(),
-                width,
-                height,
-                size,
-                data_base64: String::new(),
-            });
-            return Ok(());
-        }
-
-        let mut thumb = match self.partial_summary.thumbnail.take() {
-            Some(v) => v,
-            None => return Ok(()),
-        };
-
-        if parts.len() >= 2 && parts[0] == &thumb.start_tag && parts[1] == "end" {
-            if thumb.data_base64.len() != thumb.size {
-                return Err(err_msg("Not enough data was parsed for the thumbnail"));
-            }
-
-            let data = base_radix::base64_decode(&thumb.data_base64)?.into();
-
-            self.summary.thumbnails.push(ProgramThumbnail {
-                data,
-                width: thumb.width,
-                height: thumb.height,
-            });
-            return Ok(());
-        }
-
-        // TODO: Don't allow overflowing the size.
-        thumb.data_base64.push_str(data);
-
-        self.partial_summary.thumbnail = Some(thumb);
 
         Ok(())
     }

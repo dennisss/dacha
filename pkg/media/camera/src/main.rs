@@ -193,7 +193,10 @@ async fn main() -> Result<()> {
 
     let root_resource = executor_multitask::RootResource::new();
 
-    let camera_manager = CameraManager::create()?;
+    let usb_context = usb::Context::create()?;
+    let libcamera_manager = libcamera::CameraManager::create()?;
+
+    let camera_manager = CameraManager::create(usb_context, libcamera_manager)?;
 
     let service_impl = ServiceImpl {
         camera_manager: camera_manager.clone(),

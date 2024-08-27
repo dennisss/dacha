@@ -36,7 +36,10 @@ async fn main() -> Result<()> {
 
     let args = common::args::parse_args::<Args>()?;
 
-    let camera_manager = CameraManager::create()?;
+    let usb_context = usb::Context::create()?;
+    let libcamera_manager = libcamera::CameraManager::create()?;
+
+    let camera_manager = CameraManager::create(usb_context, libcamera_manager)?;
 
     let mut entries = camera_manager.list().await?;
 

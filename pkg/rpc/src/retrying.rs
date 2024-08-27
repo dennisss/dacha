@@ -5,6 +5,21 @@ use net::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 
 use crate::status::StatusCode;
 
+/*
+TODO:
+Per-service method limit the max rate
+
+- In the last N seconds, count the number of successful requests M
+- Quantify max QPS as 'M / N'
+- Failures count as
+
+
+- Fail fast:
+    - If true, immediately reject if we would end up waiting too long to serve the request
+    - Else, wait and possibly exceed the request deadline.
+
+*/
+
 #[derive(Clone)]
 pub struct RetryingOptions {
     /// TODO: Switch to outbound rate based throttling. We should monitor the

@@ -12,6 +12,12 @@
 #   iManufacturer           1 Prusa Research (prusa3d.com)
 #   iProduct                2 Original Prusa i3 MK3
 #   iSerial                 3 CZPX1419X004XK19470
+#
+# Capabilities returned by M115 are:
+#   Cap:AUTOREPORT_TEMP:1
+#   Cap:AUTOREPORT_FANS:1
+#   Cap:AUTOREPORT_POSITION:1
+#   Cap:EXTENDED_M20:1
 
 model_name: "Prusa i3 MK3s+"
 auto_connect: true
@@ -33,6 +39,10 @@ baud_rate: 115200
 reset_using_dtr: true
 silent_mode: true
 
+# Sample state output:
+#   T:24.0 /0.0 B:24.7 /0.0 T0:24.0 /0.0 @:0 B@:0 P:0.0 A:31.2
+#   X:0.00 Y:0.00 Z:0.15 E:0.00 Count X: 0.00 Y:0.00 Z:0.15 E:0.00
+#   E0:0 RPM PRN1:0 RPM E0@:0 PRN1@:0
 axes: [
     { id: "X" type: POSITION range { min: 0 max: 255 } },
     { id: "Y" type: POSITION range { min: -4 max: 212.5 } },

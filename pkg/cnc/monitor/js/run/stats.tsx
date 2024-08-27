@@ -19,12 +19,28 @@ export class ProgramRunStatsBox extends React.Component<{ run: any, context: Pag
             });
         }
 
+
+        let end_time = null;
+        let end_timeout = false;
         if (run.end_time) {
+            end_time = new Date(timestamp_proto_to_millis(run.end_time));
+        } else if (run.last_updated) {
+            end_time = new Date(timestamp_proto_to_millis(run.last_updated));
+
+            // 'Timing out' means that most likely the program/server crashed before being gracefully stopped.
+            if (new Date().getTime() - end_time.getTime() > 90 * 1000) {
+                end_timeout = true;
+            }
+        }
+
+
+        if (end_time) {
             properties.push({
                 name: 'End Time:',
-                value: new Date(timestamp_proto_to_millis(run.end_time)).toLocaleString()
+                value: end_time.toLocaleString() + (end_timeout ? ' (Timeout)' : '')
             });
         }
+        // TODO: 
 
         return (
             <Card id="run-stats" header="Stats" style={{ marginBottom: 10 }}>

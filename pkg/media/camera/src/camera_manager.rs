@@ -143,10 +143,10 @@ struct OpenCameraEntry {
 }
 
 impl CameraManager {
-    pub fn create() -> Result<Self> {
-        let usb_context = usb::Context::create()?;
-        let libcamera_manager = libcamera::CameraManager::create()?;
-
+    pub fn create(
+        usb_context: usb::Context,
+        libcamera_manager: Arc<libcamera::CameraManager>,
+    ) -> Result<Self> {
         Ok(Self {
             shared: Arc::new(Shared {
                 state: AsyncMutex::default(),

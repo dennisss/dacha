@@ -1,8 +1,6 @@
 name: "system.manager"
 replicas: 1
 worker {
-    persistent: true
-
     args: [
         "/volumes/bundle/built/pkg/container/cluster_manager",
         "--port=rpc"

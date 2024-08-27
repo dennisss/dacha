@@ -189,13 +189,9 @@ export function get_program_run_properties(run: any | null, file: any | null, th
 export function run_elapsed_time(run: any): string {
     let value = '<unknown>';
     let start_time = timestamp_proto_to_millis(run.start_time);
-    if (run.end_time) {
-        let end_time = timestamp_proto_to_millis(run.end_time);
-        value = format_duration_secs((end_time - start_time) / 1000, TimeUnit.Minute);
-    } else {
-        let end_time = (new Date()).getTime();
-        value = format_duration_secs((end_time - start_time) / 1000, TimeUnit.Minute);
-    }
+
+    let end_time = timestamp_proto_to_millis(run.end_time || run.last_updated);
+    value = format_duration_secs((end_time - start_time) / 1000, TimeUnit.Minute);
 
     return value;
 }
