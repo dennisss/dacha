@@ -3,7 +3,7 @@
 // TODO: This code needs more error checking for the case of getting really
 // large inputs.
 
-mod window;
+pub mod window;
 
 use common::errors::*;
 use parsing::binary::{le_u16, le_u32};

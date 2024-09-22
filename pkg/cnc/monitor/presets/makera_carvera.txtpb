@@ -1,0 +1,200 @@
+# proto-file: pkg/cnc/monitor/proto/machine_config.proto
+# proto-message: MachineConfig
+
+# Config for a Makera Carvera desktop CNC machine.
+#
+# This shows up via USB as a general FTDI chip and a serial port of the form /dev/ttyUSB0.
+# Note that since the 
+
+model_name: "Makera Carvera"
+
+# (0, 0, 0) is the max position at the upper right of the machine limited by hardware end stops,
+# (-370, -250, -135) is the min position and limited by software end stops.
+# Anchor 1 (inner corner of L-bracket) is at (-360.158, -234.568)
+# Bottom left of the work area is (-15, -15) away from Anchor 1
+work_area {
+    # The spoil board area.
+    # NOTE: Includes the unuseable toolchanger plastic overhang.
+    x_range { min: -375.158 max: -19.158 }
+    y_range { min: -249.568 max: -9.568 }
+
+    background {
+        path: "pkg/cnc/monitor/presets/makera_carvera_background.svg"
+        left: -380.158
+        bottom: -254.568
+        width: 394
+        height: 260
+    }
+}
+
+# TODO: Disable auto-device creation for this but use this to filter the recommended device?
+# device {
+#    usb {
+#        vendor: 0x0403  # Future Technology Devices International, Ltd
+#        product: 0x6001 # FT232 Serial (UART) IC
+#    }
+# }
+
+firmware: CARVERA
+baud_rate: 250000
+
+axes: [
+    { id: "X" type: POSITION range { min: -370 max: 0 } },
+    { id: "Y" type: POSITION range { min: -250 max: 0 } },
+    { id: "Z" type: POSITION range { min: -135 max: 0 } },
+    {
+        id: "VACUUM" type: SWITCH
+        value: ["DIAG:V:0", "DIAG:V:1"]
+        switch { on: "M801" off: "M802" }
+    },
+    {
+        id: "LIGHT" type: SWITCH
+        value: ["DIAG:G:0"]
+        switch { on: "M821" off: "M822" }
+    },
+    {
+        id: "SPINDLEFAN" type: SWITCH
+        value: ["DIAG:F:0", "DIAG:F:1"]
+        switch { on: "M811" off: "M812" }
+    },
+    {
+        id: "LASER" type: SWITCH
+        value: ["DIAG:L:0", "DIAG:L:1"]
+    },
+    {
+        id: "WP_CHARGER" type: SWITCH
+        value: ["DIAG:C:0"]
+        switch { on: "M841" off: "M842" }
+    },
+    {
+        id: "AIR" type: SWITCH
+        value: ["DIAG:R:0"]
+        switch { on: "M7" off: "M9" }
+    },
+    {
+        id: "X_MIN" type: SWITCH
+        value: ["DIAG:E:0"]
+    },
+    {
+        id: "X_MAX" type: SWITCH
+        value: ["DIAG:E:1"]
+    },
+    {
+        id: "Y_MIN" type: SWITCH
+        value: ["DIAG:E:2"]
+    },
+    {
+        id: "Y_MAX" type: SWITCH
+        value: ["DIAG:E:3"]
+    },
+    {
+        id: "Z_MAX" type: SWITCH
+        value: ["DIAG:E:4"]
+    },
+    {
+        id: "LID" type: SWITCH
+        value: ["DIAG:E:5"]
+    },
+    {
+        id: "TOOL_SENSOR_POWER" type: SWITCH
+        value: ["DIAG:T:0"]
+        switch { on: "M831" off: "M832" }
+    },
+    # Endstop used for homing the clamp/unclamp stepper
+    {
+        id: "ATC_HOME" type: SWITCH
+        value: ["DIAG:A:0"]
+    },
+    {
+        id: "TOOL_SENSOR" type: SWITCH
+        value: ["DIAG:A:1"]
+    },
+
+    {
+        id: "WP_VOLTAGE" type: GENERIC_SENSOR
+        value: ["STATUS:W:0"]
+    },
+    {
+        id: "SPINDLE_TEMP" type: GENERIC_SENSOR
+        value: ["STATUS:S:4"]
+    },
+    {
+        id: "SPINDLE_PWM" type: GENERIC_SENSOR
+        value: ["STATUS:S:5"]
+    },
+    {
+        # NOTE: The id must match the tool change code.
+        id: "ATC_STATE" type: GENERIC_SENSOR
+        value: ["STATUS:A:0"]
+        default_value: [0]
+    }
+
+    # ??: Something probe related
+    # DIAG:P:0
+
+    # ??: Something calibration related
+    # DIAG:P:1
+]
+
+spindle {
+    default_speed_rpm: 10000
+    max_speed_rpm: 15000
+    supports_current_speed: true
+    supports_direction: false
+}
+
+tools {
+    num_slots: 7
+
+    loaded_tools: [
+        {
+            index: 0
+            name: "Wireless Probe"
+        },
+        {
+            index: 1
+            name: "1/8in Single Flute Bit 25mm"
+            milling {
+                diameter: 25
+            }
+        },
+        {
+            index: 2
+            name: "1/8in 30 degree 0.2mm V-Bit"
+            milling {
+                diameter: 0.2
+                v_angle: 30
+            }
+        },
+        {
+            index: 3
+            name: "1/8in 0.8mm Corn Bit"
+            milling {
+                diameter: 0.8
+            }
+        },
+        {
+            index: 4
+            name: "1/8in Single Flute Bit 12mm"
+            milling {
+                diameter: 12
+            }
+        },
+        {
+            index: 5
+            name: "UV Solder Mask Removal Tool"
+            milling {
+                # TODO
+                diameter: 0
+            }
+        },
+        {
+            index: 6
+            name: "1/8in Test Rod"
+            milling {
+                # Just to use if doing an XYZ manual probe
+                diameter: 3.17500
+            }
+        }
+    ]
+}

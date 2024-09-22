@@ -325,7 +325,7 @@ class FileBox extends React.Component<FileBoxProps> {
             },
         ];
 
-        if (file['program']) {
+        if (file['program'] && file['program']['normal_duration']) {
             let dur = format_duration_proto(file['program']['normal_duration']);
             if (file['program']['silent_duration']) {
                 dur += ` (Silent: ${format_duration_proto(file['program']['silent_duration'])})`;

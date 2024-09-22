@@ -1,0 +1,15 @@
+[package]
+name = "heatshrink"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+compression = { path = "../" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

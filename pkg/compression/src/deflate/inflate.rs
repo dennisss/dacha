@@ -88,6 +88,8 @@ enum ReadCodesResult {
         ^ But still enforce the window size if it is fixed
 */
 
+// TODO: Need to test this when the output buffer length is exactly the length
+// of the expected output data (same for the ZLib one)
 pub struct Inflater {
     state: State,
 
@@ -138,7 +140,7 @@ impl Inflater {
         // NOTE: We don't wait for the output buffer to be fully consumed as there are
         // cases where the final input byte marking that the block is done isn't
         // read just because this is no output data remaining.
-        while out.index < out.buf.len() {
+        loop {
             match self.update_inner(&mut strm, &mut out) {
                 Ok(_) => {}
                 Err(e) => {
@@ -175,6 +177,7 @@ impl Inflater {
             input_read,
             output_written,
             done,
+            event: (),
         })
     }
 
@@ -411,14 +414,13 @@ impl Inflater {
         dist_tree: &HuffmanTree,
         out: &mut OutputBuffer,
     ) -> Result<ReadCodesResult> {
-        while out.index < out.buf.len() {
-            // loop {
+        loop {
             let code = litlen_tree.read_code(strm)?;
 
             if code < END_OF_BLOCK {
-                // if out.index >= out.buf.len() {
-                //     break;
-                // }
+                if out.index >= out.buf.len() {
+                    return Err(BitIoError::NotEnoughBits.into());
+                }
 
                 out.buf[out.index] = code as u8;
                 out.index += 1;
@@ -453,6 +455,10 @@ impl Inflater {
         output_window: &CyclicBuffer,
         out: &mut OutputBuffer,
     ) -> Result<Option<LenDist>> {
+        if out.index == out.buf.len() {
+            return Err(BitIoError::NotEnoughBits.into());
+        }
+
         let mut len = lendist.len;
         let dist = lendist.dist;
 

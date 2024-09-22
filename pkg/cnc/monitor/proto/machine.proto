@@ -33,7 +33,7 @@ message MachineStateProto {
         // TODO: Need a DISCONNECTING state.
 
         // The link to the machine is fully setup and the machine is believed to be healthy
-        // (responding to keep alives).
+        // (responding to keep alives and we have recently recieved a complete state update).
         //
         // Most other fields in the MachineStateProto are only valid in this state.
         CONNECTED = 4;
@@ -53,7 +53,24 @@ message MachineStateProto {
     // information on the candidate device which can be connected to.
     DeviceSelector connection_device = 5;
 
+    // Latest reported values of all axes.
+    // For position axes, these will be in the world coordinate scale.
     repeated AxisValue axis_values = 3;
+
+    //
+    repeated CoordinateSystemState coordinate_systems = 8;
+
+    // Present in gRBL/Smoothieware style controllers that have a state string.
+    string firmware_state = 9;
+
+    // Note that most firmwares represent this state globally rather than per-tool so this
+    // information may not make sense if a spinable tool isn't currently attached to the
+    // motion head.
+    //
+    // TODO: Automatically ensure the spindle is off when not on a spinable tool.
+    SpindleState spindle = 10;
+
+    ToolsState tools = 11;
 
     LoadedProgramState loaded_program = 6;
 
@@ -79,15 +96,45 @@ message MachineStateProto {
     repeated CameraState cameras = 7;
 }
 
+message ToolsState {
+    // TODO: Have better enforcement that this is definitely present when the machine is connected.
+    int32 active_tool = 1;
+}
+
+message SpindleState {
+    enum Mode {
+        UNKNOWN = 0;
+        OFF = 1;
+        ON_CLOCKWISE = 2;
+        ON_COUNTERCLOCKWISE = 3;        
+    }
+
+    Mode mode = 1;
+    float target_speed_rpm = 3;
+    float current_speed_rpm = 4;
+}
 
 message AxisValue {
     string id = 1;
 
-    // For heaters, this will contain two elements [current_temperature, target_temperature]
+    // - For heaters, this will contain two elements [current_temperature, target_temperature]
+    // - For switches, this will contain two elements [binary on/off, pwm value from 0-1]
+    // - All other axis types will contain one value.
     repeated float value = 2;
 
     // Last time we got the value of this axis from the machine.
     google.protobuf.Timestamp last_reported = 3;
+}
+
+message CoordinateSystemState {    
+    // The GCode that can used to switch to this coordinate system 
+    string gcode = 1;
+
+    // If true, future commands will use operate in this coordinate system.
+    bool current = 2;
+
+    // Origin of this coordinate system relative to the machine/world coordinate system.
+    repeated AxisValue offset = 3;
 }
 
 message LoadedProgramState {

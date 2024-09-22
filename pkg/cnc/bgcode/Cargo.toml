@@ -1,0 +1,26 @@
+[package]
+name = "bgcode"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+compression = { path = "../../compression" }
+crypto = { path = "../../crypto" }
+heatshrink = { path = "../../compression/heatshrink" }
+meatpack = { path = "../../compression/meatpack" }
+gcode = { path = "../gcode" }
+
+
+[build-dependencies]
+parsing_compiler = { path = "../../parsing/compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

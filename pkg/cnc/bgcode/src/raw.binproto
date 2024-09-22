@@ -1,0 +1,188 @@
+structs {
+    name: "FileHeader"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "magic"
+        type { buffer { element_type { primitive: U8 } fixed_length: 4 } }
+    }
+    field {
+        name: "version"
+        type { primitive: U32 }
+    }
+    field {
+        name: "checksum_type"
+        type { named: "ChecksumType" }
+    }
+}
+
+enums {
+    name: "ChecksumType"
+    endian: LITTLE_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "NoChecksum"
+        value: 0
+    }
+    values {
+        name: "CRC32"
+        value: 1
+    }
+}
+
+structs {
+    name: "BlockHeader"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "typ"
+        type { named: "BlockType" }
+    }
+    field {
+        name: "compression"
+        type { named: "CompressionType" }
+    }
+    field {
+        name: "uncompressed_size"
+        type { primitive: U32 }
+        presence: "compression.raw() != 0"
+    }
+    field {
+        name: "compressed_size"
+        type { primitive: U32 }
+    }
+}
+
+enums {
+    name: "BlockType"
+    endian: LITTLE_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "FileMetadata"
+        value: 0
+    }
+    values {
+        name: "GCode"
+        value: 1
+    }
+    values {
+        name: "SlicerMetadata"
+        value: 2
+    }
+    values {
+        name: "PrinterMetadata"
+        value: 3
+    }
+    values {
+        name: "PrintMetadata"
+        value: 4
+    }
+    values {
+        name: "Thumbnail"
+        value: 5
+    }
+}
+
+enums {
+    name: "CompressionType"
+    endian: LITTLE_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "Uncompressed"
+        value: 0
+    }
+    values {
+        name: "Deflate"
+        value: 1
+    }
+    values {
+        name: "HeatshrinkWindow11Lookahead4"
+        value: 2
+    }
+    values {
+        name: "HeatshrinkWindow12Lookahead4"
+        value: 3
+    }
+}
+
+structs {
+    name: "MetadataParams"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "encoding"
+        type { named: "MetadataEncodingType" }
+    }
+}
+
+structs {
+    name: "ThumbnailParams"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "format"
+        type { named: "ImageFormat" }
+    }
+    field {
+        name: "width"
+        type { primitive: U16 }
+    }
+    field {
+        name: "height"
+        type { primitive: U16 }
+    }
+}
+
+structs {
+    name: "GCodeParams"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "encoding"
+        type { named: "GCodeEncodingType" }
+    }
+}
+
+
+enums {
+    name: "MetadataEncodingType"
+    endian: LITTLE_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "INI"
+        value: 0
+    }
+}
+
+enums {
+    name: "GCodeEncodingType"
+    endian: LITTLE_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "NoEncoding"
+        value: 0
+    }
+    values {
+        name: "Meatpack"
+        value: 1
+    }
+    values {
+        name: "MeatpackWithComments"
+        value: 2
+    }
+}
+
+enums {
+    name: "ImageFormat"
+    endian: LITTLE_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "PNG"
+        value: 0
+    }
+    values {
+        name: "JPG"
+        value: 1
+    }
+    values {
+        name: "QOI"
+        value: 2
+    }
+}
+
+

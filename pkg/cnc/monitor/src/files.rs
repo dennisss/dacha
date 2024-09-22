@@ -301,7 +301,7 @@ impl FileManager {
         let mut new_proto = file_lock.proto.clone();
 
         let runner = ChildTask::<Result<FileProto>>::spawn(async move {
-            if name.ends_with(".gcode") || name.ends_with(".nc") {
+            if name.ends_with(".gcode") || name.ends_with(".nc") || name.ends_with(".bgcode") {
                 let summary = ProgramSummary::create(&raw_path, file_size, progress_sender).await?;
 
                 // NOTE: Logic below this point isn't tracked by the progress tracker and will

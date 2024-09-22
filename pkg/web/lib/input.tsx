@@ -1,8 +1,10 @@
 import React from "react";
 
 export interface EditInputProps {
-    value: string
-    onChange: (value: string, done: () => void) => void
+    value: string;
+    onChange: (value: string, done: () => void) => void;
+    style?: any;
+    onActive?: (active: boolean) => void;
 }
 
 interface EditInputState {
@@ -17,6 +19,9 @@ export class EditInput extends React.Component<EditInputProps, EditInputState> {
 
     _on_change = (e) => {
         this.setState({ _user_value: e.target.value });
+        if (this.props.onActive) {
+            this.props.onActive(true);
+        }
     }
 
     _on_key_up = (e) => {
@@ -32,7 +37,17 @@ export class EditInput extends React.Component<EditInputProps, EditInputState> {
 
         this.props.onChange(this.state._user_value, () => {
             this.setState({ _user_value: null });
+            if (this.props.onActive) {
+                this.props.onActive(false);
+            }
         });
+    }
+
+    _cancel = () => {
+        this.setState({ _user_value: null });
+        if (this.props.onActive) {
+            this.props.onActive(false);
+        }
     }
 
     render() {
@@ -44,13 +59,13 @@ export class EditInput extends React.Component<EditInputProps, EditInputState> {
         }
 
         return (
-            <div className="input-group">
+            <div className="input-group" style={this.props.style}>
                 <input type="text" className="form-control" value={value} onChange={this._on_change} onKeyUp={this._on_key_up} />
                 {custom_value ? <>
                     <button className="btn btn-outline-dark" onClick={this._commit} style={{ lineHeight: 1 }}>
                         <span className="material-symbols-outlined">check</span>
                     </button>
-                    <button className="btn btn-outline-dark" onClick={() => this.setState({ _user_value: null })} style={{ lineHeight: 1 }}>
+                    <button className="btn btn-outline-dark" onClick={this._cancel} style={{ lineHeight: 1 }}>
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </> : null}

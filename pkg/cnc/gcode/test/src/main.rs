@@ -37,13 +37,33 @@ async fn main() -> Result<()> {
         println!("{}", path.as_str());
 
         let data = file::read(path).await?;
-        let s = std::str::from_utf8(&data)?;
+        // let s = std::str::from_utf8(&data)?;
 
         let mut parser = gcode::ProgramParser::default();
-        for line in s.split('\n') {
+        let mut remaining = &data[..];
+
+        let mut line_num = 1;
+
+        let mut num_errors = 0;
+
+        while !remaining.is_empty() {
             let mut out = vec![];
-            if let Err(e) = parser.parse_line(line.as_bytes(), &mut out) {
-                eprintln!("{}", e);
+            let n = parser.parse_line(remaining, true, &mut out);
+            remaining = &remaining[n..];
+
+            for el in out {
+                if let gcode::ProgramElement::Error(e) = &el {
+                    eprintln!("Line: {}: {}", line_num, e);
+
+                    num_errors += 1;
+
+                    if num_errors >= 10 {
+                        return Ok(());
+                    }
+                }
+                if let gcode::ProgramElement::EndOfLine = &el {
+                    line_num += 1;
+                }
             }
         }
     }

@@ -82,6 +82,23 @@ export class ConnectionBox extends React.Component<ConnectionBoxProps, Connectio
                         </div>
                     </div>
                 )
+            },
+            {
+                name: 'Baud Rate',
+                value: (
+                    <div>
+                        <input type="number" className="form-control" value={machine_config.baud_rate} onChange={(e) => {
+                            let new_value = e.target.value * 1;
+
+                            let config = shallow_copy(this.state._config || {});
+                            config.baud_rate = new_value;
+
+                            this.setState({
+                                _config: config
+                            });
+                        }} />
+                    </div>
+                )
             }
         );
 

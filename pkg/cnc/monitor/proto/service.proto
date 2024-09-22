@@ -15,6 +15,8 @@ service Monitor {
     // we are 'watch' was configured.
     rpc QueryEntities (QueryEntitiesRequest) returns (stream QueryEntitiesResponse);
 
+    rpc CreateMachine (CreateMachineRequest) returns (CreateMachineResponse);
+
     // Executes some operation on a specific machine.
     rpc RunMachineCommand (RunMachineCommandRequest) returns (RunMachineCommandResponse);
 
@@ -32,6 +34,14 @@ service Monitor {
     rpc GetRunHistory (GetRunHistoryRequest) returns (GetRunHistoryResponse);
 
     rpc QueryMetric (QueryMetricRequest) returns (stream QueryMetricResponse);
+}
+
+message CreateMachineRequest {
+    MachineConfig config = 1;
+}
+
+message CreateMachineResponse {
+    fixed64 machine_id = 1;
 }
 
 message GetCameraPlaybackRequest {
@@ -224,6 +234,10 @@ message RunMachineCommandRequest {
         JogCommand jog = 18;
 
         bool delete_machine = 19;
+
+        int32 tool_change = 20;
+
+        SpindleState set_spindle_state = 21;
     }
 }
 
@@ -234,7 +248,7 @@ message LoadProgramCommand {
 message GotoCommand {
     float x = 1;
     float y = 2;
-    uint32 feed_rate = 3;
+    float feed_rate = 3;
 }
 
 message JogCommand {

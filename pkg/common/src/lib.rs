@@ -10,7 +10,8 @@
     const_maybe_uninit_uninit_array,
     slice_take,
     allocator_api,
-    slice_ptr_get
+    slice_ptr_get,
+    core_intrinsics
 )]
 #![cfg_attr(all(target_arch = "aarch64"), feature(stdarch_arm_crc32))]
 #![no_std]

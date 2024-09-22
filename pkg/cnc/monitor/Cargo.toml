@@ -6,6 +6,7 @@ edition = "2018"
 [dependencies]
 base_error = { path = "../../base/error" }
 base_radix = { path = "../../base/radix" }
+base_util = { path = "../../base/util" }
 common = { path = "../../common" }
 macros = { path = "../../macros" }
 protobuf = { path = "../../protobuf" }
@@ -27,11 +28,14 @@ automata = { path = "../../automata" }
 peripherals = { path = "../../peripherals" }
 failure = "0.1.8"
 gcode = { path = "../gcode" }
+bgcode = { path = "../bgcode" }
 math = { path = "../../math" }
+graphics = { path = "../../graphics" }
 datastore_meta_client = { path = "../../datastore/meta/client" }
 sstable = { path = "../../sstable" }
 media_camera = { path = "../../media/camera" }
 video = { path = "../../media/video" }
+compression = { path = "../../compression" }
 libcamera = { path = "../../../third_party/libcamera" }
 
 [features]

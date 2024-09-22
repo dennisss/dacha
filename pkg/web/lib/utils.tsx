@@ -22,3 +22,9 @@ export function compare_values(a: any, b: any): number {
 
     return 0;
 }
+
+export function extend(base: any, diff: any): any {
+    let v = shallow_copy(base);
+    Object.assign(v, diff);
+    return v;
+}

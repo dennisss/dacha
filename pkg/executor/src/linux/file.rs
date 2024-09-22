@@ -58,7 +58,7 @@ impl FileHandle {
         }
     }
 
-    pub unsafe fn set_not_seeekable(&mut self) {
+    pub unsafe fn set_not_seekable(&mut self) {
         self.offset = None;
     }
 

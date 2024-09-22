@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! define_bit_flags {
-    ($struct:ident $t:ty { $($name:ident = $value:expr),* $(,)? }) => {
+    ($struct:ident $t:ty { $($(#[$field_meta:meta])* $name:ident = $value:expr),* $(,)? }) => {
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(transparent)]
         pub struct $struct {
@@ -9,6 +9,7 @@ macro_rules! define_bit_flags {
 
         impl $struct {
             $(
+                $(#[$field_meta])*
                 pub const $name: Self = Self::from_raw($value);
             )*
 

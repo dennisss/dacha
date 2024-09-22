@@ -128,8 +128,13 @@ enum ParserState {
     InProgramDelimiter,
 }
 
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Parser {
-    /// NOTE: Only complete lines can be passed
     pub fn new() -> Self {
         let mut buffer = vec![];
         buffer.reserve_exact(256);
@@ -567,6 +572,10 @@ impl<'a, 'b> ParserIterator<'a, 'b> {
         }
 
         e
+    }
+
+    pub fn remaining(&self) -> &[u8] {
+        self.remaining
     }
 
     pub fn parser(&self) -> &Parser {

@@ -1,0 +1,15 @@
+# proto-file: pkg/cnc/monitor/proto/machine_config.proto
+# proto-message: MachineConfig
+
+# Config for a generic machine for which no parsing of serial response data is performed.
+
+model_name: "Generic Machine"
+auto_connect: true
+
+work_area {
+    x_range { min: 0 max: 100 }
+    y_range { min: 0 max: 100 }
+}
+
+firmware: GENERIC
+baud_rate: 115200

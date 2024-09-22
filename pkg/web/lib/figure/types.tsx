@@ -7,6 +7,8 @@ export interface FigureOptions {
     width?: number | string;
     height?: number | string;
 
+    max_height?: number;
+
     // Ratio calculated as pixels_per_y/pixels_per_x.
     // Defaults to 1. 
     aspect_ratio?: number;
@@ -33,12 +35,14 @@ export interface FigureOptions {
     entities: Entity[];
 };
 
-export type Entity = LineGraphEntity | CircleEntity | LineEntity;
+export type Entity = LineGraphEntity | CircleEntity | LineEntity | ImageEntity | PathEntity;
 
 export enum EntityKind {
     Line,
     LineGraph,
     Circle,
+    Image,
+    Path
 }
 
 export interface Axis {
@@ -59,6 +63,14 @@ export interface LineEntity {
 
     start: Point;
     end: Point;
+}
+
+export interface PathEntity {
+    kind: EntityKind.Path;
+    color: string;
+    width: number;
+    points: Point[];
+    closed: boolean;
 }
 
 export interface LineGraphEntity {
@@ -85,6 +97,13 @@ export interface CircleEntity {
     radius: number;
 }
 
+export interface ImageEntity {
+    kind: EntityKind.Image;
+    image: HTMLImageElement;
+
+    // Rectangle in the figure coordinate space. rect.x and rect.y are the bottom-left corner of the image.
+    rect: Rect;
+}
 
 export interface Rect {
     x: number,

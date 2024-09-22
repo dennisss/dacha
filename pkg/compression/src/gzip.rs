@@ -393,6 +393,7 @@ impl GzipDecoder {
             done,
             input_read,
             output_written,
+            event: ()
         })
     }
 
@@ -613,6 +614,7 @@ impl GzipEncoder {
             input_read,
             output_written,
             done,
+            event: ()
         })
     }
 }

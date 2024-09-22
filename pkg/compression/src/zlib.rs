@@ -243,6 +243,7 @@ impl Transform for ZlibEncoder {
             input_read,
             output_written,
             done: self.pending_bytes.is_empty() && self.deflater_done,
+            event: (),
         })
     }
 }
@@ -345,6 +346,7 @@ impl ZlibDecoder {
             input_read,
             output_written,
             done,
+            event: (),
         })
     }
 

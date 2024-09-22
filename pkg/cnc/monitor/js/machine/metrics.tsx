@@ -8,6 +8,7 @@ import { Figure } from "pkg/web/lib/figure";
 import { EntityKind, FigureOptions } from "pkg/web/lib/figure/types";
 import { compare_values, deep_copy, shallow_copy } from "pkg/web/lib/utils";
 import { round_digits } from "pkg/web/lib/formatting";
+import { FigureLegend } from "pkg/web/lib/figure/legend";
 
 
 
@@ -334,72 +335,24 @@ export class MetricsBox extends React.Component<MetricsBoxProps, MetricsBoxState
                 <CardBody>
                     <Figure options={get_test_options(this.state._data)} />
 
-                    <div style={{ paddingTop: 10, fontSize: '0.8em', textAlign: 'center' }}>
-
-                        {this.state._data.entries.map((entry, i) => {
-
-                            return (
-                                <SeriesButton key={i} entry={entry} setWidth={(w) => {
-                                    let data = deep_copy(this.state._data);
-                                    data.entries[i].line_width = w;
-                                    this.setState({ _data: data });
-                                }} />
-                            );
+                    <FigureLegend
+                        entries={this.state._data.entries.map((entry, i) => {
+                            return {
+                                id: i,
+                                name: entry.name,
+                                color: entry.color,
+                                visible: entry.line_width > 0,
+                                focused: entry.line_width == 2
+                            };
                         })}
-                    </div>
-
+                        onChange={(entry) => {
+                            let data = deep_copy(this.state._data);
+                            data.entries[entry.id].line_width = entry.focused ? 2 : (entry.visible ? 1 : 0);
+                            this.setState({ _data: data });
+                        }}
+                    />
                 </CardBody>
             </Card>
         );
     }
-}
-
-class SeriesButton extends React.Component<{ entry: SeriesEntry, setWidth: (w: number) => {} }> {
-
-    state = {
-        _hovering: false
-    }
-
-    _mouse_enter = () => {
-        // The timeout is to ensure that the mouse_exit from another button gets applied before this one is applied.
-        // TODO: The better way to do this is to verify at most one button has width >1.
-        setTimeout(() => {
-            if (this.props.entry.line_width >= 1) {
-                this.props.setWidth(2);
-            }
-        }, 2);
-    }
-
-    _mouse_exit = () => {
-        if (this.props.entry.line_width >= 1) {
-            this.props.setWidth(1);
-        }
-    }
-
-    _on_click = () => {
-        let entry = this.props.entry;
-        let on = entry.line_width >= 1;
-
-        if (on) {
-            this.props.setWidth(0);
-        } else {
-            this.props.setWidth(1);
-        }
-
-    }
-
-    render() {
-        let entry = this.props.entry;
-        let on = entry.line_width >= 1;
-
-        return (
-            <div className="figure-series-button" onClick={this._on_click} onMouseEnter={this._mouse_enter} onMouseLeave={this._mouse_exit}>
-                <div style={{ border: ('1px solid ' + entry.color), display: 'inline-block', marginRight: '1ex', width: 20, height: 10, backgroundColor: (on ? entry.color : null) }}></div>
-
-                {entry.name}
-            </div>
-        );
-
-    }
-
 }

@@ -61,8 +61,6 @@ pub struct Deflater {
     /// Compressed data that has yet been consumed by the reader.
     /// This will grow indefinately until a client reads all data from the
     /// deflater.
-    ///
-    /// This is an Option so that a client can take the entire
     output_buffer: BufferQueue,
 
     /// Remainder of the last output_buffer byte which hasn't resulted in a full
@@ -232,6 +230,7 @@ impl Deflater {
             input_read: nread, // NOTE: Currently we will always read the entire input given
             output_written: noutput,
             done: (end_of_input && self.output_buffer.is_empty()), // TODO
+            event: (),
         })
     }
 
@@ -559,7 +558,8 @@ mod tests {
             TransformProgress {
                 done: true,
                 input_read: 13,
-                output_written: 17
+                output_written: 17,
+                event: ()
             }
         );
 
@@ -577,7 +577,8 @@ mod tests {
             TransformProgress {
                 done: true,
                 input_read: 17,
-                output_written: 13
+                output_written: 13,
+                event: (),
             }
         );
 

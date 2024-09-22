@@ -111,7 +111,7 @@ impl<T, R: Dimension, C: Dimension> IndexMut<(usize, usize)> for MatrixDynamicSt
 
 /// Storage which stores all elements in stack memory for statically
 /// allocatable sizes.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 // #[repr(packed)]
 pub struct MatrixInlineStorage<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> {
     data: GenericArray<T, S>,

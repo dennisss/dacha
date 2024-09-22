@@ -30,7 +30,7 @@ pub trait Transform {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct TransformProgress {
+pub struct TransformProgress<Event = ()> {
     /// Number of input bytes consumed during the update.
     pub input_read: usize,
 
@@ -43,7 +43,40 @@ pub struct TransformProgress {
     /// In this case the transform likely hit an end of stream marker as
     /// defined by the transform's algorithm.
     pub done: bool,
+
+    /// Some metadata/label associated with the latest range of data that was
+    /// written.
+    ///
+    /// Note that a transform can emit a non-default/null event without
+    /// reading/writing all of the input/output since at most one event can be
+    /// emitted per update() call so emitting an event effectively acts like
+    /// exhausting the entire output buffer.
+    pub event: Event,
+    //
+
     // TODO: Allow outputing a remaining_output_length hint
+}
+
+#[derive(Default)]
+pub struct IdentityTransform {}
+
+impl Transform for IdentityTransform {
+    fn update(
+        &mut self,
+        input: &[u8],
+        end_of_input: bool,
+        output: &mut [u8],
+    ) -> Result<TransformProgress> {
+        let n = core::cmp::min(input.len(), output.len());
+        output[0..n].copy_from_slice(&input[0..n]);
+
+        Ok(TransformProgress {
+            input_read: n,
+            output_written: n,
+            done: end_of_input && n == input.len(),
+            event: (),
+        })
+    }
 }
 
 /// Helper that consumes all of the input data and transforms it into the output
@@ -105,6 +138,7 @@ pub fn partially_transform_to_vec(
         input_read,
         output_written: (output_len - original_output_len),
         done: final_done,
+        event: (),
     })
 }
 

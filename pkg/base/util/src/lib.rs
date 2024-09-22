@@ -10,6 +10,8 @@ extern crate std;
 extern crate alloc;
 
 pub mod bit_flags;
+#[cfg(feature = "alloc")]
+pub mod format;
 pub mod iter;
 
 #[cfg(feature = "alloc")]

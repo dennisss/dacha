@@ -1,6 +1,6 @@
 import React from "react";
 import { Tooltip, TooltipData, TooltipDataContainer } from "./tooltip";
-import { Rect, Point, FigureOptions, EntityKind, LineGraphEntity, CircleEntity, LineEntity } from "./types";
+import { Rect, Point, FigureOptions, EntityKind, LineGraphEntity, CircleEntity, LineEntity, ImageEntity, PathEntity } from "./types";
 
 export interface FigureProps {
     options: FigureOptions,
@@ -76,6 +76,13 @@ export class Figure extends React.Component<FigureProps, FigureState> {
 
             if (!options.height) {
                 canvas_height = Math.round((1 / aspect_ratio) * (canvas_width - x_margin)) + y_margin;
+            }
+        }
+
+        if (options.max_height) {
+            if (canvas_height > options.max_height) {
+                canvas_height = options.max_height;
+                canvas_width = Math.round(aspect_ratio * (canvas_height - y_margin)) + x_margin;
             }
         }
 
@@ -199,15 +206,21 @@ export class Figure extends React.Component<FigureProps, FigureState> {
         }
 
         opts.entities.map((entity) => {
+            this._ctx.save();
             if (entity.kind == EntityKind.LineGraph) {
                 this._draw_line_graph(entity, tooltip);
             } else if (entity.kind == EntityKind.Circle) {
                 this._draw_circle(entity);
             } else if (entity.kind == EntityKind.Line) {
                 this._draw_line(entity);
+            } else if (entity.kind == EntityKind.Image) {
+                this._draw_image(entity);
+            } else if (entity.kind == EntityKind.Path) {
+                this._draw_path(entity);
             } else {
                 throw new Error("Don't know how to draw entity");
             }
+            this._ctx.restore();
         });
 
         if (tooltip.lines.length == 0) {
@@ -289,6 +302,38 @@ export class Figure extends React.Component<FigureProps, FigureState> {
         }
     }
 
+    _draw_path(path: PathEntity) {
+        if (path.width === 0) {
+            return;
+        }
+
+        this._ctx.strokeStyle = path.color;
+        this._ctx.fillStyle = path.color;
+        this._ctx.lineWidth = path.width || 1;
+
+        this._ctx.beginPath();
+
+        let last_x = null;
+
+        path.points.map((graph_pt) => {
+            let pt = this._to_canvas_pt(graph_pt);
+
+            if (last_x == null) {
+                this._ctx.moveTo(pt.x, pt.y);
+            } else {
+                this._ctx.lineTo(pt.x, pt.y);
+            }
+
+            last_x = graph_pt.x;
+        });
+
+        if (path.closed) {
+            this._ctx.closePath();
+        }
+
+        this._ctx.stroke();
+    }
+
     _draw_circle(circle: CircleEntity) {
         let ctx = this._ctx;
         ctx.fillStyle = circle.color;
@@ -316,6 +361,15 @@ export class Figure extends React.Component<FigureProps, FigureState> {
         ctx.lineTo(p2.x, p2.y);
 
         ctx.stroke();
+    }
+
+    _draw_image(image: ImageEntity) {
+        let ctx = this._ctx;
+
+        let bottom_left = this._to_canvas_pt({ x: image.rect.x, y: image.rect.y });
+        let top_right = this._to_canvas_pt({ x: image.rect.x + image.rect.width, y: image.rect.y + image.rect.height });
+
+        ctx.drawImage(image.image, bottom_left.x, top_right.y, top_right.x - bottom_left.x, bottom_left.y - top_right.y);
     }
 
     _draw_hover_pointer() {

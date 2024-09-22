@@ -1,3 +1,5 @@
+extern crate alloc;
+
 #[macro_use]
 extern crate common;
 #[macro_use]
@@ -16,6 +18,7 @@ mod files;
 mod instance;
 mod metric;
 mod player;
+mod player_preprocessor;
 mod presets;
 pub mod program;
 mod response_parser;
@@ -23,5 +26,7 @@ mod serial_controller;
 mod serial_receiver_buffer;
 mod serial_send_buffer;
 mod tables;
+mod timestamped_value;
+mod users;
 
 pub use instance::MonitorImpl;

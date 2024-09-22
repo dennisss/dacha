@@ -1,5 +1,6 @@
 use base_error::*;
 use common::bytes::Bytes;
+use common::format::format_bytes;
 use gcode_decimal::Decimal;
 
 use crate::command::{Command, CommandCodec, CommandWord, LineParameters};
@@ -21,9 +22,17 @@ GCode parsing variations:
 
 */
 
+#[derive(Debug)]
 pub enum ProgramElement {
     Thumbnail(ProgramThumbnail),
+
     Command(Command),
+
+    Error(Error),
+
+    /// NOTE: If present, this will always be the last element in the 'out'
+    /// argument of parse_line.
+    EndOfLine,
 }
 
 #[derive(Debug)]
@@ -37,6 +46,14 @@ pub struct ProgramThumbnail {
 /// state.
 #[derive(Default)]
 pub struct ProgramParser {
+    parser: Parser,
+    state: State,
+}
+
+#[derive(Default)]
+struct State {
+    line_state: LineState,
+
     /// If Some, then we have partially parsed a thumbnail.
     partial_thumbnail: Option<PartialThumbnail>,
 
@@ -44,6 +61,39 @@ pub struct ProgramParser {
     ///
     /// TODO: Implement proper support for generic modal groups.
     last_motion_command: Option<CommandWord>,
+}
+
+#[derive(Default)]
+struct LineState {
+    event_index: usize,
+
+    // G and M codes seen in the line.
+    // These are the only two letters that we allow to be repeated across words.
+    command_codes: Vec<CommandWord>,
+
+    // All other words seen on the line that aren't G or M style.
+    params: LineParameters,
+
+    first_word: Option<Word>,
+
+    error: Option<Error>,
+
+    /// Up to the first 128 bytes of the current line if the line started in a
+    /// previous parse_line call.
+    line_start: Vec<u8>,
+}
+
+impl LineState {
+    /// A way to reset to LineState::default() while re-using the memory
+    /// buffers.
+    fn reset(&mut self) {
+        self.event_index = 0;
+        self.command_codes.clear();
+        self.params.clear();
+        self.first_word = None;
+        self.error = None;
+        self.line_start.clear();
+    }
 }
 
 struct PartialThumbnail {
@@ -55,73 +105,136 @@ struct PartialThumbnail {
 }
 
 impl ProgramParser {
-    pub fn parse_line(&mut self, line: &[u8], out: &mut Vec<ProgramElement>) -> Result<()> {
+    /// Parses up to one line worth of data from a program.
+    ///
+    /// Note that this will always succeed:
+    /// - If a line has an error, it will be indicated by an emitted
+    ///   ProgramElement::Error.
+    /// - Future calls to this function will skip ahead to the start of the next
+    ///   line.
+    #[must_use]
+    pub fn parse_line(
+        &mut self,
+        input: &[u8],
+        end_of_input: bool,
+        out: &mut Vec<ProgramElement>,
+    ) -> usize {
         // TODO: Support enforcing only one command per line for marlin style printers.
 
-        // G and M codes seen in the line.
-        // These are the only two letters that we allow to be repeated across words.
-        let mut command_codes: Vec<CommandWord> = vec![];
+        let mut line_done = false;
 
-        // All other words seen on the line that aren't G or M style.
-        let mut params = LineParameters::default();
-
-        let mut first_word = None;
-
-        let mut event_index = 0;
-        {
-            let mut error_in_line = false;
-            let mut parser = Parser::new();
-            let mut iter = parser.iter(&line[..], true);
-            while let Some(e) = iter.next() {
-                match e {
-                    Event::ProgramDelimiter => {
-                        // TODO: Verify this is the first non-empty line or the
-                        // last non-empty line in the file.
-                    }
-                    Event::LineNumber(_) => {}
-                    Event::Comment(data, is_semi_comment) => {
-                        if is_semi_comment && event_index == 0 {
-                            let data = core::str::from_utf8(&data)?.trim();
-                            if data.is_empty() {
-                                return Ok(());
-                            }
-
-                            // TODO: Verify that we are using consecutive lines for the comment.
-                            self.parse_thumbnail_comment(data, out)?;
-                            return Ok(());
-                        }
-                    }
-                    Event::ParseError(e) => {
-                        return Err(format_err!(
-                            "Parsing error in line '{}': {:?}",
-                            std::str::from_utf8(line)?,
-                            e
-                        ));
-                    }
-                    Event::EndLine => {
-                        // TODO: Change this function to stop parsing at the end
-                        // of a line (and return the number of parsed bytes).
-                    }
-                    Event::Word(w) => {
-                        if (w.key == 'G' || w.key == 'M') && w.value != WordValue::Empty {
-                            command_codes.push(CommandWord::from_word(&w)?);
-                        } else {
-                            if first_word.is_none() {
-                                first_word = Some(w.clone());
-                            }
-
-                            params.add_param(w.key, w.value)?;
+        // TODO: Don't assume end of input here.
+        let mut iter = self.parser.iter(&input[..], end_of_input);
+        while let Some(e) = iter.next() {
+            match e {
+                Event::ProgramDelimiter => {
+                    // TODO: Verify this is the first non-empty line or the
+                    // last non-empty line in the file.
+                }
+                Event::LineNumber(_) => {}
+                Event::Comment(data, is_semi_comment) => {
+                    if is_semi_comment && self.state.line_state.event_index == 0 {
+                        // TODO: Verify that we are using consecutive lines for the comment.
+                        if let Err(e) = self.state.parse_thumbnail_comment(data, out) {
+                            self.state.line_state.error.get_or_insert(e);
                         }
                     }
                 }
+                Event::ParseError(e) => {
+                    self.state
+                        .line_state
+                        .error
+                        .get_or_insert(format_err!("GCode parsing error: {:?}", e));
+                }
+                Event::EndLine => {
+                    // TODO: Finalize the line if there was no error.
 
-                event_index += 1;
+                    if self.state.line_state.error.is_none() {
+                        if let Err(e) = self.state.finalize_line(out) {
+                            self.state.line_state.error.get_or_insert(e);
+                        }
+                    }
+
+                    if let Some(e) = self.state.line_state.error.take() {
+                        let input_read = input.len() - iter.remaining().len();
+                        self.state.cache_line_prefix(&input[..input_read]);
+
+                        // TODO: Also escape quotes when formatting the line.
+                        let e = format_err!(
+                            "Line: \"{}\": {}",
+                            format_bytes(&self.state.line_state.line_start),
+                            e
+                        );
+
+                        out.clear();
+                        out.push(ProgramElement::Error(e));
+                    }
+
+                    out.push(ProgramElement::EndOfLine);
+
+                    self.state.line_state.reset();
+                    line_done = true;
+
+                    break;
+                }
+                Event::Word(w) => {
+                    if let Err(e) = self.state.handle_word(w) {
+                        self.state.line_state.error.get_or_insert(e);
+                    }
+                }
+            }
+
+            self.state.line_state.event_index += 1;
+        }
+
+        let input_read = input.len() - iter.remaining().len();
+
+        if input_read == input.len() && end_of_input {
+            if self.state.partial_thumbnail.is_some() {
+                out.push(ProgramElement::Error(err_msg(
+                    "Hit the end of the file before parsing the entire thumbnail",
+                )));
+                out.push(ProgramElement::EndOfLine);
             }
         }
 
+        if !line_done {
+            self.state.cache_line_prefix(&input[..input_read]);
+        }
+
+        input_read
+    }
+}
+
+impl State {
+    fn cache_line_prefix(&mut self, data: &[u8]) {
+        let n = core::cmp::min(128 - self.line_state.line_start.len(), data.len());
+        self.line_state.line_start.extend_from_slice(data);
+    }
+
+    fn handle_word(&mut self, w: Word) -> Result<()> {
+        if (w.key == 'G' || w.key == 'M') && w.value != WordValue::Empty {
+            self.line_state
+                .command_codes
+                .push(CommandWord::from_word(&w)?);
+        } else {
+            if self.line_state.first_word.is_none() {
+                self.line_state.first_word = Some(w.clone());
+            }
+
+            self.line_state.params.add_param(w.key, w.value)?;
+        }
+
+        Ok(())
+    }
+
+    fn finalize_line(&mut self, out: &mut Vec<ProgramElement>) -> Result<()> {
         let mut commands = vec![];
 
-        for command_code in command_codes {
+        // TODO: Sort commands like 'G53' so that are referenced before other things on
+        // the line. Also want things like spindle changes to precede movements.
+
+        for command_code in self.line_state.command_codes.drain(..) {
             if command_code == command_word!("G0")
                 || command_code == command_word!("G1")
                 || command_code == command_word!("G2")
@@ -130,65 +243,55 @@ impl ProgramParser {
                 self.last_motion_command = Some(command_code.clone());
             }
 
-            commands.push(
-                Command::from_command_words(command_code, &mut params).map_err(|e| {
-                    format_err!("Line '{}': {}", std::str::from_utf8(line).unwrap(), e)
-                })?,
-            );
+            commands.push(Command::from_command_words(
+                command_code,
+                &mut self.line_state.params,
+            )?);
         }
 
         if let Some(motion_command) = &self.last_motion_command {
-            if params.peek_has_remaining('X')
-                || params.peek_has_remaining('Y')
-                || params.peek_has_remaining('Z')
+            if self.line_state.params.peek_has_remaining('X')
+                || self.line_state.params.peek_has_remaining('Y')
+                || self.line_state.params.peek_has_remaining('Z')
             {
-                commands.push(
-                    Command::from_command_words(motion_command.clone(), &mut params).map_err(
-                        |e| format_err!("Line '{}': {}", std::str::from_utf8(line).unwrap(), e),
-                    )?,
-                );
+                commands.push(Command::from_command_words(
+                    motion_command.clone(),
+                    &mut self.line_state.params,
+                )?);
             }
         }
 
-        if let Some(word) = first_word {
-            if word.key == 'T' && params.peek_has_remaining('T') {
+        if let Some(word) = self.line_state.first_word.take() {
+            if word.key == 'T' && self.line_state.params.peek_has_remaining('T') {
                 let cmd = CommandWord::from_word(&word)?;
 
                 commands.push(Command::SelectTool(
-                    crate::command::SelectTool::from_command_words(cmd, &mut params)?,
+                    crate::command::SelectTool::from_command_words(
+                        cmd,
+                        &mut self.line_state.params,
+                    )?,
                 ));
             }
 
-            if word.key == 'P' && params.peek_has_remaining('P') {
+            if word.key == 'P' && self.line_state.params.peek_has_remaining('P') {
                 let cmd = CommandWord::from_word(&word)?;
 
                 commands.push(Command::ParkTool(
-                    crate::command::ParkTool::from_command_words(cmd, &mut params)?,
+                    crate::command::ParkTool::from_command_words(cmd, &mut self.line_state.params)?,
                 ));
             }
         }
 
-        if !params.is_empty() {
+        if !self.line_state.params.is_empty() {
             return Err(format_err!(
-                "Not all parameters parsed: Line: '{}'; Params: {:?}",
-                std::str::from_utf8(line)?,
-                params.debug_remaining_unparsed()
+                "Not all parameters parsed. Remaining: {:?}",
+                self.line_state.params.debug_remaining_unparsed()
             ));
         }
 
         // TODO: Inline this above.
         for command in commands {
             out.push(ProgramElement::Command(command));
-        }
-
-        Ok(())
-    }
-
-    pub fn finish(&mut self) -> Result<()> {
-        if self.partial_thumbnail.is_some() {
-            return Err(err_msg(
-                "Hit the end of the file before parsing the entire thumbnail",
-            ));
         }
 
         Ok(())
@@ -205,7 +308,16 @@ impl ProgramParser {
     ; thumbnail end
     ;
     */
-    fn parse_thumbnail_comment(&mut self, data: &str, out: &mut Vec<ProgramElement>) -> Result<()> {
+    fn parse_thumbnail_comment(
+        &mut self,
+        data: &[u8],
+        out: &mut Vec<ProgramElement>,
+    ) -> Result<()> {
+        let data = core::str::from_utf8(data)?.trim();
+        if data.is_empty() {
+            return Ok(());
+        }
+
         let parts = data.split_ascii_whitespace().collect::<Vec<_>>();
 
         if self.partial_thumbnail.is_none()

@@ -67,7 +67,18 @@ message ProgramSummaryProto {
 
     // Up to the first 5 errors seen while parsing the file.
     repeated string first_failures = 9;
+
+    Vector3fProto min_position = 10;
+
+    Vector3fProto max_position = 11;
 }
+
+message Vector3fProto {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+}
+
 
 message ProgramToolSummary {
     optional float max_extruder_temperature = 1;

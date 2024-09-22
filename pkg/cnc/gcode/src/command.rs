@@ -104,6 +104,7 @@ define_command_enum!(
     AllowColdExtrudes,               // M302
     CarveraEnterLaserMode,           // M321
     CarveraExitLaserMode,            // M322
+    WaitForCurrentMovesToFinish,     // M400
     CancelObject,                    // M486
     SetBoundingBox,                  // M555
     StepperDriverControl,            // M569
@@ -446,6 +447,10 @@ define_unparsed_command!(
 );
 
 define_command!(
+    pub struct WaitForCurrentMovesToFinish ("M400") {}
+);
+
+define_command!(
     pub struct CancelObject ("M486") {
         total_num_objects ('T'): Option<i32>,
         starting_object_index ('S'): Option<i32>,
@@ -618,6 +623,68 @@ pub trait CommandCodec {
 //     fn to_partial_words(&self, out: &mut Vec<Word>);
 // }
 
+/// Similar to a HashMap<char, T> which only supports keys which are capital
+/// ascii alphabetic letters.
+#[derive(Default)]
+struct CapitalLetterMap<T> {
+    // 65 - 90
+    bins: [Option<T>; 26],
+}
+
+impl<T> CapitalLetterMap<T> {
+    pub fn clear(&mut self) {
+        for bin in &mut self.bins {
+            bin.take();
+        }
+    }
+
+    pub fn get(&self, key: &char) -> Option<&T> {
+        let mut i = *key as usize;
+        if i < (b'A' as usize) {
+            return None;
+        }
+
+        i -= (b'A' as usize);
+
+        let bin = match self.bins.get(i) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        bin.as_ref()
+    }
+
+    pub fn get_mut(&mut self, key: &char) -> Option<&mut T> {
+        let mut i = *key as usize;
+        if i < (b'A' as usize) {
+            return None;
+        }
+
+        i -= (b'A' as usize);
+
+        let bin = match self.bins.get_mut(i) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        bin.as_mut()
+    }
+
+    pub fn contains_key(&self, key: &char) -> bool {
+        self.get(key).is_some()
+    }
+
+    /// NOTE: This will crash on out of bounds keys.
+    pub fn insert(&mut self, key: char, value: T) {
+        let mut i = (key as usize) - (b'A' as usize);
+        self.bins[i] = Some(value);
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.bins.iter().filter_map(|v| v.as_ref())
+    }
+}
+
 /// Set of available command parameters discovered while parsing a line of
 /// gcode. Parameters are incrementally taken out of this set while assembling
 /// command structs.
@@ -625,11 +692,16 @@ pub trait CommandCodec {
 pub struct LineParameters {
     // Keys that contain None were previously retrieved with 'take_param' while parsing the current
     // line.
-    params: HashMap<char, Option<WordValue>, FastHasherBuilder>,
+    params: CapitalLetterMap<Option<WordValue>>,
     order: Vec<char>,
 }
 
 impl LineParameters {
+    pub fn clear(&mut self) {
+        self.params.clear();
+        self.order.clear();
+    }
+
     pub fn take_param(&mut self, key: char) -> Result<Option<WordValue>> {
         match self.params.get_mut(&key) {
             Some(v) => match v.take() {

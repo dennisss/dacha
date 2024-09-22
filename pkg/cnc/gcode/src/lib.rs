@@ -25,6 +25,27 @@ pub use crate::program::*;
 /// TODO: The gRBL limit is only 128.
 pub const MAX_STANDARD_LINE_LENGTH: usize = 256;
 
+/// See https://linuxcnc.org/docs/html/gcode/coordinates.html
+/// These are the Gcodes for selecting coordinate system 1 to 9 in Linux CNC /
+/// gRBL / Smoothieware firmwares.
+///
+/// TODO: Get rid of this and rely only on STANDARD_COORDINATE_SYSTEM_CODES
+pub const STANDARD_COORDINATE_SYSTEMS: &'static [&'static str] = &[
+    "G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3",
+];
+
+pub const STANDARD_COORDINATE_SYSTEM_CODES: &'static [CommandWord] = &[
+    command_word!("G54"),
+    command_word!("G55"),
+    command_word!("G56"),
+    command_word!("G57"),
+    command_word!("G58"),
+    command_word!("G59"),
+    command_word!("G59.1"),
+    command_word!("G59.2"),
+    command_word!("G59.3"),
+];
+
 /*
 pub fn tile_gcode(
     initial_gcode: &[u8],

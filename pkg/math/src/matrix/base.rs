@@ -23,7 +23,7 @@ use crate::number::{Min, One, Zero};
 
 */
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct MatrixBase<T, R: Dimension, C: Dimension, S: StorageType<T, R, C>> {
     pub(super) data: S,
     t: PhantomData<T>,

@@ -62,3 +62,17 @@ axes: [
     { id: "P" type: GENERIC_SENSOR name: "PINDAv2" },
     { id: "A" type: GENERIC_SENSOR name: "Ambient" }
 ]
+
+tools {
+    num_slots: 0
+    loaded_tools: [
+        {
+            index: 0
+            name: "Extruder (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        }
+    ]
+}

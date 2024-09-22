@@ -168,14 +168,6 @@ impl HuffmanTree {
             return Ok(vec![]);
         }
 
-        // The package-merge algorithm only makes sense with > 1 symbols.
-        if symbols.len() == 1 {
-            return Ok(vec![SymbolLength {
-                symbol: symbols[0],
-                length: 1,
-            }]);
-        }
-
         // Get frequencies of symbols.
         // TODO: Should support raw input of a histogram.
         let mut freqs_map = std::collections::HashMap::<_, _, FastHasherBuilder>::default();
@@ -194,6 +186,14 @@ impl HuffmanTree {
             })
             .collect::<Vec<_>>();
 
+        // The package-merge algorithm only makes sense with > 1 symbols.
+        if freqs.len() == 1 {
+            return Ok(vec![SymbolLength {
+                symbol: symbols[0],
+                length: 1,
+            }]);
+        }
+
         freqs.sort_unstable_by(|a, b| {
             if a.count == b.count {
                 // If frequencies are equal, sort by symbol.
@@ -205,6 +205,7 @@ impl HuffmanTree {
         });
 
         // Creates the list of coins for the denomination 2^(-i).
+        // Returned list is sorted by ascending order of value.
         //
         // NOTE: This is the list pre-pairing/merging which contains all initial
         // coins of this single denomination.
@@ -581,6 +582,42 @@ mod tests {
             },
             SymbolLength {
                 symbol: 6,
+                length: 2,
+            },
+        ];
+
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn build_length_limited_tree_one_symbol_test() {
+        let data = vec![1, 1, 1, 1];
+        let out = HuffmanTree::build_length_limited_tree(&data, 4).unwrap();
+
+        let expected = vec![SymbolLength {
+            symbol: 1,
+            length: 1,
+        }];
+
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn build_length_limited_tree_three_symbol_test() {
+        let data = vec![1, 1, 1, 1, 2, 2, 2, 3, 3];
+        let out = HuffmanTree::build_length_limited_tree(&data, 4).unwrap();
+
+        let expected = vec![
+            SymbolLength {
+                symbol: 1,
+                length: 1,
+            },
+            SymbolLength {
+                symbol: 2,
+                length: 2,
+            },
+            SymbolLength {
+                symbol: 3,
                 length: 2,
             },
         ];

@@ -7,10 +7,23 @@ pub async fn get_machine_presets() -> Result<Vec<MachineConfig>> {
 
     let dir = project_path!("pkg/cnc/monitor/presets");
     for entry in file::read_dir(&dir)? {
+        // TODO: Switch to a glob
+        if !entry.name().ends_with(".txtpb") {
+            continue;
+        }
+
         let data = file::read_to_string(&dir.join(entry.name())).await?;
 
         let mut preset = MachineConfig::default();
-        protobuf::text::parse_text_proto(&data, &mut preset)?;
+        protobuf::text::parse_text_proto(&data, &mut preset)
+            .map_err(|e| format_err!("While trying to load: {}; {}", entry.name(), e))?;
+
+        if !preset.base_config().is_empty() {
+            return Err(err_msg(
+                "Support for nested inheritance in base configs is not implemented.",
+            ));
+        }
+
         preset.set_base_config(
             LocalPath::new(entry.name())
                 .file_stem()
@@ -49,5 +62,14 @@ pub async fn get_prusa_i3_mk3sp_config() -> Result<MachineConfig> {
     presets
         .into_iter()
         .find(|preset| preset.base_config() == "prusa_i3_mk3sp")
+        .ok_or_else(|| err_msg("Config not found"))
+}
+
+pub async fn get_makera_carvera_config() -> Result<MachineConfig> {
+    let presets = get_machine_presets().await?;
+
+    presets
+        .into_iter()
+        .find(|preset| preset.base_config() == "makera_carvera")
         .ok_or_else(|| err_msg("Config not found"))
 }

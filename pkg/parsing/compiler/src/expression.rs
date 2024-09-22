@@ -55,6 +55,7 @@ pub enum Attribute {
     ValueOf,
     SizeOf,
     Length,
+    Raw,
 }
 
 #[derive(Clone, Debug)]
@@ -171,6 +172,12 @@ impl Expression {
                             return Ok(Expression::Field(FieldExpression {
                                 field_path: idents,
                                 attribute: Attribute::Length,
+                            }));
+                        }
+                        "raw" => {
+                            return Ok(Expression::Field(FieldExpression {
+                                field_path: idents,
+                                attribute: Attribute::Raw,
                             }));
                         }
                         _ => return Err(format_err!("Unsupported function: {}", fname)),
@@ -300,6 +307,14 @@ impl Expression {
                         }
 
                         expr
+                    }
+                    Attribute::Raw => {
+                        let mut expr = match &symbol.value {
+                            Some(v) => v.clone(),
+                            None => return Ok(None),
+                        };
+
+                        format!("{}.to_u16()", expr)
                     }
                 }
             }

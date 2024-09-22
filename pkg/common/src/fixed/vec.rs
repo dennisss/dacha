@@ -24,6 +24,10 @@ impl<T, const LEN: usize> FixedVec<T, LEN> {
         }
     }
 
+    pub fn get(&self, index: usize) -> Option<&T> {
+        self.as_ref().get(index)
+    }
+
     pub fn push(&mut self, value: T) {
         self.data[self.length] = MaybeUninit::new(value);
         self.length += 1;

@@ -108,51 +108,40 @@ impl FakeMachine {
         shared: Arc<Shared>,
         mut serial_reader: Box<dyn Readable>,
     ) -> Result<()> {
-        let mut buf = SerialReceiverBuffer::default();
         let mut chunk_buffer = vec![0u8; 256];
-
-        let mut line_offset = buf.last_line_offset().await?;
-
         let mut parser = gcode::ProgramParser::default();
+        let mut elements = vec![];
 
         // TODO: Throttle this loop.
         loop {
-            {
+            let mut remaining = {
                 // TODO: Catch closed errors and return ok.
                 let n = serial_reader.read(&mut chunk_buffer).await?;
                 if n == 0 {
                     return Err(err_msg("Hit end of serial?"));
                 }
 
-                buf.append(&chunk_buffer[0..n], Instant::now()).await?;
-            }
+                &chunk_buffer[0..n]
+            };
 
-            let last_line_offset = buf.last_line_offset().await?;
+            while !remaining.is_empty() {
+                let n = parser.parse_line(remaining, false, &mut elements);
+                remaining = &remaining[n..];
 
-            while line_offset < last_line_offset {
-                let line_entry = buf.get_line(line_offset).await?;
-                line_offset += 1;
+                if let Some(gcode::ProgramElement::EndOfLine) = elements.last() {
+                    if let Err(e) = Self::process_line(&shared, &mut elements).await {
+                        eprintln!("FakeMachine Processing Error: {}", e);
 
-                let mut line = vec![];
-                if let Err(e) = parser.parse_line(&line_entry.data, &mut line) {
-                    lock_async!(writer <= shared.serial_writer.lock().await?, {
-                        writer.write_all(b"error: Invalid line received\n").await
-                    })?;
-                    continue;
-                }
-
-                if let Err(e) = Self::process_line(&shared, &line).await {
-                    eprintln!("FakeMachine Processing Error: {}", e);
+                        lock_async!(writer <= shared.serial_writer.lock().await?, {
+                            writer.write_all(b"error\n").await
+                        })?;
+                        continue;
+                    }
 
                     lock_async!(writer <= shared.serial_writer.lock().await?, {
-                        writer.write_all(b"error\n").await
+                        writer.write_all(b"ok\n").await
                     })?;
-                    continue;
                 }
-
-                lock_async!(writer <= shared.serial_writer.lock().await?, {
-                    writer.write_all(b"ok\n").await
-                })?;
             }
         }
     }
@@ -161,12 +150,15 @@ impl FakeMachine {
     ///
     /// Depending on the return result of this, we will either send an 'ok' or
     /// 'error' back to the host.
-    async fn process_line(shared: &Shared, line: &[gcode::ProgramElement]) -> Result<()> {
+    async fn process_line(shared: &Shared, line: &mut Vec<gcode::ProgramElement>) -> Result<()> {
         // TODO: Need to process commands in a consistent order. (e.g. apply coordinate
         // system changes before doing moves)
-        for el in line {
+        for el in line.drain(..) {
             let cmd = match el {
                 gcode::ProgramElement::Command(v) => v,
+                gcode::ProgramElement::Error(e) => {
+                    return Err(e);
+                }
                 _ => continue,
             };
 
@@ -178,7 +170,7 @@ impl FakeMachine {
                     Self::process_move(shared, &cmd.inner).await?;
                 }
 
-                gcode::Command::Dwell(_) => {
+                gcode::Command::Dwell(_) | gcode::Command::WaitForCurrentMovesToFinish(_) => {
                     // Machine is idle after each command, so should still be
                     // idle here.
                 }

@@ -1,0 +1,20 @@
+[package]
+name = "compression_test"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+crypto = { path = "../../crypto" }
+parsing = { path = "../../parsing" }
+protobuf = { path = "../../protobuf" }
+file = { path = "../../file" }
+executor = { path = "../../executor" }
+macros = { path = "../../macros" }
+heatshrink = { path = "../heatshrink" }
+compression = { path = ".." }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

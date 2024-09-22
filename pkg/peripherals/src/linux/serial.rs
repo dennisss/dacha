@@ -6,13 +6,28 @@ use common::errors::*;
 use common::io::{Readable, SharedWriteable, Writeable};
 use executor::linux::FileHandle;
 use file::LocalPath;
-use nix::{
-    sys::termios::{
-        cfgetispeed, cfgetospeed, cfsetispeed, cfsetospeed, tcgetattr, tcsetattr, BaudRate,
-        ControlFlags, InputFlags, LocalFlags, OutputFlags,
-    },
-    unistd::isatty,
-};
+
+use sys::bindings::serial_struct;
+use sys::bindings::termios2;
+
+// tcgetattr(fd, argp)
+ior!(tcgets2, b'T', 0x2A, termios2);
+
+// tcsetattr(fd, TCSANOW, argp)
+iow!(tcsets2, b'T', 0x2B, termios2);
+
+// tcsetattr(fd, TCSADRAIN, argp)
+iow!(tcsetsw2, b'T', 0x2C, termios2);
+
+// tcsetattr(fd, TCSAFLUSH, argp)
+iow!(tcsetsf2, b'T', 0x2D, termios2);
+
+ior!(tiocgserial, b'T', 0x1E, serial_struct);
+iow!(tiocsserial, b'T', 0x1F, serial_struct);
+
+// #define TIOCGSERIAL     0x541E
+// #define TIOCSSERIAL     0x541F
+// serial_struct
 
 pub struct SerialPort {
     file: FileHandle,
@@ -26,66 +41,73 @@ impl SerialPort {
             return Err(err_msg("Must open a /dev/tty* file on linux."));
         }
 
-        let baud = {
-            use BaudRate::*;
-
-            match baud_rate {
-                110 => B110,
-                134 => B134,
-                150 => B150,
-                200 => B200,
-                300 => B300,
-                600 => B600,
-                1200 => B1200,
-                1800 => B1800,
-                2400 => B2400,
-                4800 => B4800,
-                9600 => B9600,
-                19200 => B19200,
-                38400 => B38400,
-                57600 => B57600,
-                115200 => B115200,
-                230400 => B230400,
-                460800 => B460800,
-                500000 => B500000,
-                576000 => B576000,
-                921600 => B921600,
-                1000000 => B1000000,
-                1152000 => B1152000,
-                1500000 => B1500000,
-                2000000 => B2000000,
-                2500000 => B2500000,
-                3000000 => B3000000,
-                3500000 => B3500000,
-                4000000 => B4000000,
-                _ => return Err(err_msg("Unknown baud rate.")),
-            }
-        };
-
         // TODO: This seems to trigger a reset of Arduino based devices?
         let file = file::LocalFile::open_with_options(
             path,
             file::LocalFileOpenOptions::new().read(true).write(true),
         )?;
 
-        // ioctl(TCGETS, *mut termios)
-        let mut termios = tcgetattr(unsafe { file.as_raw_fd() })?;
+        // Setting up 8N1 UART (no flow control) at the requested baud rate.
+        {
+            let mut t = termios2::default();
+            unsafe { tcgets2(file.as_raw_fd(), &mut t) }?;
 
-        cfsetispeed(&mut termios, baud)?;
-        cfsetospeed(&mut termios, baud)?;
+            t.c_iflag = 0;
+            t.c_oflag = 0;
+            t.c_lflag = 0;
+            t.c_cflag = sys::bindings::CREAD
+                | sys::bindings::BOTHER
+                | (sys::bindings::BOTHER << sys::bindings::IBSHIFT)
+                | sys::bindings::CS8;
 
-        termios.input_flags = InputFlags::empty();
-        termios.local_flags = LocalFlags::empty();
-        termios.output_flags = OutputFlags::empty();
+            t.c_ispeed = baud_rate as u32;
+            t.c_ospeed = baud_rate as u32;
 
-        tcsetattr(
-            unsafe { file.as_raw_fd() },
-            nix::sys::termios::SetArg::TCSAFLUSH,
-            &termios,
-        )?;
+            unsafe { tcsetsf2(file.as_raw_fd(), &t) }?;
+        }
+
+        // For FTDI chips, the chip by default waits 16ms before responding to a USB
+        // packet if the buffer doesn't have enough data (62 bytes) to send back.
+        // Setting this flag changes this timeout to 1ms.
+        //
+        // Note that a 250k baud serial connection will generate at most 25 bytes per
+        // millisecond so there may be ineffeciencies at low speeds, though at speeds
+        // like 620k baud, the buffer should always fill up in high throughput
+        // situations.
+        //
+        // This will speed up known to be small responses like "ok\n" on grbl style
+        // devices. A less generic solution is to use the event character feature to
+        // have the chip return data as soon as a character like "\n" is seen.
+        //
+        // See https://ftdichip.com/wp-content/uploads/2020/08/AN232B-04_DataLatencyFlow.pdf
+        /*
+        {
+            let latency_timer = format!(
+                "/sys/bus/usb-serial/devices/{}/latency_timer",
+                path.file_name().unwrap()
+            );
+            if file::exists_sync(LocalPath::new(&latency_timer))? {
+                std::fs::write(latency_timer, "4")?;
+            }
+        }
+        */
+        /*
+        // TODO: Figure out why this doesn't work.
+        {
+            let mut s = serial_struct::default();
+            unsafe { tiocgserial(file.as_raw_fd(), &mut s) }?;
+
+            println!("{:?}", s);
+
+            // Equivalent to latency_timer = 1
+            s.flags |= sys::bindings::ASYNC_LOW_LATENCY as i32;
+
+            unsafe { tiocsserial(file.as_raw_fd(), &s) }?;
+        }
+        */
 
         let mut handle = unsafe { file.into_raw_handle() };
-        unsafe { handle.set_not_seeekable() };
+        unsafe { handle.set_not_seekable() };
 
         Ok(Self { file: handle })
     }

@@ -32,6 +32,9 @@ message MachineConfig {
         MARLIN = 2;
         GRBL = 3;
         SMOOTHIEWARE = 4;
+        // This is a fork of Smoothieware. 
+        CARVERA = 5;
+        KLIPPER = 6;
     }
     Firmware firmware = 8;
 
@@ -48,7 +51,53 @@ message MachineConfig {
     // Whether or not to use silent mode. Should only be set for Prusa MK3/4 machines.
     optional bool silent_mode = 14;
 
+    ToolsConfig tools = 15;
+
+    SpindleConfig spindle = 16;
+
     // TODO: Support an e-stop pin (that can be driven high/low to trigger a stop.)
+}
+
+message SpindleConfig {
+    float max_speed_rpm = 1;
+    float default_speed_rpm = 2;
+    bool supports_current_speed = 3;
+    bool supports_direction = 4;
+} 
+
+message ToolsConfig {
+    // Number of automatically changeable tool slots.
+    // - 0 means that the machine has one fixed tool (must be manually changed)
+    // - >= 1 means the machine supports automated tool change commands.
+    uint32 num_slots = 1; 
+
+    // Note that every machine should have at least one tool.
+    repeated ToolConfig loaded_tools = 2;
+}
+
+message ToolConfig {
+
+    // Index used to select this tool (used as the 'T' parameter in gcode).
+    uint32 index = 1;
+
+    string name = 2;
+
+    oneof type {
+        ExtruderToolConfig extruder = 3;
+        MillingToolConfig milling = 4;
+    }
+}
+
+message ExtruderToolConfig {
+    float nozzle_diameter = 1;
+    float filament_diameter = 2;
+}
+
+message MillingToolConfig {
+    float diameter = 1;
+
+    // Angle in degrees. Or 0 if this is not a v-bit.
+    float v_angle = 2;
 }
 
 message FieldPath {
@@ -71,10 +120,11 @@ enum AxisType {
     FAN_TACHOMETER_RPM = 3;
     FAN_PWM_VALUE = 4;
     GENERIC_SENSOR = 5;
+    SWITCH = 6;
 }
 
 message AxisConfig {
-    // Identifier used to label this axis in gcode responses. e.g. in 'X: 12.0', 'X' is the label.
+    // Identifier used to label this axis in gcode responses. e.g. in Marlin responses like 'X: 12.0', 'X' is the label.
     string id = 1;
 
     // Human friendly name for this axis.
@@ -85,11 +135,17 @@ message AxisConfig {
     // Hide this axis because it is redundant with some other axis.
     bool hide = 4;
 
-    // Min/max limit on what values can be reached by this asxis. 
+    // Min/max limit on what values can be reached by this axis. 
     Range range = 5;
 
     // If set, this axis will have its values to storage.
     AxisCollectionConfig collect = 6;
+
+    SwitchConfig switch = 7;
+
+    repeated string value = 8;
+
+    repeated float default_value = 9;
 }
 
 message AxisCollectionConfig {
@@ -98,9 +154,30 @@ message AxisCollectionConfig {
     optional float min_value = 1;
 }
 
+message SwitchConfig {
+    string on = 1;
+    string off = 2;
+}
+
 message WorkArea {
     Range x_range = 1;
     Range y_range = 2;
+    WorkAreaBackground background = 3;
+}
+
+message WorkAreaBackground {
+    // Path to an SVG
+    string path = 1;
+
+    // X coordinate of the left edge of the SVG.
+    float left = 2;
+
+    // Y coordinate of the bottom edge of the SVG.
+    float bottom = 3;
+    
+    float width = 4;
+
+    float height = 5;
 }
 
 message Range {

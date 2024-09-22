@@ -435,14 +435,23 @@ impl<'a> BitReader<'a> {
 
         // }
 
+        match self.bit_order {
+            BitOrder::MSBFirst => self.read_bits_msb(n),
+            BitOrder::LSBFirst => self.read_bits_lsb(n),
+        }
+    }
+
+    // TODO: Have a better way to keep this in sync with the other read_bits_xxx
+    // function.
+    fn read_bits_lsb(&mut self, n: u8) -> Result<Option<usize>> {
         // TODO: Instead implement as a read from up to two bytes.
         let mut out = 0;
         for i in 0..n {
             if self.offset == self.buffer.len() {
                 let mut buf = [0u8; 1];
                 let nread = self.reader.read(&mut buf)?;
-                // TODO: Annotate this if-statement with 'unlikely branch prediciton'
-                if nread == 0 {
+                // This is unlikely since we normally operate with 100+ byte input buffers.
+                if std::intrinsics::unlikely(nread == 0) {
                     if i == 0 {
                         return Ok(None);
                     } else {
@@ -453,34 +462,50 @@ impl<'a> BitReader<'a> {
                     }
                 }
 
-                // TODO: Optimize this into full byte pushes.
-                match self.bit_order {
-                    BitOrder::LSBFirst => {
-                        // Push bits into buffer from LSB to MSB
-                        let mut b = buf[0];
-                        self.buffer.push_full_msb(b.reverse_bits());
-                        /*
-                        for _ in 0..8 {
-                            self.buffer.push(b & 0b01);
-                            b = b >> 1;
-                        }
-                        */
-                    }
-                    BitOrder::MSBFirst => {
-                        // TODO: WE should be able to simplify this to just pushing to the back of
-                        // the BitVector's internal buffer?
-                        let mut b = buf[0];
-                        self.buffer.push_full_msb(b);
-                        /*
-                        for i in 0..8 {
-                            self.buffer.push((b >> (7 - i)) & 0b1);
-                        }
-                        */
-                    }
+                // Push bits into buffer from LSB to MSB
+                let mut b = buf[0];
+                self.buffer.push_full_msb(b.reverse_bits());
+            }
+
+            // TODO: Ideally change this behavior so that it pushes to the MSB for MSBFirst
+            // mode. Then we can get rid of the read_bits_be
+            out = out | ((self.buffer.get(self.offset).unwrap() as usize) << i);
+            self.offset += 1;
+        }
+
+        Ok(Some(out))
+    }
+
+    // TODO: Have a better way to keep this in sync with the other read_bits_xxx
+    // function.
+    fn read_bits_msb(&mut self, n: u8) -> Result<Option<usize>> {
+        // TODO: Instead implement as a read from up to two bytes.
+
+        while self.offset + (n as usize) > self.buffer.len() {
+            let mut buf = [0u8; 1];
+            let nread = self.reader.read(&mut buf)?;
+            // This is unlikely since we normally operate with 100+ byte input buffers.
+            if std::intrinsics::unlikely(nread == 0) {
+                if self.offset == self.buffer.len() {
+                    // There are zero more
+                    return Ok(None);
+                } else {
+                    return Err(BitIoError::NotEnoughBits.into());
                 }
             }
 
-            out = out | ((self.buffer.get(self.offset).unwrap() as usize) << i);
+            let mut b = buf[0];
+            self.buffer.push_full_msb(b);
+        }
+
+        /*
+        Get the current byte and the next byte and shift/mask the appropriate amont.
+
+        */
+
+        let mut out = 0;
+        for i in 0..n {
+            out = (out << 1) | (self.buffer.get(self.offset).unwrap() as usize);
             self.offset += 1;
         }
 
@@ -491,17 +516,6 @@ impl<'a> BitReader<'a> {
         // TODO: This error should also be identified.
         self.read_bits(n)?
             .ok_or_else(|| BitIoError::NotEnoughBits.into())
-    }
-
-    // TODO: Integrate into read_bits so that this is faster
-    pub fn read_bits_be(&mut self, n: u8) -> Result<usize> {
-        let mut out = 0;
-        for i in 0..n {
-            let next_bit = self.read_bits_exact(1)?;
-            out = (out << 1) | next_bit;
-        }
-
-        Ok(out)
     }
 
     pub fn consume(&mut self) {
@@ -553,10 +567,7 @@ impl<'a> BitReader<'a> {
         let mut num_read = 0;
 
         for i in 0..buf.len() {
-            let res = match self.bit_order {
-                BitOrder::LSBFirst => self.read_bits_exact(8),
-                BitOrder::MSBFirst => self.read_bits_be(8),
-            };
+            let res = self.read_bits_exact(8);
 
             let b = match res {
                 Ok(v) => v as u8,
@@ -601,10 +612,7 @@ impl<'a> BitReader<'a> {
         let mut num_read = 0;
 
         while num_read < buf.len() && self.offset < self.buffer.len() {
-            let b = match self.bit_order {
-                BitOrder::LSBFirst => self.read_bits_exact(8),
-                BitOrder::MSBFirst => self.read_bits_be(8),
-            }? as u8;
+            let b = self.read_bits_exact(8)? as u8;
 
             buf[num_read] = b;
             num_read += 1;
@@ -712,9 +720,19 @@ impl<'a> BitWriter<'a> {
     pub fn into_bits(self) -> BitVector {
         let mut out = BitVector::new();
         let mut v = self.current_byte;
-        for i in 0..self.bit_offset {
-            out.push((v & 0b1) as u8);
-            v = v >> 1;
+
+        match self.order {
+            BitOrder::LSBFirst => {
+                for i in 0..self.bit_offset {
+                    out.push((v & 0b1) as u8);
+                    v = v >> 1;
+                }
+            }
+            BitOrder::MSBFirst => {
+                for i in 0..(7 - self.bit_offset) {
+                    out.push((v >> (7 - i)) & 1);
+                }
+            }
         }
 
         out
@@ -737,6 +755,7 @@ impl BitWrite for BitWriter<'_> {
             }
             BitOrder::MSBFirst => {
                 for i in 0..len {
+                    // Next MSB in current_byte gets next MSB in input.
                     self.current_byte |= (((val >> (len - i - 1)) & 0b1) << self.bit_offset) as u8;
 
                     if self.bit_offset == 0 {

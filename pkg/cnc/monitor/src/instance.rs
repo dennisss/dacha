@@ -291,6 +291,59 @@ impl MonitorImpl {
         })
     }
 
+    async fn create_machine_impl(
+        &self,
+        request: &CreateMachineRequest,
+    ) -> Result<CreateMachineResponse> {
+        let preset = self
+            .shared
+            .config_presets
+            .iter()
+            .find(|c| c.base_config() == request.config().base_config())
+            .ok_or_else(|| {
+                rpc::Status::invalid_argument(format!(
+                    "Missing preset named: {}",
+                    request.config().base_config()
+                ))
+            })?;
+
+        let mut diff = request.config().clone();
+
+        let config = MachineConfigContainer::create(diff.clone(), preset)?;
+
+        let id = crypto::random::global_rng().uniform::<MachineId>().await;
+
+        eprintln!(
+            "Creating new machine with id {} from preset {}",
+            id,
+            config.base_config()
+        );
+
+        let mut res = CreateMachineResponse::default();
+        res.set_machine_id(id);
+
+        let shared = self.shared.clone();
+        // Uncancellable section.
+        executor::spawn(async move {
+            {
+                let mut machine_proto = MachineProto::default();
+                machine_proto.set_id(id);
+                machine_proto.set_config(diff.clone());
+                shared.db.insert::<MachineTable>(&machine_proto).await?;
+            }
+
+            lock!(state <= shared.state.lock().await?, {
+                state.machines.insert(id, MachineEntry::new(id, config));
+            });
+
+            Ok::<(), Error>(())
+        })
+        .join()
+        .await?;
+
+        Ok(res)
+    }
+
     pub fn files(&self) -> &FileManager {
         &self.shared.files
     }
@@ -490,6 +543,7 @@ impl MonitorImpl {
                             config.base_config()
                         );
 
+                        // TODO: Don't lock the state while doing this.
                         {
                             let mut machine_proto = MachineProto::default();
                             machine_proto.set_id(id);
@@ -1122,7 +1176,10 @@ impl MonitorImpl {
             }
             RunMachineCommandRequestCommandCase::SendSerialCommand(cmd) => {
                 // TODO: While we are sending commands, we should disable the player to be
-                // created.
+                // created (though we should allow some commands to be run if the user
+                // acknowledges that it may interfere with the ).
+
+                // TODO: Support multi-line scripts.
 
                 let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
 
@@ -1133,6 +1190,9 @@ impl MonitorImpl {
                     .await?;
             }
             RunMachineCommandRequestCommandCase::PlayProgram(_) => {
+                // TODO: Must wait for us to be in an idle state (in grbl/smoothieware) before
+                // we allow this to run.
+
                 self.play_impl(request.machine_id()).await?;
             }
             RunMachineCommandRequestCommandCase::PauseProgram(_) => {
@@ -1271,6 +1331,12 @@ impl MonitorImpl {
                 let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
                 serial_controller.home_y().await?;
             }
+            RunMachineCommandRequestCommandCase::SetSpindleState(state) => {
+                let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
+                serial_controller.set_spindle_state(state).await?;
+            }
+
+            // SpindleState
             RunMachineCommandRequestCommandCase::HomeAll(_) => {
                 // NOTE: We generally may not be able to probe Z independently
                 // if we are in a position above which the probe works.
@@ -1283,18 +1349,13 @@ impl MonitorImpl {
             }
             RunMachineCommandRequestCommandCase::Goto(cmd) => {
                 let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
-
-                // Absolute positioning
                 serial_controller
-                    .send_command("G90\n", DEFAULT_COMMAND_TIMEOUT)
+                    .goto(cmd.x(), cmd.y(), cmd.feed_rate())
                     .await?;
-
-                serial_controller
-                    .send_command(
-                        format!("G0 X{:.2} Y{:.2} F{}\n", cmd.x(), cmd.y(), cmd.feed_rate()),
-                        DEFAULT_COMMAND_TIMEOUT,
-                    )
-                    .await?;
+            }
+            RunMachineCommandRequestCommandCase::ToolChange(index) => {
+                let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
+                serial_controller.tool_change(*index).await?;
             }
             RunMachineCommandRequestCommandCase::Jog(cmd) => {
                 let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
@@ -1707,6 +1768,15 @@ impl MonitorService for MonitorImpl {
         response: &mut rpc::ServerStreamResponse<QueryEntitiesResponse>,
     ) -> Result<()> {
         self.query_entities_impl(request, response).await
+    }
+
+    async fn CreateMachine(
+        &self,
+        request: rpc::ServerRequest<CreateMachineRequest>,
+        response: &mut rpc::ServerResponse<CreateMachineResponse>,
+    ) -> Result<()> {
+        response.value = self.create_machine_impl(&request.value).await?;
+        Ok(())
     }
 
     async fn RunMachineCommand(

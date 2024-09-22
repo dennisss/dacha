@@ -1312,7 +1312,11 @@ impl Compiler {
         let mut used_nums: HashSet<FieldNumber> = HashSet::new();
         for field in msg.fields() {
             if !used_nums.insert(field.proto().number() as FieldNumber) {
-                panic!("Duplicate field number: {}", field.proto().number());
+                panic!(
+                    "Duplicate field number: {} in {}",
+                    field.proto().number(),
+                    msg.name()
+                );
             }
             if self.file.syntax() == Syntax::Proto3 {
                 // proto3 now allows optional fields again.

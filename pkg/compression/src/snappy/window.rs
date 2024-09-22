@@ -8,6 +8,8 @@ const BLOCK_SIZE: usize = 1 << 16;
 
 #[derive(Defaultable)]
 pub struct MatchingWindowSnappyOptions {
+    /// Size of the hash table. Max number of distinct 4-byte prefixes we will
+    /// memorize.
     #[default(1 << 16)]
     pub table_size: usize,
 
@@ -29,8 +31,8 @@ pub struct MatchingWindowSnappyOptions {
 ///     the 2^16 bytes before the current cursor position.
 ///
 /// The hash table itself doesn't store any information about whether or not a
-/// key/value pair is present/deleted. Instead, at lookup time, the user needs
-/// to check if the bytes at the stored offset match the query.
+/// key/value pair is present/deleted. Instead, at lookup time, the window
+/// internally re-checks if the bytes at the stored offset match the query.
 ///
 /// A minimum of 4 bytes are allowed to be matched.
 pub struct MatchingWindowSnappy<B: WindowBuffer> {
@@ -40,6 +42,9 @@ pub struct MatchingWindowSnappy<B: WindowBuffer> {
 }
 
 impl<B: WindowBuffer> MatchingWindowSnappy<B> {
+    /// The provided 'buffer' will be used to store the last N bytes of the
+    /// input for matching. The size of the buffer will bound the max distance
+    /// of matches.
     pub fn new(buffer: B, options: MatchingWindowSnappyOptions) -> Self {
         let table = vec![0; options.table_size];
         Self {
@@ -104,6 +109,10 @@ impl<B: WindowBuffer> MatchingWindowSnappy<B> {
             }
 
             offset -= BLOCK_SIZE;
+        }
+
+        if offset < self.buffer.start_offset() {
+            return None;
         }
 
         // TODO: Deduplicate the below code with the other window implementation.
