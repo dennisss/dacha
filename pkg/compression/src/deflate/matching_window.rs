@@ -1,6 +1,7 @@
-use crate::deflate::cyclic_buffer::*;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+
+use crate::deflate::cyclic_buffer::*;
 
 type Trigram = [u8; 3];
 
@@ -25,7 +26,21 @@ pub struct RelativeReference {
     pub length: usize,
 }
 
-pub struct MatchingWindowOptions {
+pub trait MatchingWindow {
+    /// Given the next segment of uncompressed data, pushes it to the end of
+    /// the window and in the process removing any data farther back the window
+    /// size.
+    fn advance(&mut self, data: &[u8]);
+
+    /// Given the next slice of unprocessed input data, attempts to match as
+    /// many of the starting bytes of the new input data in the history of past
+    /// inputs.
+    ///
+    /// NOTE: Will only ever return matches with >= 3 bytes.
+    fn find_match(&self, data: &[u8]) -> Option<RelativeReference>;
+}
+
+pub struct TrigramChainMatchingWindowOptions {
     /// Maximum number of references to a single trigram which we will keep
     /// track of.
     pub max_chain_length: usize,
@@ -35,12 +50,12 @@ pub struct MatchingWindowOptions {
 }
 
 /// A buffer of past uncompressed input which is
-pub struct MatchingWindow<B: WindowBuffer> {
+pub struct TrigramChainMatchingWindow<B: WindowBuffer> {
     // TODO: We don't need to maintain a cyclic buffer if we have the entire input available to us
     // during compression time.
     buffer: B,
 
-    options: MatchingWindowOptions,
+    options: TrigramChainMatchingWindowOptions,
 
     /// Map of three bytes in the back history to it's absolute position in the
     /// output buffer.
@@ -50,9 +65,9 @@ pub struct MatchingWindow<B: WindowBuffer> {
     trigrams: HashMap<Trigram, VecDeque<usize>>,
 }
 
-impl<B: WindowBuffer> MatchingWindow<B> {
-    pub fn new(buffer: B, options: MatchingWindowOptions) -> Self {
-        MatchingWindow {
+impl<B: WindowBuffer> TrigramChainMatchingWindow<B> {
+    pub fn new(buffer: B, options: TrigramChainMatchingWindowOptions) -> Self {
+        TrigramChainMatchingWindow {
             buffer,
             options,
             trigrams: HashMap::new(),
@@ -92,11 +107,10 @@ impl<B: WindowBuffer> MatchingWindow<B> {
             self.trigrams.insert(gram, list);
         }
     }
+}
 
-    /// Given the next segment of uncompressed data, pushes it to the end of
-    /// the window and in the process removing any data farther back the window
-    /// size.
-    pub fn advance(&mut self, data: &[u8]) {
+impl<B: WindowBuffer> MatchingWindow for TrigramChainMatchingWindow<B> {
+    fn advance(&mut self, data: &[u8]) {
         // TODO: If extending by more than the max_reference_distance, just wipe
         // the entire trigrams datastructure.
         self.buffer.extend_from_slice(data);
@@ -120,12 +134,7 @@ impl<B: WindowBuffer> MatchingWindow<B> {
         }
     }
 
-    /// Given the next slice of unprocessed input data, attempts to match as
-    /// many of the starting bytes of the new input data in the history of past
-    /// inputs.
-    ///
-    /// NOTE: Will only ever return matches with >= 3 bytes.
-    pub fn find_match(&self, data: &[u8]) -> Option<RelativeReference> {
+    fn find_match(&self, data: &[u8]) -> Option<RelativeReference> {
         if data.len() < 3 {
             return None;
         }

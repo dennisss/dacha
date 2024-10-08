@@ -7,6 +7,7 @@ use std::{
 
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
+use common::hash::FastHasherBuilder;
 use common::{bytes::Bytes, io::Readable};
 use executor::{
     bundle::TaskResultBundle,
@@ -15,11 +16,12 @@ use executor::{
 };
 use file::{LocalFile, LocalPath};
 use gcode::CommandCodec;
-use graphics::canvas::{Canvas, Paint, PathBuilder};
-use image::Color;
 use image::{format::jpeg::encoder::JPEGEncoder, types::ImageType, Image};
 use math::matrix::cwise_binary_ops::{CwiseMax, CwiseMin};
 use math::matrix::{Vector2f, Vector3f};
+use reflection::ParseFrom;
+
+use crate::{program_preview::*, round_number};
 
 pub struct ProgressSender {
     state: Arc<SyncMutex<f32>>,
@@ -111,29 +113,6 @@ impl ProgramSummary {
         bundle.join().await?;
 
         summary
-            .recv()
-            .await
-            .map_err(|_| err_msg("No summary for generated for an unknown reason"))
-    }
-
-    pub async fn visualize(
-        file_path: &LocalPath,
-        summary: &ProgramSummaryProto,
-    ) -> Result<ProgramVisualization> {
-        let mut bundle = TaskResultBundle::new();
-
-        let (reader, chunks) = ChunkedFileReader::create(file_path).await?;
-        bundle.add("ChunkedFileReader", reader.run());
-
-        let (parser, lines) = ProgramParserOp::new(chunks);
-        bundle.add("ProgramParser", parser.run());
-
-        let (visualizer, visual) = ProgramVisualizer::create(summary, lines)?;
-        bundle.add("ProgramVisualizer", visualizer.run());
-
-        bundle.join().await?;
-
-        visual
             .recv()
             .await
             .map_err(|_| err_msg("No summary for generated for an unknown reason"))
@@ -390,15 +369,30 @@ pub struct ProgramSummarizer {
 struct PartialSummary {
     current_tool: usize,
     current_position: Vector3f,
+    current_coordinate_system: String,
+    current_object: i32,
+    bounds: HashMap<String, Bounds, FastHasherBuilder>,
+    objects: HashMap<u32, ObjectData, FastHasherBuilder>,
+}
+
+#[derive(Default)]
+struct ObjectData {
+    proto: ProgramObjectSummary,
+    min_position: Option<Vector3f>,
+    max_position: Option<Vector3f>,
+}
+
+#[derive(Default)]
+struct Bounds {
     min_position: Option<Vector3f>,
     max_position: Option<Vector3f>,
 }
 
 fn vector_to_proto(v: &Vector3f) -> Vector3fProto {
     let mut out = Vector3fProto::default();
-    out.set_x(v[0]);
-    out.set_y(v[1]);
-    out.set_z(v[2]);
+    out.set_x(round_number(v[0]));
+    out.set_y(round_number(v[1]));
+    out.set_z(round_number(v[2]));
     out
 }
 
@@ -480,12 +474,33 @@ impl ProgramSummarizer {
             // Requirements such as tool types and build volume.
         }
 
-        if let Some(pos) = &self.partial_summary.min_position {
-            self.summary.proto.set_min_position(vector_to_proto(pos));
+        for (coordinate_system, bounds) in self.partial_summary.bounds {
+            let proto = self.summary.proto.new_bounds();
+            proto.set_coordinate_system(coordinate_system);
+            if let Some(pos) = &bounds.min_position {
+                proto.set_min_position(vector_to_proto(pos));
+            }
+            if let Some(pos) = &bounds.max_position {
+                proto.set_max_position(vector_to_proto(pos));
+            }
         }
 
-        if let Some(pos) = &self.partial_summary.max_position {
-            self.summary.proto.set_max_position(vector_to_proto(pos));
+        // Add the objects in order of index. There should be no missing indices.
+        for i in 0..self.partial_summary.objects.len() {
+            let object = self
+                .partial_summary
+                .objects
+                .get(&(i as u32))
+                .ok_or_else(|| format_err!("Missing object with index: {}", i))?;
+
+            let proto = self.summary.proto.add_objects(object.proto.clone());
+            proto.set_index(i as u32);
+            if let Some(pos) = &object.min_position {
+                proto.set_min_position(vector_to_proto(pos));
+            }
+            if let Some(pos) = &object.max_position {
+                proto.set_max_position(vector_to_proto(pos));
+            }
         }
 
         let _ = self.output.send(self.summary);
@@ -497,15 +512,6 @@ impl ProgramSummarizer {
         let mut out_line = gcode::LineBuilder::default();
 
         /*
-        TODO: Dimensions along which to split the bounding boxes:
-        - Overall X/Y/Z bounds.
-        - Per-object bounds.
-
-        Tracing the motion:
-        - Assumptions:
-            - Not using any position offsets like G92 within the program.
-            - Using all absolute movements
-
         TODO: Measure how much is extruded from each tool.
 
         */
@@ -519,10 +525,64 @@ impl ProgramSummarizer {
                     continue;
                 }
                 gcode::ProgramElement::Command(c) => c,
+                gcode::ProgramElement::Metadata { key, value } => {
+                    self.interpret_metadata(key, value)?;
+                    continue;
+                }
+
                 _ => continue,
             };
 
+            /*
+            ; objects_info = {"objects":[{"name":"xyzCalibration_cube.stl (Instance 1)","polygon":[[154.024,151.627],[134.024,151.627],[134.024,131.627],[154.024,131.627]]},{"name":"xyzCalibration_cube.stl (Instance 2)","polygon":[[175.918,230.018],[155.918,230.018],[155.918,210.018],[175.918,210.018]]},{"name":"xyzCalibration_cube.stl (Instance 3)","polygon":[[255.894,150.182],[235.894,150.182],[235.894,130.182],[255.894,130.182]]}]}
+
+            M486 S0
+            M486 AxyzCalibration_cube.stl (Instance 1)
+            M486 S-1
+            M486 S1
+            M486 AxyzCalibration_cube.stl (Instance 2)
+            M486 S-1
+            M486 S2
+            M486 AxyzCalibration_cube.stl (Instance 3)
+            M486 S-1
+
+            ...
+
+            M486 S2
+
+            M486 S-1
+            M486 S0
+
+            */
+
             match &command {
+                gcode::Command::Workspace1Coordinates(_) => {
+                    self.partial_summary.current_coordinate_system = "G54".into();
+                    // TODO: If the coordinate system changed, clear the current
+                    // position.
+                }
+                gcode::Command::CancelObject(cmd) => {
+                    if let Some(idx) = cmd.starting_object_index {
+                        self.partial_summary.current_object = idx;
+                    }
+
+                    if self.partial_summary.current_object >= 0 {
+                        let idx = self.partial_summary.current_object as u32;
+
+                        let obj = self.partial_summary.objects.entry(idx).or_default();
+
+                        if let Some(name) = &cmd.object_name {
+                            obj.proto.set_name(name.clone());
+                        }
+                    } else if let Some(name) = &cmd.object_name {
+                        // TODO: In RepRapFirmware, it is not necessary to specify the index. As
+                        // long as there is a name, that will uniquely
+                        // identify the objects.
+                        return Err(err_msg(
+                            "Object name given when no object index is selected",
+                        ));
+                    }
+                }
                 gcode::Command::LinearMove(gcode::LinearMove { inner })
                 | gcode::Command::RapidMove(gcode::RapidMove { inner }) => {
                     // TODO: Ideally re-use the FakeMachine code for simulating motions. Currently
@@ -537,23 +597,37 @@ impl ProgramSummarizer {
 
                     self.partial_summary.current_position = new_position.clone();
 
-                    self.partial_summary.min_position = Some(
-                        new_position.clone().cwise_min(
-                            self.partial_summary
-                                .min_position
-                                .clone()
-                                .unwrap_or(new_position.clone()),
-                        ),
-                    );
+                    let bounds = self
+                        .partial_summary
+                        .bounds
+                        .entry(self.partial_summary.current_coordinate_system.clone())
+                        .or_insert_with(|| Bounds::default());
 
-                    self.partial_summary.max_position = Some(
-                        new_position.clone().cwise_max(
-                            self.partial_summary
-                                .max_position
-                                .clone()
-                                .unwrap_or(new_position.clone()),
-                        ),
-                    );
+                    bounds.min_position =
+                        Some(new_position.clone().cwise_min(
+                            bounds.min_position.clone().unwrap_or(new_position.clone()),
+                        ));
+
+                    bounds.max_position =
+                        Some(new_position.clone().cwise_max(
+                            bounds.max_position.clone().unwrap_or(new_position.clone()),
+                        ));
+
+                    if self.partial_summary.current_object >= 0 {
+                        let object = self
+                            .partial_summary
+                            .objects
+                            .get_mut(&(self.partial_summary.current_object as u32))
+                            .ok_or_else(|| err_msg("Missing current object data"))?;
+
+                        object.min_position = Some(new_position.clone().cwise_min(
+                            object.min_position.clone().unwrap_or(new_position.clone()),
+                        ));
+
+                        object.max_position = Some(new_position.clone().cwise_max(
+                            object.max_position.clone().unwrap_or(new_position.clone()),
+                        ));
+                    }
                 }
                 gcode::Command::SetBuildPercentage(cmd) => {
                     if let Some(v) = cmd.normal_time_remaining_mins {
@@ -606,6 +680,14 @@ impl ProgramSummarizer {
                         .or(inner.min_temperature)
                         .ok_or_else(|| err_msg("Missing temperature parameter"))?;
 
+                    // let old_max = self.summary.proto.has_max_bed_temperature
+
+                    // let v = f32::max(
+                    //     if self.summary.proto.has_max_bed_temperature() {  }
+                    // self.summary.max_bed_temperature.unwrap_or(-10000.0),
+                    //     temp.to_f32(),
+                    // )
+
                     self.summary.max_bed_temperature = Some(f32::max(
                         self.summary.max_bed_temperature.unwrap_or(-10000.0),
                         temp.to_f32(),
@@ -635,6 +717,7 @@ impl ProgramSummarizer {
             out_line.add(&command);
         }
 
+        // TODO: Move this to the PlayerPreprocessor.
         // TODO: gRBL limit is 128?
         if out_line.to_string_compact().len() > gcode::MAX_STANDARD_LINE_LENGTH {
             return Err(err_msg("Line is too long to send to machines"));
@@ -653,224 +736,36 @@ impl ProgramSummarizer {
 
         Ok(())
     }
-}
 
-/*
-- For CNC, color in everything with Z < 0
+    fn interpret_metadata(&mut self, key: String, value: String) -> Result<()> {
+        if key == "objects_info" {
+            let value = json::parse(&value)?;
+            let info = gcode::ObjectsInfo::parse_from(json::ValueParser::new(&value))?;
 
-- Generate one image per tool
-- For 3d printing, also do one image per layer
-    - Highlight overhang in another color
+            for (i, object) in info.objects.into_iter().enumerate() {
+                let entry = self.partial_summary.objects.entry(i as u32).or_default();
 
-*/
+                if entry.proto.name().is_empty() {
+                    entry.proto.set_name(object.name);
+                }
 
-/// TODO: Base this on the largest tool diameter.
-const MARGIN_MM: f32 = 5.0;
+                if entry.proto.polygon_len() != 0 {
+                    return Err(err_msg("Object polygon defined multiple times"));
+                }
 
-const PIXELS_PER_MM: f32 = 10.0;
-
-fn encode_binary_image(image: &Image<u8>) -> Vec<u8> {
-    let mut out = vec![];
-
-    out.extend_from_slice(&(image.height() as u32).to_le_bytes());
-    out.extend_from_slice(&(image.width() as u32).to_le_bytes());
-
-    for y in 0..image.height() {
-        for x in 0..image.width() {
-            if x % 8 == 0 {
-                out.push(0);
-            }
-
-            if image[(y, x, 0)] != 0 {
-                *out.last_mut().unwrap() |= 1 << (x % 8);
-            }
-        }
-    }
-
-    let mut compressed = vec![];
-
-    let comper = compression::deflate::Deflater::new();
-    compression::transform::transform_to_vec(comper, &out, &mut compressed).unwrap();
-
-    compressed
-}
-
-pub struct ProgramVisualization {
-    pub image: Vec<u8>,
-    pub packed: Vec<u8>,
-}
-
-pub struct ProgramVisualizer {
-    summary: ProgramSummaryProto,
-    lines: channel::Receiver<Option<Vec<gcode::ProgramElement>>>,
-    parser: gcode::ProgramParser,
-    canvas: graphics::raster::canvas::RasterCanvas,
-    output: oneshot::Sender<ProgramVisualization>,
-}
-
-/*
-We can generate visualizations for specific machines.
-- Note that if the config changes, then we need to re-compute things though.
-
--
-
-Obviously the simplest option is to just always re-compute everything.
-
-
-TODO: Eventually we will want to save things like the tool configs in history reports since that is relevant for analysis.
-
-*/
-
-fn calculate_engraving_diameter(angle_degrees: f32, base_diameter: f32, depth: f32) -> f32 {
-    let angle_rads = angle_degrees * (PI / 180.0);
-    let half_angle_rads = angle_rads / 2.0;
-
-    let tan = half_angle_rads.tan();
-
-    let base_depth = (base_diameter / 2.0) / tan;
-
-    let full_depth = base_depth + depth;
-
-    let full_radius = full_depth * tan;
-
-    full_radius * 2.0
-}
-
-impl ProgramVisualizer {
-    pub fn create(
-        program_summary: &ProgramSummaryProto,
-        lines: channel::Receiver<Option<Vec<gcode::ProgramElement>>>,
-    ) -> Result<(Self, oneshot::Receiver<ProgramVisualization>)> {
-        let (sender, receiver) = oneshot::channel();
-
-        let raw_width =
-            (program_summary.max_position().x() - program_summary.min_position().x()).max(0.0);
-        let raw_height =
-            (program_summary.max_position().y() - program_summary.min_position().y()).max(0.0);
-
-        let width = (PIXELS_PER_MM * (2.0 * MARGIN_MM + raw_width)) as usize;
-        let height = (PIXELS_PER_MM * (2.0 * MARGIN_MM + raw_height)) as usize;
-
-        let mut canvas = graphics::raster::canvas::RasterCanvas::create(height, width);
-
-        {
-            let mut path = PathBuilder::new();
-            path.rect(-1.0, -1.0, (width as f32) + 2.0, (height as f32) + 2.0);
-
-            let mut p = canvas.create_path_fill(&path.build())?;
-            p.draw(&Paint::color(Color::hex(0xffffff)), &mut canvas)?;
-        }
-
-        // mm to pixel unit conversion.
-        canvas.translate(
-            PIXELS_PER_MM * MARGIN_MM,
-            (height as f32) - (PIXELS_PER_MM * MARGIN_MM),
-        );
-        canvas.scale(PIXELS_PER_MM, -1.0 * PIXELS_PER_MM);
-
-        let inst = Self {
-            summary: program_summary.clone(),
-            lines,
-            parser: gcode::ProgramParser::default(),
-            canvas,
-            output: sender,
-        };
-
-        Ok((inst, receiver))
-    }
-
-    pub async fn run(mut self) -> Result<()> {
-        let mut last_position = Vector3f::default();
-
-        loop {
-            // TODO: Need to parse the final line with end_of_input
-
-            let elements = match self.lines.recv().await {
-                Ok(Some(v)) => v,
-                Ok(None) => break,
-                Err(_) => return Ok(()),
-            };
-
-            for element in elements {
-                let command = match element {
-                    gcode::ProgramElement::Command(c) => c,
-                    _ => continue,
-                };
-
-                // TODO: Need to track the current tool.
-
-                // TODO: NEed to track when the spindle is on.
-
-                /*
-                0.2mm 30 degree
-
-                */
-
-                match &command {
-                    gcode::Command::LinearMove(gcode::LinearMove { inner })
-                    | gcode::Command::RapidMove(gcode::RapidMove { inner }) => {
-                        let mut new_position = last_position.clone();
-                        for (i, value) in [inner.x, inner.y, inner.z].into_iter().enumerate() {
-                            if let Some(v) = value {
-                                new_position[i] = v.to_f32();
-                            }
-                        }
-
-                        let is_below = new_position.z() < 0.0 || last_position.z() < 0.0;
-
-                        if is_below {
-                            let diameter = calculate_engraving_diameter(
-                                30.0,
-                                0.2,
-                                -1.0 * new_position.z().min(last_position.z()),
-                            );
-
-                            let mut path = PathBuilder::new();
-                            path.move_to(last_position.block(0, 0).to_owned());
-                            path.line_to(new_position.block(0, 0).to_owned());
-
-                            let r = Vector2f::from_slice(&[diameter / 2.0, diameter / 2.0]);
-
-                            let mut p = self.canvas.create_path_stroke(&path.build(), diameter)?;
-                            p.draw(&Paint::color(Color::zero()), &mut self.canvas)?;
-
-                            {
-                                let mut path = PathBuilder::new();
-
-                                path.ellipse(
-                                    last_position.block(0, 0).to_owned(),
-                                    r.clone(),
-                                    0.0,
-                                    2.0 * PI,
-                                );
-                                path.ellipse(
-                                    new_position.block(0, 0).to_owned(),
-                                    r.clone(),
-                                    0.0,
-                                    2.0 * PI,
-                                );
-
-                                let mut p = self.canvas.create_path_fill(&path.build())?;
-                                p.draw(&Paint::color(Color::zero()), &mut self.canvas)?;
-                            }
-                        }
-
-                        last_position = new_position;
+                for pt in object.polygon {
+                    if pt.len() != 2 {
+                        return Err(err_msg("Expected polygon points to be 2d"));
                     }
-                    _ => {}
+
+                    let out = entry.proto.new_polygon();
+                    out.set_x(pt[0]);
+                    out.set_y(pt[1]);
                 }
             }
         }
 
-        let encoder = JPEGEncoder::new(90);
-
-        let mut encoded = vec![];
-        encoder.encode(&self.canvas.drawing_buffer, &mut encoded)?;
-
-        let _ = self.output.send(ProgramVisualization {
-            image: encoded,
-            packed: encode_binary_image(&self.canvas.drawing_buffer),
-        });
+        //
 
         Ok(())
     }

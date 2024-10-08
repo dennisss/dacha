@@ -152,6 +152,30 @@ mod tests {
         Ok(())
     }
 
+    // regexp!(OBJECT_COMMENT => "^(.*) id:([0-9]+)\\s+copy\\s+([0-9]+)\\s*$");
+    #[test]
+    fn vm_wildcard_start() -> Result<()> {
+        let re = instance::RegExp::new("^(.*) id:([0-9]+)\\s+copy\\s+([0-9]+)\\s*$")?;
+
+        {
+            let m = re.exec("hello_world id:123 copy 456").unwrap();
+
+            assert_eq!(m.group_str(2).unwrap().unwrap(), "123");
+            assert_eq!(m.group_str(3).unwrap().unwrap(), "456");
+            assert_eq!(m.group_str(1).unwrap().unwrap(), "hello_world");
+        }
+
+        {
+            let m = re.exec("sata-bottom.stl id:1 copy 0").unwrap();
+
+            assert_eq!(m.group_str(2).unwrap().unwrap(), "1");
+            assert_eq!(m.group_str(3).unwrap().unwrap(), "0");
+            assert_eq!(m.group_str(1).unwrap().unwrap(), "sata-bottom.stl");
+        }
+
+        Ok(())
+    }
+
     // TODO: We don't want '.' to match the empty string (given that it will
     // match the start marker)
 

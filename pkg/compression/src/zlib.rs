@@ -185,7 +185,7 @@ impl ZlibEncoder {
         let hasher = Adler32Hasher::new();
 
         Self {
-            deflater: Deflater::new(),
+            deflater: Deflater::new(DeflaterOptions::fast()),
             hasher,
             pending_bytes,
             deflater_done: false,

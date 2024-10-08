@@ -6,10 +6,13 @@ import { TimeUnit, format_duration_proto, format_duration_secs, timestamp_proto_
 import { Button } from "pkg/web/lib/button";
 import { pick_file } from "../file_picker";
 import { Card, CardBody } from "../card";
+import { MachineUiState, ProgramPreviewContainer, ProgramPreviewData } from "./state";
+import { parse_binary_images } from "./binary_image";
 
 export interface PlayerBoxProps {
-    context: PageContext,
-    machine: any
+    context: PageContext;
+    machine: any;
+    ui_state: MachineUiState;
 }
 
 export class PlayerBox extends React.Component<PlayerBoxProps> {
@@ -43,6 +46,126 @@ class PlayerLoaded extends React.Component<PlayerBoxProps> {
         done();
     }
 
+    // NOTE: This assumes that the preview is already in a loaded state in the machine proto
+    _load_preview_data(): ProgramPreviewContainer {
+        let ui_state = this.props.ui_state;
+        let preview = this.props.machine.state.loaded_program.preview;
+
+        let existing_data = ui_state.program_preview();
+        if (existing_data && existing_data.config_key == preview.config_hash && existing_data.file_id == preview.file_id && existing_data.revision == preview.revision) {
+            return existing_data;
+        }
+
+        // TODO: Cancel/abort any existing data loading.
+
+        let container: ProgramPreviewContainer = {
+            config_key: preview.config_hash,
+            file_id: preview.file_id,
+            revision: preview.revision,
+            loading: true
+        };
+        ui_state.set_program_preview(container);
+
+        new Promise(async () => {
+            try {
+                let layer_images = [];
+
+                if (preview.layer_images_url) {
+                    let res = await fetch(preview.layer_images_url);
+                    let buf = await res.arrayBuffer();
+
+                    // TODO: Deduplicate this.
+                    if (!res.ok) {
+                        if (res.body !== null) {
+                            res.body.cancel();
+                        }
+
+                        throw new Error('Error returned in GET request: ' + res.status + ': ' + res.statusText);
+                    }
+
+                    layer_images = parse_binary_images(buf);
+                }
+
+                ui_state.set_program_preview({
+                    config_key: preview.config_hash,
+                    file_id: preview.file_id,
+                    revision: preview.revision,
+                    data: {
+                        layer_images
+                    },
+                    loading: false
+                });
+            } catch (e) {
+                ui_state.set_program_preview({
+                    config_key: preview.config_hash,
+                    file_id: preview.file_id,
+                    revision: preview.revision,
+                    error: (e + '')
+                });
+            }
+        });
+
+        return container;
+    }
+
+    _render_preview_progress() {
+
+        let preview = this.props.machine.state.loaded_program.preview;
+
+        // TODO: Clear any preview cache.
+        let regenerate_button = (
+            <Button preset="light"
+                style={{ float: 'right', marginLeft: '10px' }}
+                onClick={(done) => this._click_macro_button({ regenerate_preview: true }, done)}
+            >
+                <span className="material-symbols-fill">refresh</span>
+            </Button>
+
+        )
+
+        let error = preview.state.error;
+
+        if (preview.state.ready) {
+            let data = this._load_preview_data();
+
+            if (data.error) {
+                error = data.error;
+            } else if (data.loading) {
+                //
+            } else {
+                let n_layers = (preview.layers || []).length;
+                return (
+                    <div>
+                        {regenerate_button}
+                        Processed all {n_layers} layer{n_layers == 1 ? '' : 's'}
+                    </div>
+                );
+            }
+        }
+
+        if (error) {
+            return (
+                <div>
+                    {regenerate_button}
+                    <span style={{ color: 'red', fontSize: '0.8em' }}>
+                        Error: {error}
+                    </span>
+                </div>
+
+            );
+        }
+
+        let p = Math.round((preview.state.progress || 0) * 100);
+        return (
+            <div>
+                <div className="progress">
+                    <div className={"progress-bar"} style={{ width: (p + '%'), minWidth: 10 }}></div>
+                </div>
+                <div style={{ fontSize: '0.8em' }}>{p}% done generating preview</div>
+            </div>
+        );
+    }
+
     render() {
         let machine = this.props.machine;
 
@@ -61,6 +184,13 @@ class PlayerLoaded extends React.Component<PlayerBoxProps> {
         let is_stopped = state == 'DONE' || state == 'STOPPED' || state == 'ERROR';
 
         let properties = get_player_properties(machine);
+
+        properties.push({
+            name: 'Preview:',
+            value: this._render_preview_progress()
+        });
+
+        console.log(machine.state);
 
         return (
             <div>

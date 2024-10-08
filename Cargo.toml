@@ -91,6 +91,7 @@ members = [
 	"third_party/mime_types",
 	"pkg/executor",
 	"pkg/executor/multitask",
+	"pkg/executor/graph",
 	# "pkg/api/ubiquiti",
 	# "pkg/peripherals/cmsis_svd",
 	"pkg/peripherals",

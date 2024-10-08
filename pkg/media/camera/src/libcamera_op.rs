@@ -5,9 +5,9 @@ use std::time::Duration;
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
+use executor_graph::*;
 
 use crate::frame::*;
-use crate::graph::*;
 
 const CAMERA_QUEUE_LENGTH: usize = 4;
 const TARGET_FPS: u64 = 30;
@@ -457,9 +457,7 @@ impl LibcameraOp {
                 init_data: vec![],
             };
 
-            if !output.write(Box::new(frame)).await {
-                break;
-            }
+            output.write(Box::new(frame)).await?;
         }
 
         Ok(())

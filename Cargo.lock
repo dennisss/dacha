@@ -650,8 +650,10 @@ dependencies = [
  "math",
  "media_camera",
  "parsing",
+ "perf",
  "peripherals",
  "protobuf",
+ "reflection",
  "regexp_macros",
  "rpc",
  "rpc_util",
@@ -1145,6 +1147,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "executor_graph"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "common",
+ "executor",
+ "failure",
+ "macros",
+ "sys",
+]
+
+[[package]]
 name = "executor_multitask"
 version = "0.1.0"
 dependencies = [
@@ -1346,6 +1360,7 @@ dependencies = [
  "gcode_macros",
  "macros",
  "math",
+ "reflection",
  "regexp_macros",
 ]
 
@@ -2009,6 +2024,7 @@ dependencies = [
  "compression",
  "crypto",
  "executor",
+ "executor_graph",
  "executor_multitask",
  "file",
  "http",

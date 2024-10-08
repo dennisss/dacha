@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::{any::Any, collections::HashSet};
 
-use common::errors::*;
+use base_error::*;
 use executor::bundle::TaskResultBundle;
 use executor::channel::spsc::{self, Receiver, Sender};
+
+use crate::operation::*;
+use crate::stream::*;
 
 #[derive(Default)]
 pub struct Graph {
@@ -105,6 +108,8 @@ impl Graph {
 
             let op = node.operation.clone();
 
+            // TODO: Catch GraphStreamError.
+            // TODO: Must close the output screws eventually.
             let future = async move { op.execute(inputs, outputs).await };
 
             if target_nodes.contains(&node.name) {
@@ -113,6 +118,10 @@ impl Graph {
                 bundle.add(node_name, future);
             }
         }
+
+        // TODO: Need stall detection: If all operations are stuck waiting for more
+        // input (e.g. if an op can't consume an input until some other op consumes all
+        // of that same input).
 
         // TODO: Also stop this if any thing in 'bundle' returns an error.
         targets_bundle.join().await?;
@@ -134,68 +143,8 @@ pub struct Node {
     inputs: Vec<OutputKey>,
 }
 
-// pub struct
-
-#[derive(Clone, Debug)]
-pub struct OperationSignature {
-    pub name: String,
-    pub num_inputs: usize,
-    pub num_outputs: usize,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutputKey {
     pub node_name: String,
     pub output_index: usize,
-}
-
-#[async_trait]
-pub trait Operation: 'static + Send + Sync {
-    fn signature(&self) -> OperationSignature;
-
-    /// Executes the operation on the given streams of inputs and writes the
-    /// results to the given output streams.
-    ///
-    /// Generally this may be called many times in parallel if many separate
-    /// graph executions are required.
-    ///
-    /// Cancellation model:
-    /// - Operations that take >=1 inputs MUST terminate shortly after all input
-    ///   streams end/close.
-    /// - Operations that only have outputs SHOULD stop themselves when the
-    ///   output stream is closed (though this isn't necessary for graph
-    ///   correctness).
-    /// - When the final graph output streams/nodes end (or the caller loses
-    ///   interest in them), all operations will abruptly stop getting polled
-    ///   (there is no graceful shutdown).
-    async fn execute(&self, inputs: Vec<InputStream>, outputs: Vec<OutputStream>) -> Result<()>;
-}
-
-pub struct InputStream {
-    receiver: Receiver<Box<dyn Any + Send + Sync + 'static>>,
-}
-
-impl InputStream {
-    /// TODO: Need to differentiate the end of inputs and the stream being fully
-    /// consumed.
-    pub async fn read(&mut self) -> Option<Box<dyn Any + Send + Sync + 'static>> {
-        match self.receiver.recv().await {
-            Ok(v) => Some(v),
-            Err(_) => None,
-        }
-    }
-}
-
-pub struct OutputStream {
-    sender: Sender<Box<dyn Any + Send + Sync + 'static>>,
-}
-
-impl OutputStream {
-    /// Writes a single packet/frame of data to the stream. This will block if
-    /// the unprocessed packet queue is full.
-    ///
-    /// Returns false if the other end of the stream has been dropped.
-    pub async fn write(&mut self, data: Box<dyn Any + Send + Sync + 'static>) -> bool {
-        self.sender.send(data).await.is_ok()
-    }
 }

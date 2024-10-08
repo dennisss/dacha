@@ -68,6 +68,7 @@ export interface LineEntity {
 export interface PathEntity {
     kind: EntityKind.Path;
     color: string;
+    fill_color?: string;
     width: number;
     points: Point[];
     closed: boolean;

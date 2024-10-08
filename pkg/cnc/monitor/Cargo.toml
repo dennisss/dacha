@@ -30,6 +30,7 @@ failure = "0.1.8"
 gcode = { path = "../gcode" }
 bgcode = { path = "../bgcode" }
 math = { path = "../../math" }
+perf = { path = "../../perf" }
 graphics = { path = "../../graphics" }
 datastore_meta_client = { path = "../../datastore/meta/client" }
 sstable = { path = "../../sstable" }
@@ -37,6 +38,7 @@ media_camera = { path = "../../media/camera" }
 video = { path = "../../media/video" }
 compression = { path = "../../compression" }
 libcamera = { path = "../../../third_party/libcamera" }
+reflection = { path = "../../reflection" }
 
 [features]
 default = ["std"]

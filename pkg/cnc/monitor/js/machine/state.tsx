@@ -1,5 +1,6 @@
 import { FigureLegendEntry } from "pkg/web/lib/figure/legend";
 import { CarveraLevelingState } from "./carvera";
+import { BinaryImageData } from "./binary_image";
 
 
 // Shared state 
@@ -9,6 +10,7 @@ export class MachineUiState {
     _position_legend: FigureLegendState;
 
     _carvera_state: CarveraLevelingState | null = null;
+    _program_preview: ProgramPreviewContainer | null = null;
 
 
     constructor() {
@@ -35,6 +37,15 @@ export class MachineUiState {
 
     set_carvera_state(state: CarveraLevelingState | null) {
         this._carvera_state = state;
+        this._notify_all();
+    }
+
+    program_preview(): ProgramPreviewContainer | null {
+        return this._program_preview;
+    }
+
+    set_program_preview(data: ProgramPreviewContainer | null) {
+        this._program_preview = data;
         this._notify_all();
     }
 
@@ -68,15 +79,19 @@ export class FigureLegendState {
     _entries: Map<string, FigureLegendEntry> = new Map();
 
     // NOTE: This is meant to be called fom the PositionBox so doesn't trigger listeners.
-    get_or_insert_with(id: string, default_fn: () => FigureLegendEntry): FigureLegendEntry {
-        let v = this._entries.get(id);
+    get_or_insert(new_entry: FigureLegendEntry): FigureLegendEntry {
+        let v = this._entries.get(new_entry.id);
         if (v !== undefined) {
             return v;
         }
 
-        v = default_fn();
-        this._entries.set(id, v);
+        v = new_entry;
+        this._entries.set(v.id, v);
         return v;
+    }
+
+    get(id: string): FigureLegendEntry | undefined {
+        return this._entries.get(id);
     }
 
     set(entry: FigureLegendEntry) {
@@ -84,3 +99,19 @@ export class FigureLegendState {
         this._root._notify_all();
     }
 }
+
+export interface ProgramPreviewContainer {
+    file_id: any;
+    config_key: any;
+    revision: any;
+
+    error?: string;
+    loading?: boolean;
+    data?: ProgramPreviewData
+}
+
+export interface ProgramPreviewData {
+    layer_images: BinaryImageData[];
+}
+
+

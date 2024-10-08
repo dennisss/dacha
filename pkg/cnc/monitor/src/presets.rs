@@ -65,6 +65,15 @@ pub async fn get_prusa_i3_mk3sp_config() -> Result<MachineConfig> {
         .ok_or_else(|| err_msg("Config not found"))
 }
 
+pub async fn get_prusa_xl_config() -> Result<MachineConfig> {
+    let presets = get_machine_presets().await?;
+
+    presets
+        .into_iter()
+        .find(|preset| preset.base_config() == "prusa_xl")
+        .ok_or_else(|| err_msg("Config not found"))
+}
+
 pub async fn get_makera_carvera_config() -> Result<MachineConfig> {
     let presets = get_machine_presets().await?;
 

@@ -452,7 +452,7 @@ impl FileReference {
         FileManager::file_proto_with_urls(&self.shared, &self.proto)
     }
 
-    fn data_dir(&self) -> LocalPathBuf {
+    pub fn data_dir(&self) -> LocalPathBuf {
         self.shared
             .files_dir
             .join(base_radix::hex_encode(&self.file_id.to_be_bytes()))

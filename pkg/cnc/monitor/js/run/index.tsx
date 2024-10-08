@@ -81,6 +81,7 @@ export class ProgramRunPage extends React.Component<ProgramRunPageProps, Program
 
         let machine_link = '/ui/machines/' + machine.id;
 
+        // TODO: Include object cancellation info.
         return (
             <div>
                 <Title value={title} />

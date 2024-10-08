@@ -28,6 +28,13 @@ impl RasterCanvas {
             base: CanvasBase::new(),
         }
     }
+
+    pub fn create_grayscale(height: usize, width: usize) -> Self {
+        Self {
+            drawing_buffer: Image::zero(height, width, Colorspace::Grayscale),
+            base: CanvasBase::new(),
+        }
+    }
 }
 
 /*

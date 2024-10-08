@@ -59,8 +59,10 @@ message ProgramSummaryProto {
 
     google.protobuf.Duration silent_duration = 4;
 
-    map<uint32, ProgramToolSummary> tools = 5;
+    // TODO: Populate this.
+    repeated ProgramToolSummary tools = 12;
 
+    // TODO: Populate this.
     optional float max_bed_temperature = 6;
 
     repeated string unique_commands = 8;
@@ -68,9 +70,43 @@ message ProgramSummaryProto {
     // Up to the first 5 errors seen while parsing the file.
     repeated string first_failures = 9;
 
-    Vector3fProto min_position = 10;
+    // Bounding boxes 
+    repeated ProgramCoordinateSystemBounds bounds = 13;
 
-    Vector3fProto max_position = 11;
+    repeated ProgramObjectSummary objects = 14;
+
+    reserved 5, 10, 11;
+}
+
+message ProgramCoordinateSystemBounds {
+    // An empty value implies the default coordinate system.
+    // Else, this contains the gcode id for the coordinate system. e.g. 'G54'
+    string coordinate_system = 1;
+
+    Vector3fProto min_position = 2;
+
+    Vector3fProto max_position = 3;
+}
+
+message ProgramObjectSummary {
+    // Always present.
+    uint32 index = 1;
+
+    string name = 2;
+
+    // 2D Bounding shape for this object. 
+    repeated Vector2fProto polygon = 3;
+
+    Vector3fProto min_position = 4;
+
+    Vector3fProto max_position = 5;
+
+    // uint32 total_lines = 4;
+}
+
+message Vector2fProto {
+    float x = 1;
+    float y = 2;
 }
 
 message Vector3fProto {
@@ -81,5 +117,7 @@ message Vector3fProto {
 
 
 message ProgramToolSummary {
-    optional float max_extruder_temperature = 1;
+    uint32 tool_index = 1;
+
+    optional float max_extruder_temperature = 2;
 }

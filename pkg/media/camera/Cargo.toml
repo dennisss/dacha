@@ -11,6 +11,7 @@ macros = { path = "../../macros" }
 parsing = { path = "../../parsing" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
+executor_graph = { path = "../../executor/graph" }
 file = { path = "../../file" }
 crypto = { path = "../../crypto" }
 web = { path = "../../web" }

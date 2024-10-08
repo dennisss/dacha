@@ -12,6 +12,9 @@ import { Title } from "pkg/web/lib/title";
 import { Navbar } from "../navbar";
 import { HistoryComponent } from "./history";
 import { MetricsBox } from "./metrics";
+import { CarveraBox } from "./carvera";
+import { MachineUiState } from "./state";
+import { ObjectsBox } from "./objects";
 
 interface MachinePageProps {
     id: string
@@ -29,6 +32,8 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
         _right_tab: 0
     }
 
+    _ui_state: MachineUiState = new MachineUiState();
+
     constructor(props: any) {
         super(props);
 
@@ -40,6 +45,8 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
             let m = msg.machines[0];
             this.setState({ _machine: m });
         })
+
+        this._ui_state.add_listener(() => setTimeout(() => this.forceUpdate()));
     }
 
     render() {
@@ -52,7 +59,7 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
         let tabs = [
             {
                 name: 'Controls',
-                view: <ControlsComponent machine={machine} context={this.props.context} />
+                view: <ControlsComponent machine={machine} context={this.props.context} ui_state={this._ui_state} />
             },
             {
                 name: 'Terminal',
@@ -85,10 +92,12 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
                         <div className="col col-md-3">
                             <CamerasBox machine={machine} context={this.props.context} />
                             <ConnectionBox machine={machine} context={this.props.context} />
-                            <PlayerBox machine={machine} context={this.props.context} />
+                            <PlayerBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
+                            <ObjectsBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
+                            <CarveraBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
                         </div>
                         <div className="col col-md-6">
-                            <PositionBox machine={machine} context={this.props.context} />
+                            <PositionBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
                             <MetricsBox machine={machine} context={this.props.context} />
                         </div>
                         <div className="col col-md-3">

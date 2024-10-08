@@ -97,7 +97,7 @@ pub fn partially_transform_to_vec(
     end_of_input: bool,
     output: &mut Vec<u8>,
 ) -> Result<TransformProgress> {
-    const CHUNK_SIZE: usize = 512;
+    const CHUNK_SIZE: usize = 4096;
 
     let mut input_read = 0;
     let mut output_len = output.len();
@@ -108,7 +108,7 @@ pub fn partially_transform_to_vec(
 
     // We must provide the transform with at least one byte to write to. Otherwise
     // we can't tell if all pending data has been written.
-    if output.capacity() == 0 {
+    if output.capacity() - output.len() == 0 {
         output.reserve_exact(CHUNK_SIZE);
     }
 
@@ -133,6 +133,10 @@ pub fn partially_transform_to_vec(
     }
 
     output.truncate(output_len);
+
+    if !input.is_empty() {
+        return Err(err_msg("Did not consume all inputs while transforming"));
+    }
 
     Ok(TransformProgress {
         input_read,

@@ -2,6 +2,7 @@ use common::bits::{BitOrder, BitVector, BitWrite, BitWriter};
 use common::errors::*;
 use compression::buffer_queue::BufferQueue;
 use compression::deflate::cyclic_buffer::CyclicBuffer;
+use compression::deflate::matching_window::MatchingWindow;
 use compression::snappy::window::*;
 use compression::transform::{Transform, TransformProgress};
 

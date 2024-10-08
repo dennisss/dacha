@@ -206,6 +206,7 @@ fn snappy_write_literal(data: &[u8], output: &mut Vec<u8>) {
     output.extend_from_slice(data);
 }
 
+#[inline(never)]
 pub fn snappy_compress(input: &[u8], output: &mut Vec<u8>) {
     serialize_varint(input.len() as u64, output);
 

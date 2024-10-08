@@ -118,7 +118,11 @@ impl ProgramParser {
                     break;
                 }
                 Event::Metadata { typ, data } => {
-                    // TODO: Do more parsing.
+                    if let Err(e) = Self::parse_metadata_block(&data, out) {
+                        out.push(gcode::ProgramElement::Error(e));
+                    }
+
+                    out.push(gcode::ProgramElement::EndOfLine);
                 }
                 Event::Thumbnail { params, data } => {
                     out.push(gcode::ProgramElement::Thumbnail(gcode::ProgramThumbnail {
@@ -145,5 +149,28 @@ impl ProgramParser {
         }
 
         Ok(input_read)
+    }
+
+    // NOTE: The assumption is that the metadata blocks are always in ini format.
+    fn parse_metadata_block(data: &[u8], out: &mut Vec<gcode::ProgramElement>) -> Result<()> {
+        let data = std::str::from_utf8(data)?;
+
+        for line in data.lines() {
+            let mut line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let (key, value) = line
+                .split_once('=')
+                .ok_or_else(|| err_msg("Missing equals sign in ini line"))?;
+
+            out.push(gcode::ProgramElement::Metadata {
+                key: key.trim().to_string(),
+                value: value.trim().to_string(),
+            });
+        }
+
+        Ok(())
     }
 }

@@ -1,7 +1,7 @@
 use common::errors::*;
+use executor_graph::*;
 
 use crate::frame::*;
-use crate::graph::*;
 
 /*
 let mp4_builder = MP4Builder::new(
@@ -65,7 +65,7 @@ impl MP4SinkOp {
 
     async fn execute_impl(&self, mut input: InputStream) -> Result<()> {
         for _ in 0..NUM_FRAMES {
-            let input_any = match input.read().await {
+            let input_any = match input.read().await? {
                 Some(v) => v,
                 None => break,
             };

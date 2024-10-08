@@ -33,7 +33,8 @@ async fn serial_reader_thread(mut file: Box<dyn Readable>) -> Result<()> {
             break;
         }
 
-        println!("{:?}", common::bytes::Bytes::from(&buf[0..nread]));
+        // TODO: Should allow printing new lines and \r 's
+        print!("{}", base_util::format::format_bytes(&buf[0..nread]));
     }
 
     Ok(())

@@ -26,6 +26,7 @@ use crate::files::{FileManager, FileReference};
 use crate::metric::MetricStore;
 use crate::player::Player;
 use crate::program::ProgramSummary;
+use crate::program_preview_manager::*;
 use crate::serial_controller::DEFAULT_COMMAND_TIMEOUT;
 use crate::tables::{FileTable, MachineTable, MediaFragmentTable, ProgramRunTable};
 use crate::{presets::get_machine_presets, serial_controller::SerialController};
@@ -63,6 +64,7 @@ struct Shared {
     state: AsyncMutex<State>,
     force_reconcile: channel::Sender<()>,
     make_fake_machines: bool,
+    program_preview_manager: ProgramPreviewManager,
 }
 
 #[derive(Default)]
@@ -90,7 +92,6 @@ struct MachineEntry {
     /// 'config'.
     cameras: HashMap<u64, CameraEntry>,
     /*
-    - Loaded file.
     - Mesh leveling grid (when external to the machine)
     */
 }
@@ -264,6 +265,7 @@ impl MonitorImpl {
             usb_context.clone(),
             libcamera_manager.clone(),
         )?);
+        let program_preview_manager = ProgramPreviewManager::new(db.clone());
 
         let shared = Arc::new(Shared {
             local_data_dir: local_data_dir.to_owned(),
@@ -278,6 +280,7 @@ impl MonitorImpl {
             libcamera_manager,
             camera_manager,
             make_fake_machines,
+            program_preview_manager,
         });
 
         let task_resource = TaskResource::spawn_interruptable(
@@ -995,6 +998,18 @@ impl MonitorImpl {
                 state_proto
                     .loaded_program_mut()
                     .set_file(file_ref.proto().clone());
+
+                // TODO: Actively monitor this for progres updates (this needs to also change
+                // whenever the config or loaded file changes).
+                let preview = self
+                    .shared
+                    .program_preview_manager
+                    .get(file_ref.clone(), &machine_config, false)
+                    .await?;
+
+                state_proto
+                    .loaded_program_mut()
+                    .set_preview(preview.proto().clone());
             }
 
             if let Some(player_entry) = &machine.player {
@@ -1202,6 +1217,35 @@ impl MonitorImpl {
                 self.stop_impl(request.machine_id()).await?;
             }
 
+            RunMachineCommandRequestCommandCase::ToggleObject(cmd) => {
+                self.toggle_object_impl(request.machine_id(), cmd.as_ref().clone())
+                    .await?;
+            }
+
+            RunMachineCommandRequestCommandCase::RegeneratePreview(cmd) => {
+                let (file, config) = lock!(state <= self.shared.state.lock().await?, {
+                    let entry = state
+                        .machines
+                        .get_mut(&request.machine_id())
+                        .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
+
+                    let file = entry.loaded_file.clone().ok_or_else(|| {
+                        rpc::Status::failed_precondition("No file loaded on this machine")
+                    })?;
+
+                    let config = entry.config.clone();
+
+                    Ok::<_, Error>((file, config))
+                })?;
+
+                let config = config.read().await?;
+
+                let _ = self
+                    .shared
+                    .program_preview_manager
+                    .get(file, &config, true)
+                    .await?;
+            }
             RunMachineCommandRequestCommandCase::LoadProgram(cmd) => {
                 let file_ref = self.shared.files.lookup(cmd.file_id())?;
 
@@ -1560,6 +1604,31 @@ impl MonitorImpl {
                 })?;
 
                 player.player.stop().await
+            })
+        })
+        .join()
+        .await
+    }
+
+    async fn toggle_object_impl(&self, machine_id: u64, cmd: ToggleObjectCommand) -> Result<()> {
+        let shared = self.shared.clone();
+        executor::spawn(async move {
+            lock_async!(state <= shared.state.lock().await?, {
+                let entry = state
+                    .machines
+                    .get_mut(&machine_id)
+                    .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
+
+                // TODO: Support cancelled objects before the player is first played.
+
+                let player = entry.player.as_ref().ok_or_else(|| {
+                    rpc::Status::failed_precondition("Machine not playing anything")
+                })?;
+
+                player
+                    .player
+                    .toggle_object(cmd.object_index(), cmd.cancelled())
+                    .await
             })
         })
         .join()

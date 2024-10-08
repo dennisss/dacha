@@ -10,6 +10,7 @@ use executor::channel::spsc;
 use executor::lock;
 use executor::lock_async;
 use executor::sync::AsyncMutex;
+use executor_graph::{Graph, OutputKey};
 use media_camera_proto::media::camera::*;
 use parsing::ascii::AsciiString;
 use video::h264::NALUnitHeader;
@@ -17,7 +18,6 @@ use video::h264::NALUnitType;
 
 use crate::frame::*;
 use crate::frame_buffer_op::{ImageFrameBufferOp, ImageFrameSubscribers};
-use crate::graph::{Graph, OutputKey};
 use crate::h264_buffer_op::H264BufferOp;
 use crate::libcamera_op::LibcameraOp;
 use crate::v4l2::{V4L2CaptureOp, V4L2EncoderOp, V4L2EncoderOptions};

@@ -7,6 +7,7 @@ import "google/protobuf/duration.proto";
 import "pkg/cnc/monitor/proto/machine_config.proto";
 import "pkg/cnc/monitor/proto/file.proto";
 import "pkg/cnc/monitor/proto/run.proto";
+import "pkg/cnc/monitor/proto/preview.proto";
 
 message MachineProto {
     fixed64 id = 1;
@@ -139,6 +140,9 @@ message CoordinateSystemState {
 
 message LoadedProgramState {
     FileProto file = 1;
+
+    // NOTE: This proto will always have a consistent file id and config hash to the current machine / loaded file.
+    ProgramPreviewProto preview = 2;
 }
 
 message CameraState {

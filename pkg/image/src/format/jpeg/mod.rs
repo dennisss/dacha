@@ -660,7 +660,7 @@ impl JPEG {
                 let s = dc_tree.read_code(reader)?;
 
                 let mut v = if s > 0 {
-                    let amplitude = reader.read_bits_be(s as u8)?;
+                    let amplitude = reader.read_bits_exact(s as u8)?;
                     decode_zz(s as usize, amplitude as u16)
                 } else {
                     0
@@ -674,7 +674,7 @@ impl JPEG {
                 // TODO: Verify that this works right with negative numbers?
                 // TODO: Support more than one bit of
                 // refinement?
-                buffer[0] |= reader.read_bits_be(1)? as i16;
+                buffer[0] |= reader.read_bits_exact(1)? as i16;
             }
 
             reader.consume();
@@ -720,7 +720,7 @@ impl JPEG {
                         }
 
                         *eobrun += 1 << r;
-                        *eobrun += reader.read_bits_be(r as u8)?;
+                        *eobrun += reader.read_bits_exact(r as u8)?;
 
                         break;
                     }
@@ -729,7 +729,7 @@ impl JPEG {
                 // NOTE: For sequential refinement, this should always be -1 or
                 // 1 (excluding the ZRL case)
                 let value = if s > 0 {
-                    let amplitude = reader.read_bits_be(s as u8)?;
+                    let amplitude = reader.read_bits_exact(s as u8)?;
                     decode_zz(s as usize, amplitude as u16)
                 } else {
                     0

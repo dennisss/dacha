@@ -2,7 +2,7 @@ use crypto::checksum::crc::crc32c_raw_oneshot;
 use crypto::hasher::Hasher;
 
 use crate::deflate::cyclic_buffer::WindowBuffer;
-use crate::deflate::matching_window::{AbsoluteReference, RelativeReference};
+use crate::deflate::matching_window::{AbsoluteReference, MatchingWindow, RelativeReference};
 
 const BLOCK_SIZE: usize = 1 << 16;
 
@@ -62,9 +62,11 @@ impl<B: WindowBuffer> MatchingWindowSnappy<B> {
         // TODO: Change to '& 0xFFFF' to optimize for a 64K entry hash table.
         (i as usize) % self.table.len()
     }
+}
 
+impl<B: WindowBuffer> MatchingWindow for MatchingWindowSnappy<B> {
     // TODO: Ideally do this at the same time as finding matches.
-    pub fn advance(&mut self, data: &[u8]) {
+    fn advance(&mut self, data: &[u8]) {
         self.buffer.extend_from_slice(data);
 
         let mut first = self
@@ -93,7 +95,7 @@ impl<B: WindowBuffer> MatchingWindowSnappy<B> {
         }
     }
 
-    pub fn find_match(&self, data: &[u8]) -> Option<RelativeReference> {
+    fn find_match(&self, data: &[u8]) -> Option<RelativeReference> {
         if data.len() < 4 {
             return None;
         }

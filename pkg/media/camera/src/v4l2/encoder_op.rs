@@ -6,10 +6,10 @@ use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::channel::queue::ConcurrentQueue;
 use executor::channel::spsc;
+use executor_graph::*;
 use v4l2::v4l2_plane_pix_format;
 
 use crate::frame::*;
-use crate::graph::*;
 use crate::v4l2::frame_data::*;
 
 impl v4l2::DMABufferData for ImageFrame {
@@ -229,7 +229,7 @@ impl V4L2EncoderOp {
         mut input: InputStream,
         mut input_sender: spsc::Sender<()>,
     ) -> Result<()> {
-        while let Some(input) = input.read().await {
+        while let Some(input) = input.read().await? {
             let frame = input
                 .downcast_ref::<ImageFrame>()
                 .ok_or_else(|| err_msg("Wrong input format"))?;
@@ -255,7 +255,7 @@ impl V4L2EncoderOp {
     ) -> Result<()> {
         loop {
             if let Err(e) = input_receiver.recv().await {
-                break;
+                return Err(GraphStreamError {}.into());
             }
 
             // TODO: Make sure that this eventually gets cancelled.
@@ -290,10 +290,10 @@ impl V4L2EncoderOp {
 
             drop(input_frame);
 
-            if !output.write(Box::new(output_frame)).await {
-                break;
-            }
+            output.write(Box::new(output_frame)).await?;
         }
+
+        output.close().await;
 
         Ok(())
     }

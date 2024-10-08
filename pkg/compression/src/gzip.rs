@@ -393,7 +393,7 @@ impl GzipDecoder {
             done,
             input_read,
             output_written,
-            event: ()
+            event: (),
         })
     }
 
@@ -558,7 +558,7 @@ impl GzipEncoder {
 
         Ok(Self {
             output_buffer,
-            deflater: Deflater::new(),
+            deflater: Deflater::new(DeflaterOptions::fast()),
             hasher: CRC32Hasher::new(),
             input_size: 0,
             trailer_written: false,
@@ -614,7 +614,7 @@ impl GzipEncoder {
             input_read,
             output_written,
             done,
-            event: ()
+            event: (),
         })
     }
 }

@@ -95,6 +95,7 @@ impl<'a> PolygonRef<'a> {
 ///
 /// TODO: Before this is called for a path, verify that it has closed the
 /// sub-paths.
+#[inline(never)]
 pub fn fill_polygon(
     image: &mut Image<u8>,
     vertices: &[Vector2f],
@@ -118,6 +119,9 @@ pub fn fill_polygon(
 
     let mut scan_line_iter = ScanLineIterator::create(vertices, path_starts, fill_rule, y_values);
 
+    let x_min = bbox.min.x().floor() as usize;
+    let x_max = (bbox.max.x() + 1.0).floor() as usize;
+
     while let Some((y, x_intercepts)) = scan_line_iter.next() {
         if x_intercepts.is_empty() {
             continue;
@@ -125,12 +129,13 @@ pub fn fill_polygon(
 
         let mut current_winding = 0;
         let mut x_intercepts_idx = 0;
+        let mut pixel_iter = image.iter_mut(y as usize, x_min);
 
         // TODO: Get a scan line iterator on the Image object with pre-checked bounds to
         // optimize this.
         //
         // TODO: Only need to go from the min to the max in current x array.
-        for x in (bbox.min.x().floor() as usize)..((bbox.max.x() + 1.0).floor() as usize) {
+        for x in x_min..x_max {
             let x = x as f32;
 
             while x_intercepts_idx < x_intercepts.len()
@@ -141,9 +146,10 @@ pub fn fill_polygon(
             }
 
             if current_winding != 0 {
-                image.set(y as usize, x as usize, &color);
-                //				add_color(image, y as usize, x as usize, &c);
+                pixel_iter.set(&color);
             }
+
+            pixel_iter.next();
         }
 
         while x_intercepts_idx < x_intercepts.len() {

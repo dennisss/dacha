@@ -17,10 +17,13 @@ mod fake_machine;
 mod files;
 mod instance;
 mod metric;
+mod ops;
 mod player;
 mod player_preprocessor;
-mod presets;
+pub mod presets;
 pub mod program;
+pub mod program_preview;
+mod program_preview_manager;
 mod response_parser;
 mod serial_controller;
 mod serial_receiver_buffer;
@@ -30,3 +33,11 @@ mod timestamped_value;
 mod users;
 
 pub use instance::MonitorImpl;
+
+pub fn round_number(v: f32) -> f32 {
+    format!("{:.4}", v).parse().unwrap()
+}
+
+pub fn round_number_ref(v: &mut f32) {
+    *v = round_number(*v);
+}

@@ -14,6 +14,10 @@ pub struct ParsedLine {
     pub state_update: ProgramRun,
     pub progress_updated: bool,
     pub action: Option<LineAction>,
+
+    /// Index of the object which this line is in. < 0 implies this is not an
+    /// object.
+    pub object: i32,
 }
 
 pub enum LineAction {
@@ -28,6 +32,7 @@ pub struct PlayerProgramPreprocessor {
     use_silent_mode: bool,
     lines: channel::Receiver<Option<Vec<gcode::ProgramElement>>>,
     output: channel::Sender<Option<ParsedLine>>,
+    current_object: i32,
 }
 
 impl PlayerProgramPreprocessor {
@@ -41,6 +46,7 @@ impl PlayerProgramPreprocessor {
             use_silent_mode,
             lines,
             output: sender,
+            current_object: -1,
         };
 
         (inst, receiver)
@@ -54,7 +60,8 @@ impl PlayerProgramPreprocessor {
                 Err(_) => return Ok(()),
             };
 
-            self.output.send(Some(self.process_line(line)?)).await;
+            let out = self.process_line(line)?;
+            self.output.send(Some(out)).await;
         }
 
         let _ = self.output.send(None).await;
@@ -64,7 +71,7 @@ impl PlayerProgramPreprocessor {
 
     /// Attempts to process a single line of elements from the given list. Will
     /// do nothing if a whole line hasn't been parsed yet.
-    fn process_line(&self, elements: Vec<gcode::ProgramElement>) -> Result<ParsedLine> {
+    fn process_line(&mut self, elements: Vec<gcode::ProgramElement>) -> Result<ParsedLine> {
         let mut out = ParsedLine::default();
 
         let mut out_line = gcode::LineBuilder::default();
@@ -81,8 +88,16 @@ impl PlayerProgramPreprocessor {
             match &cmd {
                 gcode::Command::PrusaModelName(_)
                 | gcode::Command::NozzleDiameter(_)
-                | gcode::Command::PrintFirmwareCapabilities(_)
-                | gcode::Command::CancelObject(_) => {
+                | gcode::Command::PrintFirmwareCapabilities(_) => {
+                    // Don't send these to the machine.
+                    continue;
+                }
+
+                gcode::Command::CancelObject(cmd) => {
+                    if let Some(idx) = cmd.starting_object_index {
+                        self.current_object = idx;
+                    }
+
                     // Don't send these to the machine.
                     continue;
                 }
@@ -187,6 +202,8 @@ impl PlayerProgramPreprocessor {
         if !out_line.is_empty() {
             out.command_to_send = Some(out_line.to_string_compact());
         }
+
+        out.object = self.current_object;
 
         Ok(out)
     }

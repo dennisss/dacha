@@ -303,12 +303,12 @@ export class Figure extends React.Component<FigureProps, FigureState> {
     }
 
     _draw_path(path: PathEntity) {
-        if (path.width === 0) {
+        if (path.width === 0 && !path.fill_color) {
             return;
         }
 
         this._ctx.strokeStyle = path.color;
-        this._ctx.fillStyle = path.color;
+        this._ctx.fillStyle = path.fill_color;
         this._ctx.lineWidth = path.width || 1;
 
         this._ctx.beginPath();
@@ -331,7 +331,13 @@ export class Figure extends React.Component<FigureProps, FigureState> {
             this._ctx.closePath();
         }
 
-        this._ctx.stroke();
+        if (path.fill_color) {
+            this._ctx.fill();
+        }
+
+        if (path.width !== 0) {
+            this._ctx.stroke();
+        }
     }
 
     _draw_circle(circle: CircleEntity) {
@@ -368,7 +374,6 @@ export class Figure extends React.Component<FigureProps, FigureState> {
 
         let bottom_left = this._to_canvas_pt({ x: image.rect.x, y: image.rect.y });
         let top_right = this._to_canvas_pt({ x: image.rect.x + image.rect.width, y: image.rect.y + image.rect.height });
-
         ctx.drawImage(image.image, bottom_left.x, top_right.y, top_right.x - bottom_left.x, bottom_left.y - top_right.y);
     }
 

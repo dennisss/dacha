@@ -5,10 +5,10 @@ use common::bytes::Bytes;
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
 use executor::channel;
+use executor_graph::*;
 use media_camera_proto::media::camera::*;
 
 use crate::frame::*;
-use crate::graph::{InputStream, Operation, OperationSignature, OutputStream};
 use crate::v4l2::frame_data::*;
 
 /*
@@ -319,10 +319,10 @@ impl V4L2CaptureOp {
                 format: format.clone(),
             };
 
-            if !output.write(Box::new(frame)).await {
-                break;
-            }
+            output.write(Box::new(frame)).await?;
         }
+
+        output.close().await;
 
         Ok(())
     }

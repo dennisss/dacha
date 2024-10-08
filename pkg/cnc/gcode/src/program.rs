@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use base_error::*;
 use common::bytes::Bytes;
 use common::format::format_bytes;
@@ -22,11 +24,19 @@ GCode parsing variations:
 
 */
 
+// Matches something like "xyzCalibration_cube.stl id:0 copy 1"
+regexp!(OBJECT_COMMENT => "^(.*) id:([0-9]+)\\s+copy\\s+([0-9]+)\\s*$");
+
 #[derive(Debug)]
 pub enum ProgramElement {
     Thumbnail(ProgramThumbnail),
 
     Command(Command),
+
+    Metadata {
+        key: String,
+        value: String,
+    },
 
     Error(Error),
 
@@ -61,6 +71,8 @@ struct State {
     ///
     /// TODO: Implement proper support for generic modal groups.
     last_motion_command: Option<CommandWord>,
+
+    object_id_copy_to_index: HashMap<(u32, u32), u32>,
 }
 
 #[derive(Default)]
@@ -134,8 +146,9 @@ impl ProgramParser {
                 Event::LineNumber(_) => {}
                 Event::Comment(data, is_semi_comment) => {
                     if is_semi_comment && self.state.line_state.event_index == 0 {
-                        // TODO: Verify that we are using consecutive lines for the comment.
-                        if let Err(e) = self.state.parse_thumbnail_comment(data, out) {
+                        // TODO: Verify that we are using consecutive lines for the thumbnail
+                        // comments.
+                        if let Err(e) = self.state.parse_full_line_comment(data, out) {
                             self.state.line_state.error.get_or_insert(e);
                         }
                     }
@@ -297,6 +310,97 @@ impl State {
         Ok(())
     }
 
+    fn parse_full_line_comment(
+        &mut self,
+        data: &[u8],
+        out: &mut Vec<ProgramElement>,
+    ) -> Result<()> {
+        let data = core::str::from_utf8(data)?.trim();
+        if data.is_empty() {
+            return Ok(());
+        }
+
+        if self.parse_thumbnail_comment(data, out)? {
+            return Ok(());
+        }
+
+        if self.parse_cancel_object_comment(data, out)? {
+            return Ok(());
+        }
+
+        // NOTE: We check for spaces around the equals to be extra safe about not
+        // parsing something that doesn't look like a key-value pair.
+        if let Some((key, value)) = data.split_once(" = ") {
+            out.push(ProgramElement::Metadata {
+                key: key.trim().to_string(),
+                value: value.trim().to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /*
+    OctoPrint CancelObject comments:
+
+    ; printing object xyzCalibration_cube.stl id:0 copy 0
+    ; stop printing object xyzCalibration_cube.stl id:0 copy 0
+    ; printing object xyzCalibration_cube.stl id:0 copy 1
+    ; stop printing object xyzCalibration_cube.stl id:0 copy 1
+
+    TODO: Double check how to handle file names with spaces.
+    */
+    fn parse_cancel_object_comment(
+        &mut self,
+        data: &str,
+        out: &mut Vec<ProgramElement>,
+    ) -> Result<bool> {
+        let (remaining, stop) = {
+            if let Some(r) = data.strip_prefix("printing object ") {
+                (r, false)
+            } else if let Some(r) = data.strip_prefix("stop printing object ") {
+                (r, true)
+            } else {
+                return Ok(false);
+            }
+        };
+
+        let m = OBJECT_COMMENT
+            .exec(remaining)
+            .ok_or_else(|| err_msg("Invalid cancel object comment."))?;
+
+        let file_name = m.group_str(1).unwrap()?;
+        let id = m.group_str(2).unwrap()?.parse::<u32>()?;
+        let copy = m.group_str(3).unwrap()?.parse::<u32>()?;
+
+        let next_index = self.object_id_copy_to_index.len() as u32;
+
+        let index = self
+            .object_id_copy_to_index
+            .entry((id, copy))
+            .or_insert(next_index);
+
+        if stop {
+            out.push(ProgramElement::Command(Command::CancelObject(
+                crate::CancelObject {
+                    total_num_objects: None,
+                    starting_object_index: Some(-1),
+                    object_name: None,
+                },
+            )));
+        } else {
+            out.push(ProgramElement::Command(Command::CancelObject(
+                crate::CancelObject {
+                    total_num_objects: None,
+                    starting_object_index: Some(*index as i32),
+                    object_name: Some(remaining.to_string()),
+                },
+            )));
+        }
+
+        Ok(true)
+    }
+
     /*
     Typically thumbnails are stored in the gcode files with lines that look like the following:
     ;
@@ -310,14 +414,9 @@ impl State {
     */
     fn parse_thumbnail_comment(
         &mut self,
-        data: &[u8],
+        data: &str,
         out: &mut Vec<ProgramElement>,
-    ) -> Result<()> {
-        let data = core::str::from_utf8(data)?.trim();
-        if data.is_empty() {
-            return Ok(());
-        }
-
+    ) -> Result<bool> {
         let parts = data.split_ascii_whitespace().collect::<Vec<_>>();
 
         if self.partial_thumbnail.is_none()
@@ -348,12 +447,12 @@ impl State {
                 size,
                 data_base64: String::new(),
             });
-            return Ok(());
+            return Ok(true);
         }
 
         let mut thumb = match self.partial_thumbnail.take() {
             Some(v) => v,
-            None => return Ok(()),
+            None => return Ok(false),
         };
 
         if parts.len() >= 2 && parts[0] == &thumb.start_tag && parts[1] == "end" {
@@ -368,7 +467,7 @@ impl State {
                 width: thumb.width,
                 height: thumb.height,
             }));
-            return Ok(());
+            return Ok(true);
         }
 
         // TODO: Don't allow overflowing the size.
@@ -376,6 +475,6 @@ impl State {
 
         self.partial_thumbnail = Some(thumb);
 
-        Ok(())
+        Ok(false)
     }
 }

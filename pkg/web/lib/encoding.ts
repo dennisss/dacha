@@ -26,6 +26,19 @@ export function decode_be_u32(buffer: Uint8Array): number {
     return out;
 }
 
+export function decode_le_u32(buffer: Uint8Array): number {
+    if (buffer.length != 4) {
+        throw new Error("Expected a buffer of size 4");
+    }
+
+    let out = 0;
+    for (let i = buffer.length - 1; i >= 0; i--) {
+        out = (out << 8) | buffer[i];
+    }
+
+    return out;
+}
+
 export function encode_utf8(value: string): number[] {
     let out = [];
 

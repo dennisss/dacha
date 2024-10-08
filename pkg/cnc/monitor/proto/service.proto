@@ -238,7 +238,16 @@ message RunMachineCommandRequest {
         int32 tool_change = 20;
 
         SpindleState set_spindle_state = 21;
+
+        ToggleObjectCommand toggle_object = 22;
+
+        bool regenerate_preview = 23;
     }
+}
+
+message ToggleObjectCommand {
+    uint32 object_index = 1;
+    bool cancelled = 2;
 }
 
 message LoadProgramCommand {

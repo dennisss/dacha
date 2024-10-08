@@ -171,6 +171,38 @@ impl ProtobufTableTag for MetricSampleTable {
     }
 }
 
+pub struct ProgramPreviewTable {}
+
+impl ProtobufTableTag for ProgramPreviewTable {
+    type Message = ProgramPreviewProto;
+
+    fn table_id() -> u32 {
+        8
+    }
+
+    fn table_name() -> &'static str {
+        "ProgramPreview"
+    }
+
+    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+        &[ProtobufTableKey {
+            index_name: None,
+            fields: &[
+                ProtobufKeyField {
+                    number: ProgramPreviewProto::FILE_ID_FIELD_NUM,
+                    direction: Direction::Ascending,
+                    fixed_size: true,
+                },
+                ProtobufKeyField {
+                    number: ProgramPreviewProto::CONFIG_HASH_FIELD_NUM,
+                    direction: Direction::Ascending,
+                    fixed_size: true,
+                },
+            ],
+        }]
+    }
+}
+
 // TODO: Use me.
 pub struct TableSchemaTable {}
 

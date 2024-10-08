@@ -114,8 +114,12 @@ fn reflection_to_json_value(
     output: json::ValueStringifier,
 ) -> Result<()> {
     match r {
-        // TODO: Special cases for NaN and Infinity
-        Reflection::F32(v) => f64_to_json_value(*v as f64, output),
+        Reflection::F32(v) => {
+            // Since JSON is a string representation, this will try to preserve the shortest
+            // string representation of the number after casting.
+            let v = v.to_string().parse::<f64>()?;
+            f64_to_json_value(v, output)
+        }
         Reflection::F64(v) => f64_to_json_value(*v, output),
         Reflection::I32(v) => output.number(*v as f64),
         Reflection::U32(v) => output.number(*v as f64),

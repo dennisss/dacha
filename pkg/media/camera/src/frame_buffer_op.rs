@@ -6,9 +6,9 @@ use common::errors::*;
 use executor::channel::error::SendError;
 use executor::lock;
 use executor::{channel::spsc, sync::AsyncMutex};
+use executor_graph::*;
 
 use crate::frame::ImageFrame;
-use crate::graph::*;
 
 /// Maximum number of unprocessed frames that one subscriber can have enqueued
 /// before we start dropping frames.
@@ -77,7 +77,7 @@ impl Operation for ImageFrameBufferOp {
 
         let mut last_sent_frame = Instant::now();
         loop {
-            let frame_any = match input.read().await {
+            let frame_any = match input.read().await? {
                 Some(v) => v,
                 None => break,
             };

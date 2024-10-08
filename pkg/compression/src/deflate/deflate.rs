@@ -10,9 +10,13 @@ use std::io::Write;
 
 use crate::buffer_queue::BufferQueue;
 use crate::deflate::cyclic_buffer::CyclicBuffer;
-use crate::deflate::matching_window::{MatchingWindow, MatchingWindowOptions};
+use crate::deflate::matching_window::{
+    MatchingWindow, TrigramChainMatchingWindow, TrigramChainMatchingWindowOptions,
+};
 use crate::deflate::shared::*;
 use crate::huffman::*;
+use crate::snappy::window::MatchingWindowSnappy;
+use crate::snappy::window::MatchingWindowSnappyOptions;
 use crate::transform::{Transform, TransformProgress};
 
 /// Maximum size of the data contained in an uncompressed block.
@@ -48,11 +52,42 @@ const MAX_CODE_LEN_CODE_LEN: usize = 0b111;
 // TODO: The zlib input threshold is based on number of encoded symbols rather
 // than number of bits In order to add a
 
+pub struct DeflaterOptions {
+    pub window: MatchingWindowOptions,
+}
+
+impl Default for DeflaterOptions {
+    fn default() -> Self {
+        Self {
+            window: MatchingWindowOptions::TrigramChain(TrigramChainMatchingWindowOptions {
+                max_chain_length: MAX_CHAIN_LENGTH,
+                max_match_length: MAX_MATCH_LENGTH,
+            }),
+        }
+    }
+}
+
+impl DeflaterOptions {
+    pub fn fast() -> Self {
+        Self {
+            window: MatchingWindowOptions::Snappy(MatchingWindowSnappyOptions {
+                table_size: 1 << 16,
+                max_match_length: MAX_MATCH_LENGTH,
+            }),
+        }
+    }
+}
+
+pub enum MatchingWindowOptions {
+    TrigramChain(TrigramChainMatchingWindowOptions),
+    Snappy(MatchingWindowSnappyOptions),
+}
+
 /// Compresses a stream of data using the Deflate algorithm.
 pub struct Deflater {
     /// A sliding window of all previous input data that has already been
     /// compressed.
-    window: MatchingWindow<CyclicBuffer>,
+    window: Box<dyn MatchingWindow + Send>,
 
     /// Uncompressed input buffer. Will accumulate until we have enough to run
     /// compression
@@ -81,15 +116,23 @@ enum DeflateSignal {
 
 impl Deflater {
     // TODO: Provide window size as input option
-    pub fn new() -> Self {
+    pub fn new(options: DeflaterOptions) -> Self {
+        let buffer = CyclicBuffer::new(MAX_REFERENCE_DISTANCE);
+
+        // TODO: Move this logic elsewhere.
+        // TODO: We need to validate the max match length against what is supported by
+        // deflate.
+        let window: Box<dyn MatchingWindow + Send> = match options.window {
+            MatchingWindowOptions::TrigramChain(options) => {
+                Box::new(TrigramChainMatchingWindow::new(buffer, options))
+            }
+            MatchingWindowOptions::Snappy(options) => {
+                Box::new(MatchingWindowSnappy::new(buffer, options))
+            }
+        };
+
         Deflater {
-            window: MatchingWindow::new(
-                CyclicBuffer::new(MAX_REFERENCE_DISTANCE),
-                MatchingWindowOptions {
-                    max_chain_length: MAX_CHAIN_LENGTH,
-                    max_match_length: MAX_MATCH_LENGTH,
-                },
-            ),
+            window,
             input_buffer: vec![],
             output_buffer: BufferQueue::new(),
             output_buffer_end: BitVector::new(),
@@ -167,9 +210,9 @@ impl Deflater {
             self.input_buffer.extend_from_slice(&input[0..n]);
             input = &input[n..];
             nread += n;
-            if self.input_buffer.len() == CHUNK_SIZE {
+            if self.input_buffer.len() == CHUNK_SIZE || end_of_input {
                 Self::compress_chunk(
-                    &mut self.window,
+                    self.window.as_mut(),
                     &self.input_buffer,
                     &mut strm,
                     end_of_input && input.len() == 0,
@@ -191,7 +234,7 @@ impl Deflater {
             i += n;
             nread += n;
 
-            Self::compress_chunk(&mut self.window, chunk, &mut strm, i == input.len())?
+            Self::compress_chunk(self.window.as_mut(), chunk, &mut strm, i == input.len())?
         }
 
         // Save remainder into the internal input buffer
@@ -203,7 +246,7 @@ impl Deflater {
         if remaining > 0 {
             nread += remaining;
             if end_of_input {
-                Self::compress_chunk(&mut self.window, &input[i..], &mut strm, end_of_input)?;
+                Self::compress_chunk(self.window.as_mut(), &input[i..], &mut strm, end_of_input)?;
             } else {
                 self.input_buffer.extend_from_slice(&input[i..]);
             }
@@ -237,7 +280,7 @@ impl Deflater {
     /// Compresses a chunk of input data writing it to the given output stream.
     /// This will internally create a new full block for the chunk.
     fn compress_chunk(
-        window: &mut MatchingWindow<CyclicBuffer>,
+        window: &mut dyn MatchingWindow,
         chunk: &[u8],
         strm: &mut dyn BitWrite,
         is_final: bool,
@@ -426,10 +469,7 @@ enum ReferenceEncoded {
 }
 
 // TODO: Return an iterator.
-fn reference_encode(
-    window: &mut MatchingWindow<CyclicBuffer>,
-    data: &[u8],
-) -> Vec<ReferenceEncoded> {
+fn reference_encode(window: &mut dyn MatchingWindow, data: &[u8]) -> Vec<ReferenceEncoded> {
     let mut out = vec![];
 
     let mut i = 0;
@@ -546,7 +586,7 @@ mod tests {
 
     #[test]
     fn deflate_one_pass_test() {
-        let mut deflater = Deflater::new();
+        let mut deflater = Deflater::new(DeflaterOptions::default());
 
         let mut out = [0u8; 20];
         let progress = deflater
@@ -591,11 +631,37 @@ mod tests {
             b"hello hello hello hello there you hello and this is super cool and awesome hello.";
 
         let mut encoded = vec![];
-        crate::transform::transform_to_vec(Deflater::new(), INPUT, &mut encoded).unwrap();
+        crate::transform::transform_to_vec(
+            Deflater::new(DeflaterOptions::default()),
+            INPUT,
+            &mut encoded,
+        )
+        .unwrap();
 
         let mut decoded = vec![];
         crate::transform::transform_to_vec(Inflater::new(), &encoded, &mut decoded).unwrap();
 
         assert_eq!(&decoded, INPUT);
+    }
+
+    #[test]
+    fn deflate_partial_block() {
+        let mut input = vec![1u8; 123];
+
+        let mut transform = Deflater::new(DeflaterOptions::fast());
+
+        let mut encoded = vec![];
+        crate::transform::partially_transform_to_vec(&mut transform, &input, false, &mut encoded)
+            .unwrap();
+        assert_eq!(encoded.len(), 0);
+
+        crate::transform::partially_transform_to_vec(&mut transform, &[], true, &mut encoded)
+            .unwrap();
+        assert_ne!(encoded.len(), 0);
+
+        let mut decoded = vec![];
+        crate::transform::transform_to_vec(Inflater::new(), &encoded, &mut decoded).unwrap();
+
+        assert_eq!(&decoded, &input[..]);
     }
 }

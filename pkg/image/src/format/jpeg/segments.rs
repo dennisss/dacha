@@ -387,6 +387,10 @@ impl<'a> DefineHuffmanTableSegment<'a> {
     pub fn create_codes(&self) -> Vec<BitVector> {
         // Based on Annex C of T.81
 
+        if self.values.len() == 0 {
+            return vec![];
+        }
+
         // Expanded list of the size of each code (HUFFSIZES)
         // TODO: Make this into an iterator/generator so that we don't have to store the
         // full list.

@@ -1,9 +1,9 @@
 use common::bytes::Bytes;
 use common::errors::*;
+use executor_graph::*;
 use video::h264::{NALUnitHeader, NALUnitType};
 
 use crate::frame::*;
-use crate::graph::*;
 
 /// This op caches the init data from the frame in an H264 frame stream and
 /// continously returns it in future frames (this is to ensure that any readers
@@ -21,12 +21,7 @@ impl H264BufferOp {
         let mut pps = None;
         let mut sps = None;
 
-        loop {
-            let input_any = match input.read().await {
-                Some(v) => v,
-                None => break,
-            };
-
+        while let Some(input_any) = input.read().await? {
             let input_frame = input_any.downcast_ref::<ImageFrame>().unwrap();
 
             // TODO: Only do for H264 data.
@@ -42,10 +37,10 @@ impl H264BufferOp {
             let mut output_frame = input_frame.clone();
             output_frame.init_data = vec![pps, sps];
 
-            if !output.write(Box::new(output_frame)).await {
-                break;
-            }
+            output.write(Box::new(output_frame)).await?;
         }
+
+        output.close().await;
 
         Ok(())
     }

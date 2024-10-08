@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
     // "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode" // 86ms
     // "testdata/cnc/TapeCartridge_0.4n_0.25mm_PETG_XLIS_4h3m.bgcode" // 550ms
     let data = file::read(project_path!(
-        "testdata/cnc/GalazyCoaster-4x_0.4n_0.2mm_PLA,PLA,PLA,PLA,PLA_XL_8h32m.bgcode"
+        "testdata/cnc/GalaxyCoaster-4x_0.4n_0.2mm_PLA,PLA,PLA,PLA,PLA_XL_8h32m.bgcode"
     ))
     .await?;
 
@@ -85,6 +85,8 @@ async fn main() -> Result<()> {
     let end = Instant::now();
 
     println!("{:?}", end - start);
+
+    // let profile = executor::spawn(perf::profile_self(Duration::from_secs(5)));
 
     // let profile = profile.join().await?;
     // file::write(project_path!("perf.pb"), profile.serialize()?).await?;

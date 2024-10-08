@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package cnc;
+
+// MachineConfig specific preview of a program. 
+message ProgramPreviewProto {
+    fixed64 file_id = 1;
+
+    // Hash of the MachineConfig proto used to generate this 
+    fixed64 config_hash = 2;
+
+    fixed64 revision = 6;
+
+    // NOTE: This proto is only fully populated once 'state.ready == true'
+    ProgramPreviewState state = 3;
+
+    repeated ProgramLayer layers = 4;
+
+    string layer_images_url = 5;
+}
+
+message ProgramPreviewState {
+    bool ready = 1;
+    string error = 2;
+    float progress = 3;
+}
+
+// Layers are used to encapsulate periods for meaningful work (extruding or cutting).
+// They try to not include travel operations.
+//
+// ALL layers have a 'start_line' and 'end_line' that does not overlap with other layers.  
+message ProgramLayer {
+    uint32 start_line = 1;
+
+    // Index of the final line executed in this layer.
+    // (inclusive so will equal start_line if there is only one line)
+    uint32 end_line = 2;
+
+    // Empty implies the machine's default coordinate system is used.
+    string coordinate_system = 3;
+
+    // If set, then all the operations in this layer occur at the same Z position.
+    optional float z = 4;
+    
+    // Which tool is running for the duration of this layer.
+    optional uint32 tool_index = 5;
+
+    ProgramLayerImage image = 6;
+}
+
+message ProgramLayerImage {
+    uint64 id = 1;
+
+    string url = 2;
+
+    // Bottom Y coordinate of the image in mm units.
+    float bottom = 3;
+
+    // Left X coordinate of the image in mm units.
+    float left = 4;
+
+    // Width in mm of the image.
+    float width = 5;
+
+    // Height in mm of the image.
+    float height = 6;
+}

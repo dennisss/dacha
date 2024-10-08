@@ -1,3 +1,8 @@
+#![feature(inherent_associated_types)]
+
+#[macro_use]
+extern crate macros as other_macros;
+
 use std::{collections::HashMap, time::Instant};
 
 pub use gcode_decimal::Decimal;
@@ -12,6 +17,7 @@ mod hints;
 #[macro_use]
 mod macros;
 mod line;
+mod metadata;
 mod parser;
 mod program;
 
@@ -19,6 +25,7 @@ use base_error::*;
 
 pub use crate::command::*;
 pub use crate::line::*;
+pub use crate::metadata::*;
 pub use crate::parser::*;
 pub use crate::program::*;
 

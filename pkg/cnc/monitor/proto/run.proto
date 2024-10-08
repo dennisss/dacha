@@ -99,6 +99,8 @@ message ProgramRun {
     // The file data associated with file_id.
     // NOTE: Only present when looking up the run history.
     FileProto file = 14;
+
+    ProgramRunObjectsState objects = 15;
 }
 
 message ProgramRunSegment {
@@ -116,5 +118,33 @@ message Message {
     string text = 1;
     // log level
     // time created
+}
+
+message ProgramRunObjectsState {
+    // Index of the current object that is being generated. Will be < 0 if a non-object command is
+    // being executed.
+    int32 current_object_index = 1;
+
+    repeated ProgramRunObjectState objects = 2;
+}
+
+message ProgramRunObjectState {
+    uint32 index = 1;
+
+    uint32 completed_lines = 2;
+
+    ProgramRunCancelledObjectState cancelled = 6;
+
+    reserved 4, 5;
+}
+
+message ProgramRunCancelledObjectState {
+    google.protobuf.Timestamp cancel_time = 1;
+
+    // Number of the last line that was executed normally before this object was cancelled.
+    // Zero would imply that the object was cancelled before the program started running.
+    uint32 cancel_line = 2;
+
+    uint32 skipped_lines = 3;
 }
 

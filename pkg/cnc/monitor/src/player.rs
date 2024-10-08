@@ -2,13 +2,16 @@
 TODO: Use more Instant rather than SystemTime timestamps in thie file.
 */
 
+use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
+use common::bit_set::BitSet;
 use common::bytes::Bytes;
+use common::typenum::U20;
 use executor::bundle::TaskResultBundle;
 use executor::sync::{AsyncRwLock, AsyncVariable};
 use executor::{channel, lock};
@@ -114,6 +117,14 @@ impl Player {
                 .set_estimated_remaining_time(file.proto().program().normal_duration().clone());
         }
 
+        // Initialize objects state.
+        // One uncancelled instance for each object.
+        state_proto.objects_mut().set_current_object_index(-1);
+        for obj in file.proto().program().objects() {
+            let out = state_proto.objects_mut().new_objects();
+            out.set_index(obj.index());
+        }
+
         let shared = Arc::new(Shared {
             machine_id,
             machine_config,
@@ -134,6 +145,42 @@ impl Player {
         );
 
         Ok(Self { shared, task })
+    }
+
+    pub async fn toggle_object(&self, object_index: u32, cancelled: bool) -> Result<()> {
+        let state = self.shared.state.lock().await?;
+
+        lock!(state <= state, {
+            if (object_index as usize) >= state.proto.objects().objects().len() {
+                return Err(rpc::Status::invalid_argument(format!(
+                    "No object with index {}",
+                    object_index
+                ))
+                .into());
+            }
+
+            let line_num = state.proto.line_number();
+
+            let obj = &mut state.proto.objects_mut().objects_mut()[object_index as usize];
+
+            if cancelled {
+                if !obj.has_cancelled() {
+                    obj.cancelled_mut().set_cancel_time(SystemTime::now());
+                    obj.cancelled_mut().set_cancel_line(line_num);
+                }
+            } else {
+                if obj.cancelled().skipped_lines() > 0 {
+                    return Err(rpc::Status::failed_precondition(
+                        "Object already partially skipped so can't be uncancelled",
+                    )
+                    .into());
+                }
+
+                obj.clear_cancelled();
+            }
+
+            Ok(())
+        })
     }
 
     pub fn is_terminal_state(state: ProgramRun_PlayerState) -> bool {
@@ -246,6 +293,8 @@ impl Player {
         let mut first_stable_time = None;
         let mut status_message = None;
 
+        let mut cancelled_objects = HashSet::new();
+
         // TODO: Throttle this loop
         loop {
             //
@@ -327,6 +376,13 @@ impl Player {
                             "In an unexpected state: {:?}",
                             state.proto.status()
                         ));
+                    }
+                }
+
+                cancelled_objects.clear();
+                for object in state.proto.objects().objects() {
+                    if object.has_cancelled() {
+                        cancelled_objects.insert(object.index());
                     }
                 }
 
@@ -417,6 +473,18 @@ impl Player {
                 }
             };
 
+            let mut skipped = false;
+            if parsed_line.object >= 0 {
+                let i = parsed_line.object as u32;
+                if cancelled_objects.contains(&i) {
+                    skipped = true;
+
+                    // NOTE: State updates are still applied.
+                    parsed_line.command_to_send = None;
+                    parsed_line.action = None;
+                }
+            }
+
             if let Some(cmd) = parsed_line.command_to_send {
                 serial_interface
                     .send_command(cmd, DEFAULT_COMMAND_TIMEOUT)
@@ -435,6 +503,47 @@ impl Player {
                 state.proto.set_line_number(num);
 
                 state.proto.merge_from(&parsed_line.state_update)?;
+
+                state
+                    .proto
+                    .objects_mut()
+                    .set_current_object_index(parsed_line.object);
+
+                if parsed_line.object >= 0 {
+                    let i = parsed_line.object as usize;
+                    if i >= state.proto.objects().objects_len() {
+                        return Err(err_msg("Object index out of bounds"));
+                    }
+
+                    /*
+                                        if !obj.has_cancelled() {
+                        obj.cancelled_mut().set_cancel_time(SystemTime::now());
+                        obj.cancelled_mut()
+                            .set_cancel_line(state.proto.line_number());
+                    }
+
+                        */
+
+                    let obj = &mut state.proto.objects_mut().objects_mut()[i];
+                    if skipped {
+                        // This may happen if the object was resumed by the use at the same time
+                        // that we were running this skipped line.
+                        if !obj.has_cancelled() {
+                            obj.cancelled_mut().set_cancel_time(SystemTime::now());
+                            obj.cancelled_mut().set_cancel_line(num - 1);
+                        }
+
+                        let n = obj.cancelled().skipped_lines();
+                        obj.cancelled_mut().set_skipped_lines(n + 1);
+                    } else {
+                        if obj.has_cancelled() {
+                            obj.cancelled_mut().set_cancel_line(num);
+                        }
+
+                        let n = obj.completed_lines();
+                        obj.set_completed_lines(n + 1);
+                    }
+                }
 
                 Ok::<_, Error>(())
             })?;

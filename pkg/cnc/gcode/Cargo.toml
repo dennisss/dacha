@@ -16,6 +16,7 @@ gcode_decimal = { path = "./decimal", default-features = false }
 gcode_macros = { path = "./macros" }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }
+reflection = { path = "../../reflection" }
 
 [features]
 default = ["std", "alloc"]

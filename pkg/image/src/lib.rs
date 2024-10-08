@@ -194,6 +194,37 @@ impl Image<u8> {
         }
         color
     }
+
+    pub fn iter_mut(&mut self, y: usize, x: usize) -> ImageIterMut {
+        let channels = self.channels();
+        let start = channels * (y * self.width() + x);
+        ImageIterMut {
+            image: self,
+            i: start,
+            channels,
+        }
+    }
+
+    pub fn crop(&self, y: usize, x: usize, height: usize, width: usize) -> Self {
+        let mut out = Self {
+            colorspace: self.colorspace,
+            array: Array {
+                shape: vec![height, width, self.channels()],
+                data: vec![0u8; height * width * self.channels()],
+            },
+        };
+
+        for i in 0..height {
+            let mut out_iter = out.iter_mut(i, 0);
+
+            for j in 0..width {
+                out_iter.set(&self.get(y + i, x + j));
+                out_iter.next();
+            }
+        }
+
+        out
+    }
 }
 
 impl<T: Cast<f32> + Default + Copy> Image<T> {
@@ -284,5 +315,23 @@ impl<T: Clone, Y: Copy + Cast<usize>> std::ops::Index<(Y, Y, Y)> for Image<T> {
 impl<T: Clone, Y: Copy + Cast<usize>> std::ops::IndexMut<(Y, Y, Y)> for Image<T> {
     fn index_mut(&mut self, index: (Y, Y, Y)) -> &mut T {
         self.array.index_mut(&[index.0, index.1, index.2] as &[Y])
+    }
+}
+
+pub struct ImageIterMut<'a> {
+    image: &'a mut Image<u8>,
+    i: usize,
+    channels: usize,
+}
+
+impl<'a> ImageIterMut<'a> {
+    pub fn set(&mut self, color: &Color) {
+        for i in 0..self.channels {
+            self.image.array[self.i + i] = color[i];
+        }
+    }
+
+    pub fn next(&mut self) {
+        self.i += self.channels;
     }
 }

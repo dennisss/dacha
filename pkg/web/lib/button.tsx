@@ -13,7 +13,9 @@ interface ButtonProps {
     // function(function(string))
     onClick: any
 
-    spin?: boolean
+    spin?: boolean;
+
+    small?: boolean;
 }
 
 interface ButtonState {
@@ -58,7 +60,7 @@ export class Button extends React.Component<ButtonProps, ButtonState> {
         let spin = this.state._waiting || this.props.spin;
 
         return (
-            <button disabled={spin || this.props.disabled} type={this.props.type || "button"} className={"btn btn-" + preset + (this.props.active ? " active" : "")} style={style} onClick={this._on_click}>
+            <button disabled={spin || this.props.disabled} type={this.props.type || "button"} className={"btn btn-" + preset + (this.props.active ? " active" : "") + (this.props.small ? ' btn-sm' : '')} style={style} onClick={this._on_click}>
                 <div>
                     <div style={{ opacity: (spin ? 0 : null) }}>
                         {this.props.children}
