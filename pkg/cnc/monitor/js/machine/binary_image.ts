@@ -30,8 +30,6 @@ export function parse_binary_images(buf: ArrayBuffer): BinaryImageData[] {
 
         let len = Math.floor(height * Math.ceil(width / 8));
 
-        console.log(i, i + len, buf.byteLength);
-
         let pixel_data = new Uint8Array(buf, i, len);
         i += len;
 

@@ -5,7 +5,8 @@ use std::iter::Iterator;
 use common::errors::*;
 
 use crate::regexp::node::*;
-use crate::regexp::symbol::invert_symbols;
+use crate::regexp::symbol_set::*;
+use crate::regexp::vm::flags::Flags;
 use crate::regexp::vm::instruction::*;
 
 pub struct Compilation {
@@ -222,13 +223,15 @@ impl Compiler {
                 }
             }
             RegExpNode::Class { chars, inverted } => {
-                let mut symbols = vec![];
+                let mut symbols = RegExpSymbolSetBuilder::default();
                 for c in chars {
-                    symbols.extend(c.raw_symbols());
+                    symbols.extend(&c.raw_symbols());
                 }
 
+                let mut symbols = symbols.build();
+
                 if *inverted {
-                    symbols = invert_symbols(symbols);
+                    symbols = symbols.inverted();
                 }
 
                 // TODO: Combine and simplify.
@@ -236,7 +239,7 @@ impl Compiler {
                 // instruction.
 
                 // TODO: Deduplicate with the ::Literal case.
-                self.compile_alternation(&symbols, |c, sym| {
+                self.compile_alternation(symbols.symbols(), |c, sym| {
                     if sym.end == sym.start + 1 {
                         c.add_instruction(Instruction::Char(sym.start));
                     } else {

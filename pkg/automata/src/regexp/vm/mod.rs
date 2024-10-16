@@ -176,6 +176,19 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn vm_not_space_comma_test() -> Result<()> {
+        let re = instance::RegExp::new("^([^ ,]+)(?:,([^ ]+))? ")?;
+
+        let m = re.exec("hello,world hello -123").unwrap();
+
+        assert_eq!(m.group_str(0).unwrap().unwrap(), "hello,world ");
+        assert_eq!(m.group_str(1).unwrap().unwrap(), "hello");
+        assert_eq!(m.group_str(2).unwrap().unwrap(), "world");
+
+        Ok(())
+    }
+
     // TODO: We don't want '.' to match the empty string (given that it will
     // match the start marker)
 

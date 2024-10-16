@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use common::io::Readable;
 use file::{LocalFile, LocalPath, LocalPathBuf};
 
@@ -9,21 +12,49 @@ use crate::response::{Response, ResponseBuilder};
 use crate::server_handler::{ServerHandler, ServerRequestContext};
 use crate::status_code;
 
+#[derive(Default)]
+pub struct StaticFileHandlerOptions {
+    /// If true, infer and return a Content-Type header based on the file
+    /// extension of the requested path. By default, this is false and the
+    /// Content-Type is always application/octet-stream.
+    pub trust_file_extension: bool,
+}
+
 /// HTTP request handler which serves static files from the local file system.
 pub struct StaticFileHandler {
     // mount_path: UriPath,
     base_path: LocalPathBuf, /* Need to be able to detect content types of files (either from
                               * extensions or binary) Need to be able to know
-                              * if a content type is compressable (or if it is already compressed) */
+                              * if a content type is compressable (or if it is already
+                              * compressed) */
 
-                             /* TODO: Need to support Last-Modified and ETag stuff (will be difficult
-                              * if we need to store the entire thing in memory) */
+    /* TODO: Need to support Last-Modified and ETag stuff (will be difficult
+     * if we need to store the entire thing in memory) */
+    options: StaticFileHandlerOptions,
+
+    extension_types: HashMap<&'static str, &'static str, FastHasherBuilder>,
 }
 
 impl StaticFileHandler {
     pub fn new<P: AsRef<LocalPath>>(base_path: P) -> Self {
+        Self::new_with_options(base_path, StaticFileHandlerOptions::default())
+    }
+
+    pub fn new_with_options<P: AsRef<LocalPath>>(
+        base_path: P,
+        options: StaticFileHandlerOptions,
+    ) -> Self {
+        let mut extension_types = HashMap::default();
+        for typ in mime_types::MEDIA_TYPES_LIST {
+            for ext in typ.extensions {
+                extension_types.insert(*ext, typ.types[0]);
+            }
+        }
+
         Self {
             base_path: base_path.as_ref().to_owned(),
+            options,
+            extension_types,
         }
     }
 }
@@ -100,6 +131,21 @@ impl ServerHandler for StaticFileHandler {
         let mut response = ResponseBuilder::new()
             .status(status_code::OK)
             .header("Accept-Ranges", "bytes");
+
+        if self.options.trust_file_extension {
+            // TODO: Generalize this. If a client is expected to immediately use a result,
+            // we want to specify this, else, we want to allow downloading while preserving
+            // the encoding.
+            if file_path.as_str().ends_with(".zz") {
+                response = response.header("Content-Encoding", "deflate");
+            }
+
+            if let Some(ext) = file_path.extension() {
+                if let Some(typ) = self.extension_types.get(ext) {
+                    response = response.header("Content-Type", *typ);
+                }
+            }
+        }
 
         let range_header = match parse_range_header(&request.head.headers, metadata.len() as usize)
         {

@@ -7,14 +7,14 @@ use common::bytes::Bytes;
 use executor::lock;
 use executor::sync::AsyncMutex;
 
-/// Maximum allowed size of one line being
-const MAX_LINE_LENGTH: usize = 256;
+/// Maximum allowed size of one line received from the serial port.
+const MAX_LINE_LENGTH: usize = 512;
 
 /// Number of previous lines read from the serial port that we will retain.
 ///
 /// Must be >> READ_BUFFER_SIZE to ensure that no new lines are not truncated
 /// before that are parsed in case the read returns many short lines.
-const READ_HISTORY_SIZE: usize = 2048; // ~512KiB
+const READ_HISTORY_SIZE: usize = 2048; // ~1 MiB
 
 /// Buffer for storing all lines received from the remote machine.
 ///
@@ -106,9 +106,13 @@ impl SerialReceiverBuffer {
                 }
 
                 if nl_index.is_some() {
-                    let line = state.current_line.split_off(0).into();
+                    let mut line = state.current_line.split_off(0);
+                    if line.ends_with(b"\r") {
+                        line.pop();
+                    }
+
                     state.lines.push_back(ReceivedLine {
-                        data: line,
+                        data: line.into(),
                         time: now,
                         kind: ReadSerialLogResponse_LineKind::UNKNOWN,
                     });

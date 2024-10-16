@@ -13,6 +13,8 @@ pub struct ParsedLine {
     pub command_to_send: Option<String>,
     pub state_update: ProgramRun,
     pub progress_updated: bool,
+
+    /// TODO: Make this a vector.
     pub action: Option<LineAction>,
 
     /// Index of the object which this line is in. < 0 implies this is not an
@@ -26,10 +28,12 @@ pub enum LineAction {
         min_temperature: f32,
         min_is_max_temperature: bool,
     },
+    BedPreheat,
 }
 
 pub struct PlayerProgramPreprocessor {
     use_silent_mode: bool,
+    use_compact_lines: bool,
     lines: channel::Receiver<Option<Vec<gcode::ProgramElement>>>,
     output: channel::Sender<Option<ParsedLine>>,
     current_object: i32,
@@ -38,12 +42,14 @@ pub struct PlayerProgramPreprocessor {
 impl PlayerProgramPreprocessor {
     pub fn new(
         use_silent_mode: bool,
+        use_compact_lines: bool,
         lines: channel::Receiver<Option<Vec<gcode::ProgramElement>>>,
     ) -> (Self, channel::Receiver<Option<ParsedLine>>) {
         let (sender, receiver) = channel::bounded(20);
 
         let inst = Self {
             use_silent_mode,
+            use_compact_lines,
             lines,
             output: sender,
             current_object: -1,
@@ -100,6 +106,17 @@ impl PlayerProgramPreprocessor {
 
                     // Don't send these to the machine.
                     continue;
+                }
+
+                gcode::Command::DetailedZProbe(cmd) => {
+                    if cmd.words.len() == 1
+                        && cmd.words[0].key == 'G'
+                        && cmd.words[0].value == gcode::WordValue::Empty
+                    {
+                        // "G29 G" is a bed 'preheat' in prusa firmware (takes several minutes).
+                        out.action = Some(LineAction::BedPreheat);
+                        continue;
+                    }
                 }
 
                 gcode::Command::SetBuildPercentage(cmd) => {
@@ -200,7 +217,15 @@ impl PlayerProgramPreprocessor {
         }
 
         if !out_line.is_empty() {
-            out.command_to_send = Some(out_line.to_string_compact());
+            let cmd = {
+                if self.use_compact_lines {
+                    out_line.to_string_compact()
+                } else {
+                    out_line.to_string()
+                }
+            };
+
+            out.command_to_send = Some(cmd);
         }
 
         out.object = self.current_object;

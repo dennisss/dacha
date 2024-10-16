@@ -1274,7 +1274,7 @@ impl Compiler {
                 &self.{name}
             }}
             
-            pub fn {name}_mut(&mut self) -> &{pkg}::MapField<{key_type}, {value_type}> {{
+            pub fn {name}_mut(&mut self) -> &mut {pkg}::MapField<{key_type}, {value_type}> {{
                 &mut self.{name}
             }}
             "#,
@@ -1684,7 +1684,7 @@ impl Compiler {
                     "
                     for v in MessageCodec::<{inner_name}>::parse_repeated(&f) {{
                         let v = v?;
-                        self.{name}.insert(v.key, v.value.unwrap_or_default());
+                        self.{name}.insert(v.key.unwrap_or_default(), v.value.unwrap_or_default());
                     }}
                 ",
                     name = name,
@@ -1896,7 +1896,7 @@ impl Compiler {
                         for (k, v) in self.{name}.entries() {{
                             let mut e = {inner_name}::default();
                             e.set_key(k);
-                            e.set_value(v.as_ref().clone());
+                            e.set_value(v.clone());
                             MessageCodec::serialize({field_num}, &e, out)?;
                         }}
                     ",

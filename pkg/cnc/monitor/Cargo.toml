@@ -31,6 +31,7 @@ gcode = { path = "../gcode" }
 bgcode = { path = "../bgcode" }
 math = { path = "../../math" }
 perf = { path = "../../perf" }
+net = { path = "../../net" }
 graphics = { path = "../../graphics" }
 datastore_meta_client = { path = "../../datastore/meta/client" }
 sstable = { path = "../../sstable" }

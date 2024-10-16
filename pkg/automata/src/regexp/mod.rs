@@ -6,6 +6,7 @@ pub mod node;
 mod rune;
 mod state_machine;
 mod symbol;
+mod symbol_set;
 mod syntax;
 pub mod vm;
 

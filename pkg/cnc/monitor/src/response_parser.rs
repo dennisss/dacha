@@ -16,11 +16,14 @@ regexp!(TAG_PATTERN => "^\\s*([0-9a-zA-Z_@\\-]+):");
 
 // NOTE: This is very permissive of what format we will accept floats in
 // All of these are allowed: "1", "-1" "0.00" "0..1" or ".1"
-regexp!(FLOAT_PATTERN => "^\\s*(-)?0*([0-9]+)(?:\\.+([0-9]+)?)?(?:\\s|$)");
+regexp!(FLOAT_PATTERN => "^\\s*((-)?0*([0-9]+)(?:\\.+([0-9]+)?)?)(?:\\s|/|$)");
 
 regexp!(SLASH_PATTERN => "^\\s*/");
 
 regexp!(RPM_PATTERN => "^\\s*RPM");
+
+regexp!(COUNT_PATTERN => "^\\s*Count ");
+
 
 #[derive(Clone, Debug)]
 pub enum ResponseEvent {
@@ -90,7 +93,7 @@ pub fn parse_response_line(
     events: &mut Vec<ResponseEvent>,
 ) -> Result<()> {
     match config.firmware() {
-        MachineConfig_Firmware::MARLIN => parse_response_line_marlin(line, config, events),
+        MachineConfig_Firmware::MARLIN | MachineConfig_Firmware::PRUSA => parse_response_line_marlin(line, config, events),
         MachineConfig_Firmware::GRBL
         | MachineConfig_Firmware::SMOOTHIEWARE
         | MachineConfig_Firmware::CARVERA => parse_response_line_grbl(line, config, events),
@@ -136,14 +139,12 @@ fn parse_response_line_marlin(
     // Parsing axis position data.
     while !line.is_empty() {
         // Ignore Marlin axis step counts
-        if line.starts_with(b"Count ") {
+        if COUNT_PATTERN.test(line) {
             line = &[];
             break;
         }
 
         if let Some(m) = TAG_PATTERN.exec(line) {
-            line = &line[m.last_index()..];
-
             let id = m.group_str(1).unwrap()?;
 
             let axis_config = match config.axes().iter().find(|a| a.id() == id) {
@@ -151,7 +152,22 @@ fn parse_response_line_marlin(
                 None => break,
             };
 
+            line = &line[m.last_index()..];
+
             let mut values = FixedVec::new();
+
+            if axis_config.allow_unknown() {
+                if let Some(rest) = line.strip_prefix(b"?") {
+                    line = rest;
+                    
+                    events.push(ResponseEvent::AxisValue {
+                        id: id.to_string(),
+                        values,
+                        coordinate_system: CoordinateSystemIndex::Machine,
+                    });
+                    continue;
+                } 
+            }
 
             let (v, rest) = parse_float(line)?;
             line = rest;
@@ -642,14 +658,14 @@ fn parse_float(input: &[u8]) -> Result<(f32, &[u8])> {
 
     let normalized = format!(
         "{}{}.{}",
-        m.group_str(1).unwrap_or(Ok(""))?,
-        m.group_str(2).unwrap_or(Ok("0"))?,
-        m.group_str(3).unwrap_or(Ok("0"))?
+        m.group_str(2).unwrap_or(Ok(""))?,
+        m.group_str(3).unwrap_or(Ok("0"))?,
+        m.group_str(4).unwrap_or(Ok("0"))?
     );
 
     let v = normalized.parse::<f32>()?;
 
-    Ok((v, &input[m.last_index()..]))
+    Ok((v, &input[m.group(1).unwrap().len()..]))
 }
 
 fn bytes_to_string(input: &[u8]) -> String {
@@ -789,137 +805,160 @@ mod tests {
         Ok(())
     }
 
-    /*
-    Log from Prusa XL when starting a print file from SDCard:
-
-        b"echo:endstops hit:  Z:13.37\n"
-    b"echo:Probe classified as clean and OK\n"
-    b"echo:Starting probe at 1\n"
-    b"echo:busy: processing\n"
-    b"echo:endstops hit:  Z:16.46\n"
-    b"echo:Probe classified as clean and OK\n"
-    b"echo:Starting probe at 1\n"
-    b"echo:busy: processing\n"
-    b"echo:endstops hit:  Z:19.54\n"
-    b"echo:Probe classified as clean and OK\n"
-    b"X:195.43 Y:102.86 Z:2.00 E:-2.00 Count A:23863 B:7405 Z:1600\n"
-    b"echo:busy: processing\n"
-    b"echo:Starting probe at 1\n"
-    b"echo:busy: processing\n"
-    b"echo:busy: processing\n"
-    b"echo:endstops hit:  Z:7.20\n"
-    b"echo:Probe classified as clean and OK\n"
-    b"echo:Starting probe at 1\n"
-    b"echo:busy: processing\n"
-    b"echo:endstops hit:  Z:4.11\n"
-    b"echo:Probe classified as clean and OK\n"
-    b"X:41.14 Y:10.29 Z:2.00 E:-2.00 Count A:4114 B:2468 Z:1600\n"
-    b"Extrapolating mesh...done\nUnified Bed Leveling System v1.01 active\n"
-    b"echo:busy: processing\n"
-    b"echo:busy: processing\n"
-    b"echo:busy: processing\n"
-    b"echo:busy: processing\n"
-    b" T:175.00/240.00 B:80.10/80.00 C:-30.00/0.00 X0:42.00/36.00 A:59.68/0.00"
-    b" T0:175.00/240.00 T1:27.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00"
-    b" T5:6.00/0.00 @:42 B@:0 HBR@:255 @0:42 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60.0"
-    b"0/60.00 B_0_1:80.00/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.10/"
-    b"80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_2_"
-    b"3:60.00/60.00 B_3_3:40.10/40.00 W:?\n"
-    b" T:175.00/240.00 B:80.12/80.00 C:-30.00/0.00 X0:42.00/36.00 A:60.24/0.00"
-    b" T0:175.00/240.00 T1:26.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00"
-    b" T5:6.00/0.00 @:117 B@:0 HBR@:255 @0:117 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60"
-    b".00/60.00 B_0_1:80.00/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.1"
-    b"0/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_2_3:60.00/60.00 B_3_3:40.10/40.00 W:?\n"
-    b"echo:busy: processing\n"
-    b" T:174.00/240.00 B:80.12/80.00 C:-30.00/0.00 X0:42.00/36.00 A:60.18/0.00"
-    b" T0:174.00/240.00 T1:26.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00"
-    b" T5:6.00/0.00 @:118 B@:0 HBR@:255 @0:118 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60"
-    b".00/60.00 B_0_1:80.00/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.10/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_"
-    b"2_3:60.10/60.00"
-    b" B_3_3:40.20/40.00 W:?\n"
-    b" T:175.00/240.00 B:80.15/80.00 C:-30.00/0.00 X0:42.00/36.00 A:59.93/0.00"
-    b" T0:175.00/240.00 T1:27.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00"
-    b" T5:6.00/0.00 @:115 B@:0 HBR@:255 @0:115 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60.00/60.00 B_0_1:80.00/80.00 B_1_1:80.20/80.00 B_2_1:80.10/80.00 "
-    b"B_3_1:80.00/80.00"
-    b" B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.10/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_2_3:60.00/60.00 B_3_3:40.10/40.00 W:?\n"
-    b"echo:busy: processing\n"
-    b"echo:busy: processing\n"
-    b" T:241.00/240.00 B:80.07/80.00 C:-30.00/0.00 X0:41.00/36.00 A:59.17/0.00"
-    b" T0:241.00/240.00 T1:26.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00"
-    b" T5:6.00/0.00 @:61 B@:0 HBR@:255 @0:61 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:60.10/60.00 B_1_0:60.00/60.00 B_2_0:60.10/60.00 B_3_0:60.00/60.00 B_0_1:80.10/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_"
-    b"3_1:80.00/80.00"
-    b" B_0_2:60.00/60.00 B_1_2:80.10/80.00 B_2_2:80.00/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.00/60.00 B_2_3:60.00/60.00 B_3_3:40.30/40.00"
-    b" W:0\n"
-    b"echo:busy: processing\n"
-    b"X:14.90 Y:360.00 Z:10.36 E:0.00 Count A:29992 B:-27608 Z:8446\n"
-    b"echo:busy: processing\n"
-    b"X:76.00 Y:-7.00 Z:0.20 E:0.00 Count A:9067 B:-4888 Z:8220\n"
-    b"echo:busy: processing\n"
-    b"echo:busy: processing\n"
-
-
-    // M115
-    b"FIRMWARE_NAME:Prusa-Firmware-Buddy 6.0.3+14902 (Github) SOURCE_CODE_URL:https://github.com/prusa3d/Prusa-Firmware-Buddy PROTOCOL"
-    b"_VERSION:1.0 MACHINE_TYPE:Prusa-XL EXTRUDER_COUNT:5 UUID:cede2a2f-41a2-4748-9b12-c55c62f367ff\nCap:SERIAL_XON_XOFF:0\r\nCap:BINARY_"
-    b"FILE_TRANSFER:0\r\nCap:EEPROM:0\r\nCap:VOLUMETRIC:1\r\nCap:AUTOREPORT_TEMP:1\r\nCap:PROGRESS:0\r\nCap:PRINT_JOB:1\r\nCap:AUTOLEVEL:1\r\nCap:Z_PROBE:1\r\nCap:LEVELING_DATA:1\r\nCap:BUILD_PERCENT:0\r\nCap:SOFTWARE_"
-    b"POWER:0\r\n"
-    b"Cap:TOGGLE_LIGHTS:0\r\nCap:CASE_LIGHT_BRIGHTNESS:0\r\nCap:EMERGENCY_PARSER:0\r\nCap:PROMPT_SUPPORT:0\r\nCap:AUTOREPORT_SD_STATUS:0\r\nCap:"
-    b"THERMAL_PROTECTION:1\r\nCap:MOTION_MODES:0\r\nCap:CHAMBER_TEMPERATURE:0\r\nok\n"
-
-    // M105
-    b"ok T:240.00/240.00 B:80.07/80.00 C:-30.00/0.00 X0:50.00/36.00 A:59.90/0.00"
-    b" T0:240.00/240.00 T1:27.00/0.00 T2:27.00/0.00 T3:28.00/0.00 T4:27.00/0.00"
-    b" T5:6.00/0.00 @:62 B@:0 HBR@:255 @0:62 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:60.00/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60.0"
-    b"0/60.00 B_0_1:80.00/80.00 B_1_1:80.00/80.00 B_2_1:80.00/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.30/80.00 B_2_2:80.00/80.00 B_3_2:60.00/60.00 B_0_3:41.30/40.00 B_1_3:60.00/60.00 B_2_"
-    b"3:60.00/60.00"
-    b" B_3_3:41.20/40.00\n"
-
-
-    // M114
-    b"echo:busy: processing\n"
-    b"X:135.62 Y:136.28 Z:0.20 E:364.44 Count A:21760 B:-49 Z:200\n"
-    b"ok\n"
-
-    // M123
-    b"E0:7835 RPM PRN1:0 RPM E0@:255 PRN1@:0\n"
-    b"\nok\n"
-
-    // M863
-    b"Tool mapping: \r\n"
-    b"  Tool 0 -> 0\n  Tool 1 -> <none>\n  Tool 2 -> <none>\n  Tool 3 -> <none>\n  Tool 4 -> <none>\n  Tool 5 -> 5\nEnabled: 1\nok\n"
-
-
-    // M333
-    b"echo:touch_evt1\n"
-    b"echo:is_printing1\necho:active_extruder1\necho:temp_hbr0\necho:temp_brd0\necho:temp_chamber0\necho:temp_mcu0\necho:temp_sandwich0\necho:temp_splitter0\n"
-    b"echo:temp_bed0\necho:ttemp_bed0\necho:temp_noz0\necho:ttemp_noz0\necho:fan_speed0\necho:fan_hbr_speed0\necho:ipos_x0\necho:ipos_y0\necho:ipos_z0\n"
-    b"echo:pos_x0\necho:pos_y0\necho:pos_z0\necho:adj_z1\necho:fw_version1\necho:buddy_revision1\necho:buddy_bom1\necho:filament1\necho:stack1"
-    b"\necho:runtime1\necho:heap1\necho:print_filename1\necho:dwarf_board_temp1\necho:dwarf_mcu_temp0\necho:dwarfs_mcu_temp0\necho:dwarfs_board_temp0\n"
-    b"echo:power_panic1\necho:side_fsensor0\necho:fsensor0\necho:side_fsensor_raw0\necho:fsensor_raw0\necho:tmc_write1\necho:tmc_read1\necho:"
-    b"eeprom_write1\n"
-    b"echo:points_dropped1\necho:tmc_sg_e0\necho:tmc_sg_z0\necho:tmc_sg_y0\necho:tmc_sg_x0\necho:gui_loop_dur0\necho:modbus_reqfail1\necho:be"
-    b"dlet_curr0\n"
-    b"echo:bed_curr1\necho:bedlet_state0\necho:bedlet_temp0\necho:bedlet_pwm0\necho:bedlet_reg0\necho:bed_state0\necho:bed_mcu_temp0\necho:be"
-    b"dlet_target0\n"
-    b"echo:dwarf_fast_refresh_delay0\necho:dwarf_parked_raw0\necho:dwarf_picked_raw0\necho:dwarf_heat_curr0\necho:dwarf_heat_pwm0\necho:loa"
-    b"dcell0\necho:loadcell_age0\necho:loadcell_value0\necho:loadcell_hp0\necho:loadcell_xy0\necho:app_start1\necho:maintask_loop0\necho:cpu_"
-    b"usage1\n"
-    b"echo:usbh_err_cnt1\necho:media_prefetched1\necho:print_fan_act0\necho:hbr_fan_act0\necho:hbr_fan_enc0\necho:touch_pos1\necho:splitter_5V_current1\n"
-    b"echo:24VVoltage1\necho:5VVoltage1\necho:Sandwitch5VCurrent1\necho:xlbuddy5VCurrent1\necho:g425_rxy1\necho:g425_rz1\necho:g425_z1\necho:g425_xy1\necho:g425_xy_dev1\necho:gcode0\necho:loadcell_scale1\necho:loadcell_threshold1\n"
-    b"echo:loadcell_threshold_cont1\necho:loadcell_hysteresis1\necho:g425_cen1\necho:g425_off1\necho:esp_out1\necho:eth_out1\necho:esp_in1\necho:eth_in1\n"
-    b"echo:fan1\necho:home_diff1\necho:probe_analysis1\necho:probe_start1\necho:probe_z_diff0\necho:probe_z0\necho:tk_accel0\necho:freq_gain1\n"
-    b"echo:excite_freq0\necho:crash_repeated1\necho:crash1\necho:crash_stat1\nok\n"
-
-
-    To actually get the active extruder, you need to look at the active metrics:
-
-    - https://github.com/prusa3d/Prusa-Firmware-Buddy/blob/f5a498ab8d2a42341d0dbeb969b7ae047783e860/src/common/app_metrics.cpp#L146C59-L146C79
-
-        */
-
     #[testcase]
     async fn prusa_xl_log_parsing() -> Result<()> {
+        let config = get_prusa_xl_config().await?;
+
+        let log: &'static [&'static [u8]] = &[
+            // Old Capabilities.
+            b"FIRMWARE_NAME:Prusa-Firmware-Buddy 5.1.0 (Github) SOURCE_CODE_URL:https://github.com/prusa3d/Prusa-Firmware-Buddy PROTOCOL_VERSION:1.0 MACHINE_TYPE:Prusa-XL EXTRUDER_COUNT:6 UUID:cede2a2f-41a2",
+            b"-4748-9b12-c55c62f367ff\n",
+            b"Cap:SERIAL_XON_XOFF:0\r\nCap:BINARY_FILE_TRANSFER:0\r\nCap:EEPROM:0\r\nCap:VOLUMETRIC:1\r\nCap:AUTOREPORT_TEMP:1\r\nCap:PROGRESS:0\r\nCap:PR",
+            b"INT_JOB:1\r\n",
+            b"Cap:AUTOLEVEL:1\r\nCap:Z_PROBE:1\r\nCap:LEVELING_DATA:1\r\nCap:BUILD_PERCENT:0\r\nCap:SOFTWARE_POWER:0\r\nCap:TOGGLE_LIGHTS:0\r\nCap:CASE_LI",
+            b"GHT_BRIGHTNESS:0\r\n",
+            b"Cap:EMERGENCY_PARSER:0\r\nCap:PROMPT_SUPPORT:0\r\nCap:AUTOREPORT_SD_STATUS:0\r\nCap:THERMAL_PROTECTION:1\r\nCap:MOTION_MODES:0\r\nCap:CHAM",
+            b"BER_TEMPERATURE:0\r\nok\n",
+
+            // M115
+            b"FIRMWARE_NAME:Prusa-Firmware-Buddy 6.0.3+14902 (Github) SOURCE_CODE_URL:https://github.com/prusa3d/Prusa-Firmware-Buddy PROTOCOL",
+            b"_VERSION:1.0 MACHINE_TYPE:Prusa-XL EXTRUDER_COUNT:5 UUID:cede2a2f-41a2-4748-9b12-c55c62f367ff\nCap:SERIAL_XON_XOFF:0\r\nCap:BINARY_",
+            b"FILE_TRANSFER:0\r\nCap:EEPROM:0\r\nCap:VOLUMETRIC:1\r\nCap:AUTOREPORT_TEMP:1\r\nCap:PROGRESS:0\r\nCap:PRINT_JOB:1\r\nCap:AUTOLEVEL:1\r\nCap:Z_PROBE:1\r\nCap:LEVELING_DATA:1\r\nCap:BUILD_PERCENT:0\r\nCap:SOFTWARE_",
+            b"POWER:0\r\n",
+            b"Cap:TOGGLE_LIGHTS:0\r\nCap:CASE_LIGHT_BRIGHTNESS:0\r\nCap:EMERGENCY_PARSER:0\r\nCap:PROMPT_SUPPORT:0\r\nCap:AUTOREPORT_SD_STATUS:0\r\nCap:",
+            b"THERMAL_PROTECTION:1\r\nCap:MOTION_MODES:0\r\nCap:CHAMBER_TEMPERATURE:0\r\nok\n",
+
+            // M105
+            b"ok T:240.00/240.00 B:80.07/80.00 C:-30.00/0.00 X0:50.00/36.00 A:59.90/0.00",
+            b" T0:240.00/240.00 T1:27.00/0.00 T2:27.00/0.00 T3:28.00/0.00 T4:27.00/0.00",
+            b" T5:6.00/0.00 @:62 B@:0 HBR@:255 @0:62 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:60.00/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60.0",
+            b"0/60.00 B_0_1:80.00/80.00 B_1_1:80.00/80.00 B_2_1:80.00/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.30/80.00 B_2_2:80.00/80.00 B_3_2:60.00/60.00 B_0_3:41.30/40.00 B_1_3:60.00/60.00 B_2_",
+            b"3:60.00/60.00",
+            b" B_3_3:41.20/40.00\n",
+
+
+            // M114
+            b"echo:busy: processing\n",
+            b"X:135.62 Y:136.28 Z:0.20 E:364.44 Count A:21760 B:-49 Z:200\n",
+            b"ok\n",
+
+            // M123
+            b"E0:7835 RPM PRN1:0 RPM E0@:255 PRN1@:0\n",
+            b"\nok\n",
+
+            // M863
+            b"Tool mapping: \r\n",
+            b"  Tool 0 -> 0\n  Tool 1 -> <none>\n  Tool 2 -> <none>\n  Tool 3 -> <none>\n  Tool 4 -> <none>\n  Tool 5 -> 5\nEnabled: 1\nok\n",
+
+            // Log from Prusa XL when starting a print file from SDCard:
+            b"echo:endstops hit:  Z:13.37\n",
+            b"echo:Probe classified as clean and OK\n",
+            b"echo:Starting probe at 1\n",
+            b"echo:busy: processing\n",
+            b"echo:endstops hit:  Z:16.46\n",
+            b"echo:Probe classified as clean and OK\n",
+            b"echo:Starting probe at 1\n",
+            b"echo:busy: processing\n",
+            b"echo:endstops hit:  Z:19.54\n",
+            b"echo:Probe classified as clean and OK\n",
+            b"X:195.43 Y:102.86 Z:2.00 E:-2.00 Count A:23863 B:7405 Z:1600\n",
+            b"echo:busy: processing\n",
+            b"echo:Starting probe at 1\n",
+            b"echo:busy: processing\n",
+            b"echo:busy: processing\n",
+            b"echo:endstops hit:  Z:7.20\n",
+            b"echo:Probe classified as clean and OK\n",
+            b"echo:Starting probe at 1\n",
+            b"echo:busy: processing\n",
+            b"echo:endstops hit:  Z:4.11\n",
+            b"echo:Probe classified as clean and OK\n",
+            b"X:41.14 Y:10.29 Z:2.00 E:-2.00 Count A:4114 B:2468 Z:1600\n",
+            b"Extrapolating mesh...done\nUnified Bed Leveling System v1.01 active\n",
+            b"echo:busy: processing\n",
+            b"echo:busy: processing\n",
+            b"echo:busy: processing\n",
+            b"echo:busy: processing\n",
+            b" T:175.00/240.00 B:80.10/80.00 C:-30.00/0.00 X0:42.00/36.00 A:59.68/0.00",
+            b" T0:175.00/240.00 T1:27.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00",
+            b" T5:6.00/0.00 @:42 B@:0 HBR@:255 @0:42 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60.0",
+            b"0/60.00 B_0_1:80.00/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.10/",
+            b"80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_2_",
+            b"3:60.00/60.00 B_3_3:40.10/40.00 W:?\n",
+            b" T:175.00/240.00 B:80.12/80.00 C:-30.00/0.00 X0:42.00/36.00 A:60.24/0.00",
+            b" T0:175.00/240.00 T1:26.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00",
+            b" T5:6.00/0.00 @:117 B@:0 HBR@:255 @0:117 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60",
+            b".00/60.00 B_0_1:80.00/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.1",
+            b"0/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_2_3:60.00/60.00 B_3_3:40.10/40.00 W:?\n",
+            b"echo:busy: processing\n",
+            b" T:174.00/240.00 B:80.12/80.00 C:-30.00/0.00 X0:42.00/36.00 A:60.18/0.00",
+            b" T0:174.00/240.00 T1:26.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00",
+            b" T5:6.00/0.00 @:118 B@:0 HBR@:255 @0:118 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60",
+            b".00/60.00 B_0_1:80.00/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_3_1:80.00/80.00 B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.10/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_",
+            b"2_3:60.10/60.00",
+            b" B_3_3:40.20/40.00 W:?\n",
+            b" T:175.00/240.00 B:80.15/80.00 C:-30.00/0.00 X0:42.00/36.00 A:59.93/0.00",
+            b" T0:175.00/240.00 T1:27.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00",
+            b" T5:6.00/0.00 @:115 B@:0 HBR@:255 @0:115 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:59.90/60.00 B_1_0:60.00/60.00 B_2_0:60.00/60.00 B_3_0:60.00/60.00 B_0_1:80.00/80.00 B_1_1:80.20/80.00 B_2_1:80.10/80.00 ",
+            b"B_3_1:80.00/80.00",
+            b" B_0_2:60.00/60.00 B_1_2:80.20/80.00 B_2_2:80.10/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.10/60.00 B_2_3:60.00/60.00 B_3_3:40.10/40.00 W:?\n",
+            b"echo:busy: processing\n",
+            b"echo:busy: processing\n",
+            b" T:241.00/240.00 B:80.07/80.00 C:-30.00/0.00 X0:41.00/36.00 A:59.17/0.00",
+            b" T0:241.00/240.00 T1:26.00/0.00 T2:27.00/0.00 T3:27.00/0.00 T4:26.00/0.00",
+            b" T5:6.00/0.00 @:61 B@:0 HBR@:255 @0:61 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:60.10/60.00 B_1_0:60.00/60.00 B_2_0:60.10/60.00 B_3_0:60.00/60.00 B_0_1:80.10/80.00 B_1_1:80.10/80.00 B_2_1:80.10/80.00 B_",
+            b"3_1:80.00/80.00",
+            b" B_0_2:60.00/60.00 B_1_2:80.10/80.00 B_2_2:80.00/80.00 B_3_2:60.00/60.00 B_0_3:40.10/40.00 B_1_3:60.00/60.00 B_2_3:60.00/60.00 B_3_3:40.30/40.00",
+            b" W:0\n",
+            b"echo:busy: processing\n",
+            b"X:14.90 Y:360.00 Z:10.36 E:0.00 Count A:29992 B:-27608 Z:8446\n",
+            b"echo:busy: processing\n",
+            b"X:76.00 Y:-7.00 Z:0.20 E:0.00 Count A:9067 B:-4888 Z:8220\n",
+            b"echo:busy: processing\n",
+            b"echo:busy: processing\n",
+        
+            // M333
+            b"echo:touch_evt1\n",
+            b"echo:is_printing1\necho:active_extruder1\necho:temp_hbr0\necho:temp_brd0\necho:temp_chamber0\necho:temp_mcu0\necho:temp_sandwich0\necho:temp_splitter0\n",
+            b"echo:temp_bed0\necho:ttemp_bed0\necho:temp_noz0\necho:ttemp_noz0\necho:fan_speed0\necho:fan_hbr_speed0\necho:ipos_x0\necho:ipos_y0\necho:ipos_z0\n",
+            b"echo:pos_x0\necho:pos_y0\necho:pos_z0\necho:adj_z1\necho:fw_version1\necho:buddy_revision1\necho:buddy_bom1\necho:filament1\necho:stack1",
+            b"\necho:runtime1\necho:heap1\necho:print_filename1\necho:dwarf_board_temp1\necho:dwarf_mcu_temp0\necho:dwarfs_mcu_temp0\necho:dwarfs_board_temp0\n",
+            b"echo:power_panic1\necho:side_fsensor0\necho:fsensor0\necho:side_fsensor_raw0\necho:fsensor_raw0\necho:tmc_write1\necho:tmc_read1\necho:",
+            b"eeprom_write1\n",
+            b"echo:points_dropped1\necho:tmc_sg_e0\necho:tmc_sg_z0\necho:tmc_sg_y0\necho:tmc_sg_x0\necho:gui_loop_dur0\necho:modbus_reqfail1\necho:be",
+            b"dlet_curr0\n",
+            b"echo:bed_curr1\necho:bedlet_state0\necho:bedlet_temp0\necho:bedlet_pwm0\necho:bedlet_reg0\necho:bed_state0\necho:bed_mcu_temp0\necho:be",
+            b"dlet_target0\n",
+            b"echo:dwarf_fast_refresh_delay0\necho:dwarf_parked_raw0\necho:dwarf_picked_raw0\necho:dwarf_heat_curr0\necho:dwarf_heat_pwm0\necho:loa",
+            b"dcell0\necho:loadcell_age0\necho:loadcell_value0\necho:loadcell_hp0\necho:loadcell_xy0\necho:app_start1\necho:maintask_loop0\necho:cpu_",
+            b"usage1\n",
+            b"echo:usbh_err_cnt1\necho:media_prefetched1\necho:print_fan_act0\necho:hbr_fan_act0\necho:hbr_fan_enc0\necho:touch_pos1\necho:splitter_5V_current1\n",
+            b"echo:24VVoltage1\necho:5VVoltage1\necho:Sandwitch5VCurrent1\necho:xlbuddy5VCurrent1\necho:g425_rxy1\necho:g425_rz1\necho:g425_z1\necho:g425_xy1\necho:g425_xy_dev1\necho:gcode0\necho:loadcell_scale1\necho:loadcell_threshold1\n",
+            b"echo:loadcell_threshold_cont1\necho:loadcell_hysteresis1\necho:g425_cen1\necho:g425_off1\necho:esp_out1\necho:eth_out1\necho:esp_in1\necho:eth_in1\n",
+            b"echo:fan1\necho:home_diff1\necho:probe_analysis1\necho:probe_start1\necho:probe_z_diff0\necho:probe_z0\necho:tk_accel0\necho:freq_gain1\n",
+            b"echo:excite_freq0\necho:crash_repeated1\necho:crash1\necho:crash_stat1\nok\n",
+        ];
+
         // TODO:
+
+        let buffer = SerialReceiverBuffer::default();
+
+        for buf in log {
+            buffer.append(*buf, Instant::now()).await?;
+        }
+
+        let num_lines = buffer.last_line_offset().await?;
+        // assert_eq!(num_lines, 24);
+
+        for i in 0..num_lines {
+            let line = buffer.get_line(i).await?;
+
+            println!("==> {:?}", line.data);
+
+            let mut events = vec![];
+            parse_response_line(&line.data, &config, &mut events)?;
+
+            println!("{:?}", events);
+        }
 
         Ok(())
     }

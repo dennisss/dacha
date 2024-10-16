@@ -582,7 +582,7 @@ impl CommandCodec for ParkTool {
         let params = params
             .take_all()?
             .into_iter()
-            .filter(|w| w.key != 'T')
+            .filter(|w| w.key != 'P')
             .collect();
 
         Ok(Self { index, params })

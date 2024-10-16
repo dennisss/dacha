@@ -1,0 +1,61 @@
+# proto-file: pkg/cnc/monitor/proto/machine_config.proto
+# proto-message: MachineConfig
+
+# Config for a Prusa Mini.
+#
+# TODO: Requires testing.
+
+model_name: "Prusa Mini"
+auto_connect: true
+
+work_area {
+    # Z max is 180
+    x_range { min: 0 max: 180 }
+    y_range { min: 0 max: 180 }
+}
+
+device {
+    usb {
+        vendor: 0x2c99
+        product: 0x000C
+    }
+}
+
+firmware: PRUSA
+baud_rate: 115200 # Fake
+silent_mode: true
+
+# TODO
+axes: [
+    { id: "X" type: POSITION range { min: 0 max: 255 } },
+    { id: "Y" type: POSITION range { min: -4 max: 212.5 } },
+    { id: "Z" type: POSITION range { min: 0.15 max: 210 } },
+    { id: "E" type: POSITION },
+    
+    { id: "E0" type: FAN_TACHOMETER_RPM name: "Extruder Fan (RPM)" },
+    { id: "PRN1" type: FAN_TACHOMETER_RPM name: "Part Cooling Fan (RPM)" },
+    { id: "E0@" type: FAN_PWM_VALUE },
+    { id: "PRN1@" type: FAN_PWM_VALUE },
+
+    { id: "T" type: HEATER name: "Hotend" collect { min_value: 30 } },
+    { id: "T0" type: HEATER name: "T0" hide: true  },
+    { id: "B" type: HEATER name: "Bed" collect { min_value: 30 }  },
+    { id: "@" type: GENERIC_SENSOR name: "Hotend Power" },
+    { id: "B@" type: GENERIC_SENSOR name: "Bed Power" },
+    { id: "P" type: GENERIC_SENSOR name: "PINDAv2" },
+    { id: "A" type: GENERIC_SENSOR name: "Ambient" }
+]
+
+tools {
+    num_slots: 0
+    loaded_tools: [
+        {
+            index: 0
+            name: "Extruder (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        }
+    ]
+}

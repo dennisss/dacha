@@ -105,6 +105,9 @@ impl Player {
         // TODO: If there are no M73 commands in the file (or we think they are
         // inaccurate, then we need a motion simulation based estimator).
 
+        // TODO: Ensure the Prusa tool mapper is disabled during printing and emulate
+        // that at a higher level.
+
         // Setting the initial time estimate based on the file time.
         let maybe_silent_mode = machine_config.read().await?.silent_mode();
         let mut use_silent_mode = false;

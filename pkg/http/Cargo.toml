@@ -18,6 +18,7 @@ executor = { path = "../executor" }
 executor_multitask = { path = "../executor/multitask" }
 file = { path = "../file" }
 macros = { path = "../macros" }
+mime_types = { path = "../../third_party/mime_types" }
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing/compiler" }

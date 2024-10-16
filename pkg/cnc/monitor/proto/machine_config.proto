@@ -35,6 +35,8 @@ message MachineConfig {
         // This is a fork of Smoothieware. 
         CARVERA = 5;
         KLIPPER = 6;
+        // The 32-bit 'Prusa Firmware Buddy'. Mostly the same behavior as Marlin aside from tool changing and metrics.
+        PRUSA = 7;
     }
     Firmware firmware = 8;
 
@@ -54,6 +56,8 @@ message MachineConfig {
     ToolsConfig tools = 15;
 
     SpindleConfig spindle = 16;
+
+    SyslogHandlerConfig syslog_handler = 17;
 
     // TODO: Support an e-stop pin (that can be driven high/low to trigger a stop.)
 }
@@ -146,6 +150,10 @@ message AxisConfig {
     repeated string value = 8;
 
     repeated float default_value = 9;
+
+    bool allow_unknown = 10;
+
+    bool is_optional = 11;
 }
 
 message AxisCollectionConfig {
@@ -241,4 +249,9 @@ message CameraConfig {
 
     // If true, we will record video from this camera when the player is in a paused state.
     bool record_while_paused = 4;
+}
+
+message SyslogHandlerConfig {
+    // '[ip]:[port]' address on which to listen for syslog metric packets.
+    string addr = 1;
 }

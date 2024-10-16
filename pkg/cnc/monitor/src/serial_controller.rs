@@ -18,6 +18,8 @@ use executor::sync::{AsyncMutex, AsyncRwLock, AsyncVariable, SyncMutex};
 use executor_multitask::{impl_resource_passthrough, ServiceResourceGroup};
 use file::LocalPath;
 use math::matrix::Dimension;
+use net::ip::SocketAddr;
+use net::udp::UdpBindOptions;
 use peripherals::serial::SerialPort;
 
 use crate::change::{ChangeEvent, ChangePublisher};
@@ -26,6 +28,7 @@ use crate::metric::{MetricStore, MetricStream};
 use crate::response_parser::*;
 use crate::serial_receiver_buffer::SerialReceiverBuffer;
 use crate::serial_send_buffer::SerialSendBuffer;
+use crate::syslog_parser::{parse_prusa_metrics_packet, InfluxDBValue};
 use crate::timestamped_value::*;
 
 /// Maximum number of commands which can be locally enqueued which haven't been
@@ -131,6 +134,8 @@ struct Shared {
     processed_line_waterline: AsyncVariable<u64>,
 
     axis_metrics: HashMap<String, Vec<MetricStream>>,
+
+    syslog_handler_addr: Option<SocketAddr>,
 }
 
 /// TODO: Move this into a separate file since we need all the TimestampedValue
@@ -369,6 +374,12 @@ impl SerialController {
             }
         }
 
+        let mut syslog_handler_addr = None;
+        if config_value.has_syslog_handler() {
+            let addr = config_value.syslog_handler().addr().parse()?;
+            syslog_handler_addr = Some(addr);
+        }
+
         let shared = Arc::new(Shared {
             machine_id,
             config: config.clone(),
@@ -378,6 +389,7 @@ impl SerialController {
             change_publisher,
             processed_line_waterline: AsyncVariable::default(),
             axis_metrics,
+            syslog_handler_addr,
         });
 
         let sender_guard = SenderCancellationGuard {
@@ -408,6 +420,15 @@ impl SerialController {
                 Self::state_polling_thread(shared.clone()),
             )
             .await;
+
+        if shared.syslog_handler_addr.is_some() {
+            resources
+                .spawn_interruptable(
+                    "cnc::Machine::syslog_handler_thread",
+                    Self::syslog_handler_thread(shared.clone()),
+                )
+                .await;
+        }
 
         // TODO: Need a 'last breath' mechanism to trigger an emergency stop assuming
         // the serial writer is still healthy.
@@ -478,7 +499,7 @@ impl SerialController {
                     state.connected = true;
                 });
             }
-            MachineConfig_Firmware::MARLIN => {
+            MachineConfig_Firmware::MARLIN | MachineConfig_Firmware::PRUSA => {
                 Self::state_polling_marlin(&shared).await?;
             }
             MachineConfig_Firmware::SMOOTHIEWARE
@@ -527,6 +548,18 @@ impl SerialController {
             Self::send_command_inner(
                 &shared,
                 format!("M155 S1 C7\n"),
+                IDLE_COMMAND_TIMEOUT,
+                SendCommandFlags::empty(),
+            )
+            .await?;
+        }
+
+        if let Some(addr) = &shared.syslog_handler_addr {
+            let cmd = format!("M334 {} {}\n", addr.ip().to_string(), addr.port());
+
+            Self::send_command_inner(
+                &shared,
+                cmd,
                 IDLE_COMMAND_TIMEOUT,
                 SendCommandFlags::empty(),
             )
@@ -632,6 +665,15 @@ impl SerialController {
 
         lock!(state <= shared.state.lock().await?, {
             for (axis_id, axis) in &state.axes {
+                let axis_config = match config.axes().iter().find(|a| a.id() == axis_id) {
+                    Some(v) => v,
+                    None => panic!(),
+                };
+
+                if axis_config.is_optional() {
+                    continue;
+                }
+
                 tracker.check(axis.data.last_updated(), || axis_id.clone());
             }
 
@@ -710,6 +752,79 @@ impl SerialController {
         Ok(())
     }
 
+    async fn syslog_handler_thread(shared: Arc<Shared>) -> Result<()> {
+        let addr = shared.syslog_handler_addr.clone().unwrap();
+
+        let socket = net::udp::UdpSocket::bind_with_options(
+            addr,
+            UdpBindOptions::new().reuse_addr(true).reuse_port(true),
+        )
+        .await?;
+
+        let mut buf = vec![0u8; 1024];
+
+        loop {
+            let (n, addr) = socket.recv_from(&mut buf[..]).await?;
+            let data = &buf[0..n];
+
+            let config = shared.config.read().await?;
+
+            let mut new_state_data = State::default();
+            let mut time = Instant::now();
+            let mut has_state_change = false;
+
+            let points = match parse_prusa_metrics_packet(data) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!(
+                        "[{}] Failed to parse syslog packet: {}: {}",
+                        addr.to_string(),
+                        e,
+                        format_bytes(data)
+                    );
+                    continue;
+                }
+            };
+
+            for point in points {
+                if point.measurement == "active_extruder" {
+                    // TODO: Allow extra fields to be added in the future.
+                    if point.fields.len() != 1 || point.fields[0].0 != "v" {
+                        return Err(err_msg("Unknown fields in active_extruder metric"));
+                    }
+
+                    let mut v = match point.fields[0].1 {
+                        InfluxDBValue::Integer(v) => v,
+                        _ => {
+                            return Err(format_err!(
+                                "Unexpected format for active_extruder field value: {:?}",
+                                point.fields[0].1
+                            ));
+                        }
+                    } as i32;
+
+                    if v >= (config.tools().num_slots() as i32) {
+                        v = -1;
+                    }
+
+                    new_state_data.active_tool = TimestampedValue::new(v, time);
+                    has_state_change = true;
+                }
+            }
+
+            // TODO: Deduplicate the merging of the states.
+            if has_state_change {
+                lock!(state <= shared.state.lock().await?, {
+                    state
+                        .active_tool
+                        .insert_if_present(new_state_data.active_tool.take());
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     /// Checks if the controller is fully setup and ready to accept user
     /// commands.
     pub async fn connected(&self) -> Result<bool> {
@@ -780,6 +895,8 @@ impl SerialController {
         Ok(())
     }
 
+    /// NOTE: This will get the most recently measured value of the axis. It may
+    /// be several seconds stale if an update hasn't been received in a while.
     pub async fn axis_value(&self, axis_name: &str) -> Result<AxisData> {
         let state = self.shared.state.lock().await?.read_exclusive();
 
@@ -1073,6 +1190,16 @@ impl SerialController {
         let command = {
             if config.firmware() == MachineConfig_Firmware::MARLIN {
                 format!("T{}\n", tool_index)
+            } else if config.firmware() == MachineConfig_Firmware::PRUSA {
+                let mut tool_index = tool_index;
+
+                // Park index
+                if tool_index < 0 {
+                    tool_index = config.tools().num_slots() as i32;
+                }
+
+                // M0: Don't use the tool mapping (always do global operations).
+                format!("T{} M0\n", tool_index)
             } else {
                 // NOTE: The space is important and Carvera firmware don't seem to work without
                 // it.
@@ -1160,6 +1287,7 @@ impl SerialController {
                 }
             }
             MachineConfig_Firmware::MARLIN
+            | MachineConfig_Firmware::PRUSA
             | MachineConfig_Firmware::SMOOTHIEWARE
             | MachineConfig_Firmware::CARVERA
             | MachineConfig_Firmware::KLIPPER => {

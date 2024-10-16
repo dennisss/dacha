@@ -21,7 +21,6 @@ use crate::camera_controller::CameraController;
 use crate::change::{ChangeDistributer, ChangeEvent};
 use crate::config::MachineConfigContainer;
 use crate::db::{ProtobufDB, Query, QueryAllOf, QueryOperation, QueryValue};
-use crate::devices::*;
 use crate::files::{FileManager, FileReference};
 use crate::metric::MetricStore;
 use crate::player::Player;
@@ -29,6 +28,7 @@ use crate::program::ProgramSummary;
 use crate::program_preview_manager::*;
 use crate::serial_controller::DEFAULT_COMMAND_TIMEOUT;
 use crate::tables::{FileTable, MachineTable, MediaFragmentTable, ProgramRunTable};
+use crate::{devices::*, format_duration_secs};
 use crate::{presets::get_machine_presets, serial_controller::SerialController};
 
 const RETRY_BACKOFF: Duration = Duration::from_secs(10);
@@ -593,8 +593,10 @@ impl MonitorImpl {
 
         if let Some(locked_until) = machine.serial.lock_until {
             if let Some(remaining) = locked_until.checked_duration_since(Instant::now()) {
-                machine.serial.last_error =
-                    Some(format!("Serial port is locked for {:?}", remaining));
+                machine.serial.last_error = Some(format!(
+"Serial port is locked for {}",
+                    format_duration_secs(remaining)
+));
 
                 return Ok(());
             } else {

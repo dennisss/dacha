@@ -416,7 +416,17 @@ async fn main() -> Result<()> {
             let handler = HttpHandler {
                 instance: monitor,
                 inner: web_handler,
-                data_handler: StaticFileHandler::new(&args.local_data_dir),
+                data_handler: StaticFileHandler::new_with_options(
+&args.local_data_dir,
+                    StaticFileHandlerOptions {
+                        // - The only untrusted files are user uploaded file blobs which we always
+                        //   store with no extension.
+                        // - .svg files must have a Content-Type else they won't be rendered in
+                        //   browsers.
+                        // - .zz files are used with Content-Encoding headers to decode.
+                        trust_file_extension: true,
+                    },
+                ),
                 rpc_handler,
             };
 

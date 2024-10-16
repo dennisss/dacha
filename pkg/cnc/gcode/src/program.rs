@@ -222,7 +222,7 @@ impl ProgramParser {
 impl State {
     fn cache_line_prefix(&mut self, data: &[u8]) {
         let n = core::cmp::min(128 - self.line_state.line_start.len(), data.len());
-        self.line_state.line_start.extend_from_slice(data);
+        self.line_state.line_start.extend_from_slice(&data[0..n]);
     }
 
     fn handle_word(&mut self, w: Word) -> Result<()> {

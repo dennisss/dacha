@@ -110,6 +110,12 @@ pub struct MessagePtr<T: ?Sized> {
     value: T,
 }
 
+impl<T> From<T> for MessagePtr<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 impl<T: Debug> Debug for MessagePtr<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let v: &T = &self.value;

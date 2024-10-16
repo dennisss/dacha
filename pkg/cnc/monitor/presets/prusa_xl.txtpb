@@ -1,0 +1,150 @@
+# proto-file: pkg/cnc/monitor/proto/machine_config.proto
+# proto-message: MachineConfig
+
+# Config for a Prusa XL.
+#
+# Sample lsusb information:
+#   Bus 007 Device 059: ID 2c99:0015 Prusa Original Prusa XL
+# 
+#   iManufacturer           1 Prusa Research (prusa3d.com)
+#   iProduct                2 Original Prusa XL
+#   iSerial                 3 10381-0942441631900369
+
+model_name: "Prusa XL"
+auto_connect: true
+
+work_area {
+    # Z max is 360
+    x_range { min: 0 max: 360 }
+    y_range { min: 0 max: 360 }
+}
+
+device {
+    usb {
+        vendor: 0x2c99
+        product: 0x0015
+    }
+}
+
+syslog_handler {
+    addr: "10.100.0.1:8500"
+}
+
+firmware: PRUSA
+baud_rate: 1000000 # Fake
+silent_mode: true
+
+# Sample state output:
+#   T:6.00/0.00 B:23.37/0.00 C:-30.00/0.00 X5:6.00/36.00 A:28.75/0.00 T0:23.00/0.00 T1:22.00/0.00 T2:24.00/0.00 T3:23.00/0.00 T4:21.00/0.00 T5:6.00/0.00 @:0 B@:0 HBR@:0 @0:0 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:23.40/0.00 B_1_0:23.40/0.00 B_2_0:23.40/0.00 B_3_0:23.40/0.00 B_0_1:23.40/0.00 B_1_1:23.50/0.00 B_2_1:23.30/0.00 B_3_1:23.40/0.00 B_0_2:23.30/0.00 B_1_2:23.40/0.00 B_2_2:23.20/0.00 B_3_2:23.40/0.00 B_0_3:23.50/0.00 B_1_3:23.30/0.00 B_2_3:23.30/0.00 B_3_3:23.40/0.00
+axes: [
+    # See https://github.com/prusa3d/Prusa-Firmware-Buddy/blob/9b5764d00146119896c43e7b5f4d5293dde6cf42/include/marlin/Configuration_XL.h#L1154
+    { id: "X" type: POSITION range { min: -8 max: 361 } },
+    { id: "Y" type: POSITION range { min: -7 max: 461 } },
+    { id: "Z" type: POSITION range { min: -1.45 max: 370.66 } },
+    { id: "E" type: POSITION },
+
+    # Note that this is not very reliable since the tool can change and this depends on which tool is being heated up.
+    { id: "T" type: HEATER name: "Hotend" hide: true },
+
+    { id: "T0" type: HEATER name: "Hotend 1" collect { min_value: 30 } },
+    { id: "T1" type: HEATER name: "Hotend 2" collect { min_value: 30 } },
+    { id: "T2" type: HEATER name: "Hotend 3" collect { min_value: 30 } },
+    { id: "T3" type: HEATER name: "Hotend 4" collect { min_value: 30 } },
+    { id: "T4" type: HEATER name: "Hotend 5" collect { min_value: 30 } },
+    { id: "T5" type: HEATER hide: true },
+
+    # NOTE: These are unreliable and only present for the active tool.
+    { id: "X0" type: HEATER hide: true is_optional: true },
+    { id: "X1" type: HEATER hide: true is_optional: true },
+    { id: "X2" type: HEATER hide: true is_optional: true },
+    { id: "X3" type: HEATER hide: true is_optional: true },
+    { id: "X4" type: HEATER hide: true is_optional: true },
+    { id: "X5" type: HEATER hide: true is_optional: true },
+
+    # Hotend Power
+    { id: "@" type: GENERIC_SENSOR hide: true }, # Current Hotend
+    { id: "@0" type: GENERIC_SENSOR hide: true },
+    { id: "@1" type: GENERIC_SENSOR hide: true },
+    { id: "@2" type: GENERIC_SENSOR hide: true },
+    { id: "@3" type: GENERIC_SENSOR hide: true },
+    { id: "@4" type: GENERIC_SENSOR hide: true },
+    { id: "@5" type: GENERIC_SENSOR hide: true },
+
+    { id: "HBR@" type: GENERIC_SENSOR hide: true },
+
+    { id: "B" type: HEATER name: "Bed" collect { min_value: 30 } },
+
+    # Bed Power
+    { id: "B@" type: GENERIC_SENSOR hide: true },
+
+    # 4x4 Bed Tiles
+    { id: "B_0_0" type: HEATER hide: true },
+    { id: "B_1_0" type: HEATER hide: true },
+    { id: "B_2_0" type: HEATER hide: true },
+    { id: "B_3_0" type: HEATER hide: true },
+    { id: "B_0_1" type: HEATER hide: true },
+    { id: "B_1_1" type: HEATER hide: true },
+    { id: "B_2_1" type: HEATER hide: true },
+    { id: "B_3_1" type: HEATER hide: true },
+    { id: "B_0_2" type: HEATER hide: true },
+    { id: "B_1_2" type: HEATER hide: true },
+    { id: "B_2_2" type: HEATER hide: true },
+    { id: "B_3_2" type: HEATER hide: true },
+    { id: "B_0_3" type: HEATER hide: true },
+    { id: "B_1_3" type: HEATER hide: true },
+    { id: "B_2_3" type: HEATER hide: true },
+    { id: "B_3_3" type: HEATER hide: true },
+
+    # Note that these are returned with target values though they aren't currently controllable.
+    { id: "C" type: HEATER name: "Chamber" },
+    { id: "A" type: HEATER name: "Ambient" },
+
+    # Shows up when we are heating one of the hotends. May have a value of '?'
+    { id: "W" type: GENERIC_SENSOR hide: true allow_unknown: true is_optional: true }
+]
+
+tools {
+    num_slots: 5
+    loaded_tools: [
+        {
+            index: 0
+            name: "Extruder 1 (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        },
+        {
+            index: 1
+            name: "Extruder 2 (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        },
+        {
+            index: 2
+            name: "Extruder 3 (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        },
+        {
+            index: 3
+            name: "Extruder 4 (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        },
+        {
+            index: 4
+            name: "Extruder 5 (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        }
+    ]
+}
