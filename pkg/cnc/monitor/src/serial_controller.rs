@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::string::String;
 use std::time::{Duration, Instant, SystemTime};
 use std::{collections::VecDeque, sync::Arc};
@@ -34,11 +34,13 @@ use crate::timestamped_value::*;
 /// Maximum number of commands which can be locally enqueued which haven't been
 /// sent yet. Note that sending a message is blocked on getting an 'ok' for the
 /// previous
+///
+/// TODO: Need to expose this in the config as well
 const MAX_LOCAL_QUEUE_LENGTH: usize = 10;
 
 /// Maximum number of bytes we will attempt to read from the serial device in
 /// one kernel read.
-const READ_BUFFER_SIZE: usize = 512;
+const READ_BUFFER_SIZE: usize = 1024;
 
 /// If we don't receive a status line with the current position of the machine
 /// for this amount of time, we will assume that it is dead.
@@ -51,6 +53,9 @@ const LOW_FREQUENCY_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// NOTE: Must an exact multiple of 1 second for platforms that can auto report
 /// positions (Marlin/Prusa).
+///
+/// This needs to be fairly slow for fast machines like 3d printers with MCU
+/// based gcode processing since too much polling can messa up motions.
 const STATE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Maximum amount of time we expect it to take for a machine to become healthy
@@ -65,7 +70,7 @@ const IDLE_COMMAND_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// This mainly needs to be fairly long since commands like tool changes and
 /// mesh leveling can take a while.
-pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /*
 Need a few timeouts:
@@ -110,6 +115,23 @@ impl std::fmt::Display for SendCommandError {
     }
 }
 
+pub struct PendingCommand {
+    receiver: oneshot::Receiver<Result<(), SendCommandError>>,
+}
+
+impl PendingCommand {
+    pub async fn wait(self) -> Result<(), SendCommandError> {
+        self.receiver
+            .recv()
+            .await
+            .map_err(|_| SendCommandError::AbruptCancellation)?
+    }
+
+    pub async fn ready(&self) -> bool {
+        self.receiver.can_recv().await
+    }
+}
+
 pub struct SerialController {
     resources: ServiceResourceGroup,
     shared: Arc<Shared>,
@@ -133,9 +155,11 @@ struct Shared {
     /// buffer.
     processed_line_waterline: AsyncVariable<u64>,
 
-    axis_metrics: HashMap<String, Vec<MetricStream>>,
+    axis_metrics: HashMap<String, Vec<MetricStream>, FastHasherBuilder>,
 
     syslog_handler_addr: Option<SocketAddr>,
+
+    has_fan_axes: bool,
 }
 
 /// TODO: Move this into a separate file since we need all the TimestampedValue
@@ -146,9 +170,9 @@ struct State {
     /// state information back from the machine.
     connected: bool,
 
-    capabilites: HashMap<String, bool>,
+    capabilites: HashMap<String, bool, FastHasherBuilder>,
 
-    axes: HashMap<String, AxisData>,
+    axes: HashMap<String, AxisData, FastHasherBuilder>,
 
     /// TODO: Must track the last update time of this info.
     ///
@@ -164,10 +188,12 @@ struct State {
     current_coordinate_system: TimestampedValue<u32>,
 
     /// Note that the indexes start at 1 (for G54).
-    coordinate_systems: HashMap<u32, CoordinateSystemData>,
+    coordinate_systems: HashMap<u32, CoordinateSystemData, FastHasherBuilder>,
 
     /// This will be None if the machine doesn't have an auto tool changer.
     active_tool: TimestampedValue<i32>,
+
+    disabled_syslog_metrics: HashSet<String, FastHasherBuilder>,
 }
 
 #[derive(Default)]
@@ -175,6 +201,19 @@ struct SpindleData {
     current_rpm: TimestampedValue<f32>,
     target_rpm: TimestampedValue<f32>,
     mode: TimestampedValue<SpindleState_Mode>,
+}
+
+#[derive(Default, Debug)]
+struct AutoReportSupport {
+    temps: bool,
+    position: bool,
+    fans: bool,
+}
+
+impl AutoReportSupport {
+    fn some_not_supported(&self) -> bool {
+        !self.temps || !self.position || !self.fans
+    }
 }
 
 define_bit_flags!(
@@ -201,9 +240,9 @@ struct SerialPendingSendQueue {
     /// Lines that haven't yet been sent via the serial connection.
     pending_send: VecDeque<PendingSend>,
 
-    /// Line that was written to serial, but hasn't been acknowledged yet via an
-    /// ok/error.
-    inflight_send: Option<PendingSend>,
+    /// Lines that was written to serial, but hasn't been acknowledged yet via
+    /// an ok/error.
+    inflight_send: VecDeque<PendingSend>,
 }
 
 struct PendingSend {
@@ -229,7 +268,7 @@ pub struct AxisData {
 #[derive(Default)]
 pub struct CoordinateSystemData {
     /// CoordinateSystemPosition = MachinePosition - Offset
-    offset: HashMap<String, AxisData>,
+    offset: HashMap<String, AxisData, FastHasherBuilder>,
 }
 
 /// This ensures that if the threads die, we will cancel all outstanding send
@@ -252,7 +291,7 @@ impl Drop for SenderCancellationGuard {
                 state.stopped = true;
 
                 state.pending_send.clear();
-                state.inflight_send.take();
+                state.inflight_send.clear();
             });
         });
     }
@@ -329,7 +368,7 @@ impl SerialController {
 
         let mut state = State::default();
 
-        let mut axis_metrics = HashMap::new();
+        let mut axis_metrics = HashMap::default();
 
         let config_value = config.read().await?;
         for axis_config in config_value.axes() {
@@ -380,6 +419,14 @@ impl SerialController {
             syslog_handler_addr = Some(addr);
         }
 
+        let mut has_fan_axes = false;
+        for axis in config_value.axes() {
+            if axis.typ() == AxisType::FAN_PWM_VALUE || axis.typ() == AxisType::FAN_TACHOMETER_RPM {
+                has_fan_axes = true;
+                break;
+            }
+        }
+
         let shared = Arc::new(Shared {
             machine_id,
             config: config.clone(),
@@ -390,6 +437,7 @@ impl SerialController {
             processed_line_waterline: AsyncVariable::default(),
             axis_metrics,
             syslog_handler_addr,
+            has_fan_axes,
         });
 
         let sender_guard = SenderCancellationGuard {
@@ -426,6 +474,13 @@ impl SerialController {
                 .spawn_interruptable(
                     "cnc::Machine::syslog_handler_thread",
                     Self::syslog_handler_thread(shared.clone()),
+                )
+                .await;
+
+            resources
+                .spawn_interruptable(
+                    "cnc::Machine::syslog_metric_disabler_thread",
+                    Self::syslog_metric_disabler_thread(shared.clone()),
                 )
                 .await;
         }
@@ -523,17 +578,37 @@ impl SerialController {
         )
         .await?;
 
-        let supports_autoreport = lock!(state <= shared.state.lock().await?, {
-            /*
-            TODO: Check for all of AUTOREPORT_TEMP,AUTOREPORT_FANS,AUTOREPORT_POSITION
-            */
-
-            state
-                .capabilites
-                .get("AUTOREPORT_POSITION")
-                .cloned()
-                .unwrap_or(false)
+        let mut autoreport_support = lock!(state <= shared.state.lock().await?, {
+            AutoReportSupport {
+                position: state
+                    .capabilites
+                    .get("AUTOREPORT_POSITION")
+                    .cloned()
+                    .unwrap_or(false),
+                temps: state
+                    .capabilites
+                    .get("AUTOREPORT_TEMP")
+                    .cloned()
+                    .unwrap_or(false),
+                fans: state
+                    .capabilites
+                    .get("AUTOREPORT_FANS")
+                    .cloned()
+                    .unwrap_or(false),
+            }
         });
+
+        // In old Marlin and latest Prusa firmware versions, M114 will cause stuttering:
+        // https://github.com/prusa3d/Prusa-Firmware-Buddy/issues/2788
+        //
+        // Until then we can't easily poll for position data. Instead we must rely on
+        // syslog position information.
+        {
+            let config = shared.config.read().await?;
+            if config.firmware() == MachineConfig_Firmware::PRUSA {
+                autoreport_support.position = true;
+            }
+        }
 
         /*
         // Enter dry run mode.
@@ -542,7 +617,7 @@ impl SerialController {
 
         // TODO: Configure 'silent_mode' (either enable or disable if supported).
 
-        if supports_autoreport {
+        if autoreport_support.fans || autoreport_support.position || autoreport_support.temps {
             // Setup reporting of everything (temp/position/fans) every 1 seconds.
             // TODO: Check result.
             Self::send_command_inner(
@@ -554,6 +629,7 @@ impl SerialController {
             .await?;
         }
 
+        // Enable syslog handler.
         if let Some(addr) = &shared.syslog_handler_addr {
             let cmd = format!("M334 {} {}\n", addr.ip().to_string(), addr.port());
 
@@ -564,16 +640,29 @@ impl SerialController {
                 SendCommandFlags::empty(),
             )
             .await?;
+
+            for metric in ["pos_x", "pos_y", "pos_z"] {
+                Self::send_command_inner(
+                    &shared,
+                    format!("M331 {}\n", metric),
+                    IDLE_COMMAND_TIMEOUT,
+                    SendCommandFlags::empty(),
+                )
+                .await?;
+            }
         }
 
         let polling_start_time = Instant::now();
 
         loop {
-            if !supports_autoreport {
-                Self::request_state_report_marlin(shared).await?;
-            }
+            Self::request_state_report_marlin(shared, &autoreport_support).await?;
 
-            Self::check_machine_connected(shared, polling_start_time).await?;
+            Self::check_machine_connected(
+                shared,
+                polling_start_time,
+                autoreport_support.some_not_supported(),
+            )
+            .await?;
 
             executor::sleep(STATE_POLL_INTERVAL).await?;
         }
@@ -616,7 +705,7 @@ impl SerialController {
 
             // TODO: Need some support for optional axes as things may not exist when
             // TODO: Throttle this to 1hz
-            Self::check_machine_connected(shared, polling_start_time).await?;
+            Self::check_machine_connected(shared, polling_start_time, false).await?;
 
             executor::sleep(Duration::from_millis(100)).await?;
         }
@@ -624,19 +713,35 @@ impl SerialController {
         Ok(())
     }
 
-    async fn check_machine_connected(shared: &Shared, polling_start_time: Instant) -> Result<()> {
+    async fn check_machine_connected(
+        shared: &Shared,
+        polling_start_time: Instant,
+        command_based_polling: bool,
+    ) -> Result<()> {
         let config = shared.config.read().await?;
 
         let now = Instant::now();
 
+        let mut normal_timeout = KEEP_ALIVE_TIMEOUT;
+        let mut low_freq_timeout = LOW_FREQUENCY_KEEP_ALIVE_TIMEOUT;
+
+        // If we need to wait in the command queue for polling state updates (Prusa
+        // 32-bit machines that don't autoreport position/fans), we must wait the max
+        // time a command could take.
+        if command_based_polling {
+            normal_timeout = DEFAULT_COMMAND_TIMEOUT;
+            low_freq_timeout = DEFAULT_COMMAND_TIMEOUT;
+        }
+
         struct TimeTracker {
+            normal_timeout: Duration,
             missing_values: Vec<String>,
             now: Instant,
         }
 
         impl TimeTracker {
             fn check<F: FnOnce() -> String>(&mut self, t: Option<Instant>, f: F) {
-                self.check_with_ttl(t, f, KEEP_ALIVE_TIMEOUT)
+                self.check_with_ttl(t, f, self.normal_timeout)
             }
 
             fn check_with_ttl<F: FnOnce() -> String>(
@@ -657,6 +762,7 @@ impl SerialController {
 
         /// List of value name without a recent value.
         let mut tracker = TimeTracker {
+            normal_timeout,
             missing_values: vec![],
             now,
         };
@@ -665,7 +771,7 @@ impl SerialController {
 
         lock!(state <= shared.state.lock().await?, {
             for (axis_id, axis) in &state.axes {
-                let axis_config = match config.axes().iter().find(|a| a.id() == axis_id) {
+                let axis_config = match config.axes_map().get(axis_id) {
                     Some(v) => v,
                     None => panic!(),
                 };
@@ -700,7 +806,7 @@ impl SerialController {
                 tracker.check_with_ttl(
                     state.current_coordinate_system.last_updated(),
                     || "current_coordinate_system".into(),
-                    LOW_FREQUENCY_KEEP_ALIVE_TIMEOUT,
+                    low_freq_timeout,
                 );
             }
 
@@ -718,7 +824,7 @@ impl SerialController {
                     tracker.check_with_ttl(
                         data.data.last_updated(),
                         || format!("Offset{}:{}", idx, axis),
-                        LOW_FREQUENCY_KEEP_ALIVE_TIMEOUT,
+                        low_freq_timeout,
                     );
                 }
             }
@@ -809,20 +915,96 @@ impl SerialController {
 
                     new_state_data.active_tool = TimestampedValue::new(v, time);
                     has_state_change = true;
+                    continue;
                 }
+
+                if let Some(axis) = point.measurement.strip_prefix("pos_") {
+                    if point.fields.len() != 1 || point.fields[0].0 != "v" {
+                        return Err(err_msg("Unknown fields in active_extruder metric"));
+                    }
+
+                    let axis = axis.to_ascii_uppercase();
+                    if axis != "X" && axis != "Y" && axis != "Z" {
+                        return Err(err_msg("Unsupported position axis"));
+                    }
+
+                    let mut v = match point.fields[0].1 {
+                        InfluxDBValue::Float(v) => v,
+                        _ => {
+                            return Err(format_err!(
+                                "Unexpected format for active_extruder field value: {:?}",
+                                point.fields[0].1
+                            ));
+                        }
+                    };
+
+                    let mut values = FixedVec::new();
+                    values.push(v);
+
+                    new_state_data.axes.insert(
+                        axis,
+                        AxisData {
+                            data: TimestampedValue::new(values, time),
+                        },
+                    );
+                    has_state_change = true;
+                    continue;
+                }
+
+                // Any metrics we don't use will just create extra CPU load on the MCU to send
+                // back so prefer to disable them.
+                new_state_data
+                    .disabled_syslog_metrics
+                    .insert(point.measurement.clone());
+                has_state_change = true;
             }
 
             // TODO: Deduplicate the merging of the states.
             if has_state_change {
                 lock!(state <= shared.state.lock().await?, {
+                    state.axes.extend(new_state_data.axes.drain());
+
                     state
                         .active_tool
                         .insert_if_present(new_state_data.active_tool.take());
+
+                    state
+                        .disabled_syslog_metrics
+                        .extend(new_state_data.disabled_syslog_metrics.drain());
                 });
             }
         }
 
         Ok(())
+    }
+
+    async fn syslog_metric_disabler_thread(shared: Arc<Shared>) -> Result<()> {
+        loop {
+            // M332 metric_to_disable
+
+            let metrics_to_disable = lock!(state <= shared.state.lock().await?, {
+                state.disabled_syslog_metrics.clone()
+            });
+
+            for metric in &metrics_to_disable {
+                Self::send_command_inner(
+                    &shared,
+                    format!("M332 {}\n", metric),
+                    DEFAULT_COMMAND_TIMEOUT,
+                    SendCommandFlags::empty(),
+                )
+                .await?;
+                executor::sleep(Duration::from_millis(100)).await?;
+            }
+
+            if !metrics_to_disable.is_empty() {
+                lock!(state <= shared.state.lock().await?, {
+                    state.disabled_syslog_metrics.clear();
+                })
+            }
+
+            executor::sleep(Duration::from_secs(2)).await?;
+        }
     }
 
     /// Checks if the controller is fully setup and ready to accept user
@@ -953,43 +1135,53 @@ impl SerialController {
         }
     }
 
+    /// Explicitly requests state reports from the machine (ignoring if
+    /// autoreporting is supported).
     pub async fn request_state_update(&self) -> Result<()> {
         self.check_clear_to_send().await?;
 
         // TODO: ALso need grbl support here. Want an immediate update.
 
-        Self::request_state_report_marlin(&self.shared).await
+        Self::request_state_report_marlin(&self.shared, &AutoReportSupport::default()).await
     }
 
-    async fn request_state_report_marlin(shared: &Shared) -> Result<()> {
-        // Get position
-        Self::send_command_inner(
-            &shared,
-            "M114\n",
-            DEFAULT_COMMAND_TIMEOUT,
-            SendCommandFlags::SKIP_LINE,
-        )
-        .await?;
+    async fn request_state_report_marlin(
+        shared: &Shared,
+        autoreport_support: &AutoReportSupport,
+    ) -> Result<()> {
+        // Get position.
+        if !autoreport_support.position && !shared.syslog_handler_addr.is_some() {
+            Self::send_command_inner(
+                &shared,
+                "M114\n",
+                DEFAULT_COMMAND_TIMEOUT,
+                SendCommandFlags::SKIP_LINE,
+            )
+            .await?;
+        }
+
         // Get extruder temperatures
-        Self::send_command_inner(
-            &shared,
-            "M105\n",
-            DEFAULT_COMMAND_TIMEOUT,
-            SendCommandFlags::SKIP_LINE,
-        )
-        .await?;
+        if !autoreport_support.temps {
+            Self::send_command_inner(
+                &shared,
+                "M105\n",
+                DEFAULT_COMMAND_TIMEOUT,
+                SendCommandFlags::SKIP_LINE,
+            )
+            .await?;
+        }
 
         // TODO: Only do if Marlin/Prusa firmware
         // M123
-        Self::send_command_inner(
-            &shared,
-            "M123\n",
-            DEFAULT_COMMAND_TIMEOUT,
-            SendCommandFlags::SKIP_LINE,
-        )
-        .await?;
-
-        // TODO: Send 'T\n' to get the current tool index.
+        if shared.has_fan_axes && !autoreport_support.fans {
+            Self::send_command_inner(
+                &shared,
+                "M123\n",
+                DEFAULT_COMMAND_TIMEOUT,
+                SendCommandFlags::SKIP_LINE,
+            )
+            .await?;
+        }
 
         Ok(())
     }
@@ -1057,13 +1249,9 @@ impl SerialController {
 
     pub async fn set_temperature(&self, axis_id: &str, target: f32) -> Result<()> {
         let config = self.shared.config.read().await?;
-        let axis = config
-            .axes()
-            .iter()
-            .find(|a| a.id() == axis_id)
-            .ok_or_else(|| {
-                rpc::Status::invalid_argument(format!("No axis with id: {}", axis_id))
-            })?;
+        let axis = config.axes_map().get(axis_id).ok_or_else(|| {
+            rpc::Status::invalid_argument(format!("No axis with id: {}", axis_id))
+        })?;
 
         if axis.typ() != AxisType::HEATER {
             return Err(
@@ -1077,7 +1265,7 @@ impl SerialController {
             } else if axis_id == "T" {
                 format!("M104 S{:.2}\n", target)
             } else if let Some(num) = axis_id.strip_prefix("T") {
-                return Err(err_msg("Setting other tool temps not supported"));
+                format!("M104 T{} S{:.2}\n", num, target)
             } else {
                 return Err(err_msg("Unsupported heater id"));
             }
@@ -1207,8 +1395,7 @@ impl SerialController {
             }
         };
 
-        self.send_command(command, 2 * DEFAULT_COMMAND_TIMEOUT)
-            .await?;
+        self.send_command(command, DEFAULT_COMMAND_TIMEOUT).await?;
 
         // On Carvera, we need to wait for the atc state to become ATC_NONE since the
         // tool change command executes many sub-commands.
@@ -1219,7 +1406,9 @@ impl SerialController {
             // quickly turns non-zero).
             loop {
                 let state = self.get_current_axis_value("ATC_STATE").await?;
-                if state[0] == 0.0 {
+                let data = state.data.get().ok_or_else(|| err_msg("Missing data"))?;
+
+                if data[0] == 0.0 {
                     break;
                 }
 
@@ -1237,7 +1426,7 @@ impl SerialController {
     /// NOTE: THis will eventually terminate since the ReceiverGuard will
     /// eventually disconnect the machine when the receiver thread times out if
     /// new data isn't received for a while.
-    async fn get_current_axis_value(&self, axis_id: &str) -> Result<FixedVec<f32, 2>> {
+    pub async fn get_current_axis_value(&self, axis_id: &str) -> Result<AxisData> {
         let now = Instant::now();
 
         loop {
@@ -1261,7 +1450,6 @@ impl SerialController {
                 continue;
             }
 
-            let data = data.data.get().ok_or_else(|| err_msg("Missing data"))?;
             return Ok(data.clone());
         }
     }
@@ -1282,7 +1470,7 @@ impl SerialController {
             | MachineConfig_Firmware::GENERIC
             | MachineConfig_Firmware::GRBL => {
                 for i in 0..2 {
-                    self.send_command("G4 P0\n", 2 * DEFAULT_COMMAND_TIMEOUT)
+                    self.send_command("G4 P0\n", DEFAULT_COMMAND_TIMEOUT)
                         .await?;
                 }
             }
@@ -1291,8 +1479,7 @@ impl SerialController {
             | MachineConfig_Firmware::SMOOTHIEWARE
             | MachineConfig_Firmware::CARVERA
             | MachineConfig_Firmware::KLIPPER => {
-                self.send_command("M400\n", 2 * DEFAULT_COMMAND_TIMEOUT)
-                    .await?;
+                self.send_command("M400\n", DEFAULT_COMMAND_TIMEOUT).await?;
             }
         }
 
@@ -1344,6 +1531,31 @@ impl SerialController {
         timeout: Duration,
         flags: SendCommandFlags,
     ) -> Result<(), SendCommandError> {
+        Self::enqueue_command_impl(shared, line, timeout, flags)
+            .await?
+            .wait()
+            .await
+    }
+
+    pub async fn enqueue_command<D: Into<Bytes>>(
+        &self,
+        line: D,
+        timeout: Duration,
+    ) -> Result<PendingCommand> {
+        self.check_clear_to_send().await?;
+
+        let cmd =
+            Self::enqueue_command_impl(&self.shared, line, timeout, SendCommandFlags::empty())
+                .await?;
+        Ok(cmd)
+    }
+
+    async fn enqueue_command_impl<D: Into<Bytes>>(
+        shared: &Shared,
+        line: D,
+        timeout: Duration,
+        flags: SendCommandFlags,
+    ) -> Result<PendingCommand, SendCommandError> {
         // TODO: Should have the gcode size limiter somewhere here
 
         let (sender, receiver) = oneshot::channel();
@@ -1385,12 +1597,7 @@ impl SerialController {
             Ok::<_, SendCommandError>(())
         })?;
 
-        let res = receiver
-            .recv()
-            .await
-            .map_err(|_| SendCommandError::AbruptCancellation)?;
-
-        res
+        Ok(PendingCommand { receiver })
     }
 
     pub async fn full_stop(&self) -> Result<()> {
@@ -1436,11 +1643,13 @@ impl SerialController {
         sender_guard: SenderCancellationGuard,
     ) -> Result<()> {
         let add_quiet_period;
+        let max_in_flight;
         {
             let config = shared.config.read().await?;
 
             add_quiet_period = config.firmware() == MachineConfig_Firmware::SMOOTHIEWARE
                 || config.firmware() == MachineConfig_Firmware::CARVERA;
+            max_in_flight = core::cmp::max(config.serial().max_in_flight_commands(), 1) as usize;
         }
 
         // Many platforms using will initially boot into the bootloader for a few
@@ -1485,15 +1694,17 @@ impl SerialController {
 
             // Wait for there to be some data to send.
             // We also periodically retry to cancel commands past their deadline.
-            if queue.inflight_send.is_some() || queue.pending_send.is_empty() {
+            if queue.inflight_send.len() >= max_in_flight || queue.pending_send.is_empty() {
                 executor::timeout(Duration::from_millis(100), queue.wait()).await;
                 continue;
             }
 
+            // TODO: Batch as many commands that are immediately available (also need to
+            // handle the no_reply case).
             let data = {
                 let next_to_send = queue.pending_send.pop_front().unwrap();
                 let data = next_to_send.line.clone();
-                queue.inflight_send = Some(next_to_send);
+                queue.inflight_send.push_back(next_to_send);
                 data
             };
 
@@ -1512,14 +1723,19 @@ impl SerialController {
 
         // TODO: We need to measure in-flight timeout from the time it was sent to avoid
         // forgetting about it too soon and losing sync.
-        if let Some(send) = &queue.inflight_send {
+        if !queue.inflight_send.is_empty() {
+            // If the first command is dead, then they are basically all dead
+            // since we can't re-sync.
+
+            let send = &queue.inflight_send[0];
             if send.deadline < now {
-                queue
-                    .inflight_send
-                    .take()
-                    .unwrap()
-                    .callback
-                    .send(Err(SendCommandError::DeadlineExceeded));
+                for send in queue.inflight_send.drain(..) {
+                    send.callback.send(Err(SendCommandError::DeadlineExceeded));
+                }
+
+                // TODO: We need to fully error out since the serial port is no
+                // longer synced in terms of which command the next reply
+                // belongs to.
             }
         }
 
@@ -1571,6 +1787,8 @@ impl SerialController {
             new_state_data.capabilites.clear();
             new_state_data.axes.clear();
 
+            let mut command_responses = vec![];
+
             // Process any newly added lines.
             let end_line_offset = shared.receiver_buffer.last_line_offset().await?;
             while next_line_offset < end_line_offset {
@@ -1583,8 +1801,6 @@ impl SerialController {
                     continue;
                 }
 
-                let mut command_response = None;
-
                 // println!("{:?}", events);
 
                 let mut kind = ReadSerialLogResponse_LineKind::UNKNOWN;
@@ -1593,11 +1809,11 @@ impl SerialController {
                 for event in events {
                     match event {
                         ResponseEvent::Ok => {
-                            command_response = Some(Ok(()));
+                            command_responses.push(Ok(()));
                             kind = ReadSerialLogResponse_LineKind::OK;
                         }
                         ResponseEvent::Error { message } => {
-                            command_response = Some(Err(SendCommandError::ReceivedError(message)));
+                            command_responses.push(Err(SendCommandError::ReceivedError(message)));
                             kind = ReadSerialLogResponse_LineKind::ERROR;
                         }
                         ResponseEvent::Echo { message, level } => {
@@ -1696,20 +1912,6 @@ impl SerialController {
                     .set_kind(next_line_offset - 1, kind)
                     .await?;
 
-                // NOTE: We only respond to commands after the entire line is processed since
-                // there is often response data for the command on the same line as the 'ok'.
-                if let Some(res) = command_response {
-                    lock!(queue <= shared.sender_pending_buffer.lock().await?, {
-                        if let Some(entry) = queue.inflight_send.take() {
-                            entry.callback.send(res);
-                            queue.notify_all();
-                        } else {
-                            // TODO: Make this a error after the connection is established.
-                            eprintln!("Received response without a command! {:?}", res);
-                        }
-                    });
-                }
-
                 // TODO: Delete or move logic to me.
                 // Self::process_line(&line);
             }
@@ -1720,9 +1922,8 @@ impl SerialController {
                 // update here.
                 for (axis, axis_data) in new_state_data.axes.iter() {
                     let axis_config = config
-                        .axes()
-                        .iter()
-                        .find(|a| a.id() == axis)
+                        .axes_map()
+                        .get(axis)
                         .ok_or_else(|| format_err!("Missing axis config: {}", axis))?;
 
                     if !axis_config.has_collect() {
@@ -1793,6 +1994,27 @@ impl SerialController {
             }
 
             drop(config);
+
+            // NOTE: We only respond to commands after the entire line is processed and all
+            // state data is updated to ensure that the caller of the command observes any
+            // responses send for the same command (which may be on a previous line or on
+            // the same line as the 'ok'.
+            if !command_responses.is_empty() {
+                // TODO: This must happen after state updates (e.g. responses to commands that
+                // were parsed may not get included yet.)
+
+                lock!(queue <= shared.sender_pending_buffer.lock().await?, {
+                    for res in command_responses.drain(..) {
+                        if let Some(entry) = queue.inflight_send.pop_front() {
+                            entry.callback.send(res);
+                            queue.notify_all();
+                        } else {
+                            // TODO: Make this a error after the connection is established.
+                            eprintln!("Received response without a command! {:?}", res);
+                        }
+                    }
+                });
+            }
 
             lock!(
                 waterline <= shared.processed_line_waterline.lock().await?,

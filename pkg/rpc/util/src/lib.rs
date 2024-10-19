@@ -14,5 +14,5 @@ mod reflection;
 
 pub use args::NamedPortArg;
 pub use health::AddHealthEndpoints;
-pub use profiling::AddProfilingEndpoints;
+pub use profiling::*;
 pub use reflection::AddReflection;

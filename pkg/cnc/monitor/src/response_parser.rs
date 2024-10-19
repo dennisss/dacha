@@ -6,6 +6,8 @@ use base_error::*;
 use cnc_monitor_proto::cnc::*;
 use common::{fixed::vec::FixedVec, hash::FastHasherBuilder};
 
+use crate::config::MachineConfigContainer;
+
 // TODO: Allow either "error" or "errors"?
 // NOTE: Alarm is only a grbl/smoothieware concept.
 regexp!(RESPONSE_STATUS_PREFIX => "^(?:(ok)|(error)|(alarm))(?:\\s|:|$)", "i");
@@ -89,7 +91,7 @@ pub enum LogLevel {
 
 pub fn parse_response_line(
     mut line: &[u8],
-    config: &MachineConfig,
+    config: &MachineConfigContainer,
     events: &mut Vec<ResponseEvent>,
 ) -> Result<()> {
     match config.firmware() {
@@ -103,7 +105,7 @@ pub fn parse_response_line(
 
 fn parse_response_line_marlin(
     mut line: &[u8],
-    config: &MachineConfig,
+    config: &MachineConfigContainer,
     events: &mut Vec<ResponseEvent>,
 ) -> Result<()> {
     // TODO: Add spindle status reporting for marlin.
@@ -147,7 +149,7 @@ fn parse_response_line_marlin(
         if let Some(m) = TAG_PATTERN.exec(line) {
             let id = m.group_str(1).unwrap()?;
 
-            let axis_config = match config.axes().iter().find(|a| a.id() == id) {
+            let axis_config = match config.axes_map().get(id) {
                 Some(v) => v,
                 None => break,
             };
@@ -729,7 +731,7 @@ mod tests {
 
     #[testcase]
     async fn error_parse() -> Result<()> {
-        let config = get_prusa_i3_mk3sp_config().await?;
+        let config = MachineConfigContainer::create(MachineConfig::default(), &get_prusa_i3_mk3sp_config().await?)?;
 
         let line = b"error: Invalid line received";
 
@@ -745,7 +747,7 @@ mod tests {
 
     #[testcase]
     async fn prusa_i3_log_parsing() -> Result<()> {
-        let config = get_prusa_i3_mk3sp_config().await?;
+        let config = MachineConfigContainer::create(MachineConfig::default(), &get_prusa_i3_mk3sp_config().await?)?;
 
         // Grabbed from a Prusa I3 MK3s on startup and issuing a a few commands.
         let log: &'static [&'static [u8]] = &[
@@ -807,7 +809,7 @@ mod tests {
 
     #[testcase]
     async fn prusa_xl_log_parsing() -> Result<()> {
-        let config = get_prusa_xl_config().await?;
+        let config = MachineConfigContainer::create(MachineConfig::default(), &get_prusa_xl_config().await?)?;
 
         let log: &'static [&'static [u8]] = &[
             // Old Capabilities.
@@ -965,7 +967,7 @@ mod tests {
 
     #[testcase]
     async fn makera_carvera_log_parsing() -> Result<()> {
-        let config = get_makera_carvera_config().await?;
+        let config = MachineConfigContainer::create(MachineConfig::default(), &get_makera_carvera_config().await?)?;
 
         let log: &'static [&'static [u8]] = &[
             b"version = 0.9.7\n",

@@ -31,6 +31,13 @@ impl<K: Clone + PartialEq + Hash + Eq, V: Clone> MapField<K, V> {
             iter: self.inner.as_ref().map(|v| v.iter()),
         }
     }
+
+    pub fn get<Q: Hash + Eq + ?Sized>(&self, k: &Q) -> Option<&V>
+    where
+        K: Borrow<Q>,
+    {
+        self.inner.as_ref().and_then(|map| map.get(k))
+    }
 }
 
 pub struct MapFieldIter<'a, K, V> {

@@ -909,7 +909,9 @@ impl MonitorImpl {
                 break;
             }
 
-            executor::timeout(Duration::from_secs(10), subscriber.wait()).await;
+// At most one update per second and at least one update per 10 seconds.
+            executor::sleep(Duration::from_secs(1)).await?;
+            executor::timeout(Duration::from_secs(10 - 1), subscriber.wait()).await;
         }
 
         Ok(())

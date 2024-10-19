@@ -226,15 +226,15 @@ impl State {
     }
 
     fn handle_word(&mut self, w: Word) -> Result<()> {
+        if self.line_state.first_word.is_none() {
+            self.line_state.first_word = Some(w.clone());
+        }
+
         if (w.key == 'G' || w.key == 'M') && w.value != WordValue::Empty {
             self.line_state
                 .command_codes
                 .push(CommandWord::from_word(&w)?);
         } else {
-            if self.line_state.first_word.is_none() {
-                self.line_state.first_word = Some(w.clone());
-            }
-
             self.line_state.params.add_param(w.key, w.value)?;
         }
 

@@ -134,7 +134,7 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
                                         return null;
                                     }
 
-                                    let machine_pos = axis_values[axis.id][0];
+                                    let machine_pos = (axis_values[axis.id] || [undefined])[0];
                                     let work_pos = undefined;
 
                                     if (work_coordinates) {
@@ -150,7 +150,7 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
                                         <tr key={axis.id}>
                                             <td>{axis.name || axis.id}</td>
                                             <td style={{ fontFamily: 'Noto Sans Mono', textAlign: 'right' }}>
-                                                {format_float(machine_pos)}
+                                                {machine_pos == undefined ? '?' : format_float(machine_pos)}
                                             </td>
                                             <td style={{ fontFamily: 'Noto Sans Mono', textAlign: 'right' }}>
                                                 {work_pos === undefined ? 'N/A' : format_float(work_pos)}

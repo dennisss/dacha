@@ -22,7 +22,7 @@ work_area {
 device {
     usb {
         vendor: 0x2c99
-        product: 0x0015
+        product: 0x0011
     }
 }
 
@@ -34,14 +34,24 @@ firmware: PRUSA
 baud_rate: 1000000 # Fake
 silent_mode: true
 
+serial {
+    # Defined here: 
+    # https://github.com/prusa3d/Prusa-Firmware-Buddy/blob/9b5764d00146119896c43e7b5f4d5293dde6cf42/include/marlin/Configuration_XL_adv.h#L1247
+    # Firmware buffer is 8 commands of length 256.
+
+    max_in_flight_commands: 8
+    max_player_in_flight_commands: 4
+}
+
 # Sample state output:
 #   T:6.00/0.00 B:23.37/0.00 C:-30.00/0.00 X5:6.00/36.00 A:28.75/0.00 T0:23.00/0.00 T1:22.00/0.00 T2:24.00/0.00 T3:23.00/0.00 T4:21.00/0.00 T5:6.00/0.00 @:0 B@:0 HBR@:0 @0:0 @1:0 @2:0 @3:0 @4:0 @5:0 B_0_0:23.40/0.00 B_1_0:23.40/0.00 B_2_0:23.40/0.00 B_3_0:23.40/0.00 B_0_1:23.40/0.00 B_1_1:23.50/0.00 B_2_1:23.30/0.00 B_3_1:23.40/0.00 B_0_2:23.30/0.00 B_1_2:23.40/0.00 B_2_2:23.20/0.00 B_3_2:23.40/0.00 B_0_3:23.50/0.00 B_1_3:23.30/0.00 B_2_3:23.30/0.00 B_3_3:23.40/0.00
 axes: [
     # See https://github.com/prusa3d/Prusa-Firmware-Buddy/blob/9b5764d00146119896c43e7b5f4d5293dde6cf42/include/marlin/Configuration_XL.h#L1154
-    { id: "X" type: POSITION range { min: -8 max: 361 } },
-    { id: "Y" type: POSITION range { min: -7 max: 461 } },
-    { id: "Z" type: POSITION range { min: -1.45 max: 370.66 } },
-    { id: "E" type: POSITION },
+    # NOTE: Getting position info is trickly since M114 is unusable and we depend on syslog which sometimes doesn't work.
+    { id: "X" type: POSITION range { min: -8 max: 361 } is_optional: true },
+    { id: "Y" type: POSITION range { min: -7 max: 461 } is_optional: true },
+    { id: "Z" type: POSITION range { min: -1.45 max: 370.66 } is_optional: true },
+    { id: "E" type: POSITION is_optional: true },
 
     # Note that this is not very reliable since the tool can change and this depends on which tool is being heated up.
     { id: "T" type: HEATER name: "Hotend" hide: true },

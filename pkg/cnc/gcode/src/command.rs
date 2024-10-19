@@ -168,7 +168,10 @@ define_command!(
 );
 
 define_command!(
-    pub struct Dwell ("G4") {}
+    pub struct Dwell ("G4") {
+        time_in_millis ('P'): Option<Decimal>,
+        time_in_secs ('S'): Option<Decimal>
+    }
 );
 
 define_command!(

@@ -105,12 +105,21 @@ impl<'a> H264BitStreamIterator<'a> {
     }
 
     /// Returns the start index and code length
+    ///
+    /// Looks for the first occurence of a [0, 0, 1] or [0, 0, 0, 1] byte
+    /// sequence.
     fn find_start_code(data: &[u8]) -> Option<(usize, usize)> {
         for i in 0..data.len() {
-            let mut code_length = 0;
-            if data[i..].starts_with(&[0, 0, 1]) {
+            let s = &data[i..];
+
+            // Optimistic skip to speed up the search.
+            if s[0] != 0 {
+                continue;
+            }
+
+            if s.starts_with(&[0, 0, 1]) {
                 return Some((i, 3));
-            } else if data[i..].starts_with(&[0, 0, 0, 1]) {
+            } else if s.starts_with(&[0, 0, 0, 1]) {
                 return Some((i, 4));
             }
         }

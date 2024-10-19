@@ -89,6 +89,13 @@ impl<T> Receiver<T> {
     pub fn recv(mut self) -> impl Future<Output = Result<T, ()>> + Unpin {
         RecvFuture { receiver: self }
     }
+
+    /// Returns true if we can immediately receive the failure (or fail) without
+    /// blocking.
+    pub async fn can_recv(&self) -> bool {
+        let guard = self.inner.as_ref().unwrap().lock().unwrap();
+        guard.value.is_some() || !guard.sender_alive
+    }
 }
 
 struct RecvFuture<T> {

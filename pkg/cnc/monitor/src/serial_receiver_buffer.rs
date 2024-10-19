@@ -8,13 +8,13 @@ use executor::lock;
 use executor::sync::AsyncMutex;
 
 /// Maximum allowed size of one line received from the serial port.
-const MAX_LINE_LENGTH: usize = 512;
+const MAX_LINE_LENGTH: usize = 1024;
 
 /// Number of previous lines read from the serial port that we will retain.
 ///
 /// Must be >> READ_BUFFER_SIZE to ensure that no new lines are not truncated
 /// before that are parsed in case the read returns many short lines.
-const READ_HISTORY_SIZE: usize = 2048; // ~1 MiB
+const READ_HISTORY_SIZE: usize = 2048; // ~2 MiB
 
 /// Buffer for storing all lines received from the remote machine.
 ///

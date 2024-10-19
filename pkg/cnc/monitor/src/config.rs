@@ -1,8 +1,9 @@
 use core::ops::Deref;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use base_error::*;
-use cnc_monitor_proto::cnc::MachineConfig;
+use cnc_monitor_proto::cnc::{AxisConfig, MachineConfig};
+use common::hash::FastHasherBuilder;
 use crypto::random::RngExt;
 use protobuf::{Message, MessageReflection};
 
@@ -15,13 +16,21 @@ use crate::db::ProtobufDB;
 pub struct MachineConfigContainer {
     diff: MachineConfig,
     merged: MachineConfig,
+    axes: HashMap<String, AxisConfig, FastHasherBuilder>,
 }
 
 impl MachineConfigContainer {
     pub fn create(diff: MachineConfig, preset: &MachineConfig) -> Result<Self> {
+        let mut axes = HashMap::default();
+
+        for axis in preset.axes() {
+            axes.insert(axis.id().into(), axis.as_ref().clone());
+        }
+
         let mut inst = Self {
             diff: MachineConfig::default(),
             merged: preset.clone(),
+            axes,
         };
         inst.merge_from(&diff)?;
 
@@ -102,6 +111,11 @@ impl MachineConfigContainer {
         diff.merge_from(&other)?;
         merged.merge_from(&other)?;
 
+        if diff.axes_len() > 0 {
+            // TODO: Need to update the axes map.
+            return Err(err_msg("Don't support merging axes yet"));
+        }
+
         self.diff = diff;
         self.merged = merged;
 
@@ -110,6 +124,10 @@ impl MachineConfigContainer {
 
     pub fn value(&self) -> &MachineConfig {
         &self.merged
+    }
+
+    pub fn axes_map(&self) -> &HashMap<String, AxisConfig, FastHasherBuilder> {
+        &self.axes
     }
 }
 

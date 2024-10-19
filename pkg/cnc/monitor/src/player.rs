@@ -2,7 +2,7 @@
 TODO: Use more Instant rather than SystemTime timestamps in thie file.
 */
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -11,6 +11,7 @@ use base_error::*;
 use cnc_monitor_proto::cnc::*;
 use common::bit_set::BitSet;
 use common::bytes::Bytes;
+use common::hash::FastHasherBuilder;
 use common::typenum::U20;
 use executor::bundle::TaskResultBundle;
 use executor::sync::{AsyncRwLock, AsyncVariable};
@@ -23,10 +24,10 @@ use crate::change::{ChangeEvent, ChangePublisher};
 use crate::config::MachineConfigContainer;
 use crate::db::ProtobufDB;
 use crate::files::FileReference;
-use crate::player_preprocessor::*;
 use crate::program::*;
-use crate::serial_controller::{SerialController, DEFAULT_COMMAND_TIMEOUT};
+use crate::serial_controller::{PendingCommand, SerialController, DEFAULT_COMMAND_TIMEOUT};
 use crate::tables::ProgramRunTable;
+use crate::{format_duration_secs, player_preprocessor::*};
 
 const MIN_DB_FLUSH_RATE: Duration = Duration::from_secs(30);
 
@@ -67,6 +68,9 @@ struct Shared {
     db: Arc<ProtobufDB>,
 
     use_silent_mode: bool,
+    use_compact_lines: bool,
+    must_keep_alive: bool,
+    max_enqueued_commands: usize,
 
     // This is equivalent to checking if state.state is a terminal state, but doesn't require
     // locking a mutex.
@@ -108,8 +112,10 @@ impl Player {
         // TODO: Ensure the Prusa tool mapper is disabled during printing and emulate
         // that at a higher level.
 
+        let config = machine_config.read().await?;
+
         // Setting the initial time estimate based on the file time.
-        let maybe_silent_mode = machine_config.read().await?.silent_mode();
+        let maybe_silent_mode = config.silent_mode();
         let mut use_silent_mode = false;
         if maybe_silent_mode && file.proto().program().has_silent_duration() {
             use_silent_mode = true;
@@ -119,6 +125,30 @@ impl Player {
             state_proto
                 .set_estimated_remaining_time(file.proto().program().normal_duration().clone());
         }
+
+        let use_compact_lines = {
+            // This is not true everything since most embedded firmwares don't properly
+            // handle gcode commands without a minimum amount of whitespace.
+            //
+            // - M555 in Prusa firmware MUST have whitespaces between words (only for
+            //   preview generation).
+            // - Tool changes in Carvera firmware MUST have a whitespace between the 'T' and
+            //   'M'.
+            match config.firmware() {
+                MachineConfig_Firmware::MARLIN
+                | MachineConfig_Firmware::GRBL
+                | MachineConfig_Firmware::PRUSA => true,
+                _ => false,
+            }
+        };
+
+        let must_keep_alive = config.firmware() == MachineConfig_Firmware::PRUSA
+            || config.firmware() == MachineConfig_Firmware::MARLIN;
+
+        let max_enqueued_commands =
+            core::cmp::max(1, config.serial().max_player_in_flight_commands() as usize);
+
+        drop(config);
 
         // Initialize objects state.
         // One uncancelled instance for each object.
@@ -133,6 +163,9 @@ impl Player {
             machine_config,
             file,
             use_silent_mode,
+            use_compact_lines,
+            must_keep_alive,
+            max_enqueued_commands,
             db,
             state: AsyncVariable::new(State {
                 status_message: None,
@@ -230,7 +263,11 @@ impl Player {
         let (parser, elements) = ProgramParserOp::new(chunks);
         bundle.add("ProgramParser", parser.run());
 
-        let (processor, lines) = PlayerProgramPreprocessor::new(shared.use_silent_mode, elements);
+        let (processor, lines) = PlayerProgramPreprocessor::new(
+            shared.use_silent_mode,
+            shared.use_compact_lines,
+            elements,
+        );
         bundle.add("PlayerProgramPreprocessor", processor.run());
 
         bundle.add(
@@ -296,12 +333,24 @@ impl Player {
         let mut first_stable_time = None;
         let mut status_message = None;
 
-        let mut cancelled_objects = HashSet::new();
+        let mut cancelled_objects = HashSet::<u32, FastHasherBuilder>::default();
+
+        // See the other usage of this for why this is here.
+        let mut last_alive = Instant::now();
+        if shared.must_keep_alive {
+            serial_interface
+                .send_command("G4 P100\n", DEFAULT_COMMAND_TIMEOUT)
+                .await?;
+            last_alive = Instant::now();
+        }
+
+        let mut received_all_lines = false;
+        let mut newly_enqueued_lines = vec![];
+
+        let mut enqueued_commands = VecDeque::<PendingCommand>::new();
 
         // TODO: Throttle this loop
-        loop {
-            //
-
+        while enqueued_commands.len() > 0 || current_action.is_some() || !received_all_lines {
             {
                 let mut state = shared.state.lock().await?.enter();
 
@@ -396,9 +445,84 @@ impl Player {
                 break;
             }
 
+            // Try to dequeue any fully sent commands so that we can send more.
+            while let Some(cmd) = enqueued_commands.pop_front() {
+                // Normally only block for the command if it is ready or if we must either
+                // because:
+                // - we are out of space
+                // - we have no more lines to enqueue
+                // - we are about to run an action that depends on these commands being executed
+                //   first.
+                if !cmd.ready().await
+                    && enqueued_commands.len() + 1 < shared.max_enqueued_commands
+                    && !received_all_lines
+                    && current_action.is_none()
+                {
+                    enqueued_commands.push_front(cmd);
+                    break;
+                }
+
+                cmd.wait().await?;
+            }
+
             if let Some(action) = &current_action {
                 let mut done = false;
                 match action {
+                    LineAction::BedPreheat => {
+                        // This is equivalent to the Prusa "G29 G" commands which waits in firmware
+                        // for a period of time for heat to sufficiently soak in. Since this takes a
+                        // while to do while blocking the serial port, we want to process it
+                        // ourselves.
+                        //
+                        // - Firmware side algorithm is: https://github.com/prusa3d/Prusa-Firmware-Buddy/blob/9b5764d00146119896c43e7b5f4d5293dde6cf42/lib/Marlin/Marlin/src/feature/bed_preheat.cpp#L44
+                        // - The asumption is that during the preheat time, the firmware will be
+                        //   resetting the stepper timeout so the steppers won't timeout during our
+                        //   preheat.
+
+                        let bed_data = serial_interface.get_current_axis_value("B").await?;
+                        let data = bed_data
+                            .data
+                            .get()
+                            .ok_or_else(|| err_msg("Missing bed temp data"))?;
+                        if data.len() != 2 {
+                            return Err(err_msg("Insufficient bed temp data"));
+                        }
+
+                        let data_timestamp = bed_data.data.last_updated().unwrap();
+
+                        if data[1] < 60.0 {
+                            // Temperature too low for preheating.
+                            done = true;
+                        } else {
+                            let is_stable = (data[0] - data[1]).abs() <= 15.0;
+
+                            if is_stable {
+                                // TODO: Ideally look through the metric history and find to find
+                                // the min temperature in the last N
+                                // seconds.
+                                let start_time = *first_stable_time.get_or_insert(data_timestamp);
+
+                                let preheat_time = Duration::from_secs(
+                                    180 + ((data[1] as u64) - 60) * ((12 * 60) / 50),
+                                );
+                                let elapsed_time = Instant::now().duration_since(start_time);
+
+                                if elapsed_time >= preheat_time {
+                                    done = true;
+                                } else {
+                                    status_message = Some(format!(
+                                        "Bed Preheat: Waiting for {}",
+                                        format_duration_secs(preheat_time - elapsed_time)
+                                    ))
+                                }
+                            } else {
+                                first_stable_time = None;
+                                status_message =
+                                    Some("Bed Preheat: Waiting for bed to heat up...".into());
+                            }
+                        }
+                    }
+
                     LineAction::WaitForTemperature {
                         axis_name,
                         min_temperature,
@@ -412,11 +536,9 @@ impl Player {
 
                             let config = shared.machine_config.read().await?;
                             config
-                                .axes()
-                                .iter()
-                                .find(|a| a.id() == axis_name)
+                                .axes_map()
+                                .get(axis_name)
                                 .ok_or_else(|| err_msg("Unknown axis"))?
-                                .as_ref()
                                 .clone()
                         };
 
@@ -427,7 +549,10 @@ impl Player {
                             *min_temperature,
                         ));
 
+                        // TODO: Need to get a recent value.
                         let current_value = serial_interface.axis_value(&axis_name).await?;
+
+                        // current_value.data.last_updated()
                         if let Some(current_temp) =
                             current_value.data.get().and_then(|v| v.get(0)).cloned()
                         {
@@ -460,91 +585,132 @@ impl Player {
                     first_stable_time = None;
                     status_message = None;
                 } else {
+                    if shared.must_keep_alive {
+                        // We must continously do something indicating that the
+                        // we are still printing from the serial port.
+                        // Valid commands are:
+                        // https://github.com/prusa3d/Prusa-Firmware-Buddy/blob/master/src/common/serial_printing.cpp#L56
+                        //
+                        // After the first command, only motion/planner commands will keep the print
+                        // alive hence why G4 is used.
+                        //
+                        // If we don't after 5 seconds, the printer will reset
+                        // and clear some state (e.g. on the Prusa XL, the bed
+                        // heating area will get reset and the whole bed will
+                        // start getting heated).
+
+                        // TODO: Measure the time it takes for this to ensure we haven't gotten
+                        // close to the timeout.
+
+                        // TODO: Implement this change for the Prusa XL so the bed doesn't reset:
+                        // https://github.com/prusa3d/Prusa-Firmware-Buddy/commit/a1d4041ed7e93a4de1043e1bed85c5eb5ee27f6e
+
+                        serial_interface
+                            .send_command("G4 P100\n", DEFAULT_COMMAND_TIMEOUT)
+                            .await?;
+
+                        let now = Instant::now();
+                        last_alive = now;
+                    }
+
                     // TODO: This will delay the setting of the status message in the state which we
                     // want to avoid (for the first round of waiting on the action).
-                    executor::sleep(Duration::from_millis(100)).await?;
+                    executor::sleep(Duration::from_millis(200)).await?;
                     continue;
                 }
             }
 
-            let mut parsed_line = match lines.recv().await {
-                Ok(Some(v)) => v,
-                // All lines have been processed.
-                Ok(None) => break,
-                Err(_) => {
-                    return Err(err_msg("Exiting command loop since inputs failed"));
+            newly_enqueued_lines.clear();
+
+            // Pipelining as many lines as we can onto the serial queue.
+            // NOTE: We assume that lines.recv() is fairly fast.
+            //
+            // TODO: Don't pipeline together multiple very slow commands.
+            while !received_all_lines && enqueued_commands.len() < shared.max_enqueued_commands {
+                let mut parsed_line = match lines.recv().await {
+                    Ok(Some(v)) => v,
+                    // All lines have been processed.
+                    Ok(None) => {
+                        received_all_lines = true;
+                        break;
+                    }
+                    Err(_) => {
+                        return Err(err_msg("Exiting command loop since inputs failed"));
+                    }
+                };
+
+                let mut skipped = false;
+                if parsed_line.object >= 0 {
+                    let i = parsed_line.object as u32;
+                    if cancelled_objects.contains(&i) {
+                        skipped = true;
+
+                        // NOTE: State updates are still applied.
+                        parsed_line.command_to_send = None;
+                        parsed_line.action = None;
+                    }
                 }
-            };
 
-            let mut skipped = false;
-            if parsed_line.object >= 0 {
-                let i = parsed_line.object as u32;
-                if cancelled_objects.contains(&i) {
-                    skipped = true;
-
-                    // NOTE: State updates are still applied.
-                    parsed_line.command_to_send = None;
-                    parsed_line.action = None;
+                if let Some(cmd) = parsed_line.command_to_send.take() {
+                    enqueued_commands.push_back(
+                        serial_interface
+                            .enqueue_command(cmd, DEFAULT_COMMAND_TIMEOUT)
+                            .await?,
+                    );
                 }
-            }
 
-            if let Some(cmd) = parsed_line.command_to_send {
-                serial_interface
-                    .send_command(cmd, DEFAULT_COMMAND_TIMEOUT)
-                    .await?;
-            }
+                if parsed_line.progress_updated {
+                    let now = SystemTime::now();
+                    parsed_line.state_update.set_last_progress_update(now);
+                }
 
-            current_action = parsed_line.action;
+                current_action = parsed_line.action.take();
 
-            if parsed_line.progress_updated {
-                let now = SystemTime::now();
-                parsed_line.state_update.set_last_progress_update(now);
+                newly_enqueued_lines.push((parsed_line, skipped));
+
+                // Note: We don't pipeline across action boundaries.
+                if current_action.is_some() {
+                    break;
+                }
             }
 
             lock!(state <= shared.state.lock().await?, {
-                let num = state.proto.line_number() + 1;
+                let num = state.proto.line_number() + (newly_enqueued_lines.len() as u32);
                 state.proto.set_line_number(num);
 
-                state.proto.merge_from(&parsed_line.state_update)?;
+                for (parsed_line, skipped) in newly_enqueued_lines.drain(..) {
+                    state.proto.merge_from(&parsed_line.state_update)?;
 
-                state
-                    .proto
-                    .objects_mut()
-                    .set_current_object_index(parsed_line.object);
+                    state
+                        .proto
+                        .objects_mut()
+                        .set_current_object_index(parsed_line.object);
 
-                if parsed_line.object >= 0 {
-                    let i = parsed_line.object as usize;
-                    if i >= state.proto.objects().objects_len() {
-                        return Err(err_msg("Object index out of bounds"));
-                    }
-
-                    /*
-                                        if !obj.has_cancelled() {
-                        obj.cancelled_mut().set_cancel_time(SystemTime::now());
-                        obj.cancelled_mut()
-                            .set_cancel_line(state.proto.line_number());
-                    }
-
-                        */
-
-                    let obj = &mut state.proto.objects_mut().objects_mut()[i];
-                    if skipped {
-                        // This may happen if the object was resumed by the use at the same time
-                        // that we were running this skipped line.
-                        if !obj.has_cancelled() {
-                            obj.cancelled_mut().set_cancel_time(SystemTime::now());
-                            obj.cancelled_mut().set_cancel_line(num - 1);
+                    if parsed_line.object >= 0 {
+                        let i = parsed_line.object as usize;
+                        if i >= state.proto.objects().objects_len() {
+                            return Err(err_msg("Object index out of bounds"));
                         }
 
-                        let n = obj.cancelled().skipped_lines();
-                        obj.cancelled_mut().set_skipped_lines(n + 1);
-                    } else {
-                        if obj.has_cancelled() {
-                            obj.cancelled_mut().set_cancel_line(num);
-                        }
+                        let obj = &mut state.proto.objects_mut().objects_mut()[i];
+                        if skipped {
+                            // This may happen if the object was resumed by the use at the same time
+                            // that we were running this skipped line.
+                            if !obj.has_cancelled() {
+                                obj.cancelled_mut().set_cancel_time(SystemTime::now());
+                                obj.cancelled_mut().set_cancel_line(num - 1);
+                            }
 
-                        let n = obj.completed_lines();
-                        obj.set_completed_lines(n + 1);
+                            let n = obj.cancelled().skipped_lines();
+                            obj.cancelled_mut().set_skipped_lines(n + 1);
+                        } else {
+                            if obj.has_cancelled() {
+                                obj.cancelled_mut().set_cancel_line(num);
+                            }
+
+                            let n = obj.completed_lines();
+                            obj.set_completed_lines(n + 1);
+                        }
                     }
                 }
 

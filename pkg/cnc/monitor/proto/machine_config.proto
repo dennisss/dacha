@@ -59,7 +59,16 @@ message MachineConfig {
 
     SyslogHandlerConfig syslog_handler = 17;
 
+    SerialConfig serial = 18;
+
     // TODO: Support an e-stop pin (that can be driven high/low to trigger a stop.)
+}
+
+message SerialConfig {
+    // Overall maximum number of commands which can be awaiting a reply at any given point in time.
+    uint32 max_in_flight_commands = 1;
+
+    uint32 max_player_in_flight_commands = 2;
 }
 
 message SpindleConfig {

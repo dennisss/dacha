@@ -272,14 +272,13 @@ export class LiveVideoSource extends VideoSource {
                 // Make sure we will always seeked to near the end of the stream.
                 // The currentTime may also be beyond the end of the buffer if a previous attempt buffered more data than we have right now.
                 // TODO: Apply some smoothing to this.
-                let target_play_time = end_time - 4 * FRAGMENT_DURATION;
+                let target_play_time = end_time - 8 * FRAGMENT_DURATION;
                 if (video.currentTime < target_play_time || video.currentTime > end_time) {
-                    console.log('CHANGE TIME');
-                    video.currentTime = end_time - 2 * FRAGMENT_DURATION;
+                    video.currentTime = end_time - 4 * FRAGMENT_DURATION;
                 }
 
                 // Number of seconds of the buffer ending at the current time that we want to keep around. 
-                let buffer_target_duration = Math.min(Math.max(5.0, 4 * FRAGMENT_DURATION), 30);
+                let buffer_target_duration = Math.min(Math.max(5.0, 8 * FRAGMENT_DURATION), 30);
 
                 if (end_time > buffer_target_duration) {
                     let update_ended = new Promise((res, rej) => {

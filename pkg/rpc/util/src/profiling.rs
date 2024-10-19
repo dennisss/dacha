@@ -14,7 +14,8 @@ impl AddProfilingEndpoints for rpc::Http2Server {
     }
 }
 
-struct ProfilezRequestHandler {}
+#[derive(Default)]
+pub struct ProfilezRequestHandler {}
 
 impl ProfilezRequestHandler {
     async fn handle_impl(&self) -> Result<Bytes> {

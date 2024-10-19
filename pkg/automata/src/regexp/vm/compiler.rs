@@ -360,30 +360,35 @@ impl Compiler {
     }
 
     fn optimize(&mut self) {
-
         // Replace the instruction pattern:
-        // 'Save(x) Char(y)' with 'Char(y) BeforeSave Lookahead(y) Save(x) Any'
+        // 'Save(x) Char(y)' with 'Char(y) Save(x, lookbehind=true)'
         //
         // This works as long as there are no jumps to the 'Char(y)' and maybe
         // jumps to the 'Save(x)'.
         //
         // This optimization avoids copies of the string pointer buffer when we
         // see
-        /*
-        {
-            for i in 0..(self.program.instructions.len() - 1) {
-                let x = match self.program.instructions[i] {
-                    Instruction::Save { index, .. } => index,
-                    _ => continue
+                {
+            for i in 0..(self.output.program.len() - 1) {
+                let x = match self.output.program[i] {
+                    Instruction::Save {
+index,
+                        lookbehind: false,
+} => index,
+                    _ => continue,
                 };
 
-                let y = match self.program.instructions[i + 1] {
-                    Instruction::Char(y) => y,
-                    _ => continue
+                let y = match self.output.program[i + 1] {
+                    // TODO: Does it work with 'Special' since those aren't real characters?
+                    Instruction::Char(_)
+                    | Instruction::Any
+                    | Instruction::LUT { .. }
+                    | Instruction::Range { .. } => self.output.program[i + 1].clone(),
+                    _ => continue,
                 };
 
                 let mut fail = false;
-                for pc in self.program.iter_referenced_pcs() {
+                for pc in self.output.iter_referenced_pcs() {
                     // Fail if there is an instruction that jumps to the 'Char(y)'
                     if *pc == (i + 1) as ProgramCounter {
                         fail = true;
@@ -395,22 +400,36 @@ impl Compiler {
                     continue;
                 }
 
-                self.program.instructions.insert(i, Instruction::Lookahead(y));
-                self.program.instructions[i + 2] = Instruction::Any;
-
-                for pc in self.program.iter_referenced_pcs() {
-                    if *pc == i as ProgramCounter {
-                        // Previous pointers to the Save(x) will now point to the Lookahead(y).
-                        // (located at the same position as the old Save(x)).
-                    } else if *pc > i as ProgramCounter {
-                        // Push all PCs forward by one given that we just inserted a new op.
-                        *pc += 1;
-                    }
-                }
+                // NOTE: The number of instructions is the same so no need to fix any PC
+                // references.
+                self.output.program[i] = y;
+                self.output.program[i + 1] = Instruction::Save {
+                    index: x,
+                    lookbehind: true,
+                };
             }
         }
-        */
 
+        // Jumps to jumps can be collapsed.
+        {
+            for i in 0..(self.output.program.len() - 1) {
+                // TODO: Do the same thing for splits.
+                let mut next_pc = match self.output.program[i] {
+                    Instruction::Jump(v) => v,
+                    _ => continue,
+                };
+
+                loop {
+                    next_pc = match self.output.program[next_pc as usize] {
+                        Instruction::Jump(v) => v,
+                        _ => break,
+                    };
+                }
+
+                self.output.program[i] = Instruction::Jump(next_pc);
+                    }
+                }
+            
         // TODO: Consolidate consecutive lookaheads?
         // 'Lookahead(x) Lookahead(y)' will trivially terminate if x != y
 
@@ -427,5 +446,9 @@ impl Compiler {
         // e.g. '(a|b)' == '[a-b]'
 
         // [a-zA-Z0-9-._~!$&'()*+,;=:@%]
+
+        // TODO: ".*.*" should be simplified to ".*"
+
+        // TODO: Simplify ".*^ to ^".
     }
 }

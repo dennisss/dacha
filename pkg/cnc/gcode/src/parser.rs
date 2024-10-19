@@ -32,6 +32,7 @@ pub enum WordValue {
 impl WordValue {
     pub fn to_string(&self) -> String {
         match self {
+            // TODO: Can simplify "-0.1" to "-.1" and "0.1" to ".1"
             WordValue::RealValue(v) => v.to_string(),
             WordValue::QuotedString(v) => format!("\"{}\"", v),
             WordValue::UnquotedString(v) => v.clone(),
