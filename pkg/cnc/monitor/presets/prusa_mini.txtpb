@@ -27,7 +27,6 @@ silent_mode: true
 
 # TODO
 axes: [
-    # TODO: Need to make these optional too since we can't predict them on Prusa FW.
     { id: "X" type: POSITION range { min: 0 max: 255 } is_optional: true },
     { id: "Y" type: POSITION range { min: -4 max: 212.5 } is_optional: true },
     { id: "Z" type: POSITION range { min: 0.15 max: 210 } is_optional: true },

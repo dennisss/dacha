@@ -24,6 +24,10 @@ pub fn assign_zero(value: &mut [BaseType]) {
     }
 }
 
+pub fn bit_impl(value: &[BaseType], i: usize) -> usize {
+    ((value[i / BASE_BITS] >> (i % BASE_BITS)) & 0b01) as usize
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 /// Constant time utilities
 ///////////////////////////////////////////////////////////////////////////////
@@ -169,12 +173,12 @@ pub fn xor_assign_impl(lhs: &mut [BaseType], rhs: &[BaseType]) {
 
 /// Performs 'lhs ^= rhs' only if 'should_apply' is true.
 pub fn xor_assign_if_impl(lhs: &mut [BaseType], should_apply: bool, rhs: &[BaseType]) {
-    assert_eq!(lhs.len(), rhs.len());
+    assert!(lhs.len() >= rhs.len());
 
     // Will be 0b111...111 if should_apply else 0.
     let mask = (!(should_apply as BaseType)).wrapping_add(1);
 
-    for i in 0..lhs.len() {
+    for i in 0..rhs.len() {
         lhs[i] ^= rhs[i] & mask;
     }
 }
@@ -371,26 +375,18 @@ pub fn carryless_mul_to_impl(lhs: &[BaseType], rhs: &[BaseType], out: &mut [Base
     }
 }
 
-// TODO: Finish making this constant time and correct.
 #[cfg(not(all(target_arch = "x86_64", target_feature = "pclmulqdq")))]
 pub fn carryless_mul_to_impl(lhs: &[BaseType], rhs: &[BaseType], out: &mut [BaseType]) {
     carryless_mul_to_generic(lhs, rhs, out)
 }
 
 fn carryless_mul_to_generic(lhs: &[BaseType], rhs: &[BaseType], out: &mut [BaseType]) {
-    todo!()
-
-    /*
     assert!(bit_width_impl(out) >= bit_width_impl(lhs) + bit_width_impl(rhs) - 1);
-
-    let mut lhs = self.clone();
-
     assign_zero(out);
-    for i in 0..rhs.value_bits() {
-        xor_assign_if_impl(out, rhs.bit(i) == 1, &lhs);
-        lhs.shl();
+    for i in (0..bit_width_impl(rhs)).rev() {
+        shl_impl(out);
+        xor_assign_if_impl(out, bit_impl(rhs, i) == 1, &lhs);
     }
-    */
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -430,4 +426,21 @@ pub fn cmp_impl(lhs: &[BaseType], rhs: &[BaseType]) -> Ordering {
     }
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn carryless_mul_generic_test() {
+        let a = &[0b10100010];
+        let b = &[0b10010110];
+
+        let mut out = [0u32; 2];
+
+        carryless_mul_to_generic(&a[..], &b[..], &mut out);
+
+        assert_eq!(&out[..], &[0b101100011101100, 0][..]);
+    }
 }

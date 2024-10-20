@@ -65,7 +65,7 @@ struct CurrentSegment {
 impl CameraRecorder {
     pub async fn create(
         camera_id: u64,
-        camera_subscriber: CameraSubscriber,
+mut camera_subscriber: CameraSubscriber,
         db: Arc<ProtobufDB>,
         data_dir: &LocalPath,
     ) -> Result<Self> {
@@ -74,6 +74,15 @@ impl CameraRecorder {
         let camera_data_dir = data_dir.join(format!("{:08x}", camera_id));
 
         file::create_dir_all(&camera_data_dir).await?;
+
+        // Skip ahead of any already produced frames while we were initializing.
+        {
+            let mut n_skipped = 0;
+            while let Some(r) = camera_subscriber.try_recv() {
+                r?;
+                n_skipped += 1;
+            }
+        }
 
         Ok(Self {
             camera_id,
@@ -99,14 +108,20 @@ impl CameraRecorder {
 
         // TODO: Provide some resilience to this but still print out a warning about
         // number of skipped frames.
-        if self.next_frame_sequence_number.unwrap_or(frame.sequence) != frame.sequence {
-            // TODO: PRint out how many we missed
-            return Err(err_msg("Missed some frames while recording"));
+        let next_frame_sequence = self.next_frame_sequence_number.unwrap_or(frame.sequence);
+        if next_frame_sequence != frame.sequence {
+            let n = frame.sequence - next_frame_sequence;
+            return Err(format_err!(
+"Missed some frames while recording. Skipped {} frames.",
+                n
+));
         }
 
         self.next_frame_sequence_number = Some(frame.sequence + 1);
 
-        self.record_data(Some(frame)).await
+        self.record_data(Some(frame)).await?;
+
+        Ok(())
     }
 
     async fn record_data(&mut self, frame: Option<ImageFrame>) -> Result<()> {

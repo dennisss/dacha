@@ -1,6 +1,8 @@
 use core::arch::asm;
 use std::time::Duration;
 
+#[inline(never)]
+#[no_mangle]
 pub async fn task1() {
     unsafe {
         let mut cpu = 0;
@@ -19,10 +21,16 @@ pub async fn task1() {
     let mut i: u64 = 0;
     loop {
         i += 1;
+
+        if i % 10000 == 0 {
+            executor::yield_now().await;
+        }
     }
 }
 
-pub fn task2() {
+#[inline(never)]
+#[no_mangle]
+pub async fn task2() {
     unsafe {
         let mut cpu = 0;
         let mut node = 0;
@@ -40,6 +48,10 @@ pub fn task2() {
     let mut i: u64 = 0;
     loop {
         i += 1;
+
+        if i % 10000 == 0 {
+            executor::yield_now().await;
+        }
     }
 }
 

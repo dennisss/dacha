@@ -95,4 +95,29 @@ mod test {
 
         assert_eq!(serialize_text_proto(&msg), "number: 0\n");
     }
+
+    /*
+    #[test]
+    fn map_field() {
+        let mut list = ShoppingList::default();
+        parse_text_proto(
+            r#"
+            table {
+                key: "a"
+                value: 12
+            }
+            table {
+                key: "b"
+                value: 34
+            }
+            "#,
+            &mut list,
+        )
+        .unwrap();
+
+        assert_eq!(list.table().get("a"), Some(&12));
+
+        // list.table
+    }
+    */
 }

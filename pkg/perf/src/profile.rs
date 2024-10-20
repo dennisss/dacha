@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use common::concat_slice::ConcatSlicePair;
 use common::errors::*;
+use common::failure::ResultExt;
 use elf::*;
 use parsing::binary::*;
 use pprof_proto::perftools::profiles::*;
@@ -121,9 +122,6 @@ pub async fn profile_process(pid: sys::pid_t, duration: Duration) -> Result<Prof
 
     // TODO: Instead disable it and set it via ioctl once the mmap is ready.
     attr.set_disabled(0); // Start event counter right away.
-    attr.set_exclude_idle(1);
-    attr.set_exclude_user(0);
-    attr.set_exclude_kernel(0);
 
     // TODO: Setup wakeup_watermark (and watermark) and properly poll the state of
     // the memory buffer. Basically set it to half the size and then use epoll to
@@ -198,13 +196,16 @@ pub async fn profile_process(pid: sys::pid_t, duration: Duration) -> Result<Prof
             // println!("Open {} {} {}", cpu_i, tid, group_fd);
 
             let file = unsafe {
-                File::from_raw_fd(sys::perf_event_open(
-                    &attr,
-                    tid,
-                    cpu_i as i32,
-                    group_fd,
-                    (PERF_FLAG_FD_CLOEXEC | PERF_FLAG_FD_NO_GROUP | PERF_FLAG_FD_OUTPUT).into(),
-                )?)
+                File::from_raw_fd(
+                    sys::perf_event_open(
+                        &attr,
+                        tid,
+                        cpu_i as i32,
+                        group_fd,
+                        (PERF_FLAG_FD_CLOEXEC | PERF_FLAG_FD_NO_GROUP | PERF_FLAG_FD_OUTPUT).into(),
+                    )
+                    .with_context(|e| format!("perf_event_open failed: {}", e))?,
+                )
             };
 
             if group_fd == -1 {
@@ -219,7 +220,8 @@ pub async fn profile_process(pid: sys::pid_t, duration: Duration) -> Result<Prof
                         MAP_SHARED,
                         file.as_raw_fd(),
                         0,
-                    )?
+                    )
+                    .with_context(|e| format!("mmap failed: {}", e))?
                 });
 
                 group_fd = file.as_raw_fd();

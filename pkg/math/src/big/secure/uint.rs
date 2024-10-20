@@ -278,7 +278,7 @@ impl<S: StorageType> SecureBigUint<S> {
     }
 
     pub fn bit(&self, i: usize) -> usize {
-        ((self.value[i / BASE_BITS] >> (i % BASE_BITS)) & 0b01) as usize
+        raw::bit_impl(self.value.as_ref(), i)
     }
 
     /// Computes the quotient and remainder of 'self / rhs'.

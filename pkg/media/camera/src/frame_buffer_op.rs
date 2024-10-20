@@ -12,7 +12,9 @@ use crate::frame::ImageFrame;
 
 /// Maximum number of unprocessed frames that one subscriber can have enqueued
 /// before we start dropping frames.
-const CAMERA_SUBSCRIBER_QUEUE_LENGTH: usize = 8;
+///
+/// Default value is 2 seconds worth of buffering at 30 fps.
+const CAMERA_SUBSCRIBER_QUEUE_LENGTH: usize = 2 * 30;
 
 /// If no subscriber is pulling frames from the camera for this amount of time,
 /// we will

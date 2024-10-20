@@ -3,7 +3,7 @@ extern crate sys;
 extern crate parsing;
 extern crate elf;
 
-mod busy;
+pub mod busy;
 mod cycles;
 mod memory;
 mod profile;
