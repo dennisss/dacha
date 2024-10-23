@@ -10,6 +10,11 @@ use crate::regexp::vm::flags::Flags;
 use crate::regexp::vm::instruction::*;
 
 pub struct Compilation {
+    /// Implementation notes for specific flags:
+    /// - CASE_INSENSITIVE: The program will be constructed to only match
+    ///   against lower case characters when that produces a more concise
+    ///   program so the executor should pre-lower any characters run through
+    ///   the program.
     pub program: VecProgram,
 
     /// For each captured group in the original expression, this contains the
@@ -113,9 +118,18 @@ impl Compiler {
 
                 // TODO: These may contain overlap. Need to consolidate them. (ideally that
                 // would be done generically on all alternations).
-                let symbols = c.raw_symbols();
+                let mut symbols = c.raw_symbols();
 
-                self.compile_alternation(&symbols, |c, sym| {
+                if self
+                    .output
+                    .program
+                    .flags()
+                    .contains(Flags::CASE_INSENSITIVE)
+                {
+                    symbols = symbols.lowercased();
+                }
+
+                self.compile_alternation(symbols.symbols(), |c, sym| {
                     if sym.end == sym.start + 1 {
                         c.add_instruction(Instruction::Char(sym.start));
                     } else {
@@ -225,7 +239,7 @@ impl Compiler {
             RegExpNode::Class { chars, inverted } => {
                 let mut symbols = RegExpSymbolSetBuilder::default();
                 for c in chars {
-                    symbols.extend(&c.raw_symbols());
+                    symbols.extend(c.raw_symbols().symbols());
                 }
 
                 let mut symbols = symbols.build();
@@ -237,6 +251,15 @@ impl Compiler {
                 // TODO: Combine and simplify.
                 // e.g. if all 0-255 values are matched, then we can just use append an Any
                 // instruction.
+
+                if self
+                    .output
+                    .program
+                    .flags()
+                    .contains(Flags::CASE_INSENSITIVE)
+                {
+                    symbols = symbols.lowercased();
+                }
 
                 // TODO: Deduplicate with the ::Literal case.
                 self.compile_alternation(symbols.symbols(), |c, sym| {
@@ -368,13 +391,13 @@ impl Compiler {
         //
         // This optimization avoids copies of the string pointer buffer when we
         // see
-                {
+        {
             for i in 0..(self.output.program.len() - 1) {
                 let x = match self.output.program[i] {
                     Instruction::Save {
-index,
+                        index,
                         lookbehind: false,
-} => index,
+                    } => index,
                     _ => continue,
                 };
 
@@ -427,9 +450,13 @@ index,
                 }
 
                 self.output.program[i] = Instruction::Jump(next_pc);
-                    }
-                }
-            
+            }
+        }
+
+        // TODO: Splits where all the first instructions are the same can be
+        // simplified (can also do this if just a few of several chained split
+        // cases point to the same place).
+
         // TODO: Consolidate consecutive lookaheads?
         // 'Lookahead(x) Lookahead(y)' will trivially terminate if x != y
 

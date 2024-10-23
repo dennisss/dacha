@@ -13,6 +13,7 @@ use nix::sys::socket::{
     AddressFamily, InetAddr, NetlinkAddr, SockAddr, SockFlag, SockProtocol, SockType,
 };
 use nix::sys::uio::IoVec;
+use sys::read_null_terminated_string;
 
 use crate::ip::IPAddress;
 
@@ -376,17 +377,6 @@ pub fn local_ip() -> Result<IPAddress> {
     }
 
     found_ip.ok_or_else(|| err_msg("No suitable local ips found"))
-}
-
-// TODO: Dedup with stream_deck package.
-fn read_null_terminated_string(data: &[u8]) -> Result<String> {
-    for i in 0..data.len() {
-        if data[i] == 0x00 {
-            return Ok(std::str::from_utf8(&data[0..i])?.to_string());
-        }
-    }
-
-    Err(err_msg("Missing null terminator"))
 }
 
 fn parse_cstruct<T>(input: &[u8]) -> Result<(&T, &[u8])> {

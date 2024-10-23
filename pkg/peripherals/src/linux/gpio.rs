@@ -1,7 +1,6 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use std::sync::Arc;
-use sys::OpenFileDescriptor;
 
 use common::errors::*;
 use file::LocalPath;
@@ -10,6 +9,8 @@ use sys::bindings::{
     gpio_v2_line_config, gpio_v2_line_info, gpio_v2_line_request, gpio_v2_line_values,
     gpiochip_info,
 };
+use sys::read_null_terminated_string;
+use sys::OpenFileDescriptor;
 
 ior!(gpio_get_chipinfo, 0xB4, 0x01, gpiochip_info);
 iowr!(gpio_get_lineinfo_unwatch, 0xB4, 0x0C, u32);
@@ -184,20 +185,3 @@ pub struct GPIOLineInfo {
 
 #[derive(Clone, Debug)]
 pub struct GPIOLineAttribute {}
-
-fn read_null_terminated_str(data: &[u8]) -> Result<&str> {
-    for i in 0..data.len() {
-        if data[i] == 0x00 {
-            return Ok(std::str::from_utf8(&data[0..i])?);
-        }
-    }
-
-    Err(err_msg("Missing null terminator"))
-}
-
-// TODO: Deduplicate this everywhere.
-fn read_null_terminated_string(data: &[sys::c_char]) -> Result<String> {
-    let data = unsafe { core::mem::transmute(data) };
-
-    read_null_terminated_str(data).map(|s| s.to_string())
-}

@@ -22,9 +22,9 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 use base_error::*;
 use cnc_monitor::MonitorImpl;
 use cnc_monitor_proto::cnc::MonitorIntoService;
-use common::map;
 use executor_multitask::RootResource;
-use file::{project_path, LocalPathBuf};
+use file::LocalPathBuf;
+use http::static_file_handler::StaticFileHandlerOptions;
 use http::{
     static_file_handler::{StaticFileBody, StaticFileHandler},
     ServerHandler,
@@ -273,6 +273,12 @@ impl HttpHandler {
             return self.handle_api_request(request).await;
         }
 
+        if request.head.uri.path.as_str() == "/profilez" {
+            return rpc_util::ProfilezRequestHandler {}
+                .handle_request(request, context)
+                .await;
+        }
+
         if let Some(path) = request.head.uri.path.as_str().strip_prefix("/rpc/") {
             request.head.uri.path = AsciiString::new(&format!("/{}", path));
             return self.rpc_handler.handle_request(request, context).await;
@@ -306,78 +312,6 @@ impl http::ServerHandler for HttpHandler {
 
 #[executor_main]
 async fn main() -> Result<()> {
-    /*
-    {
-        let start = Instant::now();
-
-        let summary = cnc_monitor::program::ProgramSummary::create(&project_path!(
-            "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode"
-        ))
-        .await?;
-
-        let end = Instant::now();
-
-        println!("{:?}", end - start);
-
-        println!("{:#?}", summary.proto);
-
-        let thumb = summary.best_thumbnail()?.unwrap();
-
-        file::write(project_path!("thumb.jpg"), thumb).await?;
-
-        return Ok(());
-    }
-    */
-
-    /*
-    {
-        let gcode = file::read(project_path!(
-            "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode"
-        ))
-        .await?;
-
-        /*
-        V1 benchmark:
-        - Debug: 33s
-        - Release: 2.9s
-
-        V2 benchmark:
-        - Debug: 12s
-        - Releae: ~1.1s
-        */
-
-        println!("Loaded data!");
-
-        let start = Instant::now();
-
-        let mut parser = gcode::Parser::new();
-
-        let mut iter = parser.iter(&gcode[..], true);
-
-        // let mut input = gcode.as_bytes(); // &gcode[..];
-
-        while let Some(e) = iter.next() {
-            // println!("{:?}", e);
-
-            if let gcode::Event::ParseError(kind) = e {
-                eprintln!(
-                    "Failed to parse! Line: {}: {:?}",
-                    iter.parser().current_line_number(),
-                    kind
-                );
-            }
-        }
-
-        let end = Instant::now();
-
-        println!("{:?}", end - start);
-
-        //
-
-        return Ok(());
-    }
-    */
-
     let args = common::args::parse_args::<Args>()?;
 
     let service = RootResource::new();
@@ -417,7 +351,7 @@ async fn main() -> Result<()> {
                 instance: monitor,
                 inner: web_handler,
                 data_handler: StaticFileHandler::new_with_options(
-&args.local_data_dir,
+                    &args.local_data_dir,
                     StaticFileHandlerOptions {
                         // - The only untrusted files are user uploaded file blobs which we always
                         //   store with no extension.

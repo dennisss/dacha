@@ -33,7 +33,7 @@ struct BinaryState {
 
     buffer_done: bool,
 
-    gcode_parser: Option<gcode::ProgramParser>,
+    gcode_parser: gcode::ProgramParser,
 }
 
 impl ProgramParser {
@@ -57,7 +57,7 @@ impl ProgramParser {
                         buffer_offset: 0,
                         buffer_end: 0,
                         buffer_done: false,
-                        gcode_parser: None,
+                        gcode_parser: gcode::ProgramParser::default(),
                     });
                 } else {
                     self.state = State::Text(gcode::ProgramParser::default());
@@ -76,33 +76,36 @@ impl ProgramParser {
         end_of_input: bool,
         out: &mut Vec<gcode::ProgramElement>,
     ) -> Result<usize> {
+        if out.len() != 0 {
+            return Err(err_msg("Expected output vector to be initially empty"));
+        }
+
         let mut input_read = 0;
 
         loop {
-            if let Some(gcode_parser) = &mut state.gcode_parser {
-                loop {
-                    let n = gcode_parser.parse_line(
-                        &state.buffer[state.buffer_offset..state.buffer_end],
-                        state.buffer_done,
-                        out,
-                    );
-                    state.buffer_offset += n;
+            if state.buffer_offset < state.buffer_end || state.buffer_done {
+                let n = state.gcode_parser.parse_line(
+                    &state.buffer[state.buffer_offset..state.buffer_end],
+                    state.buffer_done,
+                    out,
+                );
+                state.buffer_offset += n;
 
-                    if let Some(gcode::ProgramElement::EndOfLine) = out.last() {
+                if let Some(gcode::ProgramElement::EndOfLine) = out.last() {
+                    if out.len() == 1 {
+                        // Proactively filter out empty lines since there tends to be a lot of them.
+                        out.clear();
+                    } else {
                         return Ok(input_read);
-                    }
-
-                    if n == 0 {
-                        break;
                     }
                 }
 
                 if state.buffer_done {
-                    state.gcode_parser = None;
+                    return Ok(input_read);
                 }
-            }
 
-            // Step 1: If we have data left in the buffer, parse it out.
+                continue;
+            }
 
             let progress =
                 state
@@ -111,6 +114,7 @@ impl ProgramParser {
             input_read += progress.input_read;
             state.buffer_offset = 0;
             state.buffer_end = progress.output_written;
+            state.buffer_done = progress.done;
 
             match progress.event {
                 Event::Pending => {
@@ -123,6 +127,7 @@ impl ProgramParser {
                     }
 
                     out.push(gcode::ProgramElement::EndOfLine);
+                    break;
                 }
                 Event::Thumbnail { params, data } => {
                     out.push(gcode::ProgramElement::Thumbnail(gcode::ProgramThumbnail {
@@ -133,16 +138,8 @@ impl ProgramParser {
                     out.push(gcode::ProgramElement::EndOfLine);
                     break;
                 }
-                Event::GCode => {
-                    if state.gcode_parser.is_none() {
-                        state.gcode_parser = Some(gcode::ProgramParser::default());
-                    }
-
+                Event::GCode | Event::GCodeEnd => {
                     // Loop and parse some of the code.
-                    continue;
-                }
-                Event::GCodeEnd => {
-                    state.buffer_done = true;
                     continue;
                 }
             }

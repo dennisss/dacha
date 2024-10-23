@@ -7,6 +7,7 @@ use crate::regexp::alphabet::*;
 use crate::regexp::instance::RegExpMetadata;
 use crate::regexp::state_machine::*;
 use crate::regexp::symbol::*; // TODO: Refactor out this edge.
+use crate::regexp::symbol_set::*;
 
 pub type RegExpNodePtr = Box<RegExpNode>;
 
@@ -211,7 +212,7 @@ impl RegExpNode {
             Self::Class { chars, inverted } => {
                 let mut syms = vec![];
                 for c in chars {
-                    syms.extend_from_slice(&alpha.decimate_many(c.raw_symbols()));
+                    syms.extend_from_slice(&alpha.decimate_many(c.raw_symbols().into_symbols()));
                 }
                 if *inverted {
                     syms = invert_symbols(syms);
@@ -231,7 +232,7 @@ impl RegExpNode {
                 a
             }
             Self::Literal(c) => {
-                let syms = alpha.decimate_many(c.raw_symbols());
+                let syms = alpha.decimate_many(c.raw_symbols().into_symbols());
 
                 let mut a = RegExpStateMachine::new();
                 let start = a.add_state();
@@ -331,37 +332,37 @@ pub enum Char {
 
 impl Char {
     // NOTE: These symbols may contain a lot of overlap.
-    pub fn raw_symbols(&self) -> Vec<RegExpSymbol> {
-        let mut out = vec![];
+    pub fn raw_symbols(&self) -> RegExpSymbolSet {
+        let mut out = RegExpSymbolSetBuilder::default();
 
         match self {
             Char::Value(c) => {
-                out.push(RegExpSymbol::single(*c));
+                out.add(RegExpSymbol::single(*c));
             }
             Char::Range(s, e) => {
-                out.push(RegExpSymbol::inclusive_range(*s, *e));
+                out.add(RegExpSymbol::inclusive_range(*s, *e));
             }
             // [0-9]
             Char::Digit | Char::NotDigit => {
-                out.push(RegExpSymbol::inclusive_range('0', '9'));
+                out.add(RegExpSymbol::inclusive_range('0', '9'));
             }
             // [0-9A-Za-z_]
             Char::Word | Char::NotWord => {
-                out.push(RegExpSymbol::inclusive_range('0', '9'));
-                out.push(RegExpSymbol::inclusive_range('A', 'Z'));
-                out.push(RegExpSymbol::inclusive_range('a', 'z'));
-                out.push(RegExpSymbol::single('_'));
+                out.add(RegExpSymbol::inclusive_range('0', '9'));
+                out.add(RegExpSymbol::inclusive_range('A', 'Z'));
+                out.add(RegExpSymbol::inclusive_range('a', 'z'));
+                out.add(RegExpSymbol::single('_'));
             }
             // [\t\n\f\r ]
             Char::Whitespace | Char::NotWhiteSpace => {
-                out.push(RegExpSymbol::single('\t'));
-                out.push(RegExpSymbol::single('\n'));
-                out.push(RegExpSymbol::single('\x0C'));
-                out.push(RegExpSymbol::single('\r'));
-                out.push(RegExpSymbol::single(' '));
+                out.add(RegExpSymbol::single('\t'));
+                out.add(RegExpSymbol::single('\n'));
+                out.add(RegExpSymbol::single('\x0C'));
+                out.add(RegExpSymbol::single('\r'));
+                out.add(RegExpSymbol::single(' '));
             }
             Char::Wildcard => {
-                out.push(RegExpSymbol::inclusive_range(0 as char, std::char::MAX));
+                out.add(RegExpSymbol::inclusive_range(0 as char, std::char::MAX));
             }
         }
 
@@ -370,16 +371,18 @@ impl Char {
             _ => false,
         };
 
+        let mut out = out.build();
+
         if invert {
-            out = invert_symbols(out);
+            out = out.inverted();
         }
 
         out
     }
 
     fn fill_alphabet(&self, alpha: &mut RegExpAlphabet) {
-        for sym in self.raw_symbols() {
-            alpha.insert(sym);
+        for sym in self.raw_symbols().symbols() {
+            alpha.insert(sym.clone());
         }
     }
 }

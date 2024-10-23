@@ -6,7 +6,7 @@ pub mod flags;
 pub mod instruction;
 pub mod lut;
 
-mod compiler;
+pub mod compiler;
 mod executor;
 pub mod instance;
 mod string_pointers;

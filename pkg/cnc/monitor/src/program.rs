@@ -245,7 +245,7 @@ impl ProgramParserOp {
             let mut remaining = &chunk[..];
             while !remaining.is_empty() {
                 let n = parser.parse_line(remaining, false, &mut self.elements)?;
-                if n == 0 {
+                if n == 0 && self.elements.is_empty() {
                     return Err(err_msg("GCode program parser failed to advance."));
                 }
 
@@ -371,6 +371,7 @@ struct PartialSummary {
     current_position: Vector3f,
     current_coordinate_system: String,
     current_object: i32,
+    current_feed_rate: f32,
     bounds: HashMap<String, Bounds, FastHasherBuilder>,
     objects: HashMap<u32, ObjectData, FastHasherBuilder>,
 }
@@ -595,6 +596,10 @@ impl ProgramSummarizer {
                         }
                     }
 
+                    if let Some(f) = inner.feed_rate {
+                        self.partial_summary.current_feed_rate = f.to_f32();
+                    }
+
                     self.partial_summary.current_position = new_position.clone();
 
                     let bounds = self
@@ -628,6 +633,13 @@ impl ProgramSummarizer {
                             object.max_position.clone().unwrap_or(new_position.clone()),
                         ));
                     }
+                }
+                gcode::Command::ClockwiseArc(gcode::ClockwiseArc { inner })
+                | gcode::Command::CounterClockwiseArc(gcode::CounterClockwiseArc { inner }) => {
+
+                    // inner.feed_rate
+
+                    // cmd.inner.
                 }
                 gcode::Command::SetBuildPercentage(cmd) => {
                     if let Some(v) = cmd.normal_time_remaining_mins {

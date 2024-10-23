@@ -191,7 +191,17 @@ impl Decoder {
                                 event,
                             });
                         }
-                        _ => return Err(err_msg("Unexpected parsing event in thumbnail")),
+                        RawEvent::Pending => {
+                            return Ok(TransformProgress {
+                                event: Event::Pending,
+                                input_read,
+                                output_written,
+                                done: false,
+                            })
+                        }
+                        _ => {
+                            return Err(err_msg("Unexpected parsing event in thumbnail"));
+                        }
                     }
                 }
                 State::GCodeBlock {

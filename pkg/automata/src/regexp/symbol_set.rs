@@ -20,6 +20,10 @@ impl RegExpSymbolSetBuilder {
         // Merging overlapping / duplicate symbols.
         let mut final_symbols = vec![];
         for symbol in self.syms.iter().cloned() {
+            if symbol.start == symbol.end {
+                continue;
+            }
+
             let last_symbol = match final_symbols.last_mut() {
                 Some(v) => v,
                 None => {
@@ -53,6 +57,10 @@ impl RegExpSymbolSet {
         &self.syms
     }
 
+    pub fn into_symbols(self) -> Vec<RegExpSymbol> {
+        self.syms
+    }
+
     /// NOTE: Inverting will only newly include symbols that are valid chars (it
     /// won't start matching special symbols).
     pub fn inverted(&self) -> Self {
@@ -79,5 +87,50 @@ impl RegExpSymbolSet {
         }
 
         Self { syms: new_symbols }
+    }
+
+    /// Replaces any references to ASCII upper symbols with the lowercase
+    /// variants.
+    pub fn lowercased(&self) -> Self {
+        let mut out = RegExpSymbolSetBuilder::default();
+
+        const A: u32 = b'A' as u32;
+        const Z_PLUS_1: u32 = (b'Z' as u32) + 1;
+
+        const SHIFT: u32 = (b'a' as u32) - (b'A' as u32);
+
+        for sym in &self.syms {
+            let mut sym = sym.clone();
+
+            if sym.start < A {
+                let end = core::cmp::min(sym.end, A);
+                out.add(RegExpSymbol {
+                    start: sym.start,
+                    end,
+                });
+
+                sym.start = A;
+                sym.end = core::cmp::max(A, sym.end);
+            }
+
+            if sym.end > Z_PLUS_1 {
+                let start = core::cmp::max(sym.start, Z_PLUS_1);
+                out.add(RegExpSymbol {
+                    start,
+                    end: sym.end,
+                });
+
+                sym.start = core::cmp::min(Z_PLUS_1, sym.start);
+                sym.end = Z_PLUS_1;
+            }
+
+            assert!(sym.start >= A && sym.end <= Z_PLUS_1);
+
+            sym.start += SHIFT;
+            sym.end += SHIFT;
+            out.add(sym);
+        }
+
+        out.build()
     }
 }

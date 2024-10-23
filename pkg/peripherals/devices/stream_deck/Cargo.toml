@@ -7,5 +7,6 @@ edition = "2018"
 common = { path = "../../../common" }
 usb = { path = "../../../usb" }
 file = { path = "../../../file" }
+sys = { path = "../../../sys" }
 executor = { path = "../../../executor" }
 macros = { path = "../../../macros" }
