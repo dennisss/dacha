@@ -1,8 +1,13 @@
+pub mod bezier;
 pub mod bounding_box;
 pub mod convex_hull;
+pub mod curve;
+pub mod ellipse;
 mod entity_storage;
 pub mod half_edge;
 pub mod line;
 pub mod line_segment;
+pub mod linearize;
 pub mod make_monotone;
 pub mod quantized;
+pub mod transforms;

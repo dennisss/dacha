@@ -3,14 +3,14 @@ use core::any::Any;
 use common::errors::*;
 use common::iter::PairIter;
 use image::{Color, Colorspace, Image};
+use math::geometry::curve::Curve2;
+use math::geometry::transforms::transform2f;
 use math::matrix::{vec2f, Matrix3f, Vector2f, Vector2i, Vector3f};
 
 use crate::canvas::base::CanvasBase;
-use crate::canvas::curve::Curve;
 use crate::canvas::path::*;
 use crate::canvas::*;
 use crate::raster::FillRule;
-use crate::transforms::transform2f;
 
 /// 2D Canvas implementation which performs all pixel rasterization on CPU.
 pub struct RasterCanvas {

@@ -1,13 +1,13 @@
 // See http://agg.sourceforge.net/antigrain.com/research/adaptive_bezier/index.html for an interseting dicussion on properly linearizing beziers.
 
+use alloc::vec::Vec;
 use core::convert::{AsMut, AsRef};
 
-use math::combin::bin_coeff;
-use math::geometry::line_segment::LineSegment2;
-use math::matrix::{Matrix3f, Vector2f, Vector3f};
-
-use crate::canvas::curve::Curve;
-use crate::transforms::transform2f;
+use crate::combin::bin_coeff;
+use crate::geometry::curve::Curve2;
+use crate::geometry::line_segment::LineSegment2;
+use crate::geometry::transforms::transform2f;
+use crate::matrix::{Matrix3f, Vector2f, Vector3f};
 
 use super::linearize::LINEARIZATION_MIN_STEP;
 
@@ -103,7 +103,7 @@ impl<P: Points> BezierCurve<P> {
     }
 }
 
-impl<P: Points> Curve for BezierCurve<P> {
+impl<P: Points> Curve2 for BezierCurve<P> {
     fn transform(&self, mat: &Matrix3f) -> Self {
         let mut points = self.points.clone();
         for i in 0..points.as_ref().len() {

@@ -1,14 +1,13 @@
 use std::f32::consts::PI;
 
 use common::iter::PairIter;
+use math::geometry::bezier::BezierCurve;
 use math::geometry::bounding_box::{BoundingBox, BoundingBoxBuilder};
+use math::geometry::curve::Curve2;
+use math::geometry::ellipse::Ellipse;
 use math::geometry::line_segment::LineSegment2;
+use math::geometry::transforms::transform2f;
 use math::matrix::{vec2f, Matrix3f, Vector2f};
-
-use crate::canvas::bezier::BezierCurve;
-use crate::canvas::curve::Curve;
-use crate::canvas::ellipse::Ellipse;
-use crate::transforms::transform2f;
 
 // TODO: Increase if we can use more anti-aliasing.
 pub const LINEARIZATION_ERROR_THRESHOLD: f32 = 0.5;

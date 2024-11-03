@@ -11,7 +11,7 @@
 // - 'n': When in polygon mode, close the current polygon by connecting the last
 //   and first vertex.
 // - 'p': Print out the current state.
-// - 'a': Togllge showing arrows to indicate line direction.
+// - 'a': Toggle showing arrows to indicate line direction.
 // - 1-9: Mode specific functions
 
 use std::f32::consts::PI;
@@ -131,6 +131,7 @@ enum PolygonViewMode {
         focus_index: Option<usize>,
     },
     Faces {
+        mode_key: glfw::Key,
         focus_index: Option<usize>,
         faces: Vec<FaceDebug<()>>,
     },
@@ -156,7 +157,7 @@ impl PointPicker {
                 // Transform to canvas dimensions.
                 let (x, y) = (x as f32, window.height() as f32 - y as f32);
 
-                println!("X: {},  Y: {}", x, y);
+                println!("Click Point: X: {},  Y: {}", x, y);
 
                 let point = Vector2f::from_slice(&[x, y]);
                 self.handle_new_point(point);
@@ -246,6 +247,7 @@ impl PointPicker {
                         // TODO: Verify each polygon has at least 3 points.
                         state.start_indices.push(self.points.len());
                     }
+                    // Cycle raw polygons
                     glfw::Key::Num1 => {
                         let mut next_idx = if let PolygonViewMode::Raw {
                             focus_index: Some(idx),
@@ -275,17 +277,23 @@ impl PointPicker {
                             next_idx += 1;
                         }
                     }
-                    glfw::Key::Num2 | glfw::Key::Num3 | glfw::Key::Num4 => {
-                        if let PolygonViewMode::Faces { focus_index, faces } = &mut state.view_mode
+                    glfw::Key::Num2 | glfw::Key::Num3 | glfw::Key::Num4 | glfw::Key::Num5 => {
+                        if let PolygonViewMode::Faces {
+                            mode_key,
+                            focus_index,
+                            faces,
+                        } = &mut state.view_mode
                         {
-                            let next_index = focus_index.clone().map(|v| v + 1).unwrap_or(0);
-                            if next_index < faces.len() {
-                                *focus_index = Some(next_index);
-                            } else {
-                                *focus_index = None;
-                            }
+                            if *mode_key == key {
+                                let next_index = focus_index.clone().map(|v| v + 1).unwrap_or(0);
+                                if next_index < faces.len() {
+                                    *focus_index = Some(next_index);
+                                } else {
+                                    *focus_index = None;
+                                }
 
-                            return Ok(());
+                                return Ok(());
+                            }
                         }
 
                         let mut data = HalfEdgeStruct::<()>::new();
@@ -323,9 +331,14 @@ impl PointPicker {
                             data.repair();
                         }
 
+                        if key == glfw::Key::Num5 {
+                            //
+                        }
+
                         let faces = FaceDebug::get_all(&data);
 
                         state.view_mode = PolygonViewMode::Faces {
+                            mode_key: key,
                             focus_index: None,
                             faces,
                         };
@@ -513,7 +526,11 @@ impl PointPicker {
                     self.draw_polygon_edge(poly.points, poly.closed, Tone::Neutral, canvas)?;
                 }
             }
-            PolygonViewMode::Faces { faces, focus_index } => {
+            PolygonViewMode::Faces {
+                mode_key: _,
+                faces,
+                focus_index,
+            } => {
                 for face in faces {
                     for points in face
                         .outer_component
@@ -536,12 +553,12 @@ impl PointPicker {
                 if let Some(idx) = focus_index.clone() {
                     let face = &faces[idx];
 
-                    if let Some(points) = &face.outer_component {
-                        self.draw_polygon_edge(&points, true, Tone::Primary, canvas)?;
-                    }
-
                     for points in face.inner_components.iter() {
                         self.draw_polygon_edge(&points, true, Tone::Secondary, canvas)?;
+                    }
+
+                    if let Some(points) = &face.outer_component {
+                        self.draw_polygon_edge(&points, true, Tone::Primary, canvas)?;
                     }
                 }
             }

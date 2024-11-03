@@ -1,8 +1,8 @@
+use alloc::vec::Vec;
 use std::collections::VecDeque;
 
-use math::matrix::Vector2f;
-
-use crate::canvas::curve::Curve;
+use crate::geometry::curve::Curve2;
+use crate::matrix::Vector2f;
 
 // /// When converting a curve into a set of line segments, the line size at
 // which /// we will stop subdividing the curve.
@@ -20,12 +20,13 @@ pub const LINEARIZATION_MIN_STEP: f32 = 0.002;
 ///   t=0 and t=1.
 /// - Then we test if splitting the line segment into 2 at the midpoint
 ///   significantly deviates from the original line segment.
+///   - The assumption is the largest deviation occurs at the midpoint.
 /// - If it does, we recursively try splitting each half of the segment until we
 ///   have a good enough result.
 ///
 /// So if the curve is sufficiently non-linear that it periodically repeats the
 /// same point, then this won't work very well.
-pub fn linearize_midpoint_bisection<C: Curve>(
+pub fn linearize_midpoint_bisection<C: Curve2>(
     curve: &C,
     max_error: f32,
     output: &mut Vec<Vector2f>,

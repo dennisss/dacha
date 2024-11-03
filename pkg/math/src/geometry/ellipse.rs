@@ -1,7 +1,8 @@
-use math::matrix::{vec2f, Matrix3f, Vector2f};
+use alloc::vec::Vec;
 
-use crate::canvas::curve::Curve;
-use crate::transforms::transform2f;
+use crate::geometry::curve::Curve2;
+use crate::geometry::transforms::transform2f;
+use crate::matrix::{vec2f, Matrix3f, Vector2f};
 
 #[derive(Debug, Clone)]
 pub struct Ellipse {
@@ -21,7 +22,7 @@ pub struct Ellipse {
     pub delta_angle: f32,
 }
 
-impl Curve for Ellipse {
+impl Curve2 for Ellipse {
     fn transform(&self, mat: &Matrix3f) -> Self {
         let center = transform2f(mat, &self.center);
 
@@ -42,7 +43,7 @@ impl Curve for Ellipse {
     fn linearize(&self, max_error: f32, output: &mut Vec<Vector2f>) {
         // Assuming the delta angle is <= 2*PI, the midpoint bisection method used by
         // this should always accurately estimate the max error.
-        crate::canvas::linearize::linearize_midpoint_bisection(self, max_error, output)
+        crate::geometry::linearize::linearize_midpoint_bisection(self, max_error, output)
     }
 }
 
