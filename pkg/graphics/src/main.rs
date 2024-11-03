@@ -208,7 +208,6 @@ async fn main() -> Result<()> {
     let f = run();
     // let f = graphics::font::open_font();
     // let f = graphics::ui::examples::run();
-    // let f = graphics::point_picker::run();
     // let f = graphics::opengl::run();
 
     f.await

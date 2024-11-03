@@ -157,12 +157,19 @@ impl OpenGLCanvasPath {
     }
 
     fn recompute(&mut self, canvas: &OpenGLCanvas) -> &mut CachedPathData {
-        let mut transform = canvas.current_transform();
+        let transform = canvas.current_transform();
+        let max_error = LINEARIZATION_ERROR_THRESHOLD;
+
+        let mut path = self.path.clone();
+        path.transform(transform);
 
         // TODO: Deduplicate the
         let ((vertices, path_starts), fill_rule) = match self.usage {
-            PathUsage::Fill => (self.path.linearize(transform), FillRule::NonZero),
-            PathUsage::Stroke { width } => (self.path.stroke(width, transform), FillRule::EvenOdd),
+            PathUsage::Fill => (path.linearize(max_error), FillRule::NonZero),
+            PathUsage::Stroke { width } => {
+                let width = width * transform[(0, 0)];
+                (path.stroke(width, max_error), FillRule::EvenOdd)
+            }
         };
 
         self.data.insert(CachedPathData {
@@ -220,21 +227,7 @@ impl OpenGLCanvasPath {
         for i in 0..(path_starts.len() - 1) {
             let start_i = path_starts[i];
             let end_i = path_starts[i + 1];
-
-            // TODO: Verify has at least 3 vertices.
-            let first_edge = half_edges.add_first_edge(
-                vertices[start_i].clone(),
-                vertices[start_i + 1].clone(),
-                (),
-            );
-            let mut next_edge = half_edges.add_next_edge(first_edge, vertices[start_i + 2].clone());
-            if start_i + 3 < end_i {
-                for v in &vertices[(start_i + 3)..end_i] {
-                    next_edge = half_edges.add_next_edge(next_edge, v.clone());
-                }
-            }
-
-            half_edges.add_close_edge(next_edge, first_edge);
+            half_edges.add_face((), vertices[start_i..end_i].iter().cloned());
         }
 
         half_edges.repair();

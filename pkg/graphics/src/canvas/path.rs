@@ -1,4 +1,7 @@
+use std::f32::consts::PI;
+
 use common::iter::PairIter;
+use math::geometry::bounding_box::{BoundingBox, BoundingBoxBuilder};
 use math::geometry::line_segment::LineSegment2;
 use math::matrix::{vec2f, Matrix3f, Vector2f};
 
@@ -8,7 +11,7 @@ use crate::canvas::ellipse::Ellipse;
 use crate::transforms::transform2f;
 
 // TODO: Increase if we can use more anti-aliasing.
-const LINEARIZATION_ERROR_THRESHOLD: f32 = 0.5;
+pub const LINEARIZATION_ERROR_THRESHOLD: f32 = 0.5;
 
 #[derive(Debug, Clone)]
 pub struct Path {
@@ -24,8 +27,11 @@ impl Path {
         &self.sub_paths
     }
 
-    /// NOTE: The result of this is only valid under the current transform.
-    pub fn linearize(&self, transform: &Matrix3f) -> (Vec<Vector2f>, Vec<usize>) {
+    /// Converts the path to a list of line segments.
+    ///
+    /// 'max_error' is the maximum allowed difference between the lines and
+    /// curves.
+    pub fn linearize(&self, max_error: f32) -> (Vec<Vector2f>, Vec<usize>) {
         let mut verts = vec![];
         let mut path_starts = vec![];
 
@@ -46,16 +52,14 @@ impl Path {
 
                 match segment {
                     PathSegment::Line(line) => {
-                        verts.push(transform2f(transform, &line.start));
-                        verts.push(transform2f(transform, &line.end))
+                        verts.push(line.start.clone());
+                        verts.push(line.end.clone());
                     }
                     PathSegment::BezierCurve(curve) => {
-                        let curve = curve.transform(transform);
-                        curve.linearize(LINEARIZATION_ERROR_THRESHOLD, &mut verts);
+                        curve.linearize(max_error, &mut verts);
                     }
                     PathSegment::Ellipse(curve) => {
-                        let curve = curve.transform(transform);
-                        curve.linearize(LINEARIZATION_ERROR_THRESHOLD, &mut verts);
+                        curve.linearize(max_error, &mut verts);
                     }
                 }
 
@@ -67,11 +71,8 @@ impl Path {
         (verts, path_starts)
     }
 
-    pub fn stroke(&self, width: f32, transform: &Matrix3f) -> (Vec<Vector2f>, Vec<usize>) {
-        let (verts, path_starts) = self.linearize(transform);
-
-        let scale = transform[(0, 0)];
-        let width_scaled = width * scale;
+    pub fn stroke(&self, width: f32, max_error: f32) -> (Vec<Vector2f>, Vec<usize>) {
+        let (verts, path_starts) = self.linearize(max_error);
 
         let dash_array = &[]; // &[5.0 * scale, 5.0 * scale];
 
@@ -82,7 +83,7 @@ impl Path {
             let dashes = crate::raster::stroke::stroke_split_dashes(&verts[*i..*j], dash_array);
 
             for dash in dashes {
-                let (points, starts) = crate::raster::stroke::stroke_poly(&dash, width_scaled);
+                let (points, starts) = crate::raster::stroke::stroke_poly(&dash, width);
 
                 stroke_vertices.extend(points);
                 stroke_path_starts.extend(starts);
@@ -131,6 +132,79 @@ impl Path {
         }
 
         error < 1e-3
+    }
+
+    /// Applies a transformation
+    pub fn transform(&mut self, transform: &Matrix3f) {
+        for sub_path in &mut self.sub_paths {
+            for segment in &mut sub_path.segments {
+                match segment {
+                    PathSegment::Line(segment) => {
+                        segment.start = transform2f(transform, &segment.start);
+                        segment.end = transform2f(transform, &segment.end);
+                    }
+                    PathSegment::Ellipse(ellipse) => {
+                        *ellipse = ellipse.transform(transform);
+                    }
+                    PathSegment::BezierCurve(curve) => {
+                        *curve = curve.transform(transform);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Adds an offset to all points in the path.
+    pub fn translate(&mut self, offset: Vector2f) {
+        for sub_path in &mut self.sub_paths {
+            for segment in &mut sub_path.segments {
+                match segment {
+                    PathSegment::Line(segment) => {
+                        segment.start += &offset;
+                        segment.end += &offset;
+                    }
+                    PathSegment::Ellipse(ellipse) => {
+                        ellipse.center += &offset;
+                    }
+                    PathSegment::BezierCurve(curve) => {
+                        for pt in &mut curve.points {
+                            *pt += &offset;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// NOTE: This assumes that the path won't be transformed in the future
+    pub fn bbox_to(&self, bbox: &mut BoundingBoxBuilder<typenum::U2>) {
+        for sub_path in &self.sub_paths {
+            for segment in &sub_path.segments {
+                match segment {
+                    PathSegment::Line(segment) => {
+                        bbox.update(&segment.start);
+                        bbox.update(&segment.end);
+                    }
+                    PathSegment::Ellipse(ellipse) => {
+                        bbox.update(&ellipse.evaluate_at_angle(ellipse.start_angle));
+                        bbox.update(
+                            &ellipse.evaluate_at_angle(ellipse.start_angle + ellipse.delta_angle),
+                        );
+
+                        for angle in [0.0, PI / 2.0, PI, 3.0 * PI / 2.0, 2.0 * PI] {
+                            if ellipse.contains_angle(angle) {
+                                bbox.update(&ellipse.evaluate_at_angle(angle));
+                            }
+                        }
+                    }
+                    PathSegment::BezierCurve(curve) => {
+                        for pt in &curve.points {
+                            bbox.update(pt);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

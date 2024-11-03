@@ -603,6 +603,18 @@ impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
 impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
     MatrixBase<T, R, C, D>
 {
+    pub fn norm(&self) -> T {
+        self.norm_squared().sqrt()
+    }
+
+    pub fn is_normalized(&self) -> bool {
+        (T::one() - self.norm_squared()).approx_zero()
+    }
+}
+
+impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
+    MatrixBase<T, R, C, D>
+{
     pub fn is_symmetric(&self) -> bool {
         if !self.is_square() {
             // TODO: Can it be symmetric when not square?
@@ -678,10 +690,6 @@ impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
         out
     }
 
-    pub fn norm(&self) -> T {
-        self.norm_squared().sqrt()
-    }
-
     // TODO: Must optionally return if it doesn't have an inverse
     pub fn inverse(&self) -> MatrixNew<T, R, C>
     where
@@ -735,10 +743,6 @@ impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
             m.diagonal_product()
         }
     }
-
-    pub fn is_normalized(&self) -> bool {
-        (T::one() - self.norm_squared()).approx_zero()
-    }
 }
 
 impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
@@ -765,7 +769,15 @@ impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>
         }
         self
     }
+}
 
+impl<
+        T: ScalarElementType + ErrorEpsilon,
+        R: Dimension,
+        C: Dimension,
+        D: StorageTypeMut<T, R, C>,
+    > MatrixBase<T, R, C, D>
+{
     pub fn swap_rows(&mut self, i1: usize, i2: usize) {
         if i1 == i2 {
             return;

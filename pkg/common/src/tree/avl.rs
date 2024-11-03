@@ -44,6 +44,20 @@ impl<T, A: TreeAttribute, C: Comparator<T, T>> AVLTree<T, A, C> {
     /// the tree and assumes that the user knows what they are doing.
     pub fn change_comparator(&mut self, comparator: C) {
         self.comparator = comparator;
+
+        /*
+        {
+            let mut iter = self.iter();
+            let mut last_value = None;
+            while let Some(v) = iter.next() {
+                if let Some(last_value) = last_value.take() {
+                    assert_eq!(self.comparator.compare(last_value, v), Ordering::Less);
+                }
+
+                last_value = Some(v);
+            }
+        }
+        */
     }
 
     /// Helper for allocating a new buffer for storing a chain of node pointers

@@ -10,14 +10,14 @@ use common::InRange;
 use crate::geometry::line::Line2;
 use crate::geometry::quantized::PseudoAngle;
 use crate::matrix::cwise_binary_ops::{CwiseMax, CwiseMin};
-use crate::matrix::element::{ElementType, FloatElementType};
+use crate::matrix::element::{ElementType, ErrorEpsilon, FloatElementType, ScalarElementType};
 use crate::matrix::{vec2f, Matrix2f, MatrixStatic, Vector2};
 
 /// Bounded 2-dimensional line segment defined by two endpoints which are
 /// connected. The two endpoints are inclusive (considered to be part of the
 /// segment).
 #[derive(Debug, PartialEq, Clone)]
-pub struct LineSegment2<T: FloatElementType> {
+pub struct LineSegment2<T: ScalarElementType> {
     pub start: Vector2<T>,
     pub end: Vector2<T>,
 }
@@ -35,7 +35,9 @@ impl<T: FloatElementType> LineSegment2<T> {
         let max = (&self.start).cwise_max(&self.end) + (max_error / T::from(2.));
         point >= &min && point <= &max
     }
+}
 
+impl<T: ScalarElementType + ErrorEpsilon> LineSegment2<T> {
     /// Computes the intersection point of the current line segment with
     /// another.
     ///
@@ -85,9 +87,6 @@ impl<T: FloatElementType> LineSegment2<T> {
     /// TODO: what should this return if there are overlapping segments?
     /// ^ Should emit the any endpoints of either line that are also present on
     /// the other line.
-    ///
-    /// TODO: For each intersection, we also want to know which segments where
-    /// involved (one or more segment indices)
     ///
     /// Returns all intersection points between the segments in order of
     /// increasing y then increasing x.
@@ -168,8 +167,9 @@ impl<T: FloatElementType> LineSegment2<T> {
                 max_error,
             };
 
-            let mut existing_segments = vec![];
-            {
+            let existing_segments = {
+                let mut existing_segments = vec![];
+
                 let mut iter = sweep_status.lower_bound_by(&event_point, &new_comparator);
 
                 while let Some(segment) = iter.next().cloned() {
@@ -179,7 +179,9 @@ impl<T: FloatElementType> LineSegment2<T> {
 
                     existing_segments.push(segment);
                 }
-            }
+
+                existing_segments
+            };
 
             // Remove all segments that we touched (will be re-inserted in the
             // next step).
@@ -190,6 +192,55 @@ impl<T: FloatElementType> LineSegment2<T> {
                 assert_eq!(v.start, segments[segment].start);
                 assert_eq!(v.end, segments[segment].end);
             }
+
+            // Debugging only sanity check that changing the comparator is a no-op.
+            /*
+            {
+                let mut iter = sweep_status.iter();
+                let mut last_value = None;
+                while let Some(v) = iter.next() {
+                    if *v == 677 || *v == 300 {
+                        println!(
+                            "X{}: {:?}",
+                            *v,
+                            sweep_line_x(&segments[*v], &event_point, max_error)
+                        );
+                    }
+
+                    if let Some(last_value) = last_value.take() {
+                        if new_comparator.compare(last_value, v) != Ordering::Less {
+                            println!("{} , {}", *last_value, *v);
+
+                            println!(
+                                "I: {:?}",
+                                segments[*last_value].intersect(&segments[*v], max_error)
+                            );
+
+                            {
+                                let s1 = &segments[*v];
+                                let s2 = &segments[*last_value];
+
+                                let current_line = Line2::from_points(&s1.start, &s1.end);
+                                let other_line = Line2::from_points(&s2.start, &s2.end);
+
+                                // TODO: Pass some error threshold into this.
+                                let mut point = current_line.intersect(&other_line);
+
+                                println!("IR: {:?}", point);
+                            }
+                            /*
+
+
+                            */
+
+                            panic!("{:?} !< {:?}", segments[*last_value], segments[*v]);
+                        }
+                    }
+
+                    last_value = Some(v);
+                }
+            }
+            */
 
             // We should have removed all discrepancies between the new and old sweep lines
             // in the above loop so we can now completely switch to comparing using the new
@@ -311,13 +362,13 @@ impl<T: FloatElementType> LineSegment2<T> {
 
             // Report an intersection
             if upper_segments.len() + existing_segments.len() > 1 {
-                let mut segments = vec![];
-                segments.extend_from_slice(&upper_segments);
-                segments.extend_from_slice(&existing_segments);
+                let mut segments_indices = vec![];
+                segments_indices.extend_from_slice(&upper_segments);
+                segments_indices.extend_from_slice(&existing_segments);
 
                 output.push(Intersection2 {
                     point: event_point.clone(),
-                    segments,
+                    segments: segments_indices,
                     left_neighbor: intersection_left_neighbor,
                     right_neighbor: intersection_right_neighbor,
                 });
@@ -354,7 +405,7 @@ mod intersections {
 
     pub type LineSegmentIndex = usize;
 
-    pub fn upper_lower_endpoints<T: FloatElementType>(
+    pub fn upper_lower_endpoints<T: ScalarElementType + ErrorEpsilon>(
         segment: &LineSegment2<T>,
         max_error: T,
     ) -> (Vector2<T>, Vector2<T>) {
@@ -368,13 +419,13 @@ mod intersections {
     }
 
     #[derive(Debug, Clone)]
-    pub struct LineSweepComparator<'a, T: FloatElementType> {
+    pub struct LineSweepComparator<'a, T: ScalarElementType + ErrorEpsilon> {
         pub segments: &'a [LineSegment2<T>],
         pub event_point: Vector2<T>,
         pub max_error: T,
     }
 
-    impl<'a, T: FloatElementType>
+    impl<'a, T: ScalarElementType + ErrorEpsilon>
         common::tree::comparator::Comparator<LineSegmentIndex, LineSegmentIndex>
         for LineSweepComparator<'a, T>
     {
@@ -399,7 +450,8 @@ mod intersections {
     // This form of the comparator is used for finding all intersections at event
     // points so needs to compare with a threshold as intersections with each line
     // segment are in-exact.
-    impl<'a, T: FloatElementType> common::tree::comparator::Comparator<LineSegmentIndex, Vector2<T>>
+    impl<'a, T: ScalarElementType + ErrorEpsilon>
+        common::tree::comparator::Comparator<LineSegmentIndex, Vector2<T>>
         for LineSweepComparator<'a, T>
     {
         fn compare(&self, segment: &LineSegmentIndex, point: &Vector2<T>) -> Ordering {
@@ -417,13 +469,13 @@ mod intersections {
     ///
     /// In the case that 'segment' is horizontal, we return the closest point on
     /// the segment to 'point.x()'.
-    pub fn sweep_line_x<T: FloatElementType>(
+    pub fn sweep_line_x<T: ScalarElementType + ErrorEpsilon>(
         segment: &LineSegment2<T>,
         point: &Vector2<T>,
         max_error: T,
     ) -> T {
         let x = {
-            if (segment.end.y() - segment.start.y()).abs() < max_error {
+            if (segment.end.y() - segment.start.y()).abs() <= max_error {
                 point.x()
             } else {
                 let t = (point.y() - segment.start.y()) / (segment.end.y() - segment.start.y());
@@ -436,7 +488,7 @@ mod intersections {
         x.min(max_x).max(min_x)
     }
 
-    pub fn find_intersection_event<T: FloatElementType>(
+    pub fn find_intersection_event<T: ScalarElementType + ErrorEpsilon>(
         a: &LineSegment2<T>,
         b: &LineSegment2<T>,
         event_point: &Vector2<T>,
@@ -463,7 +515,7 @@ mod intersections {
     //
     // TODO: If two distinct horizontal lines are passed, ensure that we have a
     // commutative behavior.
-    pub fn compare_segments_at_sweep_line<T: FloatElementType>(
+    pub fn compare_segments_at_sweep_line<T: ScalarElementType + ErrorEpsilon>(
         a: &LineSegment2<T>,
         b: &LineSegment2<T>,
         point: &Vector2<T>,
@@ -476,17 +528,19 @@ mod intersections {
         let a_x = sweep_line_x(a, point, max_error);
         let b_x = sweep_line_x(b, point, max_error);
 
+        // println!("X S: {:?} ; {:?}", a_x, b_x);
+
         let normalize_direction = |v: &mut Vector2<T>| {
-            if v.y().abs() < max_error {
+            if v.y().abs() <= max_error {
                 // Normalizing direction of a horizontal line.
                 // Avoid small negative y offsets.
                 v[1] = T::zero();
                 if v.x() > T::zero() {
-                    *v *= T::from(-1.);
+                    *v *= T::from(-1);
                 }
             } else {
                 if v.y() < T::zero() {
-                    *v *= T::from(-1.);
+                    *v *= T::from(-1);
                 }
             }
         };
@@ -529,7 +583,7 @@ mod intersections {
     }
 
     #[derive(Debug)]
-    pub struct Event<T: FloatElementType> {
+    pub struct Event<T: ScalarElementType> {
         pub point: Vector2<T>,
 
         /// If this event is triggered at the upper endpoint of a line segment,
@@ -537,7 +591,7 @@ mod intersections {
         pub segment: Option<LineSegmentIndex>,
     }
 
-    pub struct EventComparator<T: FloatElementType> {
+    pub struct EventComparator<T: ScalarElementType> {
         pub max_error: T,
     }
 
@@ -545,7 +599,7 @@ mod intersections {
     // TODO: Given that only store there are no issues with using threshold
     // comparison here while only storing one segment per event (if a == b and b ==
     // c, then that doesn't imply that a == c).
-    impl<T: FloatElementType> Comparator<Event<T>> for EventComparator<T> {
+    impl<T: ScalarElementType> Comparator<Event<T>> for EventComparator<T> {
         fn compare(&self, a: &Event<T>, b: &Event<T>) -> Ordering {
             compare_points(&a.point, &b.point, self.max_error)
         }
@@ -556,7 +610,7 @@ mod intersections {
 ///
 /// The 'smallest' points have the highest y values. At the same y value, the
 /// smaller x value is first.
-pub fn compare_points<T: FloatElementType + PartialOrd>(
+pub fn compare_points<T: ScalarElementType + PartialOrd>(
     a: &Vector2<T>,
     b: &Vector2<T>,
     max_error: T,
@@ -604,7 +658,7 @@ pub fn compare_points_x_then_y(a: &Vector2<i64>, b: &Vector2<i64>) -> Ordering {
 
 /// A point intersection between two or more line segments.
 #[derive(Debug, PartialEq, Clone)]
-pub struct Intersection2<T: FloatElementType> {
+pub struct Intersection2<T: ScalarElementType> {
     pub point: Vector2<T>,
 
     /// Index of each segment which contains the intersection point. Will
@@ -1231,6 +1285,63 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn interestions_example1() {
+        let segment_data: &'static [(f32, f32, f32, f32)] = &[
+            (0.0, 49.05, 0.942, 39.481),
+            (0.942, 39.481, 3.734, 30.28),
+            (3.734, 30.28, 8.266, 21.799),
+            (8.266, 21.799, 14.367, 14.366),
+            (14.367, 14.366, 21.799, 8.266),
+            (21.799, 8.266, 30.28, 3.734),
+            (30.28, 3.734, 39.481, 0.942),
+            (39.481, 0.942, 49.05, 0.0),
+            (49.05, 0.0, 58.62, 0.942),
+            (58.62, 0.942, 67.821, 3.734),
+            (67.821, 3.734, 76.301, 8.266),
+            (76.301, 8.266, 83.734, 14.367),
+            (83.734, 14.367, 89.834, 21.799),
+            (89.834, 21.799, 94.367, 30.28),
+            (94.367, 30.28, 97.158, 39.481),
+            (97.158, 39.481, 98.101, 49.05),
+            (98.101, 49.05, 97.158, 58.62),
+            (97.158, 58.62, 94.367, 67.821),
+            (94.367, 67.821, 89.834, 76.301),
+            (89.834, 76.301, 83.734, 83.734),
+            (83.734, 83.734, 76.301, 89.834),
+            (76.301, 89.834, 67.821, 94.367),
+            (67.821, 94.367, 58.62, 97.158),
+            (58.62, 97.158, 49.05, 98.101),
+            (49.05, 98.101, 39.481, 97.158),
+            (39.481, 97.158, 30.28, 94.367),
+            (30.28, 94.367, 21.799, 89.834),
+            (21.799, 89.834, 14.366, 83.734),
+            (14.366, 83.734, 8.266, 76.301),
+            (8.266, 76.301, 3.734, 67.821),
+            (3.734, 67.821, 0.942, 58.62),
+            (0.942, 58.62, 0.0, 49.05),
+        ];
+
+        let mut segments = vec![];
+        for (a, b, c, d) in segment_data.iter().cloned() {
+            segments.push(LineSegment2 {
+                start: Vector2::from_slice(&[a, b]),
+                end: Vector2::from_slice(&[c, d]),
+            })
+        }
+
+        let inter1 = LineSegment2::intersections_slow(&segments, 0.0001);
+
+        let inter2 = LineSegment2::intersections(&segments, 0.0001);
+
+        let mut n = 0;
+        for i in &inter2 {
+            n += i.segments.len() - 1;
+        }
+
+        assert_eq!(inter1.len(), n);
     }
 
     // TODO: Also test that colinear lines that don't overlap don't trigger

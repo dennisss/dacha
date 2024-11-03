@@ -33,7 +33,7 @@ impl<T: PartialOrd + ElementType, R: Dimension, C: Dimension, S: StorageType<T, 
     for MatrixBase<T, R, C, S>
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let mut last_ordering = None;
+        let mut last_ordering: Option<Ordering> = None;
         for i in 0..self.rows() {
             for j in 0..self.cols() {
                 let o = match self[(i, j)].partial_cmp(&other[(i, j)]) {
@@ -41,10 +41,17 @@ impl<T: PartialOrd + ElementType, R: Dimension, C: Dimension, S: StorageType<T, 
                     None => return None,
                 };
 
-                if last_ordering.is_none() {
+                if let Some(last_ordering) = &mut last_ordering {
+                    if last_ordering.is_eq() {
+                        *last_ordering = o;
+                    } else if o.is_eq() {
+                        // Keep old ordering
+                    } else if *last_ordering != o {
+                        // Some elements are '>' and some elements are '<'.
+                        return None;
+                    }
+                } else {
                     last_ordering = Some(o);
-                } else if last_ordering != Some(o) {
-                    return None;
                 }
             }
         }

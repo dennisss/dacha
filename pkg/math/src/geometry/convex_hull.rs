@@ -7,7 +7,7 @@ use common::errors::*;
 use crate::matrix::element::{ElementType, ScalarElementType};
 use crate::matrix::{vec2f, Vector2, Vector2f, Vector3, Vector3f};
 
-/// Given a set of points, returns the points which represent the convex full of
+/// Given a set of points, returns the points which represent the convex hull of
 /// that set. The returned points are ordered in clockwise order.
 ///
 /// Runtime is 'O(n log n)' for 'n' points.

@@ -117,11 +117,19 @@ impl RasterCanvasPath {
     }
 
     fn recompute(&mut self, canvas: &RasterCanvas) -> &mut CachedPathData {
-        let mut transform = canvas.current_transform();
+        let transform = canvas.current_transform();
+        let max_error = LINEARIZATION_ERROR_THRESHOLD;
 
-        let (vertices, path_starts) = match self.usage {
-            PathUsage::Fill => self.path.linearize(transform),
-            PathUsage::Stroke { width } => self.path.stroke(width, transform),
+        let mut path = self.path.clone();
+        path.transform(transform);
+
+        // TODO: Deduplicate the
+        let ((vertices, path_starts), fill_rule) = match self.usage {
+            PathUsage::Fill => (path.linearize(max_error), FillRule::NonZero),
+            PathUsage::Stroke { width } => {
+                let width = width * transform[(0, 0)];
+                (path.stroke(width, max_error), FillRule::EvenOdd)
+            }
         };
 
         self.data.insert(CachedPathData {

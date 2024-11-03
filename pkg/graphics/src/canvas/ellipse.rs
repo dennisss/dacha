@@ -36,12 +36,27 @@ impl Curve for Ellipse {
 
     fn evaluate(&self, t: f32) -> Vector2f {
         let angle = self.start_angle + (t * self.delta_angle);
-        &self.center + (self.x_axis.clone() * angle.cos()) + (self.y_axis.clone() * angle.sin())
+        self.evaluate_at_angle(angle)
     }
 
     fn linearize(&self, max_error: f32, output: &mut Vec<Vector2f>) {
         // Assuming the delta angle is <= 2*PI, the midpoint bisection method used by
         // this should always accurately estimate the max error.
         crate::canvas::linearize::linearize_midpoint_bisection(self, max_error, output)
+    }
+}
+
+impl Ellipse {
+    pub fn contains_angle(&self, angle: f32) -> bool {
+        if self.delta_angle >= 0.0 {
+            angle >= self.start_angle && angle <= self.start_angle + self.delta_angle
+        } else {
+            angle <= self.start_angle && angle >= self.start_angle + self.delta_angle
+        }
+    }
+
+    /// Assuming the ellipse exists at the given angle, evaluates the point.
+    pub fn evaluate_at_angle(&self, angle: f32) -> Vector2f {
+        &self.center + (self.x_axis.clone() * angle.cos()) + (self.y_axis.clone() * angle.sin())
     }
 }

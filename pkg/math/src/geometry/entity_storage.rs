@@ -1,19 +1,24 @@
 use core::cmp::{Eq, PartialEq};
+use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
 use core::ops::{Add, Deref, DerefMut, Index, IndexMut};
 use std::collections::HashMap;
 
+use common::hash::FastHasherBuilder;
+
 #[derive(Debug, Clone)]
 pub struct EntityStorage<IdT, T> {
-    values: HashMap<Id<IdT>, T>,
+    values: HashMap<Id<IdT>, T, FastHasherBuilder>,
     pub(super) next_id: Id<IdT>,
 }
+
+pub type EntityStorageIter<'a, IdT, T> = std::collections::hash_map::Iter<'a, IdT, T>;
 
 impl<IdT: Clone + Copy, T> EntityStorage<IdT, T> {
     pub fn new() -> Self {
         Self {
-            values: HashMap::new(),
+            values: HashMap::default(),
             next_id: Id::zero(),
         }
     }
@@ -40,7 +45,7 @@ impl<IdT: Hash + PartialEq + Eq, T> IndexMut<Id<IdT>> for EntityStorage<IdT, T> 
 }
 
 impl<IdT, T> Deref for EntityStorage<IdT, T> {
-    type Target = HashMap<Id<IdT>, T>;
+    type Target = HashMap<Id<IdT>, T, FastHasherBuilder>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
@@ -66,8 +71,14 @@ pub struct EdgeTag {
 pub type FaceId = Id<FaceTag>;
 pub type EdgeId = Id<EdgeTag>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id<T>(usize, PhantomData<T>);
+
+impl<T> Debug for Id<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Id({})", self.0)
+    }
+}
 
 impl<T> Id<T> {
     pub fn zero() -> Self {

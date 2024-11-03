@@ -12,7 +12,7 @@ pub trait ErrorEpsilon: AbsoluteValue + PartialOrd + Copy {
     where
         Self: Sized,
     {
-        self.abs() < Self::error_epsilon()
+        self.abs() <= Self::error_epsilon()
     }
 }
 
@@ -24,7 +24,7 @@ impl ErrorEpsilon for f64 {
 
 impl ErrorEpsilon for f32 {
     fn error_epsilon() -> Self {
-        1e-12
+        1e-11
     }
 }
 
@@ -44,6 +44,7 @@ pub trait ElementType = Copy + Default + Zero;
 /// To simplify trait implementations, most trait implementations for numeric
 /// calculations require these traits.
 pub trait ScalarElementType = ElementType
+    + From<i16>
     + Number
     + AbsoluteValue
     + PartialOrd

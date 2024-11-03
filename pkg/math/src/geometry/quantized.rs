@@ -1,7 +1,7 @@
 use core::ops::Deref;
 use core::{cmp::Ordering, ops::Sub};
 
-use crate::matrix::element::FloatElementType;
+use crate::matrix::element::{FloatElementType, ScalarElementType};
 use crate::matrix::Vector2i64;
 use crate::number::Cast;
 use crate::number::Float;
@@ -26,6 +26,8 @@ const SCALE: f32 = 1000.0;
 //     inner: Vector2<i64>,
 // }
 
+// TODO: Ensure this is never used on integer types since division will be very
+// lossy.
 pub trait PseudoAngle {
     type Output;
 
@@ -38,6 +40,7 @@ pub trait PseudoAngle {
     fn pseudo_angle(&self) -> Self::Output;
 }
 
+/*
 impl PseudoAngle for Vector2i64 {
     type Output = Rational;
 
@@ -56,16 +59,17 @@ impl PseudoAngle for Vector2i64 {
         }
     }
 }
+*/
 
-impl<T: FloatElementType> PseudoAngle for Vector2<T> {
+impl<T: ScalarElementType> PseudoAngle for Vector2<T> {
     type Output = T;
 
     fn pseudo_angle(&self) -> Self::Output {
         let p = self.x() / (self.x().abs() + self.y().abs());
         if self.y() < T::zero() {
-            T::from(3i8) + p
+            T::from(3) + p
         } else {
-            T::from(1i8) - p
+            T::from(1) - p
         }
     }
 }
