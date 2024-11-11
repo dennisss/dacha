@@ -84,8 +84,9 @@ impl Path {
             for dash in dashes {
                 let (points, starts) = crate::raster::stroke::stroke_poly(&dash, width);
 
+                let i = stroke_vertices.len();
                 stroke_vertices.extend(points);
-                stroke_path_starts.extend(starts);
+                stroke_path_starts.extend(starts.into_iter().map(|v| v + i));
             }
         }
 

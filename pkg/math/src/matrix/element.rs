@@ -1,5 +1,5 @@
 use core::fmt::{Debug, Display};
-use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use crate::number::{AbsoluteValue, Float, Max, Min, Number, One, Zero};
 
@@ -60,7 +60,8 @@ pub trait ScalarElementType = ElementType
     + Div<Output = Self>
     + DivAssign
     + Debug
-    + Display;
+    + Display
+    + Neg<Output = Self>;
 
 pub trait FloatElementType = ScalarElementType + Float + ErrorEpsilon;
 

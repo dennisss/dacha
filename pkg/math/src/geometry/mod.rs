@@ -9,5 +9,6 @@ pub mod line;
 pub mod line_segment;
 pub mod linearize;
 pub mod make_monotone;
+pub mod offsetting;
 pub mod quantized;
 pub mod transforms;

@@ -135,9 +135,12 @@ impl_num_type!(f64, I);
 
 pub trait CastTo = Sized + Cast<i8> + Cast<u8> + Cast<i32> + Cast<i64> where i64: Cast<Self>;
 
-pub trait Float: From<i8> + From<i16> + From<f32> + CastTo {
-    fn sqrt(self) -> Self;
+pub trait Round {
     fn round(self) -> Self;
+}
+
+pub trait Float: From<i8> + From<i16> + From<f32> + CastTo + Round {
+    fn sqrt(self) -> Self;
 }
 
 macro_rules! impl_float_type {
@@ -146,7 +149,9 @@ macro_rules! impl_float_type {
             fn sqrt(self) -> Self {
                 <$name>::sqrt(self)
             }
+        }
 
+        impl Round for $name {
             fn round(self) -> Self {
                 <$name>::round(self)
             }

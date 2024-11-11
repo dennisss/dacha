@@ -25,8 +25,8 @@ impl<T: ScalarElementType + ErrorEpsilon> Line2<T> {
         }
     }
 
-    /// Returns a vector which is pointing in a perpendicular direction to this
-    /// line (when starting at the same base point).
+    /// Returns a vector which is pointing in a perpendicular direction (left)
+    /// to this line (when starting at the same base point).
     pub fn perp(&self) -> Vector2<T> {
         Vector2::from_slice(&[T::from(-1) * self.dir.y(), self.dir.x()])
     }
@@ -44,12 +44,38 @@ impl<T: ScalarElementType + ErrorEpsilon> Line2<T> {
 
         let b = &other.base - &self.base;
 
-        if A.determinant().abs().approx_zero() {
-            None
-        } else {
-            let x = A.inverse() * b;
-            Some(self.evaluate(x[0]))
+        let A_inv = match A.checked_inverse_2x2() {
+            Some(x) => x,
+            None => return None,
+        };
+
+        let x = A_inv * b;
+
+        Some(self.evaluate(x[0]))
+    }
+
+    /// TODO: Dedup with the other one.
+    pub fn intersect_segments_exact(&self, other: &Self) -> Option<Vector2<T>> {
+        let mut A = Matrix2::zero();
+        A.block_mut(0, 0).copy_from(&self.dir);
+        A.block_mut(0, 1).copy_from(&other.dir);
+
+        let b = &other.base - &self.base;
+
+        let A_inv = match A.checked_inverse_2x2() {
+            Some(x) => x,
+            None => return None,
+        };
+
+        let mut x = A_inv * b;
+        x[1] *= -T::one();
+
+        // NOTE: No error tolerance here so only suitable for exact arithmetic.
+        if x[0] < T::zero() || x[0] > T::one() || x[1] < T::zero() || x[1] > T::one() {
+            return None;
         }
+
+        Some(self.evaluate(x[0]))
     }
 
     pub fn standard_form_coeffs(&self) -> (T, T, T) {

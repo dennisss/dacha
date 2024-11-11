@@ -113,6 +113,7 @@ members = [
 	"pkg/cnc/tools",
 	"pkg/cnc/monitor",
 	"pkg/cnc/monitor/proto",
+	"pkg/cnc/gerber",
 	"pkg/testing",
 	"pkg/perf",
 	"pkg/perf_util",

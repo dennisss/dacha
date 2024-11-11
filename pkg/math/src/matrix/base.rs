@@ -9,7 +9,7 @@ use crate::matrix::cwise_binary_ops::CwiseDivAssign;
 use crate::matrix::dimension::*;
 use crate::matrix::element::*;
 use crate::matrix::storage::*;
-use crate::number::Cast;
+use crate::number::{Cast, Round};
 use crate::number::{Min, One, Zero};
 
 /*
@@ -181,6 +181,21 @@ impl<T: ElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>> Matrix
         let mut out = MatrixNew::<Y, R, C>::new_with_shape(self.rows(), self.cols());
         for i in 0..self.len() {
             out[i] = self[i].cast();
+        }
+        out
+    }
+}
+
+impl<T: ElementType + Round, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
+    MatrixBase<T, R, C, D>
+{
+    pub fn round(&self) -> MatrixNew<T, R, C>
+    where
+        MatrixNewStorage: NewStorage<T, R, C>,
+    {
+        let mut out = MatrixNew::<T, R, C>::new_with_shape(self.rows(), self.cols());
+        for i in 0..self.len() {
+            out[i] = self[i].round();
         }
         out
     }
@@ -742,6 +757,29 @@ impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: Storage
             m.gaussian_elimination();
             m.diagonal_product()
         }
+    }
+}
+
+impl<T: ScalarElementType + ErrorEpsilon, D: StorageType<T, U2, U2>> MatrixBase<T, U2, U2, D> {
+    pub fn checked_inverse_2x2(&self) -> Option<MatrixNew<T, U2, U2>>
+    where
+        MatrixNewStorage: NewStorage<T, U2, U2>,
+    {
+        let det = self.determinant();
+        if det.approx_zero() {
+            return None;
+        }
+
+        let det_inv = T::one() / det;
+
+        Some(
+            MatrixBase::from_slice(&[
+                self[(1, 1)],
+                T::zero() - self[(0, 1)],
+                T::zero() - self[(1, 0)],
+                self[(0, 0)],
+            ]) * det_inv,
+        )
     }
 }
 

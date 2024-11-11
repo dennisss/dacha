@@ -1,11 +1,11 @@
 use core::cmp::Ordering;
 use core::convert::From;
 use core::fmt::{Debug, Display};
-use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use crate::gcd::gcd;
 use crate::matrix::element::ErrorEpsilon;
-use crate::number::{AbsoluteValue, Cast, Number, One, Zero};
+use crate::number::{AbsoluteValue, Cast, Number, One, Round, Zero};
 
 /// Any number represented as a fraction of two integers.
 ///
@@ -20,7 +20,7 @@ pub struct Rational {
 
 impl Default for Rational {
     fn default() -> Self {
-        Self::new(0, 1)
+        Self { upper: 0, lower: 1 }
     }
 }
 
@@ -30,7 +30,7 @@ impl Zero for Rational {
     }
 
     fn zero() -> Self {
-        Self::new(0, 1)
+        Self { upper: 0, lower: 1 }
     }
 }
 
@@ -40,7 +40,7 @@ impl One for Rational {
     }
 
     fn one() -> Self {
-        Self::new(1, 1)
+        Self { upper: 1, lower: 1 }
     }
 }
 
@@ -52,7 +52,21 @@ impl ErrorEpsilon for Rational {
 
 impl AbsoluteValue for Rational {
     fn abs(self) -> Self {
-        Self::new(self.upper.abs(), self.lower.abs())
+        Self {
+            upper: self.upper.abs(),
+            lower: self.lower,
+        }
+    }
+}
+
+impl Neg for Rational {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            upper: -self.upper,
+            lower: self.lower,
+        }
     }
 }
 
@@ -99,11 +113,30 @@ impl Rational {
             return (self.upper, other.upper, self.lower);
         }
 
+        fn exact_div(a: i64, b: i64) -> i64 {
+            assert_eq!(a % b, 0);
+            a / b
+        }
+
+        // Least common multiple
+        let lower_gcd = gcd(self.lower, other.lower);
+        let lcm = self.lower * exact_div(other.lower, lower_gcd);
+
         (
-            self.upper * other.lower,
-            other.upper * self.lower,
-            self.lower * other.lower,
+            self.upper * exact_div(lcm, self.lower),
+            other.upper * exact_div(lcm, other.lower),
+            lcm,
         )
+    }
+
+    fn common_lower_i128(self, other: Self) -> (i128, i128) {
+        if self.lower == other.lower {
+            return (self.upper as i128, other.upper as i128);
+        }
+
+        let a = (self.upper as i128) * (other.lower as i128);
+        let b = (other.upper as i128) * (self.lower as i128);
+        (a, b)
     }
 
     pub fn abs(self) -> Self {
@@ -122,6 +155,22 @@ impl Rational {
 
     pub fn to_f32(self) -> f32 {
         (self.upper as f32) / (self.lower as f32)
+    }
+}
+
+impl Round for Rational {
+    fn round(self) -> Self {
+        let mut v = self.clone();
+
+        let down = v.upper.abs() % v.lower;
+        let up = v.lower - down;
+        if down < up {
+            v.upper -= down * v.upper.signum();
+        } else {
+            v.upper += up * v.upper.signum();
+        }
+
+        v
     }
 }
 
@@ -221,7 +270,8 @@ impl DivAssign for Rational {
 
 impl Ord for Rational {
     fn cmp(&self, other: &Self) -> Ordering {
-        let (upper1, upper2, _) = self.common_lower(*other);
+        // let (upper1, upper2, _) = self.common_lower(*other);
+        let (upper1, upper2) = self.common_lower_i128(*other);
         upper1.cmp(&upper2)
     }
 }

@@ -32,7 +32,7 @@ pub trait PseudoAngle {
     type Output;
 
     /// Returns a value in the range [0, 4] which increases monotonically with
-    /// the clockwise angle of this vector from the +x axis.
+    /// the counter-clockwise angle of this vector from the +x axis.
     ///
     /// The [0, 4] range roughly corresponds to the range [0, 2*pi] radians.
     ///
@@ -86,6 +86,20 @@ pub fn dequantize2<T: FloatElementType>(v: Vector2i64) -> Vector2<T> {
         Cast::<T>::cast(v.x()) / T::from(SCALE),
         Cast::<T>::cast(v.y()) / T::from(SCALE),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{geometry::quantized::PseudoAngle, matrix::vec2f};
+
+    #[test]
+    fn pseudo_angle_test() {
+        println!("{}", vec2f(1.0, 0.0).pseudo_angle());
+        println!("{}", vec2f(1.0, 0.1).pseudo_angle());
+        println!("{}", vec2f(1.0, 1.0).pseudo_angle());
+        println!("{}", vec2f(0.0, 1.0).pseudo_angle());
+        println!("{}", vec2f(1.0, -0.1).pseudo_angle());
+    }
 }
 
 /*

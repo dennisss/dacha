@@ -48,6 +48,8 @@ impl<T: ScalarElementType + ErrorEpsilon> LineSegment2<T> {
         let other_line = Line2::from_points(&other.start, &other.end);
 
         // TODO: Pass some error threshold into this.
+// TODO: Need a better algorithm (like intersect_segments_exact) for this since
+        // it is likely to go out of bounds.
         let mut point = match current_line.intersect(&other_line) {
             Some(p) => p,
             None => {
@@ -80,13 +82,26 @@ impl<T: ScalarElementType + ErrorEpsilon> LineSegment2<T> {
         Some(point)
     }
 
+    fn intersect_exact(&self, other: &Self) -> Option<Vector2<T>> {
+        let current_line = Line2::from_points(&self.start, &self.end);
+        let other_line = Line2::from_points(&other.start, &other.end);
+
+        current_line.intersect_segments_exact(&other_line)
+    }
+
     /// Finds all intersections between a set of line segments.
+///
+    /// If two line segments are overlapping, this will report two points (each
+    /// will be an endpoint )
     ///
     /// Internally uses the Bentley-Ottmann algorithm.
-    ///
-    /// TODO: what should this return if there are overlapping segments?
-    /// ^ Should emit the any endpoints of either line that are also present on
-    /// the other line.
+    /// - In order for the algorithm to be stable, all internal comparisons and
+    ///   intersection point calculations are performed exactly.
+    /// - 'T' needs to be a type supporting exact arithmetic like 'Rational' for
+    ///   this to work.
+    /// - Note that with Rationals, arbitrary
+    ///   multiplication/addition/subtraction has a high change of overflow, so
+    ///   this function will internally try to avoid doing those operations.
     ///
     /// Returns all intersection points between the segments in order of
     /// increasing y then increasing x.
@@ -247,8 +262,7 @@ impl<T: ScalarElementType + ErrorEpsilon> LineSegment2<T> {
             // one.
             sweep_status.change_comparator(new_comparator.clone());
 
-            /// XXX: At this point, we can change the comparator.
-            // Of the segments we are about to insert, this tracks the left most and right
+                        // Of the segments we are about to insert, this tracks the left most and right
             // most ones.
             let mut first_last_segment = None;
 
@@ -475,14 +489,20 @@ mod intersections {
         max_error: T,
     ) -> T {
         let x = {
-            if (segment.end.y() - segment.start.y()).abs() <= max_error {
+            if segment.end.y() == segment.start.y() {
                 point.x()
             } else {
-                let t = (point.y() - segment.start.y()) / (segment.end.y() - segment.start.y());
+                let mut t = (point.y() - segment.start.y()) / (segment.end.y() - segment.start.y());
+
+                // 't' can end up being very large for near intersecting lines, so clamp to
+                // avoid overflowing arithmetic.
+                t = t.min(T::one()).max(T::zero());
+
                 t * (segment.end.x() - segment.start.x()) + segment.start.x()
             }
         };
 
+// TODO: This clamping is only necessary for the above 'point.x()' case.
         let min_x = segment.start.x().min(segment.end.x());
         let max_x = segment.start.x().max(segment.end.x());
         x.min(max_x).max(min_x)
@@ -494,7 +514,7 @@ mod intersections {
         event_point: &Vector2<T>,
         max_error: T,
     ) -> Option<Vector2<T>> {
-        let intersection = match a.intersect(b, max_error) {
+        let intersection = match a.intersect_exact(b) {
             Some(p) => p,
             None => return None,
         };
@@ -551,7 +571,7 @@ mod intersections {
         // To do this we compare the x value of their direction vectors to tell which
         // will move left or right after crossing the intersection (heading towards
         // decreasing y values).
-        if (a_x - b_x).abs() <= max_error {
+        if a_x == b_x {
             // TODO: If both lines are horizontal, compare based on their min x
 
             let mut dir_a = &a.start - &a.end;
@@ -615,8 +635,8 @@ pub fn compare_points<T: ScalarElementType + PartialOrd>(
     b: &Vector2<T>,
     max_error: T,
 ) -> Ordering {
-    if (a.y() - b.y()).abs() <= max_error {
-        if (a.x() - b.x()).abs() <= max_error {
+    if a.y() == b.y() {
+        if a.x() == b.x() {
             Ordering::Equal
         } else {
             a.x().partial_cmp(&b.x()).unwrap_or(Ordering::Equal)
