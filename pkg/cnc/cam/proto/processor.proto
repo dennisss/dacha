@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package cnc;
+
+message PCBProcessorConfig {
+
+    IsolationRoutingProcessorConfig isolation = 1;
+
+    DrillProcessorConfig drill = 2;
+
+    CutOutProcessorConfig cutout = 3;
+
+    IsolationRoutingProcessorConfig mask_removal = 4;
+
+    IsolationRoutingProcessorConfig paste_stencil = 5;
+}
+
+message IsolationRoutingProcessorConfig {
+    uint32 tool_index = 1;
+    
+    // Diameter of the tool bit. For 'V' ('\_/') geometry bits, this is the diameter of the flat
+    // bottom edge of the bit. 
+    float tool_diameter = 2;
+
+    float tool_v_angle = 3;
+
+    // How thick the copper layer on the blank PCB is.
+    // This is mainly used to verify that we are cutting deep enough to clear all of it.
+    float min_cut_depth = 4;
+
+    // Desired width of the empty space measured on the top of the PCB cut each by each line stroke of the engraving bit.
+    //
+    // If not specified, we assume it is the same as tool_diameter and we are 
+    float cut_width = 5;
+
+    // Desired cut depth. If not provided, this is derived from the cut_with for cut cutter tools.
+    float cut_depth = 6;
+
+    // Number of parallel isolation passes to take around the copper contours.
+    //
+    // If zero, we will make as many passes as necessary to clear all material up to the material edge.
+    uint32 num_passes = 7;
+
+    // From 0-1, the percentage of overlap between each pass.
+    float overlap_percentage = 8;
+
+    float spindle_speed = 9;
+
+    // Safe Z above the material at which we can travel while within the X/Y bounds of the design.
+    float travel_z = 10;
+
+    float feedrate_xy = 11;
+
+    float feedrate_z = 12;
+
+    float rapid_feedrate = 13;
+
+    // If true, cut inwards instead of cutting outwards.
+    bool inverted = 14;
+
+    // Globally safe Z height at which we can travel without hitting anything on the entire machine.
+    float clearance_z = 15;
+
+}
+
+message DrillProcessorConfig {
+    float rapid_feedrate = 1;
+
+    float feedrate_z = 2;
+
+    float spindle_speed = 3;
+
+    float travel_z = 4;
+
+    float drill_z = 5;
+
+    // NOTE: This will be used for all holes.
+    uint32 tool_index = 6;
+
+    float tool_diameter = 7;
+
+    float clearance_z = 8;
+}
+
+message CutOutProcessorConfig {
+
+    uint32 tool_index = 1;
+
+    float tool_diameter = 2;
+
+    // Amount of space (in mm) to leave around the edge cuts layer.
+    float margin = 3;
+
+    float feedrate_xy = 4;
+
+    float feedrate_z = 5;
+
+    float travel_z = 6;
+
+    float cut_depth_z = 7;
+
+    float depth_per_pass_z = 8;
+
+    float spindle_speed = 9;
+
+    float clearance_z = 10;
+
+    float rapid_feedrate = 11;
+}

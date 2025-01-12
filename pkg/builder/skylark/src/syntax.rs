@@ -1016,9 +1016,36 @@ impl Operand {
                 // TODO: Support triple quoted strings here and in the protobuf parser
                 Ok(Self::String(s))
             }),
+            seq!(c => {
+                c.next(tag("("))?;
+
+                let mut inner_context = context.clone();
+                inner_context.in_parens = true;
+                c.next(|v| inner_context.consume_whitespace(v))?;
+
+                let expr = c.next(opt(|v| Expression::parse(v, &inner_context)))?;
+
+                let expr = match expr {
+                    Some(mut v) => {
+                        v.has_trailing_comma = c.next(opt(tag(",")))?.is_some();
+                        c.next(|v| inner_context.consume_whitespace(v))?;
+                        v
+                    }
+                    None => {
+                        Expression { tests: vec![], has_trailing_comma: false }
+                    }
+                };
+
+                c.next(tag(")"))?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                Ok(Self::Tuple(expr))
+            }),
             // TODO: Add ListComp here
             seq!(c => {
                 c.next(tag("["))?;
+
+                // TODO: Dedup with the previous case.
 
                 let mut inner_context = context.clone();
                 inner_context.in_parens = true;
@@ -1123,5 +1150,10 @@ def a(): # Inline comment
         "#;
 
         // TODO: "a = 2; b = 3" is equal to "a = 2" \n "b = 3"
+    }
+
+    #[test]
+    fn more_parsing() {
+        println!("{:?}", File::parse("(2 + 3).add_me()").unwrap());
     }
 }

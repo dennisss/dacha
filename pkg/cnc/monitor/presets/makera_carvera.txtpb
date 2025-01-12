@@ -127,13 +127,15 @@ axes: [
         id: "ATC_STATE" type: GENERIC_SENSOR
         value: ["STATUS:A:0"]
         default_value: [0]
+    },
+    {
+        id: "PROBE_PIN" type: SWITCH
+        value: ["DIAG:P:0"]
+    },
+    {
+        id: "PROBE_CALIBRATE_PIN" type: SWITCH
+        value: ["DIAG:P:1"]
     }
-
-    # ??: Something probe related
-    # DIAG:P:0
-
-    # ??: Something calibration related
-    # DIAG:P:1
 ]
 
 spindle {
@@ -155,7 +157,7 @@ tools {
             index: 1
             name: "1/8in Single Flute Bit 25mm"
             milling {
-                diameter: 25
+                diameter: 3.175
             }
         },
         {
@@ -175,17 +177,16 @@ tools {
         },
         {
             index: 4
-            name: "1/8in Single Flute Bit 12mm"
+            name: "1/8in Single Flute Bit 12mm (Metal)"
             milling {
-                diameter: 12
+                diameter: 3.175
             }
         },
         {
             index: 5
             name: "UV Solder Mask Removal Tool"
             milling {
-                # TODO
-                diameter: 0
+                diameter: 0.3
             }
         },
         {
@@ -193,7 +194,7 @@ tools {
             name: "1/8in Test Rod"
             milling {
                 # Just to use if doing an XYZ manual probe
-                diameter: 3.17500
+                diameter: 3.175
             }
         }
     ]

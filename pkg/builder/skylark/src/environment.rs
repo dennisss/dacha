@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn proto_conversion() -> Result<()> {
-        use protobuf::proto::test::*;
+        use protobuf_test_proto::*;
 
         let output = Arc::new(Mutex::new(Vec::<ShoppingList>::new()));
 

@@ -578,12 +578,32 @@ impl Player {
                             }
                         }
                     }
+
+                    LineAction::ToolChange { tool } => {
+                        // TODO: Make this less of a long running operation.
+                        serial_interface.tool_change(*tool).await?;
+                        done = true;
+                    }
+
+                    LineAction::Pause => {
+                        // TOOD: Need to handle keep alive.
+
+                        // TODO: Move to parked position.
+
+                        // TODO: Show a special message and flag the reason that we paused.
+
+                        Self::pause_impl(&shared).await?;
+
+                        done = true;
+                    }
                 }
 
                 if done {
                     current_action = None;
                     first_stable_time = None;
                     status_message = None;
+
+                    continue;
                 } else {
                     if shared.must_keep_alive {
                         // We must continously do something indicating that the
@@ -798,7 +818,11 @@ impl Player {
 
     /// CANCEL SAFE
     pub async fn pause(&self) -> Result<()> {
-        lock!(state <= self.shared.state.lock().await?, {
+        Self::pause_impl(&self.shared).await
+    }
+
+    async fn pause_impl(shared: &Shared) -> Result<()> {
+        lock!(state <= shared.state.lock().await?, {
             if state.proto.status() != ProgramRun_PlayerState::PLAYING {
                 return Err(
                     rpc::Status::failed_precondition("Player not currently playing.").into(),
@@ -811,7 +835,7 @@ impl Player {
             Ok::<_, Error>(())
         })?;
 
-        Self::publish_change(&self.shared);
+        Self::publish_change(&shared);
 
         Ok(())
     }

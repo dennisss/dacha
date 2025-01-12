@@ -56,6 +56,7 @@ pub enum Attribute {
     SizeOf,
     Length,
     Raw,
+    GitHack,
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +138,19 @@ impl Expression {
 
                 return Ok(Self::List(items));
             }
+            Operand::Tuple(expr) => {
+                if expr.has_trailing_comma || expr.tests.len() != 1 {
+                    return Err(err_msg("Only support zero item tuples"));
+                }
+
+                // println!("{:#?}", expr.tests[0]);
+                // todo!();
+
+                // TODO: Must not ignore the suffixes.
+
+                return Self::parse_test(&expr.tests[0]);
+            }
+
             op => {
                 panic!("Unsupported operand: {:?}", op)
             }
@@ -178,6 +192,12 @@ impl Expression {
                             return Ok(Expression::Field(FieldExpression {
                                 field_path: idents,
                                 attribute: Attribute::Raw,
+                            }));
+                        }
+                        "git_hack" => {
+                            return Ok(Expression::Field(FieldExpression {
+                                field_path: idents,
+                                attribute: Attribute::GitHack,
                             }));
                         }
                         _ => return Err(format_err!("Unsupported function: {}", fname)),
@@ -315,6 +335,17 @@ impl Expression {
                         };
 
                         format!("{}.to_u16()", expr)
+                    }
+                    Attribute::GitHack => {
+                        let mut expr = match &symbol.value {
+                            Some(v) => v.clone(),
+                            None => return Ok(None),
+                        };
+
+                        format!(
+                            "::base_util::block_size_remainder(8, ({}.len() + 7) as u64) as usize",
+                            expr
+                        )
                     }
                 }
             }

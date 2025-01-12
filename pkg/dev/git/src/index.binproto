@@ -1,0 +1,110 @@
+# The format is described in:
+# - https://github.com/git/git/blob/867b1c1bf68363bcfd17667d6d4b9031fa6a1300/Documentation/technical/index-format.txt#L38
+# - https://git-scm.com/docs/index-format
+
+structs {
+    name: "Index"
+    endian: BIG_ENDIAN
+
+    # 'D', 'I', 'R', 'C'
+    field {
+        name: "signature"
+        type { buffer { element_type { primitive: U8 } fixed_length: 4 } }
+    }
+    field {
+        name: "version"
+        type { primitive: U32 }
+    }
+    field {
+        name: "num_entries"
+        type { primitive: U32 }
+    }
+    field {
+        name: "entries"
+        type {
+            buffer {
+                element_type { named: "IndexEntry" }
+                length_field_name: "num_entries"
+            }
+        }
+    }
+}
+
+structs {
+    name: "IndexEntry"
+    endian: BIG_ENDIAN
+    field {
+        name: "ctime_seconds"
+        type { primitive: U32 }
+    }
+    field {
+        name: "ctime_nanos"
+        type { primitive: U32 }
+    }
+
+    field {
+        name: "mtime_seconds"
+        type { primitive: U32 }
+    }
+    field {
+        name: "mtime_nanos"
+        type { primitive: U32 }
+    }
+    
+    field {
+        name: "dev"
+        type { primitive: U32 }
+    }
+    field {
+        name: "ino"
+        type { primitive: U32 }
+    }
+    
+    field {
+        name: "mode"
+        type { primitive: U32 }
+    }
+    field {
+        name: "uid"
+        type { primitive: U32 }
+    }
+    
+    field {
+        name: "gid"
+        type { primitive: U32 }
+    }
+    field {
+        name: "file_size"
+        type { primitive: U32 }
+    }
+
+    field {
+        name: "sha1_hash"
+        type { buffer { element_type { primitive: U8 } fixed_length: 20 } }
+    }
+
+    field {
+        name: "flags"
+        type { primitive: U16 }
+    }
+
+    field {
+        name: "name"
+        type { string { buffer { element_type { primitive: U8 } end_marker: "\x00" } charset: UTF8 } }
+    }
+
+    field {
+        name: "padding"
+        argument {
+            name: "name"
+            value: "name"
+        }
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                # The entry's size is padded up to a multiple of 8 bytes.
+                length: "name.git_hack()"
+            }
+        }
+    }
+}

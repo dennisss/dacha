@@ -472,7 +472,9 @@ class ToolSelector extends React.Component<{ machine: any, context: PageContext 
         let active_tool = machine.state.tools.active_tool || 0;
 
         let selected_tool = this.state._pending_index !== null ? this.state._pending_index : active_tool;
-        let switching = selected_tool !== active_tool;
+
+        // TODO: Need some global server wide state of whether or not a tool change is happening.
+        let switching = this.state._pending_index !== null;
 
         return (
             <tr>

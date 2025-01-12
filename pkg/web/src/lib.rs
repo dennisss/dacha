@@ -11,7 +11,10 @@ extern crate file;
 use std::fmt::Write;
 
 use common::errors::*;
-use http::{static_file_handler::StaticFileHandler, ServerHandler};
+use http::{
+    static_file_handler::{StaticFileHandler, StaticFileHandlerOptions},
+    ServerHandler,
+};
 use parsing::ascii::AsciiString;
 
 /*
@@ -65,9 +68,12 @@ pub struct WebServerHandler {
 
 impl WebServerHandler {
     pub fn new(options: WebServerOptions) -> Self {
+        let mut asset_options = StaticFileHandlerOptions::default();
+        asset_options.trust_file_extension = true;
+
         Self {
             options,
-            assets_handler: StaticFileHandler::new(file::project_dir()),
+            assets_handler: StaticFileHandler::new_with_options(file::project_dir(), asset_options),
         }
     }
 

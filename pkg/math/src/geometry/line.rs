@@ -38,24 +38,40 @@ impl<T: ScalarElementType + ErrorEpsilon> Line2<T> {
     ///   base1 + (lambda1 * dir1) = base2 + (lambda2 * dir2)
     ///   (lambda1 * dir1) - (lambda2 * dir2) = base2 - base1
     pub fn intersect(&self, other: &Self) -> Option<Vector2<T>> {
-        let mut A = Matrix2::zero();
-        A.block_mut(0, 0).copy_from(&self.dir);
-        A.block_mut(0, 1).copy_from(&other.dir);
-
-        let b = &other.base - &self.base;
-
-        let A_inv = match A.checked_inverse_2x2() {
-            Some(x) => x,
+        let x = match self.intersection_coeff_unchecked(other) {
+            Some(v) => v,
             None => return None,
         };
-
-        let x = A_inv * b;
 
         Some(self.evaluate(x[0]))
     }
 
+    /// Computes the intersection of two lines which which represent closed
+    /// line segments.
+    ///
+    /// NOTE: This only returns 'exact' intersections (no intersections that
+    /// exceed the end points of the segments).
+    ///
     /// TODO: Dedup with the other one.
     pub fn intersect_segments_exact(&self, other: &Self) -> Option<Vector2<T>> {
+        let x = match self.intersection_coeff_unchecked(other) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        // NOTE: No error tolerance here so only suitable for exact arithmetic.
+        if x[0] < T::zero() || x[0] > T::one() || x[1] < T::zero() || x[1] > T::one() {
+            return None;
+        }
+
+        Some(self.evaluate(x[0]))
+    }
+
+    /// Computes the raw line coefficients (the lambda part in 'p = base +
+    /// (lambda * dir)') at which 'self' and 'other' maybe intersect.
+    ///
+    /// This will only return None if the lines are parallel.
+    pub fn intersection_coeff_unchecked(&self, other: &Self) -> Option<Vector2<T>> {
         let mut A = Matrix2::zero();
         A.block_mut(0, 0).copy_from(&self.dir);
         A.block_mut(0, 1).copy_from(&other.dir);
@@ -70,12 +86,7 @@ impl<T: ScalarElementType + ErrorEpsilon> Line2<T> {
         let mut x = A_inv * b;
         x[1] *= -T::one();
 
-        // NOTE: No error tolerance here so only suitable for exact arithmetic.
-        if x[0] < T::zero() || x[0] > T::one() || x[1] < T::zero() || x[1] > T::one() {
-            return None;
-        }
-
-        Some(self.evaluate(x[0]))
+        Some(x)
     }
 
     pub fn standard_form_coeffs(&self) -> (T, T, T) {

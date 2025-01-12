@@ -101,7 +101,7 @@ parser!(parse_g04<&[u8], String> => seq!(c => {
     Ok(v)
 }));
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
     Millimeter,
     Inch,

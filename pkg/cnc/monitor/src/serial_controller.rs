@@ -1371,6 +1371,8 @@ impl SerialController {
             .into());
         }
 
+        self.wait_for_idle().await?;
+
         // TODO: Wait for any ongoing tool change to finish.
 
         // TODO: Validate the index.
@@ -1401,10 +1403,7 @@ impl SerialController {
         // tool change command executes many sub-commands.
         if config.firmware() == MachineConfig_Firmware::CARVERA {
             // TODO: Bound this loop's time
-            // TODO: This currently doesn't wait for the tool offset to finish being
-            // measured (the state becomes zero before the tool offset is measured and then
-            // quickly turns non-zero).
-            loop {
+                        loop {
                 let state = self.get_current_axis_value("ATC_STATE").await?;
                 let data = state.data.get().ok_or_else(|| err_msg("Missing data"))?;
 
@@ -1456,6 +1455,9 @@ impl SerialController {
 
     pub async fn wait_for_idle(&self) -> Result<()> {
         let config = self.shared.config.read().await?;
+
+        // TODO: On gRBL style systems, we should just check the machine state and
+        // verify it is 'idle'
 
         // TODO: Send 'M400\n' to wait for all moves to finish
         // (GRBL doesn't support this though and will return ok once commands

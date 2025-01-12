@@ -23,6 +23,7 @@ parsing = { path = "../../parsing" }
 image = { path = "../../image" }
 json = { path = "../../format/json" }
 cnc_monitor_proto = { path = "./proto" }
+cam = { path = "../cam" }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }
 peripherals = { path = "../../peripherals" }

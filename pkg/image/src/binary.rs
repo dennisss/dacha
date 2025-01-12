@@ -23,6 +23,14 @@ impl BinaryImage {
         }
     }
 
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
     /// Gets the value of a single pixel.
     pub fn get(&self, y: usize, x: usize) -> u8 {
         let offset = y * self.width * 8 + 8 * x;

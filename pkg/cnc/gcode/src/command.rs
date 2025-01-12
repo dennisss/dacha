@@ -51,6 +51,7 @@ define_command_enum!(
     ClockwiseArc,                    // G2
     CounterClockwiseArc,             // G3
     Dwell,                           // G4
+    SetCoordinates,                  // G10
     PlaneXY,                         // G17
     PlaneZX,                         // G18
     PlaneYZ,                         // G19
@@ -65,6 +66,7 @@ define_command_enum!(
     SetToRelativeMode,               // G91
     SetPosition,                     // G92
     FeedRateUnitsPerMinute,          // G94
+Stop,                            // M0
     ProgramEnd,                      // M2
     SpindleOnClockwise,              // M3
     SpindleOnCounterClockwise,       // M4
@@ -106,6 +108,7 @@ define_command_enum!(
     CarveraExitLaserMode,            // M322
     WaitForCurrentMovesToFinish,     // M400
     CancelObject,                    // M486
+    CarveraAnchor1,                  // M496.3
     SetBoundingBox,                  // M555
     StepperDriverControl,            // M569
     ExtruderPressureAdvance,         // M572
@@ -174,6 +177,11 @@ define_command!(
     }
 );
 
+// TODO: Parse this more.
+define_unparsed_command!(
+    pub struct SetCoordinates ("G10")
+);
+
 define_command!(
     pub struct PlaneXY ("G17") {}
 );
@@ -240,6 +248,10 @@ define_command!(
 
 define_command!(
     pub struct FeedRateUnitsPerMinute ("G94") {}
+);
+
+define_command!(
+    pub struct Stop ("M0") {}
 );
 
 define_command!(
@@ -460,6 +472,10 @@ define_command!(
         // MUST BE THE LAST PARAMETER
         object_name ('A'): Option<String>
     }
+);
+
+define_unparsed_command!(
+    pub struct CarveraAnchor1 ("M496.3")
 );
 
 define_command!(

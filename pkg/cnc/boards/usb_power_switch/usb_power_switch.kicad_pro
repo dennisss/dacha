@@ -34,9 +34,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 0.9,
-          "height": 0.9,
-          "width": 0.9
+          "drill": 0.0,
+          "height": 3.0988,
+          "width": 2.0
         },
         "silk_line_width": 0.15,
         "silk_text_italic": false,
@@ -173,6 +173,7 @@
       ],
       "track_widths": [
         0.0,
+        0.4,
         0.8
       ],
       "via_dimensions": [
@@ -413,10 +414,10 @@
     "classes": [
       {
         "bus_width": 12,
-        "clearance": 0.2,
-        "diff_pair_gap": 0.25,
+        "clearance": 0.3,
+        "diff_pair_gap": 0.5,
         "diff_pair_via_gap": 0.25,
-        "diff_pair_width": 0.2,
+        "diff_pair_width": 0.4,
         "line_style": 0,
         "microvia_diameter": 0.3,
         "microvia_drill": 0.1,

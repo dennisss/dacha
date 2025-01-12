@@ -1,6 +1,11 @@
 use common::errors::*;
 
-pub const STATUS_SIZE: usize = core::mem::size_of::<Status>();
+use crate::tape::Tape;
+
+pub(crate) const STATUS_SIZE: usize = core::mem::size_of::<Status>();
+
+// Applicable to PT-H500/P700/E500
+const DPI: usize = 180;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -81,7 +86,7 @@ pub struct Status {
 }
 
 impl Status {
-    pub fn parse(data: &[u8]) -> Result<Self> {
+    pub(crate) fn parse(data: &[u8]) -> Result<Self> {
         if data.len() != STATUS_SIZE {
             return Err(err_msg("Status buffer is the wrong size"));
         }
@@ -153,7 +158,7 @@ impl Status {
         if self.error_info2 != 0.into() {
             return Err(format_err!(
                 "Can't print due to errors: {:?}",
-                self.error_info1
+                self.error_info2
             ));
         }
 
@@ -183,6 +188,10 @@ impl Status {
         }
 
         Ok(())
+    }
+
+    pub fn tape(&self) -> Option<Tape> {
+        Tape::from_status(self)
     }
 }
 

@@ -1,0 +1,27 @@
+[package]
+name = "cam"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+doctest = false
+
+[dependencies]
+macros = { path = "../../macros" }
+math = { path = "../../math" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+graphics = { path = "../../graphics" }
+image = { path = "../../image" }
+protobuf = { path = "../../protobuf" }
+base_error = { path = "../../base/error" }
+base_radix = { path = "../../base/radix" }
+gerber = { path = "../gerber" }
+cam_proto = { path = "./proto" }
+
+[features]
+default = ["std", "alloc"]
+alloc = []
+std = []

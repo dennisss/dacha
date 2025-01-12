@@ -12,6 +12,7 @@ http = { path = "../../http" }
 crypto = { path = "../../crypto" }
 base_radix = { path = "../../base/radix" }
 protobuf = { path = "../../protobuf" }
+git = { path = "../git" }
 dev_source_proto = { path = "./proto" }
 google_auth = { path = "../../api/google/auth" }
 google_storage = { path = "../../api/google/storage" }

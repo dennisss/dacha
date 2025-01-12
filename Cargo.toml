@@ -103,7 +103,7 @@ members = [
 	"pkg/web",
 	# "pkg/flasher/swd_prog",
 	# "pkg/api/hue",
-	"pkg/standing_desk",
+	"pkg/peripherals/devices/standing_desk",
 	"pkg/cnc",
 	"pkg/cnc/gcode",
 	"pkg/cnc/gcode/decimal",
@@ -114,6 +114,8 @@ members = [
 	"pkg/cnc/monitor",
 	"pkg/cnc/monitor/proto",
 	"pkg/cnc/gerber",
+	"pkg/cnc/cam",
+	"pkg/cnc/cam/proto",
 	"pkg/testing",
 	"pkg/perf",
 	"pkg/perf_util",
@@ -164,6 +166,7 @@ members = [
 	"third_party/google/pprof/proto",
 	"pkg/dev/source",
 	"pkg/dev/source/proto",
+	"pkg/dev/git",
 ]
 
 [profile.dev]

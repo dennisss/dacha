@@ -7,4 +7,5 @@ edition = "2018"
 common = { path = "../../common" }
 parsing = { path = "../../parsing" }
 protobuf = { path = "../../protobuf" }
+protobuf_test_proto = { path = "../../protobuf/test/proto" }
 crypto = { path = "../../crypto" }

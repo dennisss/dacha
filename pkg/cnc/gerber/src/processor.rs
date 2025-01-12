@@ -2,13 +2,12 @@ use std::{collections::HashMap, f32::consts::PI};
 
 use base_error::*;
 use graphics::{canvas::PathBuilder, raster::stroke::stroke_poly};
-use math::{geometry::line::Line2, matrix::Vector2f};
-
-use crate::{
-    expression::ExpressionEvaluator,
-    graphics::{FillMode, GraphicsObject},
-    syntax::*,
+use math::{
+    geometry::line::Line2,
+    matrix::{vec2f, Vector2f},
 };
+
+use crate::{expression::ExpressionEvaluator, graphics::*, syntax::*};
 
 /// Gerber file prefix that is processed before any user commands are processed.
 /// This is used to define standard built-in templates.
@@ -228,9 +227,14 @@ impl CommandsProcessor {
                     return Err(err_msg("Only lines are supported"));
                 }
 
+                if self.graphics_state.unit != Some(Mode::Millimeter) {
+                    return Err(err_msg("Units must be set to millimeters before drawing"));
+                }
+
                 // TODO: Implement arc support.
 
                 // NOTE: We don't need any pre-processing for translating this macro.
+                let mut paths = vec![];
                 self.draw_aperture(
                     &ApertureDefinition {
                         id: "".to_string(),
@@ -239,8 +243,16 @@ impl CommandsProcessor {
                             params: vec![circle.diameter, start_x, start_y, end_x, end_y],
                         }),
                     },
-                    out,
+                    &mut paths,
                 )?;
+
+                out.push(GraphicsObject {
+                    paths,
+                    line: Some((
+                        vec2f(start_x as f32, start_y as f32),
+                        vec2f(end_x as f32, end_y as f32),
+                    )),
+                });
 
                 self.graphics_state.current_point_x = Some(end_x);
                 self.graphics_state.current_point_y = Some(end_y);
@@ -270,29 +282,21 @@ impl CommandsProcessor {
                         .ok_or_else(|| err_msg("Current Y undefined"))?,
                 };
 
-                let start_i = out.len();
-
                 // TODO: Need to transform all the generated objects (position and polarity).
-                self.draw_aperture(current_aperture, out)?;
+                let mut paths = vec![];
+                self.draw_aperture(current_aperture, &mut paths)?;
 
                 let offset = Vector2f::from_slice(&[x as f32, y as f32]);
-                for obj in &mut out[start_i..] {
-                    match obj {
-                        GraphicsObject::FillPath(path, fill) => {
-                            path.translate(offset.clone());
+                for path in &mut paths {
+                    path.path.translate(offset.clone());
 
-                            *fill = match *fill {
-                                FillMode::Dark | FillMode::Clear => {
-                                    self.graphics_state.polarity.into()
-                                }
-                                FillMode::Unset => FillMode::Unset,
-                            };
-                        }
-                        GraphicsObject::EndOfLayer => {}
-                    }
+                    path.fill = match path.fill {
+                        FillMode::Dark | FillMode::Clear => self.graphics_state.polarity.into(),
+                        FillMode::Unset => FillMode::Unset,
+                    };
                 }
 
-                // TODO: Add end of layer markers everywhere.
+                out.push(GraphicsObject { paths, line: None });
 
                 self.graphics_state.current_point_x = Some(x);
                 self.graphics_state.current_point_y = Some(y);
@@ -329,7 +333,7 @@ impl CommandsProcessor {
     fn draw_aperture(
         &self,
         aperture: &ApertureDefinition,
-        out: &mut Vec<GraphicsObject>,
+        out: &mut Vec<GraphicsPath>,
     ) -> Result<()> {
         let call = match &aperture.shape {
             ApertureShape::Circle(circle) => TemplateCall {
@@ -374,8 +378,6 @@ impl CommandsProcessor {
 
         draw_template_call(tmpl, &call.params, &self.options, out)?;
 
-        out.push(GraphicsObject::EndOfLayer);
-
         Ok(())
     }
 }
@@ -386,7 +388,7 @@ fn draw_template_call(
     tmpl: &ApertureMacro,
     params: &[f64],
     options: &CommandsProcessorOptions,
-    out: &mut Vec<GraphicsObject>,
+    out: &mut Vec<GraphicsPath>,
 ) -> Result<()> {
     let mut evaluator = ExpressionEvaluator::default();
     evaluator.add_call_params(params);
@@ -406,7 +408,7 @@ fn draw_template_call(
                         let diameter = evaluator.evaluate(&circle.diameter)?;
 
                         // Skip zero diameter circles.
-                        if diameter as f32 <= options.min_feature_size {
+                        if (diameter as f32) < options.min_feature_size {
                             continue;
                         }
 
@@ -420,7 +422,10 @@ fn draw_template_call(
                             2.0 * PI,
                         );
 
-                        out.push(GraphicsObject::FillPath(path_builder.build(), exposure));
+                        out.push(GraphicsPath {
+                            path: path_builder.build(),
+                            fill: exposure,
+                        });
                     }
                     ApertureMacroPrimitive::VectorLine(line) => {
                         check_rotation(&line.rotation, &evaluator)?;
@@ -436,7 +441,9 @@ fn draw_template_call(
                         let start = Vector2f::from_slice(&[start_x, start_y]);
                         let end = Vector2f::from_slice(&[end_x, end_y]);
 
-                        if (&start - &end).norm() <= 0.05 || width <= 0.05 {
+                        if (&start - &end).norm() < options.min_feature_size
+                            || width < options.min_feature_size
+                        {
                             continue;
                         }
 
@@ -458,7 +465,10 @@ fn draw_template_call(
                         path_builder.line_to(p4);
                         path_builder.close();
 
-                        out.push(GraphicsObject::FillPath(path_builder.build(), exposure));
+                        out.push(GraphicsPath {
+                            path: path_builder.build(),
+                            fill: exposure,
+                        });
                     }
                     ApertureMacroPrimitive::Outline(line) => {
                         check_rotation(&line.rotation, &evaluator)?;
@@ -493,7 +503,10 @@ fn draw_template_call(
                             first = false;
                         }
 
-                        out.push(GraphicsObject::FillPath(path_builder.build(), exposure));
+                        out.push(GraphicsPath {
+                            path: path_builder.build(),
+                            fill: exposure,
+                        });
                     }
                     ApertureMacroPrimitive::CenterLine(line) => {
                         check_rotation(&line.rotation, &evaluator)?;
@@ -505,9 +518,11 @@ fn draw_template_call(
                         let center_x = evaluator.evaluate(&line.center_x)? as f32;
                         let center_y = evaluator.evaluate(&line.center_y)? as f32;
 
-                        if width <= options.min_feature_size || height <= options.min_feature_size {
+                        if width < options.min_feature_size || height < options.min_feature_size {
                             continue;
                         }
+
+                        // TODO: Ideally just convert to a VectorLine and render that instead.
 
                         let mut path_builder = PathBuilder::new();
 
@@ -525,7 +540,10 @@ fn draw_template_call(
 
                         path_builder.close();
 
-                        out.push(GraphicsObject::FillPath(path_builder.build(), exposure));
+                        out.push(GraphicsPath {
+                            path: path_builder.build(),
+                            fill: exposure,
+                        });
                     }
 
                     ApertureMacroPrimitive::Polygon => todo!(),

@@ -35,18 +35,24 @@ pub fn offset_faces<F: FaceLabel + PartialEq>(
         return initial_faces.clone();
     }
 
-    // TODO: Add a label to differentiate the original faces from the labels
-    // (transform into a HalfEdgeStruct<(F, bool)>).
-    let mut out = initial_faces.clone();
+    let mut out = initial_faces.map_labels(|f| FaceOffsetingLabel {
+        base_label: f.clone(),
+        is_offset: false,
+    });
 
     for face in initial_faces.faces() {
         if face.label() == &F::default() {
             continue;
         }
 
+        let offset_label = FaceOffsetingLabel {
+            base_label: face.label().clone(),
+            is_offset: true,
+        };
+
         if let Some(component) = face.outer_component() {
             offset_face_boundary(
-                face.label().clone(),
+                offset_label.clone(),
                 &component.points(),
                 offset,
                 max_error,
@@ -56,7 +62,7 @@ pub fn offset_faces<F: FaceLabel + PartialEq>(
 
         for component in face.inner_components() {
             offset_face_boundary(
-                face.label().clone(),
+                offset_label.clone(),
                 &component.points(),
                 offset,
                 max_error,
@@ -67,9 +73,36 @@ pub fn offset_faces<F: FaceLabel + PartialEq>(
 
     out.repair();
 
-    // TODO: Perform face subtraction if we were asked for deflating (offset < 0).
+    let mut out = out.map_labels(|l| {
+        // When deflating, we want to delete any parts of the original faces that is in
+        // the offset part. For inflation, we just want to union everything.
+        if offset < 0.0 && l.is_offset {
+            return F::default();
+        }
+
+        l.base_label.clone()
+    });
 
     out
+}
+
+#[derive(Clone, Default, Debug, PartialEq)]
+struct FaceOffsetingLabel<F> {
+    base_label: F,
+
+    /// If true, the face was generated as an extension of a pre-existing base
+    /// edge. False implies that it is one of the original faces before
+    /// offsetting started.
+    is_offset: bool,
+}
+
+impl<F: FaceLabel> FaceLabel for FaceOffsetingLabel<F> {
+    fn union(&self, other: &Self) -> Self {
+        Self {
+            base_label: self.base_label.union(&other.base_label),
+            is_offset: self.is_offset || other.is_offset,
+        }
+    }
 }
 
 // NOTE: The given points will be from a HalfEdgeStruct so will be in
@@ -140,11 +173,11 @@ fn offset_face_boundary<F: FaceLabel>(
     //
 }
 
-fn add_arc_segment<F: FaceLabel>(
+fn add_arc_segment<'a, F: FaceLabel>(
     label: F,
     center: &Vector2f,
-    p1: &Vector2f,
-    p2: &Vector2f,
+    mut p1: &'a Vector2f,
+    mut p2: &'a Vector2f,
     max_error: f32,
     inflating: bool,
     out: &mut HalfEdgeStruct<F>,
@@ -163,6 +196,8 @@ fn add_arc_segment<F: FaceLabel>(
             // to 'angle2'
             (angle1, angle2)
         } else {
+            core::mem::swap::<&Vector2f>(&mut p1, &mut p2);
+
             // 'angle2' is the smaller angle and we need to increase in angle until we get
             // to 'angle1'
             (angle2, angle1)
@@ -177,13 +212,181 @@ fn add_arc_segment<F: FaceLabel>(
         center: center.clone(),
         x_axis: vec2f(radius, 0.0),
         y_axis: vec2f(0.0, radius),
-        start_angle: start_angle,
+        start_angle,
         delta_angle: (end_angle - start_angle),
     };
 
     let mut points = vec![];
     ellipse.linearize(max_error, &mut points);
+
+    // Ensure that the start and end point of the arc are exactly equal to the
+    // original points.
+    points[0] = p1.clone();
+    *points.last_mut().unwrap() = p2.clone();
+
     points.push(center.clone());
 
     out.add_face(label, points.into_iter());
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    use testing::*;
+
+    fn label(s: &'static str) -> HashSet<&'static str> {
+        let mut l = HashSet::new();
+        l.insert(s);
+        l
+    }
+
+    fn labels(s: &[&'static str]) -> HashSet<&'static str> {
+        let mut l = HashSet::new();
+        for s in s {
+            l.insert(*s);
+        }
+        l
+    }
+
+    #[test]
+    fn offset_merging() {
+        let mut half_edges = HalfEdgeStruct::<HashSet<&'static str>>::new();
+
+        half_edges.add_face(
+            label("A"),
+            [
+                vec2f(1.0, 1.0),
+                vec2f(4.0, 1.0),
+                vec2f(4.0, 4.0),
+                vec2f(1.0, 4.0),
+            ]
+            .iter()
+            .cloned(),
+        );
+
+        // Left
+        half_edges.add_face(
+            label("B"),
+            [
+                vec2f(1.0, 1.0),
+                vec2f(2.0, 1.0),
+                vec2f(2.0, 4.0),
+                vec2f(1.0, 4.0),
+            ]
+            .iter()
+            .cloned(),
+        );
+
+        // Right
+        half_edges.add_face(
+            label("C"),
+            [
+                vec2f(3.0, 1.0),
+                vec2f(4.0, 1.0),
+                vec2f(4.0, 4.0),
+                vec2f(3.0, 4.0),
+            ]
+            .iter()
+            .cloned(),
+        );
+
+        // Bottom
+        half_edges.add_face(
+            label("D"),
+            [
+                vec2f(1.0, 1.0),
+                vec2f(4.0, 1.0),
+                vec2f(4.0, 2.0),
+                vec2f(1.0, 2.0),
+            ]
+            .iter()
+            .cloned(),
+        );
+
+        // Top
+        half_edges.add_face(
+            label("E"),
+            [
+                vec2f(1.0, 3.0),
+                vec2f(4.0, 3.0),
+                vec2f(4.0, 4.0),
+                vec2f(1.0, 4.0),
+            ]
+            .iter()
+            .cloned(),
+        );
+
+        half_edges.repair();
+
+        /*
+        Middle space with just the 'A' label:
+        - (2,2), (3,2), (3,3), (2,3)
+        */
+
+        let faces = FaceDebug::get_all(&half_edges);
+
+        println!("{:?}", faces);
+
+        let mut found = false;
+        for face in faces {
+            if face.label == labels(&["A"]) {
+                found = true;
+                break;
+            }
+        }
+
+        assert!(found);
+    }
+
+    #[test]
+    fn deflating_test() {
+        let mut half_edges = HalfEdgeStruct::<bool>::new_with_scale(1000.0);
+
+        half_edges.add_face(
+            true,
+            [
+                vec2f(0.0, 0.0),
+                vec2f(1.0, 0.0),
+                vec2f(1.0, 1.0),
+                vec2f(0.0, 1.0),
+            ]
+            .iter()
+            .cloned(),
+        );
+
+        let mut offset = offset_faces(&half_edges, -0.1, 0.01);
+
+        offset.merge_faces();
+
+        let faces = FaceDebug::get_all(&offset);
+
+        assert_that(
+            &faces,
+            unordered_elements_are(&[
+                eq(FaceDebug {
+                    label: false,
+                    outer_component: None,
+                    inner_components: vec![vec![
+                        vec2f(0.1, 0.1),
+                        vec2f(0.1, 0.9),
+                        vec2f(0.9, 0.9),
+                        vec2f(0.9, 0.1),
+                    ]],
+                }),
+                eq(FaceDebug {
+                    label: true,
+                    outer_component: Some(vec![
+                        vec2f(0.1, 0.1),
+                        vec2f(0.9, 0.1),
+                        vec2f(0.9, 0.9),
+                        vec2f(0.1, 0.9),
+                    ]),
+                    inner_components: vec![],
+                }),
+            ]),
+        );
+    }
 }

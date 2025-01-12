@@ -13,6 +13,8 @@ use crate::opengl::texture::Texture;
 use crate::opengl::window::WindowContext;
 use crate::transform::{Camera, Transform};
 
+// TODO: Most of this code has nothing to do with OpenGL.
+
 /// Convex polygon drawing
 pub struct Polygon {
     object: Object,

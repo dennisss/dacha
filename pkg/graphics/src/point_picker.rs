@@ -231,7 +231,8 @@ impl PointPicker {
 
                     println!("Segments: {:?}", segments);
 
-                    let ints = LineSegment2::intersections(&segments, 1e-3)
+                    // TOOD: This must run on an exact numerical type.
+                    let ints = LineSegment2::intersections(&segments)
                         .into_iter()
                         .map(|i| i.point)
                         .collect::<Vec<_>>();
@@ -304,17 +305,7 @@ impl PointPicker {
                                 continue;
                             }
 
-                            let first_edge = data.add_first_edge(
-                                poly.points[0].clone(),
-                                poly.points[1].clone(),
-                                (),
-                            );
-                            let mut next_edge =
-                                data.add_next_edge(first_edge, poly.points[2].clone());
-                            for point in &poly.points[3..] {
-                                next_edge = data.add_next_edge(next_edge, point.clone());
-                            }
-                            data.add_close_edge(next_edge, first_edge);
+                            data.add_face((), poly.points.iter().cloned());
                         }
 
                         data.repair();

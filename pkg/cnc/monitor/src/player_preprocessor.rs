@@ -29,6 +29,14 @@ pub enum LineAction {
         min_is_max_temperature: bool,
     },
     BedPreheat,
+
+    // NOTE: Tool changes are performed as an action since some for some machines like the
+    // Carvera, the tool change gcode finishes way before the actual end of the tool change so we
+    // need custom logic to monitor the tool change.
+    ToolChange {
+        tool: i32,
+    },
+    Pause,
 }
 
 pub struct PlayerProgramPreprocessor {
@@ -205,6 +213,22 @@ impl PlayerProgramPreprocessor {
                         min_temperature: temp.to_f32(),
                         min_is_max_temperature: cmd.inner.target_temperature.is_some(),
                     });
+
+                    // Don't send the regular command.
+                    continue;
+                }
+
+                gcode::Command::Stop(cmd) => {
+                    out.action = Some(LineAction::Pause);
+
+                    // Don't send the regular command.
+                    continue;
+                }
+
+                gcode::Command::ToolChange(cmd) => {
+                    out.action = Some(LineAction::ToolChange { tool: cmd.tool });
+
+                    // TODO: Also do this for SelectTool.
 
                     // Don't send the regular command.
                     continue;

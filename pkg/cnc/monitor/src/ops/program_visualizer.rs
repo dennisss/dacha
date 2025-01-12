@@ -83,21 +83,6 @@ TODO: Eventually we will want to save things like the tool configs in history re
 
 */
 
-fn calculate_engraving_diameter(angle_degrees: f32, base_diameter: f32, depth: f32) -> f32 {
-    let angle_rads = angle_degrees * (PI / 180.0);
-    let half_angle_rads = angle_rads / 2.0;
-
-    let tan = half_angle_rads.tan();
-
-    let base_depth = (base_diameter / 2.0) / tan;
-
-    let full_depth = base_depth + depth;
-
-    let full_radius = full_depth * tan;
-
-    full_radius * 2.0
-}
-
 impl ProgramVisualizer {
     pub fn create(
         machine_config: &MachineConfig,
@@ -294,7 +279,7 @@ impl ProgramVisualizer {
 
             let mut diameter = tool_config.milling().diameter();
             if tool_config.milling().v_angle() != 0.0 {
-                diameter = calculate_engraving_diameter(
+                diameter = cam::vbit::calculate_engraving_diameter(
                     tool_config.milling().v_angle(),
                     diameter,
                     -1.0 * end_position.z(),

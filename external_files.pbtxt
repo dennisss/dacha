@@ -10,6 +10,16 @@ files: [
         sha256_sum: "d299b0572a379b33a2465a5161ef1936c30875ec4ed71875411689674087abc6"
     },
     {
+        path: "doc/carvera/images/caddy/inplace.jpg"
+        size: 187923
+        sha256_sum: "4c481e263c5f2bc777804a5e82026dc8c081732b8b1b1b389e1fd9fe1eb3b047"
+    },
+    {
+        path: "doc/carvera/images/caddy/printed.jpg"
+        size: 133651
+        sha256_sum: "9292777f9d8edd6efec2970fb5f3af171b629cec562c897efcb514f73fcc0520"
+    },
+    {
         path: "doc/carvera/images/camera-cable-routing.jpg"
         size: 193133
         sha256_sum: "ae166287fc531e2319748b6bb646de282bbb7b8bb187b5474a9ca005be73e026"
@@ -163,6 +173,216 @@ files: [
         path: "doc/dwm1000_flexypin/board/plot/board-PTH.drl"
         size: 2361
         sha256_sum: "7e4b23b82e05f7f372303dc13f40d70f0150b3fe5477155c4a3430d2490b2c57"
+    },
+    {
+        path: "doc/galaxy_coaster/images/main.jpg"
+        size: 250812
+        sha256_sum: "885baa8c2a732c577eb528c31ec41205539059f8d7b109c24ed769e076f26414"
+    },
+    {
+        path: "doc/galaxy_coaster/images/on-desk.jpg"
+        size: 195598
+        sha256_sum: "13501f237efd615303918ccf3890af63e3c2ed9f923f44d9260f235ec7b3bb19"
+    },
+    {
+        path: "doc/galaxy_coaster/images/while-printing.jpg"
+        size: 303079
+        sha256_sum: "5af959f6b97004ccdc37aefdb3328f62cae893c1a78109ede7bf16a4660a0d69"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 1.stl"
+        size: 29484
+        sha256_sum: "8341df4248365890bf0cb319d124f1f8ad4ba3919e750b29a58775eb5a83982f"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 10.stl"
+        size: 31884
+        sha256_sum: "6eff649eaace8c37b304c0f5e898103ad8e6b365669ab9a159b9d80ab3ed7cb5"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 11.stl"
+        size: 31484
+        sha256_sum: "663f06cea654d88bb1d0b6e80d34ea40c0bf64de0abcc30e7bf1868e0133e284"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 12.stl"
+        size: 31284
+        sha256_sum: "06f6aff633cb37d69e05f9581cccf97f3b2d2b6a1a2a8b7d6081d4346093c431"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 13.stl"
+        size: 31284
+        sha256_sum: "09ffaab9f5d4563dc71adc0c1c66cdf3ec0c2c48406b464560ed65d585ea7957"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 14.stl"
+        size: 31684
+        sha256_sum: "c34ad9a5ceb9c34fe29e0b0671504a728940225f998b3b27fd49fe4283c822c5"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 15.stl"
+        size: 57084
+        sha256_sum: "f5e62bd6bcb71d921165925cde3d2733ab6e6bf369fd0c11af23d54fde6a0657"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 16.stl"
+        size: 31484
+        sha256_sum: "b3743d751359de1fba82872113431ccae9c5605c0015c16c8481ae91b8e5ca76"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 17.stl"
+        size: 31284
+        sha256_sum: "751b889030dc1a166faca56e6935b04c1d7dbfdefa87808345afde549cdbf79e"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 18.stl"
+        size: 57284
+        sha256_sum: "9ac6ab0fdec4116343bb50d50de8fba15537feb8f5e73e1ebb07e376d9c72bb4"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 19.stl"
+        size: 31284
+        sha256_sum: "ef109fa2be510717ee1cca6ac09b91fa436a0f2eb284287af651c2bbc534a6df"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 2.stl"
+        size: 29484
+        sha256_sum: "ed29c0ed9285527a716f53ea33836fd53e4b3bb7fd7529d1fa00a6c28266f49f"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 20.stl"
+        size: 67884
+        sha256_sum: "bb5908d5706320d61771c87b64d85912feb973b9ee4893bccf31a42421b20cba"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 21.stl"
+        size: 23084
+        sha256_sum: "83c7e626e8f8dba219bc003a60177ed49a104b0c8d2bbba1c0325e03c975da86"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 22.stl"
+        size: 21284
+        sha256_sum: "095057d91ade0cb3de0225d4c914afefddd45fb6f28bbb2ac106cbb174cb39ff"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 23.stl"
+        size: 64084
+        sha256_sum: "89e4ff80a5da390c872d77835afc45ef1ee52d8dfafbc215ae3d680a6dae1fc3"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 24.stl"
+        size: 31684
+        sha256_sum: "d6798c81febb7abd942d3a8f846b3d1a22f081ebef98386cd54b506ea41c5880"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 25.stl"
+        size: 31084
+        sha256_sum: "fa96f7753e01a6a829ac60ebc2d371ee1e6fcdbebc12d454e953c6109cb8f41c"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 26.stl"
+        size: 31884
+        sha256_sum: "dc71cc7b6ef9c0122d54bb379b8a624eddb4cd0061cd4ef349ce4af25b9b995a"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 27.stl"
+        size: 31484
+        sha256_sum: "7ea25ed440fe895b734bf65a2cfe32f817c85993a5142d1cee28b83181e5427e"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 28.stl"
+        size: 31284
+        sha256_sum: "033a9cd3d0593f2f9a5d1e283ae8c6648e434c9030921106794d6d3c9d574f23"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 29.stl"
+        size: 31284
+        sha256_sum: "b9af55d5f33a84fec68bd662c90297a380618f5b720949548d287c9cca03b66b"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 3.stl"
+        size: 67884
+        sha256_sum: "2ffb88d5d1a335687258ff4c5ef80fd1f479b0fed08d47ad145a54d92a8e2877"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 30.stl"
+        size: 31684
+        sha256_sum: "020962a779230a7d75e2418e78b2146cde6eb3636182422233d54cab9b4715fb"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 31.stl"
+        size: 31484
+        sha256_sum: "e7bfb7378b39b34d418905188065a60800da61b83769d51f74ea938eca754402"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 32.stl"
+        size: 31284
+        sha256_sum: "00a3e4c486fab226ab367c0b83fc42fd1be77e563bbb8bcb7896e32a2feea079"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 33.stl"
+        size: 31284
+        sha256_sum: "bf1d2f95bda8cf6570e0dff0377b750c9217f3ba743625757bae22fec33bddd8"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 34.stl"
+        size: 57284
+        sha256_sum: "d60d43cd118b1de37275aa5b2d1b00c13579368edfea8282dd8f00bb267502df"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 35.stl"
+        size: 83684
+        sha256_sum: "28191044ed293af4e175e9f4b888a80316eafa66a67df04e58b29c562083c4ed"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 36.stl"
+        size: 57084
+        sha256_sum: "d672155b63f48d172bf7a4413e816b7eb927cccfbb97294701eab0c90214f96f"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 37.stl"
+        size: 634884
+        sha256_sum: "16e76356956af069fb36e24ef44f47c7eb44bdbc1c39b5a89e23cc34d79421b5"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 38.stl"
+        size: 59284
+        sha256_sum: "17efef4196fd4c0f75b68fe031ee354b9f440a1643227d308369427201809420"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 4.stl"
+        size: 23084
+        sha256_sum: "87da56b3e105d7444cc787db79f225bb82714838357705fbd673d4e3c8aaa43f"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 5.stl"
+        size: 21284
+        sha256_sum: "1964486968cc43fe120cac8bb625fac23022f468a49f142665cbd47cf3b41a9e"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 6.stl"
+        size: 83684
+        sha256_sum: "95d4db510c07ee9aff6e7e9591cfc4a260b7b6ed6db548124af73b163790b0d3"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 7.stl"
+        size: 64084
+        sha256_sum: "b81919fd55c9bb7ed6286ded2961351412348fa9a59c42098a86128479705675"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 8.stl"
+        size: 31684
+        sha256_sum: "69aadf570192c68f2d801b6f297a6de492c9ffb81fc7ed9a38ffbd190677237a"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/Part Studio 2/Part Studio 2 - Part 9.stl"
+        size: 31084
+        sha256_sum: "6fa9e31340d4ecb2b3b9f1ad333507e7134e3bf3c82e05c0d2ce2bb08c88ba48"
+    },
+    {
+        path: "doc/galaxy_coaster/parts/coaster-v1.1-4x.3mf"
+        size: 498634
+        sha256_sum: "f6b007b9def7f9644bb05ebffb39230683b98820fe0838cec91f0807e3fd115e"
     },
     {
         path: "doc/keyboard/board-r1/plot/board-B_Cu.gbr"
@@ -690,6 +910,61 @@ files: [
         sha256_sum: "17546257b5d209961da83795606231990518a2c32d1d1df809569b44a30f68fa"
     },
     {
+        path: "doc/rosewill_bracket/images/bracket-on-front-panel.jpg"
+        size: 196438
+        sha256_sum: "356df192ed734ddf11e7782d031e4d1b86b08b61f93fd6fb8b613a67d316cb23"
+    },
+    {
+        path: "doc/rosewill_bracket/images/front.jpg"
+        size: 275488
+        sha256_sum: "ed18b8948c4003262a983752af05acad17571deee381f0163463cc5c73e7363e"
+    },
+    {
+        path: "doc/rosewill_bracket/images/printed-bracket.jpg"
+        size: 98931
+        sha256_sum: "0aeb4512f0e48671da18705a968c4956946ba6cbd4202875a9a31a67a9f00faf"
+    },
+    {
+        path: "doc/rosewill_bracket/parts/r4000-bracket-main.stl"
+        size: 302684
+        sha256_sum: "968efbf9ab31693f98fcdb934599ef6cc3cd42956886b37f676d9aa39c33e794"
+    },
+    {
+        path: "doc/rosewill_bracket/parts/r4000-bracket-spacer.stl"
+        size: 91484
+        sha256_sum: "fca708de4a7a40853de9bf45a6db615fc397138fe642de1b1e5f09784d5f58aa"
+    },
+    {
+        path: "doc/rosewill_rail/images/front.jpg"
+        size: 217126
+        sha256_sum: "3f6f948fb4089f7823b03b85a2f76c820e5ae2b01733e3bd37f6c3edb3a15458"
+    },
+    {
+        path: "doc/rosewill_rail/images/rear-final.jpg"
+        size: 249705
+        sha256_sum: "33f130c9c779fe0ce1fe56a3e54fb2448dc914f9589c99a8543daf9645c50a94"
+    },
+    {
+        path: "doc/rosewill_rail/images/rear-yellow.jpg"
+        size: 296156
+        sha256_sum: "17ee05a7236d02d6d8f574c3cc9c50faa5318bf344aa1b1424bf7e013438ce44"
+    },
+    {
+        path: "doc/rosewill_rail/parts/rail-adapter.stl"
+        size: 150184
+        sha256_sum: "8eb206596f4ad6fb6caedd483d1434c32054767824bcf35fd700321b01d794b0"
+    },
+    {
+        path: "doc/rosewill_rail/parts/screw-washer-offset.stl"
+        size: 175484
+        sha256_sum: "35da607445ebf8f00eab4d41b428dd8f41e017ade54dab71fdd30119da99f5a5"
+    },
+    {
+        path: "doc/rosewill_rail/parts/screw-washer.stl"
+        size: 175484
+        sha256_sum: "b770c8c6def2ce29da2bdad0772a8e56ee53978d91885a50896d7e148bcb7c49"
+    },
+    {
         path: "doc/switcher/board-r1/production/board_2024-02-19_18-35-22/board.zip"
         size: 120717
         sha256_sum: "96c05ec4df4c076a4562c63159fefea725d1890e9fb61ebb18b60b1deb937b09"
@@ -808,6 +1083,56 @@ files: [
         path: "doc/uplift_desk/board/plot/board.drl"
         size: 668
         sha256_sum: "ce3a7375cbf76ee229f3705b58b05334d4619f2d78542e5f28cb68f9f06ad5e5"
+    },
+    {
+        path: "doc/voron/rear_keystone_skirt_mesh/images/back-raw.jpg"
+        size: 256986
+        sha256_sum: "3d9e4c2558acc5130a0d8be03150dcb27be2b40c2fc256ddd81298d993b22000"
+    },
+    {
+        path: "doc/voron/rear_keystone_skirt_mesh/images/back-with-ethernet.jpg"
+        size: 226437
+        sha256_sum: "781cf2491c3221ca6d28dbd5d54a73431bac436c645adc14dc2d472c92fddd83"
+    },
+    {
+        path: "doc/voron/rear_keystone_skirt_mesh/images/front.jpg"
+        size: 169190
+        sha256_sum: "a9bd7811cd7ce0490eb5c1547669d9a1a5f6b818de11e4767fba3b0814bd20c2"
+    },
+    {
+        path: "doc/voron/rear_keystone_skirt_mesh/parts/mesh.stl"
+        size: 64684
+        sha256_sum: "a978dd40607a80f7200b57ace2da91519cb3307f4697894a0130ef975eff874b"
+    },
+    {
+        path: "pkg/cnc/boards/usb_power_switch/case/bottom.stl"
+        size: 7484
+        sha256_sum: "a003b2df01d81246b7a5ac11707fd0eac0ede22074d0124e5b952cf33f83fa98"
+    },
+    {
+        path: "pkg/cnc/boards/voron_v0_toolhead/board-r1/production/board-latest_2024-12-07_13-44-50/board-latest.zip"
+        size: 117974
+        sha256_sum: "6e24cba7cb3f7de4786358fd82a7167a6ac63e5536cf4e83c90bde156d4b5fd7"
+    },
+    {
+        path: "pkg/cnc/boards/voron_v0_toolhead/board-r1/production/board-latest_2024-12-07_13-44-50/bom.csv"
+        size: 1612
+        sha256_sum: "c1f8a3d82585cad065a42d1f04b88406a3a2879b2ef417ffa5b6c00e69b14a68"
+    },
+    {
+        path: "pkg/cnc/boards/voron_v0_toolhead/board-r1/production/board-latest_2024-12-07_13-44-50/designators.csv"
+        size: 407
+        sha256_sum: "a9c4adc73e390330a62efe58e42867f7ab7cfeb5dbaeccea4a5031bb011386f8"
+    },
+    {
+        path: "pkg/cnc/boards/voron_v0_toolhead/board-r1/production/board-latest_2024-12-07_13-44-50/netlist.ipc"
+        size: 35419
+        sha256_sum: "a00ad5f50442a773239111363d53a89a8e5eddaedf1287fbd6ae06485226e2fa"
+    },
+    {
+        path: "pkg/cnc/boards/voron_v0_toolhead/board-r1/production/board-latest_2024-12-07_13-44-50/positions.csv"
+        size: 2578
+        sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
     },
     {
         path: "pkg/fan_controller/board-r3/plot/board-B_Cu.gbl"
@@ -973,6 +1298,51 @@ files: [
         path: "testdata/cnc/3DBenchy_0.4n_0.2mm_PETG_XL_59m.bgcode"
         size: 1832263
         sha256_sum: "62d4638f16682b2ed084bcc4237e134347f7988e7f283ef21c2c5bc5fd00d2b4"
+    },
+    {
+        path: "testdata/cnc/GalaxyCoaster-4x_0.4n_0.2mm_PLA,PLA,PLA,PLA,PLA_XL_8h32m.bgcode"
+        size: 4016582
+        sha256_sum: "ed7669e0662687c9e6705aad6718e588d9e39cdcbc6859dab96950e2c4ca27b5"
+    },
+    {
+        path: "testdata/cnc/TapeCartridge_0.4n_0.25mm_PETG_XLIS_4h3m.bgcode"
+        size: 3599496
+        sha256_sum: "14e98438d16d20259e68f7d09b9402ac0c7a07407d63a39e24cab7b144a502ff"
+    },
+    {
+        path: "testdata/cnc/hidden_nut.stl"
+        size: 59684
+        sha256_sum: "82fc50c4519486bbe1216f22846798ccea283b92730c7ff54e0ff198a165b838"
+    },
+    {
+        path: "testdata/cnc/hidden_nut_0.2mm_PLA_MK3S_13m.gcode"
+        size: 459135
+        sha256_sum: "5b85dd675b62e318aafd1b4f54a6aff4f9dabd815595b4740e9924138b61b510"
+    },
+    {
+        path: "testdata/cnc/hidden_nut_klipper.gcode"
+        size: 465461
+        sha256_sum: "64a8553a4e9ae257a2c542e35df26aa0be92bfe524591acbafe0f6ce049e71e3"
+    },
+    {
+        path: "testdata/cnc/sata-top_0.2mm_PETG_MK3S_28m.gcode"
+        size: 623037
+        sha256_sum: "614b38ecc2eebe2f20d1309604d4c00939a49ae12be00f16434068c71afa003d"
+    },
+    {
+        path: "testdata/cnc/xyzCalibration_cube_0.2mm_PETG_MK3S_49m.gcode"
+        size: 1701891
+        sha256_sum: "aaa71e66313054146bce65ce0a362bf63d373a523ad9f043524817cec10e4b8d"
+    },
+    {
+        path: "testdata/cnc/xyzCalibration_cube_0.4n_0.2mm_PLA_XL_50m.gcode"
+        size: 1860037
+        sha256_sum: "a01ea717a1cc417c45592e7b7392aa7a9ecc6989e9dc4050f2ba8fbb25502144"
+    },
+    {
+        path: "testdata/cnc/xyz_and_benchy_voron_klipper.gcode"
+        size: 5841673
+        sha256_sum: "5f7f407eb19840110ba46c5ebcb368309fc36542aae5b1675acf6ac578b7a0d6"
     },
     {
         path: "testdata/image/nyhavn-1920x1080.jpg"

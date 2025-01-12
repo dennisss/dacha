@@ -410,6 +410,8 @@ impl ProgramSummarizer {
             partial_summary: PartialSummary::default(),
         };
 
+        inst.partial_summary.current_object = -1;
+
         inst.summary.tools.insert(0, ProgramToolSummary::default());
 
         (inst, receiver)

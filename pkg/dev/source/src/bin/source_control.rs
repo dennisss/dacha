@@ -150,6 +150,17 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
 
     let mut glob = GlobIterator::create(&pattern)?;
 
+    let git_index = git::read_index().await?;
+    let git_entries = {
+        let mut m = HashMap::new();
+
+        for entry in &git_index.entries {
+            m.insert(entry.name.as_str(), entry);
+        }
+
+        m
+    };
+
     /////////////////////////////////////////////
     // Step 1: Loading our index of files already tracked in the database.
 
@@ -163,6 +174,12 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
     let mut existing_hashes = HashSet::new();
 
     for file in external_files.files() {
+if git_entries.contains_key(file.path()) {
+            return Err(err_msg(
+                "A file tracked by git was found in the external_files map",
+            ));
+        }
+
         existing_hashes.insert(file.sha256_sum());
 
         let path = base_dir.join(file.path());
@@ -189,6 +206,10 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
             Some(v) => v,
             None => continue,
         };
+
+        if git_entries.contains_key(rel_path.as_str()) {
+            continue;
+        }
 
         let meta = file::metadata(&path).await?;
         if meta.is_dir() {
