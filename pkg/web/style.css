@@ -195,3 +195,12 @@ a.nostyle:visited {
 .card-link:hover .card-header {
     text-decoration: underline;
 }
+
+.noscrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.noscrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}

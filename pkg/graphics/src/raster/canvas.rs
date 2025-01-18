@@ -173,9 +173,6 @@ pub struct RasterCanvasImage {
 impl CanvasObject for RasterCanvasImage {
     fn draw(&mut self, paint: &Paint, canvas: &mut dyn Canvas) -> Result<()> {
         let canvas = canvas.as_mut_any().downcast_mut::<RasterCanvas>().unwrap();
-
-        let white = Color::rgb(255, 255, 255);
-
         for y in 0..self.image.height() {
             for x in 0..self.image.width() {
                 let old_c = canvas.drawing_buffer.get(y, x);

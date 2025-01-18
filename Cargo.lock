@@ -1905,6 +1905,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "labeler"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "common",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "graphics",
+ "http",
+ "image",
+ "json",
+ "labeler_proto",
+ "macros",
+ "parsing",
+ "ptouch",
+ "rpc",
+ "rpc_util",
+ "storage",
+ "usb",
+ "web",
+]
+
+[[package]]
+name = "labeler_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2797,10 +2835,9 @@ dependencies = [
 name = "ptouch"
 version = "0.1.0"
 dependencies = [
- "common",
+ "base_error",
+ "base_util",
  "executor",
- "file",
- "graphics",
  "image",
  "macros",
  "usb",

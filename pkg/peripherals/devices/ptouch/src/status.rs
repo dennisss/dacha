@@ -1,4 +1,4 @@
-use common::errors::*;
+use base_error::*;
 
 use crate::tape::Tape;
 
@@ -122,7 +122,7 @@ impl Status {
             reserved3: 0,
             reserved4: 0,
         };
-        unsafe { common::struct_bytes::struct_bytes_mut(&mut inst).copy_from_slice(data) };
+        unsafe { struct_bytes_mut(&mut inst).copy_from_slice(data) };
 
         if inst.print_head_mark != 0x80
             || inst.size != (STATUS_SIZE as u8)
@@ -193,6 +193,14 @@ impl Status {
     pub fn tape(&self) -> Option<Tape> {
         Tape::from_status(self)
     }
+}
+
+// TODO: Dedup this.
+unsafe fn struct_bytes_mut<'a, T>(v: &'a mut T) -> &'a mut [u8] {
+    core::slice::from_raw_parts_mut(
+        core::mem::transmute::<_, *mut u8>(v),
+        core::mem::size_of::<T>(),
+    )
 }
 
 define_transparent_enum!(ModelCode u8 {

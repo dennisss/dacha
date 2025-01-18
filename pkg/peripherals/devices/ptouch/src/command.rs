@@ -14,6 +14,10 @@ impl CommandBuffer {
         Self { data: vec![] }
     }
 
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+
     pub fn as_ref(&self) -> &[u8] {
         &self.data
     }
@@ -123,7 +127,7 @@ impl CommandBuffer {
         self
     }
 
-    /// Set whether or not status notifications are automaticall sent while the
+    /// Set whether or not status notifications are automatically sent while the
     /// printer is printing. Defaults to on.
     pub fn set_auto_notify(&mut self, on: bool) -> &mut Self {
         self.data

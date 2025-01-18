@@ -17,9 +17,9 @@ pub async fn run() -> Result<()> {
     const WIDTH: usize = 800;
     const SCALE: usize = 4;
 
-    let font = Rc::new(CanvasFontRenderer::new(
+    let font = Rc::new(CanvasFontRenderer::new(Arc::new(
         OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?,
-    ));
+    )));
     let red = Color::rgb(255, 0, 0);
     let blue = Color::rgb(0, 0, 255);
     let white = Color::rgb(255, 255, 255);

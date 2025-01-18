@@ -31,9 +31,13 @@ impl BinaryImage {
         self.width
     }
 
+    pub fn raw(&self) -> &[u8] {
+        &self.data
+    }
+
     /// Gets the value of a single pixel.
     pub fn get(&self, y: usize, x: usize) -> u8 {
-        let offset = y * self.width * 8 + 8 * x;
+        let offset = y * self.width + x;
         let byte_offset = offset / 8;
         let bit_offset = offset % 8;
 

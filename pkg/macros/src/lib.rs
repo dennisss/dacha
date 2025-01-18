@@ -154,6 +154,11 @@ pub fn hex(input: TokenStream) -> TokenStream {
     hex::hex(input)
 }
 
+#[proc_macro]
+pub fn hex_ref(input: TokenStream) -> TokenStream {
+    hex::hex_ref(input)
+}
+
 #[proc_macro_attribute]
 pub fn testcase(attr: TokenStream, item: TokenStream) -> TokenStream {
     testcase::testcase(attr, item)

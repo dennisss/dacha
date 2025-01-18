@@ -1,5 +1,6 @@
 use core::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use common::errors::*;
 use image::Color;
@@ -33,9 +34,10 @@ struct FontSizeMeasurements {
 
 /// NOTE: One renderer should only ever be associated with a single canvas.
 pub struct CanvasFontRenderer {
-    font: OpenTypeFont,
+    font: Arc<OpenTypeFont>,
 
     /// TODO: Eventually delete things from here?
+    /// TODO: Do more to ensure this isn't re-used across canvases.
     glyph_paths: RefCell<HashMap<u16, GlyphPath>>,
 }
 
@@ -46,7 +48,7 @@ struct GlyphPath {
 }
 
 impl CanvasFontRenderer {
-    pub fn new(font: OpenTypeFont) -> Self {
+    pub fn new(font: Arc<OpenTypeFont>) -> Self {
         Self {
             font,
             glyph_paths: RefCell::new(HashMap::new()),

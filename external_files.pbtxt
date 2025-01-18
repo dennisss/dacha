@@ -1285,6 +1285,36 @@ files: [
         sha256_sum: "23328a708aa85cde9e1ae9ca0c7c8af431ff071b09ef728eb3218add84e87adf"
     },
     {
+        path: "pkg/peripherals/devices/ptouch/captures/settings/brother_final_settings.png"
+        size: 10816
+        sha256_sum: "6f0315c5f4d446efaf9a3c86dfb45a0adf5bade2cf7da99d47677ee3251dd093"
+    },
+    {
+        path: "pkg/peripherals/devices/ptouch/captures/settings/brother_initial_settings_roughly.png"
+        size: 11088
+        sha256_sum: "60987e4dec6bb77cd9ee7796ddd3af7a6da497dff01db1c27c78814ec4ad3455"
+    },
+    {
+        path: "pkg/peripherals/devices/ptouch/captures/settings/brother_read_settings_then_change.pcapng"
+        size: 6404
+        sha256_sum: "283018c98a4e3acf6d27ae073bef06368c30e6f559a052c0d521c3a9e42b62be"
+    },
+    {
+        path: "pkg/peripherals/devices/ptouch/references/cv_pth500p700e500_eng_raster_111.pdf"
+        size: 924840
+        sha256_sum: "cdcde44b2d7e21bc81f5c16a7f161b0c485326175107b0f4d9ac3e3429b08388"
+    },
+    {
+        path: "pkg/peripherals/devices/ptouch/references/ptp700_usaeng_soft_0.pdf"
+        size: 1243637
+        sha256_sum: "240c75c278f4c52f669c132a04d265b9f27b9f8a71c8d430f45dce1d30fb56d4"
+    },
+    {
+        path: "pkg/peripherals/devices/ptouch/references/ptp700_usaeng_usr_lad095001.pdf"
+        size: 1553030
+        sha256_sum: "fb89336192452f4e6fa24d771d36df4baf93a5e208ad3086e8d9b77f531252b3"
+    },
+    {
         path: "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode"
         size: 4381217
         sha256_sum: "3a0c6f22522945463db480f5c90c5db50dabd439612b25ccd55a607c4b44de9f"

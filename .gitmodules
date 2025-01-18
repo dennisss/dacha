@@ -25,6 +25,3 @@
 [submodule "third_party/google/apis"]
 	path = third_party/googleapis/repo
 	url = git@github.com:googleapis/googleapis.git
-[submodule "third_party/libdmtx/repo"]
-	path = third_party/libdmtx/repo
-	url = git@github.com:dmtx/libdmtx.git

@@ -244,6 +244,10 @@ impl Device {
         &self.descriptors
     }
 
+    pub fn device_descriptor(&self) -> &DeviceDescriptor {
+        &self.device_descriptor
+    }
+
     pub fn reset(&self) -> Result<()> {
         unsafe { usbdevfs_reset(self.state.fd) }?;
         Ok(())

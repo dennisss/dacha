@@ -18,6 +18,12 @@ pub struct AsyncRwLock<T> {
     inner: RwLockImpl<AsyncRwLockValue<T>>,
 }
 
+impl<T: Default> Default for AsyncRwLock<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 struct AsyncRwLockValue<T> {
     data: T,
     poisoned: bool,

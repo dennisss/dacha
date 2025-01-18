@@ -1,0 +1,25 @@
+[package]
+name = "labeler"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+usb = { path = "../../usb" }
+graphics = { path = "../../graphics" }
+image = { path = "../../image" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+macros = { path = "../../macros" }
+http = { path = "../../http" }
+json = { path = "../../format/json" }
+web = { path = "../../web" }
+parsing = { path = "../../parsing" }
+ptouch = { path = "../../peripherals/devices/ptouch" }
+labeler_proto = { path = "./proto" }
+rpc = { path = "../../rpc" }
+storage = { path = "../../storage" }
+rpc_util = { path = "../../rpc/util" }

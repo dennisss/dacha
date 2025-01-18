@@ -73,9 +73,10 @@ async fn main() -> Result<()> {
             overlap_percentage: 0.1
             spindle_speed: 12000
             travel_z: 1
+            clearance_z: 10
             feedrate_xy: 500
             feedrate_z: 200
-            rapid_feedrate_xy: 1000
+            rapid_feedrate: 1000
         }
 
         # TODO: Will this well cover the center patch of pads.
@@ -88,9 +89,10 @@ async fn main() -> Result<()> {
             cut_depth: 0.3
             overlap_percentage: 0.2
             travel_z: 1
+            clearance_z: 10
             feedrate_z: 200
             feedrate_xy: 400
-            rapid_feedrate_xy: 1000
+            rapid_feedrate: 1000
             inverted: true
         }
 
@@ -101,9 +103,10 @@ async fn main() -> Result<()> {
             spindle_speed: 12000
             feedrate_z: 200
             feedrate_xy: 100
-            rapid_feedrate_xy: 1000
+            rapid_feedrate: 1000
             cut_depth: 0.3
             travel_z: 1
+            clearance_z: 10
             num_passes: 1
             inverted: true
         }
@@ -112,9 +115,10 @@ async fn main() -> Result<()> {
             tool_index: 3
             # tool_diameter: 0.8
             spindle_speed: 12000
-            travel_xy_feedrate: 1000
+            rapid_feedrate: 1000
             feedrate_z: 200
             travel_z: 1
+            clearance_z: 10
             drill_z: -1.62
         }
     
@@ -125,15 +129,18 @@ async fn main() -> Result<()> {
             feedrate_xy: 400
             feedrate_z: 300
             travel_z: 1
+            clearance_z: 10
             cut_depth_z: 1.65
             depth_per_pass_z: 0.2
             spindle_speed: 12000
+            rapid_feedrate: 1000
         }
         ",
         &mut config,
     )?;
 
-    // TODO: Verify rapid_feedrate_xy is non-zero
+    // TODO: Verify all feedrates are non-zero. Verify all travel/clearance z
+    // heights are non-zero
 
     // let board_path =
     // project_path!("pkg/cnc/boards/usb_power_switch/usb_power_switch.kicad_pcb");

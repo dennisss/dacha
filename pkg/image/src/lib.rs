@@ -296,9 +296,20 @@ impl<T: Cast<f32> + Default + Copy> Image<T> {
     }
 
     pub fn bbox(&self) -> BoundingBox<typenum::U2> {
+        let x_max = if self.width() > 0 {
+            self.width() - 1
+        } else {
+            0
+        };
+        let y_max = if self.height() > 0 {
+            self.height() - 1
+        } else {
+            0
+        };
+
         BoundingBox {
             min: Vector2f::from_slice(&[0.0, 0.0]),
-            max: Vector2f::from_slice(&[(self.width() - 1) as f32, (self.height() - 1) as f32]),
+            max: Vector2f::from_slice(&[x_max as f32, y_max as f32]),
         }
     }
 

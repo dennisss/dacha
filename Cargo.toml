@@ -167,6 +167,8 @@ members = [
 	"pkg/dev/source",
 	"pkg/dev/source/proto",
 	"pkg/dev/git",
+	"pkg/things/labeler",
+	"pkg/things/labeler/proto"
 ]
 
 [profile.dev]

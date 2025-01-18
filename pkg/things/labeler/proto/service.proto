@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package labeler;
+
+
+service Labeler {
+
+    rpc ListDevices (ListDevicesRequest) returns (ListDevicesResponse);
+
+    rpc Print (PrintLabelRequest) returns (PrintLabelResponse);
+}
+
+message ListDevicesRequest {
+
+}
+
+message ListDevicesResponse {
+    repeated LabelDevice devices = 1;
+}
+
+message LabelDevice {
+    string id = 1;
+    string name = 2;
+    LabelTape tape = 3;
+}
+
+message LabelTape {
+    string name = 1;
+    uint32 margin = 2;
+    uint32 width = 3;
+    uint32 dpi = 4;
+    uint32 print_area = 5;
+}
+
+
+message PrintLabelRequest {
+    string device_id = 1;
+
+    repeated LabelPage pages = 2;
+
+    // If true, we will only render the pages but nothing will be printed.
+    bool dry_run = 3;
+}
+
+message PrintLabelResponse {
+    LabelDevice device = 1;
+
+    // Black and white JPEGs or PNGs containing the print area (not including any margin or gap). 
+    // There will be the same number of elements in this list as in the 'pages' on the request.
+    repeated PageImage page_images = 2;
+}
+
+message PageImage {
+    uint32 width = 1;
+    uint32 height = 2;
+    bytes data = 3;
+}
+
+
+message LabelPage {
+    LabelText text = 1;
+
+    // Number of identical copies of this page to print.
+    uint32 quantity = 2;
+
+    // Exact outer length desired for the page (this includes the margin on the start/end).
+    float length_mm = 3;
+
+    float max_length_mm = 4;
+
+    LabelDatamatrix datamatrix = 5;
+}
+
+message LabelText {
+    // Text to render. Can be multi-line if there are new line characters in this.
+    string value = 1;
+
+    enum TextAlignment {
+        UNKNOWN = 0;
+        LEFT = 1;
+        CENTER = 2;
+        RIGHT = 3;
+    }
+    TextAlignment align = 2;
+
+    // If zero or not specified, a font size will be auto selected to fit the available area.
+    float font_size_mm = 3;
+}
+
+message LabelDatamatrix {
+    string data = 1;
+
+    enum Position {
+        UNKNOWN = 0;
+        LEFT_OF_TEXT = 1;
+        RIGHT_OF_TEXT = 2;
+    }
+    Position position = 2;
+}

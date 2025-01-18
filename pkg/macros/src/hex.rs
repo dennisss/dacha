@@ -23,3 +23,18 @@ pub fn hex(input: TokenStream) -> TokenStream {
         [#( #data, )*]
     })
 }
+
+pub fn hex_ref(input: TokenStream) -> TokenStream {
+    let mut input = parse_macro_input!(input as LitStr).value();
+    input.retain(|c| !c.is_whitespace());
+
+    let data = base_radix::hex_decode(&input).unwrap();
+    let len = data.len();
+
+    TokenStream::from(quote! {
+        {
+            static DATA: [u8; #len] = [#( #data, )*];
+            &DATA[..]
+        }
+    })
+}

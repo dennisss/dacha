@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-common = { path = "../../../common" }
+base_error = { path = "../../../base/error" }
+base_util = { path = "../../../base/util" }
 usb = { path = "../../../usb" }
-graphics = { path = "../../../graphics" }
 image = { path = "../../../image" }
 executor = { path = "../../../executor" }
-file = { path = "../../../file" }
 macros = { path = "../../../macros" }

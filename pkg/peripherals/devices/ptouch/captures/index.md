@@ -7,6 +7,9 @@ This directory contains sample USB captures taken while using the official Broth
 - `print_hello` : Prints the text 'Hello' on a lable
 - `print_2inch_blank` : Prints a label with fixed length of 2 inches with nothing on it (all white)
 - `print_square_2inch_nocut` : Prints a blade square followed by empty space on a fixed 2 inch long label (auto-cut is disabled).
+- `settings`
+  - `brother_read_settings_then_change`: This capture uses the 'Device settings' program from Brother to first load the values of the current settings, then edit one of the settings and then edit another setting.
+    - What I think were the initial settings is shown in the 'brother_initial_settings_roughly' image and what are the final settings are in the 'brother_final_settings' image.
 
 
 When the device is first plugged in it appears as a removable disk like the following:
