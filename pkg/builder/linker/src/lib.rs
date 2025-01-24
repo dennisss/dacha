@@ -101,6 +101,13 @@ pub fn get_chip_config(chip_name: &str, building_bootloader: bool) -> Result<Cor
                 });
 
                 config.registers.push(NonVolatileRegister {
+                    name: "APPROTECT".into(),
+                    address: 0x10001208,
+                    words: vec![0xFFFFFF5A], // HwDisabled
+                });
+
+                // TODO: Double check what is best here.
+                config.registers.push(NonVolatileRegister {
                     name: "REGOUT0".into(),
                     address: 0x10001304,
                     words: vec![5], // Set to 3.3V VDD

@@ -138,7 +138,7 @@ impl TWIM {
                 transfer.periph.tasks_stop.write_trigger();
             }
 
-            executor::interrupts::wait_for_irq(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0).await;
+            executor::interrupts::wait_for_irq(Interrupt::SPI0_SPIM0_SPIS0_TWI0_TWIM0_TWIS0).await;
         }
 
         transfer.periph.events_stopped.write_notgenerated();

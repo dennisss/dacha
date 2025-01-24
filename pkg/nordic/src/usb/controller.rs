@@ -427,7 +427,7 @@ impl USBDeviceController {
 
             race!(
                 wait_for_irq(Interrupt::USBD),
-                wait_for_irq(Interrupt::POWER_CLOCK),
+                wait_for_irq(Interrupt::CLOCK_POWER),
             )
             .await;
         }

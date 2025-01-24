@@ -25,3 +25,9 @@
 [submodule "third_party/google/apis"]
 	path = third_party/googleapis/repo
 	url = git@github.com:googleapis/googleapis.git
+[submodule "third_party/voron_0"]
+	path = third_party/voron_0/base
+	url = git@github.com:VoronDesign/Voron-0.git
+[submodule "third_party/voron_0_tulip"]
+	path = third_party/voron_0/tulip
+	url = git@github.com:Amekyras/tulip.git

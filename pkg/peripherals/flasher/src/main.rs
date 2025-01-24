@@ -9,6 +9,8 @@ extern crate file;
 
 mod attiny;
 
+use std::time::Duration;
+
 use attiny::ATTinyProgrammer;
 use common::{ceil_div, errors::*};
 use file::LocalPathBuf;
@@ -37,24 +39,32 @@ TODO: DFU Bootloaders need to be queryable for the flash range they are editing 
 
 #[derive(Args)]
 struct Args {
+    /// Path an ELF file to write to a remote microcontroller.
     #[arg(positional)]
     path: String,
 
     protocol: Protocol,
-
-    usb_selector: usb::DeviceSelector,
 }
 
 #[derive(Args, Clone)]
 enum Protocol {
     #[arg(name = "uf2-dfu")]
-    UF2OverDFU,
+    UF2OverDFU { usb_selector: usb::DeviceSelector },
 
     #[arg(name = "attiny")]
     ATTiny {
         reset_pin: u32,
         spi_device: LocalPathBuf,
     },
+
+    #[arg(name = "blackmagic-swd")]
+    BlackmagicSWD {
+        #[arg(default = false)]
+        power_device: bool,
+    },
+
+    #[arg(name = "dump-uf2")]
+    DumpUF2 { output_path: LocalPathBuf },
 }
 
 // TODO: Also bring in support for
@@ -129,7 +139,7 @@ async fn main() -> Result<()> {
     println!("Flash Space Used: {}", total_written);
 
     match args.protocol {
-        Protocol::UF2OverDFU => {
+        Protocol::DumpUF2 { output_path } => {
             let mut firmware_builder = UF2Builder::new();
             for (offset, data) in segments {
                 firmware_builder.write(offset, data);
@@ -137,7 +147,54 @@ async fn main() -> Result<()> {
 
             println!("Firmware UF2 size: {}", firmware_builder.data.len());
 
-            let mut host = usb::dfu::DFUHost::create(args.usb_selector)?;
+            file::write(output_path, &firmware_builder.data).await?;
+        }
+
+        Protocol::BlackmagicSWD { power_device } => {
+            let mut target = gdb::RemoteTarget::connect().await?;
+
+            if power_device {
+                let _ = target.send_rcmd(b"tpwr enable").await?;
+                executor::sleep(Duration::from_millis(200)).await?;
+            }
+
+            // Currently this sequence of commands is meant for NRF52s: just in case
+            // APPROTECT is on, we fully erase the chip and then re-connect to rescan the
+            // memory map.
+
+            let _ = target.send_rcmd(b"swdp_scan").await?;
+            target.attach(1).await?;
+
+            target.send_rcmd(b"erase_mass").await?;
+            target.detach().await?;
+
+            let _ = target.send_rcmd(b"swdp_scan").await?;
+            target.attach(1).await?;
+
+            // NOTE: We just issued a mass erase so we don't need to call
+            // target.flash_erase().
+
+            // target.flash_erase(0, 0x6000).await?;
+            // target.flash_erase(0x10001000, 0x1000).await?;
+            // executor::sleep(Duration::from_millis(500)).await?;
+
+            for (offset, data) in &segments {
+                target.flash_write(*offset as usize, *data).await?;
+            }
+
+            target.flash_done().await?;
+
+            target.kill(1).await?;
+        }
+        Protocol::UF2OverDFU { usb_selector } => {
+            let mut firmware_builder = UF2Builder::new();
+            for (offset, data) in segments {
+                firmware_builder.write(offset, data);
+            }
+
+            println!("Firmware UF2 size: {}", firmware_builder.data.len());
+
+            let mut host = usb::dfu::DFUHost::create(usb_selector)?;
 
             host.download(&firmware_builder.data).await?;
         }

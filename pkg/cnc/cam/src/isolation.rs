@@ -33,14 +33,6 @@ impl IsolationRoutingProcessor {
         // TODO: Need to verify that traces are actually isolated after running
         // isolation routing.
 
-        /*
-        tool_diameter
-        tool_v_angle
-        min_cut_depth
-        cut_width
-        cut_depth
-        */
-
         let mut cut_depth = self.options.config.cut_depth();
         let mut cut_width = self.options.config.cut_width();
 
@@ -128,7 +120,7 @@ impl IsolationRoutingProcessor {
         };
 
         for i in 0..num_passes {
-            let mut offset = cut_width / 2.0;
+            let mut offset = (cut_width / 2.0) - self.options.config.erosion();
             if i > 0 {
                 offset += (i as f32) * cut_width * (1.0 - self.options.config.overlap_percentage());
             }
@@ -176,10 +168,14 @@ impl IsolationRoutingProcessor {
 
                 have_valid_face = true;
 
-                cut_paths.push(CutPath {
-                    points: boundary.clone(),
-                    closed: true,
-                });
+                let n = self.options.config.multiples().max(1);
+
+                for i in 0..n {
+                    cut_paths.push(CutPath {
+                        points: boundary.clone(),
+                        closed: true,
+                    });
+                }
             }
 
             if !have_valid_face {
@@ -269,7 +265,7 @@ impl IsolationRoutingProcessor {
                 // NOTE: Assuming the current path is closed here.
                 let distance = (&next_path.points[0] - &path.points[0]).norm();
 
-                if distance <= 1.005 * self.options.config.cut_width() {
+                if distance <= 1.005 * cut_width {
                     connecting_to_last_path = true;
                 }
             }

@@ -16,6 +16,7 @@ pub struct Peripherals {
     _hidden: (),
     pub ficr: ficr::FICR,
     pub uicr: uicr::UICR,
+    pub approtect: approtect::APPROTECT,
     pub clock: clock::CLOCK,
     pub power: power::POWER,
     pub p0: p0::P0,
@@ -83,8 +84,18 @@ pub struct Peripherals {
     pub usbd: usbd::USBD,
     pub uarte1: uarte1::UARTE1,
     pub qspi: qspi::QSPI,
-    pub cc_host_rgf: cc_host_rgf::CC_HOST_RGF,
     pub cryptocell: cryptocell::CRYPTOCELL,
+    pub cc_aes: cc_aes::CC_AES,
+    pub cc_chacha: cc_chacha::CC_CHACHA,
+    pub cc_ctl: cc_ctl::CC_CTL,
+    pub cc_din: cc_din::CC_DIN,
+    pub cc_dout: cc_dout::CC_DOUT,
+    pub cc_hash: cc_hash::CC_HASH,
+    pub cc_host_rgf: cc_host_rgf::CC_HOST_RGF,
+    pub cc_misc: cc_misc::CC_MISC,
+    pub cc_pka: cc_pka::CC_PKA,
+    pub cc_rng: cc_rng::CC_RNG,
+    pub cc_rng_sram: cc_rng_sram::CC_RNG_SRAM,
     pub pwm3: pwm3::PWM3,
     pub spim3: spim3::SPIM3,
 }
@@ -96,6 +107,7 @@ impl Peripherals {
                 _hidden: (),
                 ficr: ficr::FICR::new(),
                 uicr: uicr::UICR::new(),
+                approtect: approtect::APPROTECT::new(),
                 clock: clock::CLOCK::new(),
                 power: power::POWER::new(),
                 p0: p0::P0::new(),
@@ -163,8 +175,18 @@ impl Peripherals {
                 usbd: usbd::USBD::new(),
                 uarte1: uarte1::UARTE1::new(),
                 qspi: qspi::QSPI::new(),
-                cc_host_rgf: cc_host_rgf::CC_HOST_RGF::new(),
                 cryptocell: cryptocell::CRYPTOCELL::new(),
+                cc_aes: cc_aes::CC_AES::new(),
+                cc_chacha: cc_chacha::CC_CHACHA::new(),
+                cc_ctl: cc_ctl::CC_CTL::new(),
+                cc_din: cc_din::CC_DIN::new(),
+                cc_dout: cc_dout::CC_DOUT::new(),
+                cc_hash: cc_hash::CC_HASH::new(),
+                cc_host_rgf: cc_host_rgf::CC_HOST_RGF::new(),
+                cc_misc: cc_misc::CC_MISC::new(),
+                cc_pka: cc_pka::CC_PKA::new(),
+                cc_rng: cc_rng::CC_RNG::new(),
+                cc_rng_sram: cc_rng_sram::CC_RNG_SRAM::new(),
                 pwm3: pwm3::PWM3::new(),
                 spim3: spim3::SPIM3::new(),
             }
@@ -174,11 +196,11 @@ impl Peripherals {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Interrupt {
-    POWER_CLOCK = 0,
+    CLOCK_POWER = 0,
     RADIO = 1,
-    UARTE0_UART0 = 2,
-    SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0 = 3,
-    SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1 = 4,
+    UART0_UARTE0 = 2,
+    SPI0_SPIM0_SPIS0_TWI0_TWIM0_TWIS0 = 3,
+    SPI1_SPIM1_SPIS1_TWI1_TWIM1_TWIS1 = 4,
     NFCT = 5,
     GPIOTE = 6,
     SAADC = 7,
@@ -189,17 +211,17 @@ pub enum Interrupt {
     TEMP = 12,
     RNG = 13,
     ECB = 14,
-    CCM_AAR = 15,
+    AAR_CCM = 15,
     WDT = 16,
     RTC1 = 17,
     QDEC = 18,
     COMP_LPCOMP = 19,
-    SWI0_EGU0 = 20,
-    SWI1_EGU1 = 21,
-    SWI2_EGU2 = 22,
-    SWI3_EGU3 = 23,
-    SWI4_EGU4 = 24,
-    SWI5_EGU5 = 25,
+    EGU0_SWI0 = 20,
+    EGU1_SWI1 = 21,
+    EGU2_SWI2 = 22,
+    EGU3_SWI3 = 23,
+    EGU4_SWI4 = 24,
+    EGU5_SWI5 = 25,
     TIMER3 = 26,
     TIMER4 = 27,
     PWM0 = 28,
@@ -207,7 +229,7 @@ pub enum Interrupt {
     MWU = 32,
     PWM1 = 33,
     PWM2 = 34,
-    SPIM2_SPIS2_SPI2 = 35,
+    SPI2_SPIM2_SPIS2 = 35,
     RTC2 = 36,
     I2S = 37,
     FPU = 38,
@@ -838,7 +860,8 @@ pub mod ficr {
             _hidden: (),
             /// Part code
             pub part: part::PART,
-            /// Build code (hardware version and production configuration)
+            /// Build code, last two letters of Package Variant and first two
+            /// characters of Build Code, encoded in ASCII.
             pub variant: variant::VARIANT,
             /// Package option
             pub package: package::PACKAGE,
@@ -871,9 +894,7 @@ pub mod ficr {
             }
 
             enum_def_with_unknown!(#[allow(non_camel_case_types)] PART_FIELD u32 =>
-                            // nRF52833
-                            N52833 = 337971,
-            // nRF52840
+                            // nRF52840
                             N52840 = 337984,
             // Unspecified
                             Unspecified = 4294967295
@@ -881,15 +902,6 @@ pub mod ficr {
                         );
 
             impl PART_FIELD {
-                pub fn is_n52833(&self) -> bool {
-                    *self == Self::N52833
-                }
-
-                pub fn set_n52833(&mut self) -> &mut Self {
-                    *self = Self::N52833;
-                    self
-                }
-
                 pub fn is_n52840(&self) -> bool {
                     *self == Self::N52840
                 }
@@ -923,106 +935,12 @@ pub mod ficr {
             impl VARIANT {}
 
             impl RegisterRead for VARIANT {
-                type Value = VARIANT_FIELD;
+                type Value = u32;
 
                 #[inline(always)]
                 fn read(&self) -> Self::Value {
                     let raw = self.raw.read();
-                    VARIANT_FIELD::from_value((raw & 0xffffffff) >> 0)
-                }
-            }
-
-            enum_def_with_unknown!(#[allow(non_camel_case_types)] VARIANT_FIELD u32 =>
-                            // AAAA
-                            AAAA = 1094795585,
-            // BAAA
-                            BAAA = 1111572801,
-            // CAAA
-                            CAAA = 1128350017,
-            // AABA
-                            AABA = 1094795841,
-            // AABB
-                            AABB = 1094795842,
-            // AACA
-                            AACA = 1094796097,
-            // AAAB
-                            AAAB = 1094795586,
-            // Unspecified
-                            Unspecified = 4294967295
-
-                        );
-
-            impl VARIANT_FIELD {
-                pub fn is_aaaa(&self) -> bool {
-                    *self == Self::AAAA
-                }
-
-                pub fn set_aaaa(&mut self) -> &mut Self {
-                    *self = Self::AAAA;
-                    self
-                }
-
-                pub fn is_baaa(&self) -> bool {
-                    *self == Self::BAAA
-                }
-
-                pub fn set_baaa(&mut self) -> &mut Self {
-                    *self = Self::BAAA;
-                    self
-                }
-
-                pub fn is_caaa(&self) -> bool {
-                    *self == Self::CAAA
-                }
-
-                pub fn set_caaa(&mut self) -> &mut Self {
-                    *self = Self::CAAA;
-                    self
-                }
-
-                pub fn is_aaba(&self) -> bool {
-                    *self == Self::AABA
-                }
-
-                pub fn set_aaba(&mut self) -> &mut Self {
-                    *self = Self::AABA;
-                    self
-                }
-
-                pub fn is_aabb(&self) -> bool {
-                    *self == Self::AABB
-                }
-
-                pub fn set_aabb(&mut self) -> &mut Self {
-                    *self = Self::AABB;
-                    self
-                }
-
-                pub fn is_aaca(&self) -> bool {
-                    *self == Self::AACA
-                }
-
-                pub fn set_aaca(&mut self) -> &mut Self {
-                    *self = Self::AACA;
-                    self
-                }
-
-                pub fn is_aaab(&self) -> bool {
-                    *self == Self::AAAB
-                }
-
-                pub fn set_aaab(&mut self) -> &mut Self {
-                    *self = Self::AAAB;
-                    self
-                }
-
-                pub fn is_unspecified(&self) -> bool {
-                    *self == Self::Unspecified
-                }
-
-                pub fn set_unspecified(&mut self) -> &mut Self {
-                    *self = Self::Unspecified;
-                    self
+                    (raw & 0xffffffff) >> 0
                 }
             }
         }
@@ -1050,9 +968,11 @@ pub mod ficr {
             }
 
             enum_def_with_unknown!(#[allow(non_camel_case_types)] PACKAGE_FIELD u32 =>
-                            // QIxx - 73-pin aQFN
+                            // QIxx - 7x7 73-pin aQFN
                             QI = 8196,
-            // CKxx - WLCSP
+            // QFxx - 6x6 48-pin QFN
+                            QF = 8192,
+            // CKxx - 3.544 x 3.607 WLCSP
                             CK = 8197,
             // Unspecified
                             Unspecified = 4294967295
@@ -1066,6 +986,15 @@ pub mod ficr {
 
                 pub fn set_qi(&mut self) -> &mut Self {
                     *self = Self::QI;
+                    self
+                }
+
+                pub fn is_qf(&self) -> bool {
+                    *self == Self::QF
+                }
+
+                pub fn set_qf(&mut self) -> &mut Self {
+                    *self = Self::QF;
                     self
                 }
 
@@ -1112,15 +1041,15 @@ pub mod ficr {
             }
 
             enum_def_with_unknown!(#[allow(non_camel_case_types)] RAM_FIELD u32 =>
-                            // 16 kByte RAM
+                            // 16 kB RAM
                             K16 = 16,
-            // 32 kByte RAM
+            // 32 kB RAM
                             K32 = 32,
-            // 64 kByte RAM
+            // 64 kB RAM
                             K64 = 64,
-            // 128 kByte RAM
+            // 128 kB RAM
                             K128 = 128,
-            // 256 kByte RAM
+            // 256 kB RAM
                             K256 = 256,
             // Unspecified
                             Unspecified = 4294967295
@@ -1207,15 +1136,15 @@ pub mod ficr {
             }
 
             enum_def_with_unknown!(#[allow(non_camel_case_types)] FLASH_FIELD u32 =>
-                            // 128 kByte FLASH
+                            // 128 kB FLASH
                             K128 = 128,
-            // 256 kByte FLASH
+            // 256 kB FLASH
                             K256 = 256,
-            // 512 kByte FLASH
+            // 512 kB FLASH
                             K512 = 512,
-            // 1 MByte FLASH
+            // 1 MB FLASH
                             K1024 = 1024,
-            // 2 MByte FLASH
+            // 2 MB FLASH
                             K2048 = 2048,
             // Unspecified
                             Unspecified = 4294967295
@@ -2954,8 +2883,8 @@ pub mod uicr {
         /// Processor debug control
         pub debugctrl: debugctrl::DEBUGCTRL,
         _padding_532: [u8; 240],
-        /// GPIO reference voltage / external output supply voltage in high
-        /// voltage mode
+        /// Output voltage from REG0 regulator stage. The maximum output voltage
+        /// from this stage is given as VDDH - V_VDDH-VDD.
         pub regout0: regout0::REGOUT0,
     }
 
@@ -3277,8 +3206,10 @@ pub mod uicr {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PALL_FIELD u32 =>
-                        // Disable
+                        // Hardware disable of access port protection for devices where access port protection is controlled by hardware
                         Disabled = 255,
+        // Hardware disable of access port protection for devices where access port protection is controlled by hardware and software
+                        HwDisabled = 90,
         // Enable
                         Enabled = 0
 
@@ -3291,6 +3222,15 @@ pub mod uicr {
 
             pub fn set_disabled(&mut self) -> &mut Self {
                 *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_hwdisabled(&self) -> bool {
+                *self == Self::HwDisabled
+            }
+
+            pub fn set_hwdisabled(&mut self) -> &mut Self {
+                *self = Self::HwDisabled;
                 self
             }
 
@@ -3385,9 +3325,9 @@ pub mod uicr {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PROTECT_FIELD u32 =>
-                        // Operation as GPIO pins. Same protection as normal GPIO pins
+                        // Operation as GPIO pins. Same protection as normal GPIO pins.
                         Disabled = 0,
-        // Operation as NFC antenna pins. Configures the protection for NFC operation
+        // Operation as NFC antenna pins. Configures the protection for NFC operation.
                         NFC = 1
 
                     );
@@ -3731,6 +3671,159 @@ pub mod uicr {
 
             pub fn set_default(&mut self) -> &mut Self {
                 *self = Self::DEFAULT;
+                self
+            }
+        }
+    }
+}
+
+pub mod approtect {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct APPROTECT {
+        _hidden: (),
+    }
+
+    impl APPROTECT {
+        const BASE_ADDRESS: u32 = 0x40000000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for APPROTECT {
+        type Target = APPROTECT_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for APPROTECT {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct APPROTECT_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 1360],
+        /// Software force enable APPROTECT mechanism until next reset.
+        pub forceprotect: forceprotect::FORCEPROTECT,
+        _padding_1364: [u8; 4],
+        /// Software disable APPROTECT mechanism
+        pub disable: disable::DISABLE,
+    }
+
+    pub mod forceprotect {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct FORCEPROTECT {
+            raw: RawRegister<u32>,
+        }
+
+        impl FORCEPROTECT {
+            pub fn write_force(&mut self) {
+                self.write(FORCEPROTECT_WRITE_FIELD::Force)
+            }
+        }
+
+        impl RegisterRead for FORCEPROTECT {
+            type Value = u32;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                (raw & 0x000000ff) >> 0
+            }
+        }
+
+        impl RegisterWrite for FORCEPROTECT {
+            type Value = FORCEPROTECT_WRITE_FIELD;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = value.to_value();
+                self.raw.write(raw);
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] FORCEPROTECT_WRITE_FIELD u32 =>
+            // Software force enable APPROTECT mechanism
+            Force = 0
+
+        );
+
+        impl FORCEPROTECT_WRITE_FIELD {
+            pub fn is_force(&self) -> bool {
+                *self == Self::Force
+            }
+
+            pub fn set_force(&mut self) -> &mut Self {
+                *self = Self::Force;
+                self
+            }
+        }
+    }
+
+    pub mod disable {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DISABLE {
+            raw: RawRegister<u32>,
+        }
+
+        impl DISABLE {
+            pub fn write_swdisable(&mut self) {
+                self.write(DISABLE_FIELD::SwDisable)
+            }
+        }
+
+        impl RegisterRead for DISABLE {
+            type Value = DISABLE_FIELD;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                DISABLE_FIELD::from_value((raw & 0x000000ff) >> 0)
+            }
+        }
+
+        impl RegisterWrite for DISABLE {
+            type Value = DISABLE_FIELD;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = value.to_value();
+                self.raw.write(raw);
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DISABLE_FIELD u32 =>
+            // Software disable APPROTECT mechanism
+            SwDisable = 90
+
+        );
+
+        impl DISABLE_FIELD {
+            pub fn is_swdisable(&self) -> bool {
+                *self == Self::SwDisable
+            }
+
+            pub fn set_swdisable(&mut self) -> &mut Self {
+                *self = Self::SwDisable;
                 self
             }
         }
@@ -11299,7 +11392,7 @@ pub mod p0 {
         /// Latch register indicating what GPIO pins that have met the criteria
         /// set in the PIN_CNF[n].SENSE registers
         pub latch: latch::LATCH,
-        /// Select between default DETECT signal behaviour and LDETECT mode
+        /// Select between default DETECT signal behavior and LDETECT mode
         pub detectmode: detectmode::DETECTMODE,
         _padding_1320: [u8; 472],
         /// Description collection: Configuration of GPIO pins
@@ -13016,7 +13109,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN0_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13033,7 +13126,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN1_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13050,7 +13143,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN2_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13067,7 +13160,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN3_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13084,7 +13177,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN4_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13101,7 +13194,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN5_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13118,7 +13211,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN6_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13135,7 +13228,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN7_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13152,7 +13245,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN8_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13169,7 +13262,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN9_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13186,7 +13279,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN10_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13203,7 +13296,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN11_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13220,7 +13313,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN12_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13237,7 +13330,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN13_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13254,7 +13347,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN14_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13271,7 +13364,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN15_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13288,7 +13381,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN16_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13305,7 +13398,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN17_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13322,7 +13415,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN18_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13339,7 +13432,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN19_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13356,7 +13449,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN20_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13373,7 +13466,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN21_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13390,7 +13483,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN22_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13407,7 +13500,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN23_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13424,7 +13517,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN24_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13441,7 +13534,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN25_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13458,7 +13551,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN26_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13475,7 +13568,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN27_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13492,7 +13585,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN28_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13509,7 +13602,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN29_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13526,7 +13619,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN30_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -13543,7 +13636,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN31_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin high; writing a '0' has no effect
+            // Write: a '1' sets the pin high; a '0' has no effect
             Set = 1
 
         );
@@ -14539,7 +14632,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN0_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14556,7 +14649,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN1_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14573,7 +14666,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN2_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14590,7 +14683,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN3_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14607,7 +14700,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN4_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14624,7 +14717,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN5_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14641,7 +14734,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN6_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14658,7 +14751,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN7_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14675,7 +14768,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN8_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14692,7 +14785,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN9_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14709,7 +14802,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN10_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14726,7 +14819,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN11_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14743,7 +14836,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN12_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14760,7 +14853,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN13_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14777,7 +14870,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN14_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14794,7 +14887,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN15_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14811,7 +14904,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN16_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14828,7 +14921,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN17_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14845,7 +14938,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN18_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14862,7 +14955,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN19_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14879,7 +14972,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN20_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14896,7 +14989,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN21_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14913,7 +15006,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN22_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14930,7 +15023,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN23_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14947,7 +15040,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN24_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14964,7 +15057,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN25_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14981,7 +15074,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN26_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -14998,7 +15091,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN27_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -15015,7 +15108,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN28_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -15032,7 +15125,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN29_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -15049,7 +15142,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN30_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -15066,7 +15159,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN31_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets the pin low; writing a '0' has no effect
+            // Write: a '1' sets the pin low; a '0' has no effect
             Clear = 1
 
         );
@@ -17537,7 +17630,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN0_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17582,7 +17675,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN1_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17627,7 +17720,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN2_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17672,7 +17765,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN3_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17717,7 +17810,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN4_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17762,7 +17855,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN5_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17807,7 +17900,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN6_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17852,7 +17945,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN7_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17897,7 +17990,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN8_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17942,7 +18035,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN9_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -17987,7 +18080,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN10_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18032,7 +18125,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN11_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18077,7 +18170,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN12_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18122,7 +18215,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN13_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18167,7 +18260,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN14_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18212,7 +18305,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN15_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18257,7 +18350,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN16_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18302,7 +18395,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN17_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18347,7 +18440,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN18_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18392,7 +18485,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN19_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18437,7 +18530,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN20_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18482,7 +18575,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN21_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18527,7 +18620,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN22_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18572,7 +18665,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN23_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18617,7 +18710,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN24_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18662,7 +18755,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN25_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18707,7 +18800,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN26_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18752,7 +18845,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN27_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18797,7 +18890,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN28_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18842,7 +18935,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN29_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18887,7 +18980,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN30_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -18932,7 +19025,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN31_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to output; writing a '0' has no effect
+            // Write: a '1' sets pin to output; a '0' has no effect
             Set = 1
 
         );
@@ -19956,7 +20049,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN0_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20001,7 +20094,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN1_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20046,7 +20139,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN2_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20091,7 +20184,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN3_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20136,7 +20229,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN4_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20181,7 +20274,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN5_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20226,7 +20319,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN6_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20271,7 +20364,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN7_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20316,7 +20409,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN8_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20361,7 +20454,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN9_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20406,7 +20499,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN10_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20451,7 +20544,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN11_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20496,7 +20589,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN12_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20541,7 +20634,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN13_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20586,7 +20679,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN14_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20631,7 +20724,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN15_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20676,7 +20769,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN16_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20721,7 +20814,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN17_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20766,7 +20859,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN18_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20811,7 +20904,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN19_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20856,7 +20949,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN20_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20901,7 +20994,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN21_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20946,7 +21039,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN22_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -20991,7 +21084,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN23_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21036,7 +21129,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN24_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21081,7 +21174,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN25_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21126,7 +21219,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN26_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21171,7 +21264,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN27_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21216,7 +21309,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN28_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21261,7 +21354,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN29_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21306,7 +21399,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN30_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -21351,7 +21444,7 @@ pub mod p0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] PIN31_WRITE_FIELD u32 =>
-            // Write: writing a '1' sets pin to input; writing a '0' has no effect
+            // Write: a '1' sets pin to input; a '0' has no effect
             Clear = 1
 
         );
@@ -23039,7 +23132,7 @@ pub mod p0 {
         enum_def_with_unknown!(#[allow(non_camel_case_types)] DETECTMODE_FIELD u32 =>
                         // DETECT directly connected to PIN DETECT signals
                         Default = 0,
-        // Use the latched LDETECT behaviour
+        // Use the latched LDETECT behavior
                         LDETECT = 1
 
                     );
@@ -30049,7 +30142,8 @@ pub mod uart0 {
         pub enable: enable::ENABLE,
         _padding_1284: [u8; 4],
         pub psel: psel::PSEL,
-        /// RXD register
+        /// RXD register. Register is cleared on read and the double buffered
+        /// byte will be moved to RXD if it exists.
         pub rxd: rxd::RXD,
         /// TXD register
         pub txd: txd::TXD,
@@ -31762,7 +31856,7 @@ pub mod uarte0 {
         /// Disable interrupt
         pub intenclr: intenclr::INTENCLR,
         _padding_780: [u8; 372],
-        /// Error source Note : this register is read / write one to clear.
+        /// Error source This register is read/write one to clear.
         pub errorsrc: errorsrc::ERRORSRC,
         _padding_1156: [u8; 124],
         /// Enable UART
@@ -33547,7 +33641,7 @@ pub mod uarte0 {
                         Baud460800 = 121634816,
         // 921600 baud (actual rate: 941176)
                         Baud921600 = 251658240,
-        // 1Mega baud
+        // 1 megabaud
                         Baud1M = 268435456
 
                     );
@@ -34190,7 +34284,8 @@ pub mod spi0 {
         _padding_1284: [u8; 4],
         pub psel: psel::PSEL,
         _padding_1300: [u8; 4],
-        /// RXD register
+        /// RXD register. Register is cleared on read and the buffer pointer
+        /// will be modified if read.
         pub rxd: rxd::RXD,
         /// TXD register
         pub txd: txd::TXD,
@@ -34990,7 +35085,7 @@ pub mod spim0 {
         pub intenclr: intenclr::INTENCLR,
         _padding_780: [u8; 244],
         /// Stall status for EasyDMA RAM accesses. The fields in this register
-        /// is set to STALL by hardware whenever a stall occurres and can be
+        /// are set to STALL by hardware whenever a stall occurs and can be
         /// cleared (set to NOSTALL) by the CPU.
         pub stallstat: stallstat::STALLSTAT,
         _padding_1028: [u8; 252],
@@ -36578,8 +36673,10 @@ pub mod spim0 {
             _hidden: (),
             /// Sample delay for input serial data on MISO
             pub rxdelay: rxdelay::RXDELAY,
-            /// Minimum duration between edge of CSN and edge of SCK and minimum
-            /// duration CSN must stay high between transactions
+            /// Minimum duration between edge of CSN and edge of SCK at the
+            /// start and the end of a transaction, and minimum duration CSN
+            /// will stay high between transactions if END-START shortcut is
+            /// used
             pub csndur: csndur::CSNDUR,
         }
 
@@ -38559,7 +38656,8 @@ pub mod twi0 {
         _padding_1284: [u8; 4],
         pub psel: psel::PSEL,
         _padding_1296: [u8; 8],
-        /// RXD register
+        /// RXD register. Register is cleared on read and the buffer pointer
+        /// will be modified if read.
         pub rxd: rxd::RXD,
         /// TXD register
         pub txd: txd::TXD,
@@ -39796,8 +39894,7 @@ pub mod twim0 {
         /// TWI error
         pub events_error: EventRegister,
         _padding_296: [u8; 32],
-        /// Last byte has been sent out after the SUSPEND task has been issued,
-        /// TWI traffic is now suspended.
+        /// SUSPEND task has been issued, TWI traffic is now suspended.
         pub events_suspended: EventRegister,
         /// Receive sequence started
         pub events_rxstarted: EventRegister,
@@ -43910,7 +44007,7 @@ pub mod nfct {
         /// Third last NFCID1 part (10 bytes ID)
         pub nfcid1_3rd_last: nfcid1_3rd_last::NFCID1_3RD_LAST,
         /// Controls the auto collision resolution function. This setting must
-        /// be done before the NFCT peripheral is enabled.
+        /// be done before the NFCT peripheral is activated.
         pub autocolresconfig: autocolresconfig::AUTOCOLRESCONFIG,
         /// NFC-A SENS_RES auto-response settings
         pub sensres: sensres::SENSRES,
@@ -47850,7 +47947,7 @@ pub mod gpiote {
         /// Disable interrupt
         pub intenclr: intenclr::INTENCLR,
         _padding_780: [u8; 516],
-        /// Description collection: Configuration for OUT[n], SET[n] and CLR[n]
+        /// Description collection: Configuration for OUT[n], SET[n], and CLR[n]
         /// tasks and IN[n] event
         pub config: [config::CONFIG; 8],
     }
@@ -54170,8 +54267,8 @@ pub mod rtc0 {
         _padding_844: [u8; 440],
         /// Current COUNTER value
         pub counter: counter::COUNTER,
-        /// 12 bit prescaler for COUNTER frequency (32768/(PRESCALER+1)).Must be
-        /// written when RTC is stopped
+        /// 12 bit prescaler for COUNTER frequency (32768/(PRESCALER+1)). Must
+        /// be written when RTC is stopped.
         pub prescaler: prescaler::PRESCALER,
         _padding_1292: [u8; 52],
         /// Description collection: Compare register n
@@ -54867,7 +54964,7 @@ pub mod rtc0 {
         enum_def_with_unknown!(#[allow(non_camel_case_types)] TICK_FIELD u32 =>
                         // Disable
                         Disabled = 0,
-        // Disable
+        // Enable
                         Enabled = 1
 
                     );
@@ -54895,7 +54992,7 @@ pub mod rtc0 {
         enum_def_with_unknown!(#[allow(non_camel_case_types)] OVRFLW_FIELD u32 =>
                         // Disable
                         Disabled = 0,
-        // Disable
+        // Enable
                         Enabled = 1
 
                     );
@@ -54923,7 +55020,7 @@ pub mod rtc0 {
         enum_def_with_unknown!(#[allow(non_camel_case_types)] COMPARE0_FIELD u32 =>
                         // Disable
                         Disabled = 0,
-        // Disable
+        // Enable
                         Enabled = 1
 
                     );
@@ -54951,7 +55048,7 @@ pub mod rtc0 {
         enum_def_with_unknown!(#[allow(non_camel_case_types)] COMPARE1_FIELD u32 =>
                         // Disable
                         Disabled = 0,
-        // Disable
+        // Enable
                         Enabled = 1
 
                     );
@@ -54979,7 +55076,7 @@ pub mod rtc0 {
         enum_def_with_unknown!(#[allow(non_camel_case_types)] COMPARE2_FIELD u32 =>
                         // Disable
                         Disabled = 0,
-        // Disable
+        // Enable
                         Enabled = 1
 
                     );
@@ -55007,7 +55104,7 @@ pub mod rtc0 {
         enum_def_with_unknown!(#[allow(non_camel_case_types)] COMPARE3_FIELD u32 =>
                         // Disable
                         Disabled = 0,
-        // Disable
+        // Enable
                         Enabled = 1
 
                     );
@@ -56269,41 +56366,41 @@ pub mod temp {
         /// Temperature in degC (0.25deg steps)
         pub temp: temp::TEMP,
         _padding_1292: [u8; 20],
-        /// Slope of 1st piece wise linear function
+        /// Slope of first piecewise linear function
         pub a0: a0::A0,
-        /// Slope of 2nd piece wise linear function
+        /// Slope of second piecewise linear function
         pub a1: a1::A1,
-        /// Slope of 3rd piece wise linear function
+        /// Slope of third piecewise linear function
         pub a2: a2::A2,
-        /// Slope of 4th piece wise linear function
+        /// Slope of fourth piecewise linear function
         pub a3: a3::A3,
-        /// Slope of 5th piece wise linear function
+        /// Slope of fifth piecewise linear function
         pub a4: a4::A4,
-        /// Slope of 6th piece wise linear function
+        /// Slope of sixth piecewise linear function
         pub a5: a5::A5,
         _padding_1336: [u8; 8],
-        /// y-intercept of 1st piece wise linear function
+        /// y-intercept of first piecewise linear function
         pub b0: b0::B0,
-        /// y-intercept of 2nd piece wise linear function
+        /// y-intercept of second piecewise linear function
         pub b1: b1::B1,
-        /// y-intercept of 3rd piece wise linear function
+        /// y-intercept of third piecewise linear function
         pub b2: b2::B2,
-        /// y-intercept of 4th piece wise linear function
+        /// y-intercept of fourth piecewise linear function
         pub b3: b3::B3,
-        /// y-intercept of 5th piece wise linear function
+        /// y-intercept of fifth piecewise linear function
         pub b4: b4::B4,
-        /// y-intercept of 6th piece wise linear function
+        /// y-intercept of sixth piecewise linear function
         pub b5: b5::B5,
         _padding_1368: [u8; 8],
-        /// End point of 1st piece wise linear function
+        /// End point of first piecewise linear function
         pub t0: t0::T0,
-        /// End point of 2nd piece wise linear function
+        /// End point of second piecewise linear function
         pub t1: t1::T1,
-        /// End point of 3rd piece wise linear function
+        /// End point of third piecewise linear function
         pub t2: t2::T2,
-        /// End point of 4th piece wise linear function
+        /// End point of fourth piecewise linear function
         pub t3: t3::T3,
-        /// End point of 5th piece wise linear function
+        /// End point of fifth piecewise linear function
         pub t4: t4::T4,
     }
 
@@ -58684,7 +58781,7 @@ pub mod ccm {
     #[repr(C)]
     pub struct CCM_REGISTERS {
         _hidden: (),
-        /// Start generation of key-stream. This operation will stop by itself
+        /// Start generation of keystream. This operation will stop by itself
         /// when completed.
         pub tasks_ksgen: TaskRegister,
         /// Start encryption/decryption. This operation will stop by itself when
@@ -58696,7 +58793,7 @@ pub mod ccm {
         /// RATEOVERRIDE register for any ongoing encryption/decryption
         pub tasks_rateoverride: TaskRegister,
         _padding_16: [u8; 240],
-        /// Key-stream generation complete
+        /// Keystream generation complete
         pub events_endksgen: EventRegister,
         /// Encrypt/decrypt complete
         pub events_endcrypt: EventRegister,
@@ -58718,7 +58815,7 @@ pub mod ccm {
         pub enable: enable::ENABLE,
         /// Operation mode
         pub mode: mode::MODE,
-        /// Pointer to data structure holding AES key and NONCE vector
+        /// Pointer to data structure holding the AES key and the NONCE vector
         pub cnfptr: cnfptr::CNFPTR,
         /// Input pointer
         pub inptr: inptr::INPTR,
@@ -58726,7 +58823,7 @@ pub mod ccm {
         pub outptr: outptr::OUTPTR,
         /// Pointer to data area used for temporary storage
         pub scratchptr: scratchptr::SCRATCHPTR,
-        /// Length of key-stream generated when MODE.LENGTH = Extended.
+        /// Length of keystream generated when MODE.LENGTH = Extended
         pub maxpacketsize: maxpacketsize::MAXPACKETSIZE,
         /// Data rate override setting.
         pub rateoverride: rateoverride::RATEOVERRIDE,
@@ -59451,9 +59548,9 @@ pub mod ccm {
                         _1Mbit = 0,
         // 2 Mbps
                         _2Mbit = 1,
-        // 125 Kbps
+        // 125 kbps
                         _125Kbps = 2,
-        // 500 Kbps
+        // 500 kbps
                         _500Kbps = 3
 
                     );
@@ -59497,9 +59594,9 @@ pub mod ccm {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] LENGTH_FIELD u32 =>
-                        // Default length. Effective length of LENGTH field in encrypted/decrypted packet is 5 bits. A key-stream for packet payloads up to 27 bytes will be generated.
+                        // Default length. Effective length of LENGTH field in encrypted/decrypted packet is 5 bits. A keystream for packet payloads up to 27 bytes will be generated.
                         Default = 0,
-        // Extended length. Effective length of LENGTH field in encrypted/decrypted packet is 8 bits. A key-stream for packet payloads up to MAXPACKETSIZE bytes will be generated.
+        // Extended length. Effective length of LENGTH field in encrypted/decrypted packet is 8 bits. A keystream for packet payloads up to MAXPACKETSIZE bytes will be generated.
                         Extended = 1
 
                     );
@@ -59749,9 +59846,9 @@ pub mod ccm {
                         _1Mbit = 0,
         // 2 Mbps
                         _2Mbit = 1,
-        // 125 Kbps
+        // 125 kbps
                         _125Kbps = 2,
-        // 500 Kbps
+        // 500 kbps
                         _500Kbps = 3
 
                     );
@@ -60342,9 +60439,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR0_FIELD u32 =>
-                        // RR[0] register is not enabled, or are already requesting reload
+                        // RR[0] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[0] register is enabled, and are not yet requesting reload
+        // RR[0] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -60370,9 +60467,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR1_FIELD u32 =>
-                        // RR[1] register is not enabled, or are already requesting reload
+                        // RR[1] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[1] register is enabled, and are not yet requesting reload
+        // RR[1] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -60398,9 +60495,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR2_FIELD u32 =>
-                        // RR[2] register is not enabled, or are already requesting reload
+                        // RR[2] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[2] register is enabled, and are not yet requesting reload
+        // RR[2] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -60426,9 +60523,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR3_FIELD u32 =>
-                        // RR[3] register is not enabled, or are already requesting reload
+                        // RR[3] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[3] register is enabled, and are not yet requesting reload
+        // RR[3] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -60454,9 +60551,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR4_FIELD u32 =>
-                        // RR[4] register is not enabled, or are already requesting reload
+                        // RR[4] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[4] register is enabled, and are not yet requesting reload
+        // RR[4] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -60482,9 +60579,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR5_FIELD u32 =>
-                        // RR[5] register is not enabled, or are already requesting reload
+                        // RR[5] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[5] register is enabled, and are not yet requesting reload
+        // RR[5] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -60510,9 +60607,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR6_FIELD u32 =>
-                        // RR[6] register is not enabled, or are already requesting reload
+                        // RR[6] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[6] register is enabled, and are not yet requesting reload
+        // RR[6] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -60538,9 +60635,9 @@ pub mod wdt {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RR7_FIELD u32 =>
-                        // RR[7] register is not enabled, or are already requesting reload
+                        // RR[7] register is not enabled, or is already requesting reload
                         DisabledOrRequested = 0,
-        // RR[7] register is enabled, and are not yet requesting reload
+        // RR[7] register is enabled, and is not yet requesting reload
                         EnabledAndUnrequested = 1
 
                     );
@@ -62683,23 +62780,23 @@ pub mod qdec {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] REPORTPER_FIELD u32 =>
-                        // 10 samples / report
+                        // 10 samples/report
                         _10Smpl = 0,
-        // 40 samples / report
+        // 40 samples/report
                         _40Smpl = 1,
-        // 80 samples / report
+        // 80 samples/report
                         _80Smpl = 2,
-        // 120 samples / report
+        // 120 samples/report
                         _120Smpl = 3,
-        // 160 samples / report
+        // 160 samples/report
                         _160Smpl = 4,
-        // 200 samples / report
+        // 200 samples/report
                         _200Smpl = 5,
-        // 240 samples / report
+        // 240 samples/report
                         _240Smpl = 6,
-        // 280 samples / report
+        // 280 samples/report
                         _280Smpl = 7,
-        // 1 sample / report
+        // 1 sample/report
                         _1Smpl = 8
 
                     );
@@ -64265,7 +64362,7 @@ pub mod comp {
                         Int2V4 = 2,
         // VREF = VDD
                         VDD = 4,
-        // VREF = AREF (VDD &gt;= VREF &gt;= AREFMIN)
+        // VREF = AREF
                         ARef = 5
 
                     );
@@ -65594,9 +65691,9 @@ pub mod lpcomp {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] RESULT_FIELD u32 =>
-                        // Input voltage is below the reference threshold (VIN+ &lt; VIN-).
+                        // Input voltage is below the reference threshold (VIN+ &lt; VIN-)
                         Below = 0,
-        // Input voltage is above the reference threshold (VIN+ &gt; VIN-).
+        // Input voltage is above the reference threshold (VIN+ &gt; VIN-)
                         Above = 1
 
                     );
@@ -71283,9 +71380,9 @@ pub mod pdm {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] OPERATION_FIELD u32 =>
-                        // Sample and store one pair (Left + Right) of 16bit samples per RAM word R=[31:16]; L=[15:0]
+                        // Sample and store one pair (left + right) of 16-bit samples per RAM word R=[31:16]; L=[15:0]
                         Stereo = 0,
-        // Sample and store two successive Left samples (16 bit each) per RAM word L1=[31:16]; L0=[15:0]
+        // Sample and store two successive left samples (16 bits each) per RAM word L1=[31:16]; L0=[15:0]
                         Mono = 1
 
                     );
@@ -71385,11 +71482,11 @@ pub mod pdm {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] GAINL_FIELD u32 =>
-                        // -20dB gain adjustment (minimum)
+                        // -20 dB gain adjustment (minimum)
                         MinGain = 0,
-        // 0dB gain adjustment
+        // 0 dB gain adjustment
                         DefaultGain = 40,
-        // +20dB gain adjustment (maximum)
+        // +20 dB gain adjustment (maximum)
                         MaxGain = 80
 
                     );
@@ -71470,11 +71567,11 @@ pub mod pdm {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] GAINR_FIELD u32 =>
-                        // -20dB gain adjustment (minimum)
+                        // -20 dB gain adjustment (minimum)
                         MinGain = 0,
-        // 0dB gain adjustment
+        // 0 dB gain adjustment
                         DefaultGain = 40,
-        // +20dB gain adjustment (maximum)
+        // +20 dB gain adjustment (maximum)
                         MaxGain = 80
 
                     );
@@ -71800,11 +71897,11 @@ pub mod acl {
         pub struct ACL {
             // TODO: Add this to the peripherals register block as well.
             _hidden: (),
-            /// Description cluster: Configure the word-aligned start address of
-            /// region n to protect
+            /// Description cluster: Start address of region to protect. The
+            /// start address must be word-aligned.
             pub addr: addr::ADDR,
             /// Description cluster: Size of region to protect counting from
-            /// address ACL[n].ADDR. Write '0' as no effect.
+            /// address ACL[n].ADDR. Writing a '0' has no effect.
             pub size: size::SIZE,
             /// Description cluster: Access permissions for region n as defined
             /// by start address ACL[n].ADDR and size ACL[n].SIZE
@@ -72047,9 +72144,9 @@ pub mod acl {
             }
 
             enum_def_with_unknown!(#[allow(non_camel_case_types)] WRITE_FIELD u32 =>
-                            // Allow write and erase instructions to region n
+                            // Allow write and erase instructions to region n.
                             Enable = 0,
-            // Block write and erase instructions to region n
+            // Block write and erase instructions to region n.
                             Disable = 1
 
                         );
@@ -72075,9 +72172,9 @@ pub mod acl {
             }
 
             enum_def_with_unknown!(#[allow(non_camel_case_types)] READ_FIELD u32 =>
-                            // Allow read instructions to region n
+                            // Allow read instructions to region n.
                             Enable = 0,
-            // Block read instructions to region n
+            // Block read instructions to region n.
                             Disable = 1
 
                         );
@@ -72152,9 +72249,7 @@ pub mod nvmc {
         pub erasepage: erasepage::ERASEPAGE,
         /// Register for erasing all non-volatile user memory
         pub eraseall: eraseall::ERASEALL,
-        /// Deprecated register - Register for erasing a page in code area.
-        /// Equivalent to ERASEPAGE.
-        pub erasepcr0: erasepcr0::ERASEPCR0,
+        _padding_1296: [u8; 4],
         /// Register for erasing user information configuration registers
         pub eraseuicr: eraseuicr::ERASEUICR,
         /// Register for partial erase of a page in code area
@@ -72162,12 +72257,12 @@ pub mod nvmc {
         /// Register for partial erase configuration
         pub erasepagepartialcfg: erasepagepartialcfg::ERASEPAGEPARTIALCFG,
         _padding_1312: [u8; 32],
-        /// I-code cache configuration register.
+        /// I-code cache configuration register
         pub icachecnf: icachecnf::ICACHECNF,
         _padding_1348: [u8; 4],
-        /// I-code cache hit counter.
+        /// I-code cache hit counter
         pub ihit: ihit::IHIT,
-        /// I-code cache miss counter.
+        /// I-code cache miss counter
         pub imiss: imiss::IMISS,
     }
 
@@ -72404,16 +72499,6 @@ pub mod nvmc {
 
         impl ERASEPAGE {}
 
-        impl RegisterRead for ERASEPAGE {
-            type Value = u32;
-
-            #[inline(always)]
-            fn read(&self) -> Self::Value {
-                let raw = self.raw.read();
-                (raw & 0xffffffff) >> 0
-            }
-        }
-
         impl RegisterWrite for ERASEPAGE {
             type Value = u32;
 
@@ -72443,16 +72528,6 @@ pub mod nvmc {
 
             pub fn write_erase(&mut self) {
                 self.write(ERASEALL_FIELD::Erase)
-            }
-        }
-
-        impl RegisterRead for ERASEALL {
-            type Value = ERASEALL_FIELD;
-
-            #[inline(always)]
-            fn read(&self) -> Self::Value {
-                let raw = self.raw.read();
-                ERASEALL_FIELD::from_value((raw & 0x00000001) >> 0)
             }
         }
 
@@ -72496,40 +72571,6 @@ pub mod nvmc {
         }
     }
 
-    pub mod erasepcr0 {
-        #[allow(unused_imports)]
-        use super::*;
-
-        #[allow(non_camel_case_types)]
-        #[repr(transparent)]
-        pub struct ERASEPCR0 {
-            raw: RawRegister<u32>,
-        }
-
-        impl ERASEPCR0 {}
-
-        impl RegisterRead for ERASEPCR0 {
-            type Value = u32;
-
-            #[inline(always)]
-            fn read(&self) -> Self::Value {
-                let raw = self.raw.read();
-                (raw & 0xffffffff) >> 0
-            }
-        }
-
-        impl RegisterWrite for ERASEPCR0 {
-            type Value = u32;
-
-            #[inline(always)]
-            fn write(&mut self, value: Self::Value) {
-                let old_raw = 0;
-                let raw = (old_raw & !0xffffffff) | (value << 0);
-                self.raw.write(raw);
-            }
-        }
-    }
-
     pub mod eraseuicr {
         #[allow(unused_imports)]
         use super::*;
@@ -72547,16 +72588,6 @@ pub mod nvmc {
 
             pub fn write_erase(&mut self) {
                 self.write(ERASEUICR_FIELD::Erase)
-            }
-        }
-
-        impl RegisterRead for ERASEUICR {
-            type Value = ERASEUICR_FIELD;
-
-            #[inline(always)]
-            fn read(&self) -> Self::Value {
-                let raw = self.raw.read();
-                ERASEUICR_FIELD::from_value((raw & 0x00000001) >> 0)
             }
         }
 
@@ -72611,16 +72642,6 @@ pub mod nvmc {
         }
 
         impl ERASEPAGEPARTIAL {}
-
-        impl RegisterRead for ERASEPAGEPARTIAL {
-            type Value = u32;
-
-            #[inline(always)]
-            fn read(&self) -> Self::Value {
-                let raw = self.raw.read();
-                (raw & 0xffffffff) >> 0
-            }
-        }
 
         impl RegisterWrite for ERASEPAGEPARTIAL {
             type Value = u32;
@@ -79554,9 +79575,9 @@ pub mod ppi {
         pub struct CH {
             // TODO: Add this to the peripherals register block as well.
             _hidden: (),
-            /// Description cluster: Channel n event end-point
+            /// Description cluster: Channel n event endpoint
             pub eep: eep::EEP,
-            /// Description cluster: Channel n task end-point
+            /// Description cluster: Channel n task endpoint
             pub tep: tep::TEP,
         }
 
@@ -81265,7 +81286,7 @@ pub mod ppi {
         pub struct FORK {
             // TODO: Add this to the peripherals register block as well.
             _hidden: (),
-            /// Description cluster: Channel n task end-point
+            /// Description cluster: Channel n task endpoint
             pub tep: tep::TEP,
         }
 
@@ -94943,18 +94964,18 @@ pub mod usbd {
         /// reported in the EPSTATUS register
         pub events_started: EventRegister,
         /// Description collection: The whole EPIN[n] buffer has been consumed.
-        /// The RAM buffer can be accessed safely by software.
+        /// The buffer can be accessed safely by software.
         pub events_endepin: [EventRegister; 8],
         /// An acknowledged data transfer has taken place on the control
         /// endpoint
         pub events_ep0datadone: EventRegister,
-        /// The whole ISOIN buffer has been consumed. The RAM buffer can be
-        /// accessed safely by software.
+        /// The whole ISOIN buffer has been consumed. The buffer can be accessed
+        /// safely by software.
         pub events_endisoin: EventRegister,
         /// Description collection: The whole EPOUT[n] buffer has been consumed.
-        /// The RAM buffer can be accessed safely by software.
+        /// The buffer can be accessed safely by software.
         pub events_endepout: [EventRegister; 8],
-        /// The whole ISOOUT buffer has been consumed. The RAM buffer can be
+        /// The whole ISOOUT buffer has been consumed. The buffer can be
         /// accessed safely by software.
         pub events_endisoout: EventRegister,
         /// Signals that a SOF (start of frame) condition has been detected on
@@ -102206,7 +102227,7 @@ pub mod usbd {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] SPLIT_FIELD u32 =>
-                        // Full buffer dedicated to either iso IN or OUT
+                        // Full buffer dedicated to either ISO IN or OUT
                         OneDir = 0,
         // Lower half for IN, upper half for OUT
                         HalfIN = 128
@@ -105521,6 +105542,6826 @@ pub mod qspi {
     }
 }
 
+pub mod cryptocell {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CRYPTOCELL {
+        _hidden: (),
+    }
+
+    impl CRYPTOCELL {
+        const BASE_ADDRESS: u32 = 0x5002a000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CRYPTOCELL {
+        type Target = CRYPTOCELL_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CRYPTOCELL {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CRYPTOCELL_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 1280],
+        /// Enable CRYPTOCELL subsystem.
+        pub enable: enable::ENABLE,
+    }
+
+    pub mod enable {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct ENABLE {
+            raw: RawRegister<u32>,
+        }
+
+        impl ENABLE {
+            pub fn write_disabled(&mut self) {
+                self.write(ENABLE_FIELD::Disabled)
+            }
+
+            pub fn write_enabled(&mut self) {
+                self.write(ENABLE_FIELD::Enabled)
+            }
+        }
+
+        impl RegisterRead for ENABLE {
+            type Value = ENABLE_FIELD;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+        }
+
+        impl RegisterWrite for ENABLE {
+            type Value = ENABLE_FIELD;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = value.to_value();
+                self.raw.write(raw);
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // CRYPTOCELL subsystem disabled.
+                        Disabled = 0,
+        // CRYPTOCELL subsystem enabled.
+                        Enabled = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_aes {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_AES {
+        _hidden: (),
+    }
+
+    impl CC_AES {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_AES {
+        type Target = CC_AES_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_AES {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_AES_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 1024],
+        /// Description collection: AES key value to use.         The initial
+        /// AES_KEY_0[0] register holds the least significant bits [31:0] of the
+        /// key value.
+        pub aes_key_0: [aes_key_0::AES_KEY_0; 8],
+        _padding_1056: [u8; 32],
+        /// Description collection: AES Initialization Vector (IV) to use.
+        /// The initial AES_IV_0[0] register holds the least significant bits
+        /// [31:0] of the IV.
+        pub aes_iv_0: [aes_iv_0::AES_IV_0; 4],
+        _padding_1104: [u8; 16],
+        /// Description collection: AES counter (CTR) to use.         The
+        /// initial AES_CTR[0] register holds the least significant bits [31:0]
+        /// of the CTR.
+        pub aes_ctr: [aes_ctr::AES_CTR; 4],
+        /// Status register for AES engine activity.
+        pub aes_busy: aes_busy::AES_BUSY,
+        _padding_1140: [u8; 4],
+        /// Writing to this address trigger sampling of the HW key to the
+        /// AES_KEY_0 register
+        pub aes_sk: aes_sk::AES_SK,
+        /// Writing to this address triggers the AES engine to generate K1 and
+        /// K2 for AES-CMAC operations.
+        pub aes_cmac_init: aes_cmac_init::AES_CMAC_INIT,
+        _padding_1152: [u8; 60],
+        /// This register should be set with the amount of remaining bytes until
+        /// the end of the current AES operation.
+        pub aes_remaining_bytes: aes_remaining_bytes::AES_REMAINING_BYTES,
+        /// Control the AES engine behavior.
+        pub aes_control: aes_control::AES_CONTROL,
+        _padding_1220: [u8; 4],
+        /// Hardware configuration of the AES engine. Reset value holds the
+        /// supported features.
+        pub aes_hw_flags: aes_hw_flags::AES_HW_FLAGS,
+        _padding_1228: [u8; 12],
+        /// This register enables the AES CTR no increment mode in which the
+        /// counter mode is not incremented between two blocks
+        pub aes_ctr_no_increment: aes_ctr_no_increment::AES_CTR_NO_INCREMENT,
+        _padding_1244: [u8; 24],
+        /// Reset the AES engine.
+        pub aes_sw_reset: aes_sw_reset::AES_SW_RESET,
+        _padding_1272: [u8; 44],
+        /// Writing to this address triggers the AES engine to perform a CMAC
+        /// operation with size 0. The CMAC result can be read from the AES_IV_0
+        /// register.
+        pub aes_cmac_size0_kick: aes_cmac_size0_kick::AES_CMAC_SIZE0_KICK,
+    }
+
+    pub mod aes_key_0 {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_KEY_0 {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_KEY_0 {
+            pub fn write_with<F: Fn(&mut AES_KEY_0_WRITE_VALUE) -> &mut AES_KEY_0_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_KEY_0_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for AES_KEY_0 {
+            type Value = AES_KEY_0_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_KEY_0_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl AES_KEY_0_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod aes_iv_0 {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_IV_0 {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_IV_0 {
+            pub fn write_with<F: Fn(&mut AES_IV_0_VALUE) -> &mut AES_IV_0_VALUE>(&mut self, f: F) {
+                let mut v = AES_IV_0_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for AES_IV_0 {
+            type Value = AES_IV_0_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AES_IV_0_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for AES_IV_0 {
+            type Value = AES_IV_0_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_IV_0_VALUE {
+            raw: u32,
+        }
+
+        impl AES_IV_0_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod aes_ctr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_CTR {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_CTR {
+            pub fn write_with<F: Fn(&mut AES_CTR_VALUE) -> &mut AES_CTR_VALUE>(&mut self, f: F) {
+                let mut v = AES_CTR_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for AES_CTR {
+            type Value = AES_CTR_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AES_CTR_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for AES_CTR {
+            type Value = AES_CTR_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_CTR_VALUE {
+            raw: u32,
+        }
+
+        impl AES_CTR_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod aes_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_BUSY {}
+
+        impl RegisterRead for AES_BUSY {
+            type Value = AES_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AES_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl AES_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // AES engine is idle
+                        Idle = 0,
+        // AES engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod aes_sk {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_SK {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_SK {}
+
+        impl RegisterWrite for AES_SK {
+            type Value = u32;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = (old_raw & !0x00000001) | (value << 0);
+                self.raw.write(raw);
+            }
+        }
+    }
+
+    pub mod aes_cmac_init {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_CMAC_INIT {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_CMAC_INIT {
+            pub fn write_with<
+                F: Fn(&mut AES_CMAC_INIT_WRITE_VALUE) -> &mut AES_CMAC_INIT_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_CMAC_INIT_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for AES_CMAC_INIT {
+            type Value = AES_CMAC_INIT_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_CMAC_INIT_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl AES_CMAC_INIT_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                let value = ENABLE_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+            // Initialize AES-CMAC operations.
+            Enable = 1
+
+        );
+
+        impl ENABLE_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod aes_remaining_bytes {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_REMAINING_BYTES {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_REMAINING_BYTES {
+            pub fn write_with<
+                F: Fn(&mut AES_REMAINING_BYTES_VALUE) -> &mut AES_REMAINING_BYTES_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_REMAINING_BYTES_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for AES_REMAINING_BYTES {
+            type Value = AES_REMAINING_BYTES_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AES_REMAINING_BYTES_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for AES_REMAINING_BYTES {
+            type Value = AES_REMAINING_BYTES_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_REMAINING_BYTES_VALUE {
+            raw: u32,
+        }
+
+        impl AES_REMAINING_BYTES_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod aes_control {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_CONTROL {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_CONTROL {
+            pub fn write_with<F: Fn(&mut AES_CONTROL_VALUE) -> &mut AES_CONTROL_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_CONTROL_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for AES_CONTROL {
+            type Value = AES_CONTROL_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AES_CONTROL_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for AES_CONTROL {
+            type Value = AES_CONTROL_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_CONTROL_VALUE {
+            raw: u32,
+        }
+
+        impl AES_CONTROL_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn dec_key0(&self) -> DEC_KEY0_FIELD {
+                let raw = self.raw;
+                DEC_KEY0_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_dec_key0(&mut self, value: DEC_KEY0_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_dec_key0_with<F: Fn(&mut DEC_KEY0_FIELD) -> &mut DEC_KEY0_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dec_key0();
+                f(&mut value);
+                self.set_dec_key0(value)
+            }
+
+            pub fn mode_key0(&self) -> MODE_KEY0_FIELD {
+                let raw = self.raw;
+                MODE_KEY0_FIELD::from_value((raw & 0x0000001c) >> 2)
+            }
+
+            pub fn set_mode_key0(&mut self, value: MODE_KEY0_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000001c) | (value << 2);
+                self
+            }
+
+            pub fn set_mode_key0_with<F: Fn(&mut MODE_KEY0_FIELD) -> &mut MODE_KEY0_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.mode_key0();
+                f(&mut value);
+                self.set_mode_key0(value)
+            }
+
+            pub fn set_nk_key0(&mut self) -> &mut Self {
+                let value = NK_KEY0_FIELD::_128Bits.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00003000) | (value << 12);
+                self
+            }
+
+            pub fn aes_xor_cryptokey(&self) -> AES_XOR_CRYPTOKEY_FIELD {
+                let raw = self.raw;
+                AES_XOR_CRYPTOKEY_FIELD::from_value((raw & 0x20000000) >> 29)
+            }
+
+            pub fn set_aes_xor_cryptokey(&mut self, value: AES_XOR_CRYPTOKEY_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x20000000) | (value << 29);
+                self
+            }
+
+            pub fn set_aes_xor_cryptokey_with<
+                F: Fn(&mut AES_XOR_CRYPTOKEY_FIELD) -> &mut AES_XOR_CRYPTOKEY_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.aes_xor_cryptokey();
+                f(&mut value);
+                self.set_aes_xor_cryptokey(value)
+            }
+
+            pub fn direct_access(&self) -> DIRECT_ACCESS_FIELD {
+                let raw = self.raw;
+                DIRECT_ACCESS_FIELD::from_value((raw & 0x80000000) >> 31)
+            }
+
+            pub fn set_direct_access(&mut self, value: DIRECT_ACCESS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x80000000) | (value << 31);
+                self
+            }
+
+            pub fn set_direct_access_with<
+                F: Fn(&mut DIRECT_ACCESS_FIELD) -> &mut DIRECT_ACCESS_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.direct_access();
+                f(&mut value);
+                self.set_direct_access(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DEC_KEY0_FIELD u32 =>
+                        // Perform AES encryption
+                        Encrypt = 0,
+        // Perform AES decryption
+                        Decrypt = 1
+
+                    );
+
+        impl DEC_KEY0_FIELD {
+            pub fn is_encrypt(&self) -> bool {
+                *self == Self::Encrypt
+            }
+
+            pub fn set_encrypt(&mut self) -> &mut Self {
+                *self = Self::Encrypt;
+                self
+            }
+
+            pub fn is_decrypt(&self) -> bool {
+                *self == Self::Decrypt
+            }
+
+            pub fn set_decrypt(&mut self) -> &mut Self {
+                *self = Self::Decrypt;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] MODE_KEY0_FIELD u32 =>
+                        // Electronic codebook mode
+                        ECB = 0,
+        // Cipher block chaining mode
+                        CBC = 1,
+        // Counter mode
+                        CTR = 2,
+        // Cipher Block Chaining Message Authentication Code
+                        CBC_MAC = 3,
+        // Cipher-based Message Authentication Code
+                        CMAC = 7
+
+                    );
+
+        impl MODE_KEY0_FIELD {
+            pub fn is_ecb(&self) -> bool {
+                *self == Self::ECB
+            }
+
+            pub fn set_ecb(&mut self) -> &mut Self {
+                *self = Self::ECB;
+                self
+            }
+
+            pub fn is_cbc(&self) -> bool {
+                *self == Self::CBC
+            }
+
+            pub fn set_cbc(&mut self) -> &mut Self {
+                *self = Self::CBC;
+                self
+            }
+
+            pub fn is_ctr(&self) -> bool {
+                *self == Self::CTR
+            }
+
+            pub fn set_ctr(&mut self) -> &mut Self {
+                *self = Self::CTR;
+                self
+            }
+
+            pub fn is_cbc_mac(&self) -> bool {
+                *self == Self::CBC_MAC
+            }
+
+            pub fn set_cbc_mac(&mut self) -> &mut Self {
+                *self = Self::CBC_MAC;
+                self
+            }
+
+            pub fn is_cmac(&self) -> bool {
+                *self == Self::CMAC
+            }
+
+            pub fn set_cmac(&mut self) -> &mut Self {
+                *self = Self::CMAC;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] NK_KEY0_FIELD u32 =>
+            // 128 bits key length
+            _128Bits = 0
+
+        );
+
+        impl NK_KEY0_FIELD {
+            pub fn is_128bits(&self) -> bool {
+                *self == Self::_128Bits
+            }
+
+            pub fn set_128bits(&mut self) -> &mut Self {
+                *self = Self::_128Bits;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] AES_XOR_CRYPTOKEY_FIELD u32 =>
+                        // The value that is written to AES_KEY_0 is the value of the HW cryptokey as is.
+                        Disable = 0,
+        // The value that is written to AES_KEY_0 is the value of the HW cryptokey XOR with the current value of AES_KEY_0.
+                        Enable = 1
+
+                    );
+
+        impl AES_XOR_CRYPTOKEY_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DIRECT_ACCESS_FIELD u32 =>
+                        // Access using the DIN-DOUT DMA interface
+                        Disable = 0,
+        // Access using direct access
+                        Enable = 1
+
+                    );
+
+        impl DIRECT_ACCESS_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod aes_hw_flags {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_HW_FLAGS {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_HW_FLAGS {}
+
+        impl RegisterRead for AES_HW_FLAGS {
+            type Value = AES_HW_FLAGS_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AES_HW_FLAGS_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_HW_FLAGS_READ_VALUE {
+            raw: u32,
+        }
+
+        impl AES_HW_FLAGS_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn support_256_192_key(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000001) >> 0
+            }
+
+            pub fn set_support_256_192_key(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn aes_large_rkek(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000002) >> 1
+            }
+
+            pub fn set_aes_large_rkek(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn dpa_cntrmsr_exist(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000004) >> 2
+            }
+
+            pub fn set_dpa_cntrmsr_exist(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn ctr_exist(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000008) >> 3
+            }
+
+            pub fn set_ctr_exist(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn only_encrypt(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000010) >> 4
+            }
+
+            pub fn set_only_encrypt(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn use_sbox_table(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000020) >> 5
+            }
+
+            pub fn set_use_sbox_table(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+
+            pub fn use_5_sboxes(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000100) >> 8
+            }
+
+            pub fn set_use_5_sboxes(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000100) | (value << 8);
+                self
+            }
+
+            pub fn aes_support_prev_iv(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000200) >> 9
+            }
+
+            pub fn set_aes_support_prev_iv(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000200) | (value << 9);
+                self
+            }
+
+            pub fn aes_tunnel_exist(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000400) >> 10
+            }
+
+            pub fn set_aes_tunnel_exist(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000400) | (value << 10);
+                self
+            }
+
+            pub fn second_regs_set_exist(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000800) >> 11
+            }
+
+            pub fn set_second_regs_set_exist(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000800) | (value << 11);
+                self
+            }
+
+            pub fn dfa_cntrmsr_exist(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00001000) >> 12
+            }
+
+            pub fn set_dfa_cntrmsr_exist(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00001000) | (value << 12);
+                self
+            }
+        }
+    }
+
+    pub mod aes_ctr_no_increment {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_CTR_NO_INCREMENT {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_CTR_NO_INCREMENT {
+            pub fn write_with<
+                F: Fn(&mut AES_CTR_NO_INCREMENT_VALUE) -> &mut AES_CTR_NO_INCREMENT_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_CTR_NO_INCREMENT_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for AES_CTR_NO_INCREMENT {
+            type Value = AES_CTR_NO_INCREMENT_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AES_CTR_NO_INCREMENT_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for AES_CTR_NO_INCREMENT {
+            type Value = AES_CTR_NO_INCREMENT_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_CTR_NO_INCREMENT_VALUE {
+            raw: u32,
+        }
+
+        impl AES_CTR_NO_INCREMENT_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Counter always incremented between blocks
+                        Disable = 0,
+        // Do not increment counter between blocks
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod aes_sw_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_SW_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_SW_RESET {
+            pub fn write_with<
+                F: Fn(&mut AES_SW_RESET_WRITE_VALUE) -> &mut AES_SW_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_SW_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for AES_SW_RESET {
+            type Value = AES_SW_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_SW_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl AES_SW_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset AES engine.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod aes_cmac_size0_kick {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AES_CMAC_SIZE0_KICK {
+            raw: RawRegister<u32>,
+        }
+
+        impl AES_CMAC_SIZE0_KICK {
+            pub fn write_with<
+                F: Fn(&mut AES_CMAC_SIZE0_KICK_WRITE_VALUE) -> &mut AES_CMAC_SIZE0_KICK_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_CMAC_SIZE0_KICK_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for AES_CMAC_SIZE0_KICK {
+            type Value = AES_CMAC_SIZE0_KICK_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_CMAC_SIZE0_KICK_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl AES_CMAC_SIZE0_KICK_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Normal AES CMAC operation
+                        Disable = 0,
+        // Force CMAC operation with size 0
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_chacha {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_CHACHA {
+        _hidden: (),
+    }
+
+    impl CC_CHACHA {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_CHACHA {
+        type Target = CC_CHACHA_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_CHACHA {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_CHACHA_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 896],
+        /// Control the CHACHA engine behavior.
+        pub chacha_control: chacha_control::CHACHA_CONTROL,
+        /// CHACHA engine HW version
+        pub chacha_version: chacha_version::CHACHA_VERSION,
+        /// Description collection: CHACHA key value to use. The initial
+        /// CHACHA_KEY[0] register holds the least significant bits [31:0] of
+        /// the key value.
+        pub chacha_key: [chacha_key::CHACHA_KEY; 8],
+        /// Description collection: CHACHA Initialization Vector (IV) to use.
+        /// The IV is also known as the nonce.
+        pub chacha_iv: [chacha_iv::CHACHA_IV; 2],
+        /// Status register for CHACHA engine activity.
+        pub chacha_busy: chacha_busy::CHACHA_BUSY,
+        /// Hardware configuration of the CHACHA engine. Reset value holds the
+        /// supported features.
+        pub chacha_hw_flags: chacha_hw_flags::CHACHA_HW_FLAGS,
+        /// Store the LSB value of the block counter, in order to support
+        /// suspend/resume of operation
+        pub chacha_block_cnt_lsb: chacha_block_cnt_lsb::CHACHA_BLOCK_CNT_LSB,
+        /// Store the MSB value of the block counter, in order to support
+        /// suspend/resume of operation
+        pub chacha_block_cnt_msb: chacha_block_cnt_msb::CHACHA_BLOCK_CNT_MSB,
+        /// Reset the CHACHA engine.
+        pub chacha_sw_reset: chacha_sw_reset::CHACHA_SW_RESET,
+        /// Description collection: The auto-generated key to use in Poly1305
+        /// MAC calculation. The initial CHACHA_POLY1305_KEY[0] register holds
+        /// the least significant bits [31:0] of the key value.
+        pub chacha_poly1305_key: [chacha_poly1305_key::CHACHA_POLY1305_KEY; 8],
+        /// CHACHA engine data order configuration.
+        pub chacha_endianness: chacha_endianness::CHACHA_ENDIANNESS,
+        /// Debug register for the CHACHA engine
+        pub chacha_debug: chacha_debug::CHACHA_DEBUG,
+    }
+
+    pub mod chacha_control {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_CONTROL {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_CONTROL {
+            pub fn write_with<F: Fn(&mut CHACHA_CONTROL_VALUE) -> &mut CHACHA_CONTROL_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_CONTROL_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for CHACHA_CONTROL {
+            type Value = CHACHA_CONTROL_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_CONTROL_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for CHACHA_CONTROL {
+            type Value = CHACHA_CONTROL_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_CONTROL_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_CONTROL_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn chacha_or_salsa(&self) -> CHACHA_OR_SALSA_FIELD {
+                let raw = self.raw;
+                CHACHA_OR_SALSA_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_chacha_or_salsa(&mut self, value: CHACHA_OR_SALSA_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_chacha_or_salsa_with<
+                F: Fn(&mut CHACHA_OR_SALSA_FIELD) -> &mut CHACHA_OR_SALSA_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.chacha_or_salsa();
+                f(&mut value);
+                self.set_chacha_or_salsa(value)
+            }
+
+            pub fn init(&self) -> INIT_FIELD {
+                let raw = self.raw;
+                INIT_FIELD::from_value((raw & 0x00000002) >> 1)
+            }
+
+            pub fn set_init(&mut self, value: INIT_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn set_init_with<F: Fn(&mut INIT_FIELD) -> &mut INIT_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.init();
+                f(&mut value);
+                self.set_init(value)
+            }
+
+            pub fn gen_key_poly1305(&self) -> GEN_KEY_POLY1305_FIELD {
+                let raw = self.raw;
+                GEN_KEY_POLY1305_FIELD::from_value((raw & 0x00000004) >> 2)
+            }
+
+            pub fn set_gen_key_poly1305(&mut self, value: GEN_KEY_POLY1305_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_gen_key_poly1305_with<
+                F: Fn(&mut GEN_KEY_POLY1305_FIELD) -> &mut GEN_KEY_POLY1305_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.gen_key_poly1305();
+                f(&mut value);
+                self.set_gen_key_poly1305(value)
+            }
+
+            pub fn key_len(&self) -> KEY_LEN_FIELD {
+                let raw = self.raw;
+                KEY_LEN_FIELD::from_value((raw & 0x00000008) >> 3)
+            }
+
+            pub fn set_key_len(&mut self, value: KEY_LEN_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_key_len_with<F: Fn(&mut KEY_LEN_FIELD) -> &mut KEY_LEN_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.key_len();
+                f(&mut value);
+                self.set_key_len(value)
+            }
+
+            pub fn num_of_rounds(&self) -> NUM_OF_ROUNDS_FIELD {
+                let raw = self.raw;
+                NUM_OF_ROUNDS_FIELD::from_value((raw & 0x00000030) >> 4)
+            }
+
+            pub fn set_num_of_rounds(&mut self, value: NUM_OF_ROUNDS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000030) | (value << 4);
+                self
+            }
+
+            pub fn set_num_of_rounds_with<
+                F: Fn(&mut NUM_OF_ROUNDS_FIELD) -> &mut NUM_OF_ROUNDS_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.num_of_rounds();
+                f(&mut value);
+                self.set_num_of_rounds(value)
+            }
+
+            pub fn reset_block_cnt(&self) -> RESET_BLOCK_CNT_FIELD {
+                let raw = self.raw;
+                RESET_BLOCK_CNT_FIELD::from_value((raw & 0x00000200) >> 9)
+            }
+
+            pub fn set_reset_block_cnt(&mut self, value: RESET_BLOCK_CNT_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000200) | (value << 9);
+                self
+            }
+
+            pub fn set_reset_block_cnt_with<
+                F: Fn(&mut RESET_BLOCK_CNT_FIELD) -> &mut RESET_BLOCK_CNT_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.reset_block_cnt();
+                f(&mut value);
+                self.set_reset_block_cnt(value)
+            }
+
+            pub fn use_iv_96bit(&self) -> USE_IV_96BIT_FIELD {
+                let raw = self.raw;
+                USE_IV_96BIT_FIELD::from_value((raw & 0x00000400) >> 10)
+            }
+
+            pub fn set_use_iv_96bit(&mut self, value: USE_IV_96BIT_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000400) | (value << 10);
+                self
+            }
+
+            pub fn set_use_iv_96bit_with<
+                F: Fn(&mut USE_IV_96BIT_FIELD) -> &mut USE_IV_96BIT_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.use_iv_96bit();
+                f(&mut value);
+                self.set_use_iv_96bit(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CHACHA_OR_SALSA_FIELD u32 =>
+                        // Run engine in ChaCha mode
+                        ChaCha = 0,
+        // Run engine in Salsa mode
+                        Salsa = 1
+
+                    );
+
+        impl CHACHA_OR_SALSA_FIELD {
+            pub fn is_chacha(&self) -> bool {
+                *self == Self::ChaCha
+            }
+
+            pub fn set_chacha(&mut self) -> &mut Self {
+                *self = Self::ChaCha;
+                self
+            }
+
+            pub fn is_salsa(&self) -> bool {
+                *self == Self::Salsa
+            }
+
+            pub fn set_salsa(&mut self) -> &mut Self {
+                *self = Self::Salsa;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] INIT_FIELD u32 =>
+                        // Message already initialized
+                        Disable = 0,
+        // Initialize new message
+                        Enable = 1
+
+                    );
+
+        impl INIT_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] GEN_KEY_POLY1305_FIELD u32 =>
+                        // Do not generate Poly1305 key
+                        Disable = 0,
+        // Generate Poly1305 key
+                        Enable = 1
+
+                    );
+
+        impl GEN_KEY_POLY1305_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] KEY_LEN_FIELD u32 =>
+                        // Use 256 bits key length
+                        _256Bits = 0,
+        // Use 128 bits key length
+                        _128Bits = 1
+
+                    );
+
+        impl KEY_LEN_FIELD {
+            pub fn is_256bits(&self) -> bool {
+                *self == Self::_256Bits
+            }
+
+            pub fn set_256bits(&mut self) -> &mut Self {
+                *self = Self::_256Bits;
+                self
+            }
+
+            pub fn is_128bits(&self) -> bool {
+                *self == Self::_128Bits
+            }
+
+            pub fn set_128bits(&mut self) -> &mut Self {
+                *self = Self::_128Bits;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] NUM_OF_ROUNDS_FIELD u32 =>
+                        // Use 20 rounds of rotation (default)
+                        Default = 0,
+        // Use 12 rounds of rotation
+                        _12Rounds = 1,
+        // Use 8 rounds of rotation
+                        _8Rounds = 2
+
+                    );
+
+        impl NUM_OF_ROUNDS_FIELD {
+            pub fn is_default(&self) -> bool {
+                *self == Self::Default
+            }
+
+            pub fn set_default(&mut self) -> &mut Self {
+                *self = Self::Default;
+                self
+            }
+
+            pub fn is_12rounds(&self) -> bool {
+                *self == Self::_12Rounds
+            }
+
+            pub fn set_12rounds(&mut self) -> &mut Self {
+                *self = Self::_12Rounds;
+                self
+            }
+
+            pub fn is_8rounds(&self) -> bool {
+                *self == Self::_8Rounds
+            }
+
+            pub fn set_8rounds(&mut self) -> &mut Self {
+                *self = Self::_8Rounds;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_BLOCK_CNT_FIELD u32 =>
+                        // Use current block counter value
+                        Disable = 0,
+        // Reset block counter value to zero
+                        Enable = 1
+
+                    );
+
+        impl RESET_BLOCK_CNT_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] USE_IV_96BIT_FIELD u32 =>
+                        // Use default size IV of 64 bit
+                        Disable = 0,
+        // The IV is 96 bits
+                        Enable = 1
+
+                    );
+
+        impl USE_IV_96BIT_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod chacha_version {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_VERSION {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_VERSION {}
+
+        impl RegisterRead for CHACHA_VERSION {
+            type Value = u32;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                (raw & 0xffffffff) >> 0
+            }
+        }
+    }
+
+    pub mod chacha_key {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_KEY {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_KEY {
+            pub fn write_with<F: Fn(&mut CHACHA_KEY_WRITE_VALUE) -> &mut CHACHA_KEY_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_KEY_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for CHACHA_KEY {
+            type Value = CHACHA_KEY_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_KEY_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_KEY_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod chacha_iv {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_IV {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_IV {
+            pub fn write_with<F: Fn(&mut CHACHA_IV_VALUE) -> &mut CHACHA_IV_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_IV_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for CHACHA_IV {
+            type Value = CHACHA_IV_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_IV_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for CHACHA_IV {
+            type Value = CHACHA_IV_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_IV_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_IV_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod chacha_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_BUSY {}
+
+        impl RegisterRead for CHACHA_BUSY {
+            type Value = CHACHA_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // CHACHA engine is idle
+                        Idle = 0,
+        // CHACHA engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod chacha_hw_flags {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_HW_FLAGS {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_HW_FLAGS {}
+
+        impl RegisterRead for CHACHA_HW_FLAGS {
+            type Value = CHACHA_HW_FLAGS_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_HW_FLAGS_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_HW_FLAGS_READ_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_HW_FLAGS_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn chacha_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000001) >> 0
+            }
+
+            pub fn set_chacha_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn salsa_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000002) >> 1
+            }
+
+            pub fn set_salsa_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn fast_chacha(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000004) >> 2
+            }
+
+            pub fn set_fast_chacha(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+        }
+    }
+
+    pub mod chacha_block_cnt_lsb {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_BLOCK_CNT_LSB {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_BLOCK_CNT_LSB {
+            pub fn write_with<
+                F: Fn(&mut CHACHA_BLOCK_CNT_LSB_VALUE) -> &mut CHACHA_BLOCK_CNT_LSB_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_BLOCK_CNT_LSB_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for CHACHA_BLOCK_CNT_LSB {
+            type Value = CHACHA_BLOCK_CNT_LSB_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_BLOCK_CNT_LSB_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for CHACHA_BLOCK_CNT_LSB {
+            type Value = CHACHA_BLOCK_CNT_LSB_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_BLOCK_CNT_LSB_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_BLOCK_CNT_LSB_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod chacha_block_cnt_msb {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_BLOCK_CNT_MSB {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_BLOCK_CNT_MSB {
+            pub fn write_with<
+                F: Fn(&mut CHACHA_BLOCK_CNT_MSB_VALUE) -> &mut CHACHA_BLOCK_CNT_MSB_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_BLOCK_CNT_MSB_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for CHACHA_BLOCK_CNT_MSB {
+            type Value = CHACHA_BLOCK_CNT_MSB_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_BLOCK_CNT_MSB_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for CHACHA_BLOCK_CNT_MSB {
+            type Value = CHACHA_BLOCK_CNT_MSB_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_BLOCK_CNT_MSB_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_BLOCK_CNT_MSB_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod chacha_sw_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_SW_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_SW_RESET {
+            pub fn write_with<
+                F: Fn(&mut CHACHA_SW_RESET_WRITE_VALUE) -> &mut CHACHA_SW_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_SW_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for CHACHA_SW_RESET {
+            type Value = CHACHA_SW_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_SW_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_SW_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset CHACHA engine.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod chacha_poly1305_key {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_POLY1305_KEY {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_POLY1305_KEY {}
+
+        impl RegisterRead for CHACHA_POLY1305_KEY {
+            type Value = CHACHA_POLY1305_KEY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_POLY1305_KEY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_POLY1305_KEY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_POLY1305_KEY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod chacha_endianness {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_ENDIANNESS {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_ENDIANNESS {
+            pub fn write_with<
+                F: Fn(&mut CHACHA_ENDIANNESS_VALUE) -> &mut CHACHA_ENDIANNESS_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_ENDIANNESS_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for CHACHA_ENDIANNESS {
+            type Value = CHACHA_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_ENDIANNESS_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for CHACHA_ENDIANNESS {
+            type Value = CHACHA_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_ENDIANNESS_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_ENDIANNESS_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn chacha_din_word_order(&self) -> CHACHA_DIN_WORD_ORDER_FIELD {
+                let raw = self.raw;
+                CHACHA_DIN_WORD_ORDER_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_chacha_din_word_order(
+                &mut self,
+                value: CHACHA_DIN_WORD_ORDER_FIELD,
+            ) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_chacha_din_word_order_with<
+                F: Fn(&mut CHACHA_DIN_WORD_ORDER_FIELD) -> &mut CHACHA_DIN_WORD_ORDER_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.chacha_din_word_order();
+                f(&mut value);
+                self.set_chacha_din_word_order(value)
+            }
+
+            pub fn chacha_din_byte_order(&self) -> CHACHA_DIN_BYTE_ORDER_FIELD {
+                let raw = self.raw;
+                CHACHA_DIN_BYTE_ORDER_FIELD::from_value((raw & 0x00000002) >> 1)
+            }
+
+            pub fn set_chacha_din_byte_order(
+                &mut self,
+                value: CHACHA_DIN_BYTE_ORDER_FIELD,
+            ) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn set_chacha_din_byte_order_with<
+                F: Fn(&mut CHACHA_DIN_BYTE_ORDER_FIELD) -> &mut CHACHA_DIN_BYTE_ORDER_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.chacha_din_byte_order();
+                f(&mut value);
+                self.set_chacha_din_byte_order(value)
+            }
+
+            pub fn chacha_core_matrix_lbe_order(&self) -> CHACHA_CORE_MATRIX_LBE_ORDER_FIELD {
+                let raw = self.raw;
+                CHACHA_CORE_MATRIX_LBE_ORDER_FIELD::from_value((raw & 0x00000004) >> 2)
+            }
+
+            pub fn set_chacha_core_matrix_lbe_order(
+                &mut self,
+                value: CHACHA_CORE_MATRIX_LBE_ORDER_FIELD,
+            ) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_chacha_core_matrix_lbe_order_with<
+                F: Fn(
+                    &mut CHACHA_CORE_MATRIX_LBE_ORDER_FIELD,
+                ) -> &mut CHACHA_CORE_MATRIX_LBE_ORDER_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.chacha_core_matrix_lbe_order();
+                f(&mut value);
+                self.set_chacha_core_matrix_lbe_order(value)
+            }
+
+            pub fn chacha_dout_word_order(&self) -> CHACHA_DOUT_WORD_ORDER_FIELD {
+                let raw = self.raw;
+                CHACHA_DOUT_WORD_ORDER_FIELD::from_value((raw & 0x00000008) >> 3)
+            }
+
+            pub fn set_chacha_dout_word_order(
+                &mut self,
+                value: CHACHA_DOUT_WORD_ORDER_FIELD,
+            ) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_chacha_dout_word_order_with<
+                F: Fn(&mut CHACHA_DOUT_WORD_ORDER_FIELD) -> &mut CHACHA_DOUT_WORD_ORDER_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.chacha_dout_word_order();
+                f(&mut value);
+                self.set_chacha_dout_word_order(value)
+            }
+
+            pub fn chacha_dout_byte_order(&self) -> CHACHA_DOUT_BYTE_ORDER_FIELD {
+                let raw = self.raw;
+                CHACHA_DOUT_BYTE_ORDER_FIELD::from_value((raw & 0x00000010) >> 4)
+            }
+
+            pub fn set_chacha_dout_byte_order(
+                &mut self,
+                value: CHACHA_DOUT_BYTE_ORDER_FIELD,
+            ) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn set_chacha_dout_byte_order_with<
+                F: Fn(&mut CHACHA_DOUT_BYTE_ORDER_FIELD) -> &mut CHACHA_DOUT_BYTE_ORDER_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.chacha_dout_byte_order();
+                f(&mut value);
+                self.set_chacha_dout_byte_order(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CHACHA_DIN_WORD_ORDER_FIELD u32 =>
+                        // Use default word order for 128-bits input, where words are ordered as follows: w0, w1, w2, w3.
+                        Default = 0,
+        // Reverses the word order for 128-bits input, where words are re-ordered as follows: w3, w2, w1, w0.
+                        Reverse = 1
+
+                    );
+
+        impl CHACHA_DIN_WORD_ORDER_FIELD {
+            pub fn is_default(&self) -> bool {
+                *self == Self::Default
+            }
+
+            pub fn set_default(&mut self) -> &mut Self {
+                *self = Self::Default;
+                self
+            }
+
+            pub fn is_reverse(&self) -> bool {
+                *self == Self::Reverse
+            }
+
+            pub fn set_reverse(&mut self) -> &mut Self {
+                *self = Self::Reverse;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CHACHA_DIN_BYTE_ORDER_FIELD u32 =>
+                        // Use default byte order within each input word, where bytes are ordered as follows: B0, B1, B2, B3.
+                        Default = 0,
+        // Reverse the byte order within each input word, where bytes are re-ordered as follows: B3, B2, B1, B0.
+                        Reverse = 1
+
+                    );
+
+        impl CHACHA_DIN_BYTE_ORDER_FIELD {
+            pub fn is_default(&self) -> bool {
+                *self == Self::Default
+            }
+
+            pub fn set_default(&mut self) -> &mut Self {
+                *self = Self::Default;
+                self
+            }
+
+            pub fn is_reverse(&self) -> bool {
+                *self == Self::Reverse
+            }
+
+            pub fn set_reverse(&mut self) -> &mut Self {
+                *self = Self::Reverse;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CHACHA_CORE_MATRIX_LBE_ORDER_FIELD u32 =>
+                        // Use default quarter of matrix order, where quarters are ordered as follows: q0, q1, q2, q3. Each quarter represents a 128-bits section of the matrix.
+                        Default = 0,
+        // Reverse the order of matrix quarters, where quarters are re-ordered as follows: q3, q2, q1, q0. Each quarter represents a 128-bits section of the matrix.
+                        Reverse = 1
+
+                    );
+
+        impl CHACHA_CORE_MATRIX_LBE_ORDER_FIELD {
+            pub fn is_default(&self) -> bool {
+                *self == Self::Default
+            }
+
+            pub fn set_default(&mut self) -> &mut Self {
+                *self = Self::Default;
+                self
+            }
+
+            pub fn is_reverse(&self) -> bool {
+                *self == Self::Reverse
+            }
+
+            pub fn set_reverse(&mut self) -> &mut Self {
+                *self = Self::Reverse;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CHACHA_DOUT_WORD_ORDER_FIELD u32 =>
+                        // Uses default word order for 128-bits output, where words are ordered as follows: w0, w1, w2, w3.
+                        Default = 0,
+        // Reverse the word order for 128-bits output, where words are re-ordered as follows: w3, w2, w1, w0.
+                        Reverse = 1
+
+                    );
+
+        impl CHACHA_DOUT_WORD_ORDER_FIELD {
+            pub fn is_default(&self) -> bool {
+                *self == Self::Default
+            }
+
+            pub fn set_default(&mut self) -> &mut Self {
+                *self = Self::Default;
+                self
+            }
+
+            pub fn is_reverse(&self) -> bool {
+                *self == Self::Reverse
+            }
+
+            pub fn set_reverse(&mut self) -> &mut Self {
+                *self = Self::Reverse;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CHACHA_DOUT_BYTE_ORDER_FIELD u32 =>
+                        // Use default byte order within each output word, where bytes are ordered as follows: B0, B1, B2, B3.
+                        Default = 0,
+        // Reverse the byte order within each output word, where bytes are re-ordered as follows: B3, B2, B1, B0.
+                        Reverse = 1
+
+                    );
+
+        impl CHACHA_DOUT_BYTE_ORDER_FIELD {
+            pub fn is_default(&self) -> bool {
+                *self == Self::Default
+            }
+
+            pub fn set_default(&mut self) -> &mut Self {
+                *self = Self::Default;
+                self
+            }
+
+            pub fn is_reverse(&self) -> bool {
+                *self == Self::Reverse
+            }
+
+            pub fn set_reverse(&mut self) -> &mut Self {
+                *self = Self::Reverse;
+                self
+            }
+        }
+    }
+
+    pub mod chacha_debug {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_DEBUG {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_DEBUG {}
+
+        impl RegisterRead for CHACHA_DEBUG {
+            type Value = CHACHA_DEBUG_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CHACHA_DEBUG_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_DEBUG_READ_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_DEBUG_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn fsm_state(&self) -> FSM_STATE_FIELD {
+                let raw = self.raw;
+                FSM_STATE_FIELD::from_value((raw & 0x00000003) >> 0)
+            }
+
+            pub fn set_fsm_state(&mut self, value: FSM_STATE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000003) | (value << 0);
+                self
+            }
+
+            pub fn set_fsm_state_with<F: Fn(&mut FSM_STATE_FIELD) -> &mut FSM_STATE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.fsm_state();
+                f(&mut value);
+                self.set_fsm_state(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] FSM_STATE_FIELD u32 =>
+                        // CHACHA FSM is in idle state
+                        IDLE_STATE = 0,
+        // CHACHA FSM is in init state
+                        INIT_STATE = 1,
+        // CHACHA FSM is in rounds state
+                        ROUNDS_STATE = 2,
+        // CHACHA FSM is in final state
+                        FINAL_STATE = 3
+
+                    );
+
+        impl FSM_STATE_FIELD {
+            pub fn is_idle_state(&self) -> bool {
+                *self == Self::IDLE_STATE
+            }
+
+            pub fn set_idle_state(&mut self) -> &mut Self {
+                *self = Self::IDLE_STATE;
+                self
+            }
+
+            pub fn is_init_state(&self) -> bool {
+                *self == Self::INIT_STATE
+            }
+
+            pub fn set_init_state(&mut self) -> &mut Self {
+                *self = Self::INIT_STATE;
+                self
+            }
+
+            pub fn is_rounds_state(&self) -> bool {
+                *self == Self::ROUNDS_STATE
+            }
+
+            pub fn set_rounds_state(&mut self) -> &mut Self {
+                *self = Self::ROUNDS_STATE;
+                self
+            }
+
+            pub fn is_final_state(&self) -> bool {
+                *self == Self::FINAL_STATE
+            }
+
+            pub fn set_final_state(&mut self) -> &mut Self {
+                *self = Self::FINAL_STATE;
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_ctl {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_CTL {
+        _hidden: (),
+    }
+
+    impl CC_CTL {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_CTL {
+        type Target = CC_CTL_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_CTL {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_CTL_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 2304],
+        /// Defines the cryptographic flow.
+        pub crypto_ctl: crypto_ctl::CRYPTO_CTL,
+        _padding_2308: [u8; 12],
+        /// Status register for cryptographic cores engine activity.
+        pub crypto_busy: crypto_busy::CRYPTO_BUSY,
+        _padding_2324: [u8; 8],
+        /// Status register for HASH engine activity.
+        pub hash_busy: hash_busy::HASH_BUSY,
+        _padding_2336: [u8; 16],
+        /// A general-purpose read/write register.
+        pub context_id: context_id::CONTEXT_ID,
+    }
+
+    pub mod crypto_ctl {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CRYPTO_CTL {
+            raw: RawRegister<u32>,
+        }
+
+        impl CRYPTO_CTL {
+            pub fn write_with<F: Fn(&mut CRYPTO_CTL_WRITE_VALUE) -> &mut CRYPTO_CTL_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CRYPTO_CTL_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for CRYPTO_CTL {
+            type Value = CRYPTO_CTL_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CRYPTO_CTL_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl CRYPTO_CTL_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn mode(&self) -> MODE_FIELD {
+                let raw = self.raw;
+                MODE_FIELD::from_value((raw & 0x0000001f) >> 0)
+            }
+
+            pub fn set_mode(&mut self, value: MODE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000001f) | (value << 0);
+                self
+            }
+
+            pub fn set_mode_with<F: Fn(&mut MODE_FIELD) -> &mut MODE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.mode();
+                f(&mut value);
+                self.set_mode(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] MODE_FIELD u32 =>
+                        // Bypass cryptographic engine
+                        Bypass = 0,
+        // Use AES engine
+                        AESActive = 1,
+        // Pipe AES engine output to HASH engine input
+                        AESToHashActive = 2,
+        // Process input using both AES and HASH engine in parallell
+                        AESAndHashActive = 3,
+        // Use HASH engine
+                        HashActive = 7,
+        // Calculate AES MAC and bypass
+                        AESMACAndBypassActive = 9,
+        // Pipe AES engine output to HASH engine input. The resulting digest output is piped to DOUT buffer.
+                        AESToHashAndDOUTActive = 10,
+        // Use CHACHA engine
+                        ChaChaActive = 16
+
+                    );
+
+        impl MODE_FIELD {
+            pub fn is_bypass(&self) -> bool {
+                *self == Self::Bypass
+            }
+
+            pub fn set_bypass(&mut self) -> &mut Self {
+                *self = Self::Bypass;
+                self
+            }
+
+            pub fn is_aesactive(&self) -> bool {
+                *self == Self::AESActive
+            }
+
+            pub fn set_aesactive(&mut self) -> &mut Self {
+                *self = Self::AESActive;
+                self
+            }
+
+            pub fn is_aestohashactive(&self) -> bool {
+                *self == Self::AESToHashActive
+            }
+
+            pub fn set_aestohashactive(&mut self) -> &mut Self {
+                *self = Self::AESToHashActive;
+                self
+            }
+
+            pub fn is_aesandhashactive(&self) -> bool {
+                *self == Self::AESAndHashActive
+            }
+
+            pub fn set_aesandhashactive(&mut self) -> &mut Self {
+                *self = Self::AESAndHashActive;
+                self
+            }
+
+            pub fn is_hashactive(&self) -> bool {
+                *self == Self::HashActive
+            }
+
+            pub fn set_hashactive(&mut self) -> &mut Self {
+                *self = Self::HashActive;
+                self
+            }
+
+            pub fn is_aesmacandbypassactive(&self) -> bool {
+                *self == Self::AESMACAndBypassActive
+            }
+
+            pub fn set_aesmacandbypassactive(&mut self) -> &mut Self {
+                *self = Self::AESMACAndBypassActive;
+                self
+            }
+
+            pub fn is_aestohashanddoutactive(&self) -> bool {
+                *self == Self::AESToHashAndDOUTActive
+            }
+
+            pub fn set_aestohashanddoutactive(&mut self) -> &mut Self {
+                *self = Self::AESToHashAndDOUTActive;
+                self
+            }
+
+            pub fn is_chachaactive(&self) -> bool {
+                *self == Self::ChaChaActive
+            }
+
+            pub fn set_chachaactive(&mut self) -> &mut Self {
+                *self = Self::ChaChaActive;
+                self
+            }
+        }
+    }
+
+    pub mod crypto_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CRYPTO_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl CRYPTO_BUSY {}
+
+        impl RegisterRead for CRYPTO_BUSY {
+            type Value = CRYPTO_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CRYPTO_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CRYPTO_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl CRYPTO_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // Cryptographic core engines are idle
+                        Idle = 0,
+        // Cryptographic core engines are busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod hash_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_BUSY {}
+
+        impl RegisterRead for HASH_BUSY {
+            type Value = HASH_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // HASH engine is idle
+                        Idle = 0,
+        // HASH engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod context_id {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CONTEXT_ID {
+            raw: RawRegister<u32>,
+        }
+
+        impl CONTEXT_ID {}
+
+        impl RegisterRead for CONTEXT_ID {
+            type Value = u32;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                (raw & 0x000000ff) >> 0
+            }
+        }
+
+        impl RegisterWrite for CONTEXT_ID {
+            type Value = u32;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = (old_raw & !0x000000ff) | (value << 0);
+                self.raw.write(raw);
+            }
+        }
+    }
+}
+
+pub mod cc_din {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_DIN {
+        _hidden: (),
+    }
+
+    impl CC_DIN {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_DIN {
+        type Target = CC_DIN_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_DIN {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_DIN_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 3072],
+        /// Used by CPU to write data directly to the DIN buffer, which is then
+        /// sent to the cryptographic engines for processing.
+        pub din_buffer: din_buffer::DIN_BUFFER,
+        _padding_3076: [u8; 28],
+        /// Status register for DIN DMA engine activity when accessing memory.
+        pub din_dma_mem_busy: din_dma_mem_busy::DIN_DMA_MEM_BUSY,
+        _padding_3108: [u8; 4],
+        /// Data source address in memory.
+        pub src_mem_addr: src_mem_addr::SRC_MEM_ADDR,
+        /// The number of bytes to be read from memory. Writing to this register
+        /// triggers the DMA operation.
+        pub src_mem_size: src_mem_size::SRC_MEM_SIZE,
+        /// Data source address in RNG SRAM.
+        pub src_sram_addr: src_sram_addr::SRC_SRAM_ADDR,
+        /// The number of bytes to be read from RNG SRAM. Writing to this
+        /// register triggers the DMA operation.
+        pub src_sram_size: src_sram_size::SRC_SRAM_SIZE,
+        /// Status register for DIN DMA engine activity when accessing RNG SRAM.
+        pub din_dma_sram_busy: din_dma_sram_busy::DIN_DMA_SRAM_BUSY,
+        /// Configure the endianness of DIN DMA transactions towards RNG SRAM.
+        pub din_dma_sram_endianness: din_dma_sram_endianness::DIN_DMA_SRAM_ENDIANNESS,
+        _padding_3136: [u8; 4],
+        /// Reset the DIN DMA engine.
+        pub din_sw_reset: din_sw_reset::DIN_SW_RESET,
+        /// Specifies the number of bytes the CPU will write to the DIN_BUFFER,
+        /// ensuring the cryptographic engine processes the correct amount of
+        /// data.
+        pub din_cpu_data: din_cpu_data::DIN_CPU_DATA,
+        /// Indicates that the next CPU write to the DIN_BUFFER is the last in
+        /// the sequence. This is needed only when the data size is NOT modulo 4
+        /// (e.g. HASH padding).
+        pub din_write_align: din_write_align::DIN_WRITE_ALIGN,
+        /// Register indicating if DIN FIFO is empty and if more data can be
+        /// accepted.
+        pub din_fifo_empty: din_fifo_empty::DIN_FIFO_EMPTY,
+        _padding_3156: [u8; 4],
+        /// Reset the DIN FIFO, effectively clearing the FIFO for new data.
+        pub din_fifo_reset: din_fifo_reset::DIN_FIFO_RESET,
+    }
+
+    pub mod din_buffer {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_BUFFER {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_BUFFER {
+            pub fn write_with<F: Fn(&mut DIN_BUFFER_WRITE_VALUE) -> &mut DIN_BUFFER_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DIN_BUFFER_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DIN_BUFFER {
+            type Value = DIN_BUFFER_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_BUFFER_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_BUFFER_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_data(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod din_dma_mem_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_DMA_MEM_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_DMA_MEM_BUSY {}
+
+        impl RegisterRead for DIN_DMA_MEM_BUSY {
+            type Value = DIN_DMA_MEM_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DIN_DMA_MEM_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_DMA_MEM_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_DMA_MEM_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // DIN memory DMA engine is idle
+                        Idle = 0,
+        // DIN memory DMA engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod src_mem_addr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SRC_MEM_ADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl SRC_MEM_ADDR {
+            pub fn write_with<
+                F: Fn(&mut SRC_MEM_ADDR_WRITE_VALUE) -> &mut SRC_MEM_ADDR_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = SRC_MEM_ADDR_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for SRC_MEM_ADDR {
+            type Value = SRC_MEM_ADDR_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct SRC_MEM_ADDR_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl SRC_MEM_ADDR_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod src_mem_size {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SRC_MEM_SIZE {
+            raw: RawRegister<u32>,
+        }
+
+        impl SRC_MEM_SIZE {
+            pub fn write_with<
+                F: Fn(&mut SRC_MEM_SIZE_WRITE_VALUE) -> &mut SRC_MEM_SIZE_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = SRC_MEM_SIZE_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for SRC_MEM_SIZE {
+            type Value = SRC_MEM_SIZE_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct SRC_MEM_SIZE_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl SRC_MEM_SIZE_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_size(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x3fffffff) | (value << 0);
+                self
+            }
+
+            pub fn set_first(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x40000000) | (value << 30);
+                self
+            }
+
+            pub fn set_last(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x80000000) | (value << 31);
+                self
+            }
+        }
+    }
+
+    pub mod src_sram_addr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SRC_SRAM_ADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl SRC_SRAM_ADDR {
+            pub fn write_with<F: Fn(&mut SRC_SRAM_ADDR_VALUE) -> &mut SRC_SRAM_ADDR_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = SRC_SRAM_ADDR_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for SRC_SRAM_ADDR {
+            type Value = SRC_SRAM_ADDR_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                SRC_SRAM_ADDR_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for SRC_SRAM_ADDR {
+            type Value = SRC_SRAM_ADDR_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct SRC_SRAM_ADDR_VALUE {
+            raw: u32,
+        }
+
+        impl SRC_SRAM_ADDR_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod src_sram_size {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SRC_SRAM_SIZE {
+            raw: RawRegister<u32>,
+        }
+
+        impl SRC_SRAM_SIZE {
+            pub fn write_with<
+                F: Fn(&mut SRC_SRAM_SIZE_WRITE_VALUE) -> &mut SRC_SRAM_SIZE_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = SRC_SRAM_SIZE_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for SRC_SRAM_SIZE {
+            type Value = SRC_SRAM_SIZE_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct SRC_SRAM_SIZE_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl SRC_SRAM_SIZE_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_size(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod din_dma_sram_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_DMA_SRAM_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_DMA_SRAM_BUSY {}
+
+        impl RegisterRead for DIN_DMA_SRAM_BUSY {
+            type Value = DIN_DMA_SRAM_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DIN_DMA_SRAM_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_DMA_SRAM_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_DMA_SRAM_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // DIN RNG SRAM DMA engine is idle
+                        Idle = 0,
+        // DIN RNG SRAM DMA engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod din_dma_sram_endianness {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_DMA_SRAM_ENDIANNESS {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_DMA_SRAM_ENDIANNESS {
+            pub fn write_with<
+                F: Fn(&mut DIN_DMA_SRAM_ENDIANNESS_VALUE) -> &mut DIN_DMA_SRAM_ENDIANNESS_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DIN_DMA_SRAM_ENDIANNESS_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for DIN_DMA_SRAM_ENDIANNESS {
+            type Value = DIN_DMA_SRAM_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DIN_DMA_SRAM_ENDIANNESS_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for DIN_DMA_SRAM_ENDIANNESS {
+            type Value = DIN_DMA_SRAM_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_DMA_SRAM_ENDIANNESS_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_DMA_SRAM_ENDIANNESS_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn endian(&self) -> ENDIAN_FIELD {
+                let raw = self.raw;
+                ENDIAN_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_endian(&mut self, value: ENDIAN_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_endian_with<F: Fn(&mut ENDIAN_FIELD) -> &mut ENDIAN_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.endian();
+                f(&mut value);
+                self.set_endian(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENDIAN_FIELD u32 =>
+                        // Use little-endian format for RNG SRAM DMA transactions
+                        LittleEndian = 0,
+        // Use big-endian format for RNG SRAM DMA transactions
+                        BigEndian = 1
+
+                    );
+
+        impl ENDIAN_FIELD {
+            pub fn is_littleendian(&self) -> bool {
+                *self == Self::LittleEndian
+            }
+
+            pub fn set_littleendian(&mut self) -> &mut Self {
+                *self = Self::LittleEndian;
+                self
+            }
+
+            pub fn is_bigendian(&self) -> bool {
+                *self == Self::BigEndian
+            }
+
+            pub fn set_bigendian(&mut self) -> &mut Self {
+                *self = Self::BigEndian;
+                self
+            }
+        }
+    }
+
+    pub mod din_sw_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_SW_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_SW_RESET {
+            pub fn write_with<
+                F: Fn(&mut DIN_SW_RESET_WRITE_VALUE) -> &mut DIN_SW_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DIN_SW_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DIN_SW_RESET {
+            type Value = DIN_SW_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_SW_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_SW_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset DIN DMA engine.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod din_cpu_data {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_CPU_DATA {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_CPU_DATA {
+            pub fn write_with<
+                F: Fn(&mut DIN_CPU_DATA_WRITE_VALUE) -> &mut DIN_CPU_DATA_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DIN_CPU_DATA_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DIN_CPU_DATA {
+            type Value = DIN_CPU_DATA_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_CPU_DATA_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_CPU_DATA_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_size(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000ffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod din_write_align {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_WRITE_ALIGN {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_WRITE_ALIGN {
+            pub fn write_with<
+                F: Fn(&mut DIN_WRITE_ALIGN_WRITE_VALUE) -> &mut DIN_WRITE_ALIGN_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DIN_WRITE_ALIGN_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DIN_WRITE_ALIGN {
+            type Value = DIN_WRITE_ALIGN_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_WRITE_ALIGN_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_WRITE_ALIGN_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_last(&mut self) -> &mut Self {
+                let value = LAST_FIELD::Confirm.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] LAST_FIELD u32 =>
+            // The next CPU write is the last in the sequence.
+            Confirm = 1
+
+        );
+
+        impl LAST_FIELD {
+            pub fn is_confirm(&self) -> bool {
+                *self == Self::Confirm
+            }
+
+            pub fn set_confirm(&mut self) -> &mut Self {
+                *self = Self::Confirm;
+                self
+            }
+        }
+    }
+
+    pub mod din_fifo_empty {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_FIFO_EMPTY {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_FIFO_EMPTY {}
+
+        impl RegisterRead for DIN_FIFO_EMPTY {
+            type Value = DIN_FIFO_EMPTY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DIN_FIFO_EMPTY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_FIFO_EMPTY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_FIFO_EMPTY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // DIN FIFO is not empty
+                        NotEmpty = 0,
+        // DIN FIFO is empty, and more data can be accepted
+                        Empty = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_notempty(&self) -> bool {
+                *self == Self::NotEmpty
+            }
+
+            pub fn set_notempty(&mut self) -> &mut Self {
+                *self = Self::NotEmpty;
+                self
+            }
+
+            pub fn is_empty(&self) -> bool {
+                *self == Self::Empty
+            }
+
+            pub fn set_empty(&mut self) -> &mut Self {
+                *self = Self::Empty;
+                self
+            }
+        }
+    }
+
+    pub mod din_fifo_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DIN_FIFO_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl DIN_FIFO_RESET {
+            pub fn write_with<
+                F: Fn(&mut DIN_FIFO_RESET_WRITE_VALUE) -> &mut DIN_FIFO_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DIN_FIFO_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DIN_FIFO_RESET {
+            type Value = DIN_FIFO_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DIN_FIFO_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DIN_FIFO_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset DIN FIFO.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_dout {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_DOUT {
+        _hidden: (),
+    }
+
+    impl CC_DOUT {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_DOUT {
+        type Target = CC_DOUT_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_DOUT {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_DOUT_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 3072],
+        /// Cryptographic results directly accessible by the CPU.
+        pub dout_buffer: dout_buffer::DOUT_BUFFER,
+        _padding_3076: [u8; 284],
+        /// Status register for DOUT DMA engine activity when accessing memory.
+        pub dout_dma_mem_busy: dout_dma_mem_busy::DOUT_DMA_MEM_BUSY,
+        _padding_3364: [u8; 4],
+        /// Data destination address in memory.
+        pub dst_mem_addr: dst_mem_addr::DST_MEM_ADDR,
+        /// The number of bytes to be written to memory.
+        pub dst_mem_size: dst_mem_size::DST_MEM_SIZE,
+        /// Data destination address in RNG SRAM.
+        pub dst_sram_addr: dst_sram_addr::DST_SRAM_ADDR,
+        /// The number of bytes to be written to RNG SRAM.
+        pub dst_sram_size: dst_sram_size::DST_SRAM_SIZE,
+        /// Status register for DOUT DMA engine activity when accessing RNG
+        /// SRAM.
+        pub dout_dma_sram_busy: dout_dma_sram_busy::DOUT_DMA_SRAM_BUSY,
+        /// Configure the endianness of DOUT DMA transactions towards RNG SRAM.
+        pub dout_dma_sram_endianness: dout_dma_sram_endianness::DOUT_DMA_SRAM_ENDIANNESS,
+        _padding_3392: [u8; 4],
+        /// Indication that the next CPU read from the DOUT_BUFFER is the last
+        /// in the sequence. This is needed only when the data size is NOT
+        /// modulo 4 (e.g. HASH padding).
+        pub dout_read_align: dout_read_align::DOUT_READ_ALIGN,
+        _padding_3400: [u8; 8],
+        /// Register indicating if DOUT FIFO is empty or if more data will come.
+        pub dout_fifo_empty: dout_fifo_empty::DOUT_FIFO_EMPTY,
+        _padding_3412: [u8; 4],
+        /// Reset the DOUT DMA engine.
+        pub dout_sw_reset: dout_sw_reset::DOUT_SW_RESET,
+    }
+
+    pub mod dout_buffer {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DOUT_BUFFER {
+            raw: RawRegister<u32>,
+        }
+
+        impl DOUT_BUFFER {}
+
+        impl RegisterRead for DOUT_BUFFER {
+            type Value = DOUT_BUFFER_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DOUT_BUFFER_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DOUT_BUFFER_READ_VALUE {
+            raw: u32,
+        }
+
+        impl DOUT_BUFFER_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn data(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_data(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod dout_dma_mem_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DOUT_DMA_MEM_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl DOUT_DMA_MEM_BUSY {}
+
+        impl RegisterRead for DOUT_DMA_MEM_BUSY {
+            type Value = DOUT_DMA_MEM_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DOUT_DMA_MEM_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DOUT_DMA_MEM_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl DOUT_DMA_MEM_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // DOUT memory DMA engine is idle
+                        Idle = 0,
+        // DOUT memory DMA engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod dst_mem_addr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DST_MEM_ADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl DST_MEM_ADDR {
+            pub fn write_with<
+                F: Fn(&mut DST_MEM_ADDR_WRITE_VALUE) -> &mut DST_MEM_ADDR_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DST_MEM_ADDR_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DST_MEM_ADDR {
+            type Value = DST_MEM_ADDR_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DST_MEM_ADDR_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DST_MEM_ADDR_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod dst_mem_size {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DST_MEM_SIZE {
+            raw: RawRegister<u32>,
+        }
+
+        impl DST_MEM_SIZE {
+            pub fn write_with<
+                F: Fn(&mut DST_MEM_SIZE_WRITE_VALUE) -> &mut DST_MEM_SIZE_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DST_MEM_SIZE_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DST_MEM_SIZE {
+            type Value = DST_MEM_SIZE_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DST_MEM_SIZE_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DST_MEM_SIZE_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_size(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x3fffffff) | (value << 0);
+                self
+            }
+
+            pub fn set_first(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x40000000) | (value << 30);
+                self
+            }
+
+            pub fn set_last(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x80000000) | (value << 31);
+                self
+            }
+        }
+    }
+
+    pub mod dst_sram_addr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DST_SRAM_ADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl DST_SRAM_ADDR {
+            pub fn write_with<F: Fn(&mut DST_SRAM_ADDR_VALUE) -> &mut DST_SRAM_ADDR_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DST_SRAM_ADDR_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for DST_SRAM_ADDR {
+            type Value = DST_SRAM_ADDR_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DST_SRAM_ADDR_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for DST_SRAM_ADDR {
+            type Value = DST_SRAM_ADDR_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DST_SRAM_ADDR_VALUE {
+            raw: u32,
+        }
+
+        impl DST_SRAM_ADDR_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod dst_sram_size {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DST_SRAM_SIZE {
+            raw: RawRegister<u32>,
+        }
+
+        impl DST_SRAM_SIZE {
+            pub fn write_with<
+                F: Fn(&mut DST_SRAM_SIZE_WRITE_VALUE) -> &mut DST_SRAM_SIZE_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DST_SRAM_SIZE_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DST_SRAM_SIZE {
+            type Value = DST_SRAM_SIZE_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DST_SRAM_SIZE_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DST_SRAM_SIZE_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_size(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod dout_dma_sram_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DOUT_DMA_SRAM_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl DOUT_DMA_SRAM_BUSY {}
+
+        impl RegisterRead for DOUT_DMA_SRAM_BUSY {
+            type Value = DOUT_DMA_SRAM_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DOUT_DMA_SRAM_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DOUT_DMA_SRAM_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl DOUT_DMA_SRAM_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // DOUT RNG SRAM DMA engine is idle
+                        Idle = 0,
+        // DOUT RNG SRAM DMA engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod dout_dma_sram_endianness {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DOUT_DMA_SRAM_ENDIANNESS {
+            raw: RawRegister<u32>,
+        }
+
+        impl DOUT_DMA_SRAM_ENDIANNESS {
+            pub fn write_with<
+                F: Fn(&mut DOUT_DMA_SRAM_ENDIANNESS_VALUE) -> &mut DOUT_DMA_SRAM_ENDIANNESS_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DOUT_DMA_SRAM_ENDIANNESS_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for DOUT_DMA_SRAM_ENDIANNESS {
+            type Value = DOUT_DMA_SRAM_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DOUT_DMA_SRAM_ENDIANNESS_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for DOUT_DMA_SRAM_ENDIANNESS {
+            type Value = DOUT_DMA_SRAM_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DOUT_DMA_SRAM_ENDIANNESS_VALUE {
+            raw: u32,
+        }
+
+        impl DOUT_DMA_SRAM_ENDIANNESS_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn endian(&self) -> ENDIAN_FIELD {
+                let raw = self.raw;
+                ENDIAN_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_endian(&mut self, value: ENDIAN_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_endian_with<F: Fn(&mut ENDIAN_FIELD) -> &mut ENDIAN_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.endian();
+                f(&mut value);
+                self.set_endian(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENDIAN_FIELD u32 =>
+                        // Use little-endian format for RNG SRAM DMA transactions
+                        LittleEndian = 0,
+        // Use big-endian format for RNG SRAM DMA transactions
+                        BigEndian = 1
+
+                    );
+
+        impl ENDIAN_FIELD {
+            pub fn is_littleendian(&self) -> bool {
+                *self == Self::LittleEndian
+            }
+
+            pub fn set_littleendian(&mut self) -> &mut Self {
+                *self = Self::LittleEndian;
+                self
+            }
+
+            pub fn is_bigendian(&self) -> bool {
+                *self == Self::BigEndian
+            }
+
+            pub fn set_bigendian(&mut self) -> &mut Self {
+                *self = Self::BigEndian;
+                self
+            }
+        }
+    }
+
+    pub mod dout_read_align {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DOUT_READ_ALIGN {
+            raw: RawRegister<u32>,
+        }
+
+        impl DOUT_READ_ALIGN {
+            pub fn write_with<
+                F: Fn(&mut DOUT_READ_ALIGN_WRITE_VALUE) -> &mut DOUT_READ_ALIGN_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DOUT_READ_ALIGN_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DOUT_READ_ALIGN {
+            type Value = DOUT_READ_ALIGN_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DOUT_READ_ALIGN_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DOUT_READ_ALIGN_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_last(&mut self) -> &mut Self {
+                let value = LAST_FIELD::Flush.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] LAST_FIELD u32 =>
+            // Flush the remaining read aligned content.
+            Flush = 1
+
+        );
+
+        impl LAST_FIELD {
+            pub fn is_flush(&self) -> bool {
+                *self == Self::Flush
+            }
+
+            pub fn set_flush(&mut self) -> &mut Self {
+                *self = Self::Flush;
+                self
+            }
+        }
+    }
+
+    pub mod dout_fifo_empty {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DOUT_FIFO_EMPTY {
+            raw: RawRegister<u32>,
+        }
+
+        impl DOUT_FIFO_EMPTY {}
+
+        impl RegisterRead for DOUT_FIFO_EMPTY {
+            type Value = DOUT_FIFO_EMPTY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                DOUT_FIFO_EMPTY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DOUT_FIFO_EMPTY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl DOUT_FIFO_EMPTY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // DOUT FIFO is not empty, and more data will come
+                        NotEmpty = 0,
+        // DOUT FIFO is empty
+                        Empty = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_notempty(&self) -> bool {
+                *self == Self::NotEmpty
+            }
+
+            pub fn set_notempty(&mut self) -> &mut Self {
+                *self = Self::NotEmpty;
+                self
+            }
+
+            pub fn is_empty(&self) -> bool {
+                *self == Self::Empty
+            }
+
+            pub fn set_empty(&mut self) -> &mut Self {
+                *self = Self::Empty;
+                self
+            }
+        }
+    }
+
+    pub mod dout_sw_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DOUT_SW_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl DOUT_SW_RESET {
+            pub fn write_with<
+                F: Fn(&mut DOUT_SW_RESET_WRITE_VALUE) -> &mut DOUT_SW_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DOUT_SW_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DOUT_SW_RESET {
+            type Value = DOUT_SW_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DOUT_SW_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DOUT_SW_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset DOUT DMA engine.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_hash {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_HASH {
+        _hidden: (),
+    }
+
+    impl CC_HASH {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_HASH {
+        type Target = CC_HASH_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_HASH {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_HASH_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 1600],
+        /// Description collection: HASH_H value registers. The initial
+        /// HASH_H[0] register holds the least significant bits [31:0] of the
+        /// value.
+        pub hash_h: [hash_h::HASH_H; 8],
+        _padding_1632: [u8; 36],
+        /// Configure the HASH engine to automatically pad data at the end of
+        /// the DMA transfer to complete the digest operation.
+        pub hash_pad_auto: hash_pad_auto::HASH_PAD_AUTO,
+        _padding_1672: [u8; 12],
+        /// Configure HASH engine initial state registers.
+        pub hash_init_state: hash_init_state::HASH_INIT_STATE,
+        _padding_1688: [u8; 280],
+        /// HASH engine HW version
+        pub hash_version: hash_version::HASH_VERSION,
+        _padding_1972: [u8; 12],
+        /// Control the HASH engine behavior.
+        pub hash_control: hash_control::HASH_CONTROL,
+        /// Enable the hardware padding feature of the HASH engine.
+        pub hash_pad: hash_pad::HASH_PAD,
+        /// Force the hardware padding operation to trigger if the input data
+        /// length is zero bytes.
+        pub hash_pad_force: hash_pad_force::HASH_PAD_FORCE,
+        /// Bits [31:0] of the number of bytes that have been digested so far.
+        pub hash_cur_len_0: hash_cur_len_0::HASH_CUR_LEN_0,
+        /// Bits [63:32] of the number of bytes that have been digested so far.
+        pub hash_cur_len_1: hash_cur_len_1::HASH_CUR_LEN_1,
+        _padding_2004: [u8; 8],
+        /// Hardware configuration of the HASH engine. Reset value holds the
+        /// supported features.
+        pub hash_hw_flags: hash_hw_flags::HASH_HW_FLAGS,
+        _padding_2016: [u8; 4],
+        /// Reset the HASH engine.
+        pub hash_sw_reset: hash_sw_reset::HASH_SW_RESET,
+        /// Configure the endianness of HASH data and padding generation.
+        pub hash_endianness: hash_endianness::HASH_ENDIANNESS,
+    }
+
+    pub mod hash_h {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_H {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_H {
+            pub fn write_with<F: Fn(&mut HASH_H_VALUE) -> &mut HASH_H_VALUE>(&mut self, f: F) {
+                let mut v = HASH_H_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for HASH_H {
+            type Value = HASH_H_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_H_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for HASH_H {
+            type Value = HASH_H_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_H_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_H_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod hash_pad_auto {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_PAD_AUTO {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_PAD_AUTO {
+            pub fn write_with<
+                F: Fn(&mut HASH_PAD_AUTO_WRITE_VALUE) -> &mut HASH_PAD_AUTO_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_PAD_AUTO_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for HASH_PAD_AUTO {
+            type Value = HASH_PAD_AUTO_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_PAD_AUTO_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_PAD_AUTO_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn hwpad(&self) -> HWPAD_FIELD {
+                let raw = self.raw;
+                HWPAD_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_hwpad(&mut self, value: HWPAD_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_hwpad_with<F: Fn(&mut HWPAD_FIELD) -> &mut HWPAD_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.hwpad();
+                f(&mut value);
+                self.set_hwpad(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] HWPAD_FIELD u32 =>
+                        // Do not enable automatic hardware padding.
+                        Disable = 0,
+        // Enable automatic hardware padding.
+                        Enable = 1
+
+                    );
+
+        impl HWPAD_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod hash_init_state {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_INIT_STATE {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_INIT_STATE {
+            pub fn write_with<
+                F: Fn(&mut HASH_INIT_STATE_WRITE_VALUE) -> &mut HASH_INIT_STATE_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_INIT_STATE_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for HASH_INIT_STATE {
+            type Value = HASH_INIT_STATE_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_INIT_STATE_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_INIT_STATE_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn load(&self) -> LOAD_FIELD {
+                let raw = self.raw;
+                LOAD_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_load(&mut self, value: LOAD_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_load_with<F: Fn(&mut LOAD_FIELD) -> &mut LOAD_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.load();
+                f(&mut value);
+                self.set_load(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] LOAD_FIELD u32 =>
+                        // Disable loading of data to initial state registers.
+                        Disable = 0,
+        // Enable loading of data to initial state registers.
+                        Enable = 1
+
+                    );
+
+        impl LOAD_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod hash_version {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_VERSION {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_VERSION {}
+
+        impl RegisterRead for HASH_VERSION {
+            type Value = HASH_VERSION_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_VERSION_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_VERSION_READ_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_VERSION_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn patch(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000000ff) >> 0
+            }
+
+            pub fn set_patch(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000000ff) | (value << 0);
+                self
+            }
+
+            pub fn minor_version_number(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000f00) >> 8
+            }
+
+            pub fn set_minor_version_number(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000f00) | (value << 8);
+                self
+            }
+
+            pub fn major_version_number(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x0000f000) >> 12
+            }
+
+            pub fn set_major_version_number(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000f000) | (value << 12);
+                self
+            }
+        }
+    }
+
+    pub mod hash_control {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_CONTROL {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_CONTROL {
+            pub fn write_with<F: Fn(&mut HASH_CONTROL_VALUE) -> &mut HASH_CONTROL_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_CONTROL_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for HASH_CONTROL {
+            type Value = HASH_CONTROL_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_CONTROL_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for HASH_CONTROL {
+            type Value = HASH_CONTROL_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_CONTROL_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_CONTROL_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn mode(&self) -> MODE_FIELD {
+                let raw = self.raw;
+                MODE_FIELD::from_value((raw & 0x0000000f) >> 0)
+            }
+
+            pub fn set_mode(&mut self, value: MODE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000000f) | (value << 0);
+                self
+            }
+
+            pub fn set_mode_with<F: Fn(&mut MODE_FIELD) -> &mut MODE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.mode();
+                f(&mut value);
+                self.set_mode(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] MODE_FIELD u32 =>
+                        // Select SHA1 mode
+                        SHA1 = 1,
+        // Select SHA256 mode
+                        SHA256 = 2,
+        // Select SHA224 mode
+                        SHA224 = 10
+
+                    );
+
+        impl MODE_FIELD {
+            pub fn is_sha1(&self) -> bool {
+                *self == Self::SHA1
+            }
+
+            pub fn set_sha1(&mut self) -> &mut Self {
+                *self = Self::SHA1;
+                self
+            }
+
+            pub fn is_sha256(&self) -> bool {
+                *self == Self::SHA256
+            }
+
+            pub fn set_sha256(&mut self) -> &mut Self {
+                *self = Self::SHA256;
+                self
+            }
+
+            pub fn is_sha224(&self) -> bool {
+                *self == Self::SHA224
+            }
+
+            pub fn set_sha224(&mut self) -> &mut Self {
+                *self = Self::SHA224;
+                self
+            }
+        }
+    }
+
+    pub mod hash_pad {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_PAD {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_PAD {
+            pub fn write_with<F: Fn(&mut HASH_PAD_VALUE) -> &mut HASH_PAD_VALUE>(&mut self, f: F) {
+                let mut v = HASH_PAD_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for HASH_PAD {
+            type Value = HASH_PAD_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_PAD_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for HASH_PAD {
+            type Value = HASH_PAD_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_PAD_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_PAD_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Disable hardware padding feature.
+                        Disable = 0,
+        // Enable hardware padding feature.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod hash_pad_force {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_PAD_FORCE {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_PAD_FORCE {
+            pub fn write_with<F: Fn(&mut HASH_PAD_FORCE_VALUE) -> &mut HASH_PAD_FORCE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_PAD_FORCE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for HASH_PAD_FORCE {
+            type Value = HASH_PAD_FORCE_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_PAD_FORCE_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for HASH_PAD_FORCE {
+            type Value = HASH_PAD_FORCE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_PAD_FORCE_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_PAD_FORCE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000004) >> 2)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Do not force hardware padding to trigger.
+                        Disable = 0,
+        // Force hardware padding to trigger.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod hash_cur_len_0 {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_CUR_LEN_0 {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_CUR_LEN_0 {
+            pub fn write_with<F: Fn(&mut HASH_CUR_LEN_0_VALUE) -> &mut HASH_CUR_LEN_0_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_CUR_LEN_0_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for HASH_CUR_LEN_0 {
+            type Value = HASH_CUR_LEN_0_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_CUR_LEN_0_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for HASH_CUR_LEN_0 {
+            type Value = HASH_CUR_LEN_0_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_CUR_LEN_0_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_CUR_LEN_0_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod hash_cur_len_1 {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_CUR_LEN_1 {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_CUR_LEN_1 {
+            pub fn write_with<F: Fn(&mut HASH_CUR_LEN_1_VALUE) -> &mut HASH_CUR_LEN_1_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_CUR_LEN_1_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for HASH_CUR_LEN_1 {
+            type Value = HASH_CUR_LEN_1_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_CUR_LEN_1_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for HASH_CUR_LEN_1 {
+            type Value = HASH_CUR_LEN_1_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_CUR_LEN_1_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_CUR_LEN_1_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod hash_hw_flags {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_HW_FLAGS {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_HW_FLAGS {}
+
+        impl RegisterRead for HASH_HW_FLAGS {
+            type Value = HASH_HW_FLAGS_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_HW_FLAGS_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_HW_FLAGS_READ_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_HW_FLAGS_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn cw(&self) -> CW_FIELD {
+                let raw = self.raw;
+                CW_FIELD::from_value((raw & 0x0000000f) >> 0)
+            }
+
+            pub fn set_cw(&mut self, value: CW_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000000f) | (value << 0);
+                self
+            }
+
+            pub fn set_cw_with<F: Fn(&mut CW_FIELD) -> &mut CW_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.cw();
+                f(&mut value);
+                self.set_cw(value)
+            }
+
+            pub fn ch(&self) -> CH_FIELD {
+                let raw = self.raw;
+                CH_FIELD::from_value((raw & 0x000000f0) >> 4)
+            }
+
+            pub fn set_ch(&mut self, value: CH_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000000f0) | (value << 4);
+                self
+            }
+
+            pub fn set_ch_with<F: Fn(&mut CH_FIELD) -> &mut CH_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.ch();
+                f(&mut value);
+                self.set_ch(value)
+            }
+
+            pub fn dw(&self) -> DW_FIELD {
+                let raw = self.raw;
+                DW_FIELD::from_value((raw & 0x00000f00) >> 8)
+            }
+
+            pub fn set_dw(&mut self, value: DW_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000f00) | (value << 8);
+                self
+            }
+
+            pub fn set_dw_with<F: Fn(&mut DW_FIELD) -> &mut DW_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dw();
+                f(&mut value);
+                self.set_dw(value)
+            }
+
+            pub fn sha_512_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00001000) >> 12
+            }
+
+            pub fn set_sha_512_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00001000) | (value << 12);
+                self
+            }
+
+            pub fn pad_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00002000) >> 13
+            }
+
+            pub fn set_pad_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00002000) | (value << 13);
+                self
+            }
+
+            pub fn md5_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00004000) >> 14
+            }
+
+            pub fn set_md5_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00004000) | (value << 14);
+                self
+            }
+
+            pub fn hmac_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00008000) >> 15
+            }
+
+            pub fn set_hmac_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00008000) | (value << 15);
+                self
+            }
+
+            pub fn sha_256_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00010000) >> 16
+            }
+
+            pub fn set_sha_256_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00010000) | (value << 16);
+                self
+            }
+
+            pub fn hash_compare_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00020000) >> 17
+            }
+
+            pub fn set_hash_compare_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00020000) | (value << 17);
+                self
+            }
+
+            pub fn dump_hash_to_dout_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00040000) >> 18
+            }
+
+            pub fn set_dump_hash_to_dout_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00040000) | (value << 18);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CW_FIELD u32 =>
+                        // One concurrent word used by hash during signature generation
+                        One = 1,
+        // Two concurrent words used by hash during signature generation
+                        Two = 2
+
+                    );
+
+        impl CW_FIELD {
+            pub fn is_one(&self) -> bool {
+                *self == Self::One
+            }
+
+            pub fn set_one(&mut self) -> &mut Self {
+                *self = Self::One;
+                self
+            }
+
+            pub fn is_two(&self) -> bool {
+                *self == Self::Two
+            }
+
+            pub fn set_two(&mut self) -> &mut Self {
+                *self = Self::Two;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CH_FIELD u32 =>
+                        // One Hi value is updated at a time.
+                        One = 0,
+        // All Hi values are updated at the same time.
+                        All = 1
+
+                    );
+
+        impl CH_FIELD {
+            pub fn is_one(&self) -> bool {
+                *self == Self::One
+            }
+
+            pub fn set_one(&mut self) -> &mut Self {
+                *self = Self::One;
+                self
+            }
+
+            pub fn is_all(&self) -> bool {
+                *self == Self::All
+            }
+
+            pub fn set_all(&mut self) -> &mut Self {
+                *self = Self::All;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DW_FIELD u32 =>
+                        // 32 bits word data.
+                        _32Bits = 0,
+        // 64 bits word data.
+                        _64Bits = 1
+
+                    );
+
+        impl DW_FIELD {
+            pub fn is_32bits(&self) -> bool {
+                *self == Self::_32Bits
+            }
+
+            pub fn set_32bits(&mut self) -> &mut Self {
+                *self = Self::_32Bits;
+                self
+            }
+
+            pub fn is_64bits(&self) -> bool {
+                *self == Self::_64Bits
+            }
+
+            pub fn set_64bits(&mut self) -> &mut Self {
+                *self = Self::_64Bits;
+                self
+            }
+        }
+    }
+
+    pub mod hash_sw_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_SW_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_SW_RESET {
+            pub fn write_with<
+                F: Fn(&mut HASH_SW_RESET_WRITE_VALUE) -> &mut HASH_SW_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_SW_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for HASH_SW_RESET {
+            type Value = HASH_SW_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_SW_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_SW_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset HASH engine.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod hash_endianness {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_ENDIANNESS {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_ENDIANNESS {
+            pub fn write_with<F: Fn(&mut HASH_ENDIANNESS_VALUE) -> &mut HASH_ENDIANNESS_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_ENDIANNESS_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for HASH_ENDIANNESS {
+            type Value = HASH_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HASH_ENDIANNESS_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for HASH_ENDIANNESS {
+            type Value = HASH_ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_ENDIANNESS_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_ENDIANNESS_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn endian(&self) -> ENDIAN_FIELD {
+                let raw = self.raw;
+                ENDIAN_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_endian(&mut self, value: ENDIAN_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_endian_with<F: Fn(&mut ENDIAN_FIELD) -> &mut ENDIAN_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.endian();
+                f(&mut value);
+                self.set_endian(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENDIAN_FIELD u32 =>
+                        // Use little-endian format for data and padding
+                        LittleEndian = 0,
+        // Use big-endian format for data and padding
+                        BigEndian = 1
+
+                    );
+
+        impl ENDIAN_FIELD {
+            pub fn is_littleendian(&self) -> bool {
+                *self == Self::LittleEndian
+            }
+
+            pub fn set_littleendian(&mut self) -> &mut Self {
+                *self = Self::LittleEndian;
+                self
+            }
+
+            pub fn is_bigendian(&self) -> bool {
+                *self == Self::BigEndian
+            }
+
+            pub fn set_bigendian(&mut self) -> &mut Self {
+                *self = Self::BigEndian;
+                self
+            }
+        }
+    }
+}
+
 pub mod cc_host_rgf {
     #[allow(unused_imports)]
     use super::*;
@@ -105531,7 +112372,7 @@ pub mod cc_host_rgf {
     }
 
     impl CC_HOST_RGF {
-        const BASE_ADDRESS: u32 = 0x5002a000;
+        const BASE_ADDRESS: u32 = 0x5002b000;
 
         pub unsafe fn new() -> Self {
             Self { _hidden: () }
@@ -105555,14 +112396,36 @@ pub mod cc_host_rgf {
     #[repr(C)]
     pub struct CC_HOST_RGF_REGISTERS {
         _hidden: (),
-        _padding_0: [u8; 6712],
-        /// AES hardware key select
+        _padding_0: [u8; 2560],
+        /// Interrupt request register. Each bit of this register holds the
+        /// interrupt         status of a single interrupt source. If
+        /// corresponding IMR bit is         unmasked, an interrupt is
+        /// generated.
+        pub irr: irr::IRR,
+        /// Interrupt mask register. Each bit of this register holds the mask of
+        /// a single interrupt source.
+        pub imr: imr::IMR,
+        /// Interrupt clear register. Writing a 1 bit into a field in this
+        /// register will clear the corresponding bit in IRR.
+        pub icr: icr::ICR,
+        /// This register defines the endianness of the Host-accessible
+        /// registers, and can only be written once.
+        pub endianness: endianness::ENDIANNESS,
+        _padding_2576: [u8; 20],
+        /// This register holds the CRYPTOCELL subsystem signature. See reset
+        /// value.
+        pub host_signature: host_signature::HOST_SIGNATURE,
+        /// Hardware configuration of the CRYPTOCELL subsystem. Reset value
+        /// holds the supported features.
+        pub host_boot: host_boot::HOST_BOOT,
+        _padding_2604: [u8; 12],
+        /// AES hardware key select.
         pub host_cryptokey_sel: host_cryptokey_sel::HOST_CRYPTOKEY_SEL,
-        _padding_6716: [u8; 16],
+        _padding_2620: [u8; 16],
         /// This write-once register is the K_PRTL lock register. When this
-        /// register is set, K_PRTL can not be used and a zeroed key will be
-        /// used instead. The value of this register is saved in the CRYPTOCELL
-        /// AO power domain.
+        /// register is set, K_PRTL cannot be used and a zeroed key will be used
+        /// instead. The value of this register is saved in the CRYPTOCELL AO
+        /// power domain.
         pub host_iot_kprtl_lock: host_iot_kprtl_lock::HOST_IOT_KPRTL_LOCK,
         /// This register holds bits 31:0 of K_DR. The value of this register is
         /// saved in the CRYPTOCELL AO power domain. Reading from this address
@@ -105578,8 +112441,1300 @@ pub mod cc_host_rgf {
         /// This register holds bits 127:96 of K_DR. The value of this register
         /// is saved in the CRYPTOCELL AO power domain.
         pub host_iot_kdr3: host_iot_kdr3::HOST_IOT_KDR3,
-        /// Controls lifecycle state (LCS) for CRYPTOCELL subsystem
+        /// Controls life-cycle state (LCS) for CRYPTOCELL subsystem
         pub host_iot_lcs: host_iot_lcs::HOST_IOT_LCS,
+    }
+
+    pub mod irr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct IRR {
+            raw: RawRegister<u32>,
+        }
+
+        impl IRR {}
+
+        impl RegisterRead for IRR {
+            type Value = IRR_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                IRR_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct IRR_READ_VALUE {
+            raw: u32,
+        }
+
+        impl IRR_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn sram_to_din_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000010) >> 4
+            }
+
+            pub fn set_sram_to_din_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn dout_to_sram_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000020) >> 5
+            }
+
+            pub fn set_dout_to_sram_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+
+            pub fn mem_to_din_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000040) >> 6
+            }
+
+            pub fn set_mem_to_din_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000040) | (value << 6);
+                self
+            }
+
+            pub fn dout_to_mem_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000080) >> 7
+            }
+
+            pub fn set_dout_to_mem_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000080) | (value << 7);
+                self
+            }
+
+            pub fn ahb_err_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000100) >> 8
+            }
+
+            pub fn set_ahb_err_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000100) | (value << 8);
+                self
+            }
+
+            pub fn pka_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000200) >> 9
+            }
+
+            pub fn set_pka_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000200) | (value << 9);
+                self
+            }
+
+            pub fn rng_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000400) >> 10
+            }
+
+            pub fn set_rng_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000400) | (value << 10);
+                self
+            }
+        }
+    }
+
+    pub mod imr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct IMR {
+            raw: RawRegister<u32>,
+        }
+
+        impl IMR {
+            pub fn write_with<F: Fn(&mut IMR_VALUE) -> &mut IMR_VALUE>(&mut self, f: F) {
+                let mut v = IMR_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for IMR {
+            type Value = IMR_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                IMR_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for IMR {
+            type Value = IMR_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct IMR_VALUE {
+            raw: u32,
+        }
+
+        impl IMR_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn sram_to_din_mask(&self) -> SRAM_TO_DIN_MASK_FIELD {
+                let raw = self.raw;
+                SRAM_TO_DIN_MASK_FIELD::from_value((raw & 0x00000010) >> 4)
+            }
+
+            pub fn set_sram_to_din_mask(&mut self, value: SRAM_TO_DIN_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn set_sram_to_din_mask_with<
+                F: Fn(&mut SRAM_TO_DIN_MASK_FIELD) -> &mut SRAM_TO_DIN_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.sram_to_din_mask();
+                f(&mut value);
+                self.set_sram_to_din_mask(value)
+            }
+
+            pub fn dout_to_sram_mask(&self) -> DOUT_TO_SRAM_MASK_FIELD {
+                let raw = self.raw;
+                DOUT_TO_SRAM_MASK_FIELD::from_value((raw & 0x00000020) >> 5)
+            }
+
+            pub fn set_dout_to_sram_mask(&mut self, value: DOUT_TO_SRAM_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+
+            pub fn set_dout_to_sram_mask_with<
+                F: Fn(&mut DOUT_TO_SRAM_MASK_FIELD) -> &mut DOUT_TO_SRAM_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dout_to_sram_mask();
+                f(&mut value);
+                self.set_dout_to_sram_mask(value)
+            }
+
+            pub fn mem_to_din_mask(&self) -> MEM_TO_DIN_MASK_FIELD {
+                let raw = self.raw;
+                MEM_TO_DIN_MASK_FIELD::from_value((raw & 0x00000040) >> 6)
+            }
+
+            pub fn set_mem_to_din_mask(&mut self, value: MEM_TO_DIN_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000040) | (value << 6);
+                self
+            }
+
+            pub fn set_mem_to_din_mask_with<
+                F: Fn(&mut MEM_TO_DIN_MASK_FIELD) -> &mut MEM_TO_DIN_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.mem_to_din_mask();
+                f(&mut value);
+                self.set_mem_to_din_mask(value)
+            }
+
+            pub fn dout_to_mem_mask(&self) -> DOUT_TO_MEM_MASK_FIELD {
+                let raw = self.raw;
+                DOUT_TO_MEM_MASK_FIELD::from_value((raw & 0x00000080) >> 7)
+            }
+
+            pub fn set_dout_to_mem_mask(&mut self, value: DOUT_TO_MEM_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000080) | (value << 7);
+                self
+            }
+
+            pub fn set_dout_to_mem_mask_with<
+                F: Fn(&mut DOUT_TO_MEM_MASK_FIELD) -> &mut DOUT_TO_MEM_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dout_to_mem_mask();
+                f(&mut value);
+                self.set_dout_to_mem_mask(value)
+            }
+
+            pub fn ahb_err_mask(&self) -> AHB_ERR_MASK_FIELD {
+                let raw = self.raw;
+                AHB_ERR_MASK_FIELD::from_value((raw & 0x00000100) >> 8)
+            }
+
+            pub fn set_ahb_err_mask(&mut self, value: AHB_ERR_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000100) | (value << 8);
+                self
+            }
+
+            pub fn set_ahb_err_mask_with<
+                F: Fn(&mut AHB_ERR_MASK_FIELD) -> &mut AHB_ERR_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.ahb_err_mask();
+                f(&mut value);
+                self.set_ahb_err_mask(value)
+            }
+
+            pub fn pka_mask(&self) -> PKA_MASK_FIELD {
+                let raw = self.raw;
+                PKA_MASK_FIELD::from_value((raw & 0x00000200) >> 9)
+            }
+
+            pub fn set_pka_mask(&mut self, value: PKA_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000200) | (value << 9);
+                self
+            }
+
+            pub fn set_pka_mask_with<F: Fn(&mut PKA_MASK_FIELD) -> &mut PKA_MASK_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.pka_mask();
+                f(&mut value);
+                self.set_pka_mask(value)
+            }
+
+            pub fn rng_mask(&self) -> RNG_MASK_FIELD {
+                let raw = self.raw;
+                RNG_MASK_FIELD::from_value((raw & 0x00000400) >> 10)
+            }
+
+            pub fn set_rng_mask(&mut self, value: RNG_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000400) | (value << 10);
+                self
+            }
+
+            pub fn set_rng_mask_with<F: Fn(&mut RNG_MASK_FIELD) -> &mut RNG_MASK_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rng_mask();
+                f(&mut value);
+                self.set_rng_mask(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] SRAM_TO_DIN_MASK_FIELD u32 =>
+                        // Do not mask RNG SRAM to DIN DMA done interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask RNG SRAM to DIN DMA done interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl SRAM_TO_DIN_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DOUT_TO_SRAM_MASK_FIELD u32 =>
+                        // Do not mask DOUT to RNG SRAM DMA done interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask DOUT to RNG SRAM DMA done interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl DOUT_TO_SRAM_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] MEM_TO_DIN_MASK_FIELD u32 =>
+                        // Do not mask memory to DIN DMA done interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask memory to DIN DMA done interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl MEM_TO_DIN_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DOUT_TO_MEM_MASK_FIELD u32 =>
+                        // Do not mask DOUT to memory DMA done interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask DOUT to memory DMA done interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl DOUT_TO_MEM_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] AHB_ERR_MASK_FIELD u32 =>
+                        // Do not mask AHB error interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask AHB error interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl AHB_ERR_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] PKA_MASK_FIELD u32 =>
+                        // Do not mask PKA end of operation interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask PKA end of operation interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl PKA_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RNG_MASK_FIELD u32 =>
+                        // Do not mask RNG interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask RNG interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl RNG_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+    }
+
+    pub mod icr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct ICR {
+            raw: RawRegister<u32>,
+        }
+
+        impl ICR {
+            pub fn write_with<F: Fn(&mut ICR_WRITE_VALUE) -> &mut ICR_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = ICR_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for ICR {
+            type Value = ICR_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct ICR_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl ICR_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_sram_to_din_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn set_dout_to_sram_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+
+            pub fn set_mem_to_din_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000040) | (value << 6);
+                self
+            }
+
+            pub fn set_dout_to_mem_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000080) | (value << 7);
+                self
+            }
+
+            pub fn set_ahb_err_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000100) | (value << 8);
+                self
+            }
+
+            pub fn set_pka_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000200) | (value << 9);
+                self
+            }
+
+            pub fn set_rng_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000400) | (value << 10);
+                self
+            }
+        }
+    }
+
+    pub mod endianness {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct ENDIANNESS {
+            raw: RawRegister<u32>,
+        }
+
+        impl ENDIANNESS {
+            pub fn write_with<F: Fn(&mut ENDIANNESS_VALUE) -> &mut ENDIANNESS_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = ENDIANNESS_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for ENDIANNESS {
+            type Value = ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                ENDIANNESS_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for ENDIANNESS {
+            type Value = ENDIANNESS_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct ENDIANNESS_VALUE {
+            raw: u32,
+        }
+
+        impl ENDIANNESS_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn dout_wr_bg(&self) -> DOUT_WR_BG_FIELD {
+                let raw = self.raw;
+                DOUT_WR_BG_FIELD::from_value((raw & 0x00000008) >> 3)
+            }
+
+            pub fn set_dout_wr_bg(&mut self, value: DOUT_WR_BG_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_dout_wr_bg_with<F: Fn(&mut DOUT_WR_BG_FIELD) -> &mut DOUT_WR_BG_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dout_wr_bg();
+                f(&mut value);
+                self.set_dout_wr_bg(value)
+            }
+
+            pub fn din_rd_bg(&self) -> DIN_RD_BG_FIELD {
+                let raw = self.raw;
+                DIN_RD_BG_FIELD::from_value((raw & 0x00000080) >> 7)
+            }
+
+            pub fn set_din_rd_bg(&mut self, value: DIN_RD_BG_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000080) | (value << 7);
+                self
+            }
+
+            pub fn set_din_rd_bg_with<F: Fn(&mut DIN_RD_BG_FIELD) -> &mut DIN_RD_BG_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.din_rd_bg();
+                f(&mut value);
+                self.set_din_rd_bg(value)
+            }
+
+            pub fn dout_wr_wbg(&self) -> DOUT_WR_WBG_FIELD {
+                let raw = self.raw;
+                DOUT_WR_WBG_FIELD::from_value((raw & 0x00000800) >> 11)
+            }
+
+            pub fn set_dout_wr_wbg(&mut self, value: DOUT_WR_WBG_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000800) | (value << 11);
+                self
+            }
+
+            pub fn set_dout_wr_wbg_with<F: Fn(&mut DOUT_WR_WBG_FIELD) -> &mut DOUT_WR_WBG_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dout_wr_wbg();
+                f(&mut value);
+                self.set_dout_wr_wbg(value)
+            }
+
+            pub fn din_rd_wbg(&self) -> DIN_RD_WBG_FIELD {
+                let raw = self.raw;
+                DIN_RD_WBG_FIELD::from_value((raw & 0x00008000) >> 15)
+            }
+
+            pub fn set_din_rd_wbg(&mut self, value: DIN_RD_WBG_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00008000) | (value << 15);
+                self
+            }
+
+            pub fn set_din_rd_wbg_with<F: Fn(&mut DIN_RD_WBG_FIELD) -> &mut DIN_RD_WBG_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.din_rd_wbg();
+                f(&mut value);
+                self.set_din_rd_wbg(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DOUT_WR_BG_FIELD u32 =>
+                        // Configure DOUT write as little-endian
+                        LittleEndian = 0,
+        // Configure DOUT write as big-endian
+                        BigEndian = 1
+
+                    );
+
+        impl DOUT_WR_BG_FIELD {
+            pub fn is_littleendian(&self) -> bool {
+                *self == Self::LittleEndian
+            }
+
+            pub fn set_littleendian(&mut self) -> &mut Self {
+                *self = Self::LittleEndian;
+                self
+            }
+
+            pub fn is_bigendian(&self) -> bool {
+                *self == Self::BigEndian
+            }
+
+            pub fn set_bigendian(&mut self) -> &mut Self {
+                *self = Self::BigEndian;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DIN_RD_BG_FIELD u32 =>
+                        // Configure DIN read as little-endian
+                        LittleEndian = 0,
+        // Configure DIN read as big-endian
+                        BigEndian = 1
+
+                    );
+
+        impl DIN_RD_BG_FIELD {
+            pub fn is_littleendian(&self) -> bool {
+                *self == Self::LittleEndian
+            }
+
+            pub fn set_littleendian(&mut self) -> &mut Self {
+                *self = Self::LittleEndian;
+                self
+            }
+
+            pub fn is_bigendian(&self) -> bool {
+                *self == Self::BigEndian
+            }
+
+            pub fn set_bigendian(&mut self) -> &mut Self {
+                *self = Self::BigEndian;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DOUT_WR_WBG_FIELD u32 =>
+                        // Configure DOUT write word as little-endian
+                        LittleEndian = 0,
+        // Configure DOUT write word as big-endian
+                        BigEndian = 1
+
+                    );
+
+        impl DOUT_WR_WBG_FIELD {
+            pub fn is_littleendian(&self) -> bool {
+                *self == Self::LittleEndian
+            }
+
+            pub fn set_littleendian(&mut self) -> &mut Self {
+                *self = Self::LittleEndian;
+                self
+            }
+
+            pub fn is_bigendian(&self) -> bool {
+                *self == Self::BigEndian
+            }
+
+            pub fn set_bigendian(&mut self) -> &mut Self {
+                *self = Self::BigEndian;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DIN_RD_WBG_FIELD u32 =>
+                        // Configure DIN read word as little-endian
+                        LittleEndian = 0,
+        // Configure DIN read word as big-endian
+                        BigEndian = 1
+
+                    );
+
+        impl DIN_RD_WBG_FIELD {
+            pub fn is_littleendian(&self) -> bool {
+                *self == Self::LittleEndian
+            }
+
+            pub fn set_littleendian(&mut self) -> &mut Self {
+                *self = Self::LittleEndian;
+                self
+            }
+
+            pub fn is_bigendian(&self) -> bool {
+                *self == Self::BigEndian
+            }
+
+            pub fn set_bigendian(&mut self) -> &mut Self {
+                *self = Self::BigEndian;
+                self
+            }
+        }
+    }
+
+    pub mod host_signature {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HOST_SIGNATURE {
+            raw: RawRegister<u32>,
+        }
+
+        impl HOST_SIGNATURE {}
+
+        impl RegisterRead for HOST_SIGNATURE {
+            type Value = HOST_SIGNATURE_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HOST_SIGNATURE_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HOST_SIGNATURE_READ_VALUE {
+            raw: u32,
+        }
+
+        impl HOST_SIGNATURE_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod host_boot {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HOST_BOOT {
+            raw: RawRegister<u32>,
+        }
+
+        impl HOST_BOOT {}
+
+        impl RegisterRead for HOST_BOOT {
+            type Value = HOST_BOOT_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                HOST_BOOT_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HOST_BOOT_READ_VALUE {
+            raw: u32,
+        }
+
+        impl HOST_BOOT_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn power_gating_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000001) >> 0
+            }
+
+            pub fn set_power_gating_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn large_rkek_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000002) >> 1
+            }
+
+            pub fn set_large_rkek_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn hash_in_fuses_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000004) >> 2
+            }
+
+            pub fn set_hash_in_fuses_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn ext_mem_secured_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000008) >> 3
+            }
+
+            pub fn set_ext_mem_secured_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn rkek_ecc_exists_local_n(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000020) >> 5
+            }
+
+            pub fn set_rkek_ecc_exists_local_n(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+
+            pub fn sram_size_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000001c0) >> 6
+            }
+
+            pub fn set_sram_size_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000001c0) | (value << 6);
+                self
+            }
+
+            pub fn dscrptr_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000200) >> 9
+            }
+
+            pub fn set_dscrptr_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000200) | (value << 9);
+                self
+            }
+
+            pub fn pau_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000400) >> 10
+            }
+
+            pub fn set_pau_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000400) | (value << 10);
+                self
+            }
+
+            pub fn rng_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000800) >> 11
+            }
+
+            pub fn set_rng_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000800) | (value << 11);
+                self
+            }
+
+            pub fn pka_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00001000) >> 12
+            }
+
+            pub fn set_pka_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00001000) | (value << 12);
+                self
+            }
+
+            pub fn rc4_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00002000) >> 13
+            }
+
+            pub fn set_rc4_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00002000) | (value << 13);
+                self
+            }
+
+            pub fn sha_512_prsnt_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00004000) >> 14
+            }
+
+            pub fn set_sha_512_prsnt_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00004000) | (value << 14);
+                self
+            }
+
+            pub fn sha_256_prsnt_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00008000) >> 15
+            }
+
+            pub fn set_sha_256_prsnt_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00008000) | (value << 15);
+                self
+            }
+
+            pub fn md5_prsnt_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00010000) >> 16
+            }
+
+            pub fn set_md5_prsnt_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00010000) | (value << 16);
+                self
+            }
+
+            pub fn hash_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00020000) >> 17
+            }
+
+            pub fn set_hash_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00020000) | (value << 17);
+                self
+            }
+
+            pub fn c2_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00040000) >> 18
+            }
+
+            pub fn set_c2_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00040000) | (value << 18);
+                self
+            }
+
+            pub fn des_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00080000) >> 19
+            }
+
+            pub fn set_des_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00080000) | (value << 19);
+                self
+            }
+
+            pub fn aes_xcbc_mac_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00100000) >> 20
+            }
+
+            pub fn set_aes_xcbc_mac_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00100000) | (value << 20);
+                self
+            }
+
+            pub fn aes_cmac_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00200000) >> 21
+            }
+
+            pub fn set_aes_cmac_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00200000) | (value << 21);
+                self
+            }
+
+            pub fn aes_ccm_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00400000) >> 22
+            }
+
+            pub fn set_aes_ccm_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00400000) | (value << 22);
+                self
+            }
+
+            pub fn aes_xex_hw_t_calc_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00800000) >> 23
+            }
+
+            pub fn set_aes_xex_hw_t_calc_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00800000) | (value << 23);
+                self
+            }
+
+            pub fn aes_xex_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x01000000) >> 24
+            }
+
+            pub fn set_aes_xex_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x01000000) | (value << 24);
+                self
+            }
+
+            pub fn ctr_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x02000000) >> 25
+            }
+
+            pub fn set_ctr_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x02000000) | (value << 25);
+                self
+            }
+
+            pub fn aes_din_byte_resolution_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x04000000) >> 26
+            }
+
+            pub fn set_aes_din_byte_resolution_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x04000000) | (value << 26);
+                self
+            }
+
+            pub fn tunneling_enb_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x08000000) >> 27
+            }
+
+            pub fn set_tunneling_enb_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x08000000) | (value << 27);
+                self
+            }
+
+            pub fn support_256_192_key_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x10000000) >> 28
+            }
+
+            pub fn set_support_256_192_key_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x10000000) | (value << 28);
+                self
+            }
+
+            pub fn only_encrypt_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x20000000) >> 29
+            }
+
+            pub fn set_only_encrypt_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x20000000) | (value << 29);
+                self
+            }
+
+            pub fn aes_exists_local(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x40000000) >> 30
+            }
+
+            pub fn set_aes_exists_local(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x40000000) | (value << 30);
+                self
+            }
+        }
     }
 
     pub mod host_cryptokey_sel {
@@ -105747,26 +113902,62 @@ pub mod cc_host_rgf {
             raw: RawRegister<u32>,
         }
 
-        impl HOST_IOT_KDR0 {}
+        impl HOST_IOT_KDR0 {
+            pub fn write_notretained(&mut self) {
+                self.write(HOST_IOT_KDR0_FIELD::NotRetained)
+            }
+
+            pub fn write_retained(&mut self) {
+                self.write(HOST_IOT_KDR0_FIELD::Retained)
+            }
+        }
 
         impl RegisterRead for HOST_IOT_KDR0 {
-            type Value = u32;
+            type Value = HOST_IOT_KDR0_FIELD;
 
             #[inline(always)]
             fn read(&self) -> Self::Value {
                 let raw = self.raw.read();
-                (raw & 0xffffffff) >> 0
+                HOST_IOT_KDR0_FIELD::from_value((raw & 0xffffffff) >> 0)
             }
         }
 
         impl RegisterWrite for HOST_IOT_KDR0 {
-            type Value = u32;
+            type Value = HOST_IOT_KDR0_FIELD;
 
             #[inline(always)]
             fn write(&mut self, value: Self::Value) {
                 let old_raw = 0;
-                let raw = (old_raw & !0xffffffff) | (value << 0);
+                let raw = value.to_value();
                 self.raw.write(raw);
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] HOST_IOT_KDR0_FIELD u32 =>
+                        // Read: 128 bits K_DR key value is not yet retained in the CRYPTOCELL AO power domain.
+                        NotRetained = 0,
+        // Read: 128 bits K_DR key value is successfully retained in the CRYPTOCELL AO power domain.
+                        Retained = 1
+
+                    );
+
+        impl HOST_IOT_KDR0_FIELD {
+            pub fn is_notretained(&self) -> bool {
+                *self == Self::NotRetained
+            }
+
+            pub fn set_notretained(&mut self) -> &mut Self {
+                *self = Self::NotRetained;
+                self
+            }
+
+            pub fn is_retained(&self) -> bool {
+                *self == Self::Retained
+            }
+
+            pub fn set_retained(&mut self) -> &mut Self {
+                *self = Self::Retained;
+                self
             }
         }
     }
@@ -105782,17 +113973,6 @@ pub mod cc_host_rgf {
         }
 
         impl HOST_IOT_KDR1 {}
-
-        impl RegisterWrite for HOST_IOT_KDR1 {
-            type Value = u32;
-
-            #[inline(always)]
-            fn write(&mut self, value: Self::Value) {
-                let old_raw = 0;
-                let raw = (old_raw & !0xffffffff) | (value << 0);
-                self.raw.write(raw);
-            }
-        }
     }
 
     pub mod host_iot_kdr2 {
@@ -105806,17 +113986,6 @@ pub mod cc_host_rgf {
         }
 
         impl HOST_IOT_KDR2 {}
-
-        impl RegisterWrite for HOST_IOT_KDR2 {
-            type Value = u32;
-
-            #[inline(always)]
-            fn write(&mut self, value: Self::Value) {
-                let old_raw = 0;
-                let raw = (old_raw & !0xffffffff) | (value << 0);
-                self.raw.write(raw);
-            }
-        }
     }
 
     pub mod host_iot_kdr3 {
@@ -105830,17 +113999,6 @@ pub mod cc_host_rgf {
         }
 
         impl HOST_IOT_KDR3 {}
-
-        impl RegisterWrite for HOST_IOT_KDR3 {
-            type Value = u32;
-
-            #[inline(always)]
-            fn write(&mut self, value: Self::Value) {
-                let old_raw = 0;
-                let raw = (old_raw & !0xffffffff) | (value << 0);
-                self.raw.write(raw);
-            }
-        }
     }
 
     pub mod host_iot_lcs {
@@ -105950,19 +114108,19 @@ pub mod cc_host_rgf {
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] LCS_FIELD u32 =>
                         // CC310 operates in debug mode
-                        Debug = 0,
+                        DebugEnable = 0,
         // CC310 operates in secure mode
                         Secure = 2
 
                     );
 
         impl LCS_FIELD {
-            pub fn is_debug(&self) -> bool {
-                *self == Self::Debug
+            pub fn is_debugenable(&self) -> bool {
+                *self == Self::DebugEnable
             }
 
-            pub fn set_debug(&mut self) -> &mut Self {
-                *self = Self::Debug;
+            pub fn set_debugenable(&mut self) -> &mut Self {
+                *self = Self::DebugEnable;
                 self
             }
 
@@ -105977,9 +114135,9 @@ pub mod cc_host_rgf {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] LCS_IS_VALID_FIELD u32 =>
-                        // A valid LCS is not yet retained in the CRYPTOCELL AO power domain
+                        // Valid LCS not yet retained in the CRYPTOCELL AO power domain
                         Invalid = 0,
-        // A valid LCS is successfully retained in the CRYPTOCELL AO power domain
+        // Valid LCS successfully retained in the CRYPTOCELL AO power domain
                         Valid = 1
 
                     );
@@ -106006,90 +114164,3495 @@ pub mod cc_host_rgf {
     }
 }
 
-pub mod cryptocell {
+pub mod cc_misc {
     #[allow(unused_imports)]
     use super::*;
 
     #[allow(non_camel_case_types)]
-    pub struct CRYPTOCELL {
+    pub struct CC_MISC {
         _hidden: (),
     }
 
-    impl CRYPTOCELL {
-        const BASE_ADDRESS: u32 = 0x5002a000;
+    impl CC_MISC {
+        const BASE_ADDRESS: u32 = 0x5002b000;
 
         pub unsafe fn new() -> Self {
             Self { _hidden: () }
         }
     }
 
-    impl Deref for CRYPTOCELL {
-        type Target = CRYPTOCELL_REGISTERS;
+    impl Deref for CC_MISC {
+        type Target = CC_MISC_REGISTERS;
 
         fn deref(&self) -> &Self::Target {
             unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
         }
     }
 
-    impl DerefMut for CRYPTOCELL {
+    impl DerefMut for CC_MISC {
         fn deref_mut(&mut self) -> &mut Self::Target {
             unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
         }
     }
 
     #[repr(C)]
-    pub struct CRYPTOCELL_REGISTERS {
+    pub struct CC_MISC_REGISTERS {
         _hidden: (),
-        _padding_0: [u8; 1280],
-        /// Enable CRYPTOCELL subsystem
-        pub enable: enable::ENABLE,
+        _padding_0: [u8; 2064],
+        /// Clock control for the AES engine.
+        pub aes_clk: aes_clk::AES_CLK,
+        _padding_2068: [u8; 4],
+        /// Clock control for the HASH engine.
+        pub hash_clk: hash_clk::HASH_CLK,
+        /// Clock control for the PKA engine.
+        pub pka_clk: pka_clk::PKA_CLK,
+        /// Clock control for the DMA engines.
+        pub dma_clk: dma_clk::DMA_CLK,
+        /// CRYPTOCELL clocks status register.
+        pub clk_status: clk_status::CLK_STATUS,
+        _padding_2088: [u8; 48],
+        /// Clock control for the CHACHA engine.
+        pub chacha_clk: chacha_clk::CHACHA_CLK,
     }
 
-    pub mod enable {
+    pub mod aes_clk {
         #[allow(unused_imports)]
         use super::*;
 
         #[allow(non_camel_case_types)]
         #[repr(transparent)]
-        pub struct ENABLE {
+        pub struct AES_CLK {
             raw: RawRegister<u32>,
         }
 
-        impl ENABLE {
-            pub fn write_disabled(&mut self) {
-                self.write(ENABLE_FIELD::Disabled)
-            }
-
-            pub fn write_enabled(&mut self) {
-                self.write(ENABLE_FIELD::Enabled)
-            }
-        }
-
-        impl RegisterRead for ENABLE {
-            type Value = ENABLE_FIELD;
-
-            #[inline(always)]
-            fn read(&self) -> Self::Value {
-                let raw = self.raw.read();
-                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+        impl AES_CLK {
+            pub fn write_with<F: Fn(&mut AES_CLK_WRITE_VALUE) -> &mut AES_CLK_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AES_CLK_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
             }
         }
 
-        impl RegisterWrite for ENABLE {
-            type Value = ENABLE_FIELD;
+        impl RegisterWrite for AES_CLK {
+            type Value = AES_CLK_WRITE_VALUE;
 
             #[inline(always)]
             fn write(&mut self, value: Self::Value) {
-                let old_raw = 0;
-                let raw = value.to_value();
-                self.raw.write(raw);
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AES_CLK_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl AES_CLK_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
             }
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
-                        // CRYPTOCELL subsystem disabled
+                        // Disable clock for the AES engine.
+                        Disable = 0,
+        // Enable clock for the AES engine.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod hash_clk {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct HASH_CLK {
+            raw: RawRegister<u32>,
+        }
+
+        impl HASH_CLK {
+            pub fn write_with<F: Fn(&mut HASH_CLK_WRITE_VALUE) -> &mut HASH_CLK_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = HASH_CLK_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for HASH_CLK {
+            type Value = HASH_CLK_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct HASH_CLK_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl HASH_CLK_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Disable clock for the HASH engine.
+                        Disable = 0,
+        // Enable clock for the HASH engine.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod pka_clk {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_CLK {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_CLK {
+            pub fn write_with<F: Fn(&mut PKA_CLK_WRITE_VALUE) -> &mut PKA_CLK_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = PKA_CLK_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for PKA_CLK {
+            type Value = PKA_CLK_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_CLK_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_CLK_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Disable clock for the PKA engine.
+                        Disable = 0,
+        // Enable clock for the PKA engine.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod dma_clk {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct DMA_CLK {
+            raw: RawRegister<u32>,
+        }
+
+        impl DMA_CLK {
+            pub fn write_with<F: Fn(&mut DMA_CLK_WRITE_VALUE) -> &mut DMA_CLK_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = DMA_CLK_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for DMA_CLK {
+            type Value = DMA_CLK_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct DMA_CLK_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl DMA_CLK_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Disable clock for the DMA engines.
+                        Disable = 0,
+        // Enable clock for the DMA engines.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod clk_status {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CLK_STATUS {
+            raw: RawRegister<u32>,
+        }
+
+        impl CLK_STATUS {}
+
+        impl RegisterRead for CLK_STATUS {
+            type Value = CLK_STATUS_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                CLK_STATUS_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CLK_STATUS_READ_VALUE {
+            raw: u32,
+        }
+
+        impl CLK_STATUS_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn aes_clk(&self) -> AES_CLK_FIELD {
+                let raw = self.raw;
+                AES_CLK_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_aes_clk(&mut self, value: AES_CLK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_aes_clk_with<F: Fn(&mut AES_CLK_FIELD) -> &mut AES_CLK_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.aes_clk();
+                f(&mut value);
+                self.set_aes_clk(value)
+            }
+
+            pub fn hash_clk(&self) -> HASH_CLK_FIELD {
+                let raw = self.raw;
+                HASH_CLK_FIELD::from_value((raw & 0x00000004) >> 2)
+            }
+
+            pub fn set_hash_clk(&mut self, value: HASH_CLK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_hash_clk_with<F: Fn(&mut HASH_CLK_FIELD) -> &mut HASH_CLK_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.hash_clk();
+                f(&mut value);
+                self.set_hash_clk(value)
+            }
+
+            pub fn pka_clk(&self) -> PKA_CLK_FIELD {
+                let raw = self.raw;
+                PKA_CLK_FIELD::from_value((raw & 0x00000008) >> 3)
+            }
+
+            pub fn set_pka_clk(&mut self, value: PKA_CLK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_pka_clk_with<F: Fn(&mut PKA_CLK_FIELD) -> &mut PKA_CLK_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.pka_clk();
+                f(&mut value);
+                self.set_pka_clk(value)
+            }
+
+            pub fn chacha_clk(&self) -> CHACHA_CLK_FIELD {
+                let raw = self.raw;
+                CHACHA_CLK_FIELD::from_value((raw & 0x00000080) >> 7)
+            }
+
+            pub fn set_chacha_clk(&mut self, value: CHACHA_CLK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000080) | (value << 7);
+                self
+            }
+
+            pub fn set_chacha_clk_with<F: Fn(&mut CHACHA_CLK_FIELD) -> &mut CHACHA_CLK_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.chacha_clk();
+                f(&mut value);
+                self.set_chacha_clk(value)
+            }
+
+            pub fn dma_clk(&self) -> DMA_CLK_FIELD {
+                let raw = self.raw;
+                DMA_CLK_FIELD::from_value((raw & 0x00000100) >> 8)
+            }
+
+            pub fn set_dma_clk(&mut self, value: DMA_CLK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000100) | (value << 8);
+                self
+            }
+
+            pub fn set_dma_clk_with<F: Fn(&mut DMA_CLK_FIELD) -> &mut DMA_CLK_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dma_clk();
+                f(&mut value);
+                self.set_dma_clk(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] AES_CLK_FIELD u32 =>
+                        // Clock for AES engine is disabled
                         Disabled = 0,
-        // CRYPTOCELL subsystem enabled
+        // Clock for AES engine is enabled
+                        Enabled = 1
+
+                    );
+
+        impl AES_CLK_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] HASH_CLK_FIELD u32 =>
+                        // Clock for HASH engine is disabled
+                        Disabled = 0,
+        // Clock for HASH engine is enabled
+                        Enabled = 1
+
+                    );
+
+        impl HASH_CLK_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] PKA_CLK_FIELD u32 =>
+                        // Clock for PKA engine is disabled
+                        Disabled = 0,
+        // Clock for PKA engine is enabled
+                        Enabled = 1
+
+                    );
+
+        impl PKA_CLK_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CHACHA_CLK_FIELD u32 =>
+                        // Clock for CHACHA engine is disabled
+                        Disabled = 0,
+        // Clock for CHACHA engine is enabled
+                        Enabled = 1
+
+                    );
+
+        impl CHACHA_CLK_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DMA_CLK_FIELD u32 =>
+                        // Clocks for DMA engines are disabled
+                        Disabled = 0,
+        // Clocks for DMA engines are enabled
+                        Enabled = 1
+
+                    );
+
+        impl DMA_CLK_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+    }
+
+    pub mod chacha_clk {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct CHACHA_CLK {
+            raw: RawRegister<u32>,
+        }
+
+        impl CHACHA_CLK {
+            pub fn write_with<F: Fn(&mut CHACHA_CLK_WRITE_VALUE) -> &mut CHACHA_CLK_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = CHACHA_CLK_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for CHACHA_CLK {
+            type Value = CHACHA_CLK_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct CHACHA_CLK_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl CHACHA_CLK_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Disable clock for the CHACHA engine.
+                        Disable = 0,
+        // Enable clock for the CHACHA engine.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_pka {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_PKA {
+        _hidden: (),
+    }
+
+    impl CC_PKA {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_PKA {
+        type Target = CC_PKA_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_PKA {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_PKA_REGISTERS {
+        _hidden: (),
+        /// Description collection: Register for mapping the virtual register
+        /// R[n] to a physical address in the PKA SRAM.
+        pub memory_map: [memory_map::MEMORY_MAP; 32],
+        /// Operation code to be executed by the PKA engine. Writing to this
+        /// register triggers the PKA operation.
+        pub opcode: opcode::OPCODE,
+        /// This register defines the N, Np, T0, and T1 virtual register index.
+        pub n_np_t0_t1_addr: n_np_t0_t1_addr::N_NP_T0_T1_ADDR,
+        /// This register holds the status for the PKA pipeline.
+        pub pka_status: pka_status::PKA_STATUS,
+        /// Reset the PKA engine.
+        pub pka_sw_reset: pka_sw_reset::PKA_SW_RESET,
+        /// Description collection: This register holds the operands bit size.
+        pub pka_l: [pka_l::PKA_L; 8],
+        /// Status register indicating if the PKA pipeline is ready to receive a
+        /// new OPCODE.
+        pub pka_pipe: pka_pipe::PKA_PIPE,
+        /// Status register indicating if the PKA operation has been completed.
+        pub pka_done: pka_done::PKA_DONE,
+        _padding_184: [u8; 12],
+        /// PKA engine HW version. Reset value holds the version.
+        pub pka_version: pka_version::PKA_VERSION,
+        _padding_200: [u8; 12],
+        /// Start address in PKA SRAM for subsequent write transactions.
+        pub pka_sram_waddr: pka_sram_waddr::PKA_SRAM_WADDR,
+        /// Write data to PKA SRAM. Writing to this register triggers a DMA
+        /// transaction writing data into PKA SRAM. The DMA address offset is
+        /// automatically incremented during write.
+        pub pka_sram_wdata: pka_sram_wdata::PKA_SRAM_WDATA,
+        /// Read data from PKA SRAM. Reading from this register triggers a DMA
+        /// transaction read data from PKA SRAM. The DMA address offset is
+        /// automatically incremented during read.
+        pub pka_sram_rdata: pka_sram_rdata::PKA_SRAM_RDATA,
+        /// Register for clearing PKA SRAM write buffer.
+        pub pka_sram_wclear: pka_sram_wclear::PKA_SRAM_WCLEAR,
+        /// Start address in PKA SRAM for subsequent read transactions.
+        pub pka_sram_raddr: pka_sram_raddr::PKA_SRAM_RADDR,
+    }
+
+    pub mod memory_map {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct MEMORY_MAP {
+            raw: RawRegister<u32>,
+        }
+
+        impl MEMORY_MAP {
+            pub fn write_with<F: Fn(&mut MEMORY_MAP_VALUE) -> &mut MEMORY_MAP_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = MEMORY_MAP_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for MEMORY_MAP {
+            type Value = MEMORY_MAP_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                MEMORY_MAP_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for MEMORY_MAP {
+            type Value = MEMORY_MAP_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct MEMORY_MAP_VALUE {
+            raw: u32,
+        }
+
+        impl MEMORY_MAP_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000003fe) >> 1
+            }
+
+            pub fn set_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000003fe) | (value << 1);
+                self
+            }
+        }
+    }
+
+    pub mod opcode {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct OPCODE {
+            raw: RawRegister<u32>,
+        }
+
+        impl OPCODE {
+            pub fn write_with<F: Fn(&mut OPCODE_VALUE) -> &mut OPCODE_VALUE>(&mut self, f: F) {
+                let mut v = OPCODE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for OPCODE {
+            type Value = OPCODE_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                OPCODE_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for OPCODE {
+            type Value = OPCODE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct OPCODE_VALUE {
+            raw: u32,
+        }
+
+        impl OPCODE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn tag(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x0000003f) >> 0
+            }
+
+            pub fn set_tag(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000003f) | (value << 0);
+                self
+            }
+
+            pub fn reg_r(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000007c0) >> 6
+            }
+
+            pub fn set_reg_r(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000007c0) | (value << 6);
+                self
+            }
+
+            pub fn discard_r(&self) -> DISCARD_R_FIELD {
+                let raw = self.raw;
+                DISCARD_R_FIELD::from_value((raw & 0x00000800) >> 11)
+            }
+
+            pub fn set_discard_r(&mut self, value: DISCARD_R_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000800) | (value << 11);
+                self
+            }
+
+            pub fn set_discard_r_with<F: Fn(&mut DISCARD_R_FIELD) -> &mut DISCARD_R_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.discard_r();
+                f(&mut value);
+                self.set_discard_r(value)
+            }
+
+            pub fn reg_b(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x0001f000) >> 12
+            }
+
+            pub fn set_reg_b(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0001f000) | (value << 12);
+                self
+            }
+
+            pub fn const_b(&self) -> CONST_B_FIELD {
+                let raw = self.raw;
+                CONST_B_FIELD::from_value((raw & 0x00020000) >> 17)
+            }
+
+            pub fn set_const_b(&mut self, value: CONST_B_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00020000) | (value << 17);
+                self
+            }
+
+            pub fn set_const_b_with<F: Fn(&mut CONST_B_FIELD) -> &mut CONST_B_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.const_b();
+                f(&mut value);
+                self.set_const_b(value)
+            }
+
+            pub fn reg_a(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x007c0000) >> 18
+            }
+
+            pub fn set_reg_a(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x007c0000) | (value << 18);
+                self
+            }
+
+            pub fn const_a(&self) -> CONST_A_FIELD {
+                let raw = self.raw;
+                CONST_A_FIELD::from_value((raw & 0x00800000) >> 23)
+            }
+
+            pub fn set_const_a(&mut self, value: CONST_A_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00800000) | (value << 23);
+                self
+            }
+
+            pub fn set_const_a_with<F: Fn(&mut CONST_A_FIELD) -> &mut CONST_A_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.const_a();
+                f(&mut value);
+                self.set_const_a(value)
+            }
+
+            pub fn len(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x07000000) >> 24
+            }
+
+            pub fn set_len(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x07000000) | (value << 24);
+                self
+            }
+
+            pub fn opcode(&self) -> OPCODE_FIELD {
+                let raw = self.raw;
+                OPCODE_FIELD::from_value((raw & 0xf8000000) >> 27)
+            }
+
+            pub fn set_opcode(&mut self, value: OPCODE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xf8000000) | (value << 27);
+                self
+            }
+
+            pub fn set_opcode_with<F: Fn(&mut OPCODE_FIELD) -> &mut OPCODE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.opcode();
+                f(&mut value);
+                self.set_opcode(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DISCARD_R_FIELD u32 =>
+                        // REG_R is intepreted as a register index.
+                        Register = 0,
+        // Result is discarded.
+                        Discard = 1
+
+                    );
+
+        impl DISCARD_R_FIELD {
+            pub fn is_register(&self) -> bool {
+                *self == Self::Register
+            }
+
+            pub fn set_register(&mut self) -> &mut Self {
+                *self = Self::Register;
+                self
+            }
+
+            pub fn is_discard(&self) -> bool {
+                *self == Self::Discard
+            }
+
+            pub fn set_discard(&mut self) -> &mut Self {
+                *self = Self::Discard;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CONST_B_FIELD u32 =>
+                        // REG_B is intepreted as a register index.
+                        Register = 0,
+        // REG_B is intepreted as a constant.
+                        Constant = 1
+
+                    );
+
+        impl CONST_B_FIELD {
+            pub fn is_register(&self) -> bool {
+                *self == Self::Register
+            }
+
+            pub fn set_register(&mut self) -> &mut Self {
+                *self = Self::Register;
+                self
+            }
+
+            pub fn is_constant(&self) -> bool {
+                *self == Self::Constant
+            }
+
+            pub fn set_constant(&mut self) -> &mut Self {
+                *self = Self::Constant;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CONST_A_FIELD u32 =>
+                        // REG_A is intepreted as a register index.
+                        Register = 0,
+        // REG_A is intepreted as a constant.
+                        Constant = 1
+
+                    );
+
+        impl CONST_A_FIELD {
+            pub fn is_register(&self) -> bool {
+                *self == Self::Register
+            }
+
+            pub fn set_register(&mut self) -> &mut Self {
+                *self = Self::Register;
+                self
+            }
+
+            pub fn is_constant(&self) -> bool {
+                *self == Self::Constant
+            }
+
+            pub fn set_constant(&mut self) -> &mut Self {
+                *self = Self::Constant;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] OPCODE_FIELD u32 =>
+                        // Terminate operation
+                        Terminate = 0,
+        // Add or Increment
+                        AddInc = 4,
+        // Subtract, Decrement, or Negate
+                        SubDecNeg = 5,
+        // Modular Add or Modular Increment
+                        ModAddInc = 6,
+        // Modular Subtract, Modular Decrement, or Modular Negate
+                        ModSubDecNeg = 7,
+        // Perform AND, test, or clear
+                        ANDTST0CLR0 = 8,
+        // Perform OR, copy, or set bits
+                        ORCOPYSET0 = 9,
+        // Perform XOR, flip bits, invert, or compare
+                        XORFLP0INVCMP = 10,
+        // Shift right 0 operation
+                        SHR0 = 12,
+        // Shift right 1 operation
+                        SHR1 = 13,
+        // Shift left 0 operation
+                        SHL0 = 14,
+        // Shift left 1 operation
+                        SHL1 = 15,
+        // Multiply low operation
+                        MulLow = 16,
+        // Modular multiply operation
+                        ModMul = 17,
+        // Modular multiply N operation
+                        ModMulN = 18,
+        // Modular exponentiation operation
+                        ModExp = 19,
+        // Division operation
+                        Division = 20,
+        // Modular inversion operation
+                        ModInv = 21,
+        // Modular division operation
+                        ModDiv = 22,
+        // Multiply high operation
+                        MulHigh = 23,
+        // Modular multiplication acceleration
+                        ModMLAC = 24,
+        // Modular multiplication acceleration where final reduction is omitted
+                        ModMLACNR = 25,
+        // Reduction operation
+                        Reduction = 27
+
+                    );
+
+        impl OPCODE_FIELD {
+            pub fn is_terminate(&self) -> bool {
+                *self == Self::Terminate
+            }
+
+            pub fn set_terminate(&mut self) -> &mut Self {
+                *self = Self::Terminate;
+                self
+            }
+
+            pub fn is_addinc(&self) -> bool {
+                *self == Self::AddInc
+            }
+
+            pub fn set_addinc(&mut self) -> &mut Self {
+                *self = Self::AddInc;
+                self
+            }
+
+            pub fn is_subdecneg(&self) -> bool {
+                *self == Self::SubDecNeg
+            }
+
+            pub fn set_subdecneg(&mut self) -> &mut Self {
+                *self = Self::SubDecNeg;
+                self
+            }
+
+            pub fn is_modaddinc(&self) -> bool {
+                *self == Self::ModAddInc
+            }
+
+            pub fn set_modaddinc(&mut self) -> &mut Self {
+                *self = Self::ModAddInc;
+                self
+            }
+
+            pub fn is_modsubdecneg(&self) -> bool {
+                *self == Self::ModSubDecNeg
+            }
+
+            pub fn set_modsubdecneg(&mut self) -> &mut Self {
+                *self = Self::ModSubDecNeg;
+                self
+            }
+
+            pub fn is_andtst0clr0(&self) -> bool {
+                *self == Self::ANDTST0CLR0
+            }
+
+            pub fn set_andtst0clr0(&mut self) -> &mut Self {
+                *self = Self::ANDTST0CLR0;
+                self
+            }
+
+            pub fn is_orcopyset0(&self) -> bool {
+                *self == Self::ORCOPYSET0
+            }
+
+            pub fn set_orcopyset0(&mut self) -> &mut Self {
+                *self = Self::ORCOPYSET0;
+                self
+            }
+
+            pub fn is_xorflp0invcmp(&self) -> bool {
+                *self == Self::XORFLP0INVCMP
+            }
+
+            pub fn set_xorflp0invcmp(&mut self) -> &mut Self {
+                *self = Self::XORFLP0INVCMP;
+                self
+            }
+
+            pub fn is_shr0(&self) -> bool {
+                *self == Self::SHR0
+            }
+
+            pub fn set_shr0(&mut self) -> &mut Self {
+                *self = Self::SHR0;
+                self
+            }
+
+            pub fn is_shr1(&self) -> bool {
+                *self == Self::SHR1
+            }
+
+            pub fn set_shr1(&mut self) -> &mut Self {
+                *self = Self::SHR1;
+                self
+            }
+
+            pub fn is_shl0(&self) -> bool {
+                *self == Self::SHL0
+            }
+
+            pub fn set_shl0(&mut self) -> &mut Self {
+                *self = Self::SHL0;
+                self
+            }
+
+            pub fn is_shl1(&self) -> bool {
+                *self == Self::SHL1
+            }
+
+            pub fn set_shl1(&mut self) -> &mut Self {
+                *self = Self::SHL1;
+                self
+            }
+
+            pub fn is_mullow(&self) -> bool {
+                *self == Self::MulLow
+            }
+
+            pub fn set_mullow(&mut self) -> &mut Self {
+                *self = Self::MulLow;
+                self
+            }
+
+            pub fn is_modmul(&self) -> bool {
+                *self == Self::ModMul
+            }
+
+            pub fn set_modmul(&mut self) -> &mut Self {
+                *self = Self::ModMul;
+                self
+            }
+
+            pub fn is_modmuln(&self) -> bool {
+                *self == Self::ModMulN
+            }
+
+            pub fn set_modmuln(&mut self) -> &mut Self {
+                *self = Self::ModMulN;
+                self
+            }
+
+            pub fn is_modexp(&self) -> bool {
+                *self == Self::ModExp
+            }
+
+            pub fn set_modexp(&mut self) -> &mut Self {
+                *self = Self::ModExp;
+                self
+            }
+
+            pub fn is_division(&self) -> bool {
+                *self == Self::Division
+            }
+
+            pub fn set_division(&mut self) -> &mut Self {
+                *self = Self::Division;
+                self
+            }
+
+            pub fn is_modinv(&self) -> bool {
+                *self == Self::ModInv
+            }
+
+            pub fn set_modinv(&mut self) -> &mut Self {
+                *self = Self::ModInv;
+                self
+            }
+
+            pub fn is_moddiv(&self) -> bool {
+                *self == Self::ModDiv
+            }
+
+            pub fn set_moddiv(&mut self) -> &mut Self {
+                *self = Self::ModDiv;
+                self
+            }
+
+            pub fn is_mulhigh(&self) -> bool {
+                *self == Self::MulHigh
+            }
+
+            pub fn set_mulhigh(&mut self) -> &mut Self {
+                *self = Self::MulHigh;
+                self
+            }
+
+            pub fn is_modmlac(&self) -> bool {
+                *self == Self::ModMLAC
+            }
+
+            pub fn set_modmlac(&mut self) -> &mut Self {
+                *self = Self::ModMLAC;
+                self
+            }
+
+            pub fn is_modmlacnr(&self) -> bool {
+                *self == Self::ModMLACNR
+            }
+
+            pub fn set_modmlacnr(&mut self) -> &mut Self {
+                *self = Self::ModMLACNR;
+                self
+            }
+
+            pub fn is_reduction(&self) -> bool {
+                *self == Self::Reduction
+            }
+
+            pub fn set_reduction(&mut self) -> &mut Self {
+                *self = Self::Reduction;
+                self
+            }
+        }
+    }
+
+    pub mod n_np_t0_t1_addr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct N_NP_T0_T1_ADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl N_NP_T0_T1_ADDR {
+            pub fn write_with<F: Fn(&mut N_NP_T0_T1_ADDR_VALUE) -> &mut N_NP_T0_T1_ADDR_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = N_NP_T0_T1_ADDR_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for N_NP_T0_T1_ADDR {
+            type Value = N_NP_T0_T1_ADDR_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                N_NP_T0_T1_ADDR_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for N_NP_T0_T1_ADDR {
+            type Value = N_NP_T0_T1_ADDR_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct N_NP_T0_T1_ADDR_VALUE {
+            raw: u32,
+        }
+
+        impl N_NP_T0_T1_ADDR_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn n_virtual_addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x0000001f) >> 0
+            }
+
+            pub fn set_n_virtual_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000001f) | (value << 0);
+                self
+            }
+
+            pub fn np_virtual_addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000003e0) >> 5
+            }
+
+            pub fn set_np_virtual_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000003e0) | (value << 5);
+                self
+            }
+
+            pub fn t0_virtual_addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00007c00) >> 10
+            }
+
+            pub fn set_t0_virtual_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00007c00) | (value << 10);
+                self
+            }
+
+            pub fn t1_virtual_addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000f8000) >> 15
+            }
+
+            pub fn set_t1_virtual_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000f8000) | (value << 15);
+                self
+            }
+        }
+    }
+
+    pub mod pka_status {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_STATUS {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_STATUS {}
+
+        impl RegisterRead for PKA_STATUS {
+            type Value = PKA_STATUS_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                PKA_STATUS_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_STATUS_READ_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_STATUS_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn alu_msb_4bits(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x0000000f) >> 0
+            }
+
+            pub fn set_alu_msb_4bits(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x0000000f) | (value << 0);
+                self
+            }
+
+            pub fn alu_lsb_4bits(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000000f0) >> 4
+            }
+
+            pub fn set_alu_lsb_4bits(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000000f0) | (value << 4);
+                self
+            }
+
+            pub fn alu_sign_out(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000100) >> 8
+            }
+
+            pub fn set_alu_sign_out(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000100) | (value << 8);
+                self
+            }
+
+            pub fn alu_carry(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000200) >> 9
+            }
+
+            pub fn set_alu_carry(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000200) | (value << 9);
+                self
+            }
+
+            pub fn alu_carry_mod(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000400) >> 10
+            }
+
+            pub fn set_alu_carry_mod(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000400) | (value << 10);
+                self
+            }
+
+            pub fn alu_sub_is_zero(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000800) >> 11
+            }
+
+            pub fn set_alu_sub_is_zero(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000800) | (value << 11);
+                self
+            }
+
+            pub fn alu_out_zero(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00001000) >> 12
+            }
+
+            pub fn set_alu_out_zero(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00001000) | (value << 12);
+                self
+            }
+
+            pub fn alu_modovrflw(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00002000) >> 13
+            }
+
+            pub fn set_alu_modovrflw(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00002000) | (value << 13);
+                self
+            }
+
+            pub fn div_by_zero(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00004000) >> 14
+            }
+
+            pub fn set_div_by_zero(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00004000) | (value << 14);
+                self
+            }
+
+            pub fn modinv_of_zero(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00008000) >> 15
+            }
+
+            pub fn set_modinv_of_zero(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00008000) | (value << 15);
+                self
+            }
+
+            pub fn opcode(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x001f0000) >> 16
+            }
+
+            pub fn set_opcode(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x001f0000) | (value << 16);
+                self
+            }
+        }
+    }
+
+    pub mod pka_sw_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_SW_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_SW_RESET {
+            pub fn write_with<
+                F: Fn(&mut PKA_SW_RESET_WRITE_VALUE) -> &mut PKA_SW_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = PKA_SW_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for PKA_SW_RESET {
+            type Value = PKA_SW_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_SW_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_SW_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset PKA engine.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod pka_l {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_L {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_L {
+            pub fn write_with<F: Fn(&mut PKA_L_VALUE) -> &mut PKA_L_VALUE>(&mut self, f: F) {
+                let mut v = PKA_L_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for PKA_L {
+            type Value = PKA_L_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                PKA_L_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for PKA_L {
+            type Value = PKA_L_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_L_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_L_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn opsize(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00001fff) >> 0
+            }
+
+            pub fn set_opsize(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00001fff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod pka_pipe {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_PIPE {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_PIPE {}
+
+        impl RegisterRead for PKA_PIPE {
+            type Value = PKA_PIPE_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                PKA_PIPE_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_PIPE_READ_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_PIPE_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // PKA pipeline is not ready for a new OPCODE
+                        NotReady = 0,
+        // PKA pipeline is ready for a new OPCODE
+                        Ready = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_notready(&self) -> bool {
+                *self == Self::NotReady
+            }
+
+            pub fn set_notready(&mut self) -> &mut Self {
+                *self = Self::NotReady;
+                self
+            }
+
+            pub fn is_ready(&self) -> bool {
+                *self == Self::Ready
+            }
+
+            pub fn set_ready(&mut self) -> &mut Self {
+                *self = Self::Ready;
+                self
+            }
+        }
+    }
+
+    pub mod pka_done {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_DONE {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_DONE {}
+
+        impl RegisterRead for PKA_DONE {
+            type Value = PKA_DONE_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                PKA_DONE_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_DONE_READ_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_DONE_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // PKA operation is processing
+                        Processing = 0,
+        // PKA operation is completed and pipeline is empty
+                        Completed = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_processing(&self) -> bool {
+                *self == Self::Processing
+            }
+
+            pub fn set_processing(&mut self) -> &mut Self {
+                *self = Self::Processing;
+                self
+            }
+
+            pub fn is_completed(&self) -> bool {
+                *self == Self::Completed
+            }
+
+            pub fn set_completed(&mut self) -> &mut Self {
+                *self = Self::Completed;
+                self
+            }
+        }
+    }
+
+    pub mod pka_version {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_VERSION {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_VERSION {}
+
+        impl RegisterRead for PKA_VERSION {
+            type Value = u32;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                (raw & 0xffffffff) >> 0
+            }
+        }
+    }
+
+    pub mod pka_sram_waddr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_SRAM_WADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_SRAM_WADDR {
+            pub fn write_with<
+                F: Fn(&mut PKA_SRAM_WADDR_WRITE_VALUE) -> &mut PKA_SRAM_WADDR_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = PKA_SRAM_WADDR_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for PKA_SRAM_WADDR {
+            type Value = PKA_SRAM_WADDR_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_SRAM_WADDR_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_SRAM_WADDR_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod pka_sram_wdata {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_SRAM_WDATA {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_SRAM_WDATA {
+            pub fn write_with<
+                F: Fn(&mut PKA_SRAM_WDATA_WRITE_VALUE) -> &mut PKA_SRAM_WDATA_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = PKA_SRAM_WDATA_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for PKA_SRAM_WDATA {
+            type Value = PKA_SRAM_WDATA_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_SRAM_WDATA_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_SRAM_WDATA_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_data(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod pka_sram_rdata {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_SRAM_RDATA {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_SRAM_RDATA {}
+
+        impl RegisterRead for PKA_SRAM_RDATA {
+            type Value = PKA_SRAM_RDATA_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                PKA_SRAM_RDATA_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_SRAM_RDATA_READ_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_SRAM_RDATA_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn data(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_data(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod pka_sram_wclear {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_SRAM_WCLEAR {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_SRAM_WCLEAR {
+            pub fn write_with<
+                F: Fn(&mut PKA_SRAM_WCLEAR_WRITE_VALUE) -> &mut PKA_SRAM_WCLEAR_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = PKA_SRAM_WCLEAR_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for PKA_SRAM_WCLEAR {
+            type Value = PKA_SRAM_WCLEAR_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_SRAM_WCLEAR_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_SRAM_WCLEAR_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod pka_sram_raddr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct PKA_SRAM_RADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl PKA_SRAM_RADDR {
+            pub fn write_with<
+                F: Fn(&mut PKA_SRAM_RADDR_WRITE_VALUE) -> &mut PKA_SRAM_RADDR_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = PKA_SRAM_RADDR_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for PKA_SRAM_RADDR {
+            type Value = PKA_SRAM_RADDR_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct PKA_SRAM_RADDR_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl PKA_SRAM_RADDR_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_rng {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_RNG {
+        _hidden: (),
+    }
+
+    impl CC_RNG {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_RNG {
+        type Target = CC_RNG_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_RNG {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_RNG_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 256],
+        /// Interrupt mask register. Each bit of this register holds the mask of
+        /// a single interrupt source.
+        pub rng_imr: rng_imr::RNG_IMR,
+        /// Interrupt status register. Each bit of this register holds the
+        /// interrupt         status of a single interrupt source. If
+        /// corresponding RNG_IMR bit is         unmasked, an interrupt is
+        /// generated.
+        pub rng_isr: rng_isr::RNG_ISR,
+        /// Interrupt clear register. Writing a 1 bit into a field in this
+        /// register         will clear the corresponding bit in RNG_ISR.
+        pub rng_icr: rng_icr::RNG_ICR,
+        /// TRNG ring oscillator length configuration
+        pub trng_config: trng_config::TRNG_CONFIG,
+        /// This register indicates if TRNG entropy collection is valid.
+        pub trng_valid: trng_valid::TRNG_VALID,
+        /// Description collection: The entropy holding registers (EHR) hold
+        /// 192-bits random data collected by the TRNG. The initial EHR_DATA[0]
+        /// register holds the least significant bits [31:0] of the random data
+        /// value.
+        pub ehr_data: [ehr_data::EHR_DATA; 6],
+        /// This register controls the ring oscillator circuit used as a noise
+        /// source.
+        pub noise_source: noise_source::NOISE_SOURCE,
+        /// Sample count defining the number of CPU clock cycles between two
+        /// consecutive noise source samples.
+        pub sample_cnt: sample_cnt::SAMPLE_CNT,
+        /// Statistics counter for autocorrelation test activations. Statistics
+        /// collection is stopped if one of the counters reach its limit of all
+        /// ones.
+        pub autocorr_statistic: autocorr_statistic::AUTOCORR_STATISTIC,
+        /// Debug register for the TRNG. This register is used to bypass TRNG
+        /// tests in hardware.
+        pub trng_debug: trng_debug::TRNG_DEBUG,
+        _padding_316: [u8; 4],
+        /// Reset the RNG engine.
+        pub rng_sw_reset: rng_sw_reset::RNG_SW_RESET,
+        _padding_324: [u8; 116],
+        /// Status register for RNG engine activity.
+        pub rng_busy: rng_busy::RNG_BUSY,
+        /// Reset the TRNG, including internal counter of collected bits and
+        /// registers EHR_DATA and TRNG_VALID.
+        pub trng_reset: trng_reset::TRNG_RESET,
+        /// Hardware configuration of RNG engine. Reset value holds the
+        /// supported features.
+        pub rng_hw_flags: rng_hw_flags::RNG_HW_FLAGS,
+        /// Control clock for the RNG engine.
+        pub rng_clk: rng_clk::RNG_CLK,
+        /// Writing to this register enables the RNG DMA engine.
+        pub rng_dma: rng_dma::RNG_DMA,
+        /// This register defines which ring oscillator length configuration
+        /// should be used when using the RNG DMA engine.
+        pub rng_dma_rosc_len: rng_dma_rosc_len::RNG_DMA_ROSC_LEN,
+        /// This register defines the start address in TRNG SRAM for the TRNG
+        /// data to be collected by the RNG DMA engine.
+        pub rng_dma_sram_addr: rng_dma_sram_addr::RNG_DMA_SRAM_ADDR,
+        /// This register defines the number of 192-bits samples that the RNG
+        /// DMA engine collects per run.
+        pub rng_dma_samples_num: rng_dma_samples_num::RNG_DMA_SAMPLES_NUM,
+        /// This register defines the maximum number of CPU clock cycles per
+        /// TRNG collection of 192-bits samples. If the number of cycles for a
+        /// collection exceeds this threshold the WATCHDOG interrupt is
+        /// triggered.
+        pub rng_watchdog_val: rng_watchdog_val::RNG_WATCHDOG_VAL,
+        /// Status register for RNG DMA engine activity.
+        pub rng_dma_busy: rng_dma_busy::RNG_DMA_BUSY,
+    }
+
+    pub mod rng_imr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_IMR {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_IMR {
+            pub fn write_with<F: Fn(&mut RNG_IMR_VALUE) -> &mut RNG_IMR_VALUE>(&mut self, f: F) {
+                let mut v = RNG_IMR_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for RNG_IMR {
+            type Value = RNG_IMR_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_IMR_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for RNG_IMR {
+            type Value = RNG_IMR_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_IMR_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_IMR_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn ehr_valid_mask(&self) -> EHR_VALID_MASK_FIELD {
+                let raw = self.raw;
+                EHR_VALID_MASK_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_ehr_valid_mask(&mut self, value: EHR_VALID_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_ehr_valid_mask_with<
+                F: Fn(&mut EHR_VALID_MASK_FIELD) -> &mut EHR_VALID_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.ehr_valid_mask();
+                f(&mut value);
+                self.set_ehr_valid_mask(value)
+            }
+
+            pub fn autocorr_err_mask(&self) -> AUTOCORR_ERR_MASK_FIELD {
+                let raw = self.raw;
+                AUTOCORR_ERR_MASK_FIELD::from_value((raw & 0x00000002) >> 1)
+            }
+
+            pub fn set_autocorr_err_mask(&mut self, value: AUTOCORR_ERR_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn set_autocorr_err_mask_with<
+                F: Fn(&mut AUTOCORR_ERR_MASK_FIELD) -> &mut AUTOCORR_ERR_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.autocorr_err_mask();
+                f(&mut value);
+                self.set_autocorr_err_mask(value)
+            }
+
+            pub fn crngt_err_mask(&self) -> CRNGT_ERR_MASK_FIELD {
+                let raw = self.raw;
+                CRNGT_ERR_MASK_FIELD::from_value((raw & 0x00000004) >> 2)
+            }
+
+            pub fn set_crngt_err_mask(&mut self, value: CRNGT_ERR_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_crngt_err_mask_with<
+                F: Fn(&mut CRNGT_ERR_MASK_FIELD) -> &mut CRNGT_ERR_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.crngt_err_mask();
+                f(&mut value);
+                self.set_crngt_err_mask(value)
+            }
+
+            pub fn vnc_err_mask(&self) -> VNC_ERR_MASK_FIELD {
+                let raw = self.raw;
+                VNC_ERR_MASK_FIELD::from_value((raw & 0x00000008) >> 3)
+            }
+
+            pub fn set_vnc_err_mask(&mut self, value: VNC_ERR_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_vnc_err_mask_with<
+                F: Fn(&mut VNC_ERR_MASK_FIELD) -> &mut VNC_ERR_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.vnc_err_mask();
+                f(&mut value);
+                self.set_vnc_err_mask(value)
+            }
+
+            pub fn watchdog_mask(&self) -> WATCHDOG_MASK_FIELD {
+                let raw = self.raw;
+                WATCHDOG_MASK_FIELD::from_value((raw & 0x00000010) >> 4)
+            }
+
+            pub fn set_watchdog_mask(&mut self, value: WATCHDOG_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn set_watchdog_mask_with<
+                F: Fn(&mut WATCHDOG_MASK_FIELD) -> &mut WATCHDOG_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.watchdog_mask();
+                f(&mut value);
+                self.set_watchdog_mask(value)
+            }
+
+            pub fn dma_done_mask(&self) -> DMA_DONE_MASK_FIELD {
+                let raw = self.raw;
+                DMA_DONE_MASK_FIELD::from_value((raw & 0x00000020) >> 5)
+            }
+
+            pub fn set_dma_done_mask(&mut self, value: DMA_DONE_MASK_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+
+            pub fn set_dma_done_mask_with<
+                F: Fn(&mut DMA_DONE_MASK_FIELD) -> &mut DMA_DONE_MASK_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.dma_done_mask();
+                f(&mut value);
+                self.set_dma_done_mask(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] EHR_VALID_MASK_FIELD u32 =>
+                        // Do not mask EHR interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask EHR interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl EHR_VALID_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] AUTOCORR_ERR_MASK_FIELD u32 =>
+                        // Do not mask autocorrelation interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask autocorrelation interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl AUTOCORR_ERR_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CRNGT_ERR_MASK_FIELD u32 =>
+                        // Do not mask the CRNGT error interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask the CRNGT error interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl CRNGT_ERR_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] VNC_ERR_MASK_FIELD u32 =>
+                        // Do not mask the von Neumann corrector error interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask the von Neumann corrector error interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl VNC_ERR_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] WATCHDOG_MASK_FIELD u32 =>
+                        // Do not mask the watchdog interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask the watchdog interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl WATCHDOG_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] DMA_DONE_MASK_FIELD u32 =>
+                        // Do not mask the RNG DMA completion interrupt i.e. interrupt is generated
+                        IRQEnable = 0,
+        // Mask the RNG DMA completion interrupt i.e. no interrupt is generated
+                        IRQDisable = 1
+
+                    );
+
+        impl DMA_DONE_MASK_FIELD {
+            pub fn is_irqenable(&self) -> bool {
+                *self == Self::IRQEnable
+            }
+
+            pub fn set_irqenable(&mut self) -> &mut Self {
+                *self = Self::IRQEnable;
+                self
+            }
+
+            pub fn is_irqdisable(&self) -> bool {
+                *self == Self::IRQDisable
+            }
+
+            pub fn set_irqdisable(&mut self) -> &mut Self {
+                *self = Self::IRQDisable;
+                self
+            }
+        }
+    }
+
+    pub mod rng_isr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_ISR {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_ISR {}
+
+        impl RegisterRead for RNG_ISR {
+            type Value = RNG_ISR_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_ISR_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_ISR_READ_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_ISR_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn ehr_valid_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000001) >> 0
+            }
+
+            pub fn set_ehr_valid_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn autocorr_err_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000002) >> 1
+            }
+
+            pub fn set_autocorr_err_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn crngt_err_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000004) >> 2
+            }
+
+            pub fn set_crngt_err_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn vnc_err_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000008) >> 3
+            }
+
+            pub fn set_vnc_err_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn watchdog_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000010) >> 4
+            }
+
+            pub fn set_watchdog_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn dma_done_int(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000020) >> 5
+            }
+
+            pub fn set_dma_done_int(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+        }
+    }
+
+    pub mod rng_icr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_ICR {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_ICR {
+            pub fn write_with<F: Fn(&mut RNG_ICR_WRITE_VALUE) -> &mut RNG_ICR_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = RNG_ICR_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for RNG_ICR {
+            type Value = RNG_ICR_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_ICR_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_ICR_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_ehr_valid_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_autocorr_err_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn set_crngt_err_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_vnc_err_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_watchdog_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn set_dma_done_clear(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+        }
+    }
+
+    pub mod trng_config {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct TRNG_CONFIG {
+            raw: RawRegister<u32>,
+        }
+
+        impl TRNG_CONFIG {
+            pub fn write_with<F: Fn(&mut TRNG_CONFIG_VALUE) -> &mut TRNG_CONFIG_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = TRNG_CONFIG_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for TRNG_CONFIG {
+            type Value = TRNG_CONFIG_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                TRNG_CONFIG_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for TRNG_CONFIG {
+            type Value = TRNG_CONFIG_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct TRNG_CONFIG_VALUE {
+            raw: u32,
+        }
+
+        impl TRNG_CONFIG_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn rosc_len(&self) -> ROSC_LEN_FIELD {
+                let raw = self.raw;
+                ROSC_LEN_FIELD::from_value((raw & 0x00000003) >> 0)
+            }
+
+            pub fn set_rosc_len(&mut self, value: ROSC_LEN_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000003) | (value << 0);
+                self
+            }
+
+            pub fn set_rosc_len_with<F: Fn(&mut ROSC_LEN_FIELD) -> &mut ROSC_LEN_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rosc_len();
+                f(&mut value);
+                self.set_rosc_len(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ROSC_LEN_FIELD u32 =>
+                        // Use shortest ROSC1 ring oscillator configuration.
+                        ROSC1 = 0,
+        // Use ROSC2 ring oscillator configuration.
+                        ROSC2 = 1,
+        // Use ROSC3 ring oscillator configuration.
+                        ROSC3 = 2,
+        // Use longest ROSC4 ring oscillator configuration.
+                        ROSC4 = 3
+
+                    );
+
+        impl ROSC_LEN_FIELD {
+            pub fn is_rosc1(&self) -> bool {
+                *self == Self::ROSC1
+            }
+
+            pub fn set_rosc1(&mut self) -> &mut Self {
+                *self = Self::ROSC1;
+                self
+            }
+
+            pub fn is_rosc2(&self) -> bool {
+                *self == Self::ROSC2
+            }
+
+            pub fn set_rosc2(&mut self) -> &mut Self {
+                *self = Self::ROSC2;
+                self
+            }
+
+            pub fn is_rosc3(&self) -> bool {
+                *self == Self::ROSC3
+            }
+
+            pub fn set_rosc3(&mut self) -> &mut Self {
+                *self = Self::ROSC3;
+                self
+            }
+
+            pub fn is_rosc4(&self) -> bool {
+                *self == Self::ROSC4
+            }
+
+            pub fn set_rosc4(&mut self) -> &mut Self {
+                *self = Self::ROSC4;
+                self
+            }
+        }
+    }
+
+    pub mod trng_valid {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct TRNG_VALID {
+            raw: RawRegister<u32>,
+        }
+
+        impl TRNG_VALID {}
+
+        impl RegisterRead for TRNG_VALID {
+            type Value = TRNG_VALID_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                TRNG_VALID_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct TRNG_VALID_READ_VALUE {
+            raw: u32,
+        }
+
+        impl TRNG_VALID_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn ehr_data(&self) -> EHR_DATA_FIELD {
+                let raw = self.raw;
+                EHR_DATA_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_ehr_data(&mut self, value: EHR_DATA_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_ehr_data_with<F: Fn(&mut EHR_DATA_FIELD) -> &mut EHR_DATA_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.ehr_data();
+                f(&mut value);
+                self.set_ehr_data(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] EHR_DATA_FIELD u32 =>
+                        // Collection of bits not valid.
+                        NotValid = 0,
+        // Collection of bits valid.
+                        Valid = 1
+
+                    );
+
+        impl EHR_DATA_FIELD {
+            pub fn is_notvalid(&self) -> bool {
+                *self == Self::NotValid
+            }
+
+            pub fn set_notvalid(&mut self) -> &mut Self {
+                *self = Self::NotValid;
+                self
+            }
+
+            pub fn is_valid(&self) -> bool {
+                *self == Self::Valid
+            }
+
+            pub fn set_valid(&mut self) -> &mut Self {
+                *self = Self::Valid;
+                self
+            }
+        }
+    }
+
+    pub mod ehr_data {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct EHR_DATA {
+            raw: RawRegister<u32>,
+        }
+
+        impl EHR_DATA {}
+
+        impl RegisterRead for EHR_DATA {
+            type Value = EHR_DATA_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                EHR_DATA_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct EHR_DATA_READ_VALUE {
+            raw: u32,
+        }
+
+        impl EHR_DATA_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod noise_source {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct NOISE_SOURCE {
+            raw: RawRegister<u32>,
+        }
+
+        impl NOISE_SOURCE {
+            pub fn write_with<F: Fn(&mut NOISE_SOURCE_VALUE) -> &mut NOISE_SOURCE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = NOISE_SOURCE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for NOISE_SOURCE {
+            type Value = NOISE_SOURCE_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                NOISE_SOURCE_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for NOISE_SOURCE {
+            type Value = NOISE_SOURCE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct NOISE_SOURCE_VALUE {
+            raw: u32,
+        }
+
+        impl NOISE_SOURCE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Noise source is disabled
+                        Disabled = 0,
+        // Noise source is enabled
                         Enabled = 1
 
                     );
@@ -106110,6 +117673,1906 @@ pub mod cryptocell {
 
             pub fn set_enabled(&mut self) -> &mut Self {
                 *self = Self::Enabled;
+                self
+            }
+        }
+    }
+
+    pub mod sample_cnt {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SAMPLE_CNT {
+            raw: RawRegister<u32>,
+        }
+
+        impl SAMPLE_CNT {
+            pub fn write_with<F: Fn(&mut SAMPLE_CNT_VALUE) -> &mut SAMPLE_CNT_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = SAMPLE_CNT_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for SAMPLE_CNT {
+            type Value = SAMPLE_CNT_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                SAMPLE_CNT_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for SAMPLE_CNT {
+            type Value = SAMPLE_CNT_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct SAMPLE_CNT_VALUE {
+            raw: u32,
+        }
+
+        impl SAMPLE_CNT_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn value(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0xffffffff) >> 0
+            }
+
+            pub fn set_value(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0xffffffff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod autocorr_statistic {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct AUTOCORR_STATISTIC {
+            raw: RawRegister<u32>,
+        }
+
+        impl AUTOCORR_STATISTIC {
+            pub fn write_with<
+                F: Fn(&mut AUTOCORR_STATISTIC_VALUE) -> &mut AUTOCORR_STATISTIC_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = AUTOCORR_STATISTIC_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for AUTOCORR_STATISTIC {
+            type Value = AUTOCORR_STATISTIC_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                AUTOCORR_STATISTIC_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for AUTOCORR_STATISTIC {
+            type Value = AUTOCORR_STATISTIC_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct AUTOCORR_STATISTIC_VALUE {
+            raw: u32,
+        }
+
+        impl AUTOCORR_STATISTIC_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn autocorr_trys(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00003fff) >> 0
+            }
+
+            pub fn set_autocorr_trys(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00003fff) | (value << 0);
+                self
+            }
+
+            pub fn autocorr_fails(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x003fc000) >> 14
+            }
+
+            pub fn set_autocorr_fails(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x003fc000) | (value << 14);
+                self
+            }
+        }
+    }
+
+    pub mod trng_debug {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct TRNG_DEBUG {
+            raw: RawRegister<u32>,
+        }
+
+        impl TRNG_DEBUG {
+            pub fn write_with<F: Fn(&mut TRNG_DEBUG_VALUE) -> &mut TRNG_DEBUG_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = TRNG_DEBUG_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for TRNG_DEBUG {
+            type Value = TRNG_DEBUG_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                TRNG_DEBUG_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for TRNG_DEBUG {
+            type Value = TRNG_DEBUG_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct TRNG_DEBUG_VALUE {
+            raw: u32,
+        }
+
+        impl TRNG_DEBUG_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn vnc_bypass(&self) -> VNC_BYPASS_FIELD {
+                let raw = self.raw;
+                VNC_BYPASS_FIELD::from_value((raw & 0x00000002) >> 1)
+            }
+
+            pub fn set_vnc_bypass(&mut self, value: VNC_BYPASS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn set_vnc_bypass_with<F: Fn(&mut VNC_BYPASS_FIELD) -> &mut VNC_BYPASS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.vnc_bypass();
+                f(&mut value);
+                self.set_vnc_bypass(value)
+            }
+
+            pub fn crngt_bypass(&self) -> CRNGT_BYPASS_FIELD {
+                let raw = self.raw;
+                CRNGT_BYPASS_FIELD::from_value((raw & 0x00000004) >> 2)
+            }
+
+            pub fn set_crngt_bypass(&mut self, value: CRNGT_BYPASS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_crngt_bypass_with<
+                F: Fn(&mut CRNGT_BYPASS_FIELD) -> &mut CRNGT_BYPASS_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.crngt_bypass();
+                f(&mut value);
+                self.set_crngt_bypass(value)
+            }
+
+            pub fn autocorr_bypass(&self) -> AUTOCORR_BYPASS_FIELD {
+                let raw = self.raw;
+                AUTOCORR_BYPASS_FIELD::from_value((raw & 0x00000008) >> 3)
+            }
+
+            pub fn set_autocorr_bypass(&mut self, value: AUTOCORR_BYPASS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_autocorr_bypass_with<
+                F: Fn(&mut AUTOCORR_BYPASS_FIELD) -> &mut AUTOCORR_BYPASS_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.autocorr_bypass();
+                f(&mut value);
+                self.set_autocorr_bypass(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] VNC_BYPASS_FIELD u32 =>
+                        // von Neumann corrector post-processing is active
+                        Disabled = 0,
+        // Bypass the von Neumann corrector
+                        Enabled = 1
+
+                    );
+
+        impl VNC_BYPASS_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] CRNGT_BYPASS_FIELD u32 =>
+                        // CRNGT is active
+                        Disabled = 0,
+        // Bypass CRNGT
+                        Enabled = 1
+
+                    );
+
+        impl CRNGT_BYPASS_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] AUTOCORR_BYPASS_FIELD u32 =>
+                        // Autocorrelation test is active
+                        Disabled = 0,
+        // Bypass the autocorrelation test
+                        Enabled = 1
+
+                    );
+
+        impl AUTOCORR_BYPASS_FIELD {
+            pub fn is_disabled(&self) -> bool {
+                *self == Self::Disabled
+            }
+
+            pub fn set_disabled(&mut self) -> &mut Self {
+                *self = Self::Disabled;
+                self
+            }
+
+            pub fn is_enabled(&self) -> bool {
+                *self == Self::Enabled
+            }
+
+            pub fn set_enabled(&mut self) -> &mut Self {
+                *self = Self::Enabled;
+                self
+            }
+        }
+    }
+
+    pub mod rng_sw_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_SW_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_SW_RESET {
+            pub fn write_with<
+                F: Fn(&mut RNG_SW_RESET_WRITE_VALUE) -> &mut RNG_SW_RESET_WRITE_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = RNG_SW_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for RNG_SW_RESET {
+            type Value = RNG_SW_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_SW_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_SW_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset RNG engine.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod rng_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_BUSY {}
+
+        impl RegisterRead for RNG_BUSY {
+            type Value = RNG_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+
+            pub fn trng_status(&self) -> TRNG_STATUS_FIELD {
+                let raw = self.raw;
+                TRNG_STATUS_FIELD::from_value((raw & 0x00000002) >> 1)
+            }
+
+            pub fn set_trng_status(&mut self, value: TRNG_STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn set_trng_status_with<F: Fn(&mut TRNG_STATUS_FIELD) -> &mut TRNG_STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.trng_status();
+                f(&mut value);
+                self.set_trng_status(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // RNG engine is idle
+                        Idle = 0,
+        // RNG engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] TRNG_STATUS_FIELD u32 =>
+                        // TRNG is idle
+                        Idle = 0,
+        // TRNG is busy
+                        Busy = 1
+
+                    );
+
+        impl TRNG_STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+    }
+
+    pub mod trng_reset {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct TRNG_RESET {
+            raw: RawRegister<u32>,
+        }
+
+        impl TRNG_RESET {
+            pub fn write_with<F: Fn(&mut TRNG_RESET_WRITE_VALUE) -> &mut TRNG_RESET_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = TRNG_RESET_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for TRNG_RESET {
+            type Value = TRNG_RESET_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct TRNG_RESET_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl TRNG_RESET_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn set_reset(&mut self) -> &mut Self {
+                let value = RESET_FIELD::Enable.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RESET_FIELD u32 =>
+            // Reset TRNG.
+            Enable = 1
+
+        );
+
+        impl RESET_FIELD {
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod rng_hw_flags {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_HW_FLAGS {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_HW_FLAGS {}
+
+        impl RegisterRead for RNG_HW_FLAGS {
+            type Value = RNG_HW_FLAGS_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_HW_FLAGS_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_HW_FLAGS_READ_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_HW_FLAGS_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn ehr_width(&self) -> EHR_WIDTH_FIELD {
+                let raw = self.raw;
+                EHR_WIDTH_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_ehr_width(&mut self, value: EHR_WIDTH_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_ehr_width_with<F: Fn(&mut EHR_WIDTH_FIELD) -> &mut EHR_WIDTH_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.ehr_width();
+                f(&mut value);
+                self.set_ehr_width(value)
+            }
+
+            pub fn crngt_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000002) >> 1
+            }
+
+            pub fn set_crngt_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn autocorr_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000004) >> 2
+            }
+
+            pub fn set_autocorr_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn bypass_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000008) >> 3
+            }
+
+            pub fn set_bypass_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn prng_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000010) >> 4
+            }
+
+            pub fn set_prng_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000010) | (value << 4);
+                self
+            }
+
+            pub fn kat_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000020) >> 5
+            }
+
+            pub fn set_kat_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000020) | (value << 5);
+                self
+            }
+
+            pub fn reseeding_exists(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x00000040) >> 6
+            }
+
+            pub fn set_reseeding_exists(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000040) | (value << 6);
+                self
+            }
+
+            pub fn rng_use_5_sboxes(&self) -> RNG_USE_5_SBOXES_FIELD {
+                let raw = self.raw;
+                RNG_USE_5_SBOXES_FIELD::from_value((raw & 0x00000080) >> 7)
+            }
+
+            pub fn set_rng_use_5_sboxes(&mut self, value: RNG_USE_5_SBOXES_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000080) | (value << 7);
+                self
+            }
+
+            pub fn set_rng_use_5_sboxes_with<
+                F: Fn(&mut RNG_USE_5_SBOXES_FIELD) -> &mut RNG_USE_5_SBOXES_FIELD,
+            >(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rng_use_5_sboxes();
+                f(&mut value);
+                self.set_rng_use_5_sboxes(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] EHR_WIDTH_FIELD u32 =>
+                        // 128 bits EHR width
+                        _128Bits = 0,
+        // 192 bits EHR width
+                        _192Bits = 1
+
+                    );
+
+        impl EHR_WIDTH_FIELD {
+            pub fn is_128bits(&self) -> bool {
+                *self == Self::_128Bits
+            }
+
+            pub fn set_128bits(&mut self) -> &mut Self {
+                *self = Self::_128Bits;
+                self
+            }
+
+            pub fn is_192bits(&self) -> bool {
+                *self == Self::_192Bits
+            }
+
+            pub fn set_192bits(&mut self) -> &mut Self {
+                *self = Self::_192Bits;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] RNG_USE_5_SBOXES_FIELD u32 =>
+                        // 20 SBOX AES
+                        Disable = 0,
+        // 5 SBOX AES
+                        Enable = 1
+
+                    );
+
+        impl RNG_USE_5_SBOXES_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod rng_clk {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_CLK {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_CLK {
+            pub fn write_with<F: Fn(&mut RNG_CLK_WRITE_VALUE) -> &mut RNG_CLK_WRITE_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = RNG_CLK_WRITE_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterWrite for RNG_CLK {
+            type Value = RNG_CLK_WRITE_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_CLK_WRITE_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_CLK_WRITE_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Disable clock for RNG engine.
+                        Disable = 0,
+        // Enable clock for RNG engine.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod rng_dma {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_DMA {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_DMA {
+            pub fn write_with<F: Fn(&mut RNG_DMA_VALUE) -> &mut RNG_DMA_VALUE>(&mut self, f: F) {
+                let mut v = RNG_DMA_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for RNG_DMA {
+            type Value = RNG_DMA_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_DMA_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for RNG_DMA {
+            type Value = RNG_DMA_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_DMA_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_DMA_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn enable(&self) -> ENABLE_FIELD {
+                let raw = self.raw;
+                ENABLE_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_enable(&mut self, value: ENABLE_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_enable_with<F: Fn(&mut ENABLE_FIELD) -> &mut ENABLE_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.enable();
+                f(&mut value);
+                self.set_enable(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ENABLE_FIELD u32 =>
+                        // Disable RNG DMA engine
+                        Disable = 0,
+        // Enable RNG DMA engine This value is cleared when the RNG DMA engine completes its operation.
+                        Enable = 1
+
+                    );
+
+        impl ENABLE_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod rng_dma_rosc_len {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_DMA_ROSC_LEN {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_DMA_ROSC_LEN {
+            pub fn write_with<F: Fn(&mut RNG_DMA_ROSC_LEN_VALUE) -> &mut RNG_DMA_ROSC_LEN_VALUE>(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = RNG_DMA_ROSC_LEN_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for RNG_DMA_ROSC_LEN {
+            type Value = RNG_DMA_ROSC_LEN_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_DMA_ROSC_LEN_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for RNG_DMA_ROSC_LEN {
+            type Value = RNG_DMA_ROSC_LEN_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_DMA_ROSC_LEN_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_DMA_ROSC_LEN_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn rosc1(&self) -> ROSC1_FIELD {
+                let raw = self.raw;
+                ROSC1_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_rosc1(&mut self, value: ROSC1_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_rosc1_with<F: Fn(&mut ROSC1_FIELD) -> &mut ROSC1_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rosc1();
+                f(&mut value);
+                self.set_rosc1(value)
+            }
+
+            pub fn rosc2(&self) -> ROSC2_FIELD {
+                let raw = self.raw;
+                ROSC2_FIELD::from_value((raw & 0x00000002) >> 1)
+            }
+
+            pub fn set_rosc2(&mut self, value: ROSC2_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000002) | (value << 1);
+                self
+            }
+
+            pub fn set_rosc2_with<F: Fn(&mut ROSC2_FIELD) -> &mut ROSC2_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rosc2();
+                f(&mut value);
+                self.set_rosc2(value)
+            }
+
+            pub fn rosc3(&self) -> ROSC3_FIELD {
+                let raw = self.raw;
+                ROSC3_FIELD::from_value((raw & 0x00000004) >> 2)
+            }
+
+            pub fn set_rosc3(&mut self, value: ROSC3_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000004) | (value << 2);
+                self
+            }
+
+            pub fn set_rosc3_with<F: Fn(&mut ROSC3_FIELD) -> &mut ROSC3_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rosc3();
+                f(&mut value);
+                self.set_rosc3(value)
+            }
+
+            pub fn rosc4(&self) -> ROSC4_FIELD {
+                let raw = self.raw;
+                ROSC4_FIELD::from_value((raw & 0x00000008) >> 3)
+            }
+
+            pub fn set_rosc4(&mut self, value: ROSC4_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000008) | (value << 3);
+                self
+            }
+
+            pub fn set_rosc4_with<F: Fn(&mut ROSC4_FIELD) -> &mut ROSC4_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rosc4();
+                f(&mut value);
+                self.set_rosc4(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ROSC1_FIELD u32 =>
+                        // Disable ROSC1
+                        Disable = 0,
+        // Enable ROSC1
+                        Enable = 1
+
+                    );
+
+        impl ROSC1_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ROSC2_FIELD u32 =>
+                        // Disable ROSC2
+                        Disable = 0,
+        // Enable ROSC2
+                        Enable = 1
+
+                    );
+
+        impl ROSC2_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ROSC3_FIELD u32 =>
+                        // Disable ROSC3
+                        Disable = 0,
+        // Enable ROSC3
+                        Enable = 1
+
+                    );
+
+        impl ROSC3_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ROSC4_FIELD u32 =>
+                        // Disable ROSC4
+                        Disable = 0,
+        // Enable ROSC4
+                        Enable = 1
+
+                    );
+
+        impl ROSC4_FIELD {
+            pub fn is_disable(&self) -> bool {
+                *self == Self::Disable
+            }
+
+            pub fn set_disable(&mut self) -> &mut Self {
+                *self = Self::Disable;
+                self
+            }
+
+            pub fn is_enable(&self) -> bool {
+                *self == Self::Enable
+            }
+
+            pub fn set_enable(&mut self) -> &mut Self {
+                *self = Self::Enable;
+                self
+            }
+        }
+    }
+
+    pub mod rng_dma_sram_addr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_DMA_SRAM_ADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_DMA_SRAM_ADDR {
+            pub fn write_with<
+                F: Fn(&mut RNG_DMA_SRAM_ADDR_VALUE) -> &mut RNG_DMA_SRAM_ADDR_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = RNG_DMA_SRAM_ADDR_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for RNG_DMA_SRAM_ADDR {
+            type Value = RNG_DMA_SRAM_ADDR_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_DMA_SRAM_ADDR_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for RNG_DMA_SRAM_ADDR {
+            type Value = RNG_DMA_SRAM_ADDR_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_DMA_SRAM_ADDR_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_DMA_SRAM_ADDR_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn rng_sram_dma_addr(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000007ff) >> 0
+            }
+
+            pub fn set_rng_sram_dma_addr(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000007ff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod rng_dma_samples_num {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_DMA_SAMPLES_NUM {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_DMA_SAMPLES_NUM {
+            pub fn write_with<
+                F: Fn(&mut RNG_DMA_SAMPLES_NUM_VALUE) -> &mut RNG_DMA_SAMPLES_NUM_VALUE,
+            >(
+                &mut self,
+                f: F,
+            ) {
+                let mut v = RNG_DMA_SAMPLES_NUM_VALUE::new();
+                f(&mut v);
+                self.write(v);
+            }
+        }
+
+        impl RegisterRead for RNG_DMA_SAMPLES_NUM {
+            type Value = RNG_DMA_SAMPLES_NUM_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_DMA_SAMPLES_NUM_VALUE::from_raw(v)
+            }
+        }
+
+        impl RegisterWrite for RNG_DMA_SAMPLES_NUM {
+            type Value = RNG_DMA_SAMPLES_NUM_VALUE;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                self.raw.write(value.to_raw());
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_DMA_SAMPLES_NUM_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_DMA_SAMPLES_NUM_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn rng_samples_num(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000000ff) >> 0
+            }
+
+            pub fn set_rng_samples_num(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000000ff) | (value << 0);
+                self
+            }
+        }
+    }
+
+    pub mod rng_watchdog_val {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_WATCHDOG_VAL {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_WATCHDOG_VAL {}
+
+        impl RegisterRead for RNG_WATCHDOG_VAL {
+            type Value = u32;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                (raw & 0xffffffff) >> 0
+            }
+        }
+
+        impl RegisterWrite for RNG_WATCHDOG_VAL {
+            type Value = u32;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = (old_raw & !0xffffffff) | (value << 0);
+                self.raw.write(raw);
+            }
+        }
+    }
+
+    pub mod rng_dma_busy {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct RNG_DMA_BUSY {
+            raw: RawRegister<u32>,
+        }
+
+        impl RNG_DMA_BUSY {}
+
+        impl RegisterRead for RNG_DMA_BUSY {
+            type Value = RNG_DMA_BUSY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                RNG_DMA_BUSY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct RNG_DMA_BUSY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl RNG_DMA_BUSY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn status(&self) -> STATUS_FIELD {
+                let raw = self.raw;
+                STATUS_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_status(&mut self, value: STATUS_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_status_with<F: Fn(&mut STATUS_FIELD) -> &mut STATUS_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.status();
+                f(&mut value);
+                self.set_status(value)
+            }
+
+            pub fn rosc_len(&self) -> ROSC_LEN_FIELD {
+                let raw = self.raw;
+                ROSC_LEN_FIELD::from_value((raw & 0x00000006) >> 1)
+            }
+
+            pub fn set_rosc_len(&mut self, value: ROSC_LEN_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000006) | (value << 1);
+                self
+            }
+
+            pub fn set_rosc_len_with<F: Fn(&mut ROSC_LEN_FIELD) -> &mut ROSC_LEN_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.rosc_len();
+                f(&mut value);
+                self.set_rosc_len(value)
+            }
+
+            pub fn num_of_samples(&self) -> u32 {
+                let raw = self.raw;
+                (raw & 0x000007f8) >> 3
+            }
+
+            pub fn set_num_of_samples(&mut self, value: u32) -> &mut Self {
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x000007f8) | (value << 3);
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] STATUS_FIELD u32 =>
+                        // RNG DMA engine is idle
+                        Idle = 0,
+        // RNG DMA engine is busy
+                        Busy = 1
+
+                    );
+
+        impl STATUS_FIELD {
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
+                self
+            }
+
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] ROSC_LEN_FIELD u32 =>
+                        // Shortest ROSC1 ring oscillator configuration used.
+                        ROSC1 = 0,
+        // ROSC2 ring oscillator configuration used.
+                        ROSC2 = 1,
+        // ROSC3 ring oscillator configuration used.
+                        ROSC3 = 2,
+        // Longest ROSC4 ring oscillator configuration used.
+                        ROSC4 = 3
+
+                    );
+
+        impl ROSC_LEN_FIELD {
+            pub fn is_rosc1(&self) -> bool {
+                *self == Self::ROSC1
+            }
+
+            pub fn set_rosc1(&mut self) -> &mut Self {
+                *self = Self::ROSC1;
+                self
+            }
+
+            pub fn is_rosc2(&self) -> bool {
+                *self == Self::ROSC2
+            }
+
+            pub fn set_rosc2(&mut self) -> &mut Self {
+                *self = Self::ROSC2;
+                self
+            }
+
+            pub fn is_rosc3(&self) -> bool {
+                *self == Self::ROSC3
+            }
+
+            pub fn set_rosc3(&mut self) -> &mut Self {
+                *self = Self::ROSC3;
+                self
+            }
+
+            pub fn is_rosc4(&self) -> bool {
+                *self == Self::ROSC4
+            }
+
+            pub fn set_rosc4(&mut self) -> &mut Self {
+                *self = Self::ROSC4;
+                self
+            }
+        }
+    }
+}
+
+pub mod cc_rng_sram {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[allow(non_camel_case_types)]
+    pub struct CC_RNG_SRAM {
+        _hidden: (),
+    }
+
+    impl CC_RNG_SRAM {
+        const BASE_ADDRESS: u32 = 0x5002b000;
+
+        pub unsafe fn new() -> Self {
+            Self { _hidden: () }
+        }
+    }
+
+    impl Deref for CC_RNG_SRAM {
+        type Target = CC_RNG_SRAM_REGISTERS;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    impl DerefMut for CC_RNG_SRAM {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            unsafe { ::core::mem::transmute(Self::BASE_ADDRESS) }
+        }
+    }
+
+    #[repr(C)]
+    pub struct CC_RNG_SRAM_REGISTERS {
+        _hidden: (),
+        _padding_0: [u8; 3840],
+        /// Read/Write data from RNG SRAM
+        pub sram_data: sram_data::SRAM_DATA,
+        /// First address given to RNG SRAM DMA for read/write transactions
+        /// from/to RNG SRAM.
+        pub sram_addr: sram_addr::SRAM_ADDR,
+        /// RNG SRAM DMA engine is ready to read/write from/to RNG SRAM.
+        pub sram_data_ready: sram_data_ready::SRAM_DATA_READY,
+    }
+
+    pub mod sram_data {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SRAM_DATA {
+            raw: RawRegister<u32>,
+        }
+
+        impl SRAM_DATA {}
+
+        impl RegisterRead for SRAM_DATA {
+            type Value = u32;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let raw = self.raw.read();
+                (raw & 0xffffffff) >> 0
+            }
+        }
+
+        impl RegisterWrite for SRAM_DATA {
+            type Value = u32;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = (old_raw & !0xffffffff) | (value << 0);
+                self.raw.write(raw);
+            }
+        }
+    }
+
+    pub mod sram_addr {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SRAM_ADDR {
+            raw: RawRegister<u32>,
+        }
+
+        impl SRAM_ADDR {}
+
+        impl RegisterWrite for SRAM_ADDR {
+            type Value = u32;
+
+            #[inline(always)]
+            fn write(&mut self, value: Self::Value) {
+                let old_raw = 0;
+                let raw = (old_raw & !0x00007fff) | (value << 0);
+                self.raw.write(raw);
+            }
+        }
+    }
+
+    pub mod sram_data_ready {
+        #[allow(unused_imports)]
+        use super::*;
+
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct SRAM_DATA_READY {
+            raw: RawRegister<u32>,
+        }
+
+        impl SRAM_DATA_READY {}
+
+        impl RegisterRead for SRAM_DATA_READY {
+            type Value = SRAM_DATA_READY_READ_VALUE;
+
+            #[inline(always)]
+            fn read(&self) -> Self::Value {
+                let v = self.raw.read();
+                SRAM_DATA_READY_READ_VALUE::from_raw(v)
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq)]
+        pub struct SRAM_DATA_READY_READ_VALUE {
+            raw: u32,
+        }
+
+        impl SRAM_DATA_READY_READ_VALUE {
+            pub fn new() -> Self {
+                Self { raw: 0 }
+            }
+
+            #[inline(always)]
+            pub fn from_raw(raw: u32) -> Self {
+                Self { raw }
+            }
+
+            #[inline(always)]
+            pub fn to_raw(&self) -> u32 {
+                self.raw
+            }
+
+            pub fn sram_ready(&self) -> SRAM_READY_FIELD {
+                let raw = self.raw;
+                SRAM_READY_FIELD::from_value((raw & 0x00000001) >> 0)
+            }
+
+            pub fn set_sram_ready(&mut self, value: SRAM_READY_FIELD) -> &mut Self {
+                let value = value.to_value();
+                let old_raw = self.raw;
+                self.raw = (old_raw & !0x00000001) | (value << 0);
+                self
+            }
+
+            pub fn set_sram_ready_with<F: Fn(&mut SRAM_READY_FIELD) -> &mut SRAM_READY_FIELD>(
+                &mut self,
+                f: F,
+            ) -> &mut Self {
+                let mut value = self.sram_ready();
+                f(&mut value);
+                self.set_sram_ready(value)
+            }
+        }
+
+        enum_def_with_unknown!(#[allow(non_camel_case_types)] SRAM_READY_FIELD u32 =>
+                        // DMA is busy
+                        Busy = 0,
+        // DMA is idle
+                        Idle = 1
+
+                    );
+
+        impl SRAM_READY_FIELD {
+            pub fn is_busy(&self) -> bool {
+                *self == Self::Busy
+            }
+
+            pub fn set_busy(&mut self) -> &mut Self {
+                *self = Self::Busy;
+                self
+            }
+
+            pub fn is_idle(&self) -> bool {
+                *self == Self::Idle
+            }
+
+            pub fn set_idle(&mut self) -> &mut Self {
+                *self = Self::Idle;
                 self
             }
         }

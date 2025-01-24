@@ -13,6 +13,8 @@ message PCBProcessorConfig {
     IsolationRoutingProcessorConfig mask_removal = 4;
 
     IsolationRoutingProcessorConfig paste_stencil = 5;
+
+    float forced_hole_diameter = 6;
 }
 
 message IsolationRoutingProcessorConfig {
@@ -61,6 +63,10 @@ message IsolationRoutingProcessorConfig {
     // Globally safe Z height at which we can travel without hitting anything on the entire machine.
     float clearance_z = 15;
 
+    // Number of times to run each pass.
+    uint32 multiples = 16;
+
+    float erosion = 17;
 }
 
 message DrillProcessorConfig {

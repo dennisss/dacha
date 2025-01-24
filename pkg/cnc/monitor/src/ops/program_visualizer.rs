@@ -266,11 +266,14 @@ impl ProgramVisualizer {
             // TODO: Also allow going back up but cutting using a different tool.
             // TODO: Handle coordinate system changes.
             let is_cut = {
-                if let Some(current_layer) = &self.current_layer {
-                    end_position.z() <= current_layer.proto.z() + 0.01
-                } else {
-                    end_position.z() < 0.0
-                }
+                // NOTE: We can't trivially compare to previous layers since we need to see if
+                // material was actually cleared at the same location on the previous layer.
+
+                // if let Some(current_layer) = &self.current_layer {
+                //     end_position.z() <= current_layer.proto.z() + 0.01
+                // } else {
+                end_position.z() < 0.0
+                // }
             };
 
             if !is_cut {

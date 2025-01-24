@@ -8,7 +8,7 @@
   <version>1</version>
   <description>nRF52833 reference description for radio MCU with ARM 32-bit Cortex-M4 Microcontroller </description>
   <licenseText>
-Copyright (c) 2010 - 2022, Nordic Semiconductor ASA All rights reserved.\n
+Copyright (c) 2010 - 2025, Nordic Semiconductor ASA All rights reserved.\n
 \n
 SPDX-License-Identifier: BSD-3-Clause\n
 \n
@@ -52,7 +52,7 @@ POSSIBILITY OF SUCH DAMAGE.\n
     <nvicPrioBits>3</nvicPrioBits>
     <vendorSystickConfig>0</vendorSystickConfig>
   </cpu>
-  <headerSystemFilename>system_nrf52833</headerSystemFilename>
+  <headerSystemFilename>system_nrf52</headerSystemFilename>
   <headerDefinitionsPrefix>NRF_</headerDefinitionsPrefix>
   <vendorExtensions>
     <ExampleStackSize>2048</ExampleStackSize>

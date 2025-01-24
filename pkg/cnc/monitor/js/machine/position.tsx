@@ -474,6 +474,8 @@ export class PositionBox extends React.Component<PositionBoxProps> {
             let layer = preview.layers[layer_i];
             let layer_image = preview_data.data.layer_images[layer_i];
 
+            let work_offset = this._get_work_offset(layer.coordinate_system || '') || { x: 0, y: 0 };
+
             let cache_key = preview_data.file_id + ':' + preview_data.config_key + ':' + preview_data.revision + ':' + layer_i;
 
             let image = this._image_cache.get(cache_key);
@@ -486,8 +488,8 @@ export class PositionBox extends React.Component<PositionBoxProps> {
                 kind: EntityKind.Image,
                 image: image,
                 rect: {
-                    x: layer.image.left || 0,
-                    y: layer.image.bottom || 0,
+                    x: work_offset.x + (layer.image.left || 0),
+                    y: work_offset.y + (layer.image.bottom || 0),
                     width: layer.image.width || 0,
                     height: layer.image.height || 0
                 }

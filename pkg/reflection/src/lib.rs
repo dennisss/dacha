@@ -1,9 +1,13 @@
-extern crate common;
+extern crate base_error;
 
+#[cfg(feature = "alloc")]
 mod parser;
+#[cfg(feature = "alloc")]
 mod serializer;
 
+#[cfg(feature = "alloc")]
 pub use parser::*;
+#[cfg(feature = "alloc")]
 pub use serializer::*;
 
 pub trait Reflect {

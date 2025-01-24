@@ -100,6 +100,12 @@ pub async fn process_pcb(options: &PCBProcessorOptions) -> Result<String> {
         }
     };
 
+    if options.config.forced_hole_diameter() != 0.0 {
+        for hole in &mut drill_holes {
+            hole.diameter = options.config.forced_hole_diameter();
+        }
+    }
+
     // Finding the path bounding box.
     // NOTE: This doesn't factor in the diameter of the cutting tools.
     let mut bbox_builder = BoundingBoxBuilder::new();

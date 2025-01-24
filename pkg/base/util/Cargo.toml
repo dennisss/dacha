@@ -3,9 +3,9 @@ name = "base_util"
 version = "0.0.0"
 
 [dependencies]
-base_error = { path = "../error" }
+base_error = { path = "../error", default-features = false }
 
 [features]
 default = ["std"]
-alloc = []
-std = ["alloc"]
+alloc = ["base_error/alloc"]
+std = ["alloc", "base_error/std"]

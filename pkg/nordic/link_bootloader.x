@@ -5,6 +5,7 @@ MEMORY
     FLASH : ORIGIN = 0x00000000, LENGTH = 28K
     RAM : ORIGIN = 0x20000000, LENGTH = 256K
     PSELRESET : ORIGIN = 0x10001200, LENGTH = 8
+    APPROTECT : ORIGIN = 0x10001208, LENGTH = 4
     REGOUT0 : ORIGIN = 0x10001304, LENGTH = 4
 }
 
@@ -15,6 +16,7 @@ PHDRS
     text PT_LOAD;
     data PT_LOAD;
     pselreset PT_LOAD;
+    approtect PT_LOAD;
     regout0 PT_LOAD;
 }
 
@@ -71,6 +73,11 @@ SECTIONS
         LONG(18)
         LONG(18)
     } > PSELRESET :pselreset
+
+    .approtect :
+    {
+        LONG(4294967130)
+    } > APPROTECT :approtect
 
     .regout0 :
     {

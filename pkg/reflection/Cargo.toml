@@ -3,4 +3,9 @@ name = "reflection"
 version = "0.1.0"
 
 [dependencies]
-common = { path = "../common" }
+base_error = { path = "../base/error", default-features = false }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["base_error/alloc"]
+std = ["base_error/std"]

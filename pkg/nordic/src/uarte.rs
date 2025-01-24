@@ -141,7 +141,7 @@ impl<'a> Drop for UARTEWrite<'a> {
 impl<'a> UARTEWrite<'a> {
     pub async fn wait(&mut self) {
         while self.writer.periph.events_endtx.read().is_notgenerated() {
-            executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
+            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
         }
         self.writer.periph.events_endtx.write_notgenerated();
         self.running = false;
@@ -164,7 +164,7 @@ impl<'a> UARTEWrite<'a> {
             // Clearing any other events that would immediately re-trigger an interrupt.
             self.writer.periph.events_endtx.write_notgenerated();
 
-            executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
+            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
         }
 
         self.writer.periph.events_txstopped.write_notgenerated();
@@ -266,7 +266,7 @@ impl<'a> UARTERead<'a> {
         // assert!(self.running);
 
         while self.reader.periph.events_endrx.read().is_notgenerated() {
-            executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
+            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
         }
         self.reader.periph.events_endrx.write_notgenerated();
         self.reader.periph.events_rxdrdy.write_notgenerated();
@@ -297,7 +297,7 @@ impl<'a> UARTERead<'a> {
             self.reader.periph.events_endrx.write_notgenerated();
 
             // TODO: Need a unique interrupt per peripheral type.
-            executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
+            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
         }
 
         self.reader.periph.events_endrx.write_notgenerated();

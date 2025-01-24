@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use base_error::*;
 use cam::{kicad::KicadPCBExport, process_pcb};
-use file::temp::TempDir;
+use file::{temp::TempDir, LocalPathBuf};
 use gerber::{
     excellon,
     graphics::{FillMode, GraphicsObject},
@@ -57,8 +57,19 @@ TODO: Wireless probing auto-suggest # of points based on x/y distance
 
 */
 
+#[derive(Args)]
+struct Args {
+    board_path: LocalPathBuf,
+    output_path: LocalPathBuf,
+
+    #[arg(default = 0.0)]
+    forced_hole_diameter: f32,
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+
     let mut config = cam_proto::cnc::PCBProcessorConfig::default();
     protobuf::text::parse_text_proto(
         "
@@ -87,13 +98,15 @@ async fn main() -> Result<()> {
             spindle_speed: 6000
             # Standard is 0.2 which is not enough force for well cured mask.
             cut_depth: 0.3
-            overlap_percentage: 0.2
+            overlap_percentage: 0.3
             travel_z: 1
             clearance_z: 10
             feedrate_z: 200
             feedrate_xy: 400
             rapid_feedrate: 1000
             inverted: true
+            erosion: 0.05
+            multiples: 2
         }
 
         paste_stencil {
@@ -139,16 +152,13 @@ async fn main() -> Result<()> {
         &mut config,
     )?;
 
+    config.set_forced_hole_diameter(args.forced_hole_diameter);
+
     // TODO: Verify all feedrates are non-zero. Verify all travel/clearance z
     // heights are non-zero
 
-    // let board_path =
-    // project_path!("pkg/cnc/boards/usb_power_switch/usb_power_switch.kicad_pcb");
-
-    let board_path = project_path!("doc/overhead/strip_dimmer/strip_dimmer.kicad_pcb");
-
     let tmp_dir = TempDir::create()?;
-    let export = KicadPCBExport::generate(&board_path, tmp_dir.path())?;
+    let export = KicadPCBExport::generate(&args.board_path, tmp_dir.path())?;
 
     let options = cam::PCBProcessorOptions {
         config,
@@ -173,9 +183,7 @@ async fn main() -> Result<()> {
 
     println!("Processing Time: {:?}", end - start);
 
-    file::write(project_path!("test.gcode"), &program).await?;
-    // println!("=====");
-    // println!("{}", program);
+    file::write(&args.output_path, &program).await?;
 
     Ok(())
 }

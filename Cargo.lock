@@ -1252,6 +1252,7 @@ dependencies = [
  "elf",
  "executor",
  "file",
+ "gdb",
  "macros",
  "peripherals",
  "uf2",
@@ -1430,6 +1431,22 @@ dependencies = [
  "file",
  "gcode",
  "macros",
+]
+
+[[package]]
+name = "gdb"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "base_util",
+ "common",
+ "elf",
+ "executor",
+ "file",
+ "macros",
+ "peripherals",
+ "usb",
 ]
 
 [[package]]
@@ -2320,7 +2337,6 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
- "protobuf_compiler_proto",
 ]
 
 [[package]]
@@ -2924,7 +2940,7 @@ checksum = "41cc0f7e4d5d4544e8861606a285bb08d3e70712ccc7d2b84d7c0ccfaf4b05ce"
 name = "reflection"
 version = "0.1.0"
 dependencies = [
- "common",
+ "base_error",
 ]
 
 [[package]]

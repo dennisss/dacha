@@ -1,7 +1,7 @@
 use core::mem::transmute;
 
-use executor::interrupts::wait_for_irq;
 use common::register::{RegisterRead, RegisterWrite};
+use executor::interrupts::wait_for_irq;
 use peripherals::raw::spim0::SPIM0;
 use peripherals::raw::PinLevel;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};
@@ -109,7 +109,7 @@ impl SPIHost {
         transfer.running = true;
 
         while transfer.periph.events_end.read().is_notgenerated() {
-            wait_for_irq(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0).await;
+            wait_for_irq(Interrupt::SPI0_SPIM0_SPIS0_TWI0_TWIM0_TWIS0).await;
         }
 
         transfer.periph.events_end.write_notgenerated();

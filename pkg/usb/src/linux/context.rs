@@ -464,6 +464,13 @@ impl DeviceEntry {
                 continue;
             }
 
+            let interface_num = entry
+                .name()
+                .rsplit_once('.')
+                .ok_or_else(|| err_msg("Interface directory doesn't end in interface number"))?
+                .1
+                .parse::<usize>()?;
+
             let iface_dir = self.sysfs_dir.join(entry.name());
 
             for entry in file::read_dir(&iface_dir)? {
@@ -476,6 +483,7 @@ impl DeviceEntry {
                         out.push(DriverDevice {
                             path: format!("/dev/{}", entry.name()).into(),
                             typ: DriverDeviceType::TTY,
+                            interface_num,
                         });
                     }
                 } else if entry.name().starts_with("tty") {
@@ -484,18 +492,21 @@ impl DeviceEntry {
                     out.push(DriverDevice {
                         path: format!("/dev/{}", entry.name()).into(),
                         typ: DriverDeviceType::TTY,
+                        interface_num,
                     });
                 } else if entry.name() == "video4linux" {
                     for entry in file::read_dir(&path)? {
                         out.push(DriverDevice {
                             path: format!("/dev/{}", entry.name()).into(),
                             typ: DriverDeviceType::V4L2,
+                            interface_num,
                         });
                     }
                 } else if entry.name().starts_with("media") {
                     out.push(DriverDevice {
                         path: format!("/dev/{}", entry.name()).into(),
                         typ: DriverDeviceType::Media,
+                        interface_num,
                     });
                 } else if entry.name() == "sound" {
                     // ALSA adds a folder structure like:
@@ -514,11 +525,13 @@ impl DeviceEntry {
                                 out.push(DriverDevice {
                                     path: format!("/dev/snd/{}", entry.name()).into(),
                                     typ: DriverDeviceType::ALSA_CONTROL,
+                                    interface_num,
                                 });
                             } else if entry.name().starts_with("pcm") {
                                 out.push(DriverDevice {
                                     path: format!("/dev/snd/{}", entry.name()).into(),
                                     typ: DriverDeviceType::ALSA_PCM,
+                                    interface_num,
                                 });
                             }
                         }
@@ -560,6 +573,8 @@ pub struct DriverDevice {
     pub path: LocalPathBuf,
 
     pub typ: DriverDeviceType,
+
+    pub interface_num: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

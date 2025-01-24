@@ -331,6 +331,7 @@ pub enum RegisterAccess {
     WriteOnly,
     ReadWrite,
     ReadWriteOnce,
+    WriteOnce,
 }
 
 impl RegisterAccess {
@@ -341,6 +342,7 @@ impl RegisterAccess {
             "write-only" => Self::WriteOnly,
             "read-write" => Self::ReadWrite,
             "read-writeonce" => Self::ReadWriteOnce,
+            "writeonce" => Self::WriteOnce,
             _ => {
                 return Err(format_err!("Unknown register access: {}", value));
             }

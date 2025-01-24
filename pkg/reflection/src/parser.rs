@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::errors::*;
+use base_error::*;
 
 pub trait ParseFrom<'data> {
     fn parse_from<Input: ValueReader<'data>>(input: Input) -> Result<Self>

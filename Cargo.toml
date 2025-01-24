@@ -125,6 +125,7 @@ members = [
 	"pkg/protobuf/bench",
 	"pkg/peripherals/flasher",
 	"pkg/peripherals/flasher/uf2",
+	"pkg/peripherals/flasher/gdb",
 	"pkg/builder/skylark",
 	"pkg/builder/linker",
 	"pkg/logging",

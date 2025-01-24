@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::errors::*;
+use base_error::*;
 
 use crate::parser::PrimitiveValue;
 

@@ -11,7 +11,7 @@ rule_defaults {
         profile: "release"
         no_default_features: true
         target: "thumbv7em-none-eabihf"
-        rustflags: "-C link-arg=-Tpkg/nordic/link_bootloader.x"
+        rustflags: "-C link-arg=-Tpkg/nordic/link_bootloader.x -C opt-level=s"
         cfg: ['target_label="nrf52840"', 'target_label="cortex_m"']
     }
 }

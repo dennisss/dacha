@@ -55,7 +55,12 @@ async fn main() -> Result<()> {
             println!("- sysfs path: {}", dev.sysfs_dir().as_str());
 
             for driver in dev.driver_devices().await? {
-                println!("- {:?}: {}", driver.typ, driver.path.as_str());
+                println!(
+                    "- {:?}: {} (Iface: {})",
+                    driver.typ,
+                    driver.path.as_str(),
+                    driver.interface_num
+                );
             }
         }
     }

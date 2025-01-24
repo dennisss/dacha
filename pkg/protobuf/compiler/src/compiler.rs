@@ -1428,6 +1428,7 @@ impl Compiler {
                 }}
             }}
 
+            #[cfg(feature = \"alloc\")]
             impl ReflectStatic for {name} {{
                 type Type = Self;
 

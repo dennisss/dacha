@@ -31,9 +31,9 @@ async fn main() -> Result<()> {
 
     let stub = MetricStub::new(channel);
 
-    let font_family = Rc::new(CanvasFontRenderer::new(
+    let font_family = Rc::new(CanvasFontRenderer::new(Arc::new(
         OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?,
-    ));
+    )));
 
     let root_el = ui::Element::from(MetricViewer {
         font_family,

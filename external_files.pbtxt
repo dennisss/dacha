@@ -1135,6 +1135,51 @@ files: [
         sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
     },
     {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cable-chain-clip.stl"
+        size: 592884
+        sha256_sum: "684df1e47a9ae4bcc9285388aa7f3ecbd8330aab1e4d4e0eef83e0fab6820c5f"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed.step"
+        size: 193353
+        sha256_sum: "053240f6903a5397a521ff469c910a5be8d4621ca0f2f8f8b8b1b423810aba04"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/floor-cover.stl"
+        size: 202884
+        sha256_sum: "3483c7f8894870c05f3866dd6304fb48d8c03d98617e74be347e65887969b341"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/z-nut-bracket.stl"
+        size: 231784
+        sha256_sum: "9300f5842a177526c5e24e8dc8efd946b7eb68e6f4bbde426ce115a781f3bb91"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/dual_pane/side-panel-bottom.dxf"
+        size: 93915
+        sha256_sum: "69334ec42e085e21aff964e678987508af2fffb28040f212fa002ff862586bdf"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/dual_pane/side-panel-top.dxf"
+        size: 97825
+        sha256_sum: "e9d9f1d847f2907ec325cf7cb031b47f8257921901df6c93459dc375c8e85291"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/mag_filament/guidler-solid.stl"
+        size: 2841384
+        sha256_sum: "fdafde7663c273d92c43f20081d887eb83d4ba5397190317c411ad90ae090271"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/mag_filament/guidler.stl"
+        size: 2913484
+        sha256_sum: "72fb175bcec7070a47f6ed6cad2aa93509617373d5cac18778db5fff871e6823"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/mag_filament/motorplate.stl"
+        size: 875784
+        sha256_sum: "0616c5a24ec3533c448964af49a03a678cff8e3ae60a824cf05c05fefd1d22da"
+    },
+    {
         path: "pkg/fan_controller/board-r3/plot/board-B_Cu.gbl"
         size: 51227
         sha256_sum: "289d0b48407b3c050b2f7e1f72eebf1605ce67262871c4e35d09ff631a25bf15"
@@ -1300,21 +1345,6 @@ files: [
         sha256_sum: "283018c98a4e3acf6d27ae073bef06368c30e6f559a052c0d521c3a9e42b62be"
     },
     {
-        path: "pkg/peripherals/devices/ptouch/references/cv_pth500p700e500_eng_raster_111.pdf"
-        size: 924840
-        sha256_sum: "cdcde44b2d7e21bc81f5c16a7f161b0c485326175107b0f4d9ac3e3429b08388"
-    },
-    {
-        path: "pkg/peripherals/devices/ptouch/references/ptp700_usaeng_soft_0.pdf"
-        size: 1243637
-        sha256_sum: "240c75c278f4c52f669c132a04d265b9f27b9f8a71c8d430f45dce1d30fb56d4"
-    },
-    {
-        path: "pkg/peripherals/devices/ptouch/references/ptp700_usaeng_usr_lad095001.pdf"
-        size: 1553030
-        sha256_sum: "fb89336192452f4e6fa24d771d36df4baf93a5e208ad3086e8d9b77f531252b3"
-    },
-    {
         path: "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode"
         size: 4381217
         sha256_sum: "3a0c6f22522945463db480f5c90c5db50dabd439612b25ccd55a607c4b44de9f"
@@ -1403,5 +1433,175 @@ files: [
         path: "testdata/video/derived/clock-5s-multi-seg-independent-fragmented.mp4"
         size: 3957918
         sha256_sum: "b15bcb224575c17c5515fdf7c6a9b0ac3de1f5b485101db31c23b056680e56ac"
+    },
+    {
+        path: "third_party/brother/cv_pth500p700e500_eng_raster_111.pdf"
+        size: 924840
+        sha256_sum: "cdcde44b2d7e21bc81f5c16a7f161b0c485326175107b0f4d9ac3e3429b08388"
+    },
+    {
+        path: "third_party/brother/ptp700_usaeng_soft_0.pdf"
+        size: 1243637
+        sha256_sum: "240c75c278f4c52f669c132a04d265b9f27b9f8a71c8d430f45dce1d30fb56d4"
+    },
+    {
+        path: "third_party/brother/ptp700_usaeng_usr_lad095001.pdf"
+        size: 1553030
+        sha256_sum: "fb89336192452f4e6fa24d771d36df4baf93a5e208ad3086e8d9b77f531252b3"
+    },
+    {
+        path: "third_party/noctua/Noctua_PWM_specifications_white_paper.pdf"
+        size: 699708
+        sha256_sum: "a0817e99540ba4e9319381902ba16443847a08474b0fc5306b1543675abf34a7"
+    },
+    {
+        path: "third_party/voron_0/better_guidler/848709-voron-v0-0-02-v02-improved-guidler-27b05244-b2f2-43a1-97c9-f4d2a1c4d633.pdf"
+        size: 276183
+        sha256_sum: "8907d2916b3702a451171e0eea9a3671cdc628f233d639f63e09b863d2e2a774"
+    },
+    {
+        path: "third_party/voron_0/better_guidler/v02-guidler-v4.step"
+        size: 353982
+        sha256_sum: "b8d299df87f385192f6313aff9efa09950de366d246595f0c4ed0034f993d7c8"
+    },
+    {
+        path: "third_party/voron_0/better_guidler/v02-guidler-v4.stl"
+        size: 470484
+        sha256_sum: "8a432c6703d5464ed7eb5f3a8b734f707602137e0c15737494c195d76bcee673"
+    },
+    {
+        path: "third_party/voron_0/filter/500513-voron-v0-tiny-recirculating-carbon-filter-mfnano-remix-2153640e-9702-43db-9c91-aa663e3acfa5.pdf"
+        size: 417759
+        sha256_sum: "6d64056d3083c012d960f766c23c188a8e49bef2eee2b0e490d215a5ab114811"
+    },
+    {
+        path: "third_party/voron_0/filter/MFNano_Remix_Cartridge_Body.stl"
+        size: 2745384
+        sha256_sum: "3c2f9cd8a322021dee9189c18f9d31dc8d317d364bb174607cc2a02cfa42bf0b"
+    },
+    {
+        path: "third_party/voron_0/filter/MFNano_Remix_Plenum_Body.stl"
+        size: 506884
+        sha256_sum: "34dd2b5246ea05958fac3824f4d13df1ac8faebcbf622f177d28bc9bc4be54a0"
+    },
+    {
+        path: "third_party/voron_0/filter/[a]_MFNano_Remix_Cartridge_Lid.stl"
+        size: 164884
+        sha256_sum: "fc4b47346598a2ab5d6e6fbc707c3e2513d786503d3db1fab9f6e175616bff10"
+    },
+    {
+        path: "third_party/voron_0/filter/[a]_MFNano_Remix_Cartridge_Lid_Multibody_Logo.stl"
+        size: 299284
+        sha256_sum: "4abce067fa49eaaaaf4e64b37a14715b600bf083e55dc34d1e512eb509d4a83d"
+    },
+    {
+        path: "third_party/voron_0/filter/[a]_MFNano_Remix_MagClip_Body_x2.stl"
+        size: 106884
+        sha256_sum: "d8bba148136de66bea572d711afce6e85670b7457716cca61d959fd4e823cfab"
+    },
+    {
+        path: "third_party/voron_0/filter/[a]_MFNano_Remix_Plenum_Lid.stl"
+        size: 248584
+        sha256_sum: "acf174445f41056e871a0779353d4ca6c33d7f65b2a747c9d13d2460b9f28892"
+    },
+    {
+        path: "third_party/voron_0/matchstick_diffusers/[c]_diffuser_x2.stl"
+        size: 5084
+        sha256_sum: "5f97f539153604e53ea19573d08ea41f4f54efabc6ca1ebc3ad010b35c5e986c"
+    },
+    {
+        path: "third_party/voron_0/matchstick_diffusers/bottom_mount_clip_x4.stl"
+        size: 57784
+        sha256_sum: "792405ae14f8980a3ad6c1c627b3e69d81b8d0f24f18c2ae8d72290e5c5159b7"
+    },
+    {
+        path: "third_party/voron_0/matchstick_diffusers/main_body_daylight_A.stl"
+        size: 26284
+        sha256_sum: "3c4d15ab1182b2c83a08a42b6b66986bfec8783ded981af5d420a9679147327b"
+    },
+    {
+        path: "third_party/voron_0/matchstick_diffusers/main_body_daylight_B.stl"
+        size: 26284
+        sha256_sum: "d8f2274c687142a81d8f1bc2c410e1eaf3cd2809a12f7ccd65a59ed515d9579f"
+    },
+    {
+        path: "third_party/voron_0/matchstick_diffusers/main_body_rainbow_A.stl"
+        size: 24884
+        sha256_sum: "968c0861924a821e62cf4c50982bfee5a1cd07e2af69738dbfadca16c4cd030c"
+    },
+    {
+        path: "third_party/voron_0/matchstick_diffusers/main_body_rainbow_B.stl"
+        size: 24884
+        sha256_sum: "459699aaa027ab0327d9d084750428f37db3d86419e85b83375dd9eec4664e55"
+    },
+    {
+        path: "third_party/voron_0/matchstick_diffusers/top_mount_clip_x4.stl"
+        size: 63884
+        sha256_sum: "3971d3dc5a203bff51f0de59e0f01ddaf05fb68cc1ca3d9fc943d472e318d93d"
+    },
+    {
+        path: "third_party/voron_0/midbody_ecas/Midbody.3MF"
+        size: 818877
+        sha256_sum: "0f50a54b5840a412be4a820fe1a28610ed4d77eb9b7d324c213a1dc68e424ac6"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_front/418525-headless-skirt-add-on-for-voron-02-v02-skirt-set-mesh-only-16dcae60-7ae0-492a-9cf4-20ce8001db68.pdf"
+        size: 403694
+        sha256_sum: "2aa991771b3252502ce6ce640280bb6e08ee8a55393772f6ff59b145fefc04ac"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_front/V0.2_Headless_Skirt_Mesh.STL"
+        size: 8684
+        sha256_sum: "6c6a90e865474bf51e04ee17b3a1f19c4f0b0e89228710bb2669522441187355"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_only/369688-voron-02-v02-skirt-set-mesh-only-c1f97472-2f4b-456b-b322-83f935a2ce61.pdf"
+        size: 349414
+        sha256_sum: "198d9b1f653f2805ea56d0752676362811dcb5f73fe208f465c2e700897751f5"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_only/V0.2_Front_Skirt_Mesh.3mf"
+        size: 5779
+        sha256_sum: "a31aff20795395b76d99591dfffc685562eef2c5c9fbd7a6400f67bba6d7fbd6"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_only/V0.2_Front_Skirt_Mesh.stl"
+        size: 92321
+        sha256_sum: "ab3d5c239e2811af3d1ce3621ffd2a8f6a32c868c5b911fa09f0d82b38b09e92"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_only/V0.2_Rear_Skirt_Mesh.3mf"
+        size: 4917
+        sha256_sum: "d56c69edd0ca765c020a0a49a6f06415262b63fad2ca531c559d268f84bd0e38"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_only/V0.2_Rear_Skirt_Mesh.stl"
+        size: 73304
+        sha256_sum: "b5ee2270fd2b8c7b665431c904dad1db0127495f636fe72abbca638628a6bb29"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_only/V0.2_Side_Skirt_Mesh.3mf"
+        size: 3836
+        sha256_sum: "f7592c5ef7ebda477ff3332dc7a4cd54459238f3bdc42d71db0eb8f4f81a35e4"
+    },
+    {
+        path: "third_party/voron_0/skirt_mesh_only/V0.2_Side_Skirt_Mesh.stl"
+        size: 50471
+        sha256_sum: "613681b461df325409eed646279525ed5f07a9828fff30522779bf260f1f01cc"
+    },
+    {
+        path: "third_party/voron_0/skirt_rear_keystone/533549-voron-02r1-rear-skirt-wkeystone-35953134-2237-4521-ac03-a810edf31f83.pdf"
+        size: 263027
+        sha256_sum: "42ed095aaa6a7a7793bdcc39c125b54319d9d21a6b6e158086ee382cfc1c92bf"
+    },
+    {
+        path: "third_party/voron_0/skirt_rear_keystone/Voron 02r1 Rear Skirt.3mf"
+        size: 283953
+        sha256_sum: "8151b023a2ad84046a4c42362270141a379e8550473c8323ffe97362edbc22e3"
+    },
+    {
+        path: "third_party/voron_0/skirt_rear_keystone/voron-02r1-rear-skirt.step"
+        size: 1458577
+        sha256_sum: "4c2a4e0ec26984d15345bb3a315fb2fca846a95b9e73f010b926b3b712077cb9"
     }
 ]

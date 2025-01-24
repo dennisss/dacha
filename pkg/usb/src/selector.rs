@@ -9,7 +9,7 @@ regexp!(DEVICE_ID_PATTERN => "^([0-9a-fA-F]{4}):([0-9a-fA-F]{4})?$");
 
 regexp!(DEVICE_NUM_PATTERN => "^([0-9]+).([0-9]+)$");
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DeviceSelector {
     pub vendor_id: Option<u16>,
     pub product_id: Option<u16>,
