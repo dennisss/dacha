@@ -6,10 +6,11 @@ use nordic_wire::usb_descriptors::*;
 use usb::descriptors::{SetupPacket, StandardRequestType};
 use usb::hid::HIDDescriptorType;
 
+use crate::controller::PeripheralsController;
 use crate::keyboard::state::*;
 use crate::protocol::ProtocolUSBHandler;
 use crate::radio_socket::RadioSocket;
-use crate::timer::Timer;
+use crate::rtc::RTC;
 use crate::usb::controller::*;
 use crate::usb::handler::{USBDeviceHandler, USBError};
 
@@ -64,10 +65,10 @@ impl KeyboardUSBHandler {
     pub fn new(
         state: &'static AsyncMutex<KeyboardState>,
         radio_socket: &'static RadioSocket,
-        timer: Timer,
+        rtc: RTC,
     ) -> Self {
         let inner_handler =
-            ProtocolUSBHandler::new(KEYBOARD_USB_DESCRIPTORS, radio_socket, timer.clone());
+            ProtocolUSBHandler::new(KEYBOARD_USB_DESCRIPTORS, radio_socket, None, rtc.clone());
 
         Self {
             state,

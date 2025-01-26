@@ -474,6 +474,7 @@ impl Compiler {
 
             lines.add(format!(
                 r#"
+                #[cfg(feature = "alloc")]
                 impl ReflectStatic for {name} {{
                     type Type = Self;
 
@@ -575,7 +576,8 @@ impl Compiler {
         lines.nl();
 
         lines.add(format!(
-            "impl {}::reflection::Reflect for {} {{",
+            "#[cfg(feature = \"alloc\")]
+             impl {}::reflection::Reflect for {} {{",
             self.options.runtime_package, fullname
         ));
         lines.indented(|lines| {

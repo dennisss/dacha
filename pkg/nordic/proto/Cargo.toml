@@ -10,11 +10,12 @@ path = "lib.rs"
 common = { path = "../../common", default-features = false }
 protobuf = { path = "../../protobuf", default-features = false }
 macros = { path = "../../macros" }
+protobuf_compiler_proto = { path = "../../protobuf/compiler/proto", optional = true }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../protobuf/compiler" }
 
 [features]
 default = ["std"]
-std = ["alloc", "common/std", "protobuf/std"]
+std = ["alloc", "common/std", "protobuf/std", "protobuf_compiler_proto"]
 alloc = ["common/alloc", "protobuf/alloc"]

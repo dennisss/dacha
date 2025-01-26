@@ -39,15 +39,16 @@ use common::list::Appendable;
 use executor::channel::Channel;
 use executor::futures::*;
 use logging::Logger;
-use nordic_proto::nordic::NetworkConfig;
+use nordic_proto::nordic::{NetworkConfig, PeripheralRequest};
 use nordic_wire::packet::PacketBuffer;
 use nordic_wire::request_type::ProtocolRequestType;
 use protobuf::{Message, StaticMessage};
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 
+use crate::controller::PeripheralsController;
 use crate::radio::Radio;
 use crate::radio_socket::RadioSocket;
-use crate::timer::Timer;
+use crate::rtc::RTC;
 use crate::usb::controller::{
     USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest,
 };
@@ -60,7 +61,8 @@ pub trait ProtocolUSBDescriptorSet =
 pub struct ProtocolUSBHandler<D> {
     descriptors: D,
     radio_socket: &'static RadioSocket,
-    timer: Timer,
+    peripherals_controller: Option<&'static PeripheralsController>,
+    rtc: RTC,
     packet_buf: PacketBuffer,
 }
 
@@ -108,11 +110,17 @@ impl<D: ProtocolUSBDescriptorSet> USBDeviceHandler for ProtocolUSBHandler<D> {
 }
 
 impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
-    pub fn new(descriptors: D, radio_socket: &'static RadioSocket, timer: Timer) -> Self {
+    pub fn new(
+        descriptors: D,
+        radio_socket: &'static RadioSocket,
+        peripherals_controller: Option<&'static PeripheralsController>,
+        rtc: RTC,
+    ) -> Self {
         Self {
             descriptors,
             radio_socket,
-            timer,
+            peripherals_controller,
+            rtc,
             packet_buf: PacketBuffer::new(),
         }
     }
@@ -165,6 +173,23 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 log!("=> DONE");
 
                 return Ok(());
+            } else if setup.bRequest == ProtocolRequestType::PeripheralRequest.to_value() {
+                // TODO: Just re-use the same buffer as used for the packet?
+                let mut raw_proto = [0u8; 256];
+                let n = req.read(&mut raw_proto).await?;
+
+                let proto = match PeripheralRequest::parse(&raw_proto[0..n]) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log!("PARSE FAIL");
+                        return Ok(());
+                    }
+                };
+
+                if let Some(controller) = &self.peripherals_controller {
+                    let _ = controller.execute(&proto).await;
+                    return Ok(());
+                }
             }
         }
 
@@ -178,7 +203,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 req.read(&mut []).await?;
 
                 // Give the application enough time to notice the response.
-                self.timer.wait_ms(10).await;
+                self.rtc.wait_ms(10).await;
 
                 crate::reset::reset_to_bootloader();
             }
@@ -199,6 +224,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
         {
             if setup.bRequest == ProtocolRequestType::Receive.to_value() {
                 // log!("USB RX");
+                // TODO: Don't dequeue until the host has ACK'ed the response?
                 let has_data = self.radio_socket.dequeue_rx(&mut self.packet_buf).await;
                 res.write(if has_data {
                     self.packet_buf.as_bytes()
@@ -247,6 +273,21 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
 
                 res.write(&buffer[0..n]).await?;
                 return Ok(());
+            } else if setup.bRequest == ProtocolRequestType::PeripheralResponse.to_value() {
+                let mut buffer = [0u8; 256];
+                if (setup.wLength as usize) < buffer.len() {
+                    res.stale();
+                    return Ok(());
+                }
+
+                // TODO: Don't consume unless the host ACKs the data?
+                if let Some(controller) = self.peripherals_controller {
+                    // TODO: Add the length prefix to the buffer so that we can handle empty protos.
+                    let n = controller.read_response(&mut buffer).await.unwrap_or(0);
+
+                    res.write(&buffer[0..n]).await?;
+                    return Ok(());
+                }
             }
         }
 
@@ -260,8 +301,14 @@ pub async fn protocol_usb_thread_fn<D: ProtocolUSBDescriptorSet>(
     descriptors: D,
     mut usb: USBDeviceController,
     radio_socket: &'static RadioSocket,
-    timer: Timer,
+    peripherals_controller: Option<&'static PeripheralsController>,
+    rtc: RTC,
 ) {
-    usb.run(ProtocolUSBHandler::new(descriptors, radio_socket, timer))
-        .await;
+    usb.run(ProtocolUSBHandler::new(
+        descriptors,
+        radio_socket,
+        peripherals_controller,
+        rtc,
+    ))
+    .await;
 }

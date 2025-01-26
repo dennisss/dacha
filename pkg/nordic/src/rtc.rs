@@ -18,11 +18,11 @@ const MIN_WAIT_TICKS: u32 = 3;
 
 // 3.0601628e-5
 
-pub struct Timer {
+pub struct RTC {
     rtc0: RTC0,
 }
 
-impl Clone for Timer {
+impl Clone for RTC {
     fn clone(&self) -> Self {
         Self {
             // Timer::new() gurantees that the RTC will only be used by instances of 'Timer'.
@@ -33,7 +33,7 @@ impl Clone for Timer {
     }
 }
 
-impl Timer {
+impl RTC {
     const TIMER_LIMIT: u32 = 1 << 24;
 
     /// NOTE: This function assumes that RTC0 is currently stopped.
@@ -65,8 +65,8 @@ impl Timer {
 
     /// NOTE: This is only valid for 512 seconds after which point it will
     /// overflow.
-    pub fn now(&self) -> TimerInstant {
-        TimerInstant {
+    pub fn now(&self) -> RTCInstant {
+        RTCInstant {
             ticks: self.rtc0.counter.read(),
         }
     }
@@ -115,7 +115,7 @@ impl Timer {
         }
     }
 
-    pub async fn wait_until(&mut self, time: TimerInstant) {
+    pub async fn wait_until(&mut self, time: RTCInstant) {
         let start_ticks = self.rtc0.counter.read();
         let ticks = if time.ticks > start_ticks {
             time.ticks - start_ticks
@@ -161,13 +161,13 @@ impl Timer {
 }
 
 #[derive(Clone, Copy)]
-pub struct TimerInstant {
+pub struct RTCInstant {
     ticks: u32,
 }
 
-impl TimerInstant {
-    pub fn millis_since(&self, other: &TimerInstant) -> usize {
-        (Timer::duration(other.ticks, self.ticks) as usize * 1000) / 32768
+impl RTCInstant {
+    pub fn millis_since(&self, other: &RTCInstant) -> usize {
+        (RTC::duration(other.ticks, self.ticks) as usize * 1000) / 32768
     }
 
     pub fn zero() -> Self {

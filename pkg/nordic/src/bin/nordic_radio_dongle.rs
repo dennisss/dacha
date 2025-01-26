@@ -50,7 +50,7 @@ use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio::Radio;
 use nordic::radio_activity_led::setup_radio_activity_leds;
 use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
-use nordic::timer::Timer;
+use nordic::rtc::RTC;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
 use nordic_wire::usb_descriptors::*;
@@ -85,7 +85,7 @@ async fn main_thread_fn() {
     } else {
         gpio.pin(pins.P1_09)
     };
-    setup_radio_activity_leds(tx_pin, rx_pin, timer.clone(), &mut radio_controller);
+    setup_radio_activity_leds(tx_pin, rx_pin, rtc.clone(), &mut radio_controller);
 
     RadioControllerThread::start(radio_controller);
 
@@ -93,7 +93,8 @@ async fn main_thread_fn() {
         RADIO_DONGLE_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         &RADIO_SOCKET,
-        timer.clone(),
+        Some(peripheral_controller),
+        rtc.clone(),
     );
 }
 
@@ -103,7 +104,8 @@ define_thread!(
     descriptors: RadioDongleUSBDescriptors,
     usb: USBDeviceController,
     radio_socket: &'static RadioSocket,
-    timer: Timer
+    peripherals_controller: Option<&'static PeripheralsController>,
+    rtc: RTC
 );
 
 entry!(main);

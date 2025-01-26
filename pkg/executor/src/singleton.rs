@@ -1,5 +1,7 @@
 use crate::{lock, sync::AsyncMutex};
 
+/// A 'static' allocated value that needs to be dynamically initialized once
+/// (usually at the start of a main() function).
 pub struct Singleton<T> {
     value: AsyncMutex<Option<T>>,
 }

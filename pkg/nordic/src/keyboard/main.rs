@@ -16,7 +16,7 @@ use crate::keyboard::usb_handler::*;
 use crate::params::ParamsStorage;
 use crate::radio::Radio;
 use crate::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
-use crate::timer::Timer;
+use crate::rtc::RTC;
 use crate::usb::controller::USBDeviceController;
 use crate::usb::send_buffer::USBDeviceSendBuffer;
 
@@ -51,7 +51,7 @@ async fn main_thread_fn() {
     let mut peripherals = peripherals::raw::Peripherals::new();
     let mut pins = unsafe { crate::pins::PeripheralPins::new() };
 
-    let mut timer = Timer::new(peripherals.rtc0);
+    let mut rtc = RTC::new(peripherals.rtc0);
 
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
@@ -87,7 +87,7 @@ async fn main_thread_fn() {
 
     KeyboardUSBThread::start(
         usb_controller,
-        KeyboardUSBHandler::new(&STATE, &RADIO_SOCKET, timer.clone()),
+        KeyboardUSBHandler::new(&STATE, &RADIO_SOCKET, rtc.clone()),
     );
 
     log!("Started up!");
@@ -176,7 +176,7 @@ async fn main_thread_fn() {
 
     // Continously poll for key presses.
     loop {
-        timer.wait_ms(10).await;
+        rtc.wait_ms(10).await;
 
         let report = key_scanner.scan().await;
         if report.as_ref() != last_report.as_ref() {

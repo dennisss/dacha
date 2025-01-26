@@ -58,9 +58,9 @@ use nordic::gpio::*;
 use nordic::radio::Radio;
 use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
 use nordic::rng::Rng;
+use nordic::rtc::RTC;
 use nordic::spi::*;
 use nordic::temp::Temp;
-use nordic::timer::Timer;
 use nordic::tmc2130::TMC2130;
 use nordic::twim::TWIM;
 use nordic::uarte::UARTE;
@@ -259,7 +259,7 @@ async fn blinker_thread_fn() {
     let mut peripherals = peripherals::raw::Peripherals::new();
     let mut pins = unsafe { nordic::pins::PeripheralPins::new() };
 
-    let mut timer = Timer::new(peripherals.rtc0);
+    let mut timer = RTC::new(peripherals.rtc0);
 
     let temp = Temp::new(peripherals.temp);
 

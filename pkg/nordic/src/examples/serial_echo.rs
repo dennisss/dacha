@@ -1,6 +1,6 @@
 use executor::define_thread;
 
-use crate::timer::Timer;
+use crate::rtc::RTC;
 use crate::uarte::UARTE;
 
 use logging::num_to_slice;
@@ -11,14 +11,14 @@ define_thread!(
     SerialEcho,
     serial_echo_thread_fn,
     serial: UARTE,
-    timer: Timer
+    rtc: RTC
 );
-async fn serial_echo_thread_fn(serial: UARTE, mut timer: Timer) {
+async fn serial_echo_thread_fn(serial: UARTE, mut rtc: RTC) {
     let mut buf = [0u8; 64];
 
     let (mut reader, mut writer) = serial.split();
 
-    let mut timer2 = timer.clone();
+    let mut rtc2 = rtc.clone();
 
     loop {
         let mut read = reader.begin_read(&mut buf);
@@ -31,7 +31,7 @@ async fn serial_echo_thread_fn(serial: UARTE, mut timer: Timer) {
         loop {
             let e = race!(
                 executor::futures::map(read.wait(), |_| Event::DoneRead),
-                executor::futures::map(timer2.wait_ms(10), |_| Event::Timeout),
+                executor::futures::map(rtc2.wait_ms(10), |_| Event::Timeout),
             )
             .await;
 

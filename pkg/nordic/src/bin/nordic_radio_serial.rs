@@ -57,7 +57,7 @@ use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio::Radio;
 use nordic::radio_activity_led::setup_radio_activity_leds;
 use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
-use nordic::timer::Timer;
+use nordic::rtc::RTC;
 use nordic::twim::TWIM;
 use nordic::uarte::UARTEWriter;
 use nordic::uarte::UARTE;
@@ -75,9 +75,9 @@ define_thread!(
     ForwardingThread,
     forwarding_thread_fn,
     serial: UARTE,
-    timer: Timer
+    rtc: RTC
 );
-async fn forwarding_thread_fn(serial: UARTE, mut timer: Timer) {
+async fn forwarding_thread_fn(serial: UARTE, mut rtc: RTC) {
     enum Event {
         /// A remote packet has been received over the radio.
         RadioPacketAvailable,
@@ -103,7 +103,7 @@ async fn forwarding_thread_fn(serial: UARTE, mut timer: Timer) {
                 executor::futures::map(RADIO_SOCKET.wait_for_rx(), |_| Event::RadioPacketAvailable),
                 executor::futures::map(serial_read.wait(), |_| Event::SerialReceiveBufferFull),
                 // NOTE: It takes ~60ms at 9600 baud to fill up 64 bytes.
-                executor::futures::map(timer.wait_ms(200), |_| Event::Timeout),
+                executor::futures::map(rtc.wait_ms(200), |_| Event::Timeout),
             )
             .await;
 
@@ -165,10 +165,10 @@ async fn main_thread_fn() {
 
     let mut serial = UARTE::new(peripherals.uarte0, pins.P0_29, pins.P0_31, 9600);
 
-    let mut timer = Timer::new(peripherals.rtc0);
+    let mut rtc = RTC::new(peripherals.rtc0);
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
-    ForwardingThread::start(serial, timer.clone());
+    ForwardingThread::start(serial, rtc.clone());
 
     let params_storage = {
         PARAMS_STORAGE
@@ -202,7 +202,7 @@ async fn main_thread_fn() {
     } else {
         gpio.pin(pins.P0_08)
     };
-    setup_radio_activity_leds(tx_pin, rx_pin, timer.clone(), &mut radio_controller);
+    setup_radio_activity_leds(tx_pin, rx_pin, rtc.clone(), &mut radio_controller);
 
     RadioControllerThread::start(radio_controller);
 
@@ -210,7 +210,8 @@ async fn main_thread_fn() {
         RADIO_SERIAL_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         &RADIO_SOCKET,
-        timer.clone(),
+        None,
+        rtc.clone(),
     );
 }
 
@@ -220,7 +221,8 @@ define_thread!(
     descriptors: RadioSerialUSBDescriptors,
     usb: USBDeviceController,
     radio_socket: &'static RadioSocket,
-    timer: Timer
+    peripherals_controller: Option<&'static PeripheralsController>,
+    rtc: RTC
 );
 
 entry!(main);

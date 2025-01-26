@@ -359,6 +359,14 @@ impl<A: AsRef<[u8]> + AsMut<[u8]>> Reflect for FixedString<A> {
     }
 }
 
+impl<T> ReflectStatic for FixedString<T> {
+    type Type = str;
+
+    fn reflect_static_default() -> &'static Self::Type {
+        ""
+    }
+}
+
 // Used for 'bytes' types with the fixed_length option specified.
 impl<const LEN: usize> Reflect for FixedVec<u8, LEN> {
     fn reflect(&self) -> Reflection {

@@ -116,7 +116,7 @@ use nordic::bootloader::params::*;
 use nordic::config_storage::NetworkConfigStorage;
 use nordic::gpio::*;
 use nordic::reset::*;
-use nordic::timer::Timer;
+use nordic::rtc::RTC;
 use nordic::uarte::UARTE;
 use nordic::usb::aligned::Aligned;
 use nordic::usb::controller::USBDeviceControlRequest;
@@ -139,7 +139,7 @@ use usb::dfu::*;
 pub struct BootloaderUSBHandler {
     nvmc: NVMC,
 
-    timer: Timer,
+    rtc: RTC,
 
     /// Current value of the BootloaderParams proto loaded from flash.
     params: BootloaderParams,
@@ -238,10 +238,10 @@ impl USBDeviceHandler for BootloaderUSBHandler {
 }
 
 impl BootloaderUSBHandler {
-    pub fn new(params: BootloaderParams, nvmc: NVMC, timer: Timer) -> Self {
+    pub fn new(params: BootloaderParams, nvmc: NVMC, rtc: RTC) -> Self {
         Self {
             nvmc,
-            timer,
+            rtc,
             params,
             status_code: DFUStatusCode::OK,
             state: State::Idle,
@@ -269,7 +269,7 @@ impl BootloaderUSBHandler {
                 // TODO: Dedup this with the Manifestation code.
 
                 // Give the application enough time to notice the response.
-                self.timer.wait_ms(10).await;
+                self.rtc.wait_ms(10).await;
 
                 nordic::reset::reset_to_application();
 
@@ -534,7 +534,7 @@ impl BootloaderUSBHandler {
 
                 if let State::Manifesting = &self.state {
                     // Give the application enough time to notice the response.
-                    self.timer.wait_ms(10).await;
+                    self.rtc.wait_ms(10).await;
 
                     nordic::reset::reset_to_application();
                 }
@@ -559,7 +559,7 @@ async fn main_thread_fn(reason: EnterBootloaderReason, params: BootloaderParams)
     let mut peripherals = peripherals::raw::Peripherals::new();
     let mut pins = unsafe { nordic::pins::PeripheralPins::new() };
 
-    let mut timer = Timer::new(peripherals.rtc0);
+    let mut rtc = RTC::new(peripherals.rtc0);
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
     log!("Enter Bootloader!");
@@ -569,7 +569,7 @@ async fn main_thread_fn(reason: EnterBootloaderReason, params: BootloaderParams)
 
     let mut usb_controller = USBDeviceController::new(peripherals.usbd, peripherals.power);
     usb_controller
-        .run(BootloaderUSBHandler::new(params, peripherals.nvmc, timer))
+        .run(BootloaderUSBHandler::new(params, peripherals.nvmc, rtc))
         .await;
 
     // Never reached

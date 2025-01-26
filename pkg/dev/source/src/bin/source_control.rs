@@ -207,8 +207,24 @@ if git_entries.contains_key(file.path()) {
             None => continue,
         };
 
-        if git_entries.contains_key(rel_path.as_str()) {
+        // submodules are just tracked as a directory so we need to exclude everything
+        // in the directory.
+        {
+            let mut found = false;
+            let mut cur_path = Some(rel_path);
+            while let Some(p) = cur_path.take() {
+                // TODO: Apply the same normalization to the git index.
+                if git_entries.contains_key(p.as_str().strip_suffix("/").unwrap_or(p.as_str())) {
+                    found = true;
+                    break;
+                }
+
+                cur_path = p.parent();
+            }
+
+            if found {
             continue;
+            }
         }
 
         let meta = file::metadata(&path).await?;

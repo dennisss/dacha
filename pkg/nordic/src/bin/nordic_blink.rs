@@ -31,7 +31,7 @@ use core::arch::asm;
 use nordic::gpio::GPIO;
 use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio_socket::RadioSocket;
-use nordic::timer::Timer;
+use nordic::rtc::RTC;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
 use nordic_wire::usb_descriptors::*;
@@ -44,7 +44,7 @@ async fn blinker_thread_fn() {
     let mut peripherals = peripherals::raw::Peripherals::new();
     let mut pins = unsafe { nordic::pins::PeripheralPins::new() };
 
-    let mut timer = Timer::new(peripherals.rtc0);
+    let mut timer = RTC::new(peripherals.rtc0);
 
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
@@ -91,7 +91,8 @@ define_thread!(
     descriptors: BlinkUSBDescriptors,
     usb: USBDeviceController,
     radio_socket: &'static RadioSocket,
-    timer: Timer
+    peripherals_controller: Option<&'static PeripheralsController>,
+    rtc: RTC
 );
 
 entry!(main);

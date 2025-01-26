@@ -106,6 +106,10 @@ pub fn connect_pin<P: PeripheralPin>(pin: P, pin_select: &mut PinSelectRegister)
     });
 }
 
+pub fn disconnect_pin(pin_select: &mut PinSelectRegister) {
+    pin_select.write_with(|v| v.set_connect_with(|v| v.set_disconnected()));
+}
+
 pub struct PeripheralPinHandle {
     port: Port,
     pin: u8,

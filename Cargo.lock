@@ -2337,6 +2337,7 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
+ "protobuf_compiler_proto",
 ]
 
 [[package]]

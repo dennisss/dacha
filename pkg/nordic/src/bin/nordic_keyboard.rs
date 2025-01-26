@@ -52,7 +52,7 @@ use nordic::gpio::{GPIOPin, Resistor, GPIO};
 use nordic::protocol::ProtocolUSBHandler;
 use nordic::radio_socket::RadioSocket;
 use nordic::spi::*;
-use nordic::timer::Timer;
+use nordic::rtc::RTC;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
 use nordic::usb::controller::*;

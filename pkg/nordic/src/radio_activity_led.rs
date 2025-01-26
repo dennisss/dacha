@@ -2,7 +2,7 @@ use executor::channel::Channel;
 
 use crate::gpio::*;
 use crate::radio_socket::RadioController;
-use crate::timer::{Timer, TimerInstant};
+use crate::rtc::{RTCInstant, RTC};
 
 const LED_ON_OFF_TIME_MS: usize = 100;
 const ACTIVITY_TIMEOUT_MS: usize = 2 * LED_ON_OFF_TIME_MS;
@@ -21,12 +21,12 @@ static RX_EVENT: Channel<()> = Channel::new();
 pub fn setup_radio_activity_leds(
     tx_pin: GPIOPin,
     rx_pin: GPIOPin,
-    timer: Timer,
+    rtc: RTC,
     radio_controller: &mut RadioController,
 ) {
     radio_controller.set_tx_event(&TX_EVENT);
     radio_controller.set_rx_event(&RX_EVENT);
-    internal::RadioActivityLEDThread::start(tx_pin, rx_pin, timer)
+    internal::RadioActivityLEDThread::start(tx_pin, rx_pin, rtc)
 }
 
 mod internal {
@@ -37,18 +37,18 @@ mod internal {
         radio_activity_thread_fn,
         tx_pin: GPIOPin,
         rx_pin: GPIOPin,
-        timer: Timer
+        rtc: RTC
     );
-    async fn radio_activity_thread_fn(tx_pin: GPIOPin, rx_pin: GPIOPin, timer: Timer) {
+    async fn radio_activity_thread_fn(tx_pin: GPIOPin, rx_pin: GPIOPin, rtc: RTC) {
         race!(
-            run_single_led(tx_pin, &TX_EVENT, timer.clone()),
-            run_single_led(rx_pin, &RX_EVENT, timer.clone()),
+            run_single_led(tx_pin, &TX_EVENT, rtc.clone()),
+            run_single_led(rx_pin, &RX_EVENT, rtc.clone()),
         )
         .await;
     }
 }
 
-async fn run_single_led(mut led_pin: GPIOPin, event: &'static Channel<()>, mut timer: Timer) {
+async fn run_single_led(mut led_pin: GPIOPin, event: &'static Channel<()>, mut rtc: RTC) {
     led_pin
         .set_direction(PinDirection::Output)
         .write(PinLevel::High);
@@ -56,7 +56,7 @@ async fn run_single_led(mut led_pin: GPIOPin, event: &'static Channel<()>, mut t
     let mut last_time = None;
 
     loop {
-        let now = timer.now();
+        let now = rtc.now();
         if event.try_recv().await.is_some() {
             last_time = Some(now);
         } else if let Some(t) = &last_time {
@@ -66,7 +66,7 @@ async fn run_single_led(mut led_pin: GPIOPin, event: &'static Channel<()>, mut t
         }
 
         if last_time.is_some() {
-            if (now.millis_since(&TimerInstant::zero()) / LED_ON_OFF_TIME_MS) % 2 == 0 {
+            if (now.millis_since(&RTCInstant::zero()) / LED_ON_OFF_TIME_MS) % 2 == 0 {
                 led_pin.write(PinLevel::Low);
             } else {
                 led_pin.write(PinLevel::High);
@@ -75,6 +75,6 @@ async fn run_single_led(mut led_pin: GPIOPin, event: &'static Channel<()>, mut t
             led_pin.write(PinLevel::High);
         }
 
-        timer.wait_ms(50).await;
+        rtc.wait_ms(50).await;
     }
 }
