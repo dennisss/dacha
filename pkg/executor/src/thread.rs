@@ -6,6 +6,7 @@ use core::task::{Context, Poll, Waker};
 use crate::raw_waker::RAW_WAKER;
 
 /// Reference to the thread's polling function
+///
 /// TODO: Should be possible to optimize this down to only a single pointer to a
 /// 'fn() -> Poll<()>'
 #[derive(Clone, Copy)]
@@ -21,12 +22,18 @@ static mut CURRENT_THREAD: Option<ThreadReference> = None;
 
 ///
 pub struct Thread<Fut: 'static + Sized + Future<Output = ()>> {
+    // TODO: Should technically use a mutex for this?
     fut: Option<Fut>,
 }
 
 impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
     pub const fn new() -> Self {
         Self { fut: None }
+    }
+
+    #[inline(always)]
+    pub fn is_running(&self) -> bool {
+        self.fut.is_some()
     }
 
     #[inline(always)]
@@ -131,12 +138,19 @@ macro_rules! define_thread {
             };
 
             impl $name {
+                /// Starts executing the thread (immediately context switching to running the first poll() cycle of it).
+                ///
+                /// If the thread is already running, then the old future is destroyed before newly starting the thread.
                 pub fn start($($arg: $t,)*) {
                     unsafe { THREAD.start(move || -> ThreadFnFut { <() as ThreadFn>::start($($arg,)*) }) };
                 }
 
                 pub fn stop() {
                     unsafe { THREAD.stop() };
+                }
+
+                pub fn is_running() -> bool {
+                    unsafe { THREAD.is_running() }
                 }
             }
         };

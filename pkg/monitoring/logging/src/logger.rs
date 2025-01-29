@@ -1,13 +1,14 @@
 use core::convert::AsRef;
 
 use common::{fixed::vec::FixedVec, segmented_buffer::SegmentedBuffer};
-use executor::channel::Channel;
 use executor::lock;
 use executor::sync::AsyncMutex;
 use nordic_proto::nordic::*;
 use protobuf::Message;
 
 const LOG_BUFFER_SIZE: usize = 256;
+
+const MAX_LOG_ENTRY_SIZE: usize = 128;
 
 static LOGGER: Logger = Logger::new();
 
@@ -42,7 +43,7 @@ impl Logger {
         entry.set_index(state.next_index);
         state.next_index += 1;
 
-        let mut buffer = FixedVec::<u8, 128>::new();
+        let mut buffer = FixedVec::<u8, MAX_LOG_ENTRY_SIZE>::new();
         entry.serialize_to(&mut buffer).unwrap();
 
         // let is_first = state.entries.is_empty();

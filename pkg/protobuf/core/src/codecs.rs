@@ -56,6 +56,7 @@ macro_rules! impl_serialize_repeated_packed {
             }
 
             let mut length_counter = ByteCounter::new();
+            // TODO: For fixed size types, we should be able to optimize this.
             for value in values {
                 ($serialize_single_value)(*value, &mut length_counter).unwrap();
             }

@@ -56,7 +56,12 @@ unsafe fn init_data() {
 // TODO: Move to a different file.
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
-    loop {}
+    loop {
+        unsafe {
+            asm!("nop");
+            asm!("nop");
+        }
+    }
 }
 
 // TODO: Move to a different file.

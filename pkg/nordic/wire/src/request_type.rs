@@ -37,5 +37,11 @@ enum_def_with_unknown!(ProtocolRequestType u8 =>
     //   [length: u8] [data: LogEntry proto]
     //
     // [Device -> Host]
-    ReadLog = 6
+    ReadLog = 6,
+
+    // [Host -> Device]
+    PeripheralRequest = 7,
+
+    // [Device -> Host]
+    PeripheralResponse = 8
 );

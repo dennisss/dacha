@@ -1,10 +1,15 @@
 /*
 
 cargo run --bin gcode_tool --release -- \
+    usb_power_switch.gcode \
+    --preset=makera_carvera \
+    --output_dir=layers
+
+
+cargo run --bin gcode_tool --release -- \
     $PWD/testdata/cnc/3DBenchy_0.4n_0.2mm_PETG_XL_59m.bgcode \
     --preset=prusa_xl \
     --output_dir=$PWD/layers
-
 
 $PWD/testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode \
 --preset=prusa_i3_mk3sp
@@ -69,8 +74,7 @@ async fn main() -> Result<()> {
 
     println!("{:#?}", summary.proto);
 
-    {
-        let thumb = summary.best_thumbnail()?.unwrap();
+    if let Some(thumb) = summary.best_thumbnail()? {
         file::write(args.output_dir.join("thumbnail.jpg"), thumb).await?;
     }
 

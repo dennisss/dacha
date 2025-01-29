@@ -23,6 +23,12 @@ pub const FAN_PWM_FREQUENCY: f32 = 25000.0;
 /// - RPM range is 1200 RPM - 5000 RPM
 /// - So will get a pulse at 40 Hz - 166 Hz
 /// - So period between falling edges is `[5ms, 25ms]`
+///
+/// For an NF-A12x25:
+/// - RPM range is 450 RPM - 2000 RPM
+/// - So will get a pulse at 15 Hz - 66 Hz
+/// - So period between falling edges is `[15ms, 66ms]`
+/// (but this fan is much larger than what we want to support)
 pub struct FanTachometerReader {
     pin: GPIOPin,
 }
