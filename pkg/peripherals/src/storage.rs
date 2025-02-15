@@ -1,3 +1,5 @@
+// TODO: This is all old and correctly unused.
+
 use core::cmp::Ordering;
 use core::ops::Deref;
 

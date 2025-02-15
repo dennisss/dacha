@@ -178,17 +178,34 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 let mut raw_proto = [0u8; 256];
                 let n = req.read(&mut raw_proto).await?;
 
-                let proto = match PeripheralRequest::parse(&raw_proto[0..n]) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        log!("PARSE FAIL");
+                let mut i = 0;
+                while i < n {
+                    let len = raw_proto[i] as usize;
+                    i += 1;
+
+                    if len == 0 {
+                        break;
+                    }
+
+                    if i + len >= n {
+                        break;
+                    }
+
+                    let s = &raw_proto[i..(i + len)];
+                    i += len;
+
+                    let proto = match PeripheralRequest::parse(s) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            log!("PARSE FAIL");
+                            return Ok(());
+                        }
+                    };
+
+                    if let Some(controller) = &self.peripherals_controller {
+                        let _ = controller.execute(&proto).await;
                         return Ok(());
                     }
-                };
-
-                if let Some(controller) = &self.peripherals_controller {
-                    let _ = controller.execute(&proto).await;
-                    return Ok(());
                 }
             }
         }

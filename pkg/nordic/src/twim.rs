@@ -3,7 +3,7 @@ use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::twim0::TWIM0;
 use peripherals::raw::{Interrupt, InterruptState};
 
-use crate::pins::{connect_pin, PeripheralPin};
+use crate::pins::{connect_pin, disconnect_pin, PeripheralPin};
 
 /// NOTE: Requires a HFCLK.
 pub struct TWIM {
@@ -17,6 +17,16 @@ pub enum TWIMError {
     AddressNotAcknowledged,
     DataNotAcnkowledged,
     UnsupportedBaudrate,
+}
+
+impl Drop for TWIM {
+    fn drop(&mut self) {
+        self.periph.enable.write_disabled();
+
+        // TODO: Not sure if this is necessary if the peripheral is disabled?
+        disconnect_pin(&mut self.periph.psel.scl);
+        disconnect_pin(&mut self.periph.psel.sda);
+    }
 }
 
 impl TWIM {

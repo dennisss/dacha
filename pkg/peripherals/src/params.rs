@@ -6,39 +6,39 @@ use crypto::checksum::crc16::crc16_incremental_lut;
 // or ones doesn't appear to be valid data.
 const CRC_INITIAL_STATE: u16 = 0x1d0f;
 
-/// Largest value which the
-const BLOB_LENGTH_LIMIT: usize = 0x0FFF;
+/// Max length of a single parameter's value (4095)
+const PARAM_LENGTH_LIMIT: usize = 0x0FFF;
 
 #[derive(Clone, Copy, Debug, Errable, PartialEq)]
 #[cfg_attr(feature = "std", derive(Fail))]
 #[repr(u32)]
-pub enum BlobStorageError {
-    /// When returned by BlobStorage::create(), this means that the memory
-    /// contains an entry for a blob if which doesn't exist in the registry.
+pub enum ParamStorageError {
+    /// When returned by ParamStorage::create(), this means that the memory
+    /// contains an entry for a param if which doesn't exist in the registry.
     ///
-    /// When returnged by BlobStorage::read(), this means that the requested
-    /// blob id is not registered in storage (this is different than the blob
+    /// When returnged by ParamStorage::read(), this means that the requested
+    /// param id is not registered in storage (this is different than the param
     /// having no value yet).
-    UnknownBlobId,
+    UnknownParamId,
 
     /// There is not currently enough space to write the value passed to
-    /// BlobStorage::write(). This could be due to too much fragmentation of
+    /// ParamStorage::write(). This could be due to too much fragmentation of
     /// values.
     OutOfSpace,
 
-    /// BlobStorage::write() was called with a value which is too large to
+    /// ParamStorage::write() was called with a value which is too large to
     /// represent in serialized form.
     ValueTooLarge,
 }
 
-impl core::fmt::Display for BlobStorageError {
+impl core::fmt::Display for ParamStorageError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
 /// Interface for reading/writing from/to a segment of non-volatile memory.
-pub trait BlobMemoryController {
+pub trait ParamMemoryController {
     /// Gets the total number of bytes that can be stored in this memory.
     fn len(&self) -> usize;
 
@@ -65,71 +65,75 @@ pub trait BlobMemoryController {
 
     fn read(&self, offset: usize, out: &mut [u8]);
 
-    /// A write to the start of a page should erase it. Subsequent writes inside
-    /// of the page should append data to the page without erasing previously
-    /// writen data.
+    /// Writes 'data' at the 'offset' position in memory.
+    ///
+    /// A write to the start of a page should erase it entirely before any new
+    /// data is written. Subsequent writes inside of the page should append
+    /// data to the page without erasing previously written data.
     fn write(&mut self, offset: usize, data: &[u8]);
 }
 
-pub trait BlobRegistry {
-    fn blob_handle(&self, id: u32) -> Option<&BlobHandle>;
+// TODO: Have well defined behavior for what to do if we see an unknown id in
+// the params.
+pub trait ParamRegistry {
+    fn param_handle(&self, id: u32) -> Option<&ParamHandle>;
 
-    fn blob_handle_mut(&mut self, id: u32) -> Option<&mut BlobHandle>;
+    fn param_handle_mut(&mut self, id: u32) -> Option<&mut ParamHandle>;
 
-    fn blob_at_index(&self, index: usize) -> &BlobHandle;
+    fn param_at_index(&self, index: usize) -> &ParamHandle;
 
-    fn blob_at_index_mut(&mut self, index: usize) -> &mut BlobHandle;
+    fn param_at_index_mut(&mut self, index: usize) -> &mut ParamHandle;
 
-    fn num_blobs(&self) -> usize;
+    fn num_params(&self) -> usize;
 }
 
-impl<T: AsRef<[BlobHandle]> + AsMut<[BlobHandle]>> BlobRegistry for T {
-    fn blob_handle(&self, id: u32) -> Option<&BlobHandle> {
-        for blob in self.as_ref().iter() {
-            if blob.id == id {
-                return Some(blob);
+impl<T: AsRef<[ParamHandle]> + AsMut<[ParamHandle]>> ParamRegistry for T {
+    fn param_handle(&self, id: u32) -> Option<&ParamHandle> {
+        for param in self.as_ref().iter() {
+            if param.id == id {
+                return Some(param);
             }
         }
 
         None
     }
 
-    fn blob_handle_mut(&mut self, id: u32) -> Option<&mut BlobHandle> {
-        for blob in self.as_mut().iter_mut() {
-            if blob.id == id {
-                return Some(blob);
+    fn param_handle_mut(&mut self, id: u32) -> Option<&mut ParamHandle> {
+        for param in self.as_mut().iter_mut() {
+            if param.id == id {
+                return Some(param);
             }
         }
 
         None
     }
 
-    fn blob_at_index(&self, index: usize) -> &BlobHandle {
+    fn param_at_index(&self, index: usize) -> &ParamHandle {
         &self.as_ref()[index]
     }
 
-    fn blob_at_index_mut(&mut self, index: usize) -> &mut BlobHandle {
+    fn param_at_index_mut(&mut self, index: usize) -> &mut ParamHandle {
         &mut self.as_mut()[index]
     }
 
-    fn num_blobs(&self) -> usize {
+    fn num_params(&self) -> usize {
         self.as_ref().len()
     }
 }
 
 // TODO: We must ensure that a single handle is only ever registered with a
-// single BlobStorage instance (and that a blob handle is only use with the
-// BlobStorage instance it is registered in).
-pub struct BlobHandle {
+// single ParamStorage instance (and that a param handle is only use with the
+// ParamStorage instance it is registered in).
+pub struct ParamHandle {
     id: u32,
-    latest_entry: Option<BlobEntryHandle>,
+    latest_entry: Option<ParamEntryHandle>,
 
     /// NOTE: This is only used during the initialization phase of the
-    /// BlobStorage object.
-    pending_entry: Option<BlobEntryHandle>,
+    /// ParamStorage object so could be moved to stack memory.
+    pending_entry: Option<ParamEntryHandle>,
 }
 
-impl BlobHandle {
+impl ParamHandle {
     pub const fn new(id: u32) -> Self {
         Self {
             id,
@@ -139,9 +143,9 @@ impl BlobHandle {
     }
 }
 
-/// Reference to the value of a blob stored inside an entry in raw storage.
+/// Reference to the value of a param stored inside an entry in raw storage.
 #[derive(Clone)]
-struct BlobEntryHandle {
+struct ParamEntryHandle {
     /// Absolute index of the page storing this entry.
     /// NOTE: May be > the # of pages in memory.
     page_index: usize,
@@ -155,16 +159,18 @@ struct BlobEntryHandle {
     value_length: usize,
 }
 
-pub struct BlobStorage<Memory, Registry> {
+pub struct ParamStorage<Memory, Registry> {
     memory: Memory,
 
     registry: Registry,
 
-    current_position: BlobWriteCursor,
+    current_position: ParamWriteCursor,
 }
 
 #[derive(Clone, Debug)]
-struct BlobWriteCursor {
+struct ParamWriteCursor {
+    /// Absolute index of the page which we are currently writing.
+    /// NOTE: May be > the # of pages in memory.
     page_index: usize,
 
     /// Offset relative to the start of the current page at which we can next
@@ -174,11 +180,11 @@ struct BlobWriteCursor {
     last_entry_id: Option<u32>,
 }
 
-impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, Registry> {
-    /// Instantiates a new BlobStorage instance.
+impl<Memory: ParamMemoryController, Registry: ParamRegistry> ParamStorage<Memory, Registry> {
+    /// Instantiates a new ParamStorage instance.
     ///
     /// On instantiation this scans the contents of the given memory to find all
-    /// existing blob values.
+    /// existing params values.
     pub fn create(memory: Memory, mut registry: Registry) -> Result<Self> {
         let num_pages = memory.len() / memory.page_size();
 
@@ -191,7 +197,7 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
 
         let data = memory.get();
 
-        let mut current_position = BlobWriteCursor {
+        let mut current_position = ParamWriteCursor {
             page_index: 0,
             page_offset: 0,
             last_entry_id: None,
@@ -212,28 +218,39 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
 
             let mut page_last_entry_id = None;
 
-            let mut checkpoint_checksum = CRC_INITIAL_STATE;
-            checkpoint_checksum = crc16_incremental_lut(checkpoint_checksum, &page_data[0..4]);
-
             let mut checkpoint_seen = false;
 
             while page_offset < page_data.len() {
-                match BlobEntry::parse(&page_data[page_offset..], page_last_entry_id) {
-                    ParsedBlobEntry::Entry(entry) => {
+                match ParamEntry::parse(
+                    &page_data[page_offset..],
+                    page_index as u32,
+                    page_last_entry_id,
+                ) {
+                    Some(entry) => {
+                        if entry.checkpoint && !checkpoint_seen {
+                            checkpoint_seen = true;
+
+                            // Make all pending_entry fields for this page the latest_entry of each
+                            // param.
+                            for i in 0..registry.num_params() {
+                                let param = registry.param_at_index_mut(i);
+                                if let Some(pending_entry) = param.pending_entry.take() {
+                                    if pending_entry.page_index == page_index {
+                                        param.latest_entry = Some(pending_entry);
+                                    }
+                                }
+                            }
+                        }
+
                         page_last_entry_id = Some(entry.id);
 
-                        let blob = match registry.blob_handle_mut(entry.id) {
+                        let param = match registry.param_handle_mut(entry.id) {
                             Some(v) => v,
-                            None => return Err(BlobStorageError::UnknownBlobId.into()),
+                            None => return Err(ParamStorageError::UnknownParamId.into()),
                         };
 
-                        checkpoint_checksum = crc16_incremental_lut(
-                            checkpoint_checksum,
-                            &entry.checksum.to_le_bytes(),
-                        );
-
                         let is_newer = {
-                            if let Some(latest_entry) = &blob.latest_entry {
+                            if let Some(latest_entry) = &param.latest_entry {
                                 page_index >= latest_entry.page_index
                             } else {
                                 true
@@ -241,7 +258,7 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
                         };
 
                         if is_newer {
-                            let handle = Some(BlobEntryHandle {
+                            let handle = Some(ParamEntryHandle {
                                 page_index,
                                 checksum: entry.checksum,
                                 value_absolute_offset: page_start + page_offset + entry.value_start,
@@ -249,9 +266,9 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
                             });
 
                             if checkpoint_seen {
-                                blob.latest_entry = handle;
+                                param.latest_entry = handle;
                             } else {
-                                blob.pending_entry = handle;
+                                param.pending_entry = handle;
                             }
                         }
 
@@ -261,39 +278,7 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
                             page_offset as u64,
                         ) as usize;
                     }
-                    ParsedBlobEntry::Checkpoint {
-                        checksum,
-                        total_size,
-                    } => {
-                        // Should only have one checkpoint per page right now.
-                        if checkpoint_seen {
-                            break;
-                        }
-
-                        if checksum != checkpoint_checksum {
-                            break;
-                        }
-
-                        checkpoint_seen = true;
-
-                        // Make all pending_entry fields for this page the latest_entry of each
-                        // blob.
-                        for i in 0..registry.num_blobs() {
-                            let blob = registry.blob_at_index_mut(i);
-                            if let Some(pending_entry) = blob.pending_entry.take() {
-                                if pending_entry.page_index == page_index {
-                                    blob.latest_entry = Some(pending_entry);
-                                }
-                            }
-                        }
-
-                        page_offset += total_size;
-                        page_offset += common::block_size_remainder(
-                            memory.write_alignment() as u64,
-                            page_offset as u64,
-                        ) as usize;
-                    }
-                    ParsedBlobEntry::Invalid => {
+                    None => {
                         // No more valid data on this page.
                         break;
                     }
@@ -320,13 +305,13 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
         })
     }
 
-    pub fn get(&self, blob_id: u32) -> Result<Option<&[u8]>> {
-        let blob = match self.registry.blob_handle(blob_id) {
+    pub fn get(&self, param_id: u32) -> Result<Option<&[u8]>> {
+        let param = match self.registry.param_handle(param_id) {
             Some(v) => v,
-            None => return Err(BlobStorageError::UnknownBlobId.into()),
+            None => return Err(ParamStorageError::UnknownParamId.into()),
         };
 
-        if let Some(entry) = &blob.latest_entry {
+        if let Some(entry) = &param.latest_entry {
             let data = self.memory.get();
 
             let start = entry.value_absolute_offset;
@@ -338,24 +323,21 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
         }
     }
 
-    pub fn write(&mut self, blob_id: u32, value: &[u8]) -> Result<()> {
+    pub fn write(&mut self, param_id: u32, value: &[u8]) -> Result<()> {
         let page_size = self.memory.page_size();
         let num_pages = self.memory.len() / self.memory.page_size();
 
+        // TODO: Think about whether or not this is enough iteraitons.
         let mut num_erases = 0;
         while num_erases < 2 {
             if self.current_position.page_offset == 0 {
                 let mut current_page_start_offset =
-                    self.current_position.page_index * self.memory.page_size();
-
-                let mut checkpoint_checksum = CRC_INITIAL_STATE;
+                    (self.current_position.page_index % num_pages) * self.memory.page_size();
 
                 // Write the page counter to the beginning of the page.
-                // This should also trigger the entire page within this write() call.
+                // This should also trigger the entire page to be erased within this write()
+                // call.
                 let page_index_data = (self.current_position.page_index as u32).to_le_bytes();
-
-                checkpoint_checksum = crc16_incremental_lut(checkpoint_checksum, &page_index_data);
-
                 self.memory
                     .write(current_page_start_offset, &page_index_data);
                 self.current_position.page_offset += 4;
@@ -367,78 +349,73 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
 
                 num_erases += 1;
 
-                // Every blob who's latest value is stored on the page immediately after this
+                let mut last_param_to_rewrite = 0;
+                for i in 0..self.registry.num_params() {
+                    let param = self.registry.param_at_index(i);
+                    if let Some(entry) = &param.latest_entry {
+                        if (entry.page_index % num_pages)
+                            == (self.current_position.page_index + 1) % num_pages
+                        {
+                            last_param_to_rewrite = i;
+                        }
+                    }
+                }
+
+                // Every param who's latest value is stored on the page immediately after this
                 // one must be moved to the new page.
-                for i in 0..self.registry.num_blobs() {
-                    let blob = self.registry.blob_at_index(i);
-                    if let Some(entry) = &blob.latest_entry {
+                for i in 0..self.registry.num_params() {
+                    let param = self.registry.param_at_index(i);
+                    if let Some(entry) = &param.latest_entry {
                         // We can't re-write a page if there are still live values on it. This
                         // should never happen. (NOTE: If this fails then
                         // it's already too late as we already deleted the
                         // page).
                         assert!(entry.page_index != self.current_position.page_index);
 
-                        // TODO: If the moved blob is small enough to it in the remaining space on
+                        // TODO: If the moved param is small enough to it in the remaining space on
                         // the previous page, attempt to move it there first.
 
+                        // TODO: If the param id is the same id as the one we are about to re-write,
+                        // we don't need to copy it (if the new value can
+                        // fit on the page).
+
+                        // TODO: Write checkpoint if it is the last entry.
                         if (entry.page_index % num_pages)
                             == (self.current_position.page_index + 1) % num_pages
                         {
                             // NOTE: This should always fit in the new page because it fit in the
                             // old page.
                             let new_entry = Self::write_entry(
-                                blob.id,
-                                BlobEntryValue::Existing(entry.clone()),
+                                param.id,
+                                ParamEntryValue::Existing(entry.clone()),
+                                i == last_param_to_rewrite,
                                 &mut self.memory,
                                 &mut self.current_position,
                             )
                             .unwrap();
 
-                            checkpoint_checksum = crc16_incremental_lut(
-                                checkpoint_checksum,
-                                &new_entry.checksum.to_le_bytes(),
-                            );
-
-                            self.registry.blob_handle_mut(blob.id).unwrap().latest_entry =
-                                Some(new_entry);
+                            self.registry
+                                .param_handle_mut(param.id)
+                                .unwrap()
+                                .latest_entry = Some(new_entry);
                         }
                     }
                 }
-
-                // Write the checkpoint marker.
-                // TODO: This should be a buffered write to storage.
-                {
-                    let data = BlobEntryHeader {
-                        stored_id: None,
-                        checksum: checkpoint_checksum,
-                        value_length: BLOB_LENGTH_LIMIT,
-                        checkpoint: true,
-                    }
-                    .serialize();
-
-                    // TODO: Verify that the page index hasn't checked since
-                    // current_page_start_offset was calculated.
-                    self.memory.write(
-                        current_page_start_offset + self.current_position.page_offset,
-                        &data,
-                    );
-
-                    self.current_position.page_offset += data.len();
-                }
             }
 
-            let blob = match self.registry.blob_handle_mut(blob_id) {
+            let param = match self.registry.param_handle_mut(param_id) {
                 Some(v) => v,
-                None => return Err(BlobStorageError::UnknownBlobId.into()),
+                None => return Err(ParamStorageError::UnknownParamId.into()),
             };
 
             if let Some(new_entry) = Self::write_entry(
-                blob.id,
-                BlobEntryValue::Buffer(value),
+                param.id,
+                ParamEntryValue::Buffer(value),
+                true,
                 &mut self.memory,
                 &mut self.current_position,
             ) {
-                blob.latest_entry = Some(new_entry);
+                param.latest_entry = Some(new_entry);
                 return Ok(());
             } else {
                 // If it doesn't fit in the current page, try deleting the next page and fitting
@@ -450,10 +427,10 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
             }
         }
 
-        Err(BlobStorageError::OutOfSpace.into())
+        Err(ParamStorageError::OutOfSpace.into())
     }
 
-    /// Writes a blob entry at the given current position in non-volatile
+    /// Writes a param entry at the given current position in non-volatile
     /// memory.
     ///
     /// Returns a handle to the newly written entry and updates the current
@@ -461,27 +438,28 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
     /// the current page, None is returned and the position is not updates.
     fn write_entry(
         id: u32,
-        value: BlobEntryValue,
+        value: ParamEntryValue,
+        checkpoint: bool,
         memory: &mut Memory,
-        current_position: &mut BlobWriteCursor,
-    ) -> Option<BlobEntryHandle> {
+        current_position: &mut ParamWriteCursor,
+    ) -> Option<ParamEntryHandle> {
         const BUFFER_SIZE: usize = 64;
         assert!(BUFFER_SIZE % memory.write_alignment() == 0);
 
         let mut buffer = FixedVec::<u8, BUFFER_SIZE>::new();
 
         let checksum = match &value {
-            BlobEntryValue::Buffer(value) => {
+            ParamEntryValue::Buffer(value) => {
                 let mut sum = CRC_INITIAL_STATE;
                 sum = crc16_incremental_lut(sum, &id.to_le_bytes());
                 sum = crc16_incremental_lut(sum, value);
                 sum
             }
-            BlobEntryValue::Existing(entry) => entry.checksum,
+            ParamEntryValue::Existing(entry) => entry.checksum,
         };
 
         buffer.extend_from_slice(
-            &BlobEntryHeader {
+            &ParamEntryHeader {
                 stored_id: if Some(id) != current_position.last_entry_id {
                     Some(id)
                 } else {
@@ -489,7 +467,7 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
                 },
                 checksum,
                 value_length: value.len(),
-                checkpoint: false,
+                checkpoint,
             }
             .serialize(),
         );
@@ -520,13 +498,13 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
             buffer.resize(buffer_start + n, 0);
 
             match value {
-                BlobEntryValue::Existing(ref entry) => {
+                ParamEntryValue::Existing(ref entry) => {
                     memory.read(
                         entry.value_absolute_offset + value_offset,
                         &mut buffer[buffer_start..],
                     );
                 }
-                BlobEntryValue::Buffer(value) => {
+                ParamEntryValue::Buffer(value) => {
                     buffer[buffer_start..]
                         .copy_from_slice(&value[value_offset..(value_offset + n)]);
                 }
@@ -547,7 +525,7 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
 
         current_position.last_entry_id = Some(id);
 
-        Some(BlobEntryHandle {
+        Some(ParamEntryHandle {
             page_index: current_position.page_index,
             checksum,
             value_absolute_offset,
@@ -556,39 +534,40 @@ impl<Memory: BlobMemoryController, Registry: BlobRegistry> BlobStorage<Memory, R
     }
 }
 
-enum BlobEntryValue<'a> {
-    /// The value should be taken from an existing blob.
-    Existing(BlobEntryHandle),
+enum ParamEntryValue<'a> {
+    /// The value should be taken from an existing param.
+    Existing(ParamEntryHandle),
 
     /// The value is stored in a buffer in RAM.
     Buffer(&'a [u8]),
 }
 
-impl<'a> BlobEntryValue<'a> {
+impl<'a> ParamEntryValue<'a> {
     fn len(&self) -> usize {
         match self {
-            BlobEntryValue::Buffer(v) => v.len(),
-            BlobEntryValue::Existing(handle) => handle.value_length,
+            ParamEntryValue::Buffer(v) => v.len(),
+            ParamEntryValue::Existing(handle) => handle.value_length,
         }
     }
 }
 
 // 4 bits
-define_bit_flags!(BlobEntryFlags u32 {
+define_bit_flags!(ParamEntryFlags u32 {
     // Parity bit which may be set in order to make the number of ones in the flags be odd.
     PARITY = 1 << 3,
     STORE_ID = 1 << 2,
-    CHECKPOINT = 1 << 1
+    CHECKPOINT = 1 << 1,
+    RESERVED = 1 << 0
 });
 
-struct BlobEntryHeader {
+struct ParamEntryHeader {
     stored_id: Option<u32>,
     checkpoint: bool,
     checksum: u16,
     value_length: usize,
 }
 
-impl BlobEntryHeader {
+impl ParamEntryHeader {
     fn entry_size(&self) -> usize {
         let mut total = 4 + self.value_length;
         if self.stored_id.is_some() {
@@ -601,18 +580,18 @@ impl BlobEntryHeader {
     fn serialize(&self) -> FixedVec<u8, 8> {
         let mut out = FixedVec::new();
 
-        let mut flags = BlobEntryFlags::empty();
+        let mut flags = ParamEntryFlags::RESERVED;
 
         if self.stored_id.is_some() {
-            flags = flags | BlobEntryFlags::STORE_ID;
+            flags = flags | ParamEntryFlags::STORE_ID;
         }
 
         if self.checkpoint {
-            flags = flags | BlobEntryFlags::CHECKPOINT;
+            flags = flags | ParamEntryFlags::CHECKPOINT;
         }
 
         if flags.to_raw().count_ones() % 2 == 0 {
-            flags = flags | BlobEntryFlags::PARITY;
+            flags = flags | ParamEntryFlags::PARITY;
         }
 
         let header =
@@ -628,8 +607,8 @@ impl BlobEntryHeader {
     }
 }
 
-/// Representation of a BlobEntry which was decoded from a stream of bytes.
-struct BlobEntry {
+/// Representation of a ParamEntry which was decoded from a stream of bytes.
+struct ParamEntry {
     id: u32,
 
     checksum: u16,
@@ -642,21 +621,19 @@ struct BlobEntry {
 
     /// Total number of bytes used by this entry.
     total_size: usize,
+
+    /// Whether or not the 'checkpoint' flag was set for this entry.
+    checkpoint: bool,
 }
 
-enum ParsedBlobEntry {
-    Entry(BlobEntry),
-    Checkpoint { checksum: u16, total_size: usize },
-    Invalid,
-}
-
-impl BlobEntry {
-    fn parse(data: &[u8], last_entry_id: Option<u32>) -> ParsedBlobEntry {
+impl ParamEntry {
+    /// Returns None if we couldn't parse a valid entry.
+    fn parse(data: &[u8], page_index: u32, last_entry_id: Option<u32>) -> Option<ParamEntry> {
         let mut offset = 0;
 
         let entry_header = {
             if offset + 4 > data.len() {
-                return ParsedBlobEntry::Invalid;
+                return None;
             }
 
             u32::from_le_bytes(*array_ref![data, offset, 4])
@@ -664,33 +641,18 @@ impl BlobEntry {
         offset += 4;
 
         // Top 4 bits reserved for flags.
-        let flags = BlobEntryFlags::from_raw(entry_header >> 28);
+        let flags = ParamEntryFlags::from_raw(entry_header >> 28);
         if flags.to_raw().count_ones() % 2 != 1 {
-            return ParsedBlobEntry::Invalid;
+            return None;
         }
 
         let value_length = ((entry_header >> 16) & ((1 << 12) - 1)) as usize;
         let expected_checksum = (entry_header & 0xFFFF) as u16;
 
-        if flags.contains(BlobEntryFlags::CHECKPOINT) {
-            // Checksums should not have any other flags set and should have a special
-            // length.
-            if flags.remove(BlobEntryFlags::PARITY) != BlobEntryFlags::CHECKPOINT
-                || value_length != BLOB_LENGTH_LIMIT
-            {
-                return ParsedBlobEntry::Invalid;
-            }
-
-            return ParsedBlobEntry::Checkpoint {
-                checksum: expected_checksum,
-                total_size: offset,
-            };
-        }
-
         let id = {
-            if flags.contains(BlobEntryFlags::STORE_ID) {
+            if flags.contains(ParamEntryFlags::STORE_ID) {
                 if offset + 4 > data.len() {
-                    return ParsedBlobEntry::Invalid;
+                    return None;
                 }
 
                 let id = u32::from_le_bytes(*array_ref![data, offset, 4]);
@@ -699,14 +661,14 @@ impl BlobEntry {
             } else if let Some(id) = last_entry_id {
                 id
             } else {
-                return ParsedBlobEntry::Invalid;
+                return None;
             }
         };
 
         let value_start = offset;
 
         if offset + value_length > data.len() {
-            return ParsedBlobEntry::Invalid;
+            return None;
         }
         let value = &data[offset..(offset + value_length)];
         offset += value_length;
@@ -719,15 +681,16 @@ impl BlobEntry {
         };
 
         if expected_checksum != checksum {
-            return ParsedBlobEntry::Invalid;
+            return None;
         }
 
-        ParsedBlobEntry::Entry(Self {
+        Some(Self {
             id,
             checksum,
             value_start,
             value_length,
             total_size: offset,
+            checkpoint: flags.contains(ParamEntryFlags::CHECKPOINT),
         })
     }
 }
@@ -754,7 +717,7 @@ mod tests {
         }
     }
 
-    impl BlobMemoryController for &mut SimpleMemory {
+    impl ParamMemoryController for &mut SimpleMemory {
         fn page_size(&self) -> usize {
             PAGE_SIZE
         }
@@ -789,8 +752,8 @@ mod tests {
         let mut memory = SimpleMemory::new();
 
         {
-            let mut blobs = vec![BlobHandle::new(1), BlobHandle::new(2)];
-            let mut storage = BlobStorage::create(&mut memory, blobs).unwrap();
+            let mut params = vec![ParamHandle::new(1), ParamHandle::new(2)];
+            let mut storage = ParamStorage::create(&mut memory, params).unwrap();
 
             storage.write(1, &[10, 20, 30]).unwrap();
             assert_eq!(storage.get(1).unwrap(), Some(&[10, 20, 30][..]));
@@ -816,8 +779,8 @@ mod tests {
 
         {
             // Verify that re-opening memory with multiple entries picks the latest entry.
-            let mut blobs = vec![BlobHandle::new(1), BlobHandle::new(2)];
-            let mut storage = BlobStorage::create(&mut memory, blobs).unwrap();
+            let mut params = vec![ParamHandle::new(1), ParamHandle::new(2)];
+            let mut storage = ParamStorage::create(&mut memory, params).unwrap();
             assert_eq!(storage.get(1).unwrap(), Some(&[10, 20, 30][..]));
             assert_eq!(
                 storage.get(2).unwrap(),
@@ -854,6 +817,16 @@ mod tests {
             );
 
             println!("{:?}", storage.current_position);
+
+            for i in 0..1000 {
+                storage.write(1, b"xxxxxxxxxx");
+            }
+
+            assert_eq!(storage.get(1).unwrap(), Some(&b"xxxxxxxxxx"[..]));
+            assert_eq!(
+                storage.get(2).unwrap(),
+                Some(&[70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80][..])
+            );
         }
 
         // TODO: Test that we don't continue writing to a partially written page

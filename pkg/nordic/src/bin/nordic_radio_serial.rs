@@ -49,7 +49,6 @@ extern crate macros;
 use core::arch::asm;
 
 use executor::singleton::Singleton;
-use nordic::config_storage::NetworkConfigStorage;
 use nordic::ecb::ECB;
 use nordic::gpio::*;
 use nordic::params::ParamsStorage;

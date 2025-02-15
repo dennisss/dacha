@@ -170,6 +170,13 @@ impl RTCInstant {
         (RTC::duration(other.ticks, self.ticks) as usize * 1000) / 32768
     }
 
+    pub fn micros_since(&self, other: &RTCInstant) -> usize {
+        // = ticks * (1000000 / 32768)
+        const REDUCTION: usize = 32;
+        (RTC::duration(other.ticks, self.ticks) as usize * (1000000 / REDUCTION))
+            / (32768 / REDUCTION)
+    }
+
     pub fn zero() -> Self {
         Self { ticks: 0 }
     }

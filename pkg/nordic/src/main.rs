@@ -48,9 +48,7 @@ use logging::log;
 use peripherals::eeprom::EEPROM;
 use peripherals::raw::rtc0::RTC0;
 use peripherals::raw::PinLevel;
-use peripherals::storage::BlockStorage;
 
-use nordic::config_storage::NetworkConfigStorage;
 use nordic::ecb::ECB;
 use nordic::eeprom::Microchip24XX256;
 use nordic::gpio::*;

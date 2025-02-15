@@ -1,11 +1,15 @@
 use core::arch::asm;
+use core::ops::{Deref, DerefMut};
 
 use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::pwm0::prescaler::PRESCALER_FIELD;
 use peripherals::raw::pwm0::r#loop::LOOP_VALUE;
 use peripherals::raw::pwm0::seq::enddelay::ENDDELAY_VALUE;
 use peripherals::raw::pwm0::seq::refresh::REFRESH_VALUE;
-use peripherals::raw::pwm0::PWM0;
+use peripherals::raw::pwm0::{PWM0, PWM0_REGISTERS};
+use peripherals::raw::pwm1::PWM1;
+use peripherals::raw::pwm2::PWM2;
+use peripherals::raw::pwm3::PWM3;
 
 use crate::{
     events::flush_events_clear,
@@ -26,6 +30,44 @@ const PRESCALAR_FREQUENCIES: &'static [(u32, PRESCALER_FIELD)] = &[
     (250_000, PRESCALER_FIELD::DIV_64),
     (125_000, PRESCALER_FIELD::DIV_128),
 ];
+
+// TODO: Codegen this.
+pub struct PWMx {
+    base_address: u32,
+}
+
+impl Deref for PWMx {
+    type Target = PWM0_REGISTERS;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+impl DerefMut for PWMx {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+macro_rules! pwmx_from {
+    ($t:ident) => {
+        impl From<$t> for PWMx {
+            fn from(mut value: $t) -> Self {
+                PWMx {
+                    base_address: unsafe {
+                        core::mem::transmute::<&mut PWM0_REGISTERS, u32>(value.deref_mut())
+                    },
+                }
+            }
+        }
+    };
+}
+
+pwmx_from!(PWM0);
+pwmx_from!(PWM1);
+pwmx_from!(PWM2);
+pwmx_from!(PWM3);
 
 /// Implementation of basic continous PWM wave generation (repeating square wave
 /// with fixed frequency / duty cycle until changed by the user).
@@ -63,7 +105,7 @@ const PRESCALAR_FREQUENCIES: &'static [(u32, PRESCALER_FIELD)] = &[
 /// whenever we want to update the duty cycles which may potentially glitch and
 /// not complete full PWM periods is the duty cycles are updated too quickly.
 pub struct PWM {
-    periph: PWM0,
+    periph: PWMx,
     /// NOTE: This must be stored in RAM since it is EasyDMA referenced.
     sequence_data: Aligned<[u16; 4], u32>,
 }
@@ -110,7 +152,7 @@ impl PWMConfig {
 }
 
 impl PWM {
-    pub fn new(mut periph: PWM0) -> Self {
+    pub fn new(mut periph: PWMx) -> Self {
         Self {
             periph,
             sequence_data: Aligned::new([0; 4]),
@@ -266,6 +308,9 @@ impl PWM {
     ///   based on the available hardware resolution.
     /// - 'inverted': If false, the duty cycle is the amount of time the pin is
     ///   high, else, it is the amount of time the pin is low.
+    ///
+    /// TODO: Verify that 0 and UINT16_MAX correspond to always off and always
+    /// on.
     pub fn set_value(&mut self, channel: usize, value: u16, inverted: bool) {
         let value = value as u32;
         let countertop = self.periph.countertop.read() as u32;

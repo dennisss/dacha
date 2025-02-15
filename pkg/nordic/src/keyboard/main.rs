@@ -3,7 +3,6 @@ use executor::sync::AsyncMutex;
 use peripherals::raw::{PinDirection, PinLevel};
 use usb::hid::StandardKeyboardInputReport;
 
-use crate::config_storage::NetworkConfigStorage;
 use crate::ecb::ECB;
 use crate::gpio::Resistor;
 use crate::gpio::GPIO;
