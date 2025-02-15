@@ -1,0 +1,50 @@
+
+structs {
+    name: "SMARTAttributeSector"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "revision"
+        type { primitive: U16 }
+    }
+
+    field {
+        name: "attributes"
+        type {
+            buffer {
+                element_type { named: "SMARTAttribute" }
+                fixed_length: 30
+            }
+        }
+    }
+}
+
+structs {
+    name: "SMARTAttribute"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "id"
+        type { primitive: U8 }
+    }
+    field {
+        name: "flags"
+        type { primitive: U16 }
+    }
+    field {
+        name: "current_value"
+        type { primitive: U8 }
+    }
+    field {
+        name: "worst_value"
+        type { primitive: U8 }
+    }
+    # TODO: Last byte is reserved?
+    field {
+        name: "raw"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 7
+            }
+        }
+    }
+}

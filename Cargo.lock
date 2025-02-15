@@ -1450,6 +1450,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "gemini"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "google_auth",
+ "googleapis_proto",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "protobuf_builtins",
+ "reflection",
+ "rpc",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1616,8 +1638,8 @@ dependencies = [
 name = "google_dns"
 version = "0.0.0"
 dependencies = [
+ "base_error",
  "base_radix",
- "common",
  "executor",
  "file",
  "google_auth",
@@ -1665,6 +1687,28 @@ dependencies = [
  "macros",
  "net",
  "parsing",
+]
+
+[[package]]
+name = "google_vision"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "google_auth",
+ "googleapis_proto",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "protobuf_builtins",
+ "reflection",
+ "rpc",
 ]
 
 [[package]]
@@ -2201,6 +2245,30 @@ dependencies = [
  "uuid",
  "video",
  "xml",
+]
+
+[[package]]
+name = "media_screen"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+ "common",
+ "compression",
+ "crypto",
+ "executor",
+ "executor_graph",
+ "executor_multitask",
+ "file",
+ "http",
+ "image",
+ "json",
+ "macros",
+ "math",
+ "parsing",
+ "rpc",
+ "rpc_util",
+ "web",
+ "x11",
 ]
 
 [[package]]
@@ -3130,6 +3198,43 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddccb15bcce173023b3fedd9436f882a0739b8dfb45e4f6b6002bee5929f61b2"
 
 [[package]]
+name = "screen_grabber"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "common",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "gemini",
+ "google_auth",
+ "http",
+ "image",
+ "json",
+ "macros",
+ "parsing",
+ "rpc",
+ "rpc_util",
+ "screen_grabber_proto",
+ "web",
+ "x11",
+]
+
+[[package]]
+name = "screen_grabber_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
+]
+
+[[package]]
 name = "semver"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3328,6 +3433,7 @@ dependencies = [
  "protobuf_compiler",
  "reflection",
  "sstable",
+ "sys",
  "uuid",
  "uuid_macros",
 ]
@@ -3749,6 +3855,15 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "x11"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "bindgen 0.63.0",
+ "pkg-config",
+]
 
 [[package]]
 name = "xml"

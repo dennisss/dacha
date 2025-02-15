@@ -33,6 +33,14 @@ impl UUID {
         Self { data }
     }
 
+    pub fn to_gpt_bytes(&self) -> [u8; 16] {
+        let mut data = self.data.clone();
+        data[0..4].reverse();
+        data[4..6].reverse();
+        data[6..8].reverse();
+        data
+    }
+
     pub fn parse(value: &str) -> Result<Self> {
         if !PATTERN.test(value) {
             return Err(err_msg("Invalid UUID format"));

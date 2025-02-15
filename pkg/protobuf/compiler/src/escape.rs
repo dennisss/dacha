@@ -3,6 +3,10 @@ pub fn escape_rust_identifier(ident: &str) -> &str {
         return "typ";
     }
 
+    if ident == "mod" {
+        return "mod_field";
+    }
+
     if ident == "Option" {
         return "OptionProto";
     }

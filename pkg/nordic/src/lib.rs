@@ -48,13 +48,16 @@ pub mod spi;
 // pub mod stepper_motor_controller;
 pub mod bootloader;
 pub mod controller;
+mod fpu;
 pub mod keyboard;
 pub mod params;
 pub mod pwm;
 pub mod reset;
-pub mod temp;
 pub mod rtc;
+pub mod temp;
 pub mod tmc2130;
 pub mod twim;
 pub mod uarte;
 pub mod usb;
+
+pub use fpu::*;

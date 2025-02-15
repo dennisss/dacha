@@ -588,6 +588,33 @@ impl Compiler {
         });
         lines.add("}");
 
+        let mut possible_values = LineBuilder::new();
+        for (i, v) in e.proto().value().iter().enumerate() {
+            possible_values.add(format!("{} => {},", i, v.number()));
+        }
+
+        lines.add(format!(
+            r#"
+            #[cfg(feature = "alloc")]
+            impl {pkg}::EnumReflection for {name} {{
+                fn num_possible_values(&self) -> usize {{
+                    {num_possible_values}
+                }}
+
+                fn possible_value(&self, i: usize) -> Option<{pkg}::EnumValue> {{
+                    Some(match i {{
+                        {possible_values}
+                        _ => return None
+                    }})
+                }}
+            }}
+            "#,
+            pkg = self.options.runtime_package,
+            name = fullname,
+            num_possible_values = e.proto().value().len(),
+            possible_values = possible_values.to_string()
+        ));
+
         Ok(lines.to_string())
     }
 

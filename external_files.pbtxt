@@ -35,71 +35,6 @@ files: [
         sha256_sum: "ec5a07cd549e6dff723368a581b0ce8f32a18c60bafad5fbcf2d92261d6f9e58"
     },
     {
-        path: "doc/cnc_controller/board/plot/board-B_Cu.gbl"
-        size: 28414
-        sha256_sum: "e9f94b91172921bbc576901cb2891bdad2624bebcc3796373b6058cb1de868f1"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-B_Mask.gbs"
-        size: 159716
-        sha256_sum: "c73b8c03dfaa6d3956d5bc9aaaf533b1414ee6e3c2ef8b9939a3f7bcabbe2dec"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-B_Paste.gbp"
-        size: 507
-        sha256_sum: "fbb914f04c568e2ac50ad3b54b8991ef783617b21d2554b7f19581d9d494dfed"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-B_SilkS.gbo"
-        size: 22584
-        sha256_sum: "7548caa0d98dd73145d98f09b0e2ac5654d458dff3d5f276f19f4898d0114d95"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-Edge_Cuts.gm1"
-        size: 702
-        sha256_sum: "3f7c61694a1c3117bea5037e50cb6968db9bd88c0642daab81108baf992d29eb"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-F_Cu.gtl"
-        size: 60272
-        sha256_sum: "42def7652afabf5644b7f94fcf3ed60dab66f08ec8a53ce814401f0b3349c5af"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-F_Mask.gts"
-        size: 173602
-        sha256_sum: "adc73cbd7b3275b3c0046f94d437516efdc4ea6a21a20554734832c25bb7618a"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-F_Paste.gtp"
-        size: 25752
-        sha256_sum: "403e2c7990a0c577d1adee726aa848a32c158a2b0e2057339bb518b13aa8f621"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-F_SilkS.gto"
-        size: 85835
-        sha256_sum: "21d35516bc658f2ba9195b3491c9b552f183c7536674a9e3dd155c6d69f7f8d9"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-In1_Cu.g2"
-        size: 240681
-        sha256_sum: "d46e1ce50c6cd7bed6bdf1792ffb3ca49c6c3a856692dea8171d09f3ebab301f"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-In2_Cu.g3"
-        size: 204930
-        sha256_sum: "84b02c84466728040691ce5c847eb0d79c3ebd88e4b2e8aac8eba141bcb7d619"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board-drl_map.gbr"
-        size: 60333
-        sha256_sum: "c107c29d5c9978406d479efb98c6640cc931873c65d5eb334559719356caff54"
-    },
-    {
-        path: "doc/cnc_controller/board/plot/board.drl"
-        size: 2658
-        sha256_sum: "806cafdf482322993e617e6c22114b176df0f74b3ab06dbd3c3633fa71430ae8"
-    },
-    {
         path: "doc/dwm1000_flexypin/board/plot/board-B_Cu.gbl"
         size: 4428
         sha256_sum: "b306754b08976c788f8dbac740fa43230c2a9f9e741db696399dd0c3ef582f69"
@@ -1105,6 +1040,71 @@ files: [
         sha256_sum: "a978dd40607a80f7200b57ace2da91519cb3307f4697894a0130ef975eff874b"
     },
     {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-B_Cu.gbl"
+        size: 28414
+        sha256_sum: "e9f94b91172921bbc576901cb2891bdad2624bebcc3796373b6058cb1de868f1"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-B_Mask.gbs"
+        size: 159716
+        sha256_sum: "c73b8c03dfaa6d3956d5bc9aaaf533b1414ee6e3c2ef8b9939a3f7bcabbe2dec"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-B_Paste.gbp"
+        size: 507
+        sha256_sum: "fbb914f04c568e2ac50ad3b54b8991ef783617b21d2554b7f19581d9d494dfed"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-B_SilkS.gbo"
+        size: 22584
+        sha256_sum: "7548caa0d98dd73145d98f09b0e2ac5654d458dff3d5f276f19f4898d0114d95"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-Edge_Cuts.gm1"
+        size: 702
+        sha256_sum: "3f7c61694a1c3117bea5037e50cb6968db9bd88c0642daab81108baf992d29eb"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-F_Cu.gtl"
+        size: 60272
+        sha256_sum: "42def7652afabf5644b7f94fcf3ed60dab66f08ec8a53ce814401f0b3349c5af"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-F_Mask.gts"
+        size: 173602
+        sha256_sum: "adc73cbd7b3275b3c0046f94d437516efdc4ea6a21a20554734832c25bb7618a"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-F_Paste.gtp"
+        size: 25752
+        sha256_sum: "403e2c7990a0c577d1adee726aa848a32c158a2b0e2057339bb518b13aa8f621"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-F_SilkS.gto"
+        size: 85835
+        sha256_sum: "21d35516bc658f2ba9195b3491c9b552f183c7536674a9e3dd155c6d69f7f8d9"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-In1_Cu.g2"
+        size: 240681
+        sha256_sum: "d46e1ce50c6cd7bed6bdf1792ffb3ca49c6c3a856692dea8171d09f3ebab301f"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-In2_Cu.g3"
+        size: 204930
+        sha256_sum: "84b02c84466728040691ce5c847eb0d79c3ebd88e4b2e8aac8eba141bcb7d619"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board-drl_map.gbr"
+        size: 60333
+        sha256_sum: "c107c29d5c9978406d479efb98c6640cc931873c65d5eb334559719356caff54"
+    },
+    {
+        path: "pkg/cnc/boards/cnc_controller/board/plot/board.drl"
+        size: 2658
+        sha256_sum: "806cafdf482322993e617e6c22114b176df0f74b3ab06dbd3c3633fa71430ae8"
+    },
+    {
         path: "pkg/cnc/boards/usb_power_switch/case/bottom.stl"
         size: 7484
         sha256_sum: "a003b2df01d81246b7a5ac11707fd0eac0ede22074d0124e5b952cf33f83fa98"
@@ -1343,6 +1343,11 @@ files: [
         path: "pkg/peripherals/devices/ptouch/captures/settings/brother_read_settings_then_change.pcapng"
         size: 6404
         sha256_sum: "283018c98a4e3acf6d27ae073bef06368c30e6f559a052c0d521c3a9e42b62be"
+    },
+    {
+        path: "pkg/things/fan_controller/parts/fan-controller-hl15-case.stl"
+        size: 125884
+        sha256_sum: "a2a41f69a9b7954f489e0ba3c2bcde62b1e57a0305536c77a004600ad0ab4a6a"
     },
     {
         path: "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode"

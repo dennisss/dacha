@@ -189,6 +189,8 @@ impl<'a> VandermondReedSolomonDecoder<'a> {
 mod tests {
     use super::*;
 
+    use alloc::vec::Vec;
+
     /// Iterates over every distinct combination of K subset elements out of a N
     /// size set. On each iteration, K indexes are returned where each index is
     /// < N.

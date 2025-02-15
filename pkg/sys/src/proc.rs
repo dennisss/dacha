@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use common::errors::*;
+use base_error::*;
 use elf::ELF;
 
 use crate::file::blocking_read_to_string;

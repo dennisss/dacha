@@ -17,6 +17,7 @@ uuid = { path = "../uuid" }
 uuid_macros = { path = "../uuid/macros" }
 sstable = { path = "../sstable" }
 file = { path = "../file" }
+sys = { path = "../sys" }
 executor = { path = "../executor" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 

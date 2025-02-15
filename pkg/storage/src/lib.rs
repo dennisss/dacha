@@ -23,6 +23,8 @@ pub mod devices;
 pub mod erasure;
 pub mod partition;
 mod proto;
+pub mod scsi;
+mod smart;
 mod volume;
 
 pub const LOGICAL_BLOCK_SIZE: usize = 512;

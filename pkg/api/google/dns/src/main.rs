@@ -1,10 +1,9 @@
-extern crate common;
 #[macro_use]
 extern crate macros;
 
 use std::sync::Arc;
 
-use common::errors::*;
+use base_errors::*;
 use google_auth::*;
 
 #[executor_main]

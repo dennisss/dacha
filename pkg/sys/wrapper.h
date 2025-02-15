@@ -16,6 +16,7 @@
 #include <linux/utsname.h>
 #include <netinet/ip.h>
 #include <pthread.h>
+#include <scsi/sg.h>
 #include <signal.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>

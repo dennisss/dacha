@@ -1,6 +1,6 @@
+use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::ficr::FICR;
 use peripherals::raw::nvmc::NVMC;
-use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::uicr::{UICR, UICR_REGISTERS};
 
 /// Start offset in flash of the bootloader code.
@@ -50,7 +50,7 @@ pub unsafe fn application_code_data() -> &'static [u8] {
 
 // TODO: Keep in sync with the linker script.
 fn application_params_length() -> u32 {
-    4 * flash_page_size()
+    16 * flash_page_size()
 }
 
 pub unsafe fn application_params_data() -> &'static [u8] {

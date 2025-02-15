@@ -17,7 +17,7 @@ use crate::extension::ExtensionSet;
 use crate::message::Enum;
 use crate::types::FieldNumber;
 use crate::unknown::UnknownFieldSet;
-use crate::{Message, WireError, WireResult};
+use crate::{EnumValue, Message, WireError, WireResult};
 
 // TODO: Rename to align with the protobuf types.
 pub enum Reflection<'a> {
@@ -222,6 +222,12 @@ impl<M: Message + PartialEq<M> + 'static> MessageEquals for M {
             false
         }
     }
+}
+
+pub trait EnumReflection {
+    fn num_possible_values(&self) -> usize;
+
+    fn possible_value(&self, i: usize) -> Option<EnumValue>;
 }
 
 /// Trivially downcasts a type to its Reflection/ReflectionMut representation.

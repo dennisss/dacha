@@ -69,8 +69,8 @@ pub fn get_chip_config(chip_name: &str, building_bootloader: bool) -> Result<Cor
     // Final page is reserved for bootloader params.
     const NRF_BOOTLOADER_USABLE: u32 = 28 * 1024;
 
-    // Reserve 4 pages of flash for runtime parameter storage.
-    const NRF_END_RESERVED_BYTES: u32 = 4 * 4096;
+    // Reserve 16 pages of flash for runtime parameter storage.
+    const NRF_END_RESERVED_BYTES: u32 = 16 * 4096;
 
     match chip_name {
         "nrf52840" => {

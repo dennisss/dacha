@@ -65,12 +65,21 @@ export function decode_utf8(buffer: Uint8Array): string {
         i += 1;
 
         // Process first byte: Count and remove leading 1's
-        let extra_bytes = 0;
+        let leading_ones = 0;
         while ((code & (1 << 7)) != 0) {
-            extra_bytes += 1;
+            leading_ones += 1;
             code <<= 1;
         }
-        code >>= extra_bytes;
+        code >>= leading_ones;
+
+        let extra_bytes = 0;
+        if (leading_ones == 0) {
+            // 1 byte ASCII code
+        } else if (leading_ones == 1) {
+            throw new Error("Invalid UTF-8 start byte");
+        } else {
+            extra_bytes = leading_ones - 1;
+        }
 
         for (let j = 0; j < extra_bytes; j++) {
             let b = buffer[i];

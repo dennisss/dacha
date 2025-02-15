@@ -215,39 +215,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
 
     // Ensure that all references to the device are unmounted before we start
     // writing to it.
-    {
-        let mut device_paths = HashSet::<String>::default();
-        device_paths.insert(format!("/dev/{}", disk_entry.name));
-        for partition in disk_entry.partitions {
-            device_paths.insert(format!("/dev/{}", partition.name));
-        }
-
-        let mut to_unmount = vec![];
-
-        let mounts = sys::mounts()?;
-        for mount in mounts {
-            if !device_paths.contains(&mount.device) {
-                continue;
-            }
-
-            if mount.mount_point == "/"
-                || mount.mount_point.starts_with("/boot")
-                || mount.mount_point.starts_with("/home")
-            {
-                return Err(format_err!(
-                    "Attempting to unmount device used for system directories like \"{}\"",
-                    mount.mount_point
-                ));
-            }
-
-            to_unmount.push(mount.mount_point);
-        }
-
-        for path in to_unmount {
-            println!("Umounting {}...", path);
-            sys::umount(&path, UmountFlags::empty())?;
-        }
-    }
+    disk_entry.unmount_all().await?;
 
     println!("Opening disk...");
 
@@ -308,22 +276,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     drop(disk_file);
 
     println!("Re-sync...");
-
-    // TODO: Make this work with file::write
-    // (probably doesn't work as the file is not seekable).
-    unsafe {
-        let s = std::ffi::CString::new(format!("/sys/block/{}/device/rescan", disk_entry.name))
-            .unwrap();
-
-        let fd =
-            sys::OpenFileDescriptor::new(sys::open(s.as_ptr(), sys::O_WRONLY | sys::O_CLOEXEC, 0)?);
-
-        let mut buf = b"1";
-
-        let n = sys::write(*fd, buf.as_ptr(), 1)?;
-
-        assert_eq!(n, 1);
-    }
+    disk_entry.kernel_rescan()?;
 
     println!("Expanding root partition...");
 

@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use common::errors::*;
+use base_errors::*;
 use google_auth::GoogleRestClient;
 use google_discovery_generated::dns_v1;
 

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -11,6 +13,9 @@ pub struct BlockDevice {
     /// Name of the device (e.g. 'sda') (can be accessed at '/dev/[name]')
     pub name: String,
 
+    /// NOTE: When using USB disk adapters, this may be inaccurate and report
+    /// the adapter model rather than the disk model. It is best to directly
+    /// probe the ATA identity if a more accurate name is required.
     pub model: Option<String>,
 
     /// Size in bytes.
@@ -22,7 +27,22 @@ pub struct BlockDevice {
 
     pub physical_block_size: usize,
 
+    /// Rough guess of the physical protocol in use.
+    pub protocol: BlockDeviceProtocol,
+
     pub partitions: Vec<BlockDevicePartition>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockDeviceProtocol {
+    /// This includes generic SCSI disks for now.
+    Unknown,
+
+    /// NOTE: Currently this is currently only able to detect ATA devices that
+    /// are directly connected (not via a USB adapter).
+    ATA,
+
+    NVME,
 }
 
 #[derive(Clone, Debug)]
@@ -66,6 +86,22 @@ impl BlockDevice {
                 }
             };
 
+            let protocol = {
+                if entry.name().starts_with("nvme") {
+                    BlockDeviceProtocol::NVME
+                } else if entry.name().starts_with("sd") {
+                    let vendor_prop = device_dir.join("device/vendor");
+
+                    if file::read_to_string(vendor_prop).await?.trim() == "ATA" {
+                        BlockDeviceProtocol::ATA
+                    } else {
+                        BlockDeviceProtocol::Unknown
+                    }
+                } else {
+                    BlockDeviceProtocol::Unknown
+                }
+            };
+
             let mut partitions = vec![];
             for entry in file::read_dir(&device_dir)? {
                 if entry.typ() != file::FileType::Directory {
@@ -105,6 +141,7 @@ impl BlockDevice {
                 logical_block_size,
                 physical_block_size,
                 partitions,
+                protocol,
             });
         }
 
@@ -132,5 +169,71 @@ impl BlockDevice {
                 ))
             }
         })
+    }
+
+    /// Unmounts all fs mounts found to be referencing this block device.
+    pub async fn unmount_all(&self) -> Result<()> {
+        let mut device_paths = HashSet::<String>::default();
+        device_paths.insert(format!("/dev/{}", self.name));
+        for partition in &self.partitions {
+            device_paths.insert(format!("/dev/{}", partition.name));
+        }
+
+        let mut to_unmount = vec![];
+
+        let mounts = sys::mounts()?;
+        for mount in mounts {
+            if !device_paths.contains(&mount.device) {
+                continue;
+            }
+
+            if mount.mount_point == "/"
+                || mount.mount_point.starts_with("/boot")
+                || mount.mount_point.starts_with("/home")
+            {
+                return Err(format_err!(
+                    "Attempting to unmount device used for system directories like \"{}\"",
+                    mount.mount_point
+                ));
+            }
+
+            to_unmount.push(mount.mount_point);
+        }
+
+        for path in to_unmount {
+            println!("Umounting {}...", path);
+            sys::umount(&path, sys::UmountFlags::empty())?;
+        }
+
+        Ok(())
+    }
+
+    /// Requests that the Linux kernel rescan this disk for partitions.
+    ///
+    /// Note that you should unmount all references to the disk before doing
+    /// this to avoid inconsistency.
+    ///
+    /// DOES NOT mutate this entry so it may still contain old partitions.
+    pub fn kernel_rescan(&self) -> Result<()> {
+        // TODO: Make this work with file::write
+        // (probably doesn't work as the file is not seekable).
+        unsafe {
+            let s =
+                std::ffi::CString::new(format!("/sys/block/{}/device/rescan", self.name)).unwrap();
+
+            let fd = sys::OpenFileDescriptor::new(sys::open(
+                s.as_ptr(),
+                sys::O_WRONLY | sys::O_CLOEXEC,
+                0,
+            )?);
+
+            let mut buf = b"1";
+
+            let n = sys::write(*fd, buf.as_ptr(), 1)?;
+
+            assert_eq!(n, 1);
+        };
+
+        Ok(())
     }
 }

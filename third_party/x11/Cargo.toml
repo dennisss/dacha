@@ -1,0 +1,16 @@
+[package]
+name = "x11"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../pkg/base/error", default-features = false }
+
+[features]
+default = ["std"]
+std = ["alloc", "base_error/std"]
+alloc = ["base_error/alloc"]
+
+[build-dependencies]
+bindgen = "0.63.0"
+pkg-config = "0.3.26"

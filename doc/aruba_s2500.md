@@ -73,7 +73,7 @@ Try to ssh with `ssh admin@10.1.0.104`, but this gets an error:
 Unable to negotiate with 10.1.0.104 port 22: no matching cipher found. Their offer: aes128-cbc,aes256-cbc
 ```
 
-So we need to force it with `ssh -oCiphers=+aes256-cbc admin@10.1.0.104`
+So we need to force it with `ssh -oCiphers=+aes256-cbc -oHostKeyAlgorithms=+ssh-rsa admin@10.1.0.104`
 
 Enter priveleged mode with the `en` command.
 

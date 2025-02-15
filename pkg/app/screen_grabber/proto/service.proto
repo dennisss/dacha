@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package screen_grabber;
+
+service ScreenGrabber {
+    rpc ListWindows (ListWindowsRequest) returns (ListWindowsResponse);
+
+    rpc Grab (GrabRequest) returns (GrabResponse);
+}
+
+message ListWindowsRequest {}
+
+message ListWindowsResponse {
+    repeated Window windows = 1;
+}
+
+message Window {
+    uint64 id = 1;
+    string name = 2;
+    uint32 height = 3;
+    uint32 width = 4;
+}
+
+message GrabRequest {
+    uint64 window_id = 1;
+}
+
+message GrabResponse {
+    bytes image = 1;
+
+    string text = 2;
+}

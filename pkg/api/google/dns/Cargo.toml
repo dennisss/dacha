@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies]
 base_radix = { path = "../../../base/radix" }
-common = { path = "../../../common" }
+base_error = { path = "../../../base/error" }
 http = { path = "../../../http" }
 json = { path = "../../../format/json" }
 net = { path = "../../../net" }

@@ -53,7 +53,7 @@ pub use extension::{ExtensionRef, ExtensionSet, ExtensionTag};
 pub use merge::*;
 pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage};
 #[cfg(feature = "std")]
-pub use reflection::{FieldDescriptorShort, MessageReflection, StringPtr};
+pub use reflection::{EnumReflection, FieldDescriptorShort, MessageReflection, StringPtr};
 pub use types::{EnumValue, ExtensionNumberType, FieldNumber, TypedFieldNumber};
 #[cfg(feature = "std")]
 pub use unknown::UnknownFieldSet;

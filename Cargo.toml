@@ -76,6 +76,8 @@ members = [
 	"pkg/datastore/bundle",
 	"pkg/datastore/meta/client",
 	"pkg/app/sensor_monitor",
+	"pkg/app/screen_grabber",
+	"pkg/app/screen_grabber/proto",
 	"pkg/usb_device",
 	"pkg/builder",
 	"pkg/builder/proto",
@@ -153,6 +155,7 @@ members = [
 	"pkg/media/downloader",
 	"pkg/media/camera",
 	"pkg/media/camera/proto",
+	"pkg/media/screen",
 	# "pkg/app/study",
 	"pkg/api/google/discovery",
 	"pkg/api/google/discovery/generated",
@@ -160,11 +163,14 @@ members = [
 	"pkg/api/google/spanner",
 	"pkg/api/google/dns",
 	"pkg/api/google/storage",
+	"pkg/api/google/vision",
+	"pkg/api/google/gemini",
 	"pkg/api/acme",
 	"third_party/protobuf_builtins",
 	"third_party/googleapis",
 	"third_party/chromium/cdm",
 	"third_party/google/pprof/proto",
+	"third_party/x11",
 	"pkg/dev/source",
 	"pkg/dev/source/proto",
 	"pkg/dev/git",
@@ -215,6 +221,10 @@ opt-level = 3
 debug = false
 
 [profile.dev.package.xml]
+opt-level = 3
+debug = false
+
+[profile.dev.package.image]
 opt-level = 3
 debug = false
 

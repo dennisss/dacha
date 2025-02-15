@@ -1,0 +1,24 @@
+[package]
+name = "screen_grabber"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+image = { path = "../../image" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+macros = { path = "../../macros" }
+http = { path = "../../http" }
+json = { path = "../../format/json" }
+web = { path = "../../web" }
+parsing = { path = "../../parsing" }
+screen_grabber_proto = { path = "./proto" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
+google_auth = { path = "../../api/google/auth" }
+gemini = { path = "../../api/google/gemini" }
+x11 = { path = "../../../third_party/x11" }

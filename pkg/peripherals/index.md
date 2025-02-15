@@ -1,5 +1,7 @@
 # Peripherals
 
+This package contains various libraries / tools for building physical peripheral (USB / I2C / SPI / RF / etc.). This is also where most of the code for building MCU applications (nRF52, RP2040, etc.) lives.
+
 ## Standard Naming
 
 To refer to SPI/I2C host-side interfaces which **initiate** connections to other devices, we use the following terms:
