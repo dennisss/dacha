@@ -51,7 +51,7 @@ use core::arch::asm;
 use executor::singleton::Singleton;
 use nordic::ecb::ECB;
 use nordic::gpio::*;
-use nordic::params::ParamsStorage;
+use nordic::params::AppParamsStorage;
 use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio::Radio;
 use nordic::radio_activity_led::setup_radio_activity_leds;
@@ -66,7 +66,7 @@ use nordic_wire::usb_descriptors::*;
 use peripherals::storage::BlockStorage;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
-static PARAMS_STORAGE: Singleton<ParamsStorage> = Singleton::uninit();
+static PARAMS_STORAGE: Singleton<AppParamsStorage> = Singleton::uninit();
 
 const USING_DEV_KIT: bool = true;
 
@@ -171,7 +171,7 @@ async fn main_thread_fn() {
 
     let params_storage = {
         PARAMS_STORAGE
-            .set(ParamsStorage::create(peripherals.nvmc).unwrap())
+            .set(AppParamsStorage::create(peripherals.nvmc).unwrap())
             .await
     };
 

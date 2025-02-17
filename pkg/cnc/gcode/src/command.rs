@@ -44,6 +44,46 @@ impl CommandWord {
     }
 }
 
+/*
+What PrusaSlicer will generate for pauses:
+    ; M601 without any arguments will go to a default position. Program responsible for going back to the old position after the resume.
+    M117 Place bearings in slots and resume printing
+    M601
+
+M25 and M125 are the same as M601 in Prusa
+
+'M226' is basically the same thing
+'M0' - wait for user input or wait for time. (after finishing whatever was already doing.)
+    - Must avoid disabling the motors though.
+
+'M1'
+
+
+
+More test cases we need to handle:
+
+'M1 Hello world'
+'M117 Place bearings in slots and resume printing'
+
+
+'M1 S5 hello world'
+    - Not super critical
+
+'EXCLUDE_OBJECT_DEFINE NAME=calibration_pyramid CENTER=50,50 POLYGON=[[40,40],[50,60],[60,40]]'
+
+'EXCLUDE_OBJECT_START NAME=object_name'
+
+'EXCLUDE_OBJECT_END [NAME=object_name]'
+
+- Klipper doesn't support having arbitrary whitespace in commands.
+- General assumption is that the first word ([A-Z_]+) in the line is the command name optionally
+    - Basically I need to buffer the first word
+        - If I get a single character followed by a number, then its part of regular gcode, else, it is a gcode command
+
+
+
+*/
+
 // Defines the 'Command' enum.
 define_command_enum!(
     RapidMove,                       // G0
@@ -66,7 +106,7 @@ define_command_enum!(
     SetToRelativeMode,               // G91
     SetPosition,                     // G92
     FeedRateUnitsPerMinute,          // G94
-Stop,                            // M0
+    Stop,                            // M0
     ProgramEnd,                      // M2
     SpindleOnClockwise,              // M3
     SpindleOnCounterClockwise,       // M4

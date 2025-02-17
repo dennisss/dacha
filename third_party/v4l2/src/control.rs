@@ -2,8 +2,9 @@ use core::fmt::Debug;
 use std::ptr::read_unaligned;
 
 use base_error::*;
+use base_util::null_terminated::read_null_terminated_string;
 
-use crate::{bindings::*, utils::read_null_terminated_string};
+use crate::bindings::*;
 
 // TODO: Also port the flags defined in https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/vidioc-queryctrl.html#vidioc-queryctrl. (especially the slider one would be useful for UI rendering).
 

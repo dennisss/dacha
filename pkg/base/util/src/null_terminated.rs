@@ -1,8 +1,6 @@
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
 use base_error::*;
-
-use crate::c_char;
 
 pub fn read_null_terminated_str(data: &[u8]) -> Result<&str> {
     for i in 0..data.len() {

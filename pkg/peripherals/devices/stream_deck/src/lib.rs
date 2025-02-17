@@ -4,8 +4,8 @@ extern crate usb;
 
 use std::time::Duration;
 
+use base_util::null_terminated::read_null_terminated_string;
 use common::errors::*;
-use sys::read_null_terminated_string;
 use usb::hid::HIDDevice;
 
 const USB_CONFIG: u8 = 1;

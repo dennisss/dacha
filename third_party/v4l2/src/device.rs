@@ -1,6 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use base_error::*;
+use base_util::null_terminated::read_null_terminated_string;
 use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::AsyncVariable;
@@ -12,7 +13,6 @@ use sys::Errno;
 
 use crate::io::*;
 use crate::stream::*;
-use crate::utils::read_null_terminated_string;
 use crate::ControlDefinition;
 use crate::{bindings::*, ControlMenuItem};
 

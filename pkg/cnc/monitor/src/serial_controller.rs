@@ -44,7 +44,7 @@ const READ_BUFFER_SIZE: usize = 1024;
 
 /// If we don't receive a status line with the current position of the machine
 /// for this amount of time, we will assume that it is dead.
-const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(6);
+const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Max age of state data which we don't reliably get at a high frequently. In
 /// gRBL this is stuff that requires calling '$G' and '$#' since these block on
@@ -707,7 +707,7 @@ impl SerialController {
             // TODO: Throttle this to 1hz
             Self::check_machine_connected(shared, polling_start_time, false).await?;
 
-            executor::sleep(Duration::from_millis(100)).await?;
+            executor::sleep(Duration::from_millis(1000)).await?;
         }
 
         Ok(())
@@ -1403,7 +1403,7 @@ impl SerialController {
         // tool change command executes many sub-commands.
         if config.firmware() == MachineConfig_Firmware::CARVERA {
             // TODO: Bound this loop's time
-                        loop {
+            loop {
                 let state = self.get_current_axis_value("ATC_STATE").await?;
                 let data = state.data.get().ok_or_else(|| err_msg("Missing data"))?;
 
@@ -1668,14 +1668,24 @@ impl SerialController {
         // Wait for any errors for the above pre-amble to be skipped.
         executor::sleep(Duration::from_millis(100)).await?;
 
+        let mut just_sent_no_reply_command = false;
+
         loop {
             // Some firmwares (at least confirmed on Carvera firmware) seem to be
             // susceptible to memory corruption if we send UART commands too fast. So this
             // mitigates this issue by ensuring that there is a minimum quiet period between
             // command lines to ensure that previous lines are mostly done processing before
             // new ones are processed.
+            //
+            // NOTE: This isn't a perfect fix and there is still a small risk of corruption
+            // even with this wait.
             if add_quiet_period {
-                executor::sleep(Duration::from_millis(20)).await?;
+                if just_sent_no_reply_command {
+                    executor::sleep(Duration::from_millis(100)).await?;
+                    just_sent_no_reply_command = false;
+                } else {
+                    executor::sleep(Duration::from_millis(20)).await?;
+                }
             }
 
             let mut queue = shared.sender_pending_buffer.lock().await?.enter();
@@ -1690,6 +1700,7 @@ impl SerialController {
                     queue.exit();
                     writer.write_all(&send.line).await?;
                     send.callback.send(Ok(()));
+                    just_sent_no_reply_command = true;
                     continue;
                 }
             }

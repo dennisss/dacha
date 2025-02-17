@@ -13,7 +13,7 @@ use nordic_wire::packet::PacketBuffer;
 use nordic_wire::packet_cipher::PacketCipher;
 
 use crate::ecb::*;
-use crate::params::{ParamsStorage, NETWORK_CONFIG_ID, NETWORK_STATE_ID};
+use crate::params::{AppParamsStorage, NETWORK_CONFIG_ID, NETWORK_STATE_ID};
 use crate::radio::Radio;
 
 /// Size to use for all buffers. This is also the maximum size that we will
@@ -59,7 +59,7 @@ struct RadioSocketState {
     /// durable storage.
     persisted_packet_counter: u32,
 
-    params_storage: Option<&'static ParamsStorage>,
+    params_storage: Option<&'static AppParamsStorage>,
 
     transmit_buffer: SegmentedBuffer<[u8; BUFFER_SIZE]>,
 
@@ -92,7 +92,7 @@ impl RadioSocket {
     /// NOTE: This must be done before the socket is used.
     pub async fn configure_storage(
         &self,
-        mut params_storage: &'static ParamsStorage,
+        mut params_storage: &'static AppParamsStorage,
     ) -> Result<()> {
         let mut state_guard = self.state.lock().await?.enter();
         let state = &mut *state_guard;

@@ -99,7 +99,8 @@ async fn main() -> Result<()> {
         crypto::tls::ServerOptions::recommended(certificate_file, private_key_file)?;
 
     let mut inst = Arc::new(LabelerImpl::create().await?);
-    // service.register_dependency(inst.clone()).await;
+    // TODO: Need some warnings if we ever forget to register these.
+    service.register_dependency(inst.clone()).await;
 
     let mut rpc_handler = rpc::Http2RequestHandler::new();
     rpc_handler.add_service(inst.clone().into_service())?;

@@ -2,6 +2,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use std::sync::Arc;
 
+use base_util::null_terminated::read_null_terminated_string;
 use common::errors::*;
 use file::LocalPath;
 pub use sys::bindings::gpio_v2_line_flag;
@@ -9,7 +10,6 @@ use sys::bindings::{
     gpio_v2_line_config, gpio_v2_line_info, gpio_v2_line_request, gpio_v2_line_values,
     gpiochip_info,
 };
-use sys::read_null_terminated_string;
 use sys::OpenFileDescriptor;
 
 ior!(gpio_get_chipinfo, 0xB4, 0x01, gpiochip_info);

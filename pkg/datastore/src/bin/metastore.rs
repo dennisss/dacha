@@ -10,6 +10,14 @@ Bootstrap using:
 cargo run --package rpc_util -- ls 127.0.0.1:4001 --insecure
 
 cargo run --package rpc_util -- call 127.0.0.1:4001 KeyValueStore.Get 'data: "hello"' --insecure
+
+TODO: Make sure that nodes that don't have their log fully applied can't become a leader.
+
+cargo run --release --bin metastore -- --dir=$PWD/testdata/metastore_data2 --init_port=4000 --port=4001
+
+curl --http2 --http2-prior-knowledge http://127.0.0.1:4001/profilez > perf.pb
+
+
 */
 
 #[macro_use]

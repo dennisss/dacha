@@ -1238,6 +1238,7 @@ name = "file"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_util",
  "common",
  "executor",
  "macros",
@@ -2321,6 +2322,7 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "base_radix",
+ "base_util",
  "common",
  "crypto",
  "executor",
@@ -2647,6 +2649,7 @@ dependencies = [
 name = "peripherals"
 version = "0.1.0"
 dependencies = [
+ "base_util",
  "common",
  "crypto",
  "executor",
@@ -3442,6 +3445,7 @@ dependencies = [
 name = "stream_deck"
 version = "0.1.0"
 dependencies = [
+ "base_util",
  "common",
  "executor",
  "file",

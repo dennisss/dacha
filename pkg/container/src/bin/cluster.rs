@@ -3,6 +3,8 @@
 /*
 Aside from the 'bootstrap' command, all commands require
 
+TODO: Remove this list since it is mostly obsolete now.
+
 Testing:
     cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
 
@@ -29,6 +31,10 @@ Testing with a single node cluster:
     <try stopping and restarting the node. everything should still work>
 
 
+
+    cargo run --package rpc_util -- ls 10.1.1.1:30001 --insecure
+
+    cargo run --bin cluster -- log --worker_name=system.manager.ftc5j9f006k0v
 
 Testing with a single node non-cluster:
     cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
@@ -115,6 +121,8 @@ enum Command {
 
     /// Re-builds all system cluster components (metastore, manager) and updates
     /// them in a running cluster.
+    ///
+    /// TODO: Eventually also update node runtimes.
     #[arg(name = "upgrade")]
     Upgrade(UpgradeCommand),
 
@@ -370,6 +378,8 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
 
     let zone = node_meta.zone().to_string();
 
+    // TODO: Because the group_id will be different across runs, the bootstrap
+    // script isn't currently retryable.
     let metastore_resource = run_local_metastore(cmd.local_metastore_port, zone).await?;
 
     task_bundle.add(
@@ -472,6 +482,7 @@ async fn run_bootstrap_inner(
         .put(&zone_record)
         .await?;
 
+    // Start a local manager instance.
     let manager =
         Manager::new(meta_client.clone(), Arc::new(crypto::random::global_rng())).into_service();
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
@@ -586,6 +597,14 @@ async fn run_upgrade(cmd: UpgradeCommand) -> Result<()> {
     let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
     let manager_stub = connect_to_manager(meta_client.clone()).await?;
     let request_context = rpc::ClientRequestContext::default();
+
+    /*
+    // Start a local manager instance.
+    let manager =
+        Manager::new(meta_client.clone(), Arc::new(crypto::random::global_rng())).into_service();
+    let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
+    let manager_stub = cluster_client::ManagerStub::new(manager_channel);
+    */
 
     let meta_job_spec = get_metastore_job(meta_client.zone()).await?;
     start_job_impl(
@@ -1210,6 +1229,8 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
 
     let mut attempts = vec![];
 
+    println!("{:?}", resp);
+
     // TODO: If the final attempt (or any event) doesn't have a Stopped event, it
     // may still not be running if the event failed to be saved. Need to cross
     // reference with the current state of the worker on the node.
@@ -1225,13 +1246,19 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
                 exit_status: None,
                 events: vec![],
             }),
-            cluster_client::WorkerEventTypeCase::StartFailure(v) => attempts.push(Attempt {
-                id: event.timestamp(),
-                start_time: time,
-                end_time: Some(time.clone()),
-                exit_status: None,
-                events: vec![],
-            }),
+            cluster_client::WorkerEventTypeCase::StartFailure(v) => {
+                println!("START FAILURE");
+
+                // TODO: Report v.status() here.
+
+                attempts.push(Attempt {
+                    id: event.timestamp(),
+                    start_time: time,
+                    end_time: Some(time.clone()),
+                    exit_status: None,
+                    events: vec![],
+                })
+            }
             cluster_client::WorkerEventTypeCase::Stopped(e) => {
                 let last_attempt = attempts.last_mut().unwrap();
                 last_attempt.exit_status = Some(e.status().clone());
@@ -1240,6 +1267,8 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
             _ => {}
         }
 
+        // TODO: There may be zero attempts ().
+        /// shoudl do some validation here.
         let last_attempt = attempts.last_mut().unwrap();
         last_attempt.events.push(&event);
 
@@ -1249,6 +1278,7 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
     for attempt in attempts {
         println!("{}: {}", attempt.id, time_to_string(&attempt.start_time));
         if let Some(end_time) = attempt.end_time {
+            // TODO: This may be none if there was a start failure.
             println!("=> {:?}", attempt.exit_status.unwrap());
         }
     }

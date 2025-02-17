@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 common = { path = "../common" }
+base_util = { path = "../base/util" }
 parsing = { path = "../parsing" }
 regexp_macros = { path = "../automata/regexp_macros" }
 automata = { path = "../automata" }

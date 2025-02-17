@@ -43,6 +43,11 @@ impl<YIter: Iterator<Item = f32>> ScanLineIterator<YIter> {
         {
             let mut path_i = 0;
             for i in 0..vertices.len() {
+                /*
+                TODO:
+                thread 'exec::pool_15' panicked at pkg/graphics/src/raster/scanline.rs:46:28:
+                index out of bounds: the len is 19 but the index is 19
+                */
                 while i >= path_starts[path_i + 1] {
                     path_i += 1;
                 }

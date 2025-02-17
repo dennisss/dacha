@@ -1,3 +1,5 @@
+use crate::list::Appendable;
+
 /// A cyclic buffer for storing byte data which is canonically read/written in
 /// dynamic length segments/packets.
 ///
@@ -8,8 +10,11 @@
 /// Currently an 8-bit length prefix is used so all data packets must be <= 255
 /// bytes in length.
 pub struct SegmentedBuffer<Array> {
+    /// Start
     start: usize,
     length: usize,
+
+    /// Byte buffer containing all the segments.
     buf: Array,
 }
 
@@ -43,6 +48,11 @@ impl<Array: AsRef<[u8]> + AsMut<[u8]>> SegmentedBuffer<Array> {
         }
     }
 
+    /// Appends a contiguous slice of data to the buffer. If we hit the end of
+    /// the buffer, this will stop early and will need to be called again to add
+    /// more data starting at the beginning of the buffer.
+    ///
+    /// Returns the number of bytes appended.
     fn append_partial(&mut self, data: &[u8]) -> usize {
         let i = (self.start + self.length) % self.buf.as_ref().len();
         let j = core::cmp::min(i + data.len(), self.buf.as_ref().len());
@@ -106,6 +116,30 @@ impl<Array: AsRef<[u8]> + AsMut<[u8]>> SegmentedBuffer<Array> {
         Some(len)
     }
 }
+
+/*
+pub struct SegmentedBufferWriter {
+    //
+}
+
+impl Appendable for SegmentedBufferWriter {
+    type Item = u8;
+
+    type Error = ();
+
+    fn push(&mut self, value: Self::Item) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn extend_from_slice(&mut self, other: &[Self::Item]) -> Result<(), Self::Error> {
+        todo!()
+    }
+}
+*/
+/*
+Appendable<Item = u8>
+
+*/
 
 #[cfg(test)]
 mod tests {

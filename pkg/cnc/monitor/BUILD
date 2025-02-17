@@ -17,7 +17,7 @@ bundle(
     ],
     configs = [
         "//pkg/builder/config:rpi64",
-        "//pkg/builder/config:x64",
+        # "//pkg/builder/config:x64",
     ]
 )
 

@@ -56,7 +56,14 @@ message RouteTarget {
     // TODO: Store in binary format.
     //
     // REQUIRED
-    string addr = 1;    
+    string addr = 1;
+
+    // If true, then this the target server is fully started up and can handle general requests.
+    //
+    // This is meant to be false during startup when the server must be reachable with raft initialization but hasn't yet figured out its role in the raft group.
+    //
+    // TODO: Implement this.
+    bool ready = 2;
 }
 
 // Thin-serializable state of the server

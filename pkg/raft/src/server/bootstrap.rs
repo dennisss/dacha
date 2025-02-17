@@ -83,6 +83,8 @@ pub(super) async fn propose_entry(
             None => {
                 // TODO: Must support the known_ids list being empty.
 
+                // TODO: Make sure this selects from the 'ready' set.
+
                 // If we have no idea who the leader is, pick a random server to ask.
                 let known_ids = channel_factory
                     .reachable_servers()

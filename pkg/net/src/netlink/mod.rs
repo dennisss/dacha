@@ -5,6 +5,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::io::FromRawFd;
 use std::sync::atomic::AtomicUsize;
 
+use base_util::null_terminated::read_null_terminated_string;
 use common::errors::*;
 use nix::sys::socket::recvmsg;
 use nix::sys::socket::sendmsg;
@@ -13,7 +14,6 @@ use nix::sys::socket::{
     AddressFamily, InetAddr, NetlinkAddr, SockAddr, SockFlag, SockProtocol, SockType,
 };
 use nix::sys::uio::IoVec;
-use sys::read_null_terminated_string;
 
 use crate::ip::IPAddress;
 

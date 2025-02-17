@@ -1,6 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use base_error::*;
+use base_util::null_terminated::read_null_terminated_string;
 use executor::lock;
 use executor::sync::AsyncMutex;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath};
@@ -12,7 +13,6 @@ use crate::buffer::*;
 use crate::device::DeviceHandle;
 use crate::format::{Format, FormatDefinition, PixelFormat};
 use crate::io::*;
-use crate::utils::read_null_terminated_string;
 
 // TODO: On drop, consider turning the stream off and deallocating all buffers?
 pub struct UnconfiguredStream {

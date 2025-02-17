@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+base_util = { path = "../base/util", default-features = false }
 common = { path = "../common", default-features = false }
 crypto = { path = "../crypto", default-features = false }
 executor = { path = "../executor", default-features = false }
@@ -17,5 +18,5 @@ libc = { version = "0.2.97", optional = true }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "crypto/alloc", "executor/alloc"]
-std = ["common/std", "crypto/std", "executor/std", "failure", "nix", "libc", "file", "sys"]
+alloc = ["common/alloc", "crypto/alloc", "executor/alloc", "base_util/alloc"]
+std = ["common/std", "crypto/std", "executor/std", "base_util/std", "failure", "nix", "libc", "file", "sys"]

@@ -24,6 +24,45 @@ use math::geometry::{
 };
 
 /*
+Endoscope mount uses 2 x M2 16mm screws
+- Keywords to search for are 'Windows' or 'Linux' or 'UVC' or presence of a male USB type A connector (the 3 in 1 endoscopes)
+
+
+Dual layer workflow:
+- Given full workpiece size
+- Secure full PCB to the area with weak double sided tape.
+- Probe the surface of the PCB
+- Drill 4 asymetric alignment holes in the corners
+- Verify position of the holes with the camera
+- Do the isolation routing for the top side
+- Do the solder mask for the top side
+- Flip the PCB over
+- Check the location of the holes
+- Do Z probe
+- Transform gcode appropriately
+- Do back isolation routing
+- Do back solder mask
+- Do drilling
+- Do edge cuts.
+
+
+
+
+TODO: Need to investigate what the solder mask removal quality is so bad.
+
+TODO: Make this a golden test case:
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/usb_power_switch/usb_power_switch.kicad_pcb \
+        --output_path=usb_power_switch.gcode
+
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/things/fan_controller/boards/board-hl15-latest/board-hl15-latest.kicad_pcb \
+        --forced_hole_diameter=0.9 \
+        --output_path=fan_controller.gcode
+
+
 TODO: For Carvera leveling, if in 'preview' mode, then the view box will move while probing
 - Also need a clear sense of the progress o leveling
 
@@ -41,8 +80,6 @@ TODO: Need an alarm for the UV curing time (ideally make this computer controlle
 
 TODO: Need more tiling simplification:
 - Don't need to turn off and on spindle in between the tile runs.
-
-TODO: NEed to completely skip the drilling processor if there are no holes to drill (else we just turn on and off the spindle many times)
 
 TODO: Solder mask not getting completely removed
 - Need to go slower or more overlap?

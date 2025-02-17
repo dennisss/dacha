@@ -48,10 +48,12 @@ async fn blinker_thread_fn() {
 
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
+    // TODO: Make the radio socket optional.
     BlinkUSBThread::start(
         BLINK_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         &RADIO_SOCKET,
+        None,
         timer.clone(),
     );
 
@@ -107,6 +109,7 @@ fn main() -> () {
 
     nordic::clock::init_high_freq_clk(&mut peripherals.clock);
     nordic::clock::init_low_freq_clk(
+        // TODO: Default to using the RC
         nordic::clock::LowFrequencyClockSource::CrystalOscillator,
         &mut peripherals.clock,
     );

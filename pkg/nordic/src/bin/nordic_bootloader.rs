@@ -2,6 +2,9 @@
 
 cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 
+
+
+
 cargo run --bin flasher -- built/pkg/nordic/nordic_bootloader --usb_device_id=1
 
 da build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
@@ -61,8 +64,6 @@ What this needs to do:
     - Change interrupt table location.
     - Reset stack pointer (use the stack pointer in the table)
     - Jump to the first thing in the new vector table
--
-
 
 When is the bootloader entered:
 - Check the RESETREAS register to see if we were reset via a pin or software
@@ -113,7 +114,6 @@ use logging::Logger;
 use nordic::bootloader::app::*;
 use nordic::bootloader::flash::*;
 use nordic::bootloader::params::*;
-use nordic::config_storage::NetworkConfigStorage;
 use nordic::gpio::*;
 use nordic::reset::*;
 use nordic::rtc::RTC;
@@ -578,10 +578,28 @@ async fn main_thread_fn(reason: EnterBootloaderReason, params: BootloaderParams)
 
 entry!(main);
 
+use peripherals::raw::{PinDirection, PinLevel};
+
 // This is not inlined into entry() to allow it to be separately stored in RAM.
 #[inline(never)]
 #[no_mangle]
 fn main() -> () {
+    let mut peripherals = peripherals::raw::Peripherals::new();
+
+    // For debugging with an LED.
+    /*
+    let mut pins = unsafe { nordic::pins::PeripheralPins::new() };
+    let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
+    let mut led = gpio.pin(pins.P0_08);
+    led.set_direction(PinDirection::Output);
+    led.write(PinLevel::Low);
+    */
+
+    // Newer chip revisions will enable APPROTECT on reset unless this is done to
+    // disable it in software. This is required in combination with the HwDisable
+    // setting flashed at UICR.APPROTECT.
+    peripherals.approtect.disable.write_swdisable();
+
     // TODO: Keep all of this flash?
     let params = read_bootloader_params();
     let reason = maybe_enter_application(&params);
@@ -589,8 +607,6 @@ fn main() -> () {
     // Disable interrupts.
     // TODO: Disable FIQ interrupts?
     unsafe { asm!("cpsid i") }
-
-    let mut peripherals = peripherals::raw::Peripherals::new();
 
     nordic::clock::init_high_freq_clk(&mut peripherals.clock);
 

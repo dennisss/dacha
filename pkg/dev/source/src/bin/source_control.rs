@@ -63,6 +63,37 @@ use google_auth::GoogleServiceAccount;
 const EXTERNAL_FILES_PROTO_PATH: &'static str = "external_files.pbtxt";
 const GIT_EXCUDE_FILE_PATH: &'static str = ".git/info/exclude";
 
+/*
+
+Next steps:
+- Skip any files already in the git index
+- Skip any files not matched via the gitignore
+
+- Warn of anything in both the external files and in git
+- Warn of anything in git that is very large or a binary file.
+
+
+*/
+
+/*
+Glob notes
+- In gitignore
+    - 'hello.*' match in any directory.
+    - '/hello.*' : only match in current directory
+
+
+    - '#' at the start of a line is a comment
+        - must escape as '\#'
+        - similarly must escape trailing whitespace
+
+    - '!' in front of a line excludes the pattern
+        -
+
+- The '/' at the beginning behavior is unique to git. For other systems, there is a similar concept of matching in any directory by default.
+
+
+*/
+
 async fn list_big_files() -> Result<()> {
     // file::recursively_list_dir(dir, callback)
 
@@ -130,7 +161,7 @@ async fn save_external_files_proto(mut value: ExternalSourceFiles) -> Result<()>
     {
         let mut lines = LineBuilder::new();
         for file in value.files() {
-            lines.add(file.path());
+            lines.add(file.path().replace("[", "\\[").replace("]", "\\]"));
         }
 
         file::write(project_path!(GIT_EXCUDE_FILE_PATH), lines.to_string()).await?;
@@ -174,7 +205,8 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
     let mut existing_hashes = HashSet::new();
 
     for file in external_files.files() {
-if git_entries.contains_key(file.path()) {
+        // TODO: NEed to check for submodule directories here too.
+        if git_entries.contains_key(file.path()) {
             return Err(err_msg(
                 "A file tracked by git was found in the external_files map",
             ));
@@ -223,7 +255,7 @@ if git_entries.contains_key(file.path()) {
             }
 
             if found {
-            continue;
+                continue;
             }
         }
 

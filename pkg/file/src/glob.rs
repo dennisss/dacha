@@ -124,6 +124,7 @@ impl GlobIterator {
         Ok(Self {
             pattern: regexp,
             only_select_directories,
+            // TODO: Can skip based on a shared prefix.
             pending_directories: vec![LocalPath::new("/").to_owned()],
             matched_files: vec![],
         })

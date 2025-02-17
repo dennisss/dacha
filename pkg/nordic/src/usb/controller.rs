@@ -40,6 +40,13 @@ Start up (based on figure 3 on the USBD section):
 
 */
 
+/*
+TODO:
+ https://docs.nordicsemi.com/bundle/errata_nRF52840_EngD/page/ERR/nRF52840/EngineeringD/latest/anomaly_840_199.html
+
+
+*/
+
 use core::arch::asm;
 
 use common::register::{RegisterRead, RegisterWrite};
@@ -355,8 +362,9 @@ impl USBDeviceController {
                                 endpoint_index,
                             };
 
-                            let mut buf = [0u8; 64];
-                            let nread = match request.read(&mut buf).await {
+                            let mut buf = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
+
+                            let nread = match request.read(&mut buf[..]).await {
                                 Ok(v) => v,
                                 Err(e) => {
                                     log!("ERR");
@@ -622,14 +630,22 @@ impl<'a> USBDeviceControlRequest<'a> {
         let mut total_read = 0;
 
         // TODO: Re-use a more global buffer.
-        let mut packet_buffer = [0u8; 64];
+        let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
 
-        self.controller.periph.epout[0]
-            .ptr
-            .write(unsafe { core::mem::transmute(packet_buffer.as_ptr()) });
+        let ptr: u32 = unsafe { core::mem::transmute(packet_buffer.as_ptr()) };
+        assert!(ptr % 4 == 0);
+
+        self.controller.periph.epout[0].ptr.write(ptr);
         self.controller.periph.epout[0]
             .maxcnt
             .write(packet_buffer.len() as u32);
+
+        /*
+        TODO: Errata 104 as well
+        */
+
+        // TODO: Not needed?
+        self.controller.pending_transfer = None;
 
         while self.host_remaining > 0 {
             self.controller.periph.tasks_ep0rcvout.write_trigger();
@@ -638,16 +654,21 @@ impl<'a> USBDeviceControlRequest<'a> {
                 .await?;
 
             // XXX: Critical DMA section
+            // startepout will trigger the beginning of the DMA
+
             self.controller.pending_transfer = Some((EndpointDirection::Out, 0));
             self.controller.periph.tasks_startepout[0].write_trigger();
             self.controller
                 .wait_for_specific_event(Event::EndEpOUT, true)
                 .await?;
+            // TODO: Not needed?
+            self.controller.pending_transfer = None;
 
             let packet_len = self.controller.periph.epout[0].amount.read() as usize;
             // let packet_len = self.controller.periph.size.epout[0].read().size() as usize;
             if packet_len > output.len() {
                 // Overflow. Panic!
+                panic!()
             }
 
             output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
@@ -659,6 +680,9 @@ impl<'a> USBDeviceControlRequest<'a> {
                 break;
             }
         }
+
+        // TODO: Not needed?
+        self.controller.pending_transfer = None;
 
         self.controller.periph.tasks_ep0status.write_trigger();
 
@@ -683,7 +707,7 @@ impl<'a> USBDeviceControlResponse<'a> {
         let mut done = false;
 
         // TODO: Move to the USBDeviceController instance?
-        let mut packet_buffer = [0u8; MAX_PACKET_SIZE];
+        let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
 
         while self.host_remaining > 0 && !done {
             let mut packet_len = core::cmp::min(
@@ -800,6 +824,9 @@ impl<'a> USBDeviceControlResponse<'a> {
                     result?;
                 }
 
+                // TODO: Not needed?
+                self.controller.pending_transfer = None;
+
                 // TODO: Start preparing the next packet while this one is beign
                 // sent. self.controller
                 //     .wait_for_specific_event(Event::EP0DataDone, false)
@@ -843,9 +870,12 @@ impl<'a> USBDeviceNormalRequest<'a> {
         // TODO: Re-use a global buffer
         let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
 
+        let ptr: u32 = unsafe { core::mem::transmute(packet_buffer.as_ptr()) };
+        assert!(ptr % 4 == 0);
+
         self.controller.periph.epout[self.endpoint_index]
             .ptr
-            .write(unsafe { core::mem::transmute(packet_buffer.as_ptr()) });
+            .write(ptr);
         self.controller.periph.epout[self.endpoint_index]
             .maxcnt
             .write(packet_buffer.len() as u32);
@@ -855,6 +885,9 @@ impl<'a> USBDeviceNormalRequest<'a> {
         self.controller
             .wait_for_specific_event(Event::EndEpOUT, true)
             .await?;
+
+        // TODO: Not needed?
+        self.controller.pending_transfer = None;
 
         // NOTE: 'epout.amount' seems to always contain 64 (buffer size) while
         // SIZE.EPOUT seems to have the current value.
@@ -891,9 +924,12 @@ impl<'a> USBDeviceNormalResponse<'a> {
 
         packet_buffer[0..data.len()].copy_from_slice(data);
 
+        let ptr: u32 = unsafe { core::mem::transmute(packet_buffer.as_ptr()) };
+        assert!(ptr % 4 == 0);
+
         self.controller.periph.epin[self.endpoint_index]
             .ptr
-            .write(unsafe { core::mem::transmute(packet_buffer.as_ptr()) });
+            .write(ptr);
         self.controller.periph.epin[self.endpoint_index]
             .maxcnt
             .write(data.len() as u32);
@@ -904,6 +940,9 @@ impl<'a> USBDeviceNormalResponse<'a> {
         self.controller
             .wait_for_specific_event(Event::EndEpIN, true)
             .await?;
+
+        // TODO: Not needed?
+        self.controller.pending_transfer = None;
 
         /*
         self.controller

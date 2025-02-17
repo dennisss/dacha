@@ -102,12 +102,14 @@ export function resolve_leveling_state(machine: any, state: CarveraLevelingState
     origin.x += state.origin_offset.x;
     origin.y += state.origin_offset.y;
 
-    if (!machine.state.loaded_program?.file?.program?.min_position) {
+    // TODO: Verify using the G54 one and there are no other ones.
+    if (!machine.state.loaded_program?.file?.program?.bounds[0].min_position) {
+        // TODO: Return an error message.
         return null;
     }
 
-    let min_pos = clean_point(machine.state.loaded_program.file.program.min_position);
-    let max_pos = clean_point(machine.state.loaded_program.file.program.max_position);
+    let min_pos = clean_point(machine.state.loaded_program.file.program.bounds[0].min_position);
+    let max_pos = clean_point(machine.state.loaded_program.file.program.bounds[0].max_position);
 
     min_pos.x += origin.x;
     min_pos.y += origin.y;

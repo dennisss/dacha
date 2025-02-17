@@ -1,19 +1,21 @@
 use std::{sync::Arc, time::Duration};
 
 use base_error::*;
-use screen_grabber_proto::screen_grabber::*;
-use image::format::jpeg::encoder::JPEGEncoder;
-use image::{Color, Image};
 use gemini::GeminiClient;
 use google_auth::GoogleServiceAccount;
+use image::format::jpeg::encoder::JPEGEncoder;
+use image::{Color, Image};
+use screen_grabber_proto::screen_grabber::*;
 
 pub struct ScreenGrabberImpl {
-    gemini: GeminiClient
+    gemini: GeminiClient,
 }
 
 impl ScreenGrabberImpl {
     pub async fn create(service_account: Arc<GoogleServiceAccount>) -> Result<Self> {
-        Ok(Self { gemini: GeminiClient::create(service_account).await? })
+        Ok(Self {
+            gemini: GeminiClient::create(service_account).await?,
+        })
     }
 
     async fn list_windows_impl(&self, request: &ListWindowsRequest) -> Result<ListWindowsResponse> {
@@ -35,7 +37,6 @@ impl ScreenGrabberImpl {
     }
 
     async fn grab_impl(&self, request: &GrabRequest) -> Result<GrabResponse> {
-
         let mut res = GrabResponse::default();
 
         let image = self.grab_image(request.window_id())?;
@@ -45,31 +46,30 @@ impl ScreenGrabberImpl {
         res.set_text(text);
 
         /*
-                
+
         println!("{:?}", attrs);
-    
+
         let start = Instant::now();
-    
-        
-    
+
+
+
         let end = Instant::now();
-    
+
         println!("Capture takes: {:?}", end - start);
-    
+
         println!("{:?}", ximage);
-    
+
         println!("LSB FIRST: {}", x11::bindings::LSBFirst);
-    
+
         /*
         Data should be 32-bit
-        */        
+        */
         */
 
         Ok(res)
     }
 
     fn grab_image(&self, window_id: u64) -> Result<Vec<u8>> {
-
         let display = x11::Display::open_default()?;
         let root_window = display.root_window()?;
         let sub_windows = root_window.client_list()?;
@@ -83,36 +83,41 @@ impl ScreenGrabberImpl {
             }
         }
 
-        let selected_window = selected_window.ok_or_else(|| rpc::Status::not_found("No such window"))?;
+        let selected_window =
+            selected_window.ok_or_else(|| rpc::Status::not_found("No such window"))?;
 
         let attrs = selected_window.attrs()?;
         let ximage = selected_window.get_full_image(&attrs)?;
-    
+
         // TODO: Check aligned.
-    
+
+        // TODO: Verify the fields in 'ximage' (masks must be as expected and data mustb
+        // be 24-bit LE in 32-bit data.) This is logic we can move to the media_screen
+        // crate.
+
         let data = unsafe {
             core::slice::from_raw_parts(
                 core::mem::transmute::<_, *const u32>(ximage.data),
                 (ximage.width * ximage.height) as usize,
             )
         };
-    
+
         let mut out = Image::<u8>::zero(
             ximage.height as usize,
             ximage.width as usize,
             image::Colorspace::RGB,
         );
-    
+
         for y in 0..out.height() {
             for x in 0..out.width() {
                 let i = y * out.width() + x;
-    
+
                 let v = data[i];
-    
+
                 let r = ((v & (ximage.red_mask as u32)) >> 16) as u8;
                 let g = ((v & (ximage.green_mask as u32)) >> 8) as u8;
                 let b = ((v & (ximage.blue_mask as u32)) >> 0) as u8;
-    
+
                 out.set(y, x, &Color::rgb(r, g, b));
             }
         }
@@ -123,7 +128,6 @@ impl ScreenGrabberImpl {
 
         Ok(data)
     }
-
 }
 
 #[async_trait]

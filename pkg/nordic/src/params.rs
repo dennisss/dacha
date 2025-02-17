@@ -1,7 +1,7 @@
 use common::errors::*;
 use executor::lock;
 use executor::sync::AsyncMutex;
-use peripherals::blob::{BlobHandle, BlobMemoryController, BlobRegistry, BlobStorage};
+use peripherals::params::{ParamHandle, ParamMemoryController, ParamRegistry, ParamStorage};
 use peripherals::raw::nvmc::NVMC;
 use protobuf::{Message, StaticMessage};
 
@@ -13,25 +13,25 @@ pub const NETWORK_CONFIG_ID: u32 = 0x861C8E73;
 pub const NETWORK_STATE_ID: u32 = 0xB0A4A986;
 
 /// Stores small application parameters robustly in NRF application flash space.
-pub struct ParamsStorage {
-    blobs: AsyncMutex<BlobStorage<AppParamsMemoryController, [BlobHandle; 2]>>,
+pub struct AppParamsStorage {
+    params: AsyncMutex<ParamStorage<AppParamsMemoryController, [ParamHandle; 2]>>,
 }
 
-impl ParamsStorage {
+impl AppParamsStorage {
     /// TODO: This is only safe if at most once ParamsStorage instance is ever
     /// created.
     pub fn create(nvmc: NVMC) -> Result<Self> {
         let memory = AppParamsMemoryController { nvmc };
 
         let registry = [
-            BlobHandle::new(NETWORK_CONFIG_ID),
-            BlobHandle::new(NETWORK_STATE_ID),
+            ParamHandle::new(NETWORK_CONFIG_ID),
+            ParamHandle::new(NETWORK_STATE_ID),
         ];
 
-        let blobs = BlobStorage::create(memory, registry)?;
+        let blobs = ParamStorage::create(memory, registry)?;
 
         Ok(Self {
-            blobs: AsyncMutex::new(blobs),
+            params: AsyncMutex::new(blobs),
         })
     }
 
@@ -41,7 +41,7 @@ impl ParamsStorage {
         param_id: u32,
         proto: &mut M,
     ) -> Result<bool> {
-        let blobs = self.blobs.lock().await?.read_exclusive();
+        let blobs = self.params.lock().await?.read_exclusive();
 
         let data = match blobs.get(param_id)? {
             Some(v) => v,
@@ -49,6 +49,7 @@ impl ParamsStorage {
         };
 
         // Clear any data in the old config.
+        // TODO: Make a more efficient 'clear' method.
         *proto = M::default();
 
         Ok(proto.parse_merge(data).is_ok())
@@ -58,7 +59,7 @@ impl ParamsStorage {
         let mut data = common::fixed::vec::FixedVec::<u8, 256>::new();
         proto.serialize_to(&mut data)?;
 
-        lock!(blobs <= self.blobs.lock().await?, {
+        lock!(blobs <= self.params.lock().await?, {
             blobs.write(param_id, &data)
         })
     }
@@ -68,7 +69,7 @@ struct AppParamsMemoryController {
     nvmc: NVMC,
 }
 
-impl BlobMemoryController for AppParamsMemoryController {
+impl ParamMemoryController for AppParamsMemoryController {
     fn len(&self) -> usize {
         unsafe { application_params_data() }.len() as usize
     }

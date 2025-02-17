@@ -13,6 +13,8 @@ pub mod bit_flags;
 #[cfg(feature = "alloc")]
 pub mod format;
 pub mod iter;
+#[cfg(feature = "alloc")]
+pub mod null_terminated;
 
 #[cfg(feature = "alloc")]
 use alloc::string::String;

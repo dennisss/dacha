@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package nordic;
+
+message PeripheralRequest {
+    uint32 peripheral_index = 1;
+
+    // Monotonically increasing sequence number for this request.
+    // - Must be at least 1
+    // - Mainly used right now to mark corresponding responses.
+    //
+    // TODO: Wrap this around on the host side at a small value to avoid making the proto larger.
+    uint32 request_sequence = 2;
+
+    // TODO: Need to be able to query information about the MCU which which chip is used.
+    // TODO: For long running requests with interrupts, we need to allow cancellation.
+
+    // command to finalize the configs:
+    // - may ask to persist across restarts.
+
+    oneof command {
+        ConfigureGPIO configure_gpio = 3;
+        SetGPIOLevel set_gpio_level = 4;
+        GetGPIOLevelRequest get_gpio_level = 5;
+
+        // Unconfigures all peripherals and restores them back to the initial state
+        // (input high-z).
+        UnconfigureAll unconfigure_all = 7;
+
+        ConfigurePWMRequest configure_pwm = 8;
+
+        // TODO: Can probably be merged with the SetGPIOLevel one.
+        SetPWMRequest set_pwm = 9;
+
+        // Reads a tachometer GPIO input pin.
+        // - Returns the period between consecutive falling edges in u32 microseconds.
+        // - If it takes longer than 100ms to measure that, a timeout response is returned.
+        //
+        // TODO: Replace with generic support for getting interrupts with packet/event timing info.
+        ReadTachometer read_tachometer = 10;
+
+        // NOTE: This can be triggered on any 
+        bool measure_mcu_temperature = 11;
+
+        // Should be called after all peripherals have been initialized to perform any
+        // initialization actions that depend on having all pins wired out.
+        //
+        // Note that all other non-configuration commands are not allowed until this is called and
+        // further configuration commands are not allowed after this is called.
+        FinalizeConfigRequest finalize_config = 12;
+
+        bool get_stack_pointer = 13;
+
+        SleepRequest sleep = 14;
+
+        // Returns the current time in u32 microseconds
+        bool now = 15;
+
+        // Cheapest possible request. Immediately returns an empty response.
+        bool noop = 16;
+
+        // Returns PeripheralInfoResponse
+        bool info = 17;
+    }
+
+    reserved 6;
+}
+
+// NOTE: If no data needs to be returned, this may be empty.
+message PeripheralResponse {
+    // Indicates which request this corresponds to.
+    // Always non-zero.
+    uint32 request_sequence = 1;
+
+    enum ErrorCode {
+        NO_ERROR = 0;
+
+        // Something failed for an unexplainable reason. Maybe check the logs.
+        UNKNOWN = 1;
+
+        // Attempted to configure a non-existent pin.
+        PIN_OUT_OF_RANGE = 2;
+
+        // When configuring a peripheral: Indicates we don't support peripherals with this high of an index. 
+        // When mutating a peripheral: Indicates the peripheral hasn't been configured.
+        PERIPHERAL_OUT_OF_RANGE = 3;
+
+        // We are unable to configure a pin to do something since it is already
+        // reserved by another configured peripheral.
+        PIN_ALREADY_CONFIGURED = 4;
+
+        // Meanly for testing error responses.
+        I_AM_A_TEAPOT = 5;
+
+        // Either the direct peripheral or some shared resource (e.g. ADC controller) is locked for
+        // exclusive use by some other in-flight request so starting this request will block.  
+        RESOURCE_BUSY = 6;
+
+        // The MCU doesn't know have to handle the command set in the request.
+        UNSUPPORTED_COMMAND = 7;
+
+        PERIPHERAL_ALREADY_CONFIGURED = 8;
+
+        // Enable to process the request because we don't have any software or hardware resources.
+        // e.g. If the PWM controller only supports 4 channels, attempting to configure a 5th will fail.
+        RESOURCE_EXHAUSTED = 9;
+
+        // The requested command can't be run on the peripheral as it was configured.
+        INCOMPATIBLE_COMMAND = 10;
+
+        TIMEOUT = 11;
+
+        UNSUPPORTED_CONFIG = 12;
+
+        // finalize_config hasn't been called yet.
+        CONFIG_NOT_FINALIZED = 13;
+    }
+
+    ErrorCode error_code = 2;
+
+    oneof response {
+        // Used for basic integer responses.
+        // - For GetGPIOLevel, this is 1 if the pin is high.
+        uint32 uint_val = 3;
+
+        float float_val = 4;
+    }
+}
+
+// General information about what board we are talking to.
+//
+// NOTE: This is not meant to verbosely describe what each pin does. Instead this
+// is meant to provide some enum board/chip ids so that the host can lookup that
+// information elsewhere.
+message PeripheralInfoResponse {
+    enum Chip {
+        UNKNOWN = 0;
+        NRF52840 = 1;
+    }
+    Chip chip = 1;
+
+    // Chip manufacturer specific revision code for the IC.
+    uint32 chip_revision = 2;
+
+    // TODO: Also report a binary build id.
+}
+
+message FinalizeConfigRequest {
+
+}
+
+message SleepRequest {
+    uint32 micros = 1;
+
+    bool return_error = 2;
+}
+
+message ConfigureGPIO {
+    uint32 pin = 1;
+    
+    bool is_input = 2;
+    
+    bool pull_up = 3;
+
+    bool pull_down = 4;
+
+    // If not DISABLED, extra responses will be asyncronously sent back to the
+    // host when the criteria is met.
+    enum InterruptPolarity {
+        DISABLED = 0;
+        RISING_EDGE = 1;
+        FALLING_EDGE = 2;
+    }
+    InterruptPolarity interrupt = 5;
+}
+
+message SetGPIOLevel {
+    bool high = 1;
+}
+
+message GetGPIOLevelRequest {}
+
+message GetGPIOLevelResponse {
+    bool high = 1;
+}
+
+message UnconfigureAll {}
+
+
+// Configures a single MCU pin as a PWM output.
+message ConfigurePWMRequest {
+    uint32 pin = 1;
+    
+    // Target PWM clock frequency in Hz.
+    uint32 frequency = 2;
+
+    // TODO: Need to implement this.
+    bool inverted = 3;
+
+    // If the PWM channel isn't updated in this amount of time, it will reset back to the default value.
+    uint32 timeout_millis = 4;
+
+    uint32 default_value = 5;
+}
+
+message SetPWMRequest {
+    // Value with 16-bit resolution [0, 2^16) though the actual resolution will depend on the frequency
+    // and hardware.
+    uint32 value = 1;
+}
+
+message ReadTachometer {}
+

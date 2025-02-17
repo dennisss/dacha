@@ -1,5 +1,35 @@
 files: [
     {
+        path: "doc/asus_ssd_fan/images/image.jpg"
+        size: 345122
+        sha256_sum: "ce6a100f33508a33817d417c14c573ffa1d8fee2f7204925f932a138f56e6687"
+    },
+    {
+        path: "doc/asus_ssd_fan/images/in-case.jpg"
+        size: 467339
+        sha256_sum: "deb46b966ff9baafba48d8829a64f5593d21abca8c3aab7e56ebfac6eda71d44"
+    },
+    {
+        path: "doc/asus_ssd_fan/parts/ssd-fan-holder.stl"
+        size: 242784
+        sha256_sum: "fbf96692755ebe38db883818502492d42b49d69ae2e2961eeb92f5da99acc88c"
+    },
+    {
+        path: "doc/badge_holder/parts/badge-holder.3mf"
+        size: 80969
+        sha256_sum: "03f080a10ecb033a7131f10606e36f24c21ad3c6e0c887c9bc5009e02c8e901f"
+    },
+    {
+        path: "doc/badge_holder/parts/badge-holder.stl"
+        size: 147484
+        sha256_sum: "33e96fdef1de1fbedd1de2c531dd977adca53f1a6bc5ccbf83266a5f138066c5"
+    },
+    {
+        path: "doc/badge_holder/parts/badge-insert.dxf"
+        size: 92793
+        sha256_sum: "e86a21f996223930f1551203faf94ee9284d54cafa1e08f406cb8c09dddb4987"
+    },
+    {
         path: "doc/carvera/images/board-cover.jpg"
         size: 185365
         sha256_sum: "692266beda951aff99db2c53b31596b06b02572c6583ee633d31aecad959953f"
@@ -30,9 +60,24 @@ files: [
         sha256_sum: "018272867b72229a5ae43015f5a2cfc9f15ba2807ef4796544028032956fc7e5"
     },
     {
+        path: "doc/carvera/images/camera-screenshot.jpg"
+        size: 227638
+        sha256_sum: "bc996d9a8a5a1b9dc2857f4a3a24041a01017c42a4439c1a8d3fdbbf240d2413"
+    },
+    {
         path: "doc/carvera/images/camera-with-cover.jpg"
         size: 188511
         sha256_sum: "ec5a07cd549e6dff723368a581b0ce8f32a18c60bafad5fbcf2d92261d6f9e58"
+    },
+    {
+        path: "doc/carvera/parts/endoscope/body.stl"
+        size: 190884
+        sha256_sum: "8170d90642aded3756d9760f8a367eee1a176a9082757c59aa7dc01b542c4fba"
+    },
+    {
+        path: "doc/carvera/parts/endoscope/clamp.stl"
+        size: 75884
+        sha256_sum: "aef1b03f0f4e24b268414904b358dfb4fd2c0a4c2135d5e9b28a90d421facd47"
     },
     {
         path: "doc/dwm1000_flexypin/board/plot/board-B_Cu.gbl"
@@ -1180,6 +1225,21 @@ files: [
         sha256_sum: "0616c5a24ec3533c448964af49a03a678cff8e3ae60a824cf05c05fefd1d22da"
     },
     {
+        path: "pkg/cnc/machines/voron_0/toolboard/stencil-vacuum/body.stl"
+        size: 3050084
+        sha256_sum: "f34aad2b05fc0dcafdec93351791b361b88fdde6ba533326b6be4c68da8eb6b0"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/toolboard/stencil-vacuum/pcb-plate.stl"
+        size: 193884
+        sha256_sum: "3dc17791c05eb299c88fa616b9e709b9f6a41161f704cc839bad2555e74b6899"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/toolboard/stencil-vacuum/stencil-plate.stl"
+        size: 832184
+        sha256_sum: "e40bff9a75c101053423da7080f962fdac2bed244e5c0bb56962345ab873a155"
+    },
+    {
         path: "pkg/fan_controller/board-r3/plot/board-B_Cu.gbl"
         size: 51227
         sha256_sum: "289d0b48407b3c050b2f7e1f72eebf1605ce67262871c4e35d09ff631a25bf15"
@@ -1390,6 +1450,21 @@ files: [
         sha256_sum: "64a8553a4e9ae257a2c542e35df26aa0be92bfe524591acbafe0f6ce049e71e3"
     },
     {
+        path: "testdata/cnc/pcb_circles/fiberglass.jpg"
+        size: 213429
+        sha256_sum: "dba386f6bfaf4c1173d822c80e61e8c6a2c3899d050e73dc8bf0b77b72464509"
+    },
+    {
+        path: "testdata/cnc/pcb_circles/motor-driver.jpg"
+        size: 130952
+        sha256_sum: "7075a073905887a57d40a2f178aeeaf4969716189aa2d5e75ad6d81c52372ccc"
+    },
+    {
+        path: "testdata/cnc/pcb_circles/testpads.jpg"
+        size: 90767
+        sha256_sum: "0d74fffb66b83643af57a94518d32b21e74f633ebe63baaafb174da1880c6746"
+    },
+    {
         path: "testdata/cnc/sata-top_0.2mm_PETG_MK3S_28m.gcode"
         size: 623037
         sha256_sum: "614b38ecc2eebe2f20d1309604d4c00939a49ae12be00f16434068c71afa003d"
@@ -1438,6 +1513,16 @@ files: [
         path: "testdata/video/derived/clock-5s-multi-seg-independent-fragmented.mp4"
         size: 3957918
         sha256_sum: "b15bcb224575c17c5515fdf7c6a9b0ac3de1f5b485101db31c23b056680e56ac"
+    },
+    {
+        path: "third_party/blender/bigbuckbunny/BigBuckBunny_320x180.mp4"
+        size: 64657027
+        sha256_sum: "f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508"
+    },
+    {
+        path: "third_party/blender/bigbuckbunny/converted/bunny_h264_opus.mp4"
+        size: 21055631
+        sha256_sum: "f158fc0c0f08e369547bef36865a18a7d2ae0ce2a934ae851ef19959b44d6a1f"
     },
     {
         path: "third_party/brother/cv_pth500p700e500_eng_raster_111.pdf"

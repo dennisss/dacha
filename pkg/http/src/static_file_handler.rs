@@ -47,6 +47,7 @@ impl StaticFileHandler {
         let mut extension_types = HashMap::default();
         for typ in mime_types::MEDIA_TYPES_LIST {
             for ext in typ.extensions {
+                // NOTE: We assume that 'ext' is in lowercase.
                 extension_types.insert(*ext, typ.types[0]);
             }
         }
@@ -133,6 +134,8 @@ impl ServerHandler for StaticFileHandler {
             .header("Accept-Ranges", "bytes");
 
         if self.options.trust_file_extension {
+            // TODO: Lowercase the file extension.
+
             // TODO: Generalize this. If a client is expected to immediately use a result,
             // we want to specify this, else, we want to allow downloading while preserving
             // the encoding.

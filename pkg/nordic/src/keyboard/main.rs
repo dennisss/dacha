@@ -12,14 +12,14 @@ use crate::keyboard::state::KeyboardState;
 use crate::keyboard::state::KeyboardUSBProtocol;
 use crate::keyboard::usb_handler::KeyboardUSBHandler;
 use crate::keyboard::usb_handler::*;
-use crate::params::ParamsStorage;
+use crate::params::AppParamsStorage;
 use crate::radio::Radio;
 use crate::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
 use crate::rtc::RTC;
 use crate::usb::controller::USBDeviceController;
 use crate::usb::send_buffer::USBDeviceSendBuffer;
 
-static PARAMS_STORAGE: Singleton<ParamsStorage> = Singleton::uninit();
+static PARAMS_STORAGE: Singleton<AppParamsStorage> = Singleton::uninit();
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
 
@@ -64,7 +64,7 @@ async fn main_thread_fn() {
 
     let params_storage = {
         PARAMS_STORAGE
-            .set(ParamsStorage::create(peripherals.nvmc).unwrap())
+            .set(AppParamsStorage::create(peripherals.nvmc).unwrap())
             .await
     };
 
