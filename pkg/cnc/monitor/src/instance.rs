@@ -1686,15 +1686,15 @@ impl MonitorImpl {
         let mut query = Query::default();
         let mut a = QueryAllOf::default();
         a.and(
-            MediaFragment::CAMERA_ID_FIELD_NUM.raw(),
+            &[MediaFragment::CAMERA_ID_FIELD_NUM_RAW],
             QueryOperation::Eq(QueryValue::U64(request.camera_id())),
         )
         .and(
-            MediaFragment::START_TIME_FIELD_NUM.raw(),
+            &[MediaFragment::START_TIME_FIELD_NUM_RAW],
             QueryOperation::LessThan(QueryValue::U64(request.end_time())),
         )
         .and(
-            MediaFragment::START_TIME_FIELD_NUM.raw(),
+            &[MediaFragment::START_TIME_FIELD_NUM_RAW],
             QueryOperation::GreaterThanOrEqual(QueryValue::U64(start_time)),
         );
         query.or(a);
@@ -1736,7 +1736,7 @@ impl MonitorImpl {
         let mut query = Query::default();
         let mut a = QueryAllOf::default();
         a.and(
-            ProgramRun::MACHINE_ID_FIELD_NUM.raw(),
+            &[ProgramRun::MACHINE_ID_FIELD_NUM_RAW],
             QueryOperation::Eq(QueryValue::U64(request.machine_id())),
         );
         query.or(a);

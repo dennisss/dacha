@@ -18,12 +18,12 @@ impl Query {
 #[derive(Default)]
 pub struct QueryAllOf {
     // TODO: Make this deterministic.
-    pub fields: HashMap<FieldNumber, Vec<QueryOperation>>,
+    pub fields: HashMap<Vec<FieldNumber>, Vec<QueryOperation>>,
 }
 
 impl QueryAllOf {
-    pub fn and(&mut self, field: FieldNumber, op: QueryOperation) -> &mut Self {
-        self.fields.entry(field).or_default().push(op);
+    pub fn and(&mut self, field: &[FieldNumber], op: QueryOperation) -> &mut Self {
+        self.fields.entry(field.to_vec()).or_default().push(op);
         self
     }
 }

@@ -1568,6 +1568,12 @@ impl Compiler {
                     num = field.proto().number(),
                     typ = fullname
                 ));
+                lines.add(format!(
+                    "pub const {field_name}_FIELD_NUM_RAW: {pkg}::FieldNumber = {num};",
+                    field_name = escape_rust_identifier(field.proto().name()).to_uppercase(),
+                    pkg = self.options.runtime_package,
+                    num = field.proto().number()
+                ));
             }
 
             lines.nl();

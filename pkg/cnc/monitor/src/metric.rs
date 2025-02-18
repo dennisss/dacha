@@ -223,15 +223,15 @@ impl MetricStream {
         let mut query_a = QueryAllOf::default();
         query_a
             .and(
-                MetricSample::RESOURCE_KEY_FIELD_NUM.raw(),
+                &[MetricSample::RESOURCE_KEY_FIELD_NUM_RAW],
                 QueryOperation::Eq(QueryValue::U64(self.resource_key)),
             )
             .and(
-                MetricSample::TIMESTAMP_FIELD_NUM.raw(),
+                &[MetricSample::TIMESTAMP_FIELD_NUM_RAW],
                 QueryOperation::GreaterThanOrEqual(QueryValue::U64(start_time)),
             )
             .and(
-                MetricSample::TIMESTAMP_FIELD_NUM.raw(),
+                &[MetricSample::TIMESTAMP_FIELD_NUM_RAW],
                 QueryOperation::LessThan(QueryValue::U64(end_time)),
             );
         query.or(query_a);

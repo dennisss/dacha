@@ -8,6 +8,7 @@ use protobuf::reflection::{Reflect, Reflection, ReflectionMut};
 use protobuf::MessageReflection;
 
 use crate::key_encoding::KeyEncoder;
+use crate::reflection::{field_by_path, field_by_path_mut};
 use crate::table::*;
 
 pub struct KeyBuilder<Tag: ProtobufTableTag> {
@@ -26,10 +27,7 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
         let key_config = &Tag::indexed_keys()[key_index];
 
         for field in key_config.fields {
-            // TODO: Here we need to support arbitrary stuff.
-            let r = message
-                .field_by_number(field.number.raw())
-                .ok_or_else(|| err_msg("Missing index field value"))?;
+            let r = field_by_path(message, field.path)?;
 
             // NOTE: Since we are iterating over the fields from the config and reflecting a
             // Tag::Message type, the types and field order are correct.
@@ -59,11 +57,7 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
         self.next_field_index += 1;
 
         if discriminant(&value)
-            != discriminant(
-                &Tag::Message::DEFAULT
-                    .field_by_number(field.number.raw())
-                    .unwrap(),
-            )
+            != discriminant(&field_by_path(&Tag::Message::DEFAULT, field.path).unwrap())
         {
             todo!()
         }
@@ -80,11 +74,7 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
     /// This assumes:
     /// - Fields are appended in the right order.
     /// - The value is the correct data type.
-    fn append_raw(
-        &mut self,
-        field: &ProtobufKeyField<Tag::Message>,
-        value: Reflection,
-    ) -> Result<()> {
+    fn append_raw(&mut self, field: &ProtobufKeyField, value: Reflection) -> Result<()> {
         let inverted = field.direction == Direction::Descending;
 
         match value {
@@ -122,7 +112,7 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
     }
 
     pub fn decode_key(
-        key_config: &ProtobufTableKey<Tag::Message>,
+        key_config: &ProtobufTableKey,
         key_index: usize,
         mut key: &[u8],
         message: &mut Tag::Message,
@@ -138,9 +128,7 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
         }
 
         for field in key_config.fields {
-            let r = message
-                .field_by_number_mut(field.number.raw())
-                .ok_or_else(|| err_msg("Missing index field value"))?;
+            let r = field_by_path_mut(message, field.path)?;
 
             let inverted = field.direction == Direction::Descending;
 

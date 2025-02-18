@@ -119,9 +119,10 @@ impl KeyValueStoreIterator for SimpleIterator {
     }
 }
 
+/*
 // TODO: Move to the db_table crate.
 struct TableIndexIterator<Tag: ProtobufTableTag + 'static> {
-    key_config: &'static ProtobufTableKey<Tag>,
+    key_config: &'static ProtobufTableKey,
     min_key: Vec<u8>,
     max_key: Vec<u8>,
 }
@@ -131,3 +132,4 @@ impl<Tag: ProtobufTableTag + 'static> TableIndexIterator<Tag> {
         todo!()
     }
 }
+*/

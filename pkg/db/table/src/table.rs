@@ -1,4 +1,4 @@
-use protobuf::{StaticMessage, TypedFieldNumber};
+use protobuf::{FieldNumber, StaticMessage, TypedFieldNumber};
 
 /// Definition for a database table where each row is a protobuf (fields map to
 /// columns).
@@ -14,10 +14,10 @@ pub trait ProtobufTableTag {
     fn table_name() -> &'static str;
 
     /// Lists all fields that are present in the primary/secondary keys.
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>];
+    fn indexed_keys() -> &'static [ProtobufTableKey];
 }
 
-pub struct ProtobufTableKey<T: 'static> {
+pub struct ProtobufTableKey {
     /// None implies this is the primary key
     pub index_name: Option<&'static str>,
 
@@ -26,11 +26,12 @@ pub struct ProtobufTableKey<T: 'static> {
     ///   primary key fields.
     /// - For unique indexes, this can contain zero or more of the primary key's
     ///   fields.
-    pub fields: &'static [ProtobufKeyField<T>],
+    pub fields: &'static [ProtobufKeyField],
 }
 
-pub struct ProtobufKeyField<T> {
-    pub number: TypedFieldNumber<T>,
+pub struct ProtobufKeyField {
+    /// TODO: Make this more type safe.
+    pub path: &'static [FieldNumber],
     pub direction: Direction,
     pub fixed_size: bool,
 }

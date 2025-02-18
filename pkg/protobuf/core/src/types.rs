@@ -23,7 +23,7 @@ impl<T> TypedFieldNumber<T> {
         }
     }
 
-    pub fn raw(&self) -> FieldNumber {
+    pub const fn raw(&self) -> FieldNumber {
         self.num
     }
 }

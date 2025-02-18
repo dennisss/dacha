@@ -125,11 +125,11 @@ impl ProgramPreviewManager {
             let mut query = Query::default();
             let mut a = QueryAllOf::default();
             a.and(
-                ProgramPreviewProto::FILE_ID_FIELD_NUM.raw(),
+                &[ProgramPreviewProto::FILE_ID_FIELD_NUM_RAW],
                 QueryOperation::Eq(QueryValue::U64(file.id())),
             )
             .and(
-                ProgramPreviewProto::CONFIG_HASH_FIELD_NUM.raw(),
+                &[ProgramPreviewProto::CONFIG_HASH_FIELD_NUM_RAW],
                 QueryOperation::Eq(QueryValue::U64(machine_config_hash)),
             );
             query.or(a);

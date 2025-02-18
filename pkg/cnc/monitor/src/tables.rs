@@ -16,11 +16,11 @@ impl ProtobufTableTag for MachineTable {
         "Machine"
     }
 
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
             index_name: None,
             fields: &[ProtobufKeyField {
-                number: MachineProto::ID_FIELD_NUM,
+                path: &[MachineProto::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
                 fixed_size: true,
             }],
@@ -41,11 +41,11 @@ impl ProtobufTableTag for FileTable {
         "File"
     }
 
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
             index_name: None,
             fields: &[ProtobufKeyField {
-                number: FileProto::ID_FIELD_NUM,
+                path: &[FileProto::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
                 fixed_size: true,
             }],
@@ -66,17 +66,17 @@ impl ProtobufTableTag for MediaFragmentTable {
         "MediaFragment"
     }
 
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
             index_name: None,
             fields: &[
                 ProtobufKeyField {
-                    number: MediaFragment::CAMERA_ID_FIELD_NUM,
+                    path: &[MediaFragment::CAMERA_ID_FIELD_NUM_RAW],
                     direction: Direction::Ascending,
                     fixed_size: true,
                 },
                 ProtobufKeyField {
-                    number: MediaFragment::START_TIME_FIELD_NUM,
+                    path: &[MediaFragment::START_TIME_FIELD_NUM_RAW],
                     direction: Direction::Descending,
                     fixed_size: true,
                 },
@@ -98,18 +98,18 @@ impl ProtobufTableTag for ProgramRunTable {
         "ProgramRun"
     }
 
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[
             ProtobufTableKey {
                 index_name: None,
                 fields: &[
                     ProtobufKeyField {
-                        number: ProgramRun::MACHINE_ID_FIELD_NUM,
+                        path: &[ProgramRun::MACHINE_ID_FIELD_NUM_RAW],
                         direction: Direction::Ascending,
                         fixed_size: true,
                     },
                     ProtobufKeyField {
-                        number: ProgramRun::RUN_ID_FIELD_NUM,
+                        path: &[ProgramRun::RUN_ID_FIELD_NUM_RAW],
                         direction: Direction::Descending,
                         fixed_size: true,
                     },
@@ -119,17 +119,17 @@ impl ProtobufTableTag for ProgramRunTable {
                 index_name: Some("ByFile"),
                 fields: &[
                     ProtobufKeyField {
-                        number: ProgramRun::FILE_ID_FIELD_NUM,
+                        path: &[ProgramRun::FILE_ID_FIELD_NUM_RAW],
                         direction: Direction::Ascending,
                         fixed_size: true,
                     },
                     ProtobufKeyField {
-                        number: ProgramRun::RUN_ID_FIELD_NUM,
+                        path: &[ProgramRun::RUN_ID_FIELD_NUM_RAW],
                         direction: Direction::Descending,
                         fixed_size: true,
                     },
                     ProtobufKeyField {
-                        number: ProgramRun::MACHINE_ID_FIELD_NUM,
+                        path: &[ProgramRun::MACHINE_ID_FIELD_NUM_RAW],
                         direction: Direction::Ascending,
                         fixed_size: true,
                     },
@@ -152,17 +152,17 @@ impl ProtobufTableTag for MetricSampleTable {
         "MetricSample"
     }
 
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
             index_name: None,
             fields: &[
                 ProtobufKeyField {
-                    number: MetricSample::RESOURCE_KEY_FIELD_NUM,
+                    path: &[MetricSample::RESOURCE_KEY_FIELD_NUM_RAW],
                     direction: Direction::Ascending,
                     fixed_size: true,
                 },
                 ProtobufKeyField {
-                    number: MetricSample::TIMESTAMP_FIELD_NUM,
+                    path: &[MetricSample::TIMESTAMP_FIELD_NUM_RAW],
                     direction: Direction::Descending,
                     fixed_size: true,
                 },
@@ -184,17 +184,17 @@ impl ProtobufTableTag for ProgramPreviewTable {
         "ProgramPreview"
     }
 
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
             index_name: None,
             fields: &[
                 ProtobufKeyField {
-                    number: ProgramPreviewProto::FILE_ID_FIELD_NUM,
+                    path: &[ProgramPreviewProto::FILE_ID_FIELD_NUM_RAW],
                     direction: Direction::Ascending,
                     fixed_size: true,
                 },
                 ProtobufKeyField {
-                    number: ProgramPreviewProto::CONFIG_HASH_FIELD_NUM,
+                    path: &[ProgramPreviewProto::CONFIG_HASH_FIELD_NUM_RAW],
                     direction: Direction::Ascending,
                     fixed_size: true,
                 },
@@ -217,11 +217,11 @@ impl ProtobufTableTag for TableSchemaTable {
         "TableSchema"
     }
 
-    fn indexed_keys() -> &'static [ProtobufTableKey<Self::Message>] {
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
             index_name: None,
             fields: &[ProtobufKeyField {
-                number: TableSchema::TABLE_ID_FIELD_NUM,
+                path: &[TableSchema::TABLE_ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
                 fixed_size: false,
             }],

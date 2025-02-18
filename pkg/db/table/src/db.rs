@@ -5,6 +5,9 @@ use protobuf::{Message, MessageReflection, StaticMessage};
 use crate::key::KeyBuilder;
 use crate::key_utils::*;
 use crate::query::*;
+use crate::reflection::clear_field_by_path;
+use crate::reflection::field_by_path;
+use crate::reflection::field_by_path_mut;
 use crate::table::*;
 
 /*
@@ -216,7 +219,7 @@ impl<'a> ProtobufDBTransaction<'a> {
             for field in primary_key_config.fields {
                 let inverted = field.direction == Direction::Descending;
 
-                let op = match clause.fields.get(&field.number.raw()) {
+                let op = match clause.fields.get(field.path) {
                     Some(v) => v,
                     None => break,
                 };
@@ -402,7 +405,7 @@ impl<'a> ProtobufDBTransaction<'a> {
 
                 let mut key_value = value.clone();
                 for field in key_config.fields {
-                    key_value.clear_field_with_number(field.number.raw());
+                    clear_field_by_path(&mut key_value, field.path)?;
                 }
 
                 let value_bytes = key_value.serialize()?;
@@ -414,8 +417,6 @@ impl<'a> ProtobufDBTransaction<'a> {
                 // - 'value' is all fields of the primary key that aren't included in this
                 //   secondary key.
 
-                // TODO: Store any fields in the value that aren't in the
-
                 let mut secondary_value = Tag::Message::default();
 
                 let primary_key_config = &Tag::indexed_keys()[0];
@@ -423,18 +424,12 @@ impl<'a> ProtobufDBTransaction<'a> {
                     let in_secondary_key = key_config
                         .fields
                         .iter()
-                        .find(|f| f.number.raw() == primary_key_field.number.raw())
+                        .find(|f| f.path == primary_key_field.path)
                         .is_some();
 
                     if !in_secondary_key {
-                        secondary_value
-                            .field_by_number_mut(primary_key_field.number.raw())
-                            .unwrap()
-                            .clone_from(
-                                value
-                                    .field_by_number(primary_key_field.number.raw())
-                                    .unwrap(),
-                            );
+                        field_by_path_mut(&mut secondary_value, primary_key_field.path)?
+                            .clone_from(field_by_path(value, primary_key_field.path)?)?;
                     }
                 }
 
