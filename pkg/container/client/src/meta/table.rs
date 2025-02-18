@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use common::errors::*;
-use datastore_meta_client::key_encoding::KeyEncoder;
 use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
+use db_table::key_encoding::KeyEncoder;
 use protobuf::{Enum, Message, StaticMessage};
 
 use crate::proto::*;

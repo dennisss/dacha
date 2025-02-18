@@ -1,0 +1,20 @@
+[package]
+name = "db_kv"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+protobuf = { path = "../../protobuf" }
+macros = { path = "../../macros" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+crypto = { path = "../../crypto" }
+base_radix = { path = "../../base/radix" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

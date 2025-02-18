@@ -11,6 +11,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Writeable;
 use crypto::random::SharedRng;
+use db_kv::KeyValueEntry;
 use executor::cancellation::CancellationToken;
 use executor::channel;
 use executor::child_task::ChildTask;

@@ -1,11 +1,4 @@
-use common::bytes::Bytes;
 use common::errors::*;
-
-#[derive(Clone, Debug)]
-pub struct KeyValueEntry {
-    pub key: Bytes,
-    pub value: Bytes,
-}
 
 #[async_trait]
 pub trait Iterable<V>: Send + 'static {

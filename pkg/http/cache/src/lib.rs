@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use common::{errors::*, io::Writeable};
 use crypto::{hasher::Hasher, random::SharedRng, sha256::SHA256Hasher};
-use datastore_meta_client::key_encoding::KeyEncoder;
+use db_table::key_encoding::KeyEncoder;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 use http_cache_proto::RequestCacheEntry;
 use protobuf::{Message, StaticMessage};

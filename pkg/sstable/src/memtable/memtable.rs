@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
+use db_kv::KeyValueEntry;
 
-use crate::iterable::{Iterable, KeyValueEntry};
+use crate::iterable::Iterable;
 use crate::memtable::vec::*;
 use crate::table::comparator::*;
 

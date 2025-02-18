@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 automata = { path = "../automata" }
+base_util = { path = "../base/util" }
 common = { path = "../common" }
 sys = { path = "../sys" }
 executor = { path = "../executor" }

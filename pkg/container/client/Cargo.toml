@@ -8,6 +8,7 @@ common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
 crypto = { path = "../../crypto" }
 protobuf = { path = "../../protobuf" }
+db_table = { path = "../../db/table" }
 http = { path = "../../http" }
 macros = { path = "../../macros" }
 datastore_meta_client = { path = "../../datastore/meta/client" }

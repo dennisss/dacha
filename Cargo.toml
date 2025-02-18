@@ -75,6 +75,8 @@ members = [
 	"pkg/datastore/proto",
 	"pkg/datastore/bundle",
 	"pkg/datastore/meta/client",
+	"pkg/db/kv",
+	"pkg/db/table",
 	"pkg/app/sensor_monitor",
 	"pkg/app/screen_grabber",
 	"pkg/app/screen_grabber/proto",

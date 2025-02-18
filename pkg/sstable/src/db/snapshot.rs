@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
+use db_kv::KeyValueEntry;
 
 use crate::db::internal_key::InternalKey;
 use crate::db::level_iterator::*;
 use crate::db::version::Version;
-use crate::iterable::{Iterable, KeyValueEntry};
+use crate::iterable::Iterable;
 use crate::memtable::memtable::MemTable;
 use crate::EmbeddedDBOptions;
 

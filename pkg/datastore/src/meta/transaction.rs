@@ -4,7 +4,7 @@ use std::sync::{Arc, Weak};
 use common::bytes::Bytes;
 use common::const_default::ConstDefault;
 use common::errors::*;
-use datastore_meta_client::key_utils::*;
+use db_table::key_utils::single_key_range;
 use executor::sync::AsyncMutex;
 use executor::{channel, lock, lock_async};
 use raft::proto::LogEntryData;

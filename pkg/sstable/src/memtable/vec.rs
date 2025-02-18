@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
+use db_kv::KeyValueEntry;
 use executor::lock;
 use executor::sync::AsyncRwLock;
 
-use crate::iterable::{Iterable, KeyValueEntry};
+use crate::iterable::Iterable;
 use crate::table::comparator::KeyComparator;
 
 /// Very simple memory table implementation based on a simple sorted vector.

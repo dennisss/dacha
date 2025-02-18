@@ -1,6 +1,6 @@
 use common::bytes::Bytes;
 use common::errors::*;
-use datastore_meta_client::key_encoding::KeyEncoder;
+use db_table::key_encoding::KeyEncoder;
 use protobuf::{Enum, EnumValue};
 
 use crate::proto::*;

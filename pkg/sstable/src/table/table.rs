@@ -12,6 +12,7 @@ use common::algorithms::SliceLike;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::failure::ResultExt;
+use db_kv::KeyValueEntry;
 use executor::channel::oneshot;
 use executor::lock;
 use executor::lock_async;
@@ -22,7 +23,6 @@ use file::LocalPath;
 use parsing::complete;
 
 use crate::iterable::Iterable;
-use crate::iterable::KeyValueEntry;
 use crate::table::block_handle::BlockHandle;
 use crate::table::data_block::*;
 use crate::table::filter_policy::FilterPolicyRegistry;

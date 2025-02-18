@@ -607,6 +607,7 @@ dependencies = [
  "crypto",
  "datastore_meta_client",
  "datastore_proto",
+ "db_table",
  "executor",
  "executor_multitask",
  "failure",
@@ -666,7 +667,8 @@ dependencies = [
  "common",
  "compression",
  "crypto",
- "datastore_meta_client",
+ "db_kv",
+ "db_table",
  "executor",
  "executor_multitask",
  "failure",
@@ -807,6 +809,7 @@ dependencies = [
  "crypto",
  "datastore",
  "datastore_meta_client",
+ "db_table",
  "executor",
  "executor_multitask",
  "failure",
@@ -1008,6 +1011,7 @@ dependencies = [
  "crypto",
  "datastore_meta_client",
  "datastore_proto",
+ "db_table",
  "executor",
  "executor_multitask",
  "file",
@@ -1051,6 +1055,7 @@ version = "0.0.0"
 dependencies = [
  "common",
  "datastore_proto",
+ "db_table",
  "executor",
  "executor_multitask",
  "http",
@@ -1071,6 +1076,37 @@ dependencies = [
  "protobuf_compiler",
  "raft_proto",
  "rpc",
+]
+
+[[package]]
+name = "db_kv"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "macros",
+ "parsing",
+ "protobuf",
+]
+
+[[package]]
+name = "db_table"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "crypto",
+ "db_kv",
+ "executor",
+ "executor_multitask",
+ "macros",
+ "parsing",
+ "protobuf",
 ]
 
 [[package]]
@@ -1825,7 +1861,7 @@ dependencies = [
  "base_radix",
  "common",
  "crypto",
- "datastore_meta_client",
+ "db_table",
  "executor",
  "executor_multitask",
  "file",
@@ -3259,6 +3295,7 @@ dependencies = [
  "common",
  "crypto",
  "datastore",
+ "db_table",
  "executor",
  "file",
  "graphics",
@@ -3371,6 +3408,7 @@ dependencies = [
  "common",
  "compression",
  "crypto",
+ "db_kv",
  "executor",
  "executor_multitask",
  "file",

@@ -10,6 +10,7 @@ rpc = { path = "../rpc" }
 rpc_util = { path = "../rpc/util" }
 parsing = { path = "../parsing" }
 sstable = { path = "../sstable" }
+db_table = { path = "../db/table" }
 raft = { path = "../raft" }
 raft_client = { path = "../raft/client" }
 protobuf = { path = "../protobuf" }

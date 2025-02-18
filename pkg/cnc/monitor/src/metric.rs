@@ -112,21 +112,18 @@ impl MetricStore {
             // TODO: Do more batching. Only write if we hit the MAX_SAMPLES_PER_WRITE or 1
             // second has elapsed.
 
-            let mut txn = shared.db.new_transaction();
+            let mut samples = vec![];
 
-            let mut i = 0;
             lock!(state <= shared.state.lock().await?, {
                 for (resource_key, entry) in &mut state.data {
-                    while i < WRITE_BATCH_SIZE {
+                    while samples.len() < WRITE_BATCH_SIZE {
                         match entry.samples.pop_front() {
                             Some((time, value)) => {
                                 let mut sample = MetricSample::default();
                                 sample.set_resource_key(*resource_key);
                                 sample.set_timestamp(time);
                                 sample.set_float_value(value);
-                                txn.insert::<MetricSampleTable>(&sample)?;
-
-                                i += 1;
+                                samples.push(sample);
                             }
                             None => {
                                 break;
@@ -134,7 +131,7 @@ impl MetricStore {
                         }
                     }
 
-                    if i >= WRITE_BATCH_SIZE {
+                    if samples.len() >= WRITE_BATCH_SIZE {
                         break;
                     }
                 }
@@ -142,7 +139,11 @@ impl MetricStore {
                 Ok::<_, Error>(())
             })?;
 
-            if i > 0 {
+            if samples.len() > 0 {
+                let mut txn = shared.db.new_transaction().await?;
+                for sample in samples {
+                    txn.insert::<MetricSampleTable>(&sample).await?;
+                }
                 txn.commit().await?;
             }
 

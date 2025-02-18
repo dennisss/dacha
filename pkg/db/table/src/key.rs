@@ -3,12 +3,12 @@ use std::mem::discriminant;
 
 use base_error::*;
 use common::const_default::ConstDefault;
-use datastore_meta_client::key_encoding::KeyEncoder;
 use parsing::parse_next;
 use protobuf::reflection::{Reflect, Reflection, ReflectionMut};
 use protobuf::MessageReflection;
 
-use crate::db::table::*;
+use crate::key_encoding::KeyEncoder;
+use crate::table::*;
 
 pub struct KeyBuilder<Tag: ProtobufTableTag> {
     out: Vec<u8>,
@@ -26,6 +26,7 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
         let key_config = &Tag::indexed_keys()[key_index];
 
         for field in key_config.fields {
+            // TODO: Here we need to support arbitrary stuff.
             let r = message
                 .field_by_number(field.number.raw())
                 .ok_or_else(|| err_msg("Missing index field value"))?;

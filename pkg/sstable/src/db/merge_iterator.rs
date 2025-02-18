@@ -4,8 +4,9 @@ use std::sync::Arc;
 use common::errors::*;
 use common::tree::binary_heap::BinaryHeap;
 use common::tree::comparator::Comparator;
+use db_kv::KeyValueEntry;
 
-use crate::iterable::{Iterable, KeyValueEntry};
+use crate::iterable::Iterable;
 use crate::table::comparator::KeyComparator;
 
 /// Iterable wrapper around multiple Iterable objects created by iterating

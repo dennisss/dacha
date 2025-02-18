@@ -8,6 +8,7 @@ use common::async_fn::AsyncFn1;
 use common::bytes::Bytes;
 use common::errors::*;
 use datastore_proto::db::meta::*;
+use db_table::key_utils::*;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor::sync::{AsyncMutex, AsyncMutexGuard, AsyncMutexPermit};
@@ -19,7 +20,6 @@ use raft_client::server::channel_factory::ChannelFactory;
 use raft_client::{RouteChannelFactory, RouteStore};
 
 use crate::constants::*;
-use crate::key_utils::*;
 
 /// Maximum number of times metastore transactions should be retried if
 pub const MAX_TRANSACTION_RETRIES: usize = 5;

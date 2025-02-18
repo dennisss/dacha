@@ -1,6 +1,6 @@
 mod db;
-mod key;
-mod table;
 
 pub use self::db::*;
-pub use self::table::*;
+pub use db_table::db::ProtobufDB;
+pub use db_table::query::*;
+pub use db_table::table::*;

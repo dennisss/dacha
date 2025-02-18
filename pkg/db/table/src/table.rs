@@ -1,10 +1,16 @@
 use protobuf::{StaticMessage, TypedFieldNumber};
 
+/// Definition for a database table where each row is a protobuf (fields map to
+/// columns).
 pub trait ProtobufTableTag {
     type Message: StaticMessage;
 
+    /// NOTE: The table id must be unique across all distinct tables in a
+    /// database.
     fn table_id() -> u32;
 
+    /// NOTE: The table name must be unique across all distinct tables in a
+    /// database.
     fn table_name() -> &'static str;
 
     /// Lists all fields that are present in the primary/secondary keys.

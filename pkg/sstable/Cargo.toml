@@ -17,6 +17,7 @@ executor = { path = "../executor" }
 executor_multitask = { path = "../executor/multitask" }
 base_radix = { path = "../base/radix" }
 sstable_proto = { path = "./proto" }
+db_kv = { path = "../db/kv" }
 
 [features]
 default = ["std"]

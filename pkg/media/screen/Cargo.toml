@@ -1,0 +1,24 @@
+[package]
+name = "media_screen"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+compression = { path = "../../compression" }
+math = { path = "../../math" }
+macros = { path = "../../macros" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+executor_graph = { path = "../../executor/graph" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+web = { path = "../../web" }
+rpc = { path = "../../rpc" }
+http = { path = "../../http" }
+image = { path = "../../image" }
+rpc_util = { path = "../../rpc/util" }
+json = { path = "../../format/json" }
+x11 = { path = "../../../third_party/x11" }

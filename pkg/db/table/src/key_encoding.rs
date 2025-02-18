@@ -1,4 +1,4 @@
-use common::errors::*;
+use base_error::*;
 
 pub struct KeyEncoder {}
 

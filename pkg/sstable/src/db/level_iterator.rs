@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common::errors::*;
+use db_kv::KeyValueEntry;
 
 use crate::db::version::Version;
-use crate::iterable::{Iterable, KeyValueEntry};
+use crate::iterable::Iterable;
 use crate::table::comparator::KeyComparator;
 use crate::table::table::{DataBlockCache, SSTableIterator};
 use crate::EmbeddedDBOptions;

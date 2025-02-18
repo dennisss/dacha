@@ -108,6 +108,7 @@ async fn main_thread_fn() {
 
     peripheral_controller.start();
 
+    // TODO: Stop hard coding this.
     {
         let pwm_pins: &'static [u32] = &[12, 26, 32 + 8, 24];
 

@@ -20,7 +20,7 @@ use protobuf::Message;
 use crate::camera_controller::CameraController;
 use crate::change::{ChangeDistributer, ChangeEvent};
 use crate::config::MachineConfigContainer;
-use crate::db::{ProtobufDB, Query, QueryAllOf, QueryOperation, QueryValue};
+use crate::db::{create_db_instance, ProtobufDB, Query, QueryAllOf, QueryOperation, QueryValue};
 use crate::files::{FileManager, FileReference};
 use crate::metric::MetricStore;
 use crate::player::Player;
@@ -209,7 +209,7 @@ impl MonitorImpl {
     pub async fn create(local_data_dir: &LocalPath, make_fake_machines: bool) -> Result<Self> {
         let changes = ChangeDistributer::create();
 
-        let db = Arc::new(ProtobufDB::create(&local_data_dir.join("db")).await?);
+        let db = Arc::new(create_db_instance(&local_data_dir.join("db")).await?);
 
         let mut state = State::default();
 
