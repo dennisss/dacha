@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use cluster_client::meta::client::ClusterMetaClient;
 use common::errors::*;
+use db_table::db::ProtobufDB;
 use executor::bundle::TaskResultBundle;
 use executor_multitask::RootResource;
 use rpc_util::{AddReflection, NamedPortArg};
@@ -27,7 +28,7 @@ async fn main_with_port(port: u16) -> Result<()> {
     let client = Arc::new(ClusterMetaClient::create_from_environment().await?);
     service.register_dependency(client.clone()).await;
 
-    let manager = Manager::new(client, Arc::new(crypto::random::global_rng()));
+    let manager = Manager::new(client.db().clone(), Arc::new(crypto::random::global_rng()));
     service
         .spawn_interruptable("Manager::run", manager.clone().run())
         .await;

@@ -22,14 +22,14 @@ use crate::meta::state_machine_db::EmbeddedDBStateMachineDatabase;
 use crate::meta::watchers::*;
 use crate::proto::*;
 
-use super::table_key::TableKey;
-
 /*
 TODO: Rather than having synced path logic, we can maybe just always force syncing when opening files
 */
 
 #[derive(Defaultable, Clone)]
 pub struct EmbeddedDBStateMachineOptions {
+    /// NOTE: This must be much shorter than the typical expected lifetime of
+    /// the leader term.
     #[default(Duration::from_secs(60 * 60))] // 1 hour
     pub history_ttl: Duration,
 

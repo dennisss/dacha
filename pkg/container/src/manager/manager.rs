@@ -3,13 +3,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use cluster_client::meta::{ClusterMetaTable, GetClusterMetaTable};
+use cluster_client::meta::*;
 use common::errors::*;
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
 use datastore_meta_client::MetastoreClient;
-use datastore_meta_client::MetastoreClientInterface;
 use datastore_meta_client::MetastoreTransaction;
+use db_table::db::{ProtobufDB, ProtobufDBTransaction};
+use db_table::{query, query_one};
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
 
@@ -91,13 +92,13 @@ TODO: We need to check that the node last_seen timeout is much longer than it ta
 /// NOTE: Cloning a 'Manager' instance will reference the same internal object.
 #[derive(Clone)]
 pub struct Manager {
-    meta_client: Arc<dyn MetastoreClientInterface>,
+    db: Arc<ProtobufDB>,
     rng: Arc<dyn SharedRng>,
 }
 
 impl Manager {
-    pub fn new(meta_client: Arc<dyn MetastoreClientInterface>, rng: Arc<dyn SharedRng>) -> Self {
-        Self { meta_client, rng }
+    pub fn new(db: Arc<ProtobufDB>, rng: Arc<dyn SharedRng>) -> Self {
+        Self { db, rng }
     }
 
     /// Entrypoint of the background manager thread which periodically ensures
@@ -114,11 +115,7 @@ impl Manager {
     }
 
     async fn run_once(&self) -> Result<()> {
-        let mut jobs = self
-            .meta_client
-            .cluster_table::<JobMetadata>()
-            .list()
-            .await?;
+        let mut jobs = self.db.list::<JobMetadataTable>().await?;
         for job in jobs {
             if let Err(e) = self.reconcile_job(job.spec().name()).await {
                 eprintln!("Failed to reconcile job {}: {}", job.spec().name(), e);
@@ -211,8 +208,8 @@ impl Manager {
             // TODO: Check no build rules still present in volumes.
         }
 
-        run_transaction!(&self.meta_client, txn, {
-            self.start_job_transaction(request, &txn).await?;
+        run_transaction!(self.db, txn, {
+            self.start_job_transaction(request, &mut txn).await?;
         });
 
         // TODO: Make this optionally syncronous.
@@ -255,11 +252,14 @@ impl Manager {
     async fn start_job_transaction(
         &self,
         request: &StartJobRequest,
-        txn: &MetastoreTransaction<'_>,
+        txn: &mut ProtobufDBTransaction<'_>,
     ) -> Result<()> {
-        let job_table = txn.cluster_table::<JobMetadata>();
-
-        let existing_job = job_table.get(request.spec().name()).await?;
+        let existing_job = query_one!(
+            txn,
+            JobMetadataTable,
+            "spec.name = ?",
+            request.spec().name()
+        );
 
         if existing_job.is_none() {
             // A job can only be created if there are no job whose name is a prefix of the
@@ -272,7 +272,7 @@ impl Manager {
             let name_segments = request.spec().name().split('.').collect::<Vec<&str>>();
             for i in 1..name_segments.len() - 1 {
                 let prefix = name_segments[0..i].join(".");
-                if let Some(_) = txn.cluster_table::<JobMetadata>().get(&prefix).await? {
+                if let Some(_) = query_one!(txn, JobMetadataTable, "spec.name = ?", &prefix) {
                     return Err(rpc::Status::invalid_argument(format!(
                         "A job already exists with a prefix with a new job name: {}",
                         prefix
@@ -290,26 +290,20 @@ impl Manager {
 
         job_meta.set_spec(request.spec().clone());
 
-        job_table.put(&job_meta).await?;
+        txn.put::<JobMetadataTable>(&job_meta).await?;
 
         Ok(())
     }
 
     async fn reconcile_job(&self, job_name: &str) -> Result<()> {
-        let txn = self.meta_client.new_transaction().await?;
+        let mut txn = self.db.new_transaction().await?;
 
-        let nodes_table = txn.cluster_table::<NodeMetadata>();
-        let jobs_table = txn.cluster_table::<JobMetadata>();
-        let workers_table = txn.cluster_table::<WorkerMetadata>();
-
-        let job = jobs_table
-            .get(job_name)
-            .await?
+        let job = query_one!(&txn, JobMetadataTable, "spec.name = ?", job_name)
             .ok_or_else(|| err_msg("Job doesn't exist"))?;
 
         // TODO: This read operation will cause a lot of contention as nodes may be
         // simultaneously updating their status.
-        let mut nodes = nodes_table.list().await?;
+        let mut nodes = txn.list::<NodeMetadataTable>().await?;
         if nodes.is_empty() {
             // TODO: This may be problematic during initial bootstrapping of the cluster.
             return Err(err_msg("No nodes present"));
@@ -321,12 +315,37 @@ impl Manager {
             nodes_by_id.insert(node.id(), i);
         }
 
-        let mut existing_workers = workers_table.list_by_job(job_name).await?;
+        // TODO: Parallelize with the previous query.
+        let nodes_scheduling = txn.list::<NodeSchedulingMetadataTable>().await?;
+
+        let mut nodes_scheduling_by_id = HashMap::new();
+        for data in nodes_scheduling {
+            nodes_scheduling_by_id.insert(data.node_id(), data);
+        }
+
+        let mut nodes = nodes
+            .into_iter()
+            .map(|node| {
+                let mut sched = nodes_scheduling_by_id
+                    .remove(&node.id())
+                    .unwrap_or_default();
+                sched.set_node_id(node.id());
+
+                (node, sched)
+            })
+            .collect::<Vec<_>>();
+
+        let mut existing_workers = query!(
+            &txn,
+            WorkerMetadataTable,
+            "STARTS_WITH(spec.name, ?)",
+            format!("{}.", job_name)
+        );
 
         // TODO: Do not re-schedule drained workers if using distinct_nodes on the same
         // node until it is done being cleaned up.
         let mut drained_workers = existing_workers
-            .extract_if(|worker| worker.drain())
+            .extract_if(.., |worker| worker.drain())
             .collect::<Vec<_>>();
 
         existing_workers.retain(|worker| !worker.drain());
@@ -342,7 +361,7 @@ impl Manager {
 
         if job.spec().scheduling().specific_nodes_len() > 0 {
             remaining_nodes.retain(|i| {
-                let current_id = nodes[*i].id();
+                let current_id = nodes[*i].0.id();
                 job.spec()
                     .scheduling()
                     .specific_nodes()
@@ -358,7 +377,7 @@ impl Manager {
 
         remaining_nodes.retain(|i| {
             let node = &nodes[*i];
-            Self::filter_by_node_labels(node, job.spec().scheduling().labels())
+            Self::filter_by_node_labels(&node.0, &node.1, job.spec().scheduling().labels())
         });
 
         // TODO: Need to increment ref counts to blobs.
@@ -393,7 +412,7 @@ impl Manager {
                     // re-used.
                     if !remaining_nodes
                         .iter()
-                        .find(|idx| nodes[**idx].id() == worker.assigned_node())
+                        .find(|idx| nodes[**idx].0.id() == worker.assigned_node())
                         .is_some()
                     {
                         old_workers.push(worker);
@@ -441,14 +460,15 @@ impl Manager {
             let assigned_node = &mut nodes[assigned_node_index];
 
             let mut new_worker = WorkerMetadata::default();
-            new_worker.set_assigned_node(assigned_node.id());
+            new_worker.set_assigned_node(assigned_node.0.id());
 
             let new_spec = self
                 .create_allocated_worker_spec(
                     job.spec().name(),
                     &job.spec().worker(),
                     existing_worker.as_ref().map(|t| t.spec()),
-                    assigned_node,
+                    &assigned_node.0,
+                    &assigned_node.1,
                 )
                 .await?;
             new_worker.set_spec(new_spec);
@@ -456,7 +476,7 @@ impl Manager {
 
             // Update the worker
             // TODO: Skip this if the worker hasn't changed at all.
-            workers_table.put(&new_worker).await?;
+            txn.put::<WorkerMetadataTable>(&new_worker).await?;
 
             // Update the node
             {
@@ -471,18 +491,19 @@ impl Manager {
 
                 for port in new_worker.spec().ports() {
                     if !old_port_nums.remove(&port.number()) {
-                        assigned_node.allocated_ports_mut().insert(port.number());
+                        assigned_node.1.allocated_ports_mut().insert(port.number());
                         dirty = true;
                     }
                 }
 
                 for old_port in old_port_nums {
-                    assigned_node.allocated_ports_mut().remove(&old_port);
+                    assigned_node.1.allocated_ports_mut().remove(&old_port);
                     dirty = true;
                 }
 
                 if dirty {
-                    nodes_table.put(assigned_node).await?;
+                    txn.put::<NodeSchedulingMetadataTable>(&assigned_node.1)
+                        .await?;
                 }
             }
         }
@@ -508,20 +529,22 @@ impl Manager {
             // TODO: Eventually once the node has stopped the worker, we should delete the
             // WorkerMetadata entry for this.
             existing_worker.set_drain(true);
-            workers_table.put(&existing_worker).await?;
+
+            txn.put::<WorkerMetadataTable>(&existing_worker).await?;
 
             let node = &mut nodes[*nodes_by_id
                 .get(&existing_worker.assigned_node())
                 .ok_or_else(|| err_msg("Failed to find assigned node"))?];
 
+            // TODO: Don't de-allocate resources until the workers are fully cleaned up.
             let mut dirty = false;
             for port in existing_worker.spec().ports() {
-                node.allocated_ports_mut().remove(&port.number());
+                node.1.allocated_ports_mut().remove(&port.number());
                 dirty = true;
             }
 
             if dirty {
-                nodes_table.put(node).await?;
+                txn.put::<NodeSchedulingMetadataTable>(&node.1).await?;
             }
         }
 
@@ -533,9 +556,13 @@ impl Manager {
     }
 
     /// Returns whether or not to keep a node based on a selector.
-    fn filter_by_node_labels(node_meta: &NodeMetadata, selector: &LabelsSelector) -> bool {
+    fn filter_by_node_labels(
+        node_meta: &NodeMetadata,
+        node_scheduling: &NodeSchedulingMetadata,
+        selector: &LabelsSelector,
+    ) -> bool {
         let mut node_labels: HashMap<&str, &str> = HashMap::default();
-        for label in node_meta.labels().label() {
+        for label in node_scheduling.labels().label() {
             node_labels.insert(label.key(), label.value());
         }
 
@@ -578,14 +605,15 @@ impl Manager {
     /// allows us to schedule more stuff now).
     async fn cleanup_drained(&self, drained_workers: &[WorkerMetadata]) -> Result<()> {
         // NOTE: This transaction is mainly for batching the writes.
-        let mut txn = self.meta_client.new_transaction().await?;
+        let mut txn = self.db.new_transaction().await?;
 
         for worker in drained_workers {
-            let state_meta = self
-                .meta_client
-                .cluster_table::<WorkerStateMetadata>()
-                .get(worker.spec().name())
-                .await?;
+            let state_meta = query_one!(
+                &txn,
+                WorkerStateMetadataTable,
+                "worker_name = ?",
+                worker.spec().name()
+            );
 
             let state_meta = match state_meta {
                 Some(v) => v,
@@ -595,8 +623,8 @@ impl Manager {
             if state_meta.state() == WorkerStateMetadata_ReportedState::DONE
                 && state_meta.worker_revision() == worker.revision()
             {
-                txn.cluster_table().delete(worker).await?;
-                txn.cluster_table().delete(&state_meta).await?;
+                txn.remove::<WorkerMetadataTable>(worker).await?;
+                txn.remove::<WorkerStateMetadataTable>(&state_meta).await?;
             }
         }
 
@@ -619,6 +647,7 @@ impl Manager {
         job_worker_spec: &WorkerSpec,
         old_spec: Option<&WorkerSpec>,
         node: &NodeMetadata,
+        node_scheduling: &NodeSchedulingMetadata,
     ) -> Result<WorkerSpec> {
         let mut spec = job_worker_spec.clone();
 
@@ -655,7 +684,9 @@ impl Manager {
             for port_num in
                 node.allocatable_port_range().start()..node.allocatable_port_range().end()
             {
-                if node.allocated_ports().contains(&port_num) || new_ports.contains(&port_num) {
+                if node_scheduling.allocated_ports().contains(&port_num)
+                    || new_ports.contains(&port_num)
+                {
                     continue;
                 }
 
@@ -700,25 +731,21 @@ impl Manager {
         response: &mut rpc::ServerResponse<'a, AllocateBundleBlobsResponse>,
     ) -> Result<()> {
         // TODO: Filter out unhealthy nodes.
-        let mut nodes = self
-            .meta_client
-            .cluster_table::<NodeMetadata>()
-            .list()
-            .await?;
+        let mut nodes = self.db.list::<NodeMetadataTable>().await?;
 
         self.rng.shuffle(&mut nodes).await;
 
-        let txn = self.meta_client.new_transaction().await?;
-        let blobs_table = txn.cluster_table::<BundleBlobMetadata>();
+        let mut txn = self.db.new_transaction().await?;
 
         for spec in request.blob_specs() {
             // TODO: Validate the blob id format.
 
-            let mut blob = blobs_table.get(spec.id()).await?.unwrap_or_else(|| {
-                let mut b = BundleBlobMetadata::default();
-                b.set_spec(spec.as_ref().clone());
-                b
-            });
+            let mut blob = query_one!(txn, BundleBlobMetadataTable, "spec.id = ?", spec.id())
+                .unwrap_or_else(|| {
+                    let mut b = BundleBlobMetadata::default();
+                    b.set_spec(spec.as_ref().clone());
+                    b
+                });
 
             let mut num_uploaded = 0;
 
@@ -769,7 +796,7 @@ impl Manager {
                 response.value.add_new_assignments(assignment);
             }
 
-            blobs_table.put(&blob).await?;
+            txn.put::<BundleBlobMetadataTable>(&blob).await?;
         }
 
         txn.commit().await?;
@@ -810,6 +837,7 @@ mod tests {
         let meta = TestMetastore::create().await?;
 
         let meta_client = meta.create_client().await?;
+        let db = Arc::new(ProtobufDB::new(Arc::new(meta_client)));
 
         // TODO: Add a valid last_seen
         let node1 = NodeMetadata::parse_text(
@@ -824,10 +852,7 @@ mod tests {
         "#,
         )?;
 
-        meta_client
-            .cluster_table::<NodeMetadata>()
-            .put(&node1)
-            .await?;
+        db.insert::<NodeMetadataTable>(&node1).await?;
 
         let mut request = StartJobRequest::parse_text(
             r#"
@@ -842,7 +867,7 @@ mod tests {
         )?;
 
         let manager = Manager::new(
-            Arc::new(meta.create_client().await?),
+            db.clone(),
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
         manager.start_job_impl(&request).await?;
@@ -861,26 +886,17 @@ mod tests {
         "#,
         )?];
 
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         // Verify that doing more iterations doesn't change anything.
         manager.run_once().await?;
         manager.run_once().await?;
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         // Start it again (should be idempotent)
         manager.start_job_impl(&request).await?;
 
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         // Make a change.
         request.spec_mut().worker_mut().args_mut()[1] = "2000".into();
@@ -900,10 +916,7 @@ mod tests {
             revision: 6
         "#,
         )?];
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         Ok(())
     }
@@ -914,6 +927,7 @@ mod tests {
         let meta = TestMetastore::create().await?;
 
         let meta_client = meta.create_client().await?;
+        let db = Arc::new(ProtobufDB::new(Arc::new(meta_client)));
 
         // TODO: Add a valid last_seen
         let node1 = NodeMetadata::parse_text(
@@ -931,14 +945,8 @@ mod tests {
         let mut node2 = node1.clone();
         node2.set_id(2u64);
 
-        meta_client
-            .cluster_table::<NodeMetadata>()
-            .put(&node1)
-            .await?;
-        meta_client
-            .cluster_table::<NodeMetadata>()
-            .put(&node2)
-            .await?;
+        db.insert::<NodeMetadataTable>(&node1).await?;
+        db.insert::<NodeMetadataTable>(&node2).await?;
 
         let mut request = StartJobRequest::parse_text(
             r#"
@@ -954,7 +962,7 @@ mod tests {
         )?;
 
         let manager = Manager::new(
-            Arc::new(meta.create_client().await?),
+            db.clone(), // TODO: Always use an independent client interface?
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
         manager.start_job_impl(&request).await?;
@@ -981,10 +989,7 @@ mod tests {
                 "#,
             )?,
         ];
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         let mut node3 = node1.clone();
         node3.set_id(3u64);
@@ -992,14 +997,8 @@ mod tests {
         let mut node4 = node1.clone();
         node4.set_id(4u64);
 
-        meta_client
-            .cluster_table::<NodeMetadata>()
-            .put(&node3)
-            .await?;
-        meta_client
-            .cluster_table::<NodeMetadata>()
-            .put(&node4)
-            .await?;
+        db.insert::<NodeMetadataTable>(&node3).await?;
+        db.insert::<NodeMetadataTable>(&node4).await?;
 
         manager.run_once().await?;
 
@@ -1037,10 +1036,7 @@ mod tests {
                 "#,
             )?,
         ];
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         request.spec_mut().set_replicas(2u32);
         manager.start_job_impl(&request).await?;
@@ -1081,16 +1077,10 @@ mod tests {
                 "#,
             )?,
         ];
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         assert_eq!(
-            meta_client
-                .cluster_table::<WorkerMetadata>()
-                .list_by_node(1u64)
-                .await?,
+            query!(db, WorkerMetadataTable, "assigned_node = ?", 1u64),
             vec![WorkerMetadata::parse_text(
                 r#"
                 spec {
@@ -1104,10 +1094,7 @@ mod tests {
         );
 
         assert_eq!(
-            meta_client
-                .cluster_table::<WorkerMetadata>()
-                .list_by_node(2u64)
-                .await?,
+            query!(db, WorkerMetadataTable, "assigned_node = ?", 2u64),
             vec![WorkerMetadata::parse_text(
                 r#"
                 spec {
@@ -1121,26 +1108,17 @@ mod tests {
         );
 
         assert_eq!(
-            meta_client
-                .cluster_table::<WorkerMetadata>()
-                .list_by_node(0u64)
-                .await?,
+            query!(db, WorkerMetadataTable, "assigned_node = ?", 0u64),
             vec![]
         );
 
         assert_eq!(
-            meta_client
-                .cluster_table::<WorkerMetadata>()
-                .list_by_node(3u64)
-                .await?,
+            query!(db, WorkerMetadataTable, "assigned_node = ?", 3u64),
             vec![]
         );
 
         assert_eq!(
-            meta_client
-                .cluster_table::<WorkerMetadata>()
-                .list_by_node(10u64)
-                .await?,
+            query!(db, WorkerMetadataTable, "assigned_node = ?", 10u64),
             vec![]
         );
 
@@ -1148,82 +1126,65 @@ mod tests {
         // latest revision.
 
         // Wrong revision and state
-        meta_client
-            .cluster_table()
-            .put(&WorkerStateMetadata::parse_text(
-                r#"
+        db.insert::<WorkerStateMetadataTable>(&WorkerStateMetadata::parse_text(
+            r#"
             worker_name: "daemon.mkz8jc57m5qge"
             state: READY
             worker_revision: 1
         "#,
-            )?)
-            .await?;
+        )?)
+        .await?;
 
         manager.run_once().await?;
         manager.run_once().await?;
 
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         // Right state, wrong revision
-        meta_client
-            .cluster_table()
-            .put(&WorkerStateMetadata::parse_text(
-                r#"
+        db.insert::<WorkerStateMetadataTable>(&WorkerStateMetadata::parse_text(
+            r#"
             worker_name: "daemon.mkz8jc57m5qge"
             state: DONE
             worker_revision: 1
         "#,
-            )?)
-            .await?;
+        )?)
+        .await?;
 
         manager.run_once().await?;
         manager.run_once().await?;
 
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         // Wrong state, right revision
-        meta_client
-            .cluster_table()
-            .put(&WorkerStateMetadata::parse_text(
-                r#"
+        db.insert::<WorkerStateMetadataTable>(&WorkerStateMetadata::parse_text(
+            r#"
                 worker_name: "daemon.mkz8jc57m5qge"
                 state: READY
                 worker_revision: 4
                 "#,
-            )?)
-            .await?;
+        )?)
+        .await?;
 
         manager.run_once().await?;
         manager.run_once().await?;
 
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         // Can now be reclaimed
-        meta_client
-            .cluster_table()
-            .put(&WorkerStateMetadata::parse_text(
-                r#"
+        db.insert::<WorkerStateMetadataTable>(&WorkerStateMetadata::parse_text(
+            r#"
                 worker_name: "daemon.mkz8jc57m5qge"
                 state: DONE
                 worker_revision: 4
                 "#,
-            )?)
-            .await?;
+        )?)
+        .await?;
 
         manager.run_once().await?;
         manager.run_once().await?;
 
         assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
+            db.list::<WorkerMetadataTable>().await?,
             vec![
                 WorkerMetadata::parse_text(
                     r#"
@@ -1248,13 +1209,7 @@ mod tests {
             ]
         );
 
-        assert_eq!(
-            meta_client
-                .cluster_table::<WorkerStateMetadata>()
-                .list()
-                .await?,
-            vec![]
-        );
+        assert_eq!(db.list::<WorkerStateMetadataTable>().await?, vec![]);
 
         Ok(())
     }
@@ -1265,6 +1220,7 @@ mod tests {
         let meta = TestMetastore::create().await?;
 
         let meta_client = meta.create_client().await?;
+        let db = Arc::new(ProtobufDB::new(Arc::new(meta_client)));
 
         // TODO: Add a valid last_seen
         let node1 = NodeMetadata::parse_text(
@@ -1279,10 +1235,7 @@ mod tests {
         "#,
         )?;
 
-        meta_client
-            .cluster_table::<NodeMetadata>()
-            .put(&node1)
-            .await?;
+        db.insert::<NodeMetadataTable>(&node1).await?;
 
         let mut request = StartJobRequest::parse_text(
             r#"
@@ -1307,7 +1260,7 @@ mod tests {
         )?;
 
         let manager = Manager::new(
-            Arc::new(meta.create_client().await?),
+            db.clone(),
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
         manager.start_job_impl(&request).await?;
@@ -1366,10 +1319,7 @@ mod tests {
                 "#,
             )?,
         ];
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers);
 
         // Create a second job.
         let mut request = StartJobRequest::parse_text(
@@ -1412,10 +1362,7 @@ mod tests {
             revision: 5
             "#,
         )?]);
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers2
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers2);
 
         // Updating the job should re-use port numbers (associated with same port name).
         request.spec_mut().set_replicas(2u32);
@@ -1423,7 +1370,7 @@ mod tests {
 
         request.spec_mut().worker_mut().ports_mut().insert(
             0,
-            WorkerSpec_Port::parse_text(r#" name: "first_port" type: TCP protocol: HTTP "#)?,
+            WorkerSpec_Port::parse_text(r#" name: "first_port" type: TCP protocol: HTTP "#)?.into(),
         );
 
         manager.start_job_impl(&request).await?;
@@ -1486,10 +1433,7 @@ mod tests {
             )?,
         ]);
 
-        assert_eq!(
-            meta_client.cluster_table::<WorkerMetadata>().list().await?,
-            expected_workers2
-        );
+        assert_eq!(db.list::<WorkerMetadataTable>().await?, expected_workers2);
 
         Ok(())
     }

@@ -8,11 +8,14 @@ use std::time::{Duration, SystemTime};
 use builder::current_platform;
 use builder::proto::BundleSpec;
 use cluster_client::meta::client::ClusterMetaClient;
-use cluster_client::meta::constants::*;
-use cluster_client::meta::GetClusterMetaTable;
+use cluster_client::meta::{
+    constants::*, BundleBlobMetadataTable, NodeMetadataTable, WorkerMetadataTable,
+    WorkerStateMetadataTable,
+};
 use common::errors::*;
 use crypto::random::RngExt;
-use datastore_meta_client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
+use db_table::db::ProtobufDB;
+use db_table::{query, query_one};
 use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::AsyncMutex;
@@ -23,13 +26,14 @@ use net::backoff::*;
 use nix::unistd::chown;
 use nix::unistd::Gid;
 use protobuf::Message;
+use sstable::transactional::TransactionalEmbeddedDB;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::node::blob_store::*;
 use crate::node::resources::*;
 use crate::node::shadow::*;
 use crate::node::worker::*;
-use crate::node::workers_table;
+use crate::node::workers_table::{self, LocalNodeMetadataTable, LocalWorkerMetadataTable};
 use crate::proto::*;
 use crate::runtime::ContainerRuntime;
 
@@ -87,7 +91,7 @@ struct NodeShared {
     context: NodeContext,
     config: NodeConfig,
 
-    db: Arc<EmbeddedDB>,
+    db: Arc<ProtobufDB>,
 
     blobs: BundleBlobStore,
 
@@ -118,18 +122,11 @@ struct NodeShared {
     /// TODO: Consider sending the name of the changed worker so that we don't
     /// need to re-check all of them.
     state_change_channel: (channel::Sender<()>, channel::Receiver<()>),
-
-    heartbeat_now_channel: (channel::Sender<()>, channel::Receiver<()>),
 }
 
 struct NodeState {
     workers: Vec<Worker>,
     inner: NodeStateInner,
-
-    labels: Labels,
-
-    /// Whether or not the labels have been flushed to disk.
-    labels_flushed: bool,
 }
 
 struct NodeStateInner {
@@ -230,8 +227,6 @@ impl Node {
             core::cmp::max(last_db_time, current_time)
         };
 
-        let labels = workers_table::get_node_labels(&db).await?;
-
         let runtime = ContainerRuntime::create(
             LocalPath::new(config.data_dir()).join("run"),
             config.cgroup_dir(),
@@ -249,20 +244,17 @@ impl Node {
                 state: AsyncMutex::new(NodeState {
                     workers: vec![],
                     inner,
-                    labels,
-                    labels_flushed: true,
-                }),
+                                    }),
                 event_channel: channel::unbounded(),
                 last_timer_id: AtomicUsize::new(0),
                 usb_context,
                 meta_client: Eventually::new(),
                 last_event_timestamp: AsyncMutex::new(last_event_timestamp),
                 state_change_channel: channel::bounded(1),
-                heartbeat_now_channel: channel::bounded(1),
-            }),
+                            }),
         };
 
-        let all_workers = workers_table::list_workers(&inst.shared.db).await?;
+        let all_workers = inst.shared.db.list::<LocalWorkerMetadataTable>().await?;
         for worker_meta in all_workers {
             if !worker_meta.spec().persistent() {
                 // TODO: Also add non-persistent workers which are in a done state (this is
@@ -414,25 +406,13 @@ impl NodeInner {
     }
 
     async fn update_node_metadata(&self) -> Result<()> {
-        let meta_client = self.shared.meta_client.get().await;
-
-        let (labels, labels_flushed) = lock!(state <= self.shared.state.lock().await?, {
-            (state.labels.clone(), state.labels_flushed)
-        });
-
-        if !labels_flushed {
-            workers_table::put_node_labels(&self.shared.db, &labels).await?;
-
-            lock!(state <= self.shared.state.lock().await?, {
-                state.labels_flushed = true;
-            });
-        }
+        let db = self.shared.meta_client.get().await.db();
 
         let platform = current_platform()?;
 
-        run_transaction!(&meta_client, txn, {
-            let node_table = txn.cluster_table::<NodeMetadata>();
-            let mut node_meta = node_table.get(&self.shared.id).await?.unwrap_or_default();
+        run_transaction!(db, txn, {
+                        let mut node_meta =
+                query_one!(&txn, NodeMetadataTable, "id = ?", self.shared.id).unwrap_or_default();
             node_meta.set_id(self.shared.id);
             node_meta.set_address(&self.shared.context.local_address);
             node_meta.set_start_time(self.shared.start_time);
@@ -444,9 +424,8 @@ impl NodeInner {
             node_meta
                 .set_allocatable_port_range(self.shared.config.allocatable_port_range().clone());
             node_meta.set_platform(platform);
-            node_meta.set_labels(labels.clone());
-
-            node_table.put(&node_meta).await?;
+            
+            txn.put::<NodeMetadataTable>(&node_meta).await?;
         });
 
         Ok(())
@@ -468,11 +447,7 @@ impl NodeInner {
             // metastore for changes yet.
             let _ = self.shared.state_change_channel.0.try_send(());
 
-            executor::timeout(
-                NODE_HEARTBEAT_INTERVAL,
-                self.shared.heartbeat_now_channel.1.recv(),
-            )
-            .await;
+            executor::sleep(                NODE_HEARTBEAT_INTERVAL)            .await?;
         }
     }
 
@@ -492,15 +467,17 @@ impl NodeInner {
         &self,
         workers: &[WorkerMetadata],
     ) -> Result<HashMap<String, WorkerStateMetadata>> {
-        let meta_client = self.shared.meta_client.get().await;
+        let db = self.shared.meta_client.get().await.db();
 
         let mut out = HashMap::new();
 
         for worker in workers {
-            let reported_state = meta_client
-                .cluster_table::<WorkerStateMetadata>()
-                .get(worker.spec().name())
-                .await?
+            let reported_state = query_one!(
+                db,
+                WorkerStateMetadataTable,
+                "worker_name = ?",
+                worker.spec().name()
+            )
                 .unwrap_or_default();
 
             out.insert(worker.spec().name().to_string(), reported_state);
@@ -518,12 +495,9 @@ impl NodeInner {
     /// TODO: Run this with it's own backoff loop.
     /// TODO: Make sure that all external requests have deadlines.
     async fn reconcile_workers(&self) -> Result<()> {
-        let meta_client = self.shared.meta_client.get().await;
+        let db = self.shared.meta_client.get().await.db();
 
-        let intended_workers = meta_client
-            .cluster_table::<WorkerMetadata>()
-            .list_by_node(self.shared.id)
-            .await?;
+        let intended_workers = query!(db, WorkerMetadataTable, "assigned_node = ?", self.shared.id);
 
         // TODO: Cache this across multiple reconcile_workers() calls.
         let reported_worker_states = self.read_reported_worker_states(&intended_workers).await?;
@@ -572,7 +546,7 @@ impl NodeInner {
                 state_meta.set_worker_name(worker.spec().name());
                 state_meta.set_state(current_state);
                 state_meta.set_worker_revision(current_revision);
-                meta_client.cluster_table().put(&state_meta).await?;
+                db.insert::<WorkerStateMetadataTable>(&state_meta).await?;
             }
 
             if !worker.drain() {
@@ -808,7 +782,7 @@ impl NodeInner {
     }
 
     fn persistent_data_dir(&self) -> LocalPathBuf {
-        LocalPath::new(self.shared.config.data_dir()).join("volume/per-worker")
+        LocalPath::new(self.shared.config.data_dir()).join("persistent")
     }
 
     async fn list_workers_impl(&self) -> Result<ListWorkersResponse> {
@@ -1399,15 +1373,12 @@ impl NodeInner {
             return Ok(());
         }
 
-        let meta_client = self.shared.meta_client.get().await;
+        let db = self.shared.meta_client.get().await.db();
 
         // TODO: Once a node fetches a blob it becomes a replica of that blob. When
         // should we update the BundleBlobMetadata entry?
-        let blob_meta = meta_client
-            .cluster_table::<BundleBlobMetadata>()
-            .get(blob_id)
-            .await?
-            .ok_or_else(|| err_msg("No such blob"))?;
+        let blob_meta = query_one!(db, BundleBlobMetadataTable, "spec.id = ?", blob_id)
+                        .ok_or_else(|| err_msg("No such blob"))?;
 
         let uploaded_replicas = blob_meta
             .replicas()
@@ -1425,11 +1396,8 @@ impl NodeInner {
             .node_id();
 
         // TODO: Exclude nodes not marked as ready recently.
-        let remote_node_meta = meta_client
-            .cluster_table::<NodeMetadata>()
-            .get(&remote_node_id)
-            .await?
-            .ok_or_else(|| err_msg("No such node"))?;
+        let remote_node_meta = query_one!(db, NodeMetadataTable, "id = ?", remote_node_id)
+                        .ok_or_else(|| err_msg("No such node"))?;
 
         let client =
             rpc::Http2Channel::create(format!("http://{}", remote_node_meta.address()).as_str())

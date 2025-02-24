@@ -450,6 +450,17 @@ impl MetastoreClientInterface for MetastoreClient {
     }
 }
 
+#[async_trait]
+impl db_kv::KeyValueStore for MetastoreClient {
+    async fn new_transaction<'a>(
+        &'a self,
+    ) -> Result<Box<dyn db_kv::KeyValueStoreTransaction + 'a>> {
+        // TODO: Optimize. Only need to check the snapshot if we do reads.
+        let txn = self.new_transaction_impl().await?;
+        Ok(Box::new(txn))
+    }
+}
+
 pub struct MetastoreTransaction<'a> {
     class: MetastoreTransactionClass<'a>,
 }
@@ -497,6 +508,61 @@ impl<'a> MetastoreClientInterface for MetastoreTransaction<'a> {
 
     async fn new_transaction<'b>(&'b self) -> Result<MetastoreTransaction<'b>> {
         self.new_transaction_impl().await
+    }
+}
+
+#[async_trait]
+impl<'a> db_kv::KeyValueStoreTransaction for MetastoreTransaction<'a> {
+    async fn iter<'b>(
+        &'b self,
+        options: db_kv::KeyValueIteratorOptions,
+    ) -> Result<Box<dyn db_kv::KeyValueStoreIterator + 'b>> {
+        let values = self
+            .get_range_impl(&options.start_key, &options.end_key)
+            .await?;
+        Ok(Box::new(VecIterator {
+            entries: values,
+            i: 0,
+        }))
+    }
+
+    async fn read_index(&self) -> u64 {
+        let (_, state) = self.get_top_level().await;
+        state.read_exclusive().read_index
+    }
+
+    async fn put(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+        self.put_impl(key, value).await
+    }
+
+    async fn delete(&mut self, key: &[u8]) -> Result<()> {
+        self.delete_impl(key).await
+    }
+
+    async fn commit(&mut self) -> Result<()> {
+        self.commit_impl().await
+    }
+}
+
+struct VecIterator {
+    entries: Vec<KeyValueEntry>,
+    i: usize,
+}
+
+#[async_trait]
+impl db_kv::KeyValueStoreIterator for VecIterator {
+    async fn next(&mut self) -> Result<Option<db_kv::KeyValueEntry>> {
+        if self.i < self.entries.len() {
+            let v = &self.entries[self.i];
+            self.i += 1;
+            // TODO: Ideally avoid copying here.
+            return Ok(Some(db_kv::KeyValueEntry {
+                key: v.key().into(),
+                value: v.value().into(),
+            }));
+        }
+
+        Ok(None)
     }
 }
 
@@ -646,6 +712,10 @@ impl<'a> MetastoreTransaction<'a> {
     }
 
     pub async fn commit(self) -> Result<()> {
+self.commit_impl().await
+    }
+
+    async fn commit_impl(&self) -> Result<()> {
         // Nested transactions will be committed once the top level transaction is
         // committed.
         if let MetastoreTransactionClass::Nested { .. } = self.class {
@@ -693,7 +763,7 @@ macro_rules! run_transaction {
     ($client:expr, $txn:ident, $f:expr) => {{
         let mut retval = None;
         for i in 0..$crate::MAX_TRANSACTION_RETRIES {
-            let $txn = $client.new_transaction().await?;
+            let mut $txn = $client.new_transaction().await?;
             retval = Some($f);
             $txn.commit().await?;
             break;

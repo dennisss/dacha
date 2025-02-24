@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use base_error::*;
 use db_kv::*;
 use protobuf::{Message, MessageReflection, StaticMessage};
@@ -116,11 +118,11 @@ Standard nodes:
 */
 
 pub struct ProtobufDB {
-    store: Box<dyn KeyValueStore>,
+    store: Arc<dyn KeyValueStore>,
 }
 
 impl ProtobufDB {
-    pub fn new(store: Box<dyn KeyValueStore>) -> Self {
+    pub fn new(store: Arc<dyn KeyValueStore>) -> Self {
         Self { store }
     }
 
@@ -358,6 +360,16 @@ impl<'a> ProtobufDBTransaction<'a> {
         Ok(out)
     }
 
+    pub async fn read_index(&self) -> u64 {
+        self.txn.read_index().await
+    }
+
+    pub async fn list<Tag: ProtobufTableTag>(&self) -> Result<Vec<Tag::Message>> {
+        let mut query = Query::default();
+        query.or(QueryAllOf::default());
+        self.query::<Tag>(&query).await
+    }
+
     /// Performs either an insert or update
     pub async fn insert<Tag: ProtobufTableTag>(&self, value: &Tag::Message) -> Result<()> {
         // TODO: If we have secondary keys, then we need to retrieve the previous value
@@ -417,9 +429,21 @@ impl<'a> ProtobufDBTransaction<'a> {
                 // - 'value' is all fields of the primary key that aren't included in this
                 //   secondary key.
 
+                if let Some(old_value) = old_value {
+                    let old_key = KeyBuilder::message_key(Tag::table_id(), &key_config, old_value)?;
+                    if old_key == key {
+                        continue;
+                    }
+
+                    self.txn.delete(&old_key).await?;
+                }
+
                 let mut secondary_value = Tag::Message::default();
 
                 let primary_key_config = &Tag::indexed_keys()[0];
+
+                let mut contains_all_primary_key_fields = true;
+
                 for primary_key_field in primary_key_config.fields {
                     let in_secondary_key = key_config
                         .fields
@@ -430,6 +454,17 @@ impl<'a> ProtobufDBTransaction<'a> {
                     if !in_secondary_key {
                         field_by_path_mut(&mut secondary_value, primary_key_field.path)?
                             .clone_from(field_by_path(value, primary_key_field.path)?)?;
+contains_all_primary_key_fields = false;
+                    }
+                }
+
+                if !contains_all_primary_key_fields {
+                    if let Some(_) = self.get_one_row(&key).await? {
+                        return Err(format_err!(
+                            "Unique constraint violated on index {}::{}",
+                            Tag::table_name(),
+                            key_config.index_name.unwrap_or("?")
+                        ));
                     }
                 }
 

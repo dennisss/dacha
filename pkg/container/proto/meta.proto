@@ -28,9 +28,10 @@ enum ClusterTableId {
     WorkerState = 6;
     BundleBlob = 7;
     Object = 8;
+    NodeScheduling = 9;
 }
 
-// Stored at a singleton at the metastore key '/cluster/zone'
+// Stored at a singleton in the metastore.
 message ZoneMetadata {
     string name = 1;
 }
@@ -44,12 +45,14 @@ Restarting a node:
 
 
 // Information about a node attached to the cluster.
-// Stored at the metastore key '/cluster/node/[node_id]'
+//
+// Note that this is only edited by the node.
+//
+// WARNING: This means that anything in here is not secure against node compromise.
 message NodeMetadata {
-    uint64 id = 1;
+    fixed64 id = 1;
 
-    // Address at which this node can be contacted including the protocol and port on which the 
-    // control RPC server is running.
+    // Address at which this node RPC server can be contacted (ip address + port).
     //
     // e.g. "10.0.0.102:10400"
     string address = 2;
@@ -77,19 +80,31 @@ message NodeMetadata {
 
     PortRange allocatable_port_range = 6;
 
-    repeated uint32 allocated_ports = 7 [(dacha.unordered_set) = true];
-
     string zone = 8;
 
     builder.Platform platform = 9;
 
-    Labels labels = 10;
-
-    // TODO: Enumerate capabilities, platform, etc.
+    // TODO: Enumerate capabilities, etc.
 
     // TODO: When was the node added
 
     // TODO: Build time of the runtime
+
+    reserved 7, 10;
+}
+
+// NOTE: This is only mutable by the manager job.
+//
+// NOTE: Stuff like 'labels' is intentionally not in NodeMetadata since any rows that are mutable
+// by nodes are a security risk if a single machine is compromised. For this reason, we keep fields
+// that influence the scheduling of workers in tables only writeable by the manager to improve isolation (the assumption is that the manager may run in a more secure node pool that the average node).
+message NodeSchedulingMetadata {
+    fixed64 node_id = 1;
+
+    Labels labels = 2;
+
+    // NOTE: This is updated by the Manager job.
+    repeated uint32 allocated_ports = 3 [(dacha.unordered_set) = true];
 }
 
 message JobMetadata {
@@ -113,7 +128,7 @@ message WorkerMetadata {
     // NOTE: This field is immutable. Moving a worker to another node requires creating a new name.
     //
     // REQUIRED
-    uint64 assigned_node = 2;
+    fixed64 assigned_node = 2;
 
     // If true, this worker should be stopped by the node and not started again.
     //
@@ -190,7 +205,7 @@ message BundleBlobMetadata {
 }
 
 message BundleBlobReplica {
-    uint64 node_id = 1;
+    fixed64 node_id = 1;
 
     bool uploaded = 2;
 

@@ -22,7 +22,6 @@ use sstable::db::{SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
 
 use crate::meta::state_machine::*;
-use crate::meta::table_key::TableKey;
 use crate::meta::transaction::*;
 use crate::proto::*;
 
@@ -149,8 +148,8 @@ impl Metastore {
         // flush index).
         let snapshot = self.shared.state_machine.snapshot().await;
 
-        let start_key = TableKey::user_value(request.keys().start_key());
-        let end_key = TableKey::user_value(request.keys().end_key());
+        let start_key = request.keys().start_key();
+        let end_key = request.keys().end_key();
 
         let mut iter_options = SnapshotIteratorOptions::default();
         if request.read_index() > 0 {
@@ -170,17 +169,7 @@ impl Metastore {
                 break;
             }
 
-            let table_key = TableKey::parse(&entry.key)?;
-
-            let user_key = match table_key {
-                TableKey::UserData {
-                    user_key,
-                    sub_key: UserDataSubKey::USER_VALUE,
-                } => user_key,
-                _ => continue,
-            };
-
-            let user_value = match entry.value {
+            let value = match entry.value {
                 Some(value) => value,
                 None => {
                     // Deleted
@@ -189,8 +178,8 @@ impl Metastore {
             };
 
             let mut res = ReadResponse::default();
-            res.entry_mut().set_key(&user_key[..]);
-            res.entry_mut().set_value(user_value.as_ref());
+            res.entry_mut().set_key(&entry.key[..]);
+            res.entry_mut().set_value(value.as_ref());
             res.entry_mut().set_sequence(entry.sequence);
 
             response.send(res).await?;
@@ -204,30 +193,11 @@ impl Metastore {
         request: rpc::ServerRequest<ExecuteRequest>,
         response: &mut rpc::ServerResponse<'a, ExecuteResponse>,
     ) -> Result<()> {
-        // Translate to an internally keyed transaction
-        let user_txn = request.value.transaction();
-        let mut internal_txn = Transaction::default();
-
-        internal_txn.set_read_index(user_txn.read_index());
-
-        for range in user_txn.reads() {
-            let mut internal_range = KeyRange::default();
-            internal_range.set_start_key(TableKey::user_value(range.start_key()));
-            internal_range.set_end_key(TableKey::user_value(range.end_key()));
-            internal_txn.add_reads(internal_range);
-        }
-
-        for op in user_txn.writes() {
-            let mut internal_op = op.as_ref().clone();
-            internal_op.set_key(TableKey::user_value(op.key()));
-            internal_txn.add_writes(internal_op);
-        }
-
         let index = self
             .shared
             .transaction_manager
             .execute(
-                internal_txn,
+                request.value.transaction().clone(),
                 self.shared.node.clone(),
                 self.shared.state_machine.clone(),
             )

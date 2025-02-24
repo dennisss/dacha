@@ -7,7 +7,6 @@
     const_slice_from_raw_parts,
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
-    const_maybe_uninit_uninit_array,
     slice_take,
     allocator_api,
     slice_ptr_get,

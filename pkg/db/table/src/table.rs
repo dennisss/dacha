@@ -1,5 +1,7 @@
 use protobuf::{FieldNumber, StaticMessage, TypedFieldNumber};
 
+pub const PRIMARY_KEY_ID: u32 = 0;
+
 /// Definition for a database table where each row is a protobuf (fields map to
 /// columns).
 pub trait ProtobufTableTag {
@@ -14,10 +16,15 @@ pub trait ProtobufTableTag {
     fn table_name() -> &'static str;
 
     /// Lists all fields that are present in the primary/secondary keys.
+    ///
+    /// NOTE: This MUST be in sorted index_id order.
     fn indexed_keys() -> &'static [ProtobufTableKey];
 }
 
 pub struct ProtobufTableKey {
+    /// Unique id for this key. Must equal PRIMARY_KEY_ID for the primary key.
+    pub index_id: u32,
+
     /// None implies this is the primary key
     pub index_name: Option<&'static str>,
 
@@ -40,4 +47,31 @@ pub struct ProtobufKeyField {
 pub enum Direction {
     Ascending,
     Descending,
+}
+
+#[macro_export]
+macro_rules! define_singleton_table {
+    ($t:ident { message: $msg:ty, table_id: $id:expr, table_name: $name:expr }) => {
+        pub struct $t {}
+
+        impl $crate::table::ProtobufTableTag for $t {
+            type Message = $msg;
+
+            fn table_id() -> u32 {
+                $id
+            }
+
+            fn table_name() -> &'static str {
+                $name
+            }
+
+            fn indexed_keys() -> &'static [$crate::table::ProtobufTableKey] {
+                &[$crate::table::ProtobufTableKey {
+                    index_id: $crate::table::PRIMARY_KEY_ID,
+                    index_name: None,
+                    fields: &[],
+                }]
+            }
+        }
+    };
 }

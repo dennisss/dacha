@@ -602,6 +602,7 @@ name = "cluster_client"
 version = "0.1.0"
 dependencies = [
  "base_radix",
+ "builder_proto",
  "common",
  "container_proto",
  "crypto",
@@ -1055,6 +1056,7 @@ version = "0.0.0"
 dependencies = [
  "common",
  "datastore_proto",
+ "db_kv",
  "db_table",
  "executor",
  "executor_multitask",

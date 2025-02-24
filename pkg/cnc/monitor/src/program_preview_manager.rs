@@ -7,6 +7,7 @@ use cnc_monitor_proto::cnc::{MachineConfig, ProgramPreviewProto};
 use common::io::Writeable;
 use crypto::hasher::Hasher;
 use crypto::sip::SipHasher;
+use db_table::query_one;
 use executor::child_task::ChildTask;
 use executor::sync::{AsyncMutex, AsyncVariable};
 use executor::{lock, lock_async};
@@ -121,22 +122,13 @@ impl ProgramPreviewManager {
         force_reprocess: bool,
         state: &mut State,
     ) -> Result<ProgramPreviewReference> {
-        let existing_preview = {
-            let mut query = Query::default();
-            let mut a = QueryAllOf::default();
-            a.and(
-                &[ProgramPreviewProto::FILE_ID_FIELD_NUM_RAW],
-                QueryOperation::Eq(QueryValue::U64(file.id())),
-            )
-            .and(
-                &[ProgramPreviewProto::CONFIG_HASH_FIELD_NUM_RAW],
-                QueryOperation::Eq(QueryValue::U64(machine_config_hash)),
-            );
-            query.or(a);
-
-            let mut out = shared.db.query::<ProgramPreviewTable>(&query).await?;
-            out.pop()
-        };
+        let existing_preview = query_one!(
+            shared.db,
+            ProgramPreviewTable,
+            "file_id = ? AND config_hash = ?",
+            file.id(),
+            machine_config_hash
+        );
 
         let mut existing_in_progress = None;
         if let Some(mut existing_preview) = existing_preview {

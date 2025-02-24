@@ -7,7 +7,7 @@ use std::string::ToString;
 
 use common::bits::BitVector;
 use common::bytes::Bytes;
-use common::chrono::{Date, DateTime, FixedOffset, TimeZone, Utc};
+use common::chrono::{Date, DateTime, Datelike, FixedOffset, TimeZone, Timelike, Utc};
 use common::errors::*;
 use common::vec::VecPtr;
 use parsing::ascii::AsciiString;
@@ -623,6 +623,18 @@ impl GeneralizedTime {
                 self.seconds as u32,
                 self.nanos as u32,
             )
+    }
+
+    pub fn from_datetime(t: DateTime<Utc>) -> Self {
+        Self {
+            year: t.year() as u16,
+            month: t.month() as u8,
+            day: t.day() as u8,
+            hour: t.hour() as u8,
+            seconds: t.second() as u8,
+            minute: t.minute() as u8,
+            nanos: t.nanosecond(),
+        }
     }
 
     pub fn to_string(&self) -> String {

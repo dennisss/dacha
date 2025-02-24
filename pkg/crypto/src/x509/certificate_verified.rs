@@ -4,10 +4,9 @@ use std::sync::Arc;
 use common::errors::*;
 use pkix::PKIX1Implicit88;
 
+use crate::x509::certificate::Certificate;
+use crate::x509::certificate_registry::CertificateRegistry;
 use crate::x509::name_constraints::NameConstraints;
-use crate::x509::Certificate;
-
-use super::CertificateRegistry;
 
 /*
 The assumption is that you only have a CertificateRegistry created for a short period of time (otherwise validity may change).
@@ -82,8 +81,8 @@ impl CertificateVerified {
         child: Arc<Certificate>,
         registry: &CertificateRegistry,
     ) -> Result<Self> {
-        if self.validity.not_before > child.validity.not_before
-            || self.validity.not_after < child.validity.not_after
+        if self.validity().not_before > child.validity().not_before
+            || self.validity().not_after < child.validity().not_after
         {
             return Err(err_msg("Child certificate outlives parent"));
         }

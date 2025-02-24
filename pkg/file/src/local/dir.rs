@@ -91,18 +91,7 @@ pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
             let (dirent, r) = sys::DirEntry::parse(rest);
             rest = r;
 
-            let mut null_term_pos = None;
-            for i in 0..dirent.name.len() {
-                if dirent.name[i] == 0 {
-                    null_term_pos = Some(i);
-                    break;
-                }
-            }
-
-            let null_term_pos =
-                null_term_pos.ok_or_else(|| err_msg("Name missing null termiantor"))?;
-
-            let name = String::from_utf8(dirent.name[..null_term_pos].to_vec())?;
+            let name = base_util::null_terminated::read_null_terminated_string(&dirent.name[..])?;
 
             if name == "." || name == ".." {
                 continue;

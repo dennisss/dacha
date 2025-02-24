@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 use std::mem::discriminant;
 
 use base_error::*;
-use common::const_default::ConstDefault;
 use parsing::parse_next;
 use protobuf::reflection::{Reflect, Reflection, ReflectionMut};
 use protobuf::MessageReflection;
@@ -11,22 +10,29 @@ use crate::key_encoding::KeyEncoder;
 use crate::reflection::{field_by_path, field_by_path_mut};
 use crate::table::*;
 
-pub struct KeyBuilder<Tag: ProtobufTableTag> {
+/// Constructs the keys used as keys of rows in the key value store (where each
+/// key has a subset of the fields in a message as defined by the corresponding
+/// index definition).
+///
+/// NOTE: The encoding of byte and string fields is fully compatible and bytes
+/// can be compared to strings and vise versa (this is necessary since we do all
+/// key range calculations in byte form for both data types).
+pub struct KeyBuilder<'a> {
     out: Vec<u8>,
-    key_index: usize,
+    index_key_config: &'a ProtobufTableKey,
     next_field_index: usize,
-    data: PhantomData<Tag>,
+    default_message: &'a dyn MessageReflection,
 }
 
-// TODO: Remove templating from class and put more responsibility on the user.
-impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
-    pub fn message_key(key_index: usize, message: &Tag::Message) -> Result<Vec<u8>> {
-        let mut builder = Self::new(key_index);
+impl<'a> KeyBuilder<'a> {
+    pub fn message_key(
+        table_id: u32,
+        index_key_config: &'a ProtobufTableKey,
+        message: &'a dyn MessageReflection,
+    ) -> Result<Vec<u8>> {
+        let mut builder = Self::new(table_id, index_key_config, message);
 
-        // TODO: Add a bounds check here (or just have one in Self::new()).
-        let key_config = &Tag::indexed_keys()[key_index];
-
-        for field in key_config.fields {
+        for field in index_key_config.fields {
             let r = field_by_path(message, field.path)?;
 
             // NOTE: Since we are iterating over the fields from the config and reflecting a
@@ -37,29 +43,39 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
         Ok(builder.finish())
     }
 
-    pub fn new(key_index: usize) -> Self {
+    pub fn new(
+        table_id: u32,
+        index_key_config: &'a ProtobufTableKey,
+        default_message: &'a dyn MessageReflection,
+    ) -> Self {
         let mut out = vec![];
-        KeyEncoder::encode_varuint(Tag::table_id() as u64, false, &mut out);
-        KeyEncoder::encode_varuint(key_index as u64, false, &mut out);
+        KeyEncoder::encode_varuint(table_id as u64, false, &mut out);
+        KeyEncoder::encode_varuint(index_key_config.index_id as u64, false, &mut out);
 
         Self {
             out,
-            key_index,
+            index_key_config,
             next_field_index: 0,
-            data: PhantomData,
+            default_message,
         }
     }
 
-    pub fn append(&mut self, value: Reflection) -> Result<()> {
-        // TODO: Need more bounds checking.
+    pub fn append(&mut self, mut value: Reflection) -> Result<()> {
+        // TODO: Maybe move to append_raw
+        if let Reflection::String(s) = value {
+            value = Reflection::Bytes(s.as_bytes());
+        }
 
-        let field = &Tag::indexed_keys()[self.key_index].fields[self.next_field_index];
+        let field = &self.index_key_config.fields[self.next_field_index];
         self.next_field_index += 1;
 
-        if discriminant(&value)
-            != discriminant(&field_by_path(&Tag::Message::DEFAULT, field.path).unwrap())
-        {
-            todo!()
+        let mut default_value = field_by_path(self.default_message, field.path).unwrap();
+        if let Reflection::String(s) = default_value {
+            default_value = Reflection::Bytes(s.as_bytes());
+        }
+
+        if discriminant(&value) != discriminant(&default_value) {
+            return Err(err_msg("Incompatible values being packed into key."));
         }
 
         self.append_raw(field, value)
@@ -77,12 +93,21 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
     fn append_raw(&mut self, field: &ProtobufKeyField, value: Reflection) -> Result<()> {
         let inverted = field.direction == Direction::Descending;
 
+        // NOTE: We don't use 'encode_end_bytes' for the final field to eventually
+        // support adding column family indexes after the keys.
         match value {
-            // TODO: Use encode_end_bytes if it is the last field.
             Reflection::String(v) => {
+                if inverted {
+                    return Err(err_msg("Inverted string keys not supported"));
+                }
+
                 KeyEncoder::encode_bytes(v.as_bytes(), &mut self.out);
             }
             Reflection::Bytes(v) => {
+                if inverted {
+                    return Err(err_msg("Inverted bytes keys not supported"));
+                }
+
                 KeyEncoder::encode_bytes(v, &mut self.out);
             }
             // TODO: Detect stuff like fixed32 and appropriately use fixed encoding here too.
@@ -112,22 +137,22 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
     }
 
     pub fn decode_key(
-        key_config: &ProtobufTableKey,
-        key_index: usize,
+        table_id: u32,
+        index_key_config: &ProtobufTableKey,
         mut key: &[u8],
-        message: &mut Tag::Message,
+        message: &mut dyn MessageReflection,
     ) -> Result<()> {
         let actual_table_id = parse_next!(key, |input| KeyEncoder::decode_varuint(input, false));
-        if actual_table_id != Tag::table_id() as u64 {
+        if actual_table_id != table_id as u64 {
             return Err(err_msg("Wrong table id"));
         }
 
         let actual_key_index = parse_next!(key, |input| KeyEncoder::decode_varuint(input, false));
-        if actual_key_index != key_index as u64 {
+        if actual_key_index != index_key_config.index_id as u64 {
             return Err(err_msg("Wrong key index"));
         }
 
-        for field in key_config.fields {
+        for field in index_key_config.fields {
             let r = field_by_path_mut(message, field.path)?;
 
             let inverted = field.direction == Direction::Descending;
@@ -138,8 +163,9 @@ impl<Tag: ProtobufTableTag> KeyBuilder<Tag> {
                     *v = String::from_utf8(bytes)?;
                 }
                 ReflectionMut::Bytes(v) => {
-                    // *v = parse
-                    todo!()
+                    let bytes = parse_next!(key, KeyEncoder::decode_bytes);
+                    v.clear();
+                    v.extend_from_slice(&bytes);
                 }
                 ReflectionMut::U32(v) => {
                     if field.fixed_size {

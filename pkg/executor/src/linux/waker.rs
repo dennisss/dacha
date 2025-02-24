@@ -16,13 +16,11 @@ pub(super) fn create_waker(task_entry: Arc<TaskEntry>) -> Waker {
 
 /// Looks up the TaskEntry associated with the currently running Task.
 pub(super) fn retrieve_task_entry<'a>(context: &'a Context) -> Option<&'a TaskEntry> {
-    let raw_waker = context.waker().as_raw();
-
-    if raw_waker.vtable() != &RAW_WAKER_VTABLE {
+    if context.waker().vtable() != &RAW_WAKER_VTABLE {
         return None;
     }
 
-    Some(unsafe { core::mem::transmute(raw_waker.data()) })
+    Some(unsafe { core::mem::transmute(context.waker().data()) })
 }
 
 const RAW_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(

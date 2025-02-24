@@ -7,6 +7,7 @@ use base_error::*;
 use cnc_monitor_proto::cnc::*;
 use common::io::{Readable, Writeable};
 use crypto::random::SharedRngExt;
+use db_table::query;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor::sync::AsyncMutex;
@@ -20,7 +21,7 @@ use protobuf::Message;
 use crate::camera_controller::CameraController;
 use crate::change::{ChangeDistributer, ChangeEvent};
 use crate::config::MachineConfigContainer;
-use crate::db::{create_db_instance, ProtobufDB, Query, QueryAllOf, QueryOperation, QueryValue};
+use crate::db::{create_db_instance, ProtobufDB};
 use crate::files::{FileManager, FileReference};
 use crate::metric::MetricStore;
 use crate::player::Player;
@@ -1683,23 +1684,14 @@ impl MonitorImpl {
             start_time -= start_buffer;
         }
 
-        let mut query = Query::default();
-        let mut a = QueryAllOf::default();
-        a.and(
-            &[MediaFragment::CAMERA_ID_FIELD_NUM_RAW],
-            QueryOperation::Eq(QueryValue::U64(request.camera_id())),
-        )
-        .and(
-            &[MediaFragment::START_TIME_FIELD_NUM_RAW],
-            QueryOperation::LessThan(QueryValue::U64(request.end_time())),
-        )
-        .and(
-            &[MediaFragment::START_TIME_FIELD_NUM_RAW],
-            QueryOperation::GreaterThanOrEqual(QueryValue::U64(start_time)),
+        let fragments = query!(
+            self.shared.db,
+            MediaFragmentTable,
+            "camera_id = ? AND start_time >= ? AND start_time < ?",
+            request.camera_id(),
+            start_time,
+            request.end_time()
         );
-        query.or(a);
-
-        let mut fragments = self.shared.db.query::<MediaFragmentTable>(&query).await?;
 
         let mut out = GetCameraPlaybackResponse::default();
         for mut fragment in fragments.into_iter().rev() {
@@ -1733,15 +1725,12 @@ impl MonitorImpl {
     ) -> Result<GetRunHistoryResponse> {
         // TODO: Allow retrieving a single run.
 
-        let mut query = Query::default();
-        let mut a = QueryAllOf::default();
-        a.and(
-            &[ProgramRun::MACHINE_ID_FIELD_NUM_RAW],
-            QueryOperation::Eq(QueryValue::U64(request.machine_id())),
+        let runs = query!(
+            self.shared.db,
+            ProgramRunTable,
+            "machine_id = ?",
+            request.machine_id()
         );
-        query.or(a);
-
-        let runs = self.shared.db.query::<ProgramRunTable>(&query).await?;
 
         let mut out = GetRunHistoryResponse::default();
         for mut run in runs {

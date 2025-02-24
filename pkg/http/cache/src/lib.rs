@@ -1,17 +1,21 @@
 #[macro_use]
 extern crate common;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+mod table;
+
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use common::{errors::*, io::Writeable};
 use crypto::{hasher::Hasher, random::SharedRng, sha256::SHA256Hasher};
-use db_table::key_encoding::KeyEncoder;
+use db_table::{db::ProtobufDB, query_one};
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 use http_cache_proto::RequestCacheEntry;
 use protobuf::{Message, StaticMessage};
-use sstable::{db::WriteBatch, iterable::Iterable, EmbeddedDB, EmbeddedDBOptions};
-
-const REQUESTS_TABLE_ID: u64 = 1;
+use sstable::{transactional::TransactionalEmbeddedDB, EmbeddedDBOptions};
+use table::RequestCacheEntryTable;
 
 // TODO: Make sure that we don't cache any transport level headers.
 
@@ -31,7 +35,7 @@ We don't seme to be able to handle the keep-alive
 /// On-disk cache of persistently storing and serving HTTP requests/responses.
 pub struct DiskCache {
     client: http::SimpleClient,
-    metadata: EmbeddedDB,
+    metadata: ProtobufDB,
     blobs_dir: LocalPathBuf,
     temp_dir: LocalPathBuf,
 }
@@ -42,7 +46,7 @@ impl DiskCache {
         options.create_if_missing = true;
         options.error_if_exists = false;
 
-        let metadata = EmbeddedDB::open(dir.join("metadata"), options).await?;
+        let metadata = TransactionalEmbeddedDB::open(&dir.join("metadata"), options).await?;
 
         let blobs_dir = dir.join("blobs");
         file::create_dir_all(&blobs_dir).await?;
@@ -52,11 +56,13 @@ impl DiskCache {
 
         Ok(Self {
             client,
-            metadata,
+            metadata: ProtobufDB::new(Arc::new(metadata)),
             blobs_dir,
             temp_dir,
         })
     }
+
+    // TODO: Need some amount of url normalization.
 
     // TODO: Need a timeout for how long we allow requesting the real response.
     // (this would prevent attempting to accidentally cache unbounded requests like
@@ -71,7 +77,12 @@ impl DiskCache {
 
         // TODO: Also need a lock on the blob with the same hash.
 
-        if let Some(entry) = self.get_latest_cache_entry(&uri).await? {
+        if let Some(entry) = query_one!(
+            self.metadata,
+            RequestCacheEntryTable,
+            "request.url = ?",
+            &uri
+        ) {
             return self.response_for_entry(&entry).await;
         }
 
@@ -157,7 +168,9 @@ impl DiskCache {
 
         // TODO: Cache response trailers.
 
-        self.put_cache_entry(&entry).await?;
+        self.metadata
+            .insert::<RequestCacheEntryTable>(&entry)
+            .await?;
 
         self.response_for_entry(&entry).await
     }
@@ -187,52 +200,6 @@ impl DiskCache {
         }
 
         response_builder.build()
-    }
-
-    async fn put_cache_entry(&self, entry: &RequestCacheEntry) -> Result<()> {
-        let mut entry = entry.clone();
-
-        let mut batch = WriteBatch::new();
-
-        let mut key = vec![];
-        KeyEncoder::encode_varuint(REQUESTS_TABLE_ID, false, &mut key);
-        KeyEncoder::encode_bytes(entry.request().url().as_bytes(), &mut key);
-        KeyEncoder::encode_varuint(entry.timestamp_millis(), true, &mut key);
-
-        entry.request_mut().clear_url();
-        entry.clear_timestamp_millis();
-
-        let value = entry.serialize()?;
-        batch.put(&key, &value);
-
-        self.metadata.write(&batch).await?;
-
-        Ok(())
-    }
-
-    async fn get_latest_cache_entry(&self, url: &str) -> Result<Option<RequestCacheEntry>> {
-        let mut start_key = vec![];
-        KeyEncoder::encode_varuint(REQUESTS_TABLE_ID, false, &mut start_key);
-        KeyEncoder::encode_bytes(url.as_bytes(), &mut start_key);
-
-        let mut iter = self.metadata.snapshot().await.iter().await?;
-        iter.seek(&start_key).await?;
-
-        let entry = match iter.next().await? {
-            Some(v) => v,
-            None => return Ok(None),
-        };
-
-        if !entry.key.starts_with(&start_key.as_ref()) {
-            return Ok(None);
-        }
-
-        let value = match entry.value {
-            Some(v) => v,
-            None => return Ok(None),
-        };
-
-        Ok(Some(RequestCacheEntry::parse(&value)?))
     }
 }
 

@@ -2,6 +2,7 @@
 use alloc::boxed::Box;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+use common::const_default::StaticDefault;
 use core::fmt::Debug;
 
 use common::errors::*;
@@ -16,9 +17,10 @@ use crate::wire::WireResult;
 use crate::{MessageReflection, StaticFileDescriptor};
 
 #[cfg(feature = "alloc")]
-pub trait StaticMessageTraits = ConstDefault + Clone + Message + Default + MessageReflection;
+pub trait StaticMessageTraits =
+    ConstDefault + StaticDefault + Clone + Message + Default + MessageReflection;
 #[cfg(not(feature = "alloc"))]
-pub trait StaticMessageTraits = ConstDefault + Clone + Message + Default;
+pub trait StaticMessageTraits = ConstDefault + StaticDefault + Clone + Message + Default;
 
 /// Message whose definition is well known to the binary.
 /// Usually these will be declared with code generation.

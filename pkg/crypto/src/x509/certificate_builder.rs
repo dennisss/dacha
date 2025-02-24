@@ -1,215 +1,232 @@
-/*
-TODO: For gneeral internet connectivity, I need to support CRLs
-^ Eventually also check for certificate transparent
+use alloc::vec::Vec;
+use common::bits::BitVector;
+use common::chrono::{DateTime, Timelike, Utc};
+use core::time::Duration;
+use pkix::PKIX1Implicit88::KeyIdentifier;
+use std::time::SystemTime;
 
-I want to be able to:
+use asn::builtin::{BitString, GeneralizedTime, OctetString, SequenceOf};
+use asn::encoding::DERWriteable;
+use common::errors::*;
+use math::big::BigInt;
+use pkix::PKIX1Explicit88::SubjectPublicKeyInfo;
+use pkix::{
+    PKIX1Explicit88::{self, CertificateSerialNumber, Extensions, TBSCertificate},
+    PKIX1Implicit88,
+};
 
-Support
+use crate::hasher::Hasher;
+use crate::random::Rng;
+use crate::sha256::SHA256Hasher;
+use crate::x509::SignatureKeyConstraints;
 
-- Specify:
-    - Validity duration
-    - DNS Name
-    - DNS Name constraint (for children)
-    - Public/Private Key (eliptic curve)
-        - From the public
-    - Whether or not it is allowed to be a CA
-    - Either:
-        - Self sign or provide another certificate to use for signing
+use super::{
+    Certificate, CertificateRegistry, CertificateRequest, CertificateVerified, PrivateKey,
+};
 
+/// Builds a Certificate by signing a CertificateRequest with a CA certificate /
+/// private key.
+pub struct CertificateBuilder {
+    request: CertificateRequest,
+    duration: Duration,
+    creating_ca: bool,
+}
 
+impl CertificateBuilder {
+    /// Initializes a builder from a request.
+    ///
+    /// NOTE: We assume that the caller has verified the common name and subject
+    /// alt name in the request.
+    pub fn new(request: CertificateRequest, duration: Duration) -> Result<Self> {
+        if !request.verify_signature()? {
+            return Err(err_msg("Certificate request is not correctly signed"));
+        }
 
-*/
+        // TODO: Ensure that we capture all critical attributes and see if we will allow
+        // to passthrough any extensions.
 
-/*
-Types of certificates we want to create:
-- Self signed root CA
-- Child CA possibly with DNS name constraints
-- Leaf most non-CA with a SAN
+        // TODO: Check that the private key matches the CA
 
-Issuer:
-- Should be unique for all our entities.
-- Will be provided with just a 'CN' set to the DNS name
+        Ok(Self {
+            request,
+            duration,
+            creating_ca: false,
+        })
+    }
 
-Extensions to use:
-- SubjectKeyIdentifier
-    - Use in ALL certified as SHA-1 hash of subjectPublicKey
-    - MUST be not critical
-- Key Usage
-    - Must be present for CAs
-    - Must be critical
-- SubjectAlternativeName
-    - Will contain a DNS name
+    pub fn create_ca(&mut self) -> &mut Self {
+        self.creating_ca = true;
+        self
+    }
 
+    /// Finishes building the certificate by signing with an issuer certificate.
+    pub async fn build(
+        &self,
+        ca: Option<&CertificateVerified>,
+        private_key: &PrivateKey,
+    ) -> Result<Vec<u8>> {
+        // TODO: Verify the issuer name constriants are ok.
 
-[
-    Certificate {
-        validity: Validity {
-            not_before: 2021-11-25T22:07:20Z,
-            not_after: 2025-11-24T22:07:20Z,
-        },
-        plaintext: b"0\x82\x02!\xa0\x03\x02\x01\x02\x02\x14k\xb3S\xdf\xe2\x94y\xc1(\x01\xd3n\x9b\xfaI$\x89\xde\0\x190\r\x06\t*\x86H\x86\xf7\r\x01\x01\x0b\x05\00!1\x0b0\t\x06\x03U\x04\x06\x13\x02US1\x120\x10\x06\x03U\x04\x03\x0c\tlocalhost0\x1e\x17\r211125220720Z\x17\r251124220720Z0!1\x0b0\t\x06\x03U\x04\x06\x13\x02US1\x120\x10\x06\x03U\x04\x03\x0c\tlocalhost0\x82\x01\"0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x01\x05\0\x03\x82\x01\x0f\00\x82\x01\n\x02\x82\x01\x01\0\xc8\x7f\xcd;\x8e\x8f\xaaS\xfc\xb4\xc1\x80_\xa7\xfa/\x02\xf5\xe1G\xfb\xf9\xf5\x8b5\xdf\xc1\xd8\x17\x8da\xb6\x120\x011\xb1\xc4\x1dw\x1b\xf7\xb6\xf8Z\xb3R\x99|?\x87\xc5\xe8L\xbf\x98\xb7\xdco{WJ\x95B\xed\01\x1a\xc8\x8e \x81\xc2\xc3\x01\x7f\x97\x8d\xc3y]\xb0k\x94\xb6\xaf\xa1\xf0,)\xdc\x90\x05<\xe3~\xe9\x9d\x99!.FQ\xce\x83\xa7\x08\\\xf9H\xcaq\xcaQ:\xde\xa3\x9fF\xa3\xe5\x82=\x943\xe6 h\x9c\xe0\xce\x97&\xb2\xf18DF\x01$\x14L{\xa7oX<c\x99z\x14G\xba\xa9\x15\xecK2\xf6xStz\xe9+\x0c\xef^\t\x15\xd1?\x84,/G\x9dP\xda\x98\xab\xfd\xb5\\{S\xc2\x10_v!\xd1n\xa7Z\xa9p\xe9I\xd3\xcc\xc0G\\\xa6$\xf0GR_\x9ad\xbf1\x1e\xcfZ\xbc\x96\xb4E\xdcx|\xd2\xf5\x9b'\xf9;\xca1\x99\xf9s3e)\x8c!\xac!@3\xcc\x9dP\xd1\x1a\xa0\x9f\x90\x95\x8e\xf5=\x02\x03\x01\0\x01\xa3i0g0\x1d\x06\x03U\x1d\x0e\x04\x16\x04\x14\xb13+\xd6\x8a7>\x9d\x91\x1d\x92q/\xe3D\x88\x9b?\xb1.0\x1f\x06\x03U\x1d#\x04\x180\x16\x80\x14\xb13+\xd6\x8a7>\x9d\x91\x1d\x92q/\xe3D\x88\x9b?\xb1.0\x0f\x06\x03U\x1d\x13\x01\x01\xff\x04\x050\x03\x01\x01\xff0\x14\x06\x03U\x1d\x11\x04\r0\x0b\x82\tlocalhost",
-        subject_key_id: b"\xb13+\xd6\x8a7>\x9d\x91\x1d\x92q/\xe3D\x88\x9b?\xb1.",
-        extensions: CertificateExtensions {
-            map: {
-                [2.5.29.14]: b"\x04\x14\xb13+\xd6\x8a7>\x9d\x91\x1d\x92q/\xe3D\x88\x9b?\xb1.",
-                [2.5.29.35]: b"0\x16\x80\x14\xb13+\xd6\x8a7>\x9d\x91\x1d\x92q/\xe3D\x88\x9b?\xb1.",
-                [2.5.29.17]: b"0\x0b\x82\tlocalhost",
-                [2.5.29.19]: b"0\x03\x01\x01\xff",
-            },
-        },
-        raw: Certificate {
-            tbsCertificate: TBSCertificate {
-                version: v3,
-                serialNumber: CertificateSerialNumber {
-                    value: 614861152372564426562463467260188032050818580505,
-                },
-                signature: AlgorithmIdentifier {
-                    algorithm: [1.2.840.113549.1.1.11],
-                    parameters: Some(
-                        Any(Element { ident: Identifier { tag: Tag { class: Universal, number: 5 }, constructed: false }, len: Short(0), data: b"", outer: b"\x05\0" }),
-                    ),
-                },
-                issuer: rdnSequence(
-                    RDNSequence {
-                        value: SequenceOf {
-                            items: [
-                                RelativeDistinguishedName {
-                                    value: SetOf {
-                                        items: [
-                                            AttributeTypeAndValue {
-                                                typ: AttributeType {
-                                                    value: [2.5.4.6],
-                                                },
-                                                value: AttributeValue {
-                                                    value: Any(Element { ident: Identifier { tag: Tag { class: Universal, number: 19 }, constructed: false }, len: Short(2), data: b"US", outer: b"\x13\x02US" }),
-                                                },
-                                            },
-                                        ],
-                                    },
-                                },
-                                RelativeDistinguishedName {
-                                    value: SetOf {
-                                        items: [
-                                            AttributeTypeAndValue {
-                                                typ: AttributeType {
-                                                    value: [2.5.4.3],
-                                                },
-                                                value: AttributeValue {
-                                                    value: Any(Element { ident: Identifier { tag: Tag { class: Universal, number: 12 }, constructed: false }, len: Short(9), data: b"localhost", outer: b"\x0c\tlocalhost" }),
-                                                },
-                                            },
-                                        ],
-                                    },
-                                },
-                            ],
-                        },
-                    },
+        if let Some(ca) = ca {
+            if !ca.can_sign_certificates()? {
+                return Err(err_msg(
+                    "This CA certificate can not be used to sign child certificates.",
+                ));
+            }
+
+            if ca.subject_key_id().is_empty() {
+                return Err(err_msg("Expecting CA to have a non-empty serial number"));
+            }
+        } else {
+            if !self.creating_ca {
+                return Err(err_msg("Self signed certificate must be a CA"));
+            }
+        }
+
+        let subject = self.request.raw().certificationRequestInfo.subject.clone();
+
+        let issuer = match ca.clone() {
+            Some(ca) => ca.raw.tbsCertificate.subject.clone(),
+            None => subject.clone(),
+        };
+
+        let serialNumber = Self::generate_serial_number();
+
+        // TODO: Verify that this is a reasonably secure algorithm.
+        let subjectPublicKeyInfo = self
+            .request
+            .raw()
+            .certificationRequestInfo
+            .subjectPKInfo
+            .clone();
+
+        let subject_key_id = Self::generate_key_id(&subjectPublicKeyInfo);
+
+        let authority_key_id = match ca {
+            Some(ca) => ca.subject_key_id().to_vec(),
+            None => subject_key_id.clone(),
+        };
+
+        // TODO: Should these use 'Any'
+        let mut extensions = vec![];
+
+        extensions.push(PKIX1Explicit88::Extension {
+            extnID: PKIX1Implicit88::ID_CE_BASICCONSTRAINTS,
+            critical: true,
+            extnValue: PKIX1Implicit88::BasicConstraints {
+                cA: self.creating_ca,
+                pathLenConstraint: None,
+            }
+            .to_der()
+            .into(),
+        });
+
+        extensions.push(PKIX1Explicit88::Extension {
+            extnID: PKIX1Implicit88::ID_CE_AUTHORITYKEYIDENTIFIER,
+            critical: false,
+            extnValue: PKIX1Implicit88::AuthorityKeyIdentifier {
+                keyIdentifier: Some(OctetString::from(authority_key_id).into()),
+                // Not needed since we use key identifiers.
+                authorityCertIssuer: None,
+                authorityCertSerialNumber: None,
+            }
+            .to_der()
+            .into(),
+        });
+
+        extensions.push(PKIX1Explicit88::Extension {
+            extnID: PKIX1Implicit88::ID_CE_SUBJECTKEYIDENTIFIER,
+            critical: false,
+            extnValue: PKIX1Implicit88::SubjectKeyIdentifier::from(
+                PKIX1Implicit88::KeyIdentifier::from(OctetString::from(subject_key_id)),
+            )
+            .to_der()
+            .into(),
+        });
+
+        if let Some(san) = self.request.subject_alt_name()? {
+            extensions.push(PKIX1Explicit88::Extension {
+                extnID: PKIX1Implicit88::ID_CE_SUBJECTALTNAME,
+                critical: false,
+                extnValue: san.to_der().into(),
+            });
+        }
+
+        let now = DateTime::<Utc>::from(SystemTime::now())
+            .with_nanosecond(0)
+            .unwrap();
+
+        // TODO: Verify expiration is before expiration of issuer cert.
+
+        let expire = now + common::chrono::Duration::from_std(self.duration).unwrap();
+
+        // TODO: Make this configurable.
+        let algorithm_ident = private_key.default_signature_algorithm();
+
+        let tbsCertificate = TBSCertificate {
+            version: pkix::PKIX1Explicit88::Version::v3,
+            serialNumber: Self::generate_serial_number(),
+            signature: algorithm_ident.clone(),
+            issuer,
+            validity: PKIX1Explicit88::Validity {
+                notBefore: PKIX1Explicit88::Time::generalTime(
+                    GeneralizedTime::from_datetime(now).into(),
                 ),
-                validity: Validity {
-                    notBefore: utcTime(
-                        UTCTime { ... },
-                    ),
-                    notAfter: utcTime(
-                        UTCTime { ... },
-                    ),
-                },
-                subject: rdnSequence(
-                    RDNSequence {
-                        value: SequenceOf {
-                            items: [
-                                RelativeDistinguishedName {
-                                    value: SetOf {
-                                        items: [
-                                            AttributeTypeAndValue {
-                                                typ: AttributeType {
-                                                    value: [2.5.4.6],
-                                                },
-                                                value: AttributeValue {
-                                                    value: Any(Element { ident: Identifier { tag: Tag { class: Universal, number: 19 }, constructed: false }, len: Short(2), data: b"US", outer: b"\x13\x02US" }),
-                                                },
-                                            },
-                                        ],
-                                    },
-                                },
-                                RelativeDistinguishedName {
-                                    value: SetOf {
-                                        items: [
-                                            AttributeTypeAndValue {
-                                                typ: AttributeType {
-                                                    value: [2.5.4.3],
-                                                },
-                                                value: AttributeValue {
-                                                    value: Any(Element { ident: Identifier { tag: Tag { class: Universal, number: 12 }, constructed: false }, len: Short(9), data: b"localhost", outer: b"\x0c\tlocalhost" }),
-                                                },
-                                            },
-                                        ],
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                ),
-                subjectPublicKeyInfo: SubjectPublicKeyInfo {
-                    algorithm: AlgorithmIdentifier {
-                        algorithm: [1.2.840.113549.1.1.1],
-                        parameters: Some(
-                            Any(Element { ident: Identifier { tag: Tag { class: Universal, number: 5 }, constructed: false }, len: Short(0), data: b"", outer: b"\x05\0" }),
-                        ),
-                    },
-                    subjectPublicKey: BitString {
-                        data: '...',
-                    },
-                },
-                issuerUniqueID: None,
-                subjectUniqueID: None,
-                extensions: Some(
-                    Extensions {
-                        value: SequenceOf {
-                            items: [
-                                Extension {
-                                    extnID: [2.5.29.14], // Subject Key Identifier
-                                    critical: false,
-                                    extnValue: OctetString(
-                                        b"\x04\x14\xb13+\xd6\x8a7>\x9d\x91\x1d\x92q/\xe3D\x88\x9b?\xb1.",
-                                    ),
-                                },
-                                Extension {
-                                    extnID: [2.5.29.35], // Authority key identity.
-                                    critical: false,
-                                    extnValue: OctetString(
-                                        b"0\x16\x80\x14\xb13+\xd6\x8a7>\x9d\x91\x1d\x92q/\xe3D\x88\x9b?\xb1.",
-                                    ),
-                                },
-                                Extension {
-                                    extnID: [2.5.29.19], // Basic constraints. ()
-                                    critical: true,
-                                    extnValue: OctetString(
-                                        b"0\x03\x01\x01\xff",
-                                    ),
-                                },
-                                Extension { // SAN
-                                    extnID: [2.5.29.17],
-                                    critical: false,
-                                    extnValue: OctetString(
-                                        b"0\x0b\x82\tlocalhost",
-                                    ),
-                                },
-                            ],
-                        },
-                    },
+                notAfter: PKIX1Explicit88::Time::generalTime(
+                    GeneralizedTime::from_datetime(expire).into(),
                 ),
             },
-            signatureAlgorithm: AlgorithmIdentifier {
-                algorithm: [1.2.840.113549.1.1.11],
-                parameters: Some(
-                    Any(Element { ident: Identifier { tag: Tag { class: Universal, number: 5 }, constructed: false }, len: Short(0), data: b"", outer: b"\x05\0" }),
-                ),
-            },
-            signature: BitString {
-                data: '...',
-            },
-        },
-    },
-]
+            subject,
+            subjectPublicKeyInfo,
+            issuerUniqueID: None,
+            subjectUniqueID: None,
+            extensions: Some(PKIX1Explicit88::Extensions::from(SequenceOf::from(
+                extensions,
+            ))),
+        };
 
-*/
+        let signature = {
+            let plaintext = tbsCertificate.to_der();
+
+            private_key
+                .create_signature(
+                    &plaintext,
+                    &algorithm_ident,
+                    &SignatureKeyConstraints::default(),
+                )
+                .await?
+        };
+
+        let cert = PKIX1Explicit88::Certificate {
+            tbsCertificate,
+            signatureAlgorithm: algorithm_ident,
+            signature: BitString::from(BitVector::from(signature.as_ref(), signature.len() * 8)),
+        };
+
+        Ok(cert.to_der())
+    }
+
+    // TODO: Use secure random
+    fn generate_serial_number() -> CertificateSerialNumber {
+        // Max length is 20 octets.
+        let mut num = vec![0u8; 20];
+        crate::random::clocked_rng().generate_bytes(&mut num);
+
+        // Serial number must be '> 0'
+        num[0] &= 0b01111111;
+
+        let int = BigInt::from_le_bytes(&num);
+
+        int.into()
+    }
+
+    fn generate_key_id(pkey_info: &SubjectPublicKeyInfo) -> Vec<u8> {
+        let mut hasher = SHA256Hasher::default();
+        hasher.update(pkey_info.subjectPublicKey.as_ref());
+
+        let mut id = hasher.finish();
+        id.truncate(160 / 8);
+
+        id
+    }
+}

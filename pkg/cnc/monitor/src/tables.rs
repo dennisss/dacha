@@ -18,6 +18,7 @@ impl ProtobufTableTag for MachineTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
             index_name: None,
             fields: &[ProtobufKeyField {
                 path: &[MachineProto::ID_FIELD_NUM_RAW],
@@ -43,6 +44,7 @@ impl ProtobufTableTag for FileTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
             index_name: None,
             fields: &[ProtobufKeyField {
                 path: &[FileProto::ID_FIELD_NUM_RAW],
@@ -68,6 +70,7 @@ impl ProtobufTableTag for MediaFragmentTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
             index_name: None,
             fields: &[
                 ProtobufKeyField {
@@ -101,6 +104,7 @@ impl ProtobufTableTag for ProgramRunTable {
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[
             ProtobufTableKey {
+                index_id: PRIMARY_KEY_ID,
                 index_name: None,
                 fields: &[
                     ProtobufKeyField {
@@ -116,6 +120,7 @@ impl ProtobufTableTag for ProgramRunTable {
                 ],
             },
             ProtobufTableKey {
+                index_id: 1,
                 index_name: Some("ByFile"),
                 fields: &[
                     ProtobufKeyField {
@@ -154,6 +159,7 @@ impl ProtobufTableTag for MetricSampleTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
             index_name: None,
             fields: &[
                 ProtobufKeyField {
@@ -186,6 +192,7 @@ impl ProtobufTableTag for ProgramPreviewTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
             index_name: None,
             fields: &[
                 ProtobufKeyField {
@@ -219,6 +226,7 @@ impl ProtobufTableTag for TableSchemaTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
             index_name: None,
             fields: &[ProtobufKeyField {
                 path: &[TableSchema::TABLE_ID_FIELD_NUM_RAW],

@@ -2,8 +2,6 @@ use common::segmented_buffer::SegmentedBuffer;
 
 use crate::constants::{RadioAddress, RADIO_ADDRESS_SIZE};
 
-const BUFFER_SIZE: usize = 128;
-
 const LENGTH_OFFSET: usize = 0;
 
 const START_OF_PAYLOAD: usize = 1;

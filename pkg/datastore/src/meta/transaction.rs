@@ -15,7 +15,6 @@ use sstable::iterable::Iterable;
 
 use crate::meta::key_ranges::KeyRanges;
 use crate::meta::state_machine::EmbeddedDBStateMachine;
-use crate::meta::table_key::*;
 use crate::proto::*;
 
 const MAX_READ_RANGES_PER_TRANSACTION: usize = 10;
@@ -292,16 +291,6 @@ impl TransactionManager {
                 );
             }
         }
-
-        // Add the transaction time.
-        // NOTE: We don't currently make gurantees that transaction times are monotonic
-        // and it may be much earlier than the time at which the transaction is actually
-        // committed if the system is in the middle of a network partition.
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as u64;
-        write_batch.put(&TableKey::transaction_time(), &time.to_le_bytes());
 
         let mut entry = LogEntryData::default();
         entry.set_command(write_batch.as_bytes());

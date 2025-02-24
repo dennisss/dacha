@@ -9,6 +9,7 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
+use db_table::db::ProtobufDB;
 use executor::lock;
 use executor::sync::SyncMutex;
 use file::{LocalFile, LocalFileOpenOptions, LocalPathBuf};
@@ -82,7 +83,7 @@ struct Shared {
     dir: LocalPathBuf,
 
     /// Local database used for storing blob metadata.
-    db: Arc<EmbeddedDB>,
+    db: Arc<ProtobufDB>,
 
     state: SyncMutex<State>,
 }
@@ -111,8 +112,9 @@ struct BlobEntry {
 impl BundleBlobStore {
     /// NOTE: It is unsafe to create mutliple BlobStore instances with the same
     /// 'db' or 'dir' as they will overwrite each other's data.
-    pub async fn create(dir: LocalPathBuf, db: Arc<EmbeddedDB>) -> Result<Self> {
-        let blobs = get_blob_specs(db.as_ref())
+    pub async fn create(dir: LocalPathBuf, db: Arc<ProtobufDB>) -> Result<Self> {
+        let blobs = db
+            .list::<LocalBundleBlobSpecTable>()
             .await?
             .into_iter()
             .map(|spec| {
@@ -485,7 +487,11 @@ impl BlobWriter {
             }
         }
 
-        put_blob_spec(self.lease.shared.db.as_ref(), self.lease.spec().clone()).await?;
+        self.lease
+            .shared
+            .db
+            .insert::<LocalBundleBlobSpecTable>(self.lease.spec())
+            .await?;
 
         self.lease
             .shared

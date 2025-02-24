@@ -16,7 +16,7 @@ message WorkerEvent {
     string container_id = 4;
 
     // NOTE: Only present when events are aggregated outside of the originating node.
-    uint64 node_id = 9;
+    fixed64 node_id = 9;
 
     // The worker can't currently be started as we are 
     message Pending {}
@@ -43,4 +43,8 @@ message WorkerEvent {
         Stopping stopping = 7;
         Stopped stopped = 8;
     }
+}
+
+message WorkerEventLatestTimestamp {
+    uint64 timestamp = 1;
 }

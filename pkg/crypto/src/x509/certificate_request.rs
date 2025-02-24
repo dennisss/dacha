@@ -7,7 +7,7 @@ use pkix::{PKIX1Explicit88, PKIX1Implicit88, PKCS_10};
 use crate::pem::{PEMBuilder, PEM_CERTIFICATE_REQUEST_LABEL};
 use crate::x509::{PublicKey, SignatureKeyConstraints};
 
-use super::CertificateExtensions;
+use crate::x509::certificate::CertificateExtensions;
 
 pub struct CertificateRequest {
     raw: PKCS_10::CertificationRequest,

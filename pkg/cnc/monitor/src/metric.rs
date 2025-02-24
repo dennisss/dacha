@@ -7,12 +7,13 @@ use cnc_monitor_proto::cnc::*;
 use common::hash::SumHasherBuilder;
 use crypto::hasher::Hasher;
 use crypto::sip::SipHasher;
+use db_table::query;
 use executor::lock;
 use executor::sync::AsyncMutex;
 use executor_multitask::{impl_resource_passthrough, TaskResource};
 use protobuf::Message;
 
-use crate::db::{ProtobufDB, Query, QueryAllOf, QueryOperation, QueryValue};
+use crate::db::ProtobufDB;
 use crate::tables::MetricSampleTable;
 
 /*
@@ -142,7 +143,7 @@ impl MetricStore {
             if samples.len() > 0 {
                 let mut txn = shared.db.new_transaction().await?;
                 for sample in samples {
-                    txn.insert::<MetricSampleTable>(&sample).await?;
+                    txn.put::<MetricSampleTable>(&sample).await?;
                 }
                 txn.commit().await?;
             }
@@ -215,29 +216,18 @@ impl MetricStream {
             start_time = end_time;
         }
 
-        let mut query = Query::default();
-
         let start_time = Self::time_to_u64(start_time);
         let end_time = Self::time_to_u64(end_time);
 
-        let mut query_a = QueryAllOf::default();
-        query_a
-            .and(
-                &[MetricSample::RESOURCE_KEY_FIELD_NUM_RAW],
-                QueryOperation::Eq(QueryValue::U64(self.resource_key)),
-            )
-            .and(
-                &[MetricSample::TIMESTAMP_FIELD_NUM_RAW],
-                QueryOperation::GreaterThanOrEqual(QueryValue::U64(start_time)),
-            )
-            .and(
-                &[MetricSample::TIMESTAMP_FIELD_NUM_RAW],
-                QueryOperation::LessThan(QueryValue::U64(end_time)),
-            );
-        query.or(query_a);
-
         // NOTE: These are in descending timestamp order.
-        let mut samples = self.shared.db.query::<MetricSampleTable>(&query).await?;
+        let mut samples = query!(
+            &self.shared.db,
+            MetricSampleTable,
+            "resource_key = ? AND timestamp >= ? AND timestamp < ?",
+            self.resource_key,
+            start_time,
+            end_time
+        );
 
         // Do alignment
         if let Some(alignment) = alignment {

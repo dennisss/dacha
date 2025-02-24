@@ -8,6 +8,7 @@ common = { path = "../../../common" }
 http = { path = "../../../http" }
 rpc = { path = "../../../rpc" }
 net = { path = "../../../net" }
+db_kv = { path = "../../../db/kv" }
 db_table = { path = "../../../db/table" }
 raft_client = { path = "../../../raft/client" }
 protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }

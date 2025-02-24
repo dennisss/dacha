@@ -75,7 +75,7 @@ use container::manager::Manager;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use crypto::sip::SipHasher;
-use datastore_meta_client::MetastoreClientInterface;
+use db_table::query_one;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor::JoinHandle;
@@ -278,19 +278,16 @@ impl WorkerNodeSelector {
                 // Must connect to the metastore, find the worker, and then we can
 
                 let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+                let db = meta_client.db();
 
-                let worker_meta = meta_client
-                    .cluster_table::<WorkerMetadata>()
-                    .get(&self.worker_name)
-                    .await?
-                    .ok_or_else(|| format_err!("No worker named: {}", self.worker_name))?;
+                let worker_meta =
+                    query_one!(db, WorkerMetadataTable, "spec.name = ?", &self.worker_name)
+                        .ok_or_else(|| format_err!("No worker named: {}", self.worker_name))?;
 
                 // TODO: assigned_node may eventually be allowed to be zero.
-                let node_meta = meta_client
-                    .cluster_table::<NodeMetadata>()
-                    .get(&worker_meta.assigned_node())
-                    .await?
-                    .ok_or_else(|| err_msg("Failed to find node for worker"))?;
+                let node_meta =
+                    query_one!(db, NodeMetadataTable, "id = ?", worker_meta.assigned_node())
+                        .ok_or_else(|| err_msg("Failed to find node for worker"))?;
 
                 node_meta.address().to_string()
             }
@@ -319,11 +316,9 @@ impl NodeSelector {
 
         if let Some(id) = self.node_id {
             let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+            let db = meta_client.db();
 
-            let node_meta = meta_client
-                .cluster_table::<NodeMetadata>()
-                .get(&id)
-                .await?
+            let node_meta = query_one!(db, NodeMetadataTable, "id = ?", id)
                 .ok_or_else(|| err_msg("Failed to find node for worker"))?;
 
             return Ok(Some(node_meta.address().to_string()));
@@ -440,6 +435,7 @@ async fn run_bootstrap_inner(
     // TODO: Given that we know the port of the local metastore, we can use that to
     // help find it.
     let meta_client = Arc::new(ClusterMetaClient::create(node_meta.zone(), &[]).await?);
+    let db = meta_client.db();
 
     // Id of the local metastore server which is being used just for bootstrapping
     // the server.
@@ -463,11 +459,7 @@ async fn run_bootstrap_inner(
     // immediately without retrying.
     println!("Waiting for node to register itself:");
     loop {
-        if let Some(_) = meta_client
-            .cluster_table::<NodeMetadata>()
-            .get(&node_id)
-            .await?
-        {
+        if let Some(_) = query_one!(db, NodeMetadataTable, "id = ?", node_id) {
             break;
         }
 
@@ -477,14 +469,10 @@ async fn run_bootstrap_inner(
 
     let mut zone_record = ZoneMetadata::default();
     zone_record.set_name(node_meta.zone());
-    meta_client
-        .cluster_table::<ZoneMetadata>()
-        .put(&zone_record)
-        .await?;
+    db.insert::<ZoneMetadataTable>(&zone_record).await?;
 
     // Start a local manager instance.
-    let manager =
-        Manager::new(meta_client.clone(), Arc::new(crypto::random::global_rng())).into_service();
+    let manager = Manager::new(db.clone(), Arc::new(crypto::random::global_rng())).into_service();
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
     let manager_stub = cluster_client::ManagerStub::new(manager_channel);
 
@@ -692,20 +680,21 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
     }
 
     let meta_client = ClusterMetaClient::create_from_environment().await?;
+    let db = meta_client.db();
 
     let kind = cmd.kind.unwrap();
 
     match kind {
         ObjectKind::Node => {
             println!("Nodes:");
-            let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
+            let nodes = db.list::<NodeMetadataTable>().await?;
             for node in nodes {
                 println!("{:?}", node);
             }
         }
         ObjectKind::Job => {
             println!("Jobs:");
-            let jobs = meta_client.cluster_table::<JobMetadata>().list().await?;
+            let jobs = db.list::<JobMetadataTable>().await?;
             for job in jobs {
                 println!("{:?}", job);
             }
@@ -714,7 +703,7 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
             let mut node_workers = HashMap::new();
             {
                 let request_context = rpc::ClientRequestContext::default();
-                let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
+                let nodes = db.list::<NodeMetadataTable>().await?;
                 for node in nodes {
                     let node_stubs = connect_to_node(node.address()).await?;
                     let res = node_stubs
@@ -730,11 +719,10 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
             }
 
             println!("Workers:");
-            let workers = meta_client.cluster_table::<WorkerMetadata>().list().await?;
+            let workers = db.list::<WorkerMetadataTable>().await?;
 
-            let worker_states = meta_client
-                .cluster_table::<WorkerStateMetadata>()
-                .list()
+            let worker_states = db
+                .list::<WorkerStateMetadataTable>()
                 .await?
                 .into_iter()
                 .map(|s| (s.worker_name().to_string(), s))
@@ -766,10 +754,7 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
         }
         ObjectKind::Blob => {
             println!("Blobs:");
-            let nodes = meta_client
-                .cluster_table::<BundleBlobMetadata>()
-                .list()
-                .await?;
+            let nodes = db.list::<BundleBlobMetadataTable>().await?;
             for node in nodes {
                 println!("{:?}", node);
             }

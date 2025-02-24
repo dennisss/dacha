@@ -20,6 +20,7 @@ use crate::unknown::UnknownFieldSet;
 use crate::{EnumValue, Message, WireError, WireResult};
 
 // TODO: Rename to align with the protobuf types.
+#[derive(Clone, Copy)]
 pub enum Reflection<'a> {
     F32(&'a f32),
     F64(&'a f64),

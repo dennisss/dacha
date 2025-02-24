@@ -1,5 +1,10 @@
 
 
+Relevant RFCs:
+- https://datatracker.ietf.org/doc/html/rfc5280
+- RFC 7093 Section 2(1)
+    - Suggests generating key identifiers based on SHA256
+
 
 
 /*

@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use common::errors::*;
 use datastore_meta_client::MetastoreClient;
+use db_table::db::ProtobufDB;
+use db_table::{query, query_one};
 use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::{AsyncMutex, AsyncVariable};
@@ -12,7 +14,7 @@ use http::ResolvedEndpoint;
 use net::ip::SocketAddr;
 
 use crate::meta::client::ClusterMetaClient;
-use crate::meta::GetClusterMetaTable;
+use crate::meta::{NodeMetadataTable, WorkerMetadataTable, ZoneMetadataTable};
 use crate::proto::*;
 use crate::service::address::*;
 
@@ -91,10 +93,9 @@ impl ServiceResolver {
     /// TODO: Support having a fallback to a regular public DNS name if this
     /// resolver doesn't support it.
     pub async fn create(address: &str, meta_client: Arc<ClusterMetaClient>) -> Result<Self> {
-        let zone = meta_client
-            .cluster_table::<ZoneMetadata>()
-            .get(&())
-            .await?
+        let db = meta_client.db();
+
+        let zone = query_one!(db, ZoneMetadataTable, "TRUE")
             .ok_or_else(|| err_msg("No local zone defined"))?;
 
         let service_address = ServiceAddress::parse(address, zone.name())?;
@@ -146,6 +147,8 @@ impl ServiceResolver {
         // TODO: Ignore timed out nodes
         // TODO: Ignore non-healthy workers.
 
+        let db = shared.meta_client.db();
+
         let mut endpoints = vec![];
 
         match &shared.service_address.name.entity {
@@ -162,11 +165,12 @@ impl ServiceResolver {
                 });
             }
             ServiceEntity::Job { job_name } => {
-                let workers = shared
-                    .meta_client
-                    .cluster_table::<WorkerMetadata>()
-                    .list_by_job(job_name)
-                    .await?;
+                let workers = query!(
+                    db,
+                    WorkerMetadataTable,
+                    "STARTS_WITH(spec.name, ?)",
+                    format!("{}.", job_name)
+                );
 
                 for worker in workers {
                     if let Some(endpoint) = Self::get_worker_endpoint(&shared, &worker).await? {
@@ -178,12 +182,13 @@ impl ServiceResolver {
                 job_name,
                 worker_id,
             } => {
-                let worker = shared
-                    .meta_client
-                    .cluster_table::<WorkerMetadata>()
-                    .get(&format!("{}.{}", job_name, worker_id))
-                    .await?
-                    .ok_or_else(|| err_msg("Failed to find worker"))?;
+                let worker = query_one!(
+                    db,
+                    WorkerMetadataTable,
+                    "spec.name = ?",
+                    format!("{}.{}", job_name, worker_id)
+                )
+                .ok_or_else(|| err_msg("Failed to find worker"))?;
 
                 // TODO: Must check worker state metadata.
 
@@ -263,11 +268,9 @@ impl ServiceResolver {
     }
 
     async fn get_node_addr(shared: &Shared, id: u64) -> Result<SocketAddr> {
-        let node_meta = shared
-            .meta_client
-            .cluster_table::<NodeMetadata>()
-            .get(&id)
-            .await?
+        let db = shared.meta_client.db();
+
+        let node_meta = query_one!(db, NodeMetadataTable, "id = ?", id)
             .ok_or_else(|| err_msg("Missing node"))?;
 
         let authority = node_meta.address().parse::<http::uri::Authority>()?;

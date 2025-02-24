@@ -3,11 +3,10 @@
 
 use builder::proto::BundleBlobSpec;
 use common::errors::*;
-use db_table::key_encoding::KeyEncoder;
+use container_proto::cluster::*;
+use db_table::db::ProtobufDB;
+use db_table::{define_singleton_table, query, query_one, table::*};
 use protobuf::{Message, StaticMessage};
-use sstable::db::WriteBatch;
-use sstable::iterable::Iterable;
-use sstable::EmbeddedDB;
 
 use crate::proto::{Labels, WorkerEvent, WorkerMetadata};
 
@@ -18,203 +17,194 @@ const EVENTS_TABLE_ID: u64 = 14;
 const EVENTS_TIMESTAMP_ID: u64 = 15;
 const NODE_LABELS_ID: u64 = 16;
 
-pub async fn list_workers(db: &EmbeddedDB) -> Result<Vec<WorkerMetadata>> {
-    let mut start_key = vec![];
-    KeyEncoder::encode_varuint(WORKERS_TABLE_ID, false, &mut start_key);
+/// Table that contains only the WorkerMetadata for workers that are assigned to
+/// the current node.
+pub struct LocalWorkerMetadataTable {}
 
-    let mut iter = db.snapshot().await.iter().await?;
-    iter.seek(&start_key).await?;
+impl ProtobufTableTag for LocalWorkerMetadataTable {
+    type Message = WorkerMetadata;
 
-    let mut workers = vec![];
-
-    while let Some(entry) = iter.next().await? {
-        let (table_id, _) = KeyEncoder::decode_varuint(&entry.key, false)?;
-        if table_id != WORKERS_TABLE_ID {
-            break;
-        }
-
-        // TODO: Pull the name out of the key.
-        if let Some(value) = entry.value {
-            workers.push(WorkerMetadata::parse(&value)?);
-        }
+    fn table_id() -> u32 {
+        11
     }
 
-    Ok(workers)
+    fn table_name() -> &'static str {
+        "LocalWorkerMetadata"
+    }
+
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
+        &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
+            index_name: None,
+            fields: &[ProtobufKeyField {
+                path: &[
+                    WorkerMetadata::SPEC_FIELD_NUM_RAW,
+                    WorkerSpec::NAME_FIELD_NUM_RAW,
+                ],
+                direction: Direction::Ascending,
+                fixed_size: false,
+            }],
+        }]
+    }
 }
 
-pub async fn delete_worker(db: &EmbeddedDB, worker_name: &str) -> Result<()> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(WORKERS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(worker_name.as_bytes(), &mut key);
-
-    db.delete(&key).await
+pub async fn delete_worker(db: &ProtobufDB, worker_name: &str) -> Result<()> {
+    let mut entry = WorkerMetadata::default();
+    entry.spec_mut().set_name(worker_name);
+    db.remove::<LocalWorkerMetadataTable>(&entry).await
 }
 
-pub async fn put_worker(db: &EmbeddedDB, worker: &WorkerMetadata) -> Result<()> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(WORKERS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(worker.spec().name().as_bytes(), &mut key);
+// Stores a partial copy of the NodeMetadata that will get synced to the
+// metastore.
+//
+// Currently this is just used to keep a record of this node's 'id'.
+define_singleton_table!(LocalNodeMetadataTable {
+    message: NodeMetadata,
+    table_id: 12,
+    table_name: "LocalNodeMetadataTable"
+});
 
-    let value = worker.serialize()?;
+/// Table used to keep track of all the blobs that are replicated locally on
+/// this node.
+pub struct LocalBundleBlobSpecTable {}
 
-    db.set(&key, &value).await
+impl ProtobufTableTag for LocalBundleBlobSpecTable {
+    type Message = BundleBlobSpec;
+
+    fn table_id() -> u32 {
+        13
+    }
+
+    fn table_name() -> &'static str {
+        "LocalBundleBlobSpec"
+    }
+
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
+        &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
+            index_name: None,
+            fields: &[ProtobufKeyField {
+                path: &[BundleBlobSpec::ID_FIELD_NUM_RAW],
+                direction: Direction::Ascending,
+                fixed_size: false,
+            }],
+        }]
+    }
 }
 
-pub async fn get_saved_node_id(db: &EmbeddedDB) -> Result<Option<u64>> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(NODE_ID_TABLE_ID, false, &mut key);
+pub async fn delete_blob_spec(db: &ProtobufDB, blob_id: &str) -> Result<()> {
+    let mut msg = BundleBlobSpec::default();
+    msg.set_id(blob_id);
+    db.remove::<LocalBundleBlobSpecTable>(&msg).await?;
+    Ok(())
+}
 
-    let value = db.get(&key).await?;
+pub async fn get_events_timestamp(db: &ProtobufDB) -> Result<Option<u64>> {
+    let entry = query_one!(db, WorkerEventLatestTimestampTable, "TRUE");
 
-    if let Some(value) = value {
-        if value.len() != 8 {
-            return Err(err_msg("Invalid node id length"));
-        }
-
-        return Ok(Some(u64::from_le_bytes(*array_ref![value, 0, 8])));
+    if let Some(entry) = entry {
+        return Ok(Some(entry.timestamp()));
     }
 
     Ok(None)
 }
 
-pub async fn set_saved_node_id(db: &EmbeddedDB, id: u64) -> Result<()> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(NODE_ID_TABLE_ID, false, &mut key);
+pub struct WorkerEventTable {}
 
-    let value = id.to_le_bytes();
+impl ProtobufTableTag for WorkerEventTable {
+    type Message = WorkerEvent;
 
-    db.set(&key, &value).await
-}
-
-pub async fn put_blob_spec(db: &EmbeddedDB, spec: BundleBlobSpec) -> Result<()> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(spec.id().as_bytes(), &mut key);
-
-    let value = spec.serialize()?;
-    db.set(&key, &value).await?;
-    Ok(())
-}
-
-pub async fn delete_blob_spec(db: &EmbeddedDB, blob_id: &str) -> Result<()> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(blob_id.as_bytes(), &mut key);
-
-    db.delete(&key).await?;
-    Ok(())
-}
-
-pub async fn get_blob_specs(db: &EmbeddedDB) -> Result<Vec<BundleBlobSpec>> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
-
-    let mut iter = db.snapshot().await.iter().await?;
-    iter.seek(&key).await?;
-
-    let mut out = vec![];
-    while let Some(entry) = iter.next().await? {
-        if !entry.key.starts_with(key.as_ref()) {
-            break;
-        }
-
-        if let Some(value) = entry.value {
-            out.push(BundleBlobSpec::parse(&value)?);
-        }
+    fn table_id() -> u32 {
+        14
     }
 
-    Ok(out)
-}
-
-pub async fn get_events_timestamp(db: &EmbeddedDB) -> Result<Option<u64>> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(EVENTS_TIMESTAMP_ID, false, &mut key);
-
-    let value = db.get(&key).await?;
-
-    if let Some(value) = value {
-        if value.len() != 8 {
-            return Err(err_msg("Invalid event timestamp length"));
-        }
-
-        return Ok(Some(u64::from_le_bytes(*array_ref![value, 0, 8])));
+    fn table_name() -> &'static str {
+        "WorkerEvent"
     }
 
-    Ok(None)
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
+        &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
+            index_name: None,
+            fields: &[
+                ProtobufKeyField {
+                    path: &[WorkerEvent::WORKER_NAME_FIELD_NUM_RAW],
+                    direction: Direction::Ascending,
+                    fixed_size: false,
+                },
+                ProtobufKeyField {
+                    path: &[WorkerEvent::TIMESTAMP_FIELD_NUM_RAW],
+                    direction: Direction::Descending,
+                    fixed_size: false,
+                },
+            ],
+        }]
+    }
 }
+
+define_singleton_table!(WorkerEventLatestTimestampTable {
+    message: WorkerEventLatestTimestamp,
+    table_id: 15,
+    table_name: "WorkerEventLatestTimestamp"
+});
 
 // NOTE: This assumes that the user has already ensured that the timestamp in
 // the event is monotonic.
-pub async fn put_worker_event(db: &EmbeddedDB, event: &WorkerEvent) -> Result<()> {
-    let mut batch = WriteBatch::new();
+pub async fn put_worker_event(db: &ProtobufDB, event: &WorkerEvent) -> Result<()> {
+    let mut txn = db.new_transaction().await?;
+    txn.put::<WorkerEventTable>(event).await?;
 
-    {
-        let mut key = vec![];
-        KeyEncoder::encode_varuint(EVENTS_TABLE_ID, false, &mut key);
-        // TODO: Don't store these in the value given that they are present in the key.
-        KeyEncoder::encode_bytes(event.worker_name().as_bytes(), &mut key);
-        KeyEncoder::encode_varuint(event.timestamp(), true, &mut key);
+    // TODO: Have a read lock for this to prevent overwriting another slightly
+    // larger timestamp.
+    let mut time = WorkerEventLatestTimestamp::default();
+    time.set_timestamp(event.timestamp());
+    txn.put::<WorkerEventLatestTimestampTable>(&time).await?;
 
-        let value = event.serialize()?;
-        batch.put(&key, &value);
-    }
-
-    {
-        let mut time_key = vec![];
-        KeyEncoder::encode_varuint(EVENTS_TIMESTAMP_ID, false, &mut time_key);
-
-        let value = (event.timestamp() as u64).to_le_bytes();
-        batch.put(&time_key, &value);
-    }
-
-    db.write(&batch).await?;
+    txn.commit().await?;
 
     Ok(())
 }
 
-pub async fn get_worker_events(db: &EmbeddedDB, worker_name: &str) -> Result<Vec<WorkerEvent>> {
-    let mut start_key = vec![];
-    KeyEncoder::encode_varuint(EVENTS_TABLE_ID, false, &mut start_key);
-    KeyEncoder::encode_bytes(worker_name.as_bytes(), &mut start_key);
-
-    let mut iter = db.snapshot().await.iter().await?;
-    iter.seek(&start_key).await?;
-
-    let mut out = vec![];
-    while let Some(entry) = iter.next().await? {
-        if !entry.key.starts_with(&start_key.as_ref()) {
-            break;
-        }
-
-        if let Some(value) = entry.value {
-            out.push(WorkerEvent::parse(&value)?);
-        }
-    }
-
+pub async fn get_worker_events(db: &ProtobufDB, worker_name: &str) -> Result<Vec<WorkerEvent>> {
+    let out = query!(db, WorkerEventTable, "worker_name = ?", worker_name);
     Ok(out)
 }
 
-pub async fn get_node_labels(db: &EmbeddedDB) -> Result<Labels> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(NODE_LABELS_ID, false, &mut key);
+define_singleton_table!(CertificateRegistryTable {
+    message: CertificateRegistryProto,
+    table_id: 17,
+    table_name: "CertificateRegistry"
+});
 
-    let value = match db.get(&key).await? {
-        Some(v) => v,
-        None => return Ok(Labels::default()),
-    };
+// Stores the node's certificate and private key.
+define_singleton_table!(CertificateSecretsTable {
+    message: CertificateSecrets,
+    table_id: 18,
+    table_name: "SelfCertificate"
+});
 
-    let labels = Labels::parse(&value)?;
+pub struct WorkerRuntimeMetadataTable {}
 
-    Ok(labels)
-}
+impl ProtobufTableTag for WorkerRuntimeMetadataTable {
+    type Message = WorkerRuntimeMetadata;
 
-pub async fn put_node_labels(db: &EmbeddedDB, labels: &Labels) -> Result<()> {
-    let mut key = vec![];
-    KeyEncoder::encode_varuint(NODE_LABELS_ID, false, &mut key);
+    fn table_id() -> u32 {
+        19
+    }
 
-    let value = labels.serialize()?;
+    fn table_name() -> &'static str {
+        "WorkerRuntimeMetadata"
+    }
 
-    db.set(&key, &value).await?;
-
-    Ok(())
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
+        &[ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
+            index_name: None,
+            fields: &[ProtobufKeyField {
+                path: &[WorkerRuntimeMetadata::WORKER_NAME_FIELD_NUM_RAW],
+                direction: Direction::Ascending,
+                fixed_size: false,
+            }],
+        }]
+    }
 }

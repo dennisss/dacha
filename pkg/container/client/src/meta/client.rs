@@ -1,14 +1,16 @@
 use core::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use common::errors::*;
 use datastore_meta_client::MetastoreClient;
-use datastore_meta_client::MetastoreClientInterface;
+use db_table::db::ProtobufDB;
+use db_table::query_one;
 use executor_multitask::impl_resource_passthrough;
 use protobuf_builtins::google::protobuf::Any;
 use raft_client::proto::RouteLabel;
 
 use crate::meta::constants::ZONE_ENV_VAR;
-use crate::meta::{ClusterMetaTable, GetClusterMetaTable};
+use crate::meta::ObjectMetadataTable;
 use crate::proto::ObjectMetadata;
 
 use super::constants::META_STORE_SEEDS_ENV_VAR;
@@ -16,7 +18,8 @@ use super::constants::META_STORE_SEEDS_ENV_VAR;
 ///
 pub struct ClusterMetaClient {
     zone: String,
-    inner: MetastoreClient,
+    inner: Arc<MetastoreClient>,
+    db: Arc<ProtobufDB>,
 }
 
 impl_resource_passthrough!(ClusterMetaClient, inner);
@@ -26,10 +29,12 @@ impl ClusterMetaClient {
         let mut label = RouteLabel::default();
         label.set_value(format!("{}={}", ZONE_ENV_VAR, zone));
 
-        let inner = MetastoreClient::create(std::slice::from_ref(&label), seeds).await?;
+        let inner = Arc::new(MetastoreClient::create(std::slice::from_ref(&label), seeds).await?);
+        let db = Arc::new(ProtobufDB::new(inner.clone()));
         Ok(Self {
             zone: zone.to_string(),
             inner,
+            db,
         })
     }
 
@@ -67,12 +72,14 @@ impl ClusterMetaClient {
         &self.inner
     }
 
+    pub fn db(&self) -> &Arc<ProtobufDB> {
+        &self.db
+    }
+
     pub async fn get_object_any(&self, name: &str) -> Result<Option<Any>> {
-        let obj = self
-            .inner
-            .cluster_table::<ObjectMetadata>()
-            .get(name)
-            .await?;
+        let db = self.db();
+        let obj = query_one!(&db, ObjectMetadataTable, "name = ?", name);
+
         if let Some(obj) = obj {
             Ok(Some(obj.value().clone()))
         } else {
@@ -84,11 +91,9 @@ impl ClusterMetaClient {
         &self,
         name: &str,
     ) -> Result<Option<M>> {
-        let obj = self
-            .inner
-            .cluster_table::<ObjectMetadata>()
-            .get(name)
-            .await?;
+        let db = self.db();
+        let obj = query_one!(&db, ObjectMetadataTable, "name = ?", name);
+
         if let Some(obj) = obj {
             Ok(Some(
                 obj.value()
@@ -105,39 +110,8 @@ impl ClusterMetaClient {
         obj.set_name(name);
         obj.value_mut().pack_from(value)?;
 
-        self.inner
-            .cluster_table::<ObjectMetadata>()
-            .put(&obj)
-            .await?;
+        self.db().insert::<ObjectMetadataTable>(&obj).await?;
+
         Ok(())
-    }
-}
-
-#[async_trait]
-impl MetastoreClientInterface for ClusterMetaClient {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        self.inner.get(key).await
-    }
-
-    async fn get_range(
-        &self,
-        start_key: &[u8],
-        end_key: &[u8],
-    ) -> Result<Vec<datastore_proto::db::meta::KeyValueEntry>> {
-        self.inner.get_range(start_key, end_key).await
-    }
-
-    async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        self.inner.put(key, value).await
-    }
-
-    async fn delete(&self, key: &[u8]) -> Result<()> {
-        self.inner.delete(key).await
-    }
-
-    async fn new_transaction<'a>(
-        &'a self,
-    ) -> Result<datastore_meta_client::MetastoreTransaction<'a>> {
-        self.inner.new_transaction().await
     }
 }
