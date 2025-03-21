@@ -99,6 +99,10 @@ impl LeaderResolver {
         }
     }
 
+    // TODO: Also need a callback to allow observing when the http client fails to
+    // connect to a backend (this should immediately trigger the hint to be removed
+    // if the backend was the one we care about.)
+
     /// CANCEL SAFE
     fn on_response_complete_impl(&self, successful: bool, context: &rpc::ClientResponseContext) {
         let new_hint = Self::get_leader_hint(context).unwrap_or_else(|_| None);
@@ -111,7 +115,7 @@ impl LeaderResolver {
             .unwrap_or("");
 
         self.current_hint.apply(|current_hint| {
-            let within_delay = current_hint.change_time + HINT_TRANSITION_DELAY < now;
+            let within_delay = now.duration_since(current_hint.change_time) < HINT_TRANSITION_DELAY;
 
             // After the delay period has passed, we will assume all requests are from the
             // right backend. Note that we can't reliably verify that though since the route

@@ -1,15 +1,20 @@
+use alloc::string::String;
 use alloc::vec::Vec;
-use common::bits::BitVector;
-use common::chrono::{DateTime, Timelike, Utc};
 use core::time::Duration;
-use pkix::PKIX1Implicit88::KeyIdentifier;
 use std::time::SystemTime;
 
-use asn::builtin::{BitString, GeneralizedTime, OctetString, SequenceOf};
-use asn::encoding::DERWriteable;
-use common::errors::*;
+use asn::builtin::{
+    BitString, GeneralizedTime, IA5String, OctetString, SequenceOf, SetOf, UTF8String,
+};
+use asn::encoding::{Any, DERWriteable};
+use base_error::*;
+use common::bits::BitVector;
+use common::chrono::{DateTime, Timelike, Utc};
 use math::big::BigInt;
-use pkix::PKIX1Explicit88::SubjectPublicKeyInfo;
+use pkix::PKIX1Explicit88::{
+    AttributeTypeAndValue, Name, RDNSequence, RelativeDistinguishedName, SubjectPublicKeyInfo,
+};
+use pkix::PKIX1Implicit88::{GeneralSubtree, GeneralSubtrees, KeyIdentifier};
 use pkix::{
     PKIX1Explicit88::{self, CertificateSerialNumber, Extensions, TBSCertificate},
     PKIX1Implicit88,
@@ -30,14 +35,34 @@ pub struct CertificateBuilder {
     request: CertificateRequest,
     duration: Duration,
     creating_ca: bool,
+    subject: SubjectValue,
+    san: SubjectAltNameValue,
+    permitted_subtrees: Option<Vec<String>>,
+}
+
+/// Determines how to derive the subject field of the certificate being built.
+pub enum SubjectValue {
+    CopyCSR,
+    CommonName(String),
+}
+
+pub enum SubjectAltNameValue {
+    None,
+    CopyCSR,
+    DNSNames(Vec<String>),
 }
 
 impl CertificateBuilder {
     /// Initializes a builder from a request.
     ///
-    /// NOTE: We assume that the caller has verified the common name and subject
-    /// alt name in the request.
-    pub fn new(request: CertificateRequest, duration: Duration) -> Result<Self> {
+    /// Note that by default nothing is copied from the CSR aside from the
+    /// public key info. The caller needs to specify using the other methods of
+    /// Self which extensions to transfer over or reconfigure.
+    pub fn new(
+        request: CertificateRequest,
+        duration: Duration,
+        subject: SubjectValue,
+    ) -> Result<Self> {
         if !request.verify_signature()? {
             return Err(err_msg("Certificate request is not correctly signed"));
         }
@@ -51,21 +76,37 @@ impl CertificateBuilder {
             request,
             duration,
             creating_ca: false,
+            subject,
+            san: SubjectAltNameValue::None,
+            permitted_subtrees: None,
         })
     }
 
+    pub fn set_subject_alt_names(&mut self, san: SubjectAltNameValue) -> &mut Self {
+        self.san = san;
+        self
+    }
+
+    /// Call to indicate that we should create a CA certificate (one that is
+    /// allowed to sign other certificates).
     pub fn create_ca(&mut self) -> &mut Self {
         self.creating_ca = true;
+        self
+    }
+
+    pub fn set_permitted_subtrees(&mut self, names: &[String]) -> &mut Self {
+        self.permitted_subtrees = Some(names.to_vec());
         self
     }
 
     /// Finishes building the certificate by signing with an issuer certificate.
     pub async fn build(
         &self,
-        ca: Option<&CertificateVerified>,
+        ca: Option<&Certificate>,
         private_key: &PrivateKey,
     ) -> Result<Vec<u8>> {
-        // TODO: Verify the issuer name constriants are ok.
+        // TODO: Verify the issuer name constriants are ok (this needs to verify the
+        // whole chain up to the root cert).
 
         if let Some(ca) = ca {
             if !ca.can_sign_certificates()? {
@@ -83,7 +124,27 @@ impl CertificateBuilder {
             }
         }
 
-        let subject = self.request.raw().certificationRequestInfo.subject.clone();
+        let subject = match &self.subject {
+            SubjectValue::CopyCSR => self.request.raw().certificationRequestInfo.subject.clone(),
+            SubjectValue::CommonName(name) => {
+                let id = PKIX1Explicit88::ID_AT_COMMONNAME.clone().into();
+                let value = Any::from(
+                    PKIX1Explicit88::X520CommonName::utf8String(UTF8String::new(name))
+                        .to_der()
+                        .into(),
+                )?;
+
+                let mut subject_rdns = vec![];
+                subject_rdns.push(RelativeDistinguishedName::from(SetOf::from(vec![
+                    AttributeTypeAndValue {
+                        typ: id,
+                        value: value.clone().into(),
+                    },
+                ])));
+
+                Name::rdnSequence(RDNSequence::from(SequenceOf::from(subject_rdns)))
+            }
+        };
 
         let issuer = match ca.clone() {
             Some(ca) => ca.raw.tbsCertificate.subject.clone(),
@@ -144,11 +205,57 @@ impl CertificateBuilder {
             .into(),
         });
 
-        if let Some(san) = self.request.subject_alt_name()? {
+        match &self.san {
+            SubjectAltNameValue::None => {}
+            SubjectAltNameValue::CopyCSR => {
+                if let Some(san) = self.request.subject_alt_name()? {
+                    extensions.push(PKIX1Explicit88::Extension {
+                        extnID: PKIX1Implicit88::ID_CE_SUBJECTALTNAME,
+                        critical: false,
+                        extnValue: san.to_der().into(),
+                    });
+                }
+            }
+            SubjectAltNameValue::DNSNames(dns_names) => {
+                let mut names = vec![];
+                for n in dns_names {
+                    names.push(PKIX1Implicit88::GeneralName::dNSName(IA5String::new(
+                        n.as_ref(),
+                    )?));
+                }
+
+                let san = PKIX1Implicit88::SubjectAltName::from(
+                    PKIX1Implicit88::GeneralNames::from(SequenceOf::from(names)),
+                );
+
+                extensions.push(PKIX1Explicit88::Extension {
+                    extnID: PKIX1Implicit88::ID_CE_SUBJECTALTNAME,
+                    critical: false,
+                    extnValue: san.to_der().into(),
+                });
+            }
+        }
+
+        if let Some(permitted_subtrees) = &self.permitted_subtrees {
+            let mut subtrees: Vec<GeneralSubtree> = vec![];
+
+            for name in permitted_subtrees {
+                subtrees.push(GeneralSubtree {
+                    base: PKIX1Implicit88::GeneralName::dNSName(IA5String::new(name.as_ref())?),
+                    minimum: BigInt::zero().into(),
+                    maximum: None,
+                });
+            }
+
             extensions.push(PKIX1Explicit88::Extension {
-                extnID: PKIX1Implicit88::ID_CE_SUBJECTALTNAME,
-                critical: false,
-                extnValue: san.to_der().into(),
+                extnID: PKIX1Implicit88::ID_CE_NAMECONSTRAINTS,
+                critical: true, // TODO: Check this
+                extnValue: PKIX1Implicit88::NameConstraints {
+                    permittedSubtrees: Some(GeneralSubtrees::from(SequenceOf::from(subtrees))),
+                    excludedSubtrees: None,
+                }
+                .to_der()
+                .into(),
             });
         }
 

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use cluster_client::credentials::get_cluster_credentials;
 use cluster_client::meta::client::ClusterMetaClient;
 use common::errors::*;
 use db_table::db::ProtobufDB;
@@ -25,7 +26,10 @@ async fn main_with_port(port: u16) -> Result<()> {
 
     let service = RootResource::new();
 
-    let client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+    let creds = get_cluster_credentials().await?;
+    service.register_dependency(creds.clone()).await;
+
+    let client = ClusterMetaClient::create_from_environment().await?;
     service.register_dependency(client.clone()).await;
 
     let manager = Manager::new(client.db().clone(), Arc::new(crypto::random::global_rng()));
@@ -34,6 +38,8 @@ async fn main_with_port(port: u16) -> Result<()> {
         .await;
 
     let mut server = rpc::Http2Server::new(Some(port));
+    server.http_options_mut().tls = Some(creds.server_options());
+    server.set_base_path("/rpc"); // TODO: Standardize.
     server.add_service(manager.into_service())?;
     server.add_reflection()?;
     service.register_dependency(server.start()).await;

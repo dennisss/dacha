@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
 use core::arch::x86_64::*;
 
-use common::errors::*;
+use base_error::*;
 #[cfg(target_arch = "x86_64")]
 use math::{from_m128i, to_m128i};
 

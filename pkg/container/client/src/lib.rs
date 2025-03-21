@@ -8,9 +8,13 @@ extern crate common;
 #[macro_use]
 extern crate datastore_meta_client;
 
+pub mod credentials;
+pub mod env;
+pub mod id;
 pub mod meta;
+pub mod server;
 pub mod service;
 
-use container_proto::cluster as proto;
-pub use proto::*;
+pub use container_proto::cluster::*;
+pub use server::*;
 pub use service::resolver::ServiceResolver;

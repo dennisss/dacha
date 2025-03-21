@@ -245,13 +245,16 @@ async fn main() -> Result<()> {
         Node::create(NodeOptions {
             dir: lock,
             init_port: Some(4000),
-            bootstrap: args.bootstrap,
-            seed_list,
+            bootstrap_node_id: None,
+            bootstrap_group: args.bootstrap,
+            seed_list: None,
             state_machine: state_machine.clone(),
             log_options: SegmentedLogOptions::default(),
             route_labels: vec![],
             rpc_server: &mut rpc_server,
             rpc_server_address,
+            tls_options: None,
+            hostname_resolver: todo!(),
         })
         .await?,
     );

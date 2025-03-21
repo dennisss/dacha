@@ -3,8 +3,8 @@ use std::vec::Vec;
 
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{Any, DERWriteable};
-use common::errors::*;
-use common::LeftPad;
+use base_error::*;
+use base_util::LeftPad;
 use math::big::{Allocator, SecureModulo};
 use math::big::{BigInt, Modulo};
 use math::big::{BigUint, SecureMontgomeryModulo};

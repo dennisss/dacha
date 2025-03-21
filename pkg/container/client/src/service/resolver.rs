@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
+use container_proto::cluster::*;
 use datastore_meta_client::MetastoreClient;
 use db_table::db::ProtobufDB;
 use db_table::{query, query_one};
@@ -14,8 +15,7 @@ use http::ResolvedEndpoint;
 use net::ip::SocketAddr;
 
 use crate::meta::client::ClusterMetaClient;
-use crate::meta::{NodeMetadataTable, WorkerMetadataTable, ZoneMetadataTable};
-use crate::proto::*;
+use crate::meta::{NodeMetadataTable, WorkerMetadataTable};
 use crate::service::address::*;
 
 /// Resolves the addresses of cluster services to useable ip/port numbers.
@@ -93,15 +93,14 @@ impl ServiceResolver {
     /// TODO: Support having a fallback to a regular public DNS name if this
     /// resolver doesn't support it.
     pub async fn create(address: &str, meta_client: Arc<ClusterMetaClient>) -> Result<Self> {
-        let db = meta_client.db();
+        let service_address = ServiceAddress::parse_relative_addr(address, meta_client.zone())?;
 
-        let zone = query_one!(db, ZoneMetadataTable, "TRUE")
-            .ok_or_else(|| err_msg("No local zone defined"))?;
-
-        let service_address = ServiceAddress::parse(address, zone.name())?;
-
-        if service_address.name.zone != zone.name() {
+        if service_address.name.zone() != meta_client.zone() {
             return Err(err_msg("Unsupported zone"));
+        }
+
+        if !service_address.name.maybe_reachable() {
+            return Err(format_err!("Can not connect to {}", address));
         }
 
         let shared = Arc::new(Shared {
@@ -127,7 +126,11 @@ impl ServiceResolver {
 
         loop {
             if let Err(e) = Self::background_thread_impl(shared.clone()).await {
-                eprintln!("ServiceResolver failed: {}", e);
+                eprintln!(
+                    "ServiceResolver for {} failed: {}",
+                    shared.service_address.name.to_string(),
+                    e
+                );
 
                 lock!(state <= shared.state.lock().await.unwrap(), {
                     if !state.initialized {
@@ -151,7 +154,7 @@ impl ServiceResolver {
 
         let mut endpoints = vec![];
 
-        match &shared.service_address.name.entity {
+        match &shared.service_address.name.entity() {
             ServiceEntity::Node { id } => {
                 let address = Self::get_node_addr(&shared, *id).await?;
                 endpoints.push(http::ResolvedEndpoint {
@@ -195,6 +198,10 @@ impl ServiceResolver {
                 if let Some(endpoint) = Self::get_worker_endpoint(&shared, &worker).await? {
                     endpoints.push(endpoint);
                 }
+            }
+            _ => {
+                // This should be caught earlier by the 'maybe_reachable' check.
+                return Err(format_err!("Can't connect to service"));
             }
         }
 
@@ -253,7 +260,7 @@ impl ServiceResolver {
         let address = SocketAddr::new(node_address.ip().clone(), port as u16);
 
         let host_name =
-            ServiceName::for_worker(&shared.service_address.name.zone, worker.spec().name())?
+            ServiceName::for_worker(&shared.service_address.name.zone(), worker.spec().name())?
                 .to_string();
 
         Ok(Some(ResolvedEndpoint {

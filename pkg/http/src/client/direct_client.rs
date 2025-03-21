@@ -43,7 +43,7 @@ Key details about an upgrade request:
 pub struct DirectClientOptions {
     /// If present, use these options to connect with SSL/TLS. Otherwise, we'll
     /// send requests over plain text.
-    pub tls: Option<crypto::tls::ClientOptions>,
+    pub tls: Option<crypto::tls::ClientOptionsContainer>,
 
     /// If true, we'll immediately connect using HTTP2 and fail if it is not
     /// supported by the server. By default (when this is false), we'll start by
@@ -323,17 +323,9 @@ enum ConnectionInstance {
 impl DirectClient {
     pub fn new(
         endpoint: ResolvedEndpoint,
-        mut options: DirectClientOptions,
+        options: DirectClientOptions,
         event_listener: Arc<dyn ClientEventListener>,
     ) -> Self {
-        if let Some(tls_options) = &mut options.tls {
-            if let Host::Name(name) = &endpoint.authority.host {
-                tls_options.hostname = name.clone();
-            }
-            tls_options.alpn_ids.push(ALPN_HTTP2.into());
-            tls_options.alpn_ids.push(ALPN_HTTP11.into());
-        }
-
         Self {
             shared: Arc::new(Shared {
                 endpoint,
@@ -1101,11 +1093,19 @@ impl DirectClientRunner {
         let mut is_secure = false;
 
         if let Some(client_options) = &shared.options.tls {
+            let mut client_options = client_options.get().as_ref().clone();
+
+            if let Host::Name(name) = &shared.endpoint.authority.host {
+                client_options.hostname = name.clone();
+            }
+            client_options.alpn_ids.push(ALPN_HTTP2.into());
+            client_options.alpn_ids.push(ALPN_HTTP11.into());
+
             is_secure = true;
 
             let mut tls_client = crypto::tls::Client::new();
 
-            let tls_stream = tls_client.connect(reader, writer, client_options).await?;
+            let tls_stream = tls_client.connect(reader, writer, &client_options).await?;
 
             // TODO: Save handshake info so that the user can access it.
 

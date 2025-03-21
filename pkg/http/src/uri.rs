@@ -299,7 +299,8 @@ impl Authority {
 impl TryFrom<&str> for Authority {
     type Error = Error;
     fn try_from(value: &str) -> Result<Self> {
-        let (v, _) = parsing::complete(crate::uri_syntax::parse_authority)(value.into())?;
+        let (v, _) = parsing::complete(crate::uri_syntax::parse_authority)(value.into())
+            .map_err(|_| format_err!("Invalid uri authitory: {}", value))?;
         Ok(v)
     }
 }

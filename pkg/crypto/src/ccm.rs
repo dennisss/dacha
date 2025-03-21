@@ -5,7 +5,7 @@
 
 use core::result::Result;
 
-use common::ceil_div;
+use base_util::ceil_div;
 
 use crate::constant_eq;
 use crate::utils::xor_inplace;

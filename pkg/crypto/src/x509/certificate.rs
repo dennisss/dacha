@@ -248,9 +248,11 @@ impl Certificate {
         Ok(out)
     }
 
-    pub fn to_pem(&self) -> String {
+    pub fn to_pem(certs: &[Arc<Certificate>]) -> String {
         let mut builder = PEMBuilder::default();
-        builder.add_binary_entry(PEM_CERTIFICATE_LABEL, &self.raw.to_der());
+        for cert in certs {
+            builder.add_binary_entry(PEM_CERTIFICATE_LABEL, &cert.raw.to_der());
+        }
         builder.build()
     }
 
@@ -260,6 +262,10 @@ impl Certificate {
         let mut r = DERReader::new(buf);
         let raw = PKIX1Explicit88::Certificate::read_der(&mut r)?;
         Self::new(raw, r.slices[1].clone())
+    }
+
+    pub fn to_der(&self) -> Vec<u8> {
+        self.raw.to_der()
     }
 
     pub fn validity(&self) -> &Validity {
@@ -494,6 +500,31 @@ impl<'a> DistinguishedName<'a> {
                 PKIX1Explicit88::Name::rdnSequence(v) => v,
             },
         }
+    }
+
+    pub fn common_name(&self) -> Result<Option<String>> {
+        // TODO: Dedup this and verify there is only one common name.
+
+        for item in &self.value.items {
+            for item in &item.items {
+                if !der_eq(&item.typ, &PKIX1Explicit88::ID_AT_COMMONNAME) {
+                    continue;
+                }
+
+                let cn = item.value.parse_as::<PKIX1Explicit88::X520CommonName>()?;
+                let s = match &cn {
+                    PKIX1Explicit88::X520CommonName::teletexString(v) => v.as_str(),
+                    PKIX1Explicit88::X520CommonName::printableString(v) => v.as_str(),
+                    PKIX1Explicit88::X520CommonName::universalString(v) => v.as_str(),
+                    PKIX1Explicit88::X520CommonName::utf8String(v) => v.as_str(),
+                    PKIX1Explicit88::X520CommonName::bmpString(v) => v.as_str(),
+                };
+
+                return Ok(Some(s.into()));
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn to_string(&self) -> Result<String> {

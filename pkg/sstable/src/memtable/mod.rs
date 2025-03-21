@@ -1,4 +1,3 @@
-mod atomic;
 pub mod memtable;
 mod skip_list;
 mod vec;

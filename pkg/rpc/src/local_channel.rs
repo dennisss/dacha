@@ -37,6 +37,7 @@ impl LocalChannel {
     ) -> http::Response {
         let server_request_context = ServerRequestContext {
             metadata: request_context.metadata,
+            connection: None,
         };
 
         let server_request_buffer = Arc::new(MessageRequestBuffer::new(0, request_receiver));

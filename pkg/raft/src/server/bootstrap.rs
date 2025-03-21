@@ -12,7 +12,11 @@ use crate::server::server_identity::ServerIdentity;
 
 pub async fn bootstrap_first_server(log: &dyn Log) -> Result<ServerId> {
     let server_id = 1.into();
+    bootstrap_first_server_with_id(server_id, log).await?;
+    Ok(server_id)
+}
 
+pub async fn bootstrap_first_server_with_id(server_id: ServerId, log: &dyn Log) -> Result<()> {
     // For this to be supported, we must be able to become a leader with zero
     // members in the config (implying that we can know if we are )
     let mut first_entry = LogEntry::default();
@@ -35,7 +39,7 @@ pub async fn bootstrap_first_server(log: &dyn Log) -> Result<ServerId> {
         log.wait_for_flush().await?;
     }
 
-    Ok(server_id)
+    Ok(())
 }
 
 /// Creates a new unique server id.

@@ -10,12 +10,15 @@ doctest = false
 macros = { path = "../macros", optional = true }
 asn = { path = "../asn", optional = true }
 math = { path = "../math", optional = true }
+base_util = { path = "../base/util", default-features = false }
+base_error = { path = "../base/error", default-features = false }
 common = { path = "../common", default-features = false }
 parsing = { path = "../parsing", optional = true }
 pkix = { path = "../../third_party/pkix", optional = true }
 generic-array = { version = "0.13.2"}
 typenum = { version = "1.11.2" }
 executor = { path = "../executor", default-features = false }
+executor_multitask = { path = "../executor/multitask", optional = true }
 file = { path = "../file", optional = true }
 base_radix = { path = "../base/radix", optional = true }
 
@@ -24,5 +27,5 @@ openssl = { path = "../../third_party/openssl" }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "executor/alloc"]
-std = ["macros", "asn", "math", "parsing", "pkix", "alloc", "common/std", "executor/std", "file", "base_radix"]
+alloc = ["common/alloc", "executor/alloc", "base_util/alloc", "base_error/alloc"]
+std = ["macros", "asn", "math", "parsing", "pkix", "alloc", "common/std", "executor/std", "file", "base_radix", "base_util/std", "base_error/std", "executor_multitask"]

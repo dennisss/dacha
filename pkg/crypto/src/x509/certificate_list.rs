@@ -1,6 +1,6 @@
 use asn::encoding::{der_eq, DERReadable, DERReader};
+use base_error::*;
 use common::bytes::Bytes;
-use common::errors::*;
 
 pub struct CertificateList {
     raw: pkix::PKIX1Explicit88::CertificateList,

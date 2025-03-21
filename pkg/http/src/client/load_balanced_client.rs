@@ -376,6 +376,8 @@ impl LoadBalancedClient {
 
                         // Retry concacting the resolver. Old state is invalidated.
                         latest_resolved_endpoints = None;
+
+                        state.exit();
                         continue;
                     }
                 }

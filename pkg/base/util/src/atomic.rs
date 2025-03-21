@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Arc;
 
 /// Equivalent to a Mutex<Option<Arc<T>>> implemented using atomic operation.
@@ -20,6 +20,14 @@ impl<T> Default for AtomicArc<T> {
         Self {
             ptr: AtomicPtr::new(core::ptr::null_mut()),
         }
+    }
+}
+
+impl<T> From<Option<Arc<T>>> for AtomicArc<T> {
+    fn from(value: Option<Arc<T>>) -> Self {
+        let mut v = Self::default();
+        v.store(value);
+        v
     }
 }
 

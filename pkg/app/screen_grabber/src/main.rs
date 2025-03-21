@@ -8,18 +8,17 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 use base_error::*;
 use executor_multitask::RootResource;
 use file::LocalPathBuf;
+use google_auth::GoogleServiceAccount;
 use http::static_file_handler::StaticFileHandlerOptions;
 use http::{
     static_file_handler::{StaticFileBody, StaticFileHandler},
     ServerHandler,
 };
-use screen_grabber::service::ScreenGrabberImpl;
-use screen_grabber_proto::screen_grabber::ScreenGrabberIntoService;
 use parsing::ascii::AsciiString;
 use rpc_util::NamedPortArg;
+use screen_grabber::service::ScreenGrabberImpl;
+use screen_grabber_proto::screen_grabber::ScreenGrabberIntoService;
 use web::WebServerHandler;
-use google_auth::GoogleServiceAccount;
-
 
 pub fn bad_request() -> http::Response {
     http::ResponseBuilder::new()
@@ -129,7 +128,7 @@ async fn main() -> Result<()> {
 
             let mut options = http::ServerOptions::default();
             options.port = Some(args.port.value());
-            options.tls = Some(tls_options.clone());
+            options.tls = Some(tls_options.into());
             options.force_http2 = true;
 
             let web_server = http::Server::new(handler, options);

@@ -14,21 +14,30 @@ use crate::{proto::*, LeaderResolver};
 pub struct RouteChannelFactory {
     group_id: GroupId,
     route_store: RouteStore,
+    tls_options: Option<crypto::tls::ClientOptionsContainer>,
 }
 
 impl RouteChannelFactory {
     /// Assuming there is some discovery mechanism finding new servers, this
     /// will wait for the first server group to be discovered and create a
     /// factory that connects to it.
-    pub async fn find_group(route_store: RouteStore) -> Self {
+    pub async fn find_group(
+        route_store: RouteStore,
+        tls_options: Option<crypto::tls::ClientOptionsContainer>,
+    ) -> Self {
         let group_id = find_peer_group_id(&route_store).await;
-        Self::new(group_id, route_store)
+        Self::new(group_id, route_store, tls_options)
     }
 
-    pub fn new(group_id: GroupId, route_store: RouteStore) -> Self {
+    pub fn new(
+        group_id: GroupId,
+        route_store: RouteStore,
+        tls_options: Option<crypto::tls::ClientOptionsContainer>,
+    ) -> Self {
         Self {
             group_id,
             route_store,
+            tls_options,
         }
     }
 
@@ -41,9 +50,12 @@ impl RouteChannelFactory {
         let mut options =
             Http2ChannelOptions::try_from(http::ClientOptions::from_resolver(resolver.clone()))?;
 
+        options.base_path = "/rpc".to_string();
+
         options.http.backend_balancer.subset_size = 3;
         options.http.backend_balancer.max_backend_count = 5;
         options.response_interceptor = Some(resolver);
+        options.http.backend_balancer.backend.tls = self.tls_options.clone();
 
         // Add one extra retry opportunity since hitting a 'not leader' error is fairly
         // likely which the stub is first initialized.
@@ -55,15 +67,18 @@ impl RouteChannelFactory {
     /// Creates an RPC channel which will contact any available cluster node
     /// (and may load balance different requests between any of them).
     pub async fn create_any(&self) -> Result<Arc<rpc::Http2Channel>> {
-        let mut options = http::ClientOptions::from_resolver(Arc::new(RouteResolver::create(
-            self.route_store.clone(),
-            self.group_id,
-            None,
-        )));
+        let mut options: rpc::Http2ChannelOptions = http::ClientOptions::from_resolver(Arc::new(
+            RouteResolver::create(self.route_store.clone(), self.group_id, None),
+        ))
+        .try_into_result()?;
+
+        options.base_path = "/rpc".to_string();
 
         // Best to avoid having too many connections to avoid overloading servers.
-        options.backend_balancer.subset_size = 2;
-        options.backend_balancer.max_backend_count = 4;
+        options.http.backend_balancer.subset_size = 2;
+        options.http.backend_balancer.max_backend_count = 4;
+
+        options.http.backend_balancer.backend.tls = self.tls_options.clone();
 
         Ok(Arc::new(rpc::Http2Channel::create(options).await?))
     }
@@ -72,12 +87,15 @@ impl RouteChannelFactory {
 #[async_trait]
 impl ChannelFactory for RouteChannelFactory {
     async fn create(&self, server_id: ServerId) -> Result<Arc<dyn rpc::Channel>> {
-        Ok(Arc::new(
-            rpc::Http2Channel::create(http::ClientOptions::from_resolver(Arc::new(
-                RouteResolver::create(self.route_store.clone(), self.group_id, Some(server_id)),
-            )))
-            .await?,
+        let mut options: rpc::Http2ChannelOptions = http::ClientOptions::from_resolver(Arc::new(
+            RouteResolver::create(self.route_store.clone(), self.group_id, Some(server_id)),
         ))
+        .try_into_result()?;
+        options.http.backend_balancer.backend.tls = self.tls_options.clone();
+
+        options.base_path = "/rpc".to_string();
+
+        Ok(Arc::new(rpc::Http2Channel::create(options).await?))
     }
 
     async fn reachable_servers(&self) -> Result<HashSet<ServerId>> {

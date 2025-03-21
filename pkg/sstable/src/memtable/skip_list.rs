@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use base_util::atomic::AtomicArc;
 use common::bytes::Bytes;
 use common::errors::*;
 use crypto::random::{MersenneTwisterRng, RngExt, SharedRngExt};
 use db_kv::KeyValueEntry;
 use executor::sync::{AsyncMutex, SyncMutex};
 
-use crate::memtable::atomic::AtomicArc;
 use crate::{
     iterable::Iterable,
     table::{comparator::AlwaysGreaterComparator, KeyComparator},

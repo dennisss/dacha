@@ -148,6 +148,12 @@ impl<'a> From<&'a String> for QueryValue {
     }
 }
 
+impl<'a> From<&'a [u8]> for QueryValue {
+    fn from(value: &'a [u8]) -> Self {
+        Self::Bytes(value.to_vec())
+    }
+}
+
 /// 65-bit integer used as a normalized representation to allow comparing i64 to
 /// u64 types.
 #[derive(PartialEq, PartialOrd)]

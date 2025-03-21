@@ -31,10 +31,10 @@ impl Client {
             let resolver = cluster_client::ServiceResolver::create_with_fallback(
                 radio_bridge_addr,
                 async move {
-                    Ok(Arc::new(
+                    Ok(
                         cluster_client::meta::client::ClusterMetaClient::create_from_environment()
                             .await?,
-                    ))
+                    )
                 },
             )
             .await?;

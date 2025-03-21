@@ -3,7 +3,7 @@ use math::big::SecureBigUint;
 use std::string::ToString;
 use std::vec::Vec;
 
-use common::errors::*;
+use base_error::*;
 use math::big::{Allocator, BigUint, HeapAllocator};
 use math::integer::Integer;
 use math::number::Zero;

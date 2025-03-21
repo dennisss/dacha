@@ -64,8 +64,13 @@ impl MetastoreClient {
     /// The store servers will automatically be discovered via multicast. The
     /// main downside of this is that it may take a few seconds to receive the
     /// next broadcast in order to connect.
-    pub async fn create(labels: &[RouteLabel], seeds: &[String]) -> Result<Self> {
-        let route_store = raft_client::RouteStore::new(labels);
+    pub async fn create(
+labels: &[RouteLabel],
+seeds: &[String],
+        hostname_resolver: Arc<dyn raft_client::RouteHostnameResolver>,
+        tls_options: Option<crypto::tls::ClientOptionsContainer>,
+) -> Result<Self> {
+        let route_store = raft_client::RouteStore::new(labels, hostname_resolver);
 
         let resources = ServiceResourceGroup::new("MetastoreClient");
 
@@ -98,6 +103,7 @@ impl MetastoreClient {
                 raft_client::DiscoveryClientOptions {
                     seeds: seeds.to_vec(),
                     active_broadcaster: false,
+tls_options: tls_options.clone(),
                 },
             )
             .await;
@@ -115,7 +121,8 @@ impl MetastoreClient {
         // Whenever the set of members changes, use that info to prune the routes we
         // have on the client side.
         let channel_factory =
-            raft_client::RouteChannelFactory::find_group(route_store.clone()).await;
+            raft_client::RouteChannelFactory::find_group(route_store.clone(), tls_options.clone())
+.await;
 
         let channel = channel_factory.create_leader().await?;
 
@@ -182,7 +189,7 @@ impl MetastoreClient {
     /// MetastoreClient instance.
     ///
     /// The list is sorted from most to least likely to be currently healthy.
-    pub async fn known_servers(&self) -> Vec<String> {
+    fn known_servers(&self) -> Vec<String> {
         let cluster = match self.cluster.as_ref() {
             Some(v) => v,
             None => return vec![],
@@ -194,7 +201,7 @@ impl MetastoreClient {
         for route in guard.selected_routes() {
             out.push((
                 SystemTime::from(route.last_seen()),
-                route.target().addr().to_string(),
+                (route.server_id(), route.target().addr().to_string()),
             ));
         }
 

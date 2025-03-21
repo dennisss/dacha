@@ -9,6 +9,7 @@ import "pkg/container/proto/meta.proto";
 import "pkg/container/proto/worker_event.proto";
 import "pkg/container/proto/labels.proto";
 import "google/protobuf/empty.proto";
+import "pkg/container/proto/certificates.proto";
 
 message ListWorkersRequest {
     // If present, we will only return data for the container with this id.
@@ -42,6 +43,16 @@ enum WorkerStateProto {
 message StartWorkerRequest {
     WorkerSpec spec = 1;
     uint64 revision = 2;
+    
+    // Certificate and private key to be used as credentials by this worker.
+    //
+    // The behavior of this is quite limited and only applies once if the worker is currently
+    // in a non-running state. If the worker is already running or stopping, then this field is
+    // effectively ignored.
+    //
+    // Note that this is only used during cluster bootstapping (before there a CA worker
+    // exists to issue worker certificates). 
+    CertificateSecrets credentials = 3;
 }
 
 message StartWorkerResponse {
@@ -84,10 +95,6 @@ message GetEventsRequest {
 
 message GetEventsResponse {
     repeated WorkerEvent events = 1;
-}
-
-message UpdateLabelsRequests {
-    Labels labels = 1;
 }
 
 service ContainerNode {
@@ -149,8 +156,4 @@ service ContainerNode {
     rpc GetLogs(LogRequest) returns (stream LogEntry);
 
     rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
-
-    rpc GetLabels (google.protobuf.Empty) returns (Labels);
-
-    rpc UpdateLabels (UpdateLabelsRequests) returns (google.protobuf.Empty);
 }

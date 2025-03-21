@@ -1,5 +1,18 @@
+use crate::id::{entity_id_from_string, entity_id_to_string, is_valid_entity_id};
+
+pub const LOCAL_ZONE: &'static str = "local";
+
+pub const GLOBAL_ZONE: &'static str = "global";
+
 const NAME_SUFFIX: &'static str = ".cluster.internal";
 
+/// A 'url' / address pointing to a server in the cluster that can be sent
+/// requests.
+///
+/// Note that ServiceAddresses in string form may have 'local' in them
+///
+/// Note that unlike a ServiceName, a ServiceAddress can use the 'local' zone to
+/// reference the
 #[derive(Debug, PartialEq)]
 pub struct ServiceAddress {
     pub name: ServiceName,
@@ -8,10 +21,15 @@ pub struct ServiceAddress {
     pub port: Option<String>,
 }
 
+/// Absolute global identifier for an entity in a cluster.
+///
+/// Note that ServiceNames always reference a specific zone and don't use the
+/// 'local' zone.
 #[derive(Debug, PartialEq)]
 pub struct ServiceName {
-    pub zone: String,
-    pub entity: ServiceEntity,
+    zone: String,
+
+    entity: ServiceEntity,
 }
 
 #[derive(Debug, PartialEq)]
@@ -19,6 +37,7 @@ pub enum ServiceEntity {
     Node { id: u64 },
     Job { job_name: String },
     Worker { job_name: String, worker_id: String },
+    Root,
 }
 
 #[derive(Debug, Fail)]
@@ -27,6 +46,7 @@ pub enum ServiceParseError {
     NameTooShort,
     InvalidNodeId,
     UnknownEntity,
+    InvalidZone,
 }
 
 impl std::fmt::Display for ServiceParseError {
@@ -41,7 +61,16 @@ impl ServiceAddress {
         address[..host_end].ends_with(NAME_SUFFIX)
     }
 
-    pub fn parse(address: &str, current_zone: &str) -> Result<Self, ServiceParseError> {
+    /// Parses a relative address that path relatively reference an entity in
+    /// the same zone as the caller.
+    pub fn parse_relative_addr(
+        address: &str,
+        current_zone: &str,
+    ) -> Result<Self, ServiceParseError> {
+        if current_zone == LOCAL_ZONE {
+            return Err(ServiceParseError::InvalidZone);
+        }
+
         let raw_name = address
             .strip_suffix(NAME_SUFFIX)
             .ok_or(ServiceParseError::NotClusterAddress)?;
@@ -56,14 +85,100 @@ impl ServiceAddress {
             }
         }
 
+        let name = ServiceName::parse_impl(name_parts, Some(current_zone))?;
+
+        Ok(ServiceAddress { name, port })
+    }
+}
+
+impl ServiceName {
+    pub fn for_job(zone: &str, job_name: &str) -> Result<Self, ServiceParseError> {
+        if zone == LOCAL_ZONE {
+            return Err(ServiceParseError::InvalidZone);
+        }
+
+        Ok(Self {
+            zone: zone.to_string(),
+            entity: ServiceEntity::Job {
+                job_name: job_name.to_string(),
+            },
+        })
+    }
+
+    pub fn for_worker(zone: &str, worker_name: &str) -> Result<Self, ServiceParseError> {
+        if zone == LOCAL_ZONE {
+            return Err(ServiceParseError::InvalidZone);
+        }
+
+        let (job_name, worker_id) = worker_name
+            .rsplit_once(".")
+            .ok_or(ServiceParseError::NameTooShort)?;
+
+        Ok(Self {
+            zone: zone.to_string(),
+            entity: ServiceEntity::Worker {
+                worker_id: worker_id.to_string(),
+                job_name: job_name.to_string(),
+            },
+        })
+    }
+
+    pub fn for_node(zone: &str, node_id: u64) -> Result<Self, ServiceParseError> {
+        if zone == LOCAL_ZONE {
+            return Err(ServiceParseError::InvalidZone);
+        }
+
+        if !is_valid_entity_id(node_id) {
+            return Err(ServiceParseError::InvalidNodeId);
+        }
+
+        Ok(Self {
+            zone: zone.to_string(),
+            entity: ServiceEntity::Node { id: node_id },
+        })
+    }
+
+    pub fn for_root(zone: &str) -> Result<Self, ServiceParseError> {
+        if zone == LOCAL_ZONE {
+            return Err(ServiceParseError::InvalidZone);
+        }
+
+        Ok(Self {
+            zone: zone.to_string(),
+            entity: ServiceEntity::Root,
+        })
+    }
+
+    pub fn parse(name: &str) -> Result<Self, ServiceParseError> {
+        let raw_name = name
+            .strip_suffix(NAME_SUFFIX)
+            .ok_or(ServiceParseError::NotClusterAddress)?;
+
+        let mut name_parts = raw_name.split(".").collect::<Vec<_>>();
+
+        Self::parse_impl(name_parts, None)
+    }
+
+    fn parse_impl(
+        mut name_parts: Vec<&str>,
+        current_zone: Option<&str>,
+    ) -> Result<Self, ServiceParseError> {
         // Name must contain at least a zone, an entity type and an entity name.
         if name_parts.len() < 3 {
             return Err(ServiceParseError::NameTooShort);
         }
 
         let mut zone = name_parts.pop().unwrap();
-        if zone == "local" {
-            zone = current_zone;
+
+        if zone == LOCAL_ZONE {
+            match current_zone {
+                Some(z) => zone = z,
+                None => {
+                    return Err(ServiceParseError::InvalidZone);
+                }
+            }
+        } else if zone == GLOBAL_ZONE {
+            return Err(ServiceParseError::InvalidZone);
         }
 
         let entity_type = name_parts.pop().unwrap();
@@ -75,8 +190,9 @@ impl ServiceAddress {
                     return Err(ServiceParseError::InvalidNodeId);
                 }
 
-                let id = base_radix::base32_decode_cl64(name_parts[0])
-                    .ok_or(ServiceParseError::InvalidNodeId)?;
+                let id =
+                    entity_id_from_string(name_parts[0]).ok_or(ServiceParseError::InvalidNodeId)?;
+
                 ServiceEntity::Node { id }
             }
             "job" => {
@@ -103,34 +219,30 @@ impl ServiceAddress {
                     worker_id,
                 }
             }
+            "root" => {
+                if name_parts.len() != 0 {
+                    return Err(ServiceParseError::NameTooShort);
+                }
+
+                ServiceEntity::Root
+            }
             _ => {
                 return Err(ServiceParseError::UnknownEntity);
             }
         };
 
-        Ok(ServiceAddress {
-            name: ServiceName {
-                zone: zone.to_string(),
-                entity,
-            },
-            port,
+        Ok(ServiceName {
+            zone: zone.to_string(),
+            entity,
         })
     }
-}
 
-impl ServiceName {
-    pub fn for_worker(zone: &str, worker_name: &str) -> Result<Self, ServiceParseError> {
-        let (job_name, worker_id) = worker_name
-            .rsplit_once(".")
-            .ok_or(ServiceParseError::NameTooShort)?;
+    pub fn zone(&self) -> &str {
+        &self.zone
+    }
 
-        Ok(Self {
-            zone: zone.to_string(),
-            entity: ServiceEntity::Worker {
-                worker_id: worker_id.to_string(),
-                job_name: job_name.to_string(),
-            },
-        })
+    pub fn entity(&self) -> &ServiceEntity {
+        &self.entity
     }
 
     pub fn to_string(&self) -> String {
@@ -138,7 +250,7 @@ impl ServiceName {
             ServiceEntity::Node { id } => {
                 format!(
                     "{}.node.{}{}",
-                    base_radix::base32_encode_cl64(*id),
+                    entity_id_to_string(*id).unwrap(),
                     self.zone,
                     NAME_SUFFIX
                 )
@@ -175,6 +287,20 @@ impl ServiceName {
                     NAME_SUFFIX
                 )
             }
+            ServiceEntity::Root => {
+                format!("root.{}{}", self.zone, NAME_SUFFIX)
+            }
+        }
+    }
+
+    /// Returns whether or not it is possible for us to attempt to make a remote
+    /// connection to this entity.
+    pub fn maybe_reachable(&self) -> bool {
+        match &self.entity {
+            ServiceEntity::Node { .. }
+            | ServiceEntity::Job { .. }
+            | ServiceEntity::Worker { .. } => true,
+            ServiceEntity::Root => false,
         }
     }
 }
@@ -187,7 +313,7 @@ mod tests {
 
     #[testcase]
     fn parse_job_address_with_port() -> Result<()> {
-        let addr = ServiceAddress::parse(
+        let addr = ServiceAddress::parse_relative_addr(
             "_my_port.adder_server.user.job.local.cluster.internal",
             "testing",
         )?;
@@ -214,7 +340,7 @@ mod tests {
 
     #[testcase]
     fn parse_worker_address_with_port() -> Result<()> {
-        let addr = ServiceAddress::parse(
+        let addr = ServiceAddress::parse_relative_addr(
             "a12345.adder_client.user.worker.local.cluster.internal",
             "testing",
         )?;

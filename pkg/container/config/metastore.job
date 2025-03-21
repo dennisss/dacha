@@ -7,26 +7,24 @@ worker {
     persistent: true
 
     args: [
-        "/volumes/bundle/built/pkg/datastore/metastore",
+        "/volumes/bundle/built/pkg/cluster/meta/cluster_meta",
         "--port=rpc",
         "--dir=/volumes/data"
-        # NOTE: An additional --labels flag is added dynamically by the bootstrapping script.
     ]
 
     ports {
         name: "rpc"
         type: TCP
-        protocol: [HTTP, GRPC]
     }
 
     volumes: [
         {
             name: "bundle"
-            build_target: "//pkg/datastore:metastore_bundle"
+            build_target: "//pkg/cluster/meta:cluster_meta_bundle"
         },
         {
             name: "data"
-            persistent_name: "metastore_data"
+            persistent: true
         }
     ]
 }

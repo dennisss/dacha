@@ -72,8 +72,9 @@ impl BuildTarget for RustBinary {
             .arg(bin_name)
             .arg("--target-dir")
             .arg(rust_target_dir.as_str())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         let mut effective_profile = "debug";
         match self.attrs.profile() {
@@ -112,9 +113,13 @@ impl BuildTarget for RustBinary {
 
         let mut child = cmd.spawn()?;
 
-        let status = child.wait()?;
-        if !status.success() {
-            return Err(format_err!("cargo failed with status: {:?}", status));
+        let output = child.wait_with_output()?;
+
+        if !output.status.success() {
+            file::write("/tmp/cargo-stdout", output.stdout).await?;
+            file::write("/tmp/cargo-stderr", output.stderr).await?;
+
+            return Err(format_err!("cargo failed with status: {:?}", output.status));
         }
 
         let binary_path = rust_target_dir

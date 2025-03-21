@@ -120,17 +120,32 @@ impl http::Resolver for RouteResolver {
                 }
             };
 
-            let authority = route.target().addr().parse::<Authority>()?;
-            let ip = match &authority.host {
-                http::uri::Host::IP(ip) => ip.clone(),
-                _ => {
-                    return Err(err_msg("Route doesn't contain an ip address"));
-                }
+            // TODO: Have more resistance to some routes being bad.
+
+            let address = {
+                let authority = route.target().addr().parse::<Authority>()?;
+                let ip = match &authority.host {
+                    http::uri::Host::IP(ip) => ip.clone(),
+                    _ => {
+                        return Err(err_msg("Route doesn't contain an ip address"));
+                    }
+                };
+
+                let port = authority.port.ok_or_else(|| err_msg("No port in route"))?;
+
+                SocketAddr::new(ip, port)
             };
 
-            let port = authority.port.ok_or_else(|| err_msg("No port in route"))?;
-
-            let address = SocketAddr::new(ip, port);
+            let authority = match self
+                .shared
+                .route_store
+                .hostname_resolver()
+                .route_hostname(route)
+            {
+                Some(v) => v,
+                None => continue,
+            }
+            .parse::<Authority>()?;
 
             endpoints.push(http::ResolvedEndpoint {
                 name: id.value().to_string(),

@@ -136,19 +136,28 @@ pub struct ServerOptions {
 
 impl ServerOptions {
     pub fn recommended(certificate_file: Bytes, private_key_file: Bytes) -> Result<Self> {
+        let certificates = x509::Certificate::from_pem(certificate_file)?;
+        let private_key = Arc::new(x509::PrivateKey::from_pem(private_key_file)?);
+        Ok(Self::recommended_with(certificates, private_key))
+    }
+
+    pub fn recommended_with(
+        certificates: Vec<Arc<x509::Certificate>>,
+        private_key: Arc<x509::PrivateKey>,
+    ) -> Self {
         let client_options = ClientOptions::recommended();
 
-        Ok(Self {
+        Self {
             certificate_request: None,
-            certificate_auth: CertificateAuthenticationOptions::create(
-                certificate_file,
-                private_key_file,
-            )?,
+            certificate_auth: CertificateAuthenticationOptions {
+                certificates,
+                private_key,
+            },
             alpn_ids: vec![],
             supported_cipher_suites: client_options.supported_cipher_suites,
             supported_groups: client_options.supported_groups,
             supported_signature_algorithms: client_options.supported_signature_algorithms,
-        })
+        }
     }
 }
 
@@ -196,18 +205,7 @@ pub struct CertificateAuthenticationOptions {
     /// names they must all be in the same certificate),
     pub certificates: Vec<Arc<x509::Certificate>>,
 
-    pub private_key: x509::PrivateKey,
-}
-
-impl CertificateAuthenticationOptions {
-    pub fn create(certificate_file: Bytes, private_key_file: Bytes) -> Result<Self> {
-        let certificates = x509::Certificate::from_pem(certificate_file)?;
-        let private_key = x509::PrivateKey::from_pem(private_key_file)?;
-        Ok(Self {
-            certificates,
-            private_key,
-        })
-    }
+    pub private_key: Arc<x509::PrivateKey>,
 }
 
 #[derive(Clone)]

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use base_error::*;
-use common::bytes::Bytes;
 use db_kv::*;
 use db_table::db::*;
 use db_table::query::*;
@@ -25,4 +24,4 @@ pub async fn create_db_instance(path: &LocalPath) -> Result<ProtobufDB> {
 
     let db = TransactionalEmbeddedDB::open(path, options).await?;
     Ok(ProtobufDB::new(Arc::new(db)))
-    }
+}

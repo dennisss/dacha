@@ -30,6 +30,7 @@ enum TextToken {
     Identifier(String),
     // TODO: Support up to u64::MAX
     Integer(i64),
+    UnsignedInteger(u64),
     Float(f64),
 }
 
@@ -79,7 +80,7 @@ impl TextToken {
 
         c.next(alt!(
             map(float_lit, |v| Self::Float((sign as f64) * v)),
-            map(int_lit, |v| Self::Integer(sign * (v as i64)))
+            map(int_lit, |v| if sign == 1 { Self::UnsignedInteger(v) } else { Self::Integer(sign * (v as i64)) })
         ))
     }));
 }
@@ -101,6 +102,7 @@ token_atom!(symbol, Symbol, char);
 token_atom!(string, String, Vec<u8>);
 token_atom!(ident, Identifier, String);
 token_atom!(integer, Integer, i64);
+token_atom!(uinteger, UnsignedInteger, u64);
 token_atom!(float, Float, f64);
 
 parser!(pub multiline_str_lit<&str, Vec<u8>> => seq!(c => {
@@ -348,6 +350,7 @@ impl TextFieldName {
 enum TextValue {
     Bool(bool),
     Integer(i64),
+    UnsignedInteger(u64),
     Float(f64),
 
     // TODO: Verify if things like null bytes can appear in protobuf 'string'
@@ -366,6 +369,7 @@ enum TextValue {
 impl TextValue {
     parser!(parse<&str, Self> => alt!(
         map(integer, |v| Self::Integer(v)),
+        map(uinteger, |v| Self::UnsignedInteger(v)),
         map(float, |v| Self::Float(v)),
         map(string, |v| Self::String(v)),
         map(ident, |v| {
@@ -390,6 +394,7 @@ impl TextValue {
         match self {
             TextValue::Bool(v) => v.to_string(),
             TextValue::Integer(v) => v.to_string(),
+            TextValue::UnsignedInteger(v) => v.to_string(),
             TextValue::Float(v) => v.to_string(),
             TextValue::String(v) => {
                 let mut out = String::new();
@@ -423,6 +428,7 @@ impl TextValue {
                 *v = match self {
                     Self::Float(v) => *v as f32,
                     Self::Integer(v) => *v as f32,
+                    Self::UnsignedInteger(v) => *v as f32,
                     _ => Err(err_msg("Can't cast to f32"))?,
                 };
             }
@@ -430,6 +436,7 @@ impl TextValue {
                 *v = match self {
                     Self::Float(v) => *v,
                     Self::Integer(v) => *v as f64,
+                    Self::UnsignedInteger(v) => *v as f64,
                     _ => {
                         return Err(err_msg("Can't cast to f64"));
                     }
@@ -438,6 +445,7 @@ impl TextValue {
             ReflectionMut::I32(v) => {
                 *v = match self {
                     Self::Integer(v) => (*v).try_into()?,
+                    Self::UnsignedInteger(v) => (*v).try_into()?,
                     _ => {
                         return Err(err_msg("Can't cast to i32"));
                     }
@@ -446,6 +454,7 @@ impl TextValue {
             ReflectionMut::I64(v) => {
                 *v = match self {
                     Self::Integer(v) => (*v).try_into()?,
+                    Self::UnsignedInteger(v) => (*v).try_into()?,
                     _ => {
                         return Err(err_msg("Can't cast to i64"));
                     }
@@ -454,7 +463,7 @@ impl TextValue {
             // TODO: If the text had a sign, then it should definately error out
             ReflectionMut::U32(v) => {
                 *v = match self {
-                    Self::Integer(v) => (*v).try_into()?,
+                    Self::UnsignedInteger(v) => (*v).try_into()?,
                     _ => {
                         return Err(err_msg("Can't cast to u32"));
                     }
@@ -462,7 +471,7 @@ impl TextValue {
             }
             ReflectionMut::U64(v) => {
                 *v = match self {
-                    Self::Integer(v) => (*v).try_into()?,
+                    Self::UnsignedInteger(v) => (*v).try_into()?,
                     _ => {
                         return Err(err_msg("Can't cast to u64"));
                     }
@@ -780,6 +789,8 @@ mod tests {
         parse_text_syntax(data).unwrap();
     }
 
+    // TODO: Test a massive number like "11901871820519434940"
+
     #[test]
     fn multi_line_string() {
         let data = r#"
@@ -798,6 +809,11 @@ mod tests {
                 }]
             }
         );
+    }
+
+    #[test]
+    fn large_text_number() {
+        println!("{:?}", parse_text_syntax("field: 11901871820519434940"));
     }
 }
 

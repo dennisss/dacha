@@ -12,7 +12,7 @@ use nix::sched::CloneFlags;
 use nix::sys::stat::{umask, Mode};
 use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
-use rpc_util::AddReflection;
+use rpc_util::{AddProfilingEndpoints, AddReflection};
 
 use crate::init::{MainProcess, MainProcessOptions};
 use crate::node::node::{Node, NodeContext};
@@ -341,8 +341,12 @@ async fn run(
         .await;
 
     let mut server = rpc::Http2Server::new(Some(config.service_port() as u16));
+    server.set_base_path("/rpc"); // TODO: Standardize.
+    server.http_options_mut().tls = node.tls_server_options();
     node.add_services(&mut server)?;
     server.add_reflection()?;
+    server.add_profilez()?;
+
 
     // TODO: Some of these tasks should be marked as non-blocking so should just be
     // cancelled but not necessary blocked till completion.

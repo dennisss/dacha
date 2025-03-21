@@ -1,0 +1,40 @@
+[package]
+name = "cluster_cli"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+base_radix = { path = "../../base/radix" }
+db_table = { path = "../../db/table" }
+crypto = { path = "../../crypto" }
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+builder = { path = "../../builder" }
+nix = "0.21.0"
+libc = "0.2.97"
+protobuf = { path = "../../protobuf" }
+http = { path = "../../http" }
+macros = { path = "../../macros" }
+datastore = { path = "../../datastore" }
+datastore_meta_client = { path = "../../datastore/meta/client" }
+compression = { path = "../../compression" }
+cluster_client = { path = "../../container/client" }
+cluster_ca = { path = "../ca" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
+net = { path = "../../net" }
+raft = { path = "../../raft" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+failure = "0.1.8"
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+sys = { path = "../../sys" }
+container_proto = { path = "../../container/proto" }
+container = { path = "../../container" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

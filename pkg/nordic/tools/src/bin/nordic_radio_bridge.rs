@@ -29,6 +29,7 @@ async fn main() -> Result<()> {
     let service = RootResource::new();
 
     let mut rpc_server = rpc::Http2Server::new(Some(args.rpc_port.value()));
+    rpc_server.set_base_path("/rpc"); // TODO: Standardize.
     bridge.add_services(&mut rpc_server)?;
     service.register_dependency(rpc_server.start()).await;
 

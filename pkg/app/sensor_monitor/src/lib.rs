@@ -277,7 +277,7 @@ pub async fn run() -> Result<()> {
     });
 
     task_bundle.add("RpcServer", {
-        let mut rpc_server = rpc::Http2Server::new();
+        let mut rpc_server = rpc::Http2Server::new(Some(8001));
         rpc_server.add_service(
             MetricServiceImpl {
                 metric_store: store.clone(),

@@ -1,0 +1,31 @@
+[package]
+name = "cluster_meta"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+base_radix = { path = "../../base/radix" }
+db_table = { path = "../../db/table" }
+crypto = { path = "../../crypto" }
+protobuf = { path = "../../protobuf" }
+http = { path = "../../http" }
+macros = { path = "../../macros" }
+datastore = { path = "../../datastore" }
+datastore_meta_client = { path = "../../datastore/meta/client" }
+compression = { path = "../../compression" }
+cluster_client = { path = "../../container/client" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
+net = { path = "../../net" }
+raft = { path = "../../raft" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

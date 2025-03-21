@@ -9,6 +9,7 @@ use executor_multitask::ServiceResource;
 use file::{temp::TempDir, LocalPathBuf};
 use protobuf::text::ParseTextProto;
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
+use raft_client::DefaultHostnameResolver;
 
 use crate::{meta::EmbeddedDBStateMachineOptions, proto::KeyValueEntry};
 
@@ -51,11 +52,15 @@ impl TestMetastoreCluster {
         let mut state_machine = EmbeddedDBStateMachineOptions::default();
         state_machine.db.write_buffer_size = 1 * 1024 * 1024;
 
+        // TODO: Even if just a test, we should block external network communication for
+        // this.
+
         // TODO: Disable multicast as we don't need it in a unit test.
         let resource = crate::meta::store::run(crate::meta::store::MetastoreOptions {
             dir: dir.clone(),
             init_port: None,
-            bootstrap,
+            bootstrap_group: bootstrap,
+            bootstrap_node_id: None,
             service_port: port,
             route_labels: self.shared.route_labels.clone(),
             log: SegmentedLogOptions {
@@ -63,6 +68,8 @@ impl TestMetastoreCluster {
                 max_segment_size: 2 * 1024 * 1024,
             },
             state_machine,
+            tls: None,
+            hostname_resolver: Arc::new(DefaultHostnameResolver::default()),
         })
         .await?;
 
@@ -84,7 +91,13 @@ impl TestMetastoreCluster {
 
     /// Creates a client which connects to all the nodes in this cluster.
     pub async fn create_client(&self) -> Result<MetastoreClient> {
-        MetastoreClient::create(&self.shared.route_labels, &[]).await
+        MetastoreClient::create(
+            &self.shared.route_labels,
+            &[],
+            Arc::new(DefaultHostnameResolver::default()),
+            None,
+        )
+        .await
     }
 }
 

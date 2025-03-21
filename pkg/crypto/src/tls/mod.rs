@@ -7,6 +7,7 @@ mod cipher_suite;
 mod cipher_tls12;
 pub mod client;
 mod constants;
+mod credentials;
 pub mod extensions;
 mod extensions_util;
 pub mod handshake;
@@ -16,6 +17,7 @@ pub mod key_schedule;
 mod key_schedule_helper;
 mod key_schedule_tls12;
 pub mod options;
+mod options_containers;
 mod parsing;
 pub mod record;
 mod record_stream;
@@ -24,8 +26,10 @@ mod signatures;
 pub mod transcript;
 
 pub use client::Client;
+pub use credentials::*;
 pub use handshake_summary::HandshakeSummary;
 pub use options::*;
+pub use options_containers::*;
 pub use server::Server;
 
 // Big-endian network order

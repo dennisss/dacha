@@ -189,12 +189,6 @@ impl Manager {
                     )
                     .into());
                 }
-
-                if port.protocol().is_empty() {
-                    return Err(
-                        rpc::Status::invalid_argument("No port protocol(s) specified").into(),
-                    );
-                }
             }
 
             // TODO: Require authentication to create system services.
@@ -700,27 +694,6 @@ impl Manager {
                 return Err(err_msg("Failed to allocate a new port number"));
             }
         }
-
-        // TODO: Validate that there are no overlapping volumes names.
-        for volume in spec.volumes_mut() {
-            match volume.source_case() {
-                WorkerSpec_VolumeSourceCase::NOT_SET => {}
-                WorkerSpec_VolumeSourceCase::Bundle(_) => {}
-                WorkerSpec_VolumeSourceCase::PersistentName(name) => {
-                    // Persistent volumes should be specific to individual workers.
-                    // TODO: Consider moving this local to the node?
-                    // (or have a system for making persistent volume claims?)
-                    let mut n = worker_name.to_string();
-                    n.push('/');
-                    n.push_str(name.as_str());
-
-                    volume.set_persistent_name(n);
-                }
-                WorkerSpec_VolumeSourceCase::BuildTarget(_) => {}
-            }
-        }
-
-        // TODO: Verify no duplicate volumes?
 
         Ok(spec)
     }
@@ -1247,12 +1220,10 @@ mod tests {
                     ports {
                         name: "first_port"
                         type: TCP
-                        protocol: HTTP
                     }
                     ports {
                         name: "second_port"
                         type: TCP
-                        protocol: HTTP
                     }
                 }
             }
@@ -1278,13 +1249,11 @@ mod tests {
                             name: "first_port"
                             number: 8002
                             type: TCP
-                            protocol: HTTP
                         },
                         {
                             name: "second_port"
                             number: 8003
                             type: TCP
-                            protocol: HTTP
                         }
                     ]
                 }
@@ -1304,13 +1273,11 @@ mod tests {
                             name: "first_port"
                             number: 8000
                             type: TCP
-                            protocol: HTTP
                         },
                         {
                             name: "second_port"
                             number: 8001
                             type: TCP
-                            protocol: HTTP
                         }
                     ]
                 }
@@ -1332,7 +1299,6 @@ mod tests {
                     ports {
                         name: "third_port"
                         type: TCP
-                        protocol: HTTP
                     }
                 }
             }
@@ -1354,7 +1320,6 @@ mod tests {
                         name: "third_port"
                         number: 8004
                         type: TCP
-                        protocol: HTTP
                     }
                 ]
             }
@@ -1370,7 +1335,7 @@ mod tests {
 
         request.spec_mut().worker_mut().ports_mut().insert(
             0,
-            WorkerSpec_Port::parse_text(r#" name: "first_port" type: TCP protocol: HTTP "#)?.into(),
+            WorkerSpec_Port::parse_text(r#" name: "first_port" type: TCP "#)?.into(),
         );
 
         manager.start_job_impl(&request).await?;
@@ -1390,13 +1355,11 @@ mod tests {
                         name: "first_port"
                         number: 8006
                         type: TCP
-                        protocol: HTTP
                     },
                     {
                         name: "third_port"
                         number: 8007
                         type: TCP
-                        protocol: HTTP
                     }
                 ]
             }
@@ -1417,13 +1380,11 @@ mod tests {
                         name: "first_port"
                         number: 8005
                         type: TCP
-                        protocol: HTTP
                     },
                     {
                         name: "third_port"
                         number: 8004  # Same number as before
                         type: TCP
-                        protocol: HTTP
                     }
                 ]
             }

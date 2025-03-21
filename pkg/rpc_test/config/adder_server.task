@@ -18,6 +18,6 @@ volumes: [
     },
     {
         name: "data"
-        persistent_name: "adder_data"
+        persistent: true
     }
 ]

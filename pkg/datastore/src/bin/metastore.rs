@@ -65,11 +65,15 @@ async fn main() -> Result<()> {
         run(MetastoreOptions {
             dir: args.dir,
             init_port: args.init_port.as_ref().map(|v| v.value()),
-            bootstrap: false,
+            bootstrap_group: false,
+            bootstrap_node_id: None,
             service_port: args.port.value(),
             route_labels,
             log: SegmentedLogOptions::default(),
             state_machine: EmbeddedDBStateMachineOptions::default(),
+            tls_client_options: todo!(),
+            tls_server_options: todo!(),
+            hostname_resolver: todo!(),
         })
         .await?,
     )

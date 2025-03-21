@@ -11,7 +11,7 @@ use alloc::boxed::Box;
 use std::ops::SubAssign;
 use std::vec::Vec;
 
-use common::errors::*;
+use base_error::*;
 use math::big::*;
 use typenum::U320;
 

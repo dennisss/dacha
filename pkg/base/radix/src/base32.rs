@@ -16,6 +16,7 @@ pub fn base32_encode_cl64(mut num: u64) -> String {
     const ENCODE_MAP: &'static [u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
     let mut out = String::new();
+    out.reserve_exact(U64_NUM_BYTES);
 
     let mut first_code = (num & 0b1111) as u8;
     num >>= 4;

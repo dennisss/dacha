@@ -11,6 +11,7 @@ use std::convert::TryFrom;
 
 use common::bytes::Bytes;
 use common::errors::*;
+use file::LocalPath;
 use http::{ClientInterface, ClientRequestContext};
 use http::{ClientResponseContext, SimpleClientOptions};
 use parsing::iso::*;
@@ -71,6 +72,7 @@ async fn main() -> Result<()> {
     }
     */
 
+    /*
     {
         let mut options =
             http::ClientOptions::try_from("https://acme-staging-v02.api.letsencrypt.org")?;
@@ -108,12 +110,42 @@ async fn main() -> Result<()> {
 
         return Ok(());
     }
+    */
 
-    let mut options = http::ClientOptions::try_from("https://localhost:8000")?;
+    {
+        let creds =
+            crypto::tls::FileCredentialsLoader::create(&LocalPath::new("/tmp/tls_root/")).await?;
 
-    let tls_options = options.backend_balancer.backend.tls.as_mut().unwrap();
+        let mut options = http::ClientOptions::try_from("http://10.1.0.43:10400")?;
 
-    tls_options.certificate_request.trust_remote_certificate = true;
+        // ftkyy996zvsp8.node.testing.cluster.internal
+
+        let mut tls_options = creds.client_options().get().as_ref().clone();
+
+        // let mut tls_options = crypto::tls::ClientOptions::recommended();
+        tls_options.certificate_request.trust_remote_certificate = true;
+        options.backend_balancer.backend.tls = Some(tls_options.into());
+
+        let client = http::Client::create(options).await?;
+
+        let req = http::RequestBuilder::new()
+            .method(http::Method::GET)
+            .path("/")
+            .header("Accept", "text/html")
+            .header("Accept-Encoding", "gzip")
+            .build()?;
+
+        let mut res = client
+            .request(
+                req,
+                ClientRequestContext::default(),
+                &mut ClientResponseContext::default(),
+            )
+            .await?;
+        println!("{:?}", res.head);
+
+        return Ok(());
+    }
 
     /*
        // RSA 2048
@@ -134,7 +166,8 @@ async fn main() -> Result<()> {
 
     let req = http::RequestBuilder::new()
         .method(http::Method::GET)
-        .path("/index.html")
+        .uri("https://127.0.0.1:10400/index.html")
+        // .path("/index.html")
         .header("Accept", "text/html")
         .header("Accept-Encoding", "gzip")
         .build()?;

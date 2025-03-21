@@ -11,11 +11,6 @@ rule_defaults {
         compiler: CARGO
         profile: "release"
         target: "x86_64-unknown-linux-gnu"
-
-        cfg: [
-            'target_feature="aes"',
-            'target_feature="pclmulqdq"',
-            'target_feature="sse4.2"'
-        ]
+        rustflags: "-C target_feature=aes -C target_feature=pclmulqdq -C target_feature=sse4.2"
     }
 }

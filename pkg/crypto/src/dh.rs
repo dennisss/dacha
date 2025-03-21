@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use std::vec::Vec;
 
-use common::errors::*;
+use base_error::*;
 
 /// NOTE: This is not a public/private crypto system in itself.
 #[async_trait]

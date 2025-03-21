@@ -62,6 +62,29 @@ impl Display for ResolvedEndpoint {
     }
 }
 
+pub struct StaticEndpointResolver {
+    endpoints: Vec<ResolvedEndpoint>,
+}
+
+impl StaticEndpointResolver {
+    pub fn new(endpoints: &[ResolvedEndpoint]) -> Self {
+        Self {
+            endpoints: endpoints.to_vec(),
+        }
+    }
+}
+
+#[async_trait]
+impl Resolver for StaticEndpointResolver {
+    async fn resolve(&self) -> Result<Vec<ResolvedEndpoint>> {
+        Ok(self.endpoints.clone())
+    }
+
+    async fn add_change_listener(&self, listener: ResolverChangeListener) {
+        // Never changes
+    }
+}
+
 pub struct SystemDNSResolver {
     host: Host,
     port: u16,

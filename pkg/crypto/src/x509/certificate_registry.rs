@@ -15,6 +15,7 @@ use pkix::{
     PKIX1_PSS_OAEP_Algorithms, NIST_SHA2, PKCS_1,
 };
 
+use crate::pem::{PEMBuilder, PEM, PEM_CERTIFICATE_LABEL};
 use crate::x509::certificate::Certificate;
 use crate::x509::certificate_verified::CertificateVerified;
 
@@ -97,6 +98,48 @@ impl CertificateRegistry {
         let mut reg = CertificateRegistry::new();
         reg.append(&certs, true)?;
         Ok(reg)
+    }
+
+    /// Creates a registry by parsing all the certificates in a PEM file.
+    /// (this assumes that all of these are trusted root certificates)
+    pub fn from_pem(data: Bytes) -> Result<Self> {
+        let pem = PEM::parse(data)?;
+
+        let mut out = Self::new();
+
+        for entry in pem.entries {
+            if entry.label.as_str() != PEM_CERTIFICATE_LABEL {
+                return Err(err_msg("Unknown PEM label found in "));
+            }
+
+            let cert = Arc::new(Certificate::read(entry.to_binary()?.into())?);
+            // TODO: Validate the certificate in its initial state.
+
+            out.append(&[cert], true)?;
+        }
+
+        Ok(out)
+    }
+
+    /// Creates a PEM containing ALL certificates in this registry.
+///
+    /// NOTE: This is not deterministic and may return a registry in
+    /// certificates in different orders.
+    pub fn to_pem(&self) -> String {
+        let mut builder = PEMBuilder::default();
+
+        for cert_list in self.certs.values() {
+            for cert in cert_list {
+                builder.add_binary_entry(PEM_CERTIFICATE_LABEL, &cert.raw.to_der());
+            }
+        }
+
+        builder.build()
+    }
+
+    /// TODO: Also returns certificates in any parent registries.
+    pub fn certificates(&self) -> impl Iterator<Item = &Arc<CertificateVerified>> {
+        self.certs.values().flatten()
     }
 
     /// Creates an empty registry.

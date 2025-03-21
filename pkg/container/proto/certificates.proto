@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package cluster;
+
+
+// Record of the existence of a certificate.
+// These are stored are rows in the 'CertificateMetadata' table of the metastore with rows for every
+// single certificate ever used/generated in the cluster (that is unexpires).
+message CertificateMetadata {
+    // Serial number of the certificate. Used as the unique id for each row.
+    bytes serial_number = 1;
+
+    // This certificate in DER format.
+    bytes data = 2;
+
+    uint64 creation_time = 3;
+
+    // Expiration time of this certificate in microseconds since epoch.
+    uint64 expiration_time = 4;
+
+    // If non-zero, specifies the node on which the private keys for this certificate life.
+    fixed64 assigned_node = 5;
+
+    // Reversed common name (e.g. 'example.com' becomes 'com.example') 
+    string reversed_common_name = 6;
+
+    // If true, this certificate is a trusted self-signed certificate.
+    // TODO: Only index if true.
+    bool root = 7;
+
+    bytes key_id = 8; 
+}
+
+message PrivateKeyMetadata {
+    bytes id = 1;
+
+    // Private key in DER form.
+    bytes data = 2;
+}
+
+service CertificateAuthority {
+    // Issues a certificate from a CSR using this server's signing key.
+    //
+    // Note that this is currently restricted to just signing worker and node certificates with
+    // the following restrictions:
+    // - The caller must have provided a valid Node client certificate.
+    // - If signing a worker entity certificate, the worker must be assigned to that node.
+    // - If signing a node certificate, the entity name must match the client certificate entity name.
+    //
+    // This is rate limited and up to 5 unexpired certificates are allowed to exist for the same entity.
+    //
+    // TODO: Acquire a metastore lock for this.
+    rpc SignCertificate (SignCertificateRequest) returns (SignCertificateResponse);
+}
+
+message SignCertificateRequest {
+    // (in raw DER form)
+    bytes csr = 1;
+}
+
+message SignCertificateResponse {
+    // (in raw DER form)
+    repeated bytes certificate = 1;
+}
+
+message CertificateSecrets {
+    // (in raw DER form)
+    repeated bytes certificates = 1;
+    
+    // (in raw DER form)
+    bytes private_key = 2;
+}
+
+message Signature {
+    // Serial number of the certificate whos public/private key was used to create this
+    // signature. 
+    bytes certificate_id = 1;
+
+    bytes signature = 2;
+
+    SignatureAlgorithm signature_algorithm = 3;
+}
+
+message SignatureAlgorithm {
+    enum Algorithm {
+        UNKNOWN = 0;
+        ECDSA_WITH_SHA256 = 1;
+    }
+
+    Algorithm algorithm = 1;
+}
+

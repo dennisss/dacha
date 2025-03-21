@@ -19,7 +19,7 @@ use protobuf::{Message, StaticMessage};
 use raft_client::server::channel_factory::{self, ChannelFactory};
 use raft_client::{
     DiscoveryClient, DiscoveryClientOptions, DiscoveryMulticast, DiscoveryServer,
-    RouteChannelFactory, RouteStore,
+    RouteChannelFactory, RouteHostnameResolver, RouteStore,
 };
 use rpc_util::AddReflection;
 
@@ -104,9 +104,23 @@ pub struct NodeOptions<'a, R> {
     /// Port used to use the init service if this is an un-initialized server.
     pub init_port: Option<u16>,
 
-    pub bootstrap: bool,
+    /// If true, we will create a new empty log with this as the first member of
+    /// the corresponding raft group.
+    ///
+    /// Else (default), we will wait for some other group to show up with a
+    /// compatible label set and join it.
+    pub bootstrap_group: bool,
 
+    /// If provided and the node hasn't being initialized yet, uses this id as
+    /// the id of the current server/node.
+    ///
+    /// Else (default), generates a unique id internally.
+    pub bootstrap_node_id: Option<ServerId>,
+
+    /// TODO: Need to feed these through the hostname resolver?
     pub seed_list: Vec<String>,
+
+    pub hostname_resolver: Arc<dyn RouteHostnameResolver>,
 
     /// State machine instance to be used.
     pub state_machine: Arc<dyn StateMachine<R> + Send + Sync + 'static>,
@@ -125,6 +139,9 @@ pub struct NodeOptions<'a, R> {
     /// TODO: Consider instead making an accessor method on the Http2Server to
     /// retrieve this.S
     pub rpc_server_address: String,
+
+    /// TLS options to use for connecting to other nodes.
+    pub tls_options: Option<crypto::tls::ClientOptionsContainer>,
 }
 
 /// Simple implementation of a complete Raft based server instance.
@@ -205,7 +222,7 @@ impl<R: 'static + Send> Node<R> {
     // Creates a new Node instance, attachs it to the server, and starts up
     // background tasks.
     pub async fn create(options: NodeOptions<'_, R>) -> Result<Node<R>> {
-        let route_store = RouteStore::new(&options.route_labels);
+        let route_store = RouteStore::new(&options.route_labels, options.hostname_resolver);
 
         let resources = ServiceResourceGroup::new("raft::Node");
 
@@ -224,6 +241,7 @@ impl<R: 'static + Send> Node<R> {
                 DiscoveryClientOptions {
                     seeds: options.seed_list,
                     active_broadcaster: true,
+                    tls_options: options.tls_options.clone(),
                 },
             )
             .await;
@@ -254,6 +272,7 @@ impl<R: 'static + Send> Node<R> {
             channel_factory = Arc::new(RouteChannelFactory::new(
                 meta.group_id(),
                 route_store.clone(),
+                options.tls_options.clone(),
             ));
 
             (meta, meta_file)
@@ -275,7 +294,7 @@ impl<R: 'static + Send> Node<R> {
             // - A ServerInit::Bootstrap RPC to come to tell us to bootstrap ourselves
             // - We discover a peer on the network that is already initialized.
             let group_id_or_bootstrap: Option<GroupId> = {
-                if options.bootstrap {
+                if options.bootstrap_group {
                     None
                 } else {
                     let init_signal = ServerInit::maybe_wait_for_init(options.init_port).fuse();
@@ -306,13 +325,28 @@ impl<R: 'static + Send> Node<R> {
                 None => (random::clocked_rng().uniform::<u64>().into(), true),
             };
 
-            channel_factory = Arc::new(RouteChannelFactory::new(group_id, route_store.clone()));
+            channel_factory = Arc::new(RouteChannelFactory::new(
+                group_id,
+                route_store.clone(),
+                options.tls_options.clone(),
+            ));
 
-            let id = if bootstrap {
-                crate::server::bootstrap::bootstrap_first_server(&log).await?
-            } else {
-                crate::server::bootstrap::generate_new_server_id(group_id, channel_factory.as_ref())
+            let id = {
+                if let Some(id) = options.bootstrap_node_id {
+                    if bootstrap {
+                        crate::server::bootstrap::bootstrap_first_server_with_id(id, &log).await?;
+                    }
+
+                    id
+                } else if bootstrap {
+                    crate::server::bootstrap::bootstrap_first_server(&log).await?
+                } else {
+                    crate::server::bootstrap::generate_new_server_id(
+                        group_id,
+                        channel_factory.as_ref(),
+                    )
                     .await?
+                }
             };
 
             println!("Starting new server with id: {}", id.value());

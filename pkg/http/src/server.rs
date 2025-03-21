@@ -60,7 +60,7 @@ pub struct ServerOptions {
     // TODO: We should make sure that the client uses the "https" scheme
     /// If present, use these options to connect with SSL/TLS. Otherwise, we'll
     /// send requests over plain text.
-    pub tls: Option<crypto::tls::ServerOptions>,
+    pub tls: Option<crypto::tls::ServerOptionsContainer>,
 
     /// If true, we will only accept HTTPv2 connections. Setting this to true
     /// will improve the performance of V2 connections as we will internally
@@ -207,13 +207,6 @@ impl Drop for ServerResource {
 
 impl Server {
     pub fn new<H: ServerHandler>(handler: H, mut options: ServerOptions) -> Self {
-        if let Some(tls_options) = &mut options.tls {
-            tls_options.alpn_ids.push(ALPN_HTTP2.into());
-            if !options.force_http2 {
-                tls_options.alpn_ids.push(ALPN_HTTP11.into());
-            }
-        }
-
         let resource_state = ServiceResourceReportTracker::new(ServiceResourceReport {
             resource_name: options.name.clone(),
             self_state: ServiceResourceState::Loading,
@@ -548,10 +541,16 @@ impl Server {
         let mut negotatied_http11 = false;
         let mut negotiated_http2 = false;
         if let Some(tls_options) = &shared.options.tls {
+            let mut opts: crypto::tls::ServerOptions = tls_options.get().as_ref().clone();
+            opts.alpn_ids.push(ALPN_HTTP2.into());
+            if !shared.options.force_http2 {
+                opts.alpn_ids.push(ALPN_HTTP11.into());
+            }
+
             // NOTE: If the client is sending invalid TLS packets, this will timeout.
             let app = executor::timeout(
                 Duration::from_secs(2),
-                crypto::tls::Server::connect(read_stream, write_stream, tls_options),
+                crypto::tls::Server::connect(read_stream, write_stream, &opts),
             )
             .await??;
             if let Some(proto) = &app.handshake_summary.selected_alpn_protocol {

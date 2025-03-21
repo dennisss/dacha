@@ -3,7 +3,7 @@
 // This file contains supplementary test cases for the SHA hashing algorithms.
 // For now, this is mainly using the NIST test vectors.
 
-use common::errors::*;
+use base_error::*;
 
 use crate::hasher::{GetHasherFactory, HasherFactory};
 use crate::sha1::*;

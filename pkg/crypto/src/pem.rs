@@ -1,8 +1,8 @@
 use alloc::string::String;
 use std::vec::Vec;
 
+use base_error::*;
 use common::bytes::Bytes;
-use common::errors::*;
 use common::line_builder::LineBuilder;
 use parsing::ascii::*;
 use parsing::*;

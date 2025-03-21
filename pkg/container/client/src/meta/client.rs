@@ -2,43 +2,64 @@ use core::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use common::errors::*;
+use container_proto::cluster::ObjectMetadata;
 use datastore_meta_client::MetastoreClient;
 use db_table::db::ProtobufDB;
 use db_table::query_one;
 use executor_multitask::impl_resource_passthrough;
+use protobuf::{Message, StaticMessage};
 use protobuf_builtins::google::protobuf::Any;
 use raft_client::proto::RouteLabel;
 
-use crate::meta::constants::ZONE_ENV_VAR;
+use crate::credentials::get_cluster_credentials;
+use crate::env::ZONE_ENV_VAR;
 use crate::meta::ObjectMetadataTable;
-use crate::proto::ObjectMetadata;
 
 use super::constants::META_STORE_SEEDS_ENV_VAR;
+use super::hostname::ClusterMetaHostnameResolver;
 
 ///
 pub struct ClusterMetaClient {
     zone: String,
     inner: Arc<MetastoreClient>,
     db: Arc<ProtobufDB>,
+    tls_options: Option<crypto::tls::ClientOptionsContainer>,
 }
 
 impl_resource_passthrough!(ClusterMetaClient, inner);
 
 impl ClusterMetaClient {
-    pub async fn create(zone: &str, seeds: &[String]) -> Result<Self> {
+    pub async fn create(
+        zone: &str,
+        seeds: &[String],
+        tls_options: Option<crypto::tls::ClientOptionsContainer>,
+    ) -> Result<Self> {
         let mut label = RouteLabel::default();
         label.set_value(format!("{}={}", ZONE_ENV_VAR, zone));
 
-        let inner = Arc::new(MetastoreClient::create(std::slice::from_ref(&label), seeds).await?);
+        let inner = Arc::new(
+            MetastoreClient::create(
+                std::slice::from_ref(&label),
+                seeds,
+                Arc::new(ClusterMetaHostnameResolver::new(zone)),
+                tls_options.clone(),
+            )
+            .await?,
+        );
         let db = Arc::new(ProtobufDB::new(inner.clone()));
         Ok(Self {
             zone: zone.to_string(),
             inner,
             db,
+            tls_options,
         })
     }
 
-    pub async fn create_from_environment() -> Result<Self> {
+    pub(crate) fn tls_options(&self) -> Option<crypto::tls::ClientOptionsContainer> {
+        self.tls_options.clone()
+    }
+
+    pub async fn create_from_environment() -> Result<Arc<Self>> {
         let zone = std::env::var(ZONE_ENV_VAR).map_err(|_| {
             format_err!(
                 "Expected the {} environment variable to be set",
@@ -61,7 +82,13 @@ impl ClusterMetaClient {
             )
         }
 
-        Self::create(&zone, &seeds).await
+        // TODO: Allow having an insecure cluster?
+        // TODO: Add this credentials loader to the resource group.
+        let creds = get_cluster_credentials().await?;
+
+        Ok(Arc::new(
+            Self::create(&zone, &seeds, Some(creds.client_options().clone())).await?,
+        ))
     }
 
     pub fn zone(&self) -> &str {
@@ -74,6 +101,11 @@ impl ClusterMetaClient {
 
     pub fn db(&self) -> &Arc<ProtobufDB> {
         &self.db
+    }
+
+    pub async fn seeds(&self) -> Result<String> {
+        let seeds = self.inner().seeds().await;
+        Ok(seeds.join(","))
     }
 
     pub async fn get_object_any(&self, name: &str) -> Result<Option<Any>> {

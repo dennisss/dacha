@@ -1,8 +1,9 @@
 use std::vec::Vec;
 
+use base_util::ceil_div;
+
 use crate::hasher::*;
 use crate::hmac::*;
-use common::ceil_div;
 
 /// https://tools.ietf.org/html/rfc5869
 pub struct HKDF {

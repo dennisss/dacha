@@ -1,6 +1,8 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
-use asn::encoding::{der_eq, DERWriteable};
+use asn::encoding::{der_eq, DERReadable, DERReader, DERWriteable};
+use common::bytes::Bytes;
 use common::errors::*;
 use pkix::{PKIX1Explicit88, PKIX1Implicit88, PKCS_10};
 
@@ -38,6 +40,18 @@ impl CertificateRequest {
         Ok(Self { raw, extensions })
     }
 
+    /// Reads a certficate request from DER encoded data.
+    pub fn from_der(buf: Bytes) -> Result<Self> {
+        // TODO: Ensure the buffer is read till completion.
+        let mut r = DERReader::new(buf);
+        let raw = PKCS_10::CertificationRequest::read_der(&mut r)?;
+        Self::new(raw)
+    }
+
+    pub fn to_der(&self) -> Vec<u8> {
+        self.raw.to_der()
+    }
+
     pub fn raw(&self) -> &PKCS_10::CertificationRequest {
         &self.raw
     }
@@ -50,33 +64,38 @@ impl CertificateRequest {
             .build()
     }
 
-    pub fn common_name(&self) -> Result<Option<String>> {
+    /// Expects the subject to consist of exactly one field which is a common
+    /// name.
+    ///
+    /// Returns the common name if it is, else, returns None.
+    pub fn subject_as_common_name(&self) -> Result<Option<String>> {
         // TODO: Verify that there is only one name.
 
-        match &self.raw.certificationRequestInfo.subject {
-            pkix::PKIX1Explicit88::Name::rdnSequence(seq) => {
-                for item in &seq.items {
-                    for item in &item.items {
-                        if !der_eq(&item.typ, &PKIX1Explicit88::ID_AT_COMMONNAME) {
-                            continue;
-                        }
+        let seq = match &self.raw.certificationRequestInfo.subject {
+            pkix::PKIX1Explicit88::Name::rdnSequence(seq) => seq,
+        };
 
-                        let cn = item.value.parse_as::<PKIX1Explicit88::X520CommonName>()?;
-                        let s = match &cn {
-                            PKIX1Explicit88::X520CommonName::teletexString(v) => v.as_str(),
-                            PKIX1Explicit88::X520CommonName::printableString(v) => v.as_str(),
-                            PKIX1Explicit88::X520CommonName::universalString(v) => v.as_str(),
-                            PKIX1Explicit88::X520CommonName::utf8String(v) => v.as_str(),
-                            PKIX1Explicit88::X520CommonName::bmpString(v) => v.as_str(),
-                        };
-
-                        return Ok(Some(s.into()));
-                    }
-                }
-            }
+        if seq.items.len() != 1 || seq.items[0].items.len() != 1 {
+            return Ok(None);
         }
 
-        Ok(None)
+        let item = &seq.items[0].items[0];
+
+        if !der_eq(&item.typ, &PKIX1Explicit88::ID_AT_COMMONNAME) {
+            return Ok(None);
+        }
+
+        let cn = item.value.parse_as::<PKIX1Explicit88::X520CommonName>()?;
+
+        let s = match &cn {
+            PKIX1Explicit88::X520CommonName::teletexString(v) => v.as_str(),
+            PKIX1Explicit88::X520CommonName::printableString(v) => v.as_str(),
+            PKIX1Explicit88::X520CommonName::universalString(v) => v.as_str(),
+            PKIX1Explicit88::X520CommonName::utf8String(v) => v.as_str(),
+            PKIX1Explicit88::X520CommonName::bmpString(v) => v.as_str(),
+        };
+
+        Ok(Some(s.into()))
     }
 
     pub fn subject_alt_name(&self) -> Result<Option<PKIX1Implicit88::SubjectAltName>> {

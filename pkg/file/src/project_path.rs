@@ -10,7 +10,9 @@ pub fn project_dir() -> LocalPathBuf {
             return dir;
         }
 
-        dir.pop();
+        if !dir.pop() {
+            break;
+        }
     }
 
     panic!(

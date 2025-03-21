@@ -20,11 +20,17 @@ pub struct ServerCodecOptions {
 
 /// Server-side view of information related to this request.
 pub struct ServerRequestContext {
-    pub metadata: Metadata, /* metadata */
+    pub metadata: Metadata,
 
-                            /* connection information */
+    /// Information about the underlying HTTP connection.
+    ///
+    /// This is ALWAYS present if the connection is HTTP based.
+    pub connection: Option<http::ServerConnectionContext>,
+    /* metadata */
 
-                            /* deadline (if any) */
+    /* connection information */
+
+    /* deadline (if any) */
 }
 
 #[derive(Default)]

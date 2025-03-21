@@ -29,6 +29,9 @@ enum ClusterTableId {
     BundleBlob = 7;
     Object = 8;
     NodeScheduling = 9;
+    Certificate = 10;
+    CertificateRequest = 11;
+    PrivateKey = 12;
 }
 
 // Stored at a singleton in the metastore.

@@ -19,6 +19,7 @@
 #include <scsi/sg.h>
 #include <signal.h>
 #include <sys/epoll.h>
+#include <sys/fanotify.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>

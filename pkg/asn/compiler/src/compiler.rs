@@ -487,9 +487,10 @@ impl<'a> FileCompiler<'a> {
                     // different encodings possible (at least if we try to
                     // optimize it? 						field_lines.add(format!
                     // ("if der_eq(&{}, &{}) {{", field_name, valuec));
-                    // 						field_lines.add(format!("\treturn Err(\"DER got default
-                    // value encoded for '{}'\".into());",
-                    // field_name)); 						field_lines.add("}");
+                    // 						field_lines.add(format!("\treturn Err(\"DER got
+                    // default value encoded for
+                    // '{}'\".into());", field_name));
+                    // field_lines.add("}");
                     } else {
                         field_lines.add_inline("?;");
                     }
@@ -1146,9 +1147,17 @@ impl<'a> FileCompiler<'a> {
                     BuiltinValue::Integer(v) => {
                         match v {
                             IntegerValue::SignedNumber(v) => {
-                                // TODO: Use BigInt to do the conversion.
+                                // TODO: Use BigInt to do the conversion (this msust be fully
+                                // reduced to be correct)
 
-                                format!("BigInt::from_le_static(&[{}])", v)
+                                format!(
+                                    "BigInt::from_le_static(&[{}])",
+                                    if *v == 0 {
+                                        "".to_string()
+                                    } else {
+                                        v.to_string()
+                                    }
+                                )
                             }
                             // TODO: We will never see this as we never
                             // TODO: This depends on the type. If it has a named

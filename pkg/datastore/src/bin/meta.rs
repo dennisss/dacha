@@ -30,7 +30,7 @@ async fn increment_counter(txn: &dyn MetastoreClientInterface) -> Result<()> {
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let client = MetastoreClient::create(&[], &[]).await?;
+    let client = MetastoreClient::create(&[], &[], None).await?;
 
     {
         let mut data = vec![0; 1024 * 1024];

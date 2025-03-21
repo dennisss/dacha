@@ -1,7 +1,7 @@
 use alloc::string::String;
 
+use base_error::*;
 use base_radix::{base64_decode_with, base64_encode_with, Base64Options};
-use common::errors::*;
 
 use crate::{blowfish::Blowfish, cipher_modes::ECBModeCipher, constant_eq, random::Rng};
 

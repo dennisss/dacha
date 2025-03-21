@@ -74,7 +74,8 @@ impl ClientOptions {
             backend_balancer: LoadBalancedClientOptions::default_for_dns(),
         };
         if secure {
-            options.backend_balancer.backend.tls = Some(crypto::tls::ClientOptions::recommended());
+            options.backend_balancer.backend.tls =
+                Some(crypto::tls::ClientOptions::recommended().into());
         }
 
         Ok(options)

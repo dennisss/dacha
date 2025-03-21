@@ -31,11 +31,47 @@ pub enum RouteInitializerState {
     Initialized = 2,
 }
 
+/// Used to determine which host name to use when communicating with remote
+/// servers.
+pub trait RouteHostnameResolver: Send + Sync + 'static {
+    /// Gets the host name to be used when communicating with a specific server
+    /// with the id given in the route.
+    ///
+    /// Ideally what is returned should be a name unique to the remote server
+    /// which can be used (e.g. by TLS) to authenticate that we are talking to
+    /// the right entity.
+    ///
+    /// If this returns 'None', then the route is not valid.
+    fn route_hostname(&self, route: &Route) -> Option<String>;
+
+    /// Gets the host name to use when we don't know the identity (or care about
+    /// the identity) of the remote raft server.
+    ///
+    /// Ideally this hostname should minimally be useful for authenticating that
+    /// we are talking to a proper raft member and not an arbitrary server
+    /// outside of the raft group / database.
+    fn anonymous_route_hostname(&self) -> String;
+}
+
+#[derive(Default)]
+pub struct DefaultHostnameResolver {}
+
+impl RouteHostnameResolver for DefaultHostnameResolver {
+    fn route_hostname(&self, route: &Route) -> Option<String> {
+        Some(self.anonymous_route_hostname())
+    }
+
+    fn anonymous_route_hostname(&self) -> String {
+        "metastore".to_string()
+    }
+}
+
 /// Container of all server-to-server routing information known by the local
 /// server.
 #[derive(Clone)]
 pub struct RouteStore {
     state: Arc<AsyncVariable<State>>,
+    hostname_resolver: Arc<dyn RouteHostnameResolver>,
 }
 
 struct State {
@@ -60,7 +96,7 @@ struct PeerState {
 }
 
 impl RouteStore {
-    pub fn new(labels: &[RouteLabel]) -> Self {
+    pub fn new(labels: &[RouteLabel], hostname_resolver: Arc<dyn RouteHostnameResolver>) -> Self {
         Self {
             state: Arc::new(AsyncVariable::new(State {
                 peers: HashMap::new(),
@@ -68,7 +104,12 @@ impl RouteStore {
                 labels: labels.to_vec(),
                 initializers: RouteInitializerState::NoInitializers,
             })),
+            hostname_resolver,
         }
+    }
+
+    pub fn hostname_resolver(&self) -> &dyn RouteHostnameResolver {
+        self.hostname_resolver.as_ref()
     }
 
     pub async fn lock<'a>(&'a self) -> RouteStoreGuard<'a> {

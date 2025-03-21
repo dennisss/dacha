@@ -256,17 +256,22 @@ impl Http2RequestHandler {
 
         let request_context = ServerRequestContext {
             metadata: Metadata::from_headers(&request.head.headers)?,
+connection: Some(context.connection_context.clone()),
         };
 
-        let path_parts = request
-            .head
-            .uri
-            .path
-            .as_ref()
-            .split('/')
-            .collect::<Vec<_>>();
+        let rpc_path = match request.head.uri.path.as_ref().strip_prefix(&self.base_path) {
+            Some(v) => v,
+            None => {
+                return Ok(http::ResponseBuilder::new()
+                    .status(http::status_code::NOT_FOUND)
+                    .build()
+                    .unwrap());
+            }
+        };
+
+        let path_parts = rpc_path            .split('/')            .collect::<Vec<_>>();
         if path_parts.len() != 3 || path_parts[0].len() != 0 {
-            // TODO: Convert to a grpc error.
+            // TODO: Convert to a grpc error (UNIMPLEMENTED).
             return Err(err_msg("Invalid path"));
         }
 

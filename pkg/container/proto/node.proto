@@ -42,6 +42,17 @@ message NodeConfig {
     // [init_process_args, "--", worker_args]. The expectation is that the init process will
     // run the worker binary based on the given arguments.
     repeated string init_process_args = 10;
+
+    // Unique identifier for this node in the cluster.
+    // The value of this MUST NOT change after the first startup.
+    //
+    // NOTE: This is only relevant if 'zone' os not empty.
+    fixed64 id = 13;
+
+    // If true, the node will use mTLS for all communications.
+    bool secure = 14;
+
+    reserved 5, 12;
 }
 
 // Represents all port numbers in the range [start, end).

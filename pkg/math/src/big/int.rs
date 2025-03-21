@@ -186,8 +186,13 @@ impl BigInt {
 
 impl From<i32> for BigInt {
     fn from(value: i32) -> Self {
+        let mut data = vec![];
+        if value != 0 {
+            data.push(value as u32);
+        }
+
         Self {
-            value: VecPtr::Dynamic(vec![value as u32]),
+            value: VecPtr::Dynamic(data),
         }
     }
 }

@@ -158,10 +158,7 @@ impl QueryBuilder {
             _ => return Err(err_msg("Expected ident")),
         };
 
-        let placeholder = match &args[1] {
-            RawQuery::Placeholder(v) => *v,
-            _ => return Err(err_msg("Expected placeholder as value")),
-        };
+        let raw_value = &args[1];
 
         let mut num_path = vec![];
 
@@ -181,8 +178,14 @@ impl QueryBuilder {
             r = msg.field_by_number(num).unwrap();
         }
 
-        // TODO: Cast this to a reasonable type for the field based on 'r'.
-        let value = placeholder_map.get(&placeholder).unwrap().clone();
+        let value = match raw_value {
+            RawQuery::Placeholder(v) => {
+                // TODO: Cast this to a reasonable type for the field based on 'r'.
+                placeholder_map.get(v).unwrap().clone()
+            }
+            RawQuery::BoolLiteral(v) => QueryValue::Bool(*v),
+            _ => return Err(format_err!("Unsupported query value type: {:?}", raw_value)),
+        };
 
         let op = match op {
             RawOp::And | RawOp::Or => return Err(err_msg("Primitive AND/OR not supported")),

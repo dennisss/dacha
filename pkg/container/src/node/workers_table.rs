@@ -54,16 +54,6 @@ pub async fn delete_worker(db: &ProtobufDB, worker_name: &str) -> Result<()> {
     db.remove::<LocalWorkerMetadataTable>(&entry).await
 }
 
-// Stores a partial copy of the NodeMetadata that will get synced to the
-// metastore.
-//
-// Currently this is just used to keep a record of this node's 'id'.
-define_singleton_table!(LocalNodeMetadataTable {
-    message: NodeMetadata,
-    table_id: 12,
-    table_name: "LocalNodeMetadataTable"
-});
-
 /// Table used to keep track of all the blobs that are replicated locally on
 /// this node.
 pub struct LocalBundleBlobSpecTable {}
@@ -169,19 +159,6 @@ pub async fn get_worker_events(db: &ProtobufDB, worker_name: &str) -> Result<Vec
     let out = query!(db, WorkerEventTable, "worker_name = ?", worker_name);
     Ok(out)
 }
-
-define_singleton_table!(CertificateRegistryTable {
-    message: CertificateRegistryProto,
-    table_id: 17,
-    table_name: "CertificateRegistry"
-});
-
-// Stores the node's certificate and private key.
-define_singleton_table!(CertificateSecretsTable {
-    message: CertificateSecrets,
-    table_id: 18,
-    table_name: "SelfCertificate"
-});
 
 pub struct WorkerRuntimeMetadataTable {}
 

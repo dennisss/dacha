@@ -99,6 +99,20 @@ impl SocketAddr {
     pub fn port(&self) -> u16 {
         self.port
     }
+
+    fn parse_impl(s: &str) -> Result<Self> {
+        let (ip, mut rest) = IPAddress::parse(s.as_bytes())?;
+        parse_next!(rest, parsing::tag(":"));
+
+        let (port, rest) = crate::ip_syntax::parse_port(rest)?;
+        if !rest.is_empty() {
+            return Err(err_msg("Extra bytes at end of ip address"));
+        }
+
+        let port = port.ok_or_else(|| err_msg("Missing port"))?;
+
+        Ok(Self { ip, port })
+    }
 }
 
 impl Debug for SocketAddr {
@@ -116,17 +130,7 @@ impl ToString for SocketAddr {
 impl std::str::FromStr for SocketAddr {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
-        let (ip, mut rest) = IPAddress::parse(s.as_bytes())?;
-        parse_next!(rest, parsing::tag(":"));
-
-        let (port, rest) = crate::ip_syntax::parse_port(rest)?;
-        if !rest.is_empty() {
-            return Err(err_msg("Extra bytes at end of ip address"));
-        }
-
-        let port = port.ok_or_else(|| err_msg("Missing port"))?;
-
-        Ok(Self { ip, port })
+        Self::parse_impl(s).map_err(|_| format_err!("Invalid socket addr: {}", s))
     }
 }
 

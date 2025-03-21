@@ -9,6 +9,8 @@ extern crate std;
 #[macro_use]
 extern crate alloc;
 
+#[cfg(feature = "std")]
+pub mod atomic;
 pub mod bit_flags;
 #[cfg(feature = "alloc")]
 pub mod format;

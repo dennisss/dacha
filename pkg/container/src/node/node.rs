@@ -132,8 +132,10 @@ struct NodeState {
 struct NodeStateInner {
     container_id_to_worker_name: HashMap<String, String>,
 
-    next_uid: u32,
-    next_gid: u32,
+    runtime_metadata: HashMap<String, WorkerRuntimeMetadata>,
+
+    uid_allocator: IdAllocator,
+    gid_allocator: IdAllocator,
 
     /// Map of host paths to the number of running workers referencing them.
     /// This is used to implement exclusive locks to volumes/devices.

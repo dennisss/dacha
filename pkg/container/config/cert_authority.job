@@ -1,0 +1,25 @@
+name: "system.cert-authority"
+replicas: 1
+scheduling {
+    distinct_nodes: true
+}
+worker {
+    persistent: true
+
+    args: [
+        "/volumes/bundle/built/pkg/cluster/ca/cluster_ca",
+        "--port=rpc"
+    ]
+
+    ports {
+        name: "rpc"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cluster/ca:bundle"
+        }
+    ]
+}

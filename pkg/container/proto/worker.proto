@@ -78,15 +78,12 @@ message WorkerSpec {
         // What type of port this should be (e.g. TCP, UNIX, etc.)
         PortType type = 2;
 
-        // Layered protocols supported by the server on this port.
-        // This is mainly used to dynamically configure clients so that incompatible changes can be
-        // made (e.g. switching from plaintext to TLS).
-        repeated PortProtocol protocol = 3;
-
         // INTERNAL ONLY
         // The port number on the node to use if this is a TCP port.
         // Set by the Cluster Manager when assigning the worker to a node.
         uint32 number = 4; // [(google.api.field_behavior) = OUTPUT_ONLY];
+
+        reserved 3;
     }
     repeated Port ports = 6;
 

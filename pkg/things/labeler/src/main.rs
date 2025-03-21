@@ -128,7 +128,7 @@ async fn main() -> Result<()> {
 
             let mut options = http::ServerOptions::default();
             options.port = Some(args.port.value());
-            options.tls = Some(tls_options.clone());
+            options.tls = Some(tls_options.into());
             options.force_http2 = true;
 
             let web_server = http::Server::new(handler, options);

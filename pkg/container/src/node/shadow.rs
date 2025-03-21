@@ -49,9 +49,8 @@ pub struct GroupEntry {
     pub user_list: Vec<String>,
 }
 
-pub fn read_groups_from_path<P: AsRef<Path>>(path: P) -> Result<Vec<GroupEntry>> {
+pub fn read_groups_from_data(data: &str) -> Result<Vec<GroupEntry>> {
     let mut out = vec![];
-    let data = std::fs::read_to_string::<&std::path::Path>(path.as_ref().into())?;
     for line in data.lines() {
         let fields = line.split(":").collect::<Vec<_>>();
         if fields.len() != 4 {
@@ -70,6 +69,11 @@ pub fn read_groups_from_path<P: AsRef<Path>>(path: P) -> Result<Vec<GroupEntry>>
     }
 
     Ok(out)
+}
+
+pub fn read_groups_from_path<P: AsRef<Path>>(path: P) -> Result<Vec<GroupEntry>> {
+    let data = std::fs::read_to_string::<&std::path::Path>(path.as_ref().into())?;
+    read_groups_from_data(&data)
 }
 
 pub fn read_groups() -> Result<Vec<GroupEntry>> {
@@ -171,4 +175,18 @@ fn newidmap(binary: &str, pid: i32, mappings: &[IdMapping]) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn read_current_ids() {
+        read_passwd().unwrap();
+        read_groups().unwrap();
+        read_subuids().unwrap();
+        read_subgids().unwrap();
+    }
 }

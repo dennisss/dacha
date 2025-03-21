@@ -22,6 +22,8 @@ pub struct DiscoveryClientOptions {
     /// additionally we will periodically poll all known servers in the
     /// RouteStore.
     pub active_broadcaster: bool,
+
+    pub tls_options: Option<crypto::tls::ClientOptionsContainer>,
 }
 
 /// Most basic mode of discover service based on an initial list of server
@@ -86,6 +88,7 @@ impl DiscoveryClient {
                 // Next value of 'states' constructed without any garbage collected  routes.
                 let mut new_states = HashMap::new();
 
+                // TODO: Need these to be deduped.
                 let mut selected_addrs = vec![];
 
                 let mut maybe_select_addr = |addr: String| {
@@ -101,6 +104,7 @@ impl DiscoveryClient {
                     selected_addrs.push(addr);
                 };
 
+                // TODO: After some period of time, stop relying on the seeds.
                 for addr in &self.options.seeds {
                     // Don't send to ourselves.
                     if let Some(local_route) = route_store.local_route() {
@@ -109,14 +113,13 @@ impl DiscoveryClient {
                         }
                     }
 
-                    maybe_select_addr(format!("http://{}", addr));
+                    maybe_select_addr(addr.clone());
                 }
 
                 if self.options.active_broadcaster {
                     // TODO: Make sure this doesn't get marked as a usage of the route.
                     for route in route_store.selected_routes() {
-                        let addr = format!("http://{}", route.target().addr());
-                        maybe_select_addr(addr);
+                        maybe_select_addr(route.target().addr().into());
                     }
                 }
 
@@ -157,12 +160,28 @@ impl DiscoveryClient {
                             // TODO: Don't let this fail the entire job if we get bad addresses (we
                             // may have received a malformed address
                             // from another server).
-                            let channel = Arc::new(
-                                rpc::Http2Channel::create(http::ClientOptions::from_uri(
-                                    &addr.parse()?,
-                                )?)
-                                .await?,
-                            );
+
+                            let hostname = self
+                                .route_store
+                                .hostname_resolver()
+                                .anonymous_route_hostname();
+
+                            let endpoint = http::ResolvedEndpoint {
+                                name: "server".to_string(),
+                                address: addr.parse()?,
+                                authority: hostname.parse()?,
+                            };
+
+                            let mut options: rpc::Http2ChannelOptions =
+                                http::ClientOptions::from_resolver(Arc::new(
+                                    http::StaticEndpointResolver::new(&[endpoint]),
+                                ))
+                                .try_into_result()?;
+                            options.base_path = "/rpc".into();
+                            options.http.backend_balancer.backend.tls =
+                                this.options.tls_options.clone();
+
+                            let channel = Arc::new(rpc::Http2Channel::create(options).await?);
 
                             states.insert(
                                 addr.clone(),

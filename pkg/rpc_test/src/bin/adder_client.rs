@@ -54,9 +54,7 @@ async fn main() -> Result<()> {
     let channel = {
         let resolver =
             cluster_client::ServiceResolver::create_with_fallback(&args.target, async move {
-                Ok(Arc::new(
-                    ClusterMetaClient::create_from_environment().await?,
-                ))
+                Ok(ClusterMetaClient::create_from_environment().await?)
             })
             .await?;
 

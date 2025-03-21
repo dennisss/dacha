@@ -1,6 +1,9 @@
 mod blob_store;
+mod credentials;
+mod id_allocator;
 pub mod main;
 pub mod node;
+mod paths;
 mod resources;
 pub mod shadow;
 mod worker;

@@ -36,12 +36,10 @@ worker {
         {
             name: "rpc"
             type: TCP
-            protocol: [HTTP, GRPC]
         },
         {
             name: "web"
             type: TCP
-            protocol: [HTTP]
         }
     ]
 

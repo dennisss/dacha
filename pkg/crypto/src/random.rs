@@ -4,9 +4,10 @@ use std::num::Wrapping;
 use std::sync::Arc;
 use std::vec::Vec;
 
+use base_error::*;
+use base_util::ceil_div;
 use common::bytes::{Buf, Bytes};
 use common::io::Readable;
-use common::{ceil_div, errors::*};
 use executor::lock;
 use executor::sync::AsyncMutex;
 use file::LocalFile;

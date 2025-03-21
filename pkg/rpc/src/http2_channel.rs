@@ -40,6 +40,8 @@ pub struct Http2ChannelOptions {
     pub max_request_buffer_size: usize,
 
     pub response_interceptor: Option<Arc<dyn ClientResponseInterceptor>>,
+
+    pub base_path: String,
 }
 
 impl TryFrom<http::ClientOptions> for Http2ChannelOptions {
@@ -52,6 +54,7 @@ impl TryFrom<http::ClientOptions> for Http2ChannelOptions {
             max_request_buffer_size: 16 * 1024, // 16KB
             credentials: None,
             response_interceptor: None,
+            base_path: String::new(),
         })
     }
 }
@@ -158,7 +161,10 @@ impl Http2Channel {
         let request_sender = Http2RequestSender {
             shared: self.shared.clone(),
             // TODO: Add the full package path.
-            path: format!("/{}/{}", service_name, method_name),
+            path: format!(
+                "{}/{}/{}",
+                self.shared.options.base_path, service_name, method_name
+            ),
             request_context,
             request_buffer: buffer,
         };
@@ -463,6 +469,8 @@ impl Http2RequestSender {
         // Separation point where we can
 
         if response.head.status_code != http::status_code::OK {
+            println!("{:?}", response.head);
+
             return Err(crate::Status::unknown("Server responded with non-OK status").into());
         }
 

@@ -71,115 +71,13 @@ impl PrivateKey {
         let entry = pem.entries.pop().unwrap();
 
         if entry.label.as_str() == PEM_PRIVATE_KEY_LABEL {
-            let pkey_info = pkix::PKCS_8::PrivateKeyInfo::from_der(entry.to_binary()?.into())?;
-
-            let check_null_params = || -> Result<()> {
-                if !der_eq(&pkey_info.privateKeyAlgorithm.parameters, &Null::new()) {
-                    return Err(err_msg("Expected null params for algorithm"));
-                }
-                Ok(())
-            };
-
-            // TODO: Check version.
-
-            if pkey_info.privateKeyAlgorithm.algorithm == PKCS_1::RSAENCRYPTION {
-                check_null_params()?;
-                let pkey = PKCS_1::RSAPrivateKey::from_der(pkey_info.privateKey.to_bytes())?;
-                return Ok(Self::RSA((&pkey).try_into()?));
-            } else if pkey_info.privateKeyAlgorithm.algorithm == PKIX1Algorithms2008::ID_ECPUBLICKEY
-            {
-                // TODO: Deduplicate this logic with the ec_public_key logic which is basically
-                // identical.
-
-                let params = match &pkey_info.privateKeyAlgorithm.parameters {
-                    Some(any) => any.parse_as::<PKIX1Algorithms88::EcpkParameters>()?,
-                    None => {
-                        return Err(err_msg("No EC params specified"));
-                    }
-                };
-
-                let group_id;
-                let group = match params {
-                    PKIX1Algorithms88::EcpkParameters::namedCurve(id) => {
-                        group_id = id.clone();
-                        if id == PKIX1Algorithms2008::SECP192R1 {
-                            EllipticCurveGroup::secp192r1()
-                        } else if id == PKIX1Algorithms2008::SECP224R1 {
-                            EllipticCurveGroup::secp224r1()
-                        } else if id == PKIX1Algorithms2008::SECP256R1 {
-                            EllipticCurveGroup::secp256r1()
-                        } else if id == PKIX1Algorithms2008::SECP384R1 {
-                            EllipticCurveGroup::secp384r1()
-                        } else if id == PKIX1Algorithms2008::SECP521R1 {
-                            EllipticCurveGroup::secp521r1()
-                        } else {
-                            return Err(err_msg("Unsupported named curve"));
-                        }
-                    }
-                    PKIX1Algorithms88::EcpkParameters::implicitlyCA(_) => {
-                        return Err(err_msg(
-                            "Don't support loading PEM private key using implicitlyCA params",
-                        ));
-                    }
-                    _ => {
-                        return Err(err_msg("Unsupported curve format"));
-                    }
-                };
-
-                // TODO: Verify that the parameters in the ECPrivateKEy match the ones in the
-                // privateKeyAlgorithm.
-                let key = PKIX1Algorithms2008::ECPrivateKey::from_der(
-                    Into::<OctetString>::into(pkey_info.privateKey.clone()).to_bytes(),
-                )?
-                .privateKey
-                .to_bytes();
-
-                /*
-                println!("{:#?}", ppkey);
-
-                // TODO: Reduce the number of conversions needed for this.
-                let point = PKIX1Algorithms2008::ECPoint::from(Into::<OctetString>::into(
-                    pkey_info.privateKey.clone(),
-                ));
-                */
-
-                return Ok(Self::ECDSA(group_id, group, key));
-            } else if pkey_info.privateKeyAlgorithm.algorithm
-                == pkix::Safecurves_pkix_18::ID_ED25519
-            {
-                if !pkey_info.privateKeyAlgorithm.parameters.is_none() {
-                    return Err(err_msg("Expected params to be absent for safecurves"));
-                }
-
-                let key: OctetString = pkix::Safecurves_pkix_18::CurvePrivateKey::from_der(
-                    Into::<OctetString>::into(pkey_info.privateKey.clone()).to_bytes(),
-                )?
-                .into();
-
-                if key.len() != 32 {
-                    return Err(err_msg("Wrong length of Ed25519 private key"));
-                }
-
-                return Ok(Self::Ed25519(key.into_bytes()));
-            } else {
-                return Err(format_err!(
-                    "Unsupported private key algorithm: {:?}",
-                    pkey_info.privateKeyAlgorithm.algorithm
-                ));
-            }
+            Self::from_der(entry.to_binary()?.into())
         } else {
             return Err(format_err!(
                 "Unsupported PEM label for private key: {}",
                 entry.label.as_str()
             ));
         }
-
-        // println!("{}", entry.label.as_ref());
-        // let data = entry.to_binary()?.into();
-
-        // println!("{:#?}", pkey);
-
-        // asn::debug::print_debug_string(data);
     }
 
     pub fn to_pem(&self) -> String {
@@ -241,6 +139,106 @@ impl PrivateKey {
                 }
             }
         }
+    }
+
+    pub fn from_der(data: Bytes) -> Result<Self> {
+        let pkey_info = pkix::PKCS_8::PrivateKeyInfo::from_der(data)?;
+
+        let check_null_params = || -> Result<()> {
+            if !der_eq(&pkey_info.privateKeyAlgorithm.parameters, &Null::new()) {
+                return Err(err_msg("Expected null params for algorithm"));
+            }
+            Ok(())
+        };
+
+        // TODO: Check version.
+
+        if pkey_info.privateKeyAlgorithm.algorithm == PKCS_1::RSAENCRYPTION {
+            check_null_params()?;
+            let pkey = PKCS_1::RSAPrivateKey::from_der(pkey_info.privateKey.to_bytes())?;
+            return Ok(Self::RSA((&pkey).try_into()?));
+        } else if pkey_info.privateKeyAlgorithm.algorithm == PKIX1Algorithms2008::ID_ECPUBLICKEY {
+            // TODO: Deduplicate this logic with the ec_public_key logic which is basically
+            // identical.
+
+            let params = match &pkey_info.privateKeyAlgorithm.parameters {
+                Some(any) => any.parse_as::<PKIX1Algorithms88::EcpkParameters>()?,
+                None => {
+                    return Err(err_msg("No EC params specified"));
+                }
+            };
+
+            let group_id;
+            let group = match params {
+                PKIX1Algorithms88::EcpkParameters::namedCurve(id) => {
+                    group_id = id.clone();
+                    if id == PKIX1Algorithms2008::SECP192R1 {
+                        EllipticCurveGroup::secp192r1()
+                    } else if id == PKIX1Algorithms2008::SECP224R1 {
+                        EllipticCurveGroup::secp224r1()
+                    } else if id == PKIX1Algorithms2008::SECP256R1 {
+                        EllipticCurveGroup::secp256r1()
+                    } else if id == PKIX1Algorithms2008::SECP384R1 {
+                        EllipticCurveGroup::secp384r1()
+                    } else if id == PKIX1Algorithms2008::SECP521R1 {
+                        EllipticCurveGroup::secp521r1()
+                    } else {
+                        return Err(err_msg("Unsupported named curve"));
+                    }
+                }
+                PKIX1Algorithms88::EcpkParameters::implicitlyCA(_) => {
+                    return Err(err_msg(
+                        "Don't support loading PEM private key using implicitlyCA params",
+                    ));
+                }
+                _ => {
+                    return Err(err_msg("Unsupported curve format"));
+                }
+            };
+
+            // TODO: Verify that the parameters in the ECPrivateKEy match the ones in the
+            // privateKeyAlgorithm.
+            let key = PKIX1Algorithms2008::ECPrivateKey::from_der(
+                Into::<OctetString>::into(pkey_info.privateKey.clone()).to_bytes(),
+            )?
+            .privateKey
+            .to_bytes();
+
+            /*
+            println!("{:#?}", ppkey);
+
+            // TODO: Reduce the number of conversions needed for this.
+            let point = PKIX1Algorithms2008::ECPoint::from(Into::<OctetString>::into(
+                pkey_info.privateKey.clone(),
+            ));
+            */
+
+            return Ok(Self::ECDSA(group_id, group, key));
+        } else if pkey_info.privateKeyAlgorithm.algorithm == pkix::Safecurves_pkix_18::ID_ED25519 {
+            if !pkey_info.privateKeyAlgorithm.parameters.is_none() {
+                return Err(err_msg("Expected params to be absent for safecurves"));
+            }
+
+            let key: OctetString = pkix::Safecurves_pkix_18::CurvePrivateKey::from_der(
+                Into::<OctetString>::into(pkey_info.privateKey.clone()).to_bytes(),
+            )?
+            .into();
+
+            if key.len() != 32 {
+                return Err(err_msg("Wrong length of Ed25519 private key"));
+            }
+
+            return Ok(Self::Ed25519(key.into_bytes()));
+        } else {
+            return Err(format_err!(
+                "Unsupported private key algorithm: {:?}",
+                pkey_info.privateKeyAlgorithm.algorithm
+            ));
+        }
+    }
+
+    pub fn to_der(&self) -> Vec<u8> {
+        self.to_asn1().to_der()
     }
 
     pub fn public_key(&self) -> Result<PublicKey> {

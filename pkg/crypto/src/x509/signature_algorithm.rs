@@ -1,6 +1,6 @@
 use asn::builtin::{BitString, Null, OctetString};
 use asn::encoding::{der_eq, Any};
-use common::errors::*;
+use base_error::*;
 use pkix::{
     PKIX1Algorithms2008, PKIX1Explicit88, PKIX1_PSS_OAEP_Algorithms, Safecurves_pkix_18, PKCS_1,
 };

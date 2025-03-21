@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use common::errors::*;
+use base_error::*;
 
 use crate::cipher::BlockCipher;
 
