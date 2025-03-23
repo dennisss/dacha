@@ -4,10 +4,16 @@
 /*
 cargo run --bin cluster_cli -- setup_node --zone=testing --bootstrap --tls_root=/tmp/tls_root --local_node=/opt/dacha/node
 
+CLUSTER_ZONE=testing CLUSTER_CREDENTIALS=/tmp/tls_root cargo run --bin cluster_cli -- list workers
+
+CLUSTER_ZONE=testing CLUSTER_CREDENTIALS=/tmp/tls_root cargo run --bin cluster_cli -- list nodes
+
 TODO: Safety mesaures needed:
 - Must have a well defined local system time before the node can start running.
 - Need automatic detection on each RPC of clock syncronization
 
+
+curl --insecure https://127.0.0.1:10400/profilez > perf.pb
 
 */
 
@@ -67,6 +73,7 @@ pub struct SetupNodeCommand {
     zone: String,
 
     /// If true, this is the first node in the cluster zone so we should
+    #[arg(default = false)]
     bootstrap: bool,
 
     /// Directory in which the root CA private key and TLS certificate are
@@ -101,7 +108,7 @@ pub struct SetupNodeCommand {
 /// TODO: Improve this so that we can continue running it if a previous run
 /// failed (mainly needed for the non-bootstrapping case)
 pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
-    // TODO: Validate that the zone name matches a good pattern.
+    // TODO: Validate that the zone name matches a good pattern (a-z0-9_).
 
     if cmd.zone.is_empty() {
         return Err(err_msg("Empty --zone provided"));
@@ -582,10 +589,8 @@ async fn setup_remote_node_server(
     // Delete any old built artifacts data.
     let bundle_dir = base_dir.join("bundle");
     operator
-        .run(&format!("sudo rm -rf {}", bundle_dir.as_str()))
+        .run(&format!("rm -rf {}", bundle_dir.as_str()))
         .await?;
-
-    // operator.
 
     // Cluster cluster data directory
     let data_dir = base_dir.join("data");
@@ -600,6 +605,7 @@ async fn setup_remote_node_server(
 
     operator.upload(b"", bundle_dir.join("WORKSPACE")).await?;
 
+    /*
     // TODO: This is the only file in the bundle not owned by
     // 'cluster-user:cluster-user'
     // TODO: Find a better place to store this logic that is shared with local
@@ -618,6 +624,7 @@ async fn setup_remote_node_server(
     operator
         .run(&format!("sudo chmod u+s {}", newcgroup_path.as_str()))
         .await?;
+    */
 
     let mut node_config = {
         let s = file::read_to_string(project_path!("pkg/container/config/node.txtpb")).await?;
@@ -649,6 +656,8 @@ async fn setup_remote_node_server(
             .upload_file(project_dir().join(key), remote_path)
             .await?;
     }
+
+    // TODO: Only do this if it doesn't already exist.
 
     operator.create_dir_all(&data_dir).await?;
 

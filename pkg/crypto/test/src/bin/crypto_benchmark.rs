@@ -30,9 +30,12 @@ use std::time::{Duration, Instant};
 
 use common::iter::cartesian_product;
 use common::{bool_to_num, errors::*};
-use crypto::chacha20::Poly1305;
+use crypto::aead::AuthEncAD;
+use crypto::chacha20::{ChaCha20Poly1305, Poly1305};
 use crypto::dh::DiffieHellmanFn;
 use crypto::elliptic::{EllipticCurveGroup, MontgomeryCurveCodec, MontgomeryCurveGroup};
+use crypto::gcm::AesGCM;
+use crypto::random::Rng;
 use crypto_test::*;
 use file::project_path;
 use protobuf::Message;
@@ -208,6 +211,37 @@ async fn key_exchange_benchmark(f: &dyn DiffieHellmanFn) -> Result<()> {
     Ok(())
 }
 
+async fn aead_speed_benchmark(aead: &dyn AuthEncAD) -> Result<()> {
+    let aes_gcm = AesGCM::aes128();
+
+    let mut key = vec![0u8; aead.key_size()];
+    crypto::random::clocked_rng().generate_bytes(&mut key);
+
+    let mut nonce = vec![0u8; aead.nonce_range().1];
+    crypto::random::clocked_rng().generate_bytes(&mut nonce);
+
+    let mut data = vec![0u8; 1 * 1024 * 1024];
+    crypto::random::clocked_rng().generate_bytes(&mut data);
+
+    let mut tmp = vec![];
+    let mut tmp2 = vec![];
+
+    let start = Instant::now();
+    let num_iters = 200;
+    for _ in 0..num_iters {
+        tmp.clear();
+        aead.encrypt(&key, &nonce, &data, &[], &mut tmp);
+
+        tmp2.clear();
+        aead.decrypt(&key, &nonce, &tmp, &[], &mut tmp2)?;
+    }
+    let end = Instant::now();
+
+    println!("=> Time per MiB: {:?}", (end - start) / num_iters);
+
+    Ok(())
+}
+
 /*
 Want performance numbers on the whole Chacha20 + Poly1305 AEAD flow.
 
@@ -216,7 +250,7 @@ Want performance numbers on the whole Chacha20 + Poly1305 AEAD flow.
 #[executor_main]
 async fn main() -> Result<()> {
     // TODO: Wait for this thing to start profiling.
-    let profile = executor::spawn(perf::profile_self(Duration::from_secs(20)));
+    let profile = executor::spawn(perf::profile_self(Duration::from_secs(10)));
 
     // println!("constant_eq:");
     // println!("=> {:?}", constant_eq_test());
@@ -231,14 +265,18 @@ async fn main() -> Result<()> {
     // println!("poly1305:");
     // poly1305_test();
 
-    signature_benchmark(crypto::x509::PrivateKeyType::Ed25519).await?;
-    key_exchange_benchmark(&MontgomeryCurveGroup::x25519()).await?;
+    // signature_benchmark(crypto::x509::PrivateKeyType::Ed25519).await?;
+    // key_exchange_benchmark(&MontgomeryCurveGroup::x25519()).await?;
 
-    signature_benchmark(crypto::x509::PrivateKeyType::ECDSA_SECP256R1).await?;
-    key_exchange_benchmark(&EllipticCurveGroup::secp256r1()).await?;
+    // signature_benchmark(crypto::x509::PrivateKeyType::ECDSA_SECP256R1).await?;
+    // key_exchange_benchmark(&EllipticCurveGroup::secp256r1()).await?;
+
+    println!("aes_gcm_128");
+    aead_speed_benchmark(&AesGCM::aes128()).await?;
+    println!("chacha20_poly1305");
+    aead_speed_benchmark(&ChaCha20Poly1305::new()).await?;
 
     let profile = profile.join().await?;
-
     file::write(project_path!("perf.pb"), profile.serialize()?).await?;
 
     /*

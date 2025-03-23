@@ -40,7 +40,8 @@ mod utils;
 pub mod utsname;
 // mod vdso;
 mod device_id;
-mod fanotify;
+pub mod fanotify;
+pub mod inotify;
 mod virtual_memory;
 mod wait;
 
@@ -77,7 +78,6 @@ pub use stat::*;
 pub use std::os::raw::{c_char, c_int, c_short, c_uint, c_ulong, c_ushort};
 // pub use vdso::*;
 pub use device_id::*;
-pub use fanotify::*;
 pub use virtual_memory::*;
 pub use wait::*;
 

@@ -11,7 +11,7 @@ pub trait AddReflection {
     fn add_reflection(&mut self) -> Result<()>;
 }
 
-impl AddReflection for rpc::Http2Server {
+impl AddReflection for rpc::Http2RequestHandler {
     fn add_reflection(&mut self) -> Result<()> {
         let reflection_service = ServerReflectionImpl::new(self);
         self.add_service(reflection_service.into_service())?;
@@ -24,9 +24,9 @@ struct ServerReflectionImpl {
 }
 
 impl ServerReflectionImpl {
-    fn new(server: &rpc::Http2Server) -> Self {
+    fn new(handler: &rpc::Http2RequestHandler) -> Self {
         let mut services = vec![];
-        for s in server.services() {
+        for s in handler.services() {
             services.push((s.service_name(), s.file_descriptor()));
         }
 

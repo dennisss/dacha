@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::FromStr;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use std::{collections::HashSet, sync::Arc};
 
 use builder::proto::{BundleBlobFormat, BundleSpec};
@@ -22,8 +22,8 @@ use container::{
     WorkerStateMetadata_ReportedState,
 };
 use container::{
-    ContainerNodeStub, Label, Labels, UpdateLabelsRequests, WorkerMetadata, WorkerSpec,
-    WorkerSpec_Port, WorkerSpec_Volume, WorkerStateMetadata, WriteInputRequest, ZoneMetadata,
+    ContainerNodeStub, Label, Labels, WorkerMetadata, WorkerSpec, WorkerSpec_Port,
+    WorkerSpec_Volume, WorkerStateMetadata, WriteInputRequest, ZoneMetadata,
 };
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
@@ -172,6 +172,9 @@ pub(crate) async fn start_job_impl(
         .map(|b| (b.spec().id().to_string(), b))
         .collect::<HashMap<_, _>>();
 
+    // TODO: Should have a server side limit on how large individual request chunks
+    // can be.
+
     // Upload blbos to all desired replicas.
     // TODO: Parallelize this
     for assignment in blob_allocations.new_assignments() {
@@ -183,26 +186,7 @@ pub(crate) async fn start_job_impl(
             .get(assignment.blob_id())
             .ok_or_else(|| err_msg("Missing blob"))?;
 
-        // TODO: Make sure this request fails fast if the node doesn't currently exist
-        // TODO: NEed much better chunking here.
-        let mut request = node.blobs.Upload(request_context).await;
-        request.send(&blob_data).await;
-
-        if let Err(e) = request.finish().await {
-            let mut ignore_error = false;
-            if let Some(status) = e.downcast_ref::<rpc::Status>() {
-                if status.code() == rpc::StatusCode::AlreadyExists {
-                    println!("=> {}", status.message());
-                    ignore_error = true;
-                }
-            }
-
-            if !ignore_error {
-                return Err(e);
-            }
-        }
-
-        println!("Uploaded!");
+        upload_blob_to_node(&node, request_context, &blob_data).await?;
     }
 
     let mut req = StartJobRequest::default();
@@ -242,23 +226,7 @@ async fn start_worker_impl(
             continue;
         }
 
-        let mut request = node.blobs.Upload(request_context).await;
-        // TODO: Need much better chunking here.
-        request.send(&blob_data).await;
-
-        if let Err(e) = request.finish().await {
-            let mut ignore_error = false;
-            if let Some(status) = e.downcast_ref::<rpc::Status>() {
-                if status.code() == rpc::StatusCode::AlreadyExists {
-                    println!("=> {}", status.message());
-                    ignore_error = true;
-                }
-            }
-
-            if !ignore_error {
-                return Err(e);
-            }
-        }
+        upload_blob_to_node(node, request_context, &blob_data).await?;
 
         println!("Uploaded!");
     }
@@ -335,6 +303,39 @@ async fn build_worker_blobs(worker_spec: &mut WorkerSpec) -> Result<Vec<cluster_
     }
 
     Ok(out)
+}
+
+async fn upload_blob_to_node(
+    node: &NodeStubs,
+    request_context: &rpc::ClientRequestContext,
+    blob_data: &cluster_client::BlobData,
+) -> Result<()> {
+    let mut request = node.blobs.Upload(request_context).await;
+
+    let start = Instant::now();
+
+    // TODO: Need much better chunking here.
+    request.send(blob_data).await;
+
+    if let Err(e) = request.finish().await {
+        let mut ignore_error = false;
+        if let Some(status) = e.downcast_ref::<rpc::Status>() {
+            if status.code() == rpc::StatusCode::AlreadyExists {
+                println!("=> {}", status.message());
+                ignore_error = true;
+            }
+        }
+
+        if !ignore_error {
+            return Err(e);
+        }
+    }
+
+    let end = Instant::now();
+
+    println!("Uploaded in {:?}", end - start);
+
+    Ok(())
 }
 
 async fn start_terminal_input_task(

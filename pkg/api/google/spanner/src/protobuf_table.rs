@@ -18,6 +18,7 @@ use crate::sql::{
 };
 use crate::SpannerDatabaseClient;
 
+// TODO: Replace me with the db_table one.
 pub trait ProtobufTableTag {
     type Message: protobuf::StaticMessage;
 

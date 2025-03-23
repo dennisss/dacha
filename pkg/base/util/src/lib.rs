@@ -24,12 +24,16 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 pub const fn ceil_div(a: usize, b: usize) -> usize {
+    /*
     let mut out = a / b;
     if a % b != 0 {
         out += 1;
     }
 
     out
+    */
+
+    (a + b - 1) / b
 }
 
 /// Given that the current position in the file is at the end of a middle, this

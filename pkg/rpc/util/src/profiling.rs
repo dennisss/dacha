@@ -4,13 +4,15 @@ use common::bytes::Bytes;
 use common::errors::*;
 use protobuf::Message;
 
+pub const PROFILEZ_PATH: &'static str = "/profilez";
+
 pub trait AddProfilingEndpoints {
     fn add_profilez(&mut self) -> Result<()>;
 }
 
 impl AddProfilingEndpoints for rpc::Http2Server {
     fn add_profilez(&mut self) -> Result<()> {
-        self.add_request_handler("/profilez", ProfilezRequestHandler {})
+        self.add_request_handler(PROFILEZ_PATH, ProfilezRequestHandler {})
     }
 }
 

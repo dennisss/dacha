@@ -172,6 +172,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
 
                 if let Ok(CipherSuiteParts::TLS13(_)) = suite.decode() {
                     selected = Some(*suite);
+                    break;
                 }
             }
 

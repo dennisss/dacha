@@ -36,6 +36,7 @@ impl ProtobufTableTag for LocalWorkerMetadataTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[
                     WorkerMetadata::SPEC_FIELD_NUM_RAW,
@@ -73,6 +74,7 @@ impl ProtobufTableTag for LocalBundleBlobSpecTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[BundleBlobSpec::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
@@ -116,6 +118,7 @@ impl ProtobufTableTag for WorkerEventTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[
                 ProtobufKeyField {
                     path: &[WorkerEvent::WORKER_NAME_FIELD_NUM_RAW],
@@ -177,6 +180,7 @@ impl ProtobufTableTag for WorkerRuntimeMetadataTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[WorkerRuntimeMetadata::WORKER_NAME_FIELD_NUM_RAW],
                 direction: Direction::Ascending,

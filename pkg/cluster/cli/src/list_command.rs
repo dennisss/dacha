@@ -5,7 +5,7 @@ use cluster_client::meta::table::*;
 use common::errors::*;
 use container_proto::cluster::*;
 
-use crate::utils::{connect_to_node, connect_to_node_id};
+use crate::utils::{connect_to_node, connect_to_node_id, NodeStubs};
 
 #[derive(Args)]
 pub struct ListCommand {
@@ -18,6 +18,8 @@ pub struct ListCommand {
     ///
     /// NOTE: Note all object kinds will be supported in this mode.
     node_addr: Option<String>,
+
+    node_id: Option<u64>,
 }
 
 #[derive(Args)]
@@ -40,49 +42,18 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
 
     if let Some(node_addr) = &cmd.node_addr {
         let node = connect_to_node(node_addr, Some(creds.client_options())).await?;
-
-        let request_context = rpc::ClientRequestContext::default();
-
-        let identity = node
-            .service
-            .Identity(
-                &request_context,
-                &protobuf_builtins::google::protobuf::Empty::default(),
-            )
-            .await
-            .result?;
-
-        println!("Nodes:");
-        println!("{:?}", identity);
-
-        println!("Workers:");
-        let workers = node
-            .service
-            .ListWorkers(&request_context, &ListWorkersRequest::default())
-            .await
-            .result?;
-        for worker in workers.workers() {
-            println!("{:?}", worker);
-        }
-
-        println!("Blobs:");
-        let blobs = node
-            .blobs
-            .List(
-                &request_context,
-                &protobuf_builtins::google::protobuf::Empty::default(),
-            )
-            .await
-            .result?;
-        for blob in blobs.blob() {
-            println!("{:?}", blob);
-        }
-
+        run_list_on_node(node).await?;
         return Ok(());
     }
 
     let meta_client = ClusterMetaClient::create_from_environment().await?;
     let db = meta_client.db();
+
+    if let Some(node_id) = &cmd.node_id {
+        let node = connect_to_node_id(meta_client.clone(), *node_id).await?;
+        run_list_on_node(node).await?;
+        return Ok(());
+    }
 
     let kind = cmd.kind.unwrap();
 
@@ -161,6 +132,47 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
                 println!("{:?}", node);
             }
         }
+    }
+
+    Ok(())
+}
+
+async fn run_list_on_node(node: NodeStubs) -> Result<()> {
+    let request_context = rpc::ClientRequestContext::default();
+
+    let identity = node
+        .service
+        .Identity(
+            &request_context,
+            &protobuf_builtins::google::protobuf::Empty::default(),
+        )
+        .await
+        .result?;
+
+    println!("Nodes:");
+    println!("{:?}", identity);
+
+    println!("Workers:");
+    let workers = node
+        .service
+        .ListWorkers(&request_context, &ListWorkersRequest::default())
+        .await
+        .result?;
+    for worker in workers.workers() {
+        println!("{:?}", worker);
+    }
+
+    println!("Blobs:");
+    let blobs = node
+        .blobs
+        .List(
+            &request_context,
+            &protobuf_builtins::google::protobuf::Empty::default(),
+        )
+        .await
+        .result?;
+    for blob in blobs.blob() {
+        println!("{:?}", blob);
     }
 
     Ok(())

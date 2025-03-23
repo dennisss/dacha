@@ -8,6 +8,7 @@ extern crate common;
 #[macro_use]
 extern crate datastore_meta_client;
 
+pub mod acl;
 pub mod credentials;
 pub mod env;
 pub mod id;

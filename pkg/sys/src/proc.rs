@@ -44,6 +44,22 @@ pub fn num_cpus() -> Result<usize> {
     Ok(total)
 }
 
+/// Returns the name of the cgroup for the current process.
+///
+/// The returned value will look something like
+/// '/system.slice/cluster-node.service' which can be interprated as a absolute
+/// path relative to '/sys/fs/cgroup'
+pub fn current_cgroup_name() -> Result<String> {
+    // This will look like '0::/system.slice/cluster-node.service'
+    let data = blocking_read_to_string("/proc/self/cgroup")?;
+
+    let s = data.trim();
+
+    Ok(s.strip_prefix("0::")
+        .ok_or_else(|| format_err!("Unknown format of cgroup proc file: {}", s))?
+        .to_string())
+}
+
 #[derive(Clone, Debug)]
 pub struct Mount {
     pub device: String,

@@ -23,15 +23,15 @@ message WorkerSpec {
         string name = 1;
         
         oneof source {
-            
-            // The volume will be initialized by creating a new read-writeable directory on the host.
-            // - Whenever a worker is started on the same node with the same persistent_name, it will
-            //   see the previously initialized directory and will also have read-write access to it. 
+            // If true, initialize a local persistent read-writeable directory on the host.
+            //
+            // - Data will only be preserved while the worker is assigned to the given node and not
+            //   carried over between nodes.
             // - Each persistent directory is exclusive to the current worker and not shareable across
             //   multiple workers.
-            // - Having a persistnet directory will prevent this worker from being moved to another
+            // - Having a persistnet directory may prevent this worker from being moved to another
             //   machine in the future.
-            string persistent_name = 3;
+            bool persistent = 7;
 
             // Path to the build target for a bundle which should be built to derive the source for this volume.
             //
@@ -42,10 +42,15 @@ message WorkerSpec {
             builder.BundleSpec bundle = 5;
 
             // TODO: Support temp dir
-            
+
+            // Directory containing mTLS credentials identifying this worker.
+            //
+            // NOTE: A volume of this type is always implicitly mounted by the node and this
+            // source can't be explicitly specified in the WorkerSpec by a user. 
+            bool credentials = 6;
         }
         
-        reserved 2;
+        reserved 2, 3;
 
         // TODO: Should support exclusive/reader/reader-writer locks to persistent volumes.
     }

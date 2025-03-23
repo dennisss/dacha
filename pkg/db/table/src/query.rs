@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use base_error::*;
+use common::hash::FastHasherBuilder;
 use protobuf::reflection::Reflection;
 use protobuf::{FieldNumber, MessageReflection};
 
@@ -69,7 +70,7 @@ impl Query {
 #[derive(Default)]
 pub(crate) struct QueryAllOf {
     // TODO: Make this deterministic.
-    pub(crate) fields: HashMap<Vec<FieldNumber>, Vec<QueryComparison>>,
+    pub(crate) fields: HashMap<Vec<FieldNumber>, Vec<QueryComparison>, FastHasherBuilder>,
 }
 
 impl QueryAllOf {

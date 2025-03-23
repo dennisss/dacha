@@ -141,6 +141,8 @@ impl BlobFile {
         file::rename(&self.path, &self.path_tmp).await?;
         self.dir.sync_data().await?;
 
+        // TODO: Replace with this approach: https://lwn.net/Articles/569134/
+
         // Write new value
         let mut file = LocalFile::open_with_options(
             &self.path,

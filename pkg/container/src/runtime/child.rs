@@ -45,7 +45,7 @@ use crate::setup_socket::SetupSocketChild;
 // runtime which is frozen in the child process.
 pub fn run_child_process(
     container_config: &ContainerConfig,
-    container_dir: &Path,
+    root_dir: &Path,
     setup_socket: &mut SetupSocketChild,
     file_mapping: &FileMapping,
 ) -> sys::ExitCode {
@@ -54,8 +54,7 @@ pub fn run_child_process(
 
     // TODO: Must ensure that all files are closed.
 
-    let result =
-        run_child_process_inner(container_config, container_dir, setup_socket, file_mapping);
+    let result = run_child_process_inner(container_config, root_dir, setup_socket, file_mapping);
     let status = {
         if let Err(e) = result {
             eprintln!("Child process wrapper failed: {:?}", e);
@@ -77,13 +76,14 @@ pub fn run_child_process(
 // using it for that purpose.
 fn run_child_process_inner(
     container_config: &ContainerConfig,
-    container_dir: &Path,
+    root_dir: &Path,
     setup_socket: &mut SetupSocketChild,
     file_mapping: &FileMapping,
 ) -> Result<()> {
     // Block until the parent is done with setting up our environment.
     setup_socket.wait(USER_NS_SETUP_BYTE)?;
 
+    // TODO: Update this comment since we no longer create the root dir here.
     // The root directory of the container will be world readable so that the
     // container user can read from it.
     //
@@ -94,12 +94,6 @@ fn run_child_process_inner(
     // - Prevent parent processes from seeing the new mounts.
     // - But, we will see new mounts created by the parent.
     mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SLAVE | MsFlags::MS_REC, None)?;
-
-    // Create the directory that we'll use for the new root fs.
-    // The owner will be the root container runtime process user.
-    // TODO: Be very explicit about what permission flags should be set on this.
-    let root_dir = container_dir.join("root");
-    std::fs::create_dir(&root_dir)?;
 
     /*
     // If joining existing namespaces:
@@ -124,8 +118,8 @@ fn run_child_process_inner(
     // Bind the root directory to itself so that it becomes a mount point (otherwise
     // we can't mount it as the '/' mount point later).
     mount::<Path, Path, str, str>(
-        Some(&root_dir),
-        &root_dir,
+        Some(root_dir),
+        root_dir,
         None,
         MsFlags::MS_BIND | MsFlags::MS_REC,
         None,
@@ -249,8 +243,8 @@ fn run_child_process_inner(
     // TODO: Compare to the pivot root here:
     // https://github.com/opencontainers/runc/blob/0d49470392206f40eaab3b2190a57fe7bb3df458/libcontainer/SPEC.md
     {
-        nix::unistd::chdir(&root_dir)?;
-        nix::mount::mount::<_, _, str, str>(Some(&root_dir), "/", None, MsFlags::MS_MOVE, None)?;
+        nix::unistd::chdir(root_dir)?;
+        nix::mount::mount::<_, _, str, str>(Some(root_dir), "/", None, MsFlags::MS_MOVE, None)?;
         nix::unistd::chroot(".")?;
         nix::unistd::chdir("/")?;
     }
@@ -357,6 +351,8 @@ fn exec_child_process(
 
     // TODO: Remove FS capabilities?
 
+    // TODO: Try to do this much earlier so that more stuff is covered under child
+    // isolated stdout/stderr.
     if process.terminal() {
         // NOTE: This may not support O_CLOEXEC depending on the OS.
         let term_primary = posix_openpt(OFlag::O_RDWR | OFlag::O_CLOEXEC)?;

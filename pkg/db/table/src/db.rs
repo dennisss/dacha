@@ -1,7 +1,11 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use base_error::*;
+use common::bytes::Bytes;
+use common::const_default::StaticDefault;
 use db_kv::*;
+use executor::sync::AsyncRwLock;
 use protobuf::{Message, MessageReflection, StaticMessage};
 
 use crate::key::KeyBuilder;
@@ -15,66 +19,13 @@ use crate::table::*;
 /*
 TODO: A potential innefficiency with this approach is that protobufs would be used as an intermediate representation everywhere even if only a few fields are set.
 
-Generalized queries:
+Remaining TODOs
+- Remove some of the templating
+- Normalize protobuf serialization to be in sorted field number order.
+- WriteBatch needs to have sorted distinct keys
+- Simplify the key hierarchy of the metastore.
 
-- Have some 'message' + constraints.
-
-- Eq(FieldNumber, Value)
-
-
-
-Typical queries:
-- List all: empty query
-- Runs for machine:
-    - Eq(machine_id, 123)
-
-- Runs for a file
-    - Eq(file_id, 445454)
-    - Afterwards sort by run_id
-        Smart way to do this would be to have the key be '[ file_id, run_id, machine_id ]'
-
-- Video segments:
-    - And
-        - Eq(camera_id, 456)
-        - GreaterThan(start_time, 1)
-        - LessThan(start_time, 100)
-
-- Metrics
-
-
-&[
-]
-
-A query is effectively and OR of ANDs
-- Each AND is basically one table scan
-
-Finding a user;
-
-- Search for 'name'
-    -
-
-
-Grabbing multiple users:
-    - AnyOf
-        Or( Eq(id, 1) )
-        Or( Eq(id, 2) )
-
-
-Operations in the graph:
-    -
-
-
-Posting list search
-
-- Index with key [SearchToken, doc_id]
-- To search for (A & B)
-    - iterator over [A, ...]
-    - iterator over [B, ...]
-        - Each basically emits a primary key
-        - ^ These need a way of skipping ahead to future primary keys
-    - Merge streams
-
-    [Search]
+- Ensure that the DB interface is fully cancel safe.
 
 
 - Query node
@@ -117,6 +68,31 @@ Standard nodes:
 
 */
 
+/*
+TODO: Lots of validation needs to happen on the 'Tag':
+- There is at least one indexed key and it is the primary key.
+- Index keys are ordered
+- No duplication of ids
+- Primary key id is correct and has no name.
+- Fields actually exist in the message and are indexable.
+- No other duplicate table in the database.
+
+*/
+
+/*
+struct TableIndexIterator<Tag: ProtobufTableTag + 'static> {
+    key_config: &'static ProtobufTableKey,
+    min_key: Vec<u8>,
+    max_key: Vec<u8>,
+}
+
+impl<Tag: ProtobufTableTag + 'static> TableIndexIterator<Tag> {
+    async fn next(&self) -> Result<Option<Tag::Message>> {
+        todo!()
+    }
+}
+*/
+
 pub struct ProtobufDB {
     store: Arc<dyn KeyValueStore>,
 }
@@ -130,6 +106,7 @@ impl ProtobufDB {
         Ok(ProtobufDBTransaction {
             inst: self,
             txn: self.store.new_transaction().await?,
+            poisoned: false,
         })
     }
 
@@ -148,216 +125,311 @@ impl ProtobufDB {
     /// Performs either an insert or update
     /// TODO: Rename to upsert?
     pub async fn insert<Tag: ProtobufTableTag>(&self, value: &Tag::Message) -> Result<()> {
-        let txn = self.new_transaction().await?;
-        txn.insert::<Tag>(value).await?;
+        let mut txn = self.new_transaction().await?;
+        txn.put::<Tag>(value).await?;
         txn.commit().await
     }
 
     pub async fn remove<Tag: ProtobufTableTag>(&self, value: &Tag::Message) -> Result<()> {
-        let txn = self.new_transaction().await?;
+        let mut txn = self.new_transaction().await?;
         txn.remove::<Tag>(value).await?;
         txn.commit().await
     }
 }
 
+/// NOTE: The transaction must be mutable to make a write primarily because we
+/// want to avoid having concurrent writes to conflicting rows of a table mess
+/// each other up (e.g. overwrite each other's unique secondary keys).
 pub struct ProtobufDBTransaction<'a> {
     inst: &'a ProtobufDB,
+
     txn: Box<dyn KeyValueStoreTransaction + 'a>,
+
+    // If true, then a write operation did not
+    poisoned: bool,
+}
+
+struct QueryIndexKeyRange {
+    start_key: Vec<u8>,
+    end_key: Vec<u8>,
+    cost: u64,
 }
 
 impl<'a> ProtobufDBTransaction<'a> {
+    // TODO: Make this code less templated to reduce the code size.
     pub async fn query<Tag: ProtobufTableTag>(&self, query: &Query) -> Result<Vec<Tag::Message>> {
-        // let snapshot = self.db.snapshot().await;
+        // TODO: Ideally perform filtering on the serialized protobufs to avoid having
+        // to deserialize the full message to filter it out. To make this efficient, we
+        // should ideally be only serializing in sorted field number order (so we just
+        // need to merge two lists to filter). Naturally we can fully optimize this out
+        // if we are dealing with
+
+        self.check_readable()?;
 
         let mut out = vec![];
+        let mut keys = HashSet::new();
+        let mut callback = |key: Bytes, message: Tag::Message| -> Result<()> {
+            // TODO: Don't need to compare to any fields already matched by the key range.
+            if !query.matches(&message)? {
+                return Ok(());
+            }
+
+            // Dedup.
+            if query.any_of.len() > 1 && !keys.insert(key) {
+                return Ok(());
+            }
+
+            out.push(message);
+            Ok(())
+        };
 
         // TODO: Need to merge any clauses that refer to overlapping sets.
+        // TODO: Parallelize the clauses after we do query planning.
         for clause in &query.any_of {
-            let primary_key_index = 0;
-            let primary_key_config = &Tag::indexed_keys()[primary_key_index];
-
-            let mut min_key = KeyBuilder::<Tag>::new(primary_key_index);
-            let mut min_is_inclusive = true;
-
-            let mut max_key = KeyBuilder::<Tag>::new(primary_key_index);
-            let mut max_is_inclusive = true;
-
-            let mut num_prefix_fields_matched = 0;
-
-            /*
-            TODO: First see if we can match against one or more indexes.
-            - In the case of multiple indexes, we'd want to merge based on the primary keys.
-
-            => Output will a stream of messages containing the primary keys (in sorted order)
-                -> Will want to
-
-            Can have the user provide a hint:
-                - E.g. some fields we will allow checking via a scan. Others must require a
-            */
-
-            /*
-            Greedy algorithm:
-            - Find the index that matches to the most number of keys in the prefix
-
-            - Find the first index that matches against at least one key.
-            - Use that index to scan the primary key table and
-
-            */
-
-            /*
-
-
-            First operation:
-            - Scan range in the secondary index:
-                - Output is a list of primary keys
-                - Go through each of them and
-
-
-
-
-
-            */
-
-            for field in primary_key_config.fields {
-                let inverted = field.direction == Direction::Descending;
-
-                let op = match clause.fields.get(field.path) {
-                    Some(v) => v,
-                    None => break,
-                };
-
-                if op.len() == 0 {
-                    break;
-                }
-
-                if op.len() == 1 {
-                    if let QueryOperation::Eq(v) = &op[0] {
-                        min_key.append(v.reflect());
-                        max_key.append(v.reflect());
-                        num_prefix_fields_matched += 1;
-                        continue;
-                    }
-                }
-
-                // TODO: Should also implement indexing of field presence
-                // - e.g. only create a column if the secondary key are present.
-
-                let mut got_min = false;
-                let mut got_max = false;
-
-                for op in op {
-                    match op {
-                        QueryOperation::Eq(v) => {
-                            return Err(err_msg(
-                                "Can't mix Eq with other ANDed operations on the same field",
-                            ));
-                        }
-                        QueryOperation::LessThan(v) => {
-                            if got_max {
-                                return Err(err_msg("Multiple < or <= constraints on same field"));
-                            }
-
-                            got_max = true;
-
-                            if !inverted {
-                                max_key.append(v.reflect())?;
-                                max_is_inclusive = false;
-                            } else {
-                                min_key.append(v.reflect())?;
-                                min_is_inclusive = false;
-                            }
-                        }
-                        QueryOperation::LessThanOrEqual(v) => {
-                            if got_max {
-                                return Err(err_msg("Multiple < or <= constraints on same field"));
-                            }
-
-                            got_max = true;
-
-                            if !inverted {
-                                max_key.append(v.reflect())?;
-                                max_is_inclusive = true;
-                            } else {
-                                min_key.append(v.reflect())?;
-                                min_is_inclusive = true;
-                            }
-                        }
-                        QueryOperation::GreaterThan(v) => {
-                            if got_min {
-                                return Err(err_msg("Multiple > or >= constraints on same field"));
-                            }
-
-                            got_min = true;
-
-                            if !inverted {
-                                min_key.append(v.reflect())?;
-                                min_is_inclusive = false;
-                            } else {
-                                max_key.append(v.reflect())?;
-                                max_is_inclusive = false;
-                            }
-                        }
-                        QueryOperation::GreaterThanOrEqual(v) => {
-                            if got_min {
-                                return Err(err_msg("Multiple > or >= constraints on same field"));
-                            }
-
-                            got_min = true;
-
-                            if !inverted {
-                                min_key.append(v.reflect())?;
-                                min_is_inclusive = true;
-                            } else {
-                                max_key.append(v.reflect())?;
-                                max_is_inclusive = true;
-                            }
-                        }
-                    }
-                }
-
-                num_prefix_fields_matched += 1;
-                break;
+            let mut index_keys = vec![];
+            for key_config in Tag::indexed_keys() {
+                index_keys.push((
+                    key_config,
+                    Self::get_index_key(
+                        clause,
+                        Tag::table_id(),
+                        key_config,
+                        Tag::Message::static_default(),
+                    )?,
+                ));
             }
 
-            let mut min_key = min_key.finish();
-            if !min_is_inclusive {
-                min_key = find_short_successor(min_key);
-            }
+            let (best_index_key_config, best_index_key) =
+                index_keys.into_iter().min_by_key(|(_, k)| k.cost).unwrap();
 
-            let mut max_key = max_key.finish();
-            if max_is_inclusive {
-                max_key = find_short_successor(max_key);
-            }
-
-            // TODO: If we can infer a total ordering between all of the AnyOf clauses, then
-            // we should reuse this iterator between them.
-            let mut iter = self
-                .txn
-                .iter(KeyValueIteratorOptions {
-                    start_key: min_key.into(),
-                    end_key: max_key.into(),
-                })
+            if best_index_key_config.index_id == PRIMARY_KEY_ID {
+                self.query_with_primary_key::<Tag, _>(
+                    best_index_key_config,
+                    best_index_key,
+                    &mut callback,
+                )
                 .await?;
-
-            while let Some(entry) = iter.next().await? {
-                let mut msg = Tag::Message::parse(&entry.value)?;
-                KeyBuilder::<Tag>::decode_key(
-                    primary_key_config,
-                    primary_key_index,
-                    &entry.key,
-                    &mut msg,
-                )?;
-
-                // TODO: Must use any left over fields as extra filters (that weren't
-                // constrained by some other index).
-                // ^ for all these fields, we also need to ensure that we have type checked the
-                // reflection discriminant.
-
-                out.push(msg);
+            } else {
+                self.query_with_secondary_key::<Tag, _>(
+                    best_index_key_config,
+                    best_index_key,
+                    &mut callback,
+                )
+                .await?;
             }
         }
 
         Ok(out)
+    }
+
+    fn get_index_key(
+        clause: &QueryAllOf,
+        table_id: u32,
+        key_config: &ProtobufTableKey,
+        default_message: &dyn MessageReflection,
+    ) -> Result<QueryIndexKeyRange> {
+        let mut min_key = KeyBuilder::new(table_id, key_config, default_message);
+        let mut min_is_inclusive = true;
+
+        let mut max_key = KeyBuilder::new(table_id, key_config, default_message);
+        let mut max_is_inclusive = true;
+
+        let mut num_prefix_fields_matched = 0;
+
+        let mut cost = 1;
+
+        for field in key_config.fields {
+            let inverted = field.direction == Direction::Descending;
+
+            let cmps = match clause.fields.get(field.path) {
+                Some(v) => v,
+                None => break,
+            };
+
+            if cmps.len() == 0 {
+                break;
+            }
+
+            if cmps.len() == 1 {
+                if cmps[0].op == QueryOp::Eq {
+                    min_key.append(cmps[0].rhs.reflect());
+                    max_key.append(cmps[0].rhs.reflect());
+                    num_prefix_fields_matched += 1;
+                    continue;
+                }
+            }
+
+            // TODO: Should also implement indexing of field presence
+            // - e.g. only create a column if the secondary key are present.
+
+            let mut got_min = false;
+            let mut got_max = false;
+
+            for cmp in cmps {
+                match cmp.op {
+                    QueryOp::Eq => {
+                        return Err(err_msg(
+                            "Can't mix Eq with other ANDed operations on the same field",
+                        ));
+                    }
+                    QueryOp::LessThan | QueryOp::LessThanOrEqual => {
+                        let inclusive = cmp.op == QueryOp::LessThanOrEqual;
+
+                        if got_max {
+                            return Err(err_msg("Multiple < or <= constraints on same field"));
+                        }
+
+                        got_max = true;
+
+                        if !inverted {
+                            max_key.append(cmp.rhs.reflect())?;
+                            max_is_inclusive = inclusive;
+                        } else {
+                            min_key.append(cmp.rhs.reflect())?;
+                            min_is_inclusive = inclusive;
+                        }
+                    }
+                    QueryOp::GreaterThan | QueryOp::GreaterThanOrEqual => {
+                        let inclusive = cmp.op == QueryOp::GreaterThanOrEqual;
+
+                        if got_min {
+                            return Err(err_msg("Multiple > or >= constraints on same field"));
+                        }
+
+                        got_min = true;
+
+                        if !inverted {
+                            min_key.append(cmp.rhs.reflect())?;
+                            min_is_inclusive = inclusive;
+                        } else {
+                            max_key.append(cmp.rhs.reflect())?;
+                            max_is_inclusive = inclusive;
+                        }
+                    }
+                }
+            }
+
+            num_prefix_fields_matched += 1;
+
+            if num_prefix_fields_matched != clause.fields.len() {
+                cost *= 2;
+            }
+
+            break;
+        }
+
+        for _ in 0..(clause.fields.len() - num_prefix_fields_matched) {
+            cost *= 4;
+        }
+
+        if key_config.index_id != PRIMARY_KEY_ID {
+            cost += 1;
+        }
+
+        let mut min_key = min_key.finish();
+        if !min_is_inclusive {
+            min_key = find_short_successor(min_key);
+        }
+
+        let mut max_key = max_key.finish();
+        if max_is_inclusive {
+            max_key = find_short_successor(max_key);
+        }
+
+        Ok(QueryIndexKeyRange {
+            start_key: min_key,
+            end_key: max_key,
+            cost,
+        })
+    }
+
+    async fn query_with_primary_key<
+        Tag: ProtobufTableTag,
+        F: FnMut(Bytes, Tag::Message) -> Result<()>,
+    >(
+        &self,
+        index_key_config: &ProtobufTableKey,
+        index_key: QueryIndexKeyRange,
+        callback: &mut F,
+    ) -> Result<()> {
+        // TODO: If we can infer a total ordering between all of the AnyOf clauses, then
+        // we should reuse this iterator between them.
+        let mut iter = self
+            .txn
+            .iter(KeyValueIteratorOptions {
+                start_key: index_key.start_key.into(),
+                end_key: index_key.end_key.into(),
+            })
+            .await?;
+
+        while let Some(entry) = iter.next().await? {
+            let mut msg = Tag::Message::parse(&entry.value)?;
+            KeyBuilder::decode_key(Tag::table_id(), index_key_config, &entry.key, &mut msg)?;
+
+            callback(entry.key, msg)?;
+        }
+
+        Ok(())
+    }
+
+    async fn query_with_secondary_key<
+        Tag: ProtobufTableTag,
+        F: FnMut(Bytes, Tag::Message) -> Result<()>,
+    >(
+        &self,
+        index_key_config: &ProtobufTableKey,
+        index_key: QueryIndexKeyRange,
+        callback: &mut F,
+    ) -> Result<()> {
+        let mut iter = self
+            .txn
+            .iter(KeyValueIteratorOptions {
+                start_key: index_key.start_key.into(),
+                end_key: index_key.end_key.into(),
+            })
+            .await?;
+
+        let primary_key_config = Tag::indexed_keys()
+            .iter()
+            .find(|k| k.index_id == PRIMARY_KEY_ID)
+            .unwrap();
+
+        while let Some(secondary_entry) = iter.next().await? {
+            // NOTE: This will only contain the full primary key.
+            let mut secondary_msg = Tag::Message::parse(&secondary_entry.value)?;
+            KeyBuilder::decode_key(
+                Tag::table_id(),
+                index_key_config,
+                &secondary_entry.key,
+                &mut secondary_msg,
+            )?;
+
+            // TODO: Dedup this code with get().
+
+            let primary_key =
+                KeyBuilder::message_key(Tag::table_id(), primary_key_config, &secondary_msg)?;
+
+            let entry = self
+                .get_one_row(&primary_key)
+                .await?
+                .ok_or_else(|| err_msg("Missing value referenced in secondary key"))?;
+
+            let mut msg = Tag::Message::parse(&entry.value)?;
+            KeyBuilder::decode_key(Tag::table_id(), primary_key_config, &entry.key, &mut msg)?;
+
+            callback(entry.key, msg)?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_one_row(&self, key: &[u8]) -> Result<Option<KeyValueEntry>> {
+        let (start_key, end_key) = single_key_range(key);
+        let mut iter = self
+            .txn
+            .iter(KeyValueIteratorOptions { start_key, end_key })
+            .await?;
+        iter.next().await
     }
 
     pub async fn read_index(&self) -> u64 {
@@ -370,47 +442,136 @@ impl<'a> ProtobufDBTransaction<'a> {
         self.query::<Tag>(&query).await
     }
 
+    /// Gets the row that has the same primary key as the given message.
+    pub async fn get<Tag: ProtobufTableTag>(
+        &self,
+        value: &Tag::Message,
+    ) -> Result<Option<Tag::Message>> {
+        self.check_readable()?;
+
+        let primary_key_config = Tag::indexed_keys()
+            .iter()
+            .find(|k| k.index_id == PRIMARY_KEY_ID)
+            .unwrap();
+        let primary_key = KeyBuilder::message_key(Tag::table_id(), primary_key_config, value)?;
+
+        let entry = match self.get_one_row(&primary_key).await? {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+
+        let mut msg = Tag::Message::parse(&entry.value)?;
+        KeyBuilder::decode_key(Tag::table_id(), primary_key_config, &entry.key, &mut msg)?;
+
+        Ok(Some(msg))
+    }
+
     /// Performs either an insert or update
-    pub async fn insert<Tag: ProtobufTableTag>(&self, value: &Tag::Message) -> Result<()> {
-        // TODO: If we have secondary keys, then we need to retrieve the previous value
-        // of the key and delete/update any stale keys.
+    pub async fn put<Tag: ProtobufTableTag>(&mut self, value: &Tag::Message) -> Result<()> {
+        // If we support secondary keys,
+        // - We need to look up the old value of the row,
+        // - For each index/secondary key
+        //   - If the old key value == new key value,
+        //     - continue
+        //   - If the index is a 'unique index' (doesn't have the full primary key in
+        //     the key fields),
+        //     - Look up the value of the secondary key in the database and return an
+        //       error if it already exists.
+        //   - Else delete old key value and insert the new one.
+        //
+        // Finally we need to insert the value into the primary key.
 
-        self.mutate_row::<Tag>(value, true).await
+        self.check_readable()?;
+
+        let mut old_value = None;
+        if Tag::indexed_keys().len() > 1 {
+            old_value = self.get::<Tag>(value).await?;
+        }
+
+        self.start_critical_section()?;
+        self.put_impl::<Tag>(value, old_value.as_ref()).await?;
+        self.end_critical_section();
+
+        Ok(())
     }
 
-    pub async fn remove<Tag: ProtobufTableTag>(&self, value: &Tag::Message) -> Result<()> {
-        // TODO: Must look up the complete previous value.
+    pub async fn remove<Tag: ProtobufTableTag>(&mut self, mut value: &Tag::Message) -> Result<()> {
+        // If we support secondary keys,
+        // - We need to look up the old value of the row and if the row exists, we will
+        //   remove the row and all secondary keys.
+        // Else,
+        // - We just blindly trigger a deletion (assumption is that this is cheaper than
+        //   looking up the value since the caller probably already has advance
+        //   knowledge about the value existing).
 
-        self.mutate_row::<Tag>(value, false).await
+        self.check_readable()?;
+
+        let mut old_value = None;
+        if Tag::indexed_keys().len() > 1 {
+            old_value = self.get::<Tag>(value).await?;
+
+            if let Some(v) = &old_value {
+                value = v;
+            } else {
+                // Row does not exist so no point in removing it.
+                return Ok(());
+            }
+        }
+
+        self.start_critical_section()?;
+
+        for key_config in Tag::indexed_keys() {
+            let key = KeyBuilder::message_key(Tag::table_id(), key_config, value)?;
+            self.txn.delete(&key).await?;
+        }
+
+        self.end_critical_section();
+
+        Ok(())
     }
 
-    pub async fn commit(self) -> Result<()> {
+    fn check_readable(&self) -> Result<()> {
+        if self.poisoned {
+            return Err(executor::sync::PoisonError::MutationCancelled.into());
+        }
+
+        Ok(())
+    }
+
+    fn start_critical_section(&mut self) -> Result<()> {
+        self.check_readable()?;
+        self.poisoned = true;
+        Ok(())
+    }
+
+    fn end_critical_section(&mut self) {
+        self.poisoned = false;
+    }
+
+    pub async fn commit(mut self) -> Result<()> {
+        self.start_critical_section()?;
         self.txn.commit().await?;
         Ok(())
     }
 
-    // TODO: This probably requires an extra lock over the keys to prevent
-    // concurrent changes to the same row.
-    async fn mutate_row<Tag: ProtobufTableTag>(
-        &self,
+    async fn put_impl<Tag: ProtobufTableTag>(
+        &mut self,
         value: &Tag::Message,
-        insert: bool,
+        old_value: Option<&Tag::Message>,
     ) -> Result<()> {
-        for (key_index, key_config) in Tag::indexed_keys().iter().enumerate() {
-            let key = KeyBuilder::<Tag>::message_key(key_index, value)?;
+        // TODO: Need to verify this is the correct key.
+        let primary_key_config = &Tag::indexed_keys()[0];
 
-            // TODO: Need to delete whenever we are unsure if the old value existed?
-            if !insert {
-                self.txn.delete(&key).await?;
-                continue;
-            }
+        for key_config in Tag::indexed_keys() {
+            let key = KeyBuilder::message_key(Tag::table_id(), key_config, value)?;
 
-            if key_index == 0 {
+            if key_config.index_id == PRIMARY_KEY_ID {
                 // Primary key/index:
                 // - 'key' is the concatenated primary index fields.
                 // - 'value' is a protobuf with all fields in the message except those in the
                 //   key.
 
+                // TODO: We no longer use ordering to check this.
                 if key_config.index_name.is_some() {
                     return Err(err_msg("First key must be the primary key"));
                 }
@@ -454,7 +615,7 @@ impl<'a> ProtobufDBTransaction<'a> {
                     if !in_secondary_key {
                         field_by_path_mut(&mut secondary_value, primary_key_field.path)?
                             .clone_from(field_by_path(value, primary_key_field.path)?)?;
-contains_all_primary_key_fields = false;
+                        contains_all_primary_key_fields = false;
                     }
                 }
 

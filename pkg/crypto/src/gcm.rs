@@ -1,3 +1,6 @@
+// See https://www.intel.com/content/dam/develop/external/us/en/documents/clmul-wp-rev-2-02-2014-04-20.pdf
+// for algorithm information.
+
 use alloc::boxed::Box;
 use math::big::SecureBigUint;
 use std::string::ToString;
@@ -29,6 +32,8 @@ struct GaloisField2 {
     poly: SecureBigUint,
 
     poly_wide: SecureBigUint,
+
+    is_gcm128: bool,
 }
 
 impl GaloisField2 {
@@ -55,7 +60,12 @@ impl GaloisField2 {
             p
         };
 
-        Self { m, poly, poly_wide }
+        Self {
+            m,
+            poly,
+            poly_wide,
+            is_gcm128: false,
+        }
     }
 
     /// Creates the GF(2^128) field used by GCM.
@@ -72,14 +82,25 @@ impl GaloisField2 {
             n
         };
 
-        Self::new(128, p)
+        let mut inst = Self::new(128, p);
+        inst.is_gcm128 = true;
+        inst
     }
 
     /// Reduces a value which is '2*m - 1' bits wide to a value which is 'm'
     /// bits wide by repeatetly subtracting 'poly' until the value is < 2^m.
-    ///
-    /// TODO: Implement fast reduction for GCM128.
+    #[inline(never)]
     fn reduce(&self, v: &SecureBigUint) -> SecureBigUint {
+        if self.is_gcm128 {
+            return Self::reduce_gcm_fast(v);
+        }
+
+        self.reduce_generic(v)
+    }
+
+    /// Generic implemenation of reduce(). Works for all polynomial but fairly
+    /// slow.
+    fn reduce_generic(&self, v: &SecureBigUint) -> SecureBigUint {
         let mut poly = self.poly_wide.clone();
 
         let mut r = v.clone();
@@ -102,10 +123,64 @@ impl GaloisField2 {
         r
     }
 
+    /// Optimized implementation of reduce() for the GCM128 polynomial that
+    /// takes advantage of the sparseness of the polynomial.
+    fn reduce_gcm_fast(v: &SecureBigUint) -> SecureBigUint {
+        // NOTE: In the array formats, we store the integers as a little endian list of
+        // u64 limbs.
+
+        // TODO: This should be do-able with zero copies if we align the BigUint to
+        // 64bits
+        let x = {
+            let b = v.to_le_bytes();
+            assert_eq!(b.len(), 32);
+
+            [
+                u64::from_le_bytes(*array_ref![b, 0, 8]),
+                u64::from_le_bytes(*array_ref![b, 8, 8]),
+                u64::from_le_bytes(*array_ref![b, 16, 8]),
+                u64::from_le_bytes(*array_ref![b, 24, 8]),
+            ]
+        };
+
+        let a = x[3] >> 63;
+        let b = x[3] >> 62;
+        let c = x[3] >> 57;
+
+        let d = x[2] ^ a ^ b ^ c;
+
+        fn u128_shl(v: (u64, u64), n: usize) -> (u64, u64) {
+            let carry = v.0 >> (64 - n);
+            (v.0 << n, v.1 << n | carry)
+        }
+
+        let x3_d = (d, x[3]);
+
+        let e = u128_shl(x3_d, 1);
+        let f = u128_shl(x3_d, 2);
+        let g = u128_shl(x3_d, 7);
+
+        fn u128_xor(a: (u64, u64), b: (u64, u64)) -> (u64, u64) {
+            (a.0 ^ b.0, a.1 ^ b.1)
+        }
+
+        let h = u128_xor(x3_d, u128_xor(e, u128_xor(f, g)));
+
+        let out = [x[0] ^ h.0, x[1] ^ h.1];
+
+        let mut outd = [0u8; 16];
+        *array_mut_ref![outd, 0, 8] = out[0].to_le_bytes();
+        *array_mut_ref![outd, 8, 8] = out[1].to_le_bytes();
+
+        // TODO: Directly modify the input number instead of allocating a new number.
+        SecureBigUint::from_le_bytes(&outd[..], &mut HeapAllocator {})
+    }
+
     /// Multiplies two numbers in this field of size 'm' bits to produce a new
     /// number of size 'm'.
     ///
     /// The intermediate multiplication pre-reduction will reach
+    #[inline(never)]
     pub fn mul(&self, mut a: SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
         let mut out = SecureBigUint::from_usize(0, 2 * self.m - 1, &mut HeapAllocator {});
         a.carryless_mul_to(b, &mut out);
@@ -462,6 +537,25 @@ mod tests {
     // :4d5c2af327cd64a62cf35abd2ba6fab4
 
     // https://www.intel.cn/content/dam/www/public/us/en/documents/white-papers/carry-less-multiplication-instruction-in-gcm-mode-paper.pdf
+
+    #[test]
+    fn gcm_reduce_test() {
+        let gf = GaloisField2::gcm128();
+
+        let mut p = gf.poly.clone();
+        p.extend(256, &mut HeapAllocator {});
+
+        let q = GaloisField2::reduce_gcm_fast(&p);
+        assert_eq!(q.bit_width(), 128);
+        assert_eq!(gf.poly, q);
+
+        p.set_bit(128, 1);
+        let q = GaloisField2::reduce_gcm_fast(&p);
+        let q2 = gf.reduce_generic(&p);
+        assert_eq!(q.bit_width(), 128);
+        assert_eq!(q, q2);
+        assert!(q.is_zero());
+    }
 
     #[test]
     fn gcm_test() {

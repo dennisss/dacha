@@ -11,6 +11,9 @@ message NodeConfig {
 
     // Path to use for the node's cgroup v2 subtree. The node process and all container processes
     // will live somewhere in this tree.
+    //
+    // If empty, then we assume that the node already exists in a suitable cgroup that its
+    // running uid can control.
     string cgroup_dir = 11;
 
     // Port used for the main node management service.
@@ -23,16 +26,11 @@ message NodeConfig {
     // forcefully kill it.
     uint32 graceful_shutdown_timeout_secs = 4;
 
-    // If true and this is the first time the node is running, we will initialize the id of this
-    // node with the first 16 characters of /etc/machine-id
-    bool bootstrap_id_from_machine_id = 5;
-
     // Range of network ports which may be used by workers running on this node.
     // TODO: Have the node runtime validate that we only receive workers with ports in this range. 
     PortRange allocatable_port_range = 6;
 
-    // Cluster zone in which this node is running.
-    // When running in a managed cluster this field is required.
+    // Name of the cluster zone this node is a part of.
     string zone = 7;
 
     // If non-empty, all containers are started using an 'init' process running the binary
@@ -45,8 +43,6 @@ message NodeConfig {
 
     // Unique identifier for this node in the cluster.
     // The value of this MUST NOT change after the first startup.
-    //
-    // NOTE: This is only relevant if 'zone' os not empty.
     fixed64 id = 13;
 
     // If true, the node will use mTLS for all communications.

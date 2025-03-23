@@ -61,7 +61,9 @@ pub struct MetastoreOptions {
     /// Not used for already setup clusters.
     pub init_port: Option<u16>,
 
-    pub bootstrap: bool,
+    pub bootstrap_group: bool,
+
+    pub bootstrap_node_id: Option<u64>,
 
     /// Server port of the RPC service exposed to users of the store.
     /// This will also be used for internal communication between servers.
@@ -72,6 +74,10 @@ pub struct MetastoreOptions {
     pub state_machine: EmbeddedDBStateMachineOptions,
 
     pub log: SegmentedLogOptions,
+
+    pub hostname_resolver: Arc<dyn raft_client::RouteHostnameResolver>,
+
+    pub tls: Option<crypto::tls::Credentials>,
 }
 
 #[derive(Clone)]
@@ -394,6 +400,8 @@ pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> 
     // TODO: Must limit what percentage of request slots can be used for user facing
     // requests since we also use this for server-to-server Raft requests.
     let mut rpc_server = rpc::Http2Server::new(Some(options.service_port));
+    rpc_server.set_base_path("/rpc"); // TODO: Standardize.
+    rpc_server.http_options_mut().tls = options.tls.as_ref().map(|c| c.server.clone());
 
     let local_address = http::uri::Authority {
         user: None,
@@ -407,13 +415,16 @@ pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> 
         raft::Node::create(raft::NodeOptions {
             dir,
             init_port: options.init_port,
-            bootstrap: options.bootstrap,
+            bootstrap_group: options.bootstrap_group,
+            bootstrap_node_id: options.bootstrap_node_id.map(|v| v.into()),
             seed_list: vec![], // Will just find everyone via multi-cast
             state_machine: state_machine.clone(),
             log_options: options.log,
             route_labels: options.route_labels.clone(),
             rpc_server: &mut rpc_server,
             rpc_server_address: local_address,
+            hostname_resolver: options.hostname_resolver,
+            tls_options: options.tls.map(|c| c.client.clone()),
         })
         .await?,
     );

@@ -71,8 +71,7 @@ async fn main() -> Result<()> {
             route_labels,
             log: SegmentedLogOptions::default(),
             state_machine: EmbeddedDBStateMachineOptions::default(),
-            tls_client_options: todo!(),
-            tls_server_options: todo!(),
+            tls: todo!(),
             hostname_resolver: todo!(),
         })
         .await?,

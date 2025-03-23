@@ -20,6 +20,7 @@ impl ProtobufTableTag for MachineTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[MachineProto::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
@@ -46,6 +47,7 @@ impl ProtobufTableTag for FileTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[FileProto::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
@@ -72,6 +74,7 @@ impl ProtobufTableTag for MediaFragmentTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[
                 ProtobufKeyField {
                     path: &[MediaFragment::CAMERA_ID_FIELD_NUM_RAW],
@@ -106,6 +109,7 @@ impl ProtobufTableTag for ProgramRunTable {
             ProtobufTableKey {
                 index_id: PRIMARY_KEY_ID,
                 index_name: None,
+                filter: None,
                 fields: &[
                     ProtobufKeyField {
                         path: &[ProgramRun::MACHINE_ID_FIELD_NUM_RAW],
@@ -122,6 +126,7 @@ impl ProtobufTableTag for ProgramRunTable {
             ProtobufTableKey {
                 index_id: 1,
                 index_name: Some("ByFile"),
+                filter: None,
                 fields: &[
                     ProtobufKeyField {
                         path: &[ProgramRun::FILE_ID_FIELD_NUM_RAW],
@@ -161,6 +166,7 @@ impl ProtobufTableTag for MetricSampleTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[
                 ProtobufKeyField {
                     path: &[MetricSample::RESOURCE_KEY_FIELD_NUM_RAW],
@@ -228,6 +234,7 @@ impl ProtobufTableTag for TableSchemaTable {
         &[ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
+            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[TableSchema::TABLE_ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,

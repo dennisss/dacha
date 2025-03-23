@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io::Cursor;
 use std::marker::PhantomData;
+use std::ops::Deref;
+use std::ops::DerefMut;
 use std::sync::Arc;
 
 use common::bytes::Buf;
@@ -50,11 +52,6 @@ impl Http2Server {
         }
     }
 
-    pub fn add_service(&mut self, service: Arc<dyn Service>) -> Result<()> {
-        self.handler.add_service(service);
-        Ok(())
-    }
-
     pub fn add_request_handler<H: http::ServerHandler>(
         &mut self,
         path: &str,
@@ -93,10 +90,6 @@ impl Http2Server {
         Arc::get_mut(&mut self.handler.codec_options).unwrap()
     }
 
-    pub fn services(&self) -> impl Iterator<Item = &dyn Service> {
-        self.handler.services.iter().map(|(_, v)| v.as_ref())
-    }
-
     fn to_inner_server(self) -> (http::Server, Vec<StartCallback>) {
         (
             http::Server::new(self.handler, self.http_options),
@@ -121,6 +114,20 @@ impl Http2Server {
         }
 
         r
+    }
+}
+
+impl Deref for Http2Server {
+    type Target = Http2RequestHandler;
+
+    fn deref(&self) -> &Http2RequestHandler {
+        &self.handler
+    }
+}
+
+impl DerefMut for Http2Server {
+    fn deref_mut(&mut self) -> &mut Http2RequestHandler {
+        &mut self.handler
     }
 }
 
@@ -153,7 +160,11 @@ pub struct Http2RequestHandler {
     pub(crate) codec_options: Arc<ServerCodecOptions>,
 
     enable_cors: bool,
+
+    base_path: String,
 }
+
+// TODO: Get rid of the CORS stuff from here and move higher up.
 
 impl Http2RequestHandler {
     pub fn new() -> Self {
@@ -162,6 +173,7 @@ impl Http2RequestHandler {
             services: HashMap::new(),
             codec_options: Arc::new(ServerCodecOptions::default()),
             enable_cors: false,
+            base_path: String::new(),
         }
     }
 
@@ -174,7 +186,14 @@ impl Http2RequestHandler {
             enable_cors,
             codec_options: Arc::new(ServerCodecOptions::default()),
             services,
+            base_path: String::new(),
         }
+    }
+
+    /// NOTE: THe base path is ONLY used for RPCs and not for attached http
+    /// request handlers.
+    pub fn set_base_path(&mut self, base_path: &str) {
+        self.base_path = base_path.to_string();
     }
 
     pub fn add_service(&mut self, service: Arc<dyn Service>) -> Result<()> {
@@ -187,12 +206,21 @@ impl Http2RequestHandler {
         Ok(())
     }
 
+    pub fn services(&self) -> impl Iterator<Item = &dyn Service> {
+        self.services.iter().map(|(_, v)| v.as_ref())
+    }
+
     async fn handle_request_impl<'a>(
         &self,
         request: http::Request,
         context: http::ServerRequestContext<'a>,
     ) -> http::Response {
+        // TODO: Make sure this earlier request stuff gets bundled into the request
+        // filtering/ACL logic.
+
         // TODO: Need to start thinking of this multi-dimensionally (Host, Path, Method)
+        // TODO: Get rid of this and assume that there is a higher level wrapper
+        // available.
         if let Some(request_handler) = self.request_handlers.get(request.head.uri.path.as_str()) {
             return request_handler.handle_request(request, context).await;
         }
@@ -256,7 +284,7 @@ impl Http2RequestHandler {
 
         let request_context = ServerRequestContext {
             metadata: Metadata::from_headers(&request.head.headers)?,
-connection: Some(context.connection_context.clone()),
+            connection: Some(context.connection_context.clone()),
         };
 
         let rpc_path = match request.head.uri.path.as_ref().strip_prefix(&self.base_path) {
@@ -269,7 +297,7 @@ connection: Some(context.connection_context.clone()),
             }
         };
 
-        let path_parts = rpc_path            .split('/')            .collect::<Vec<_>>();
+        let path_parts = rpc_path.split('/').collect::<Vec<_>>();
         if path_parts.len() != 3 || path_parts[0].len() != 0 {
             // TODO: Convert to a grpc error (UNIMPLEMENTED).
             return Err(err_msg("Invalid path"));

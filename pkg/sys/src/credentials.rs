@@ -16,7 +16,7 @@ impl Uid {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(transparent)]
-pub struct Gid(gid_t);
+pub struct Gid(pub gid_t);
 
 impl Gid {
     pub fn as_raw(&self) -> uid_t {

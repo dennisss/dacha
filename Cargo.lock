@@ -664,6 +664,7 @@ dependencies = [
 name = "cluster_client"
 version = "0.1.0"
 dependencies = [
+ "automata",
  "base_radix",
  "builder_proto",
  "common",
@@ -683,6 +684,7 @@ dependencies = [
  "protobuf_builtins",
  "raft_client",
  "rpc",
+ "rpc_util",
  "sys",
 ]
 

@@ -595,9 +595,9 @@ impl MonitorImpl {
         if let Some(locked_until) = machine.serial.lock_until {
             if let Some(remaining) = locked_until.checked_duration_since(Instant::now()) {
                 machine.serial.last_error = Some(format!(
-"Serial port is locked for {}",
+                    "Serial port is locked for {}",
                     format_duration_secs(remaining)
-));
+                ));
 
                 return Ok(());
             } else {

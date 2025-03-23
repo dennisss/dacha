@@ -78,7 +78,7 @@ impl Metadata {
 
 /// Includes file mode (set-user-id, set-group-id, sticky bits) and the
 /// permissions.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Permissions {
     pub(crate) mode: u32,
 }

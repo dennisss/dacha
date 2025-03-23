@@ -65,11 +65,11 @@ impl MetastoreClient {
     /// main downside of this is that it may take a few seconds to receive the
     /// next broadcast in order to connect.
     pub async fn create(
-labels: &[RouteLabel],
-seeds: &[String],
+        labels: &[RouteLabel],
+        seeds: &[String],
         hostname_resolver: Arc<dyn raft_client::RouteHostnameResolver>,
         tls_options: Option<crypto::tls::ClientOptionsContainer>,
-) -> Result<Self> {
+    ) -> Result<Self> {
         let route_store = raft_client::RouteStore::new(labels, hostname_resolver);
 
         let resources = ServiceResourceGroup::new("MetastoreClient");
@@ -92,6 +92,8 @@ seeds: &[String],
         ///     - This means that we can sustain an outage to the metastore so
         ///       long as all needed services are cached.
         /// - If running in a unit test, the facttory
+        ///
+        /// TODO: Have some level of security for this.
         let discovery = raft_client::DiscoveryMulticast::create(route_store.clone()).await?;
         resources
             .register_dependency(Arc::new(discovery.start()))
@@ -103,7 +105,7 @@ seeds: &[String],
                 raft_client::DiscoveryClientOptions {
                     seeds: seeds.to_vec(),
                     active_broadcaster: false,
-tls_options: tls_options.clone(),
+                    tls_options: tls_options.clone(),
                 },
             )
             .await;
@@ -122,7 +124,7 @@ tls_options: tls_options.clone(),
         // have on the client side.
         let channel_factory =
             raft_client::RouteChannelFactory::find_group(route_store.clone(), tls_options.clone())
-.await;
+                .await;
 
         let channel = channel_factory.create_leader().await?;
 
@@ -144,9 +146,12 @@ tls_options: tls_options.clone(),
     ///
     /// TODO: Restrict to other this and the main crate.
     pub async fn create_direct(addr: SocketAddr) -> Result<Self> {
-        let channel = Arc::new(
-            rpc::Http2Channel::create(format!("http://{}", addr.to_string()).as_str()).await?,
-        );
+        let mut options: rpc::Http2ChannelOptions = format!("http://{}", addr.to_string())
+            .as_str()
+            .try_into_result()?;
+        options.base_path = "/rpc".to_string();
+
+        let channel = Arc::new(rpc::Http2Channel::create(options).await?);
 
         Self::create_impl(channel, ServiceResourceGroup::new("MetastoreClient"), None).await
     }
@@ -185,11 +190,19 @@ tls_options: tls_options.clone(),
         self.wait_for_termination().await
     }
 
+    /// List of seed server addresses that can be used later to rediscover the
+    /// metastore more quickly.
+    pub async fn seeds(&self) -> Vec<String> {
+        let mut addrs = self.known_servers().await;
+        addrs.truncate(3);
+        addrs
+    }
+
     /// Retrieves a list of known server addresses. Can be used to seed a future
     /// MetastoreClient instance.
     ///
     /// The list is sorted from most to least likely to be currently healthy.
-    fn known_servers(&self) -> Vec<String> {
+    async fn known_servers(&self) -> Vec<String> {
         let cluster = match self.cluster.as_ref() {
             Some(v) => v,
             None => return vec![],
@@ -201,7 +214,7 @@ tls_options: tls_options.clone(),
         for route in guard.selected_routes() {
             out.push((
                 SystemTime::from(route.last_seen()),
-                (route.server_id(), route.target().addr().to_string()),
+                route.target().addr().to_string(),
             ));
         }
 
@@ -414,6 +427,8 @@ tls_options: tls_options.clone(),
 }
 
 //// Interface for interacting with the metastore's key-value file system.
+///
+/// TODO: Deprecate this in favor of the standard one in db_kv.
 #[async_trait]
 pub trait MetastoreClientInterface: Send + Sync {
     /// Looks up a single value from the metastore.
@@ -719,7 +734,7 @@ impl<'a> MetastoreTransaction<'a> {
     }
 
     pub async fn commit(self) -> Result<()> {
-self.commit_impl().await
+        self.commit_impl().await
     }
 
     async fn commit_impl(&self) -> Result<()> {

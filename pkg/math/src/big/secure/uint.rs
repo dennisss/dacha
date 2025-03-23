@@ -41,7 +41,7 @@ use crate::number::{One, Zero};
 #[derive(Debug)]
 pub struct SecureBigUint<S: StorageType = Vec<BaseType>> {
     /// In little endian 32bits at a time.
-    /// Will be padded with
+    /// Will be padded with zero bits
     pub(super) value: S,
 
     /// Exact width of 'value' in bits. May be much smaller than the size of

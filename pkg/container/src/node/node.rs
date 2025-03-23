@@ -7,11 +7,15 @@ use std::time::{Duration, SystemTime};
 
 use builder::current_platform;
 use builder::proto::BundleSpec;
+use cluster_client::env::*;
+use cluster_client::id::entity_id_to_string;
 use cluster_client::meta::client::ClusterMetaClient;
 use cluster_client::meta::{
     constants::*, BundleBlobMetadataTable, NodeMetadataTable, WorkerMetadataTable,
     WorkerStateMetadataTable,
 };
+use cluster_client::service::address::{ServiceAddress, ServiceEntity, ServiceName};
+use cluster_client::service::create_rpc_channel;
 use common::errors::*;
 use crypto::random::RngExt;
 use db_table::db::ProtobufDB;
@@ -26,24 +30,27 @@ use net::backoff::*;
 use nix::unistd::chown;
 use nix::unistd::Gid;
 use protobuf::Message;
+use protobuf::StaticMessage;
 use sstable::transactional::TransactionalEmbeddedDB;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::node::blob_store::*;
+use crate::node::credentials::NodeCredentialsManager;
+use crate::node::paths::{
+    NODE_BLOB_PATH, NODE_CREDENTIALS_PATH, NODE_DB_PATH, NODE_PERSISTENT_PATH, NODE_RUN_PATH,
+};
 use crate::node::resources::*;
 use crate::node::shadow::*;
 use crate::node::worker::*;
-use crate::node::workers_table::{self, LocalNodeMetadataTable, LocalWorkerMetadataTable};
+use crate::node::workers_table::{self, LocalWorkerMetadataTable};
 use crate::proto::*;
 use crate::runtime::ContainerRuntime;
 
-/// Maximum combined serialized size of all custom labels associated with this
-/// node.
-const MAX_LABELS_SIZE: usize = 4096;
+use super::id_allocator::IdAllocator;
+use super::paths::NODE_WORKER_CREDENTIALS_PATH;
+use super::workers_table::WorkerRuntimeMetadataTable;
 
-// NOTE: Each key/value must contain at least one character.
-// Delimiters like '=' and ':' are reserved to allow for selector strings.
-regexp!(LABEL_DATA_PATTERN => "^[a-z0-9_\\-\\.]+$");
+const CREDENTIALS_VOLUME_NAME: &'static str = "credentials";
 
 #[derive(Clone)]
 pub struct NodeContext {
@@ -105,7 +112,7 @@ struct NodeShared {
 
     /// Available once we have connected and registered our node in the meta
     /// store.
-    meta_client: Eventually<ClusterMetaClient>,
+    meta_client: Arc<Eventually<Arc<ClusterMetaClient>>>,
 
     /// Timestamp (in unix micros) of the last event we've recorded. This is
     /// used to ensure that all recorded events use a monotonic timestamp (at
@@ -122,6 +129,9 @@ struct NodeShared {
     /// TODO: Consider sending the name of the changed worker so that we don't
     /// need to re-check all of them.
     state_change_channel: (channel::Sender<()>, channel::Receiver<()>),
+
+    // TODO: Add to list of watched resources.
+    credentials: Option<NodeCredentialsManager>,
 }
 
 struct NodeState {
@@ -171,57 +181,97 @@ enum NodeEvent {
         worker_name: String,
         timer_id: usize,
     },
+
+    /// Triggered by the NodeCredentialsManager once we have acquired a set of
+    /// TLS credentials for a given worker.
+    WorkerCredentialsReady { worker_name: String },
 }
 
 impl Node {
     pub async fn create(context: &NodeContext, config: &NodeConfig) -> Result<Self> {
+        if config.zone().is_empty() {
+            return Err(err_msg("No zone configured"));
+        }
+
+        let id = config.id();
+        if id == 0 {
+            return Err(err_msg("No id specified in node config"));
+        }
+
+        println!("Node Id: {}", entity_id_to_string(id).unwrap());
+
         let mut db_options = EmbeddedDBOptions::default();
         db_options.create_if_missing = true;
 
-        let db = Arc::new(
-            EmbeddedDB::open(LocalPath::new(config.data_dir()).join("db"), db_options).await?,
-        );
+        let db = Arc::new(ProtobufDB::new(Arc::new(
+            TransactionalEmbeddedDB::open(
+                &LocalPath::new(config.data_dir()).join(NODE_DB_PATH),
+                db_options,
+            )
+            .await?,
+        )));
 
-        let id = match workers_table::get_saved_node_id(&db).await? {
-            Some(id) => id,
-            None => {
-                let id = if config.bootstrap_id_from_machine_id() {
-                    let machine_id = base_radix::hex_decode(
-                        file::read_to_string("/etc/machine-id").await?.trim(),
-                    )?;
+        let meta_client = Arc::new(Eventually::new());
 
-                    if machine_id.len() < 8 {
-                        return Err(err_msg("Expected machine id to have at least 8 bytes"));
-                    }
+        let event_channel = channel::unbounded();
 
-                    u64::from_be_bytes(*array_ref![machine_id, 0, 8])
-                } else {
-                    return Err(err_msg("Node not initialized with an id"));
+        let credentials = {
+            if config.secure() {
+                let sender2 = event_channel.0.clone();
+                let callback = move |worker_name: &str| {
+                    sender2.try_send(NodeEvent::WorkerCredentialsReady {
+                        worker_name: worker_name.to_string(),
+                    });
                 };
 
-                workers_table::set_saved_node_id(&db, id).await?;
-
-                id
+                Some(
+                    NodeCredentialsManager::create(
+                        id,
+                        config.zone(),
+                        &LocalPath::new(config.data_dir()).join(NODE_CREDENTIALS_PATH),
+                        meta_client.clone(),
+                        Box::new(callback),
+                    )
+                    .await?,
+                )
+            } else {
+                None
             }
         };
 
-        println!("Node id: {}", base_radix::base32_encode_cl64(id));
+        let mut uid_allocator = IdAllocator::new(context.container_uids.clone());
+        let mut gid_allocator = IdAllocator::new(context.container_gids.clone());
+
+        let runtime_metadata = {
+            let mut out = HashMap::new();
+
+            // TODO: Eventually clean up non-existent worker metadata once all file system
+            // references are cleaned up.
+            for meta in db.list::<WorkerRuntimeMetadataTable>().await? {
+                uid_allocator.reserve(meta.user_id());
+                gid_allocator.reserve(meta.group_id());
+                out.insert(meta.worker_name().to_string(), meta);
+            }
+
+            out
+        };
 
         let inner = NodeStateInner {
             container_id_to_worker_name: HashMap::new(),
-            // TODO: Preserve these across reboots and attempt to not re-use ids already
-            // referenced in the file system.
-            next_uid: context.container_uids.start_id,
-            next_gid: context.container_gids.start_id,
+            runtime_metadata,
+            uid_allocator,
+            gid_allocator,
             mounted_paths: HashMap::new(),
             blob_fetchers: HashMap::new(),
         };
 
         let usb_context = usb::Context::create()?;
 
-        let blobs =
-            BundleBlobStore::create(LocalPath::new(config.data_dir()).join("blob"), db.clone())
-                .await?;
+        let blobs = BundleBlobStore::create(
+            LocalPath::new(config.data_dir()).join(NODE_BLOB_PATH),
+            db.clone(),
+        )
+        .await?;
 
         let last_event_timestamp = {
             let last_db_time = workers_table::get_events_timestamp(&db).await?.unwrap_or(0);
@@ -230,7 +280,7 @@ impl Node {
         };
 
         let runtime = ContainerRuntime::create(
-            LocalPath::new(config.data_dir()).join("run"),
+            LocalPath::new(config.data_dir()).join(NODE_RUN_PATH),
             config.cgroup_dir(),
         )
         .await?;
@@ -246,14 +296,15 @@ impl Node {
                 state: AsyncMutex::new(NodeState {
                     workers: vec![],
                     inner,
-                                    }),
-                event_channel: channel::unbounded(),
+                }),
+                credentials,
+                event_channel,
                 last_timer_id: AtomicUsize::new(0),
                 usb_context,
-                meta_client: Eventually::new(),
+                meta_client,
                 last_event_timestamp: AsyncMutex::new(last_event_timestamp),
                 state_change_channel: channel::bounded(1),
-                            }),
+            }),
         };
 
         let all_workers = inst.shared.db.list::<LocalWorkerMetadataTable>().await?;
@@ -295,11 +346,23 @@ impl Node {
         rpc_server.add_service(self.inner.shared.blobs.clone().into_service())?;
         Ok(())
     }
+
+    /// Gets the TLS options to use for running the node HTTP server.
+    pub fn tls_server_options(&self) -> Option<crypto::tls::ServerOptionsContainer> {
+        self.inner
+            .shared
+            .credentials
+            .as_ref()
+            .map(|s| s.node_server_options())
+    }
 }
 
 impl NodeInner {
     // TODO: Implement graceful node shutdown which terminates all the inner nodes.
     // ^ Also flush any pending data to disk.
+    // -
+    // - We'd basically be requesting a stop for all nodes (this should mark the )
+    // -
 
     async fn run_impl(self) -> Result<()> {
         let mut task_bundle = executor::bundle::TaskResultBundle::new();
@@ -338,11 +401,6 @@ impl NodeInner {
     }
 
     async fn run_node_registration(mut self) -> Result<()> {
-        if self.shared.config.zone().is_empty() {
-            println!("Node running outside of cluster zone");
-            return Ok(());
-        }
-
         let mut backoff = ExponentialBackoff::new(ExponentialBackoffOptions {
             base_duration: Duration::from_secs(10),
             jitter_duration: Duration::from_secs(10),
@@ -368,6 +426,13 @@ impl NodeInner {
         }
     }
 
+    fn tls_client_options(&self) -> Option<crypto::tls::ClientOptionsContainer> {
+        self.shared
+            .credentials
+            .as_ref()
+            .map(|s| s.node_client_options())
+    }
+
     /// Registers the node in the cluster.
     ///
     /// Internally this tries to contact the metastore instance and update our
@@ -383,9 +448,19 @@ impl NodeInner {
         let zone = self.shared.config.zone();
         println!("Starting node registration in zone: {}", zone);
 
+        // TODO: Add the metaclient to the monitored resources (as optional since we
+        // don't want disconnects to break things).
+
+        // TODO: During cluster bootstrapping when the local instance is downed, this
+        // client seems to get stuck and return 'Exceeded max number of retries' errors
+        // due to the backend list in the LoadBalancedClient being empty.
+
+        // TODO: Make sure that this aggressively blocks till ready.
         let meta_client = {
             if !self.shared.meta_client.has_value().await {
-                let meta_client = ClusterMetaClient::create(zone, &[]).await?;
+                let meta_client = Arc::new(
+                    ClusterMetaClient::create(zone, &[], self.tls_client_options()).await?,
+                );
                 self.shared.meta_client.set(meta_client).await?;
             }
 
@@ -413,7 +488,7 @@ impl NodeInner {
         let platform = current_platform()?;
 
         run_transaction!(db, txn, {
-                        let mut node_meta =
+            let mut node_meta =
                 query_one!(&txn, NodeMetadataTable, "id = ?", self.shared.id).unwrap_or_default();
             node_meta.set_id(self.shared.id);
             node_meta.set_address(&self.shared.context.local_address);
@@ -426,7 +501,7 @@ impl NodeInner {
             node_meta
                 .set_allocatable_port_range(self.shared.config.allocatable_port_range().clone());
             node_meta.set_platform(platform);
-            
+
             txn.put::<NodeMetadataTable>(&node_meta).await?;
         });
 
@@ -440,6 +515,10 @@ impl NodeInner {
     async fn run_heartbeat_loop(self) -> Result<()> {
         let meta_client = self.shared.meta_client.get().await;
 
+        // Stop doing heartbeats this until we have a more efficient node heartbeat
+        // mechansim that doesn't require writing to disc in the metastore.
+        return Ok(());
+
         // Periodically mark this node as still active.
         // TODO: Allow this is fail and continue to retry.
         loop {
@@ -449,7 +528,7 @@ impl NodeInner {
             // metastore for changes yet.
             let _ = self.shared.state_change_channel.0.try_send(());
 
-            executor::sleep(                NODE_HEARTBEAT_INTERVAL)            .await?;
+            executor::sleep(NODE_HEARTBEAT_INTERVAL).await?;
         }
     }
 
@@ -457,9 +536,18 @@ impl NodeInner {
     async fn run_reconcile_loop(self) -> Result<()> {
         let meta_client = self.shared.meta_client.get().await;
 
+        // TODO: Always wait for at least one TLS registry refresh cycle since boot
+        // before we allow scheduling workers (to avoid unnecessary turbulence).
+        // - This mainly becomes complicated if system workers are involved.
+
         loop {
             self.reconcile_workers().await?;
-            self.shared.state_change_channel.1.recv().await?;
+
+            executor::timeout(
+                NODE_HEARTBEAT_INTERVAL,
+                self.shared.state_change_channel.1.recv(),
+            )
+            .await;
         }
     }
 
@@ -480,7 +568,7 @@ impl NodeInner {
                 "worker_name = ?",
                 worker.spec().name()
             )
-                .unwrap_or_default();
+            .unwrap_or_default();
 
             out.insert(worker.spec().name().to_string(), reported_state);
         }
@@ -576,6 +664,10 @@ impl NodeInner {
         // eventually cleaned up.
         for (_, worker) in existing_workers {
             if worker.state() == WorkerStateProto::DONE {
+                if let Some(creds) = &self.shared.credentials {
+                    creds.remove_worker(worker.spec().name()).await?;
+                }
+
                 // TODO: Eventually add a state before DONE for cleanup like deleting or backing
                 // up worker state before we lose track of it (this needs to persist across
                 // restarts for any local assets).
@@ -622,6 +714,12 @@ impl NodeInner {
                 } => {
                     lock_async!(state <= self.shared.state.lock().await?, {
                         self.handle_start_backoff_timeout(&worker_name, event_timer_id, &mut state)
+                            .await
+                    })?;
+                }
+                NodeEvent::WorkerCredentialsReady { worker_name } => {
+                    lock_async!(state <= self.shared.state.lock().await?, {
+                        self.handle_worker_credentials_ready(&worker_name, &mut state)
                             .await
                     })?;
                 }
@@ -749,6 +847,39 @@ impl NodeInner {
         Ok(())
     }
 
+    async fn handle_worker_credentials_ready(
+        &self,
+        worker_name: &str,
+        state: &mut NodeState,
+    ) -> Result<()> {
+        let worker = match state
+            .workers
+            .iter_mut()
+            .find(|t| t.spec.name() == worker_name)
+        {
+            Some(t) => t,
+            None => {
+                // Most likely a race condition with the timer event being processed
+                // after the worker was deleted.
+                return Ok(());
+            }
+        };
+
+        if let WorkerState::Pending {
+            missing_requirements,
+        } = &mut worker.state
+        {
+            missing_requirements.credentials = false;
+
+            if missing_requirements.is_empty() {
+                self.transition_worker_to_running(&mut state.inner, worker)
+                    .await;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn handle_start_backoff_timeout(
         &self,
         worker_name: &str,
@@ -784,7 +915,7 @@ impl NodeInner {
     }
 
     fn persistent_data_dir(&self) -> LocalPathBuf {
-        LocalPath::new(self.shared.config.data_dir()).join("persistent")
+        LocalPath::new(self.shared.config.data_dir()).join(NODE_PERSISTENT_PATH)
     }
 
     async fn list_workers_impl(&self) -> Result<ListWorkersResponse> {
@@ -841,9 +972,14 @@ impl NodeInner {
         state_inner: &mut NodeStateInner,
         worker: &mut Worker,
     ) -> Result<()> {
+        let mut injected_credentials = None;
         if let Some(req) = worker.pending_update.take() {
             worker.revision = req.revision();
             worker.spec = req.spec().clone();
+
+            if req.has_credentials() {
+                injected_credentials = Some(req.credentials().clone());
+            }
         }
 
         if worker.container_id.is_some() {
@@ -853,7 +989,7 @@ impl NodeInner {
         }
 
         if let Err(e) = self
-            .transition_worker_to_running_impl(state_inner, worker)
+            .transition_worker_to_running_impl(injected_credentials, state_inner, worker)
             .await
         {
             // TODO: Can we differentiate between failures caused by the node and failures
@@ -883,28 +1019,53 @@ impl NodeInner {
 
     async fn transition_worker_to_running_impl(
         &self,
+        mut injected_credentials: Option<CertificateSecrets>,
         state_inner: &mut NodeStateInner,
         worker: &mut Worker,
     ) -> Result<()> {
+        let runtime_meta = {
+            if let Some(v) = state_inner.runtime_metadata.get(worker.spec.name()) {
+                v
+            } else {
+                let mut meta = WorkerRuntimeMetadata::default();
+                meta.set_worker_name(worker.spec.name());
+                meta.set_user_id(
+                    state_inner
+                        .uid_allocator
+                        .allocate()
+                        .ok_or_else(|| err_msg("Out of UIDs"))?,
+                );
+                meta.set_group_id(
+                    state_inner
+                        .gid_allocator
+                        .allocate()
+                        .ok_or_else(|| err_msg("Out of GIDs"))?,
+                );
+                self.shared
+                    .db
+                    .insert::<WorkerRuntimeMetadataTable>(&meta)
+                    .await?;
+                state_inner
+                    .runtime_metadata
+                    .entry(worker.spec.name().to_string())
+                    .or_insert(meta)
+            }
+        }
+        .clone();
+
         let mut container_config = self.shared.config.container_template().clone();
 
-        // TODO: Check for overflows of the count in the range.
-        let process_uid = state_inner.next_uid;
-        state_inner.next_uid += 1;
-
-        let process_gid = state_inner.next_gid;
-        state_inner.next_gid += 1;
-
         container_config
             .process_mut()
             .user_mut()
-            .set_uid(process_uid);
+            .set_uid(runtime_meta.user_id());
         container_config
             .process_mut()
             .user_mut()
-            .set_gid(process_gid);
+            .set_gid(runtime_meta.group_id());
 
         for additional_group in worker.spec.additional_groups() {
+            // TODO: Verify none of these are in the reserved range.
             let gid = *self
                 .shared
                 .context
@@ -945,7 +1106,7 @@ impl NodeInner {
                 continue;
             }
 
-            mount.add_options(format!("gid={}", process_gid));
+            mount.add_options(format!("gid={}", runtime_meta.group_id()));
         }
 
         // container_config.process_mut().set_terminal(true);
@@ -975,9 +1136,11 @@ impl NodeInner {
         }
 
         {
-            container_config
-                .process_mut()
-                .add_env(format!("{}={}", NODE_ID_ENV_VAR, self.shared.id));
+            container_config.process_mut().add_env(format!(
+                "{}={}",
+                NODE_ID_ENV_VAR,
+                entity_id_to_string(self.shared.id).unwrap()
+            ));
             container_config.process_mut().add_env(format!(
                 "{}={}",
                 WORKER_NAME_ENV_VAR,
@@ -995,16 +1158,11 @@ impl NodeInner {
             if self.shared.meta_client.has_value().await {
                 let client = self.shared.meta_client.get().await;
 
-                // TODO: If there are many servers that are healthy, then we probably need some
-                // randomization before truncation.
-                let mut addrs = client.inner().known_servers().await;
-                addrs.truncate(3);
+                let seeds = client.seeds().await?;
 
-                container_config.process_mut().add_env(format!(
-                    "{}={}",
-                    META_STORE_SEEDS_ENV_VAR,
-                    addrs.join(",")
-                ));
+                container_config
+                    .process_mut()
+                    .add_env(format!("{}={}", META_STORE_SEEDS_ENV_VAR, seeds));
             }
         }
 
@@ -1030,6 +1188,9 @@ impl NodeInner {
 
         let mut blob_leases = vec![];
 
+        // TODO: Verify there will be no issues if certiticates in the cert registry
+        // expire shortly after the registry is created.
+
         for volume in worker.spec.volumes() {
             let mut mount = ContainerMount::default();
             mount.set_destination(format!("/volumes/{}", volume.name()));
@@ -1052,55 +1213,23 @@ impl NodeInner {
                     mount.add_options("ro".into());
                     blob_leases.push(blob_lease);
                 }
-                WorkerSpec_VolumeSourceCase::PersistentName(name) => {
-                    let dir = self.persistent_data_dir().join(name);
+                WorkerSpec_VolumeSourceCase::Persistent(_) => {
+                    let dir = self
+                        .persistent_data_dir()
+                        .join(worker.spec.name())
+                        .join(volume.name());
                     let dir_str = dir.to_string();
 
-                    let volume_gid;
+                    file::create_dir_all(&dir).await?;
+                    chown(
+                        dir_str.as_str(),
+                        None,
+                        Some(Gid::from_raw(runtime_meta.group_id())),
+                    )?;
 
-                    if file::exists(&dir).await? {
-                        // TODO: If the volume was partially created but the permissions were not
-                        // set, then this may raise an error.
-
-                        let gid = file::metadata(&dir).await?.gid();
-
-                        // TODO: Keep a separate record of the gids assigned to each volume and
-                        // verify that they haven't changed.
-                        // I'm not sure if it's a security risk if a container could change the
-                        // group on a volume and then get an additional_gid when it is remounted.
-                        if gid < self.shared.context.container_gids.start_id
-                            || gid
-                                >= (self.shared.context.container_gids.start_id
-                                    + self.shared.context.container_gids.count)
-                        {
-                            return Err(format_err!(
-                                "Persistent volume belows to unmanaged group: {}",
-                                gid
-                            ));
-                        }
-
-                        volume_gid = gid;
-                    } else {
-                        volume_gid = state_inner.next_gid;
-                        if volume_gid == state_inner.next_uid {
-                            // Keep them aligned to simplify debugging.
-                            state_inner.next_uid += 1;
-                        }
-
-                        state_inner.next_gid += 1;
-
-                        file::create_dir_all(&dir).await?;
-                        chown(dir_str.as_str(), None, Some(Gid::from_raw(volume_gid)))?;
-
-                        let mut perms = file::metadata(&dir).await?.permissions();
-                        perms.set_mode(0o770 | libc::S_ISGID);
-                        file::set_permissions(&dir, perms).await?;
-                    }
-
-                    container_config
-                        .process_mut()
-                        .user_mut()
-                        .add_additional_gids(volume_gid);
+                    let mut perms = file::metadata(&dir).await?.permissions();
+                    perms.set_mode(0o770 | libc::S_ISGID);
+                    file::set_permissions(&dir, perms).await?;
 
                     mount.add_options("bind".into());
                     mount.set_source(dir_str);
@@ -1111,6 +1240,58 @@ impl NodeInner {
                     )
                     .into());
                 }
+                WorkerSpec_VolumeSourceCase::Credentials(_) => {
+                    let dir = LocalPath::new(self.shared.config.data_dir())
+                        .join(NODE_WORKER_CREDENTIALS_PATH)
+                        .join(worker.spec.name());
+                    file::create_dir_all(&dir).await?;
+
+                    let mut all_paths = vec![];
+                    all_paths.push(dir.clone());
+                    // TODO: Support nested directories.
+                    for entry in file::read_dir(&dir)? {
+                        all_paths.push(dir.join(entry.name()));
+                    }
+
+                    // TODO: Ensure that the credentials manager isn't controlling the files at the
+                    // same time.
+                    for path in all_paths {
+                        // Owned by the node runtime user. Group is the worker specific group id.
+                        chown(
+                            path.as_str(),
+                            None,
+                            Some(Gid::from_raw(runtime_meta.group_id())),
+                        )?;
+
+                        // Only the node can write to the directory and only the container user can
+                        // read from it.
+                        let mut perms = file::metadata(&path).await?.permissions();
+                        perms.set_mode(0o750 | libc::S_ISGID);
+                        file::set_permissions(&path, perms).await?;
+                    }
+
+                    let ready = self
+                        .shared
+                        .credentials
+                        .as_ref()
+                        .unwrap()
+                        .add_worker(worker.spec.name(), &dir, injected_credentials.take())
+                        .await?;
+
+                    if !ready {
+                        missing_requirements.credentials = true;
+                    }
+
+                    container_config.process_mut().add_env(format!(
+                        "{}=/volumes/{}",
+                        CREDENTIALS_DIR_ENV_VAR,
+                        volume.name()
+                    ));
+
+                    mount.add_options("bind".into());
+                    mount.set_source(dir.as_str());
+                }
+
                 WorkerSpec_VolumeSourceCase::NOT_SET => {
                     return Err(
                         rpc::Status::invalid_argument("No source configured for volume").into(),
@@ -1148,6 +1329,14 @@ impl NodeInner {
                             mount.set_destination(dev.sysfs_dir().as_str());
                             mount.add_options("bind".into());
                             container_config.add_mounts(mount);
+
+                            for entry in dev.driver_devices().await? {
+                                let mut mount = ContainerMount::default();
+                                mount.set_source(entry.path.as_str());
+                                mount.set_destination(entry.path.as_str());
+                                mount.add_options("bind".into());
+                                container_config.add_mounts(mount);
+                            }
 
                             num_mounted += 1;
                             break;
@@ -1375,12 +1564,13 @@ impl NodeInner {
             return Ok(());
         }
 
+        let meta_client = self.shared.meta_client.get().await;
         let db = self.shared.meta_client.get().await.db();
 
         // TODO: Once a node fetches a blob it becomes a replica of that blob. When
         // should we update the BundleBlobMetadata entry?
         let blob_meta = query_one!(db, BundleBlobMetadataTable, "spec.id = ?", blob_id)
-                        .ok_or_else(|| err_msg("No such blob"))?;
+            .ok_or_else(|| err_msg("No such blob"))?;
 
         let uploaded_replicas = blob_meta
             .replicas()
@@ -1393,19 +1583,18 @@ impl NodeInner {
         }
 
         // TODO: Don't try fetching the blob from ourselves.
+        // TODO: Exclude nodes not marked as ready recently.
         let remote_node_id = crypto::random::clocked_rng()
             .choose(&uploaded_replicas)
             .node_id();
 
-        // TODO: Exclude nodes not marked as ready recently.
-        let remote_node_meta = query_one!(db, NodeMetadataTable, "id = ?", remote_node_id)
-                        .ok_or_else(|| err_msg("No such node"))?;
+        let client = create_rpc_channel(
+            &ServiceName::for_node(meta_client.zone(), remote_node_id)?.to_string(),
+            meta_client.clone(),
+        )
+        .await?;
 
-        let client =
-            rpc::Http2Channel::create(format!("http://{}", remote_node_meta.address()).as_str())
-                .await?;
-
-        let stub = BundleBlobStoreStub::new(Arc::new(client));
+        let stub = BundleBlobStoreStub::new(client);
 
         let request_context = rpc::ClientRequestContext::default();
 
@@ -1445,6 +1634,13 @@ impl NodeInner {
     /// ALL ERRORS ARE FATAL
     async fn transition_worker_to_stopping(&self, worker: &mut Worker) -> Result<()> {
         let container_id = worker.container_id.as_ref().unwrap();
+
+        /*
+        TODO: Have two stages to this:
+        1. Mark in metadata that the task isn't ready
+         - then wait 500ms
+        2.
+        */
 
         let mut event = WorkerEvent::default();
         event.set_worker_name(worker.spec.name());
@@ -1509,10 +1705,36 @@ impl NodeInner {
         Ok(())
     }
 
+    /*
+    TODO: Need some definitive sense of whether or not the subprocess for a container worker is running or not regardless of whether errors have occured.
+
+    */
+
+    /*
+    TODO: THis can fail with '[ESRCH] No such process'
+     */
     pub async fn start_worker(&self, request: &StartWorkerRequest) -> Result<()> {
         // Do some validation
         if request.spec().name().is_empty() {
             return Err(rpc::Status::invalid_argument("Invalid worker name").into());
+        }
+
+        let mut unique_volumes = HashSet::new();
+        for spec in request.spec().volumes() {
+            if spec.name() == CREDENTIALS_VOLUME_NAME || spec.credentials() {
+                return Err(rpc::Status::invalid_argument(
+                    "Not allowed to have an explicit credentials volume",
+                )
+                .into());
+            }
+
+            if !unique_volumes.insert(spec.name()) {
+                return Err(rpc::Status::invalid_argument(format!(
+                    "Duplicate volume named: {}",
+                    spec.name()
+                ))
+                .into());
+            }
         }
 
         lock_async!(state <= self.shared.state.lock().await?, {
@@ -1520,6 +1742,7 @@ impl NodeInner {
         })
     }
 
+    /// ONLY CALL FROM 'Self::start_worker'
     async fn start_worker_impl(
         &self,
         request: &StartWorkerRequest,
@@ -1531,7 +1754,8 @@ impl NodeInner {
             .find(|t| t.spec.name() == request.spec().name());
 
         // If we were given a revision, we will skip the update if it hasn't changed.
-        if request.revision() != 0 {
+        // But, always update if we were credentials to use.
+        if request.revision() != 0 && !request.has_credentials() {
             if let Some(worker) = &existing_worker {
                 if worker.revision == request.revision() {
                     return Ok(());
@@ -1551,7 +1775,18 @@ impl NodeInner {
         let mut meta = WorkerMetadata::default();
         meta.set_spec(request.spec().clone());
         meta.set_revision(request.revision());
-        workers_table::put_worker(&self.shared.db, &meta).await?;
+        self.shared
+            .db
+            .insert::<LocalWorkerMetadataTable>(&meta)
+            .await?;
+
+        let mut request = request.clone();
+
+        if self.shared.config.secure() {
+            let v = request.spec_mut().new_volumes();
+            v.set_name(CREDENTIALS_VOLUME_NAME);
+            v.set_credentials(true);
+        }
 
         let worker = {
             if let Some(worker) = existing_worker {
@@ -1567,7 +1802,9 @@ impl NodeInner {
                     state: WorkerState::Pending {
                         missing_requirements: ResourceSet::default(),
                     },
-                    pending_update: None,
+                    // This could be None, but is set as the request in order to pass through the
+                    // request.credentials if any were given.
+                    pending_update: Some(request.clone()),
                     permanent_stop: false,
                     blob_leases: vec![],
                     start_backoff: ExponentialBackoff::new(ExponentialBackoffOptions {
@@ -1792,7 +2029,6 @@ impl ContainerNodeService for NodeInner {
 
         // TODO: If the container is being shutdown then we may temporarily get the
         // wrong container id
-        println!("GetLogs Container Id: {}", container_id);
 
         // TODO: Support log seeking.
 
@@ -1801,25 +2037,31 @@ impl ContainerNodeService for NodeInner {
 
         let mut log_reader = self.shared.runtime.open_log(&container_id).await?;
 
-        println!("Log opened!");
-
         // TODO: This loop seems to keep running even if I close the request
-        let mut num_ended = 0;
+        let mut open_streams = HashSet::<LogStream>::default();
         loop {
             let entry = log_reader.read().await?;
             if let Some(entry) = entry {
-                let end_stream = entry.end_stream();
+                for s in entry.stream() {
+                    if entry.start_stream() {
+                        open_streams.insert(*s);
+                    }
+
+                    if entry.end_stream() {
+                        open_streams.remove(s);
+                    }
+                }
 
                 response.send(entry).await?;
 
-                // TODO: Check that we got an end_stream on all the streams.
-                if end_stream {
-                    num_ended += 1;
-                    if num_ended == 2 {
-                        break;
-                    }
+                // NOTE: THe first entry will declare the complete list of open streams.
+                if open_streams.is_empty() {
+                    break;
                 }
             } else {
+                // TODO: Exit if we find that the container has already been cleaned up
+                // (implying that the log should now be completely written).
+
                 // TODO: Replace with receiving a notification.
                 executor::sleep(std::time::Duration::from_millis(100)).await?;
             }
@@ -1880,68 +2122,6 @@ impl ContainerNodeService for NodeInner {
             workers_table::get_worker_events(&self.shared.db, request.worker_name()).await?;
         for event in events {
             response.value.add_events(event);
-        }
-
-        Ok(())
-    }
-
-    /// CANCEL SAFE
-    async fn GetLabels(
-        &self,
-        request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
-        response: &mut rpc::ServerResponse<Labels>,
-    ) -> Result<()> {
-        lock!(state <= self.shared.state.lock().await?, {
-            response.value = state.labels.clone();
-        });
-
-        Ok(())
-    }
-
-    /// CANCEL SAFE
-    async fn UpdateLabels(
-        &self,
-        request: rpc::ServerRequest<UpdateLabelsRequests>,
-        response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
-    ) -> Result<()> {
-        if request.labels().serialize()?.len() > MAX_LABELS_SIZE {
-            return Err(rpc::Status::invalid_argument("Labels are too large").into());
-        }
-
-        for label in request.labels().label() {
-            if !LABEL_DATA_PATTERN.test(label.key().as_bytes())
-                || !LABEL_DATA_PATTERN.test(label.value().as_bytes())
-            {
-                return Err(rpc::Status::invalid_argument(
-                    "Labels contain non-allowed characters.",
-                )
-                .into());
-            }
-        }
-
-        let mut labels = request.labels().clone();
-        labels.label_mut().sort_by_key(|v| v.key().to_string());
-        labels.label_mut().dedup_by_key(|v| v.key().to_string());
-
-        lock!(state <= self.shared.state.lock().await?, {
-            state.labels = labels;
-            state.labels_flushed = false;
-        });
-
-        let _ = self.shared.heartbeat_now_channel.0.try_send(());
-
-        // Wait for the labels to be flushed to disk. (shortly after that they should
-        // also get pushed to the metastore)
-        loop {
-            let done = lock!(state <= self.shared.state.lock().await?, {
-                state.labels_flushed
-            });
-
-            if done {
-                break;
-            }
-
-            executor::sleep(Duration::from_secs(1)).await?;
         }
 
         Ok(())

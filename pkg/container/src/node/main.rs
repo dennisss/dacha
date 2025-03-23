@@ -94,6 +94,8 @@ fn find_container_ids_range(id_map: &[IdMapping]) -> Result<IdRange> {
 pub fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
+    let supervisor_pid = unsafe { sys::getpid() };
+
     let mut config = NodeConfig::default();
     {
         let config_data = std::fs::read_to_string(args.config)?;
@@ -158,6 +160,12 @@ pub fn main() -> Result<()> {
     .to_string()?;
     println!("Starting node on address: {}", local_address);
 
+    let current_cgroup_dir = format!("/sys/fs/cgroup{}", sys::current_cgroup_name()?);
+    if config.cgroup_dir().is_empty() {
+        config.set_cgroup_dir(&current_cgroup_dir);
+    }
+    println!("CGroup Dir: {}", config.cgroup_dir());
+
     let node_context = NodeContext {
         system_groups: all_groups.iter().map(|g| (g.name.clone(), g.id)).collect(),
         sub_uids: uidmap
@@ -180,9 +188,11 @@ pub fn main() -> Result<()> {
     newuidmap(root_process.pid(), &uidmap)?;
     newgidmap(root_process.pid(), &gidmap)?;
 
-    // Move the root process into its own cgroup.
-    newcgroup(root_process.pid(), config.cgroup_dir())
-        .map_err(|e| format_err!("While trying to create node's cgroup: {}", e))?;
+    if config.cgroup_dir() != current_cgroup_dir {
+        // Move the root process into its own cgroup.
+        newcgroup(root_process.pid(), config.cgroup_dir())
+            .map_err(|e| format_err!("While trying to create node's cgroup: {}", e))?;
+    }
 
     setup_parent.notify(START_CHILD_BYTE)?;
     setup_parent.wait(CGROUP_NAMESPACE_SETUP_BYTE)?;
@@ -190,8 +200,12 @@ pub fn main() -> Result<()> {
     {
         // Create a sub-group to hold the root process (because cgroups only allows
         // processes in leaf trees).
-        let self_group = LocalPath::new(config.cgroup_dir()).join("cluster_node");
+        let self_group = LocalPath::new(config.cgroup_dir()).join("node");
         std::fs::create_dir(&self_group).unwrap();
+
+        if current_cgroup_dir == config.cgroup_dir() {
+            std::fs::write(self_group.join("cgroup.procs"), supervisor_pid.to_string()).unwrap();
+        }
 
         // Move the root process into the sub-group.
         std::fs::write(
@@ -346,7 +360,6 @@ async fn run(
     node.add_services(&mut server)?;
     server.add_reflection()?;
     server.add_profilez()?;
-
 
     // TODO: Some of these tasks should be marked as non-blocking so should just be
     // cancelled but not necessary blocked till completion.

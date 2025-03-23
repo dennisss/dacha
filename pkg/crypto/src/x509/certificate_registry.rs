@@ -122,7 +122,7 @@ impl CertificateRegistry {
     }
 
     /// Creates a PEM containing ALL certificates in this registry.
-///
+    ///
     /// NOTE: This is not deterministic and may return a registry in
     /// certificates in different orders.
     pub fn to_pem(&self) -> String {

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+automata = { path = "../../automata" }
 common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
 crypto = { path = "../../crypto" }
@@ -14,6 +15,7 @@ macros = { path = "../../macros" }
 datastore_meta_client = { path = "../../datastore/meta/client" }
 datastore_proto = { path = "../../datastore/proto" }
 rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
 net = { path = "../../net" }
 raft_client = { path = "../../raft/client" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }

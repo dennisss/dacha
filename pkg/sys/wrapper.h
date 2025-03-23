@@ -20,6 +20,7 @@
 #include <signal.h>
 #include <sys/epoll.h>
 #include <sys/fanotify.h>
+#include <sys/inotify.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>

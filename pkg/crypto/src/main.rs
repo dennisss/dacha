@@ -9,6 +9,7 @@ extern crate file;
 
 use alloc::boxed::Box;
 use crypto::pem::PEMBuilder;
+use crypto::pem::PEM_CERTIFICATE_LABEL;
 use crypto::pem::PEM_CERTIFICATE_REQUEST_LABEL;
 use math::big::HeapAllocator;
 use pkix::PKIX1Explicit88;
@@ -17,6 +18,7 @@ use std::num::Wrapping;
 use std::str::FromStr;
 use std::string::String;
 use std::string::ToString;
+use std::time::Duration;
 
 use common::errors::*;
 use math::big::{BigUint, SecureBigUint};
@@ -229,12 +231,15 @@ async fn debug_csr() -> Result<()> {
 }
 
 async fn generate_csr() -> Result<()> {
-    let private_key = crypto::x509::PrivateKey::generate_default().await?;
+    let private_key =
+        crypto::x509::PrivateKey::generate(crypto::x509::PrivateKeyType::ECDSA_SECP256R1).await?;
     println!("{}", private_key.to_pem());
 
+    file::write(project_path!("test.key"), private_key.to_pem()).await?;
+
     let mut csr = crypto::x509::CertificateRequestBuilder::default();
-    csr.set_common_name("example.com")?;
-    csr.set_subject_alt_names(&["foo.bar", "hello.world"])?;
+    csr.set_common_name("localhost")?;
+    csr.set_subject_alt_names(&["localhost"])?;
 
     let csr = csr.build(&private_key).await?;
 
@@ -251,11 +256,25 @@ async fn generate_csr() -> Result<()> {
 
     */
 
+    /*
+    let cert = crypto::x509::CertificateBuilder::new(csr, Duration::from_secs(60 * 60 * 24 * 30))?
+        .create_ca()
+        .build(None, &private_key)
+        .await?;
+
+    let cert_pem = {
+        let mut builder = PEMBuilder::default();
+        builder.add_binary_entry(PEM_CERTIFICATE_LABEL, &cert);
+        builder.build()
+    };
+    file::write(project_path!("test.cert"), cert_pem).await?;
+    */
+
     Ok(())
 }
 
 fn main() -> Result<()> {
-    return executor::run_main(debug_csr())?;
+    // return executor::run_main(debug_csr())?;
 
     return executor::run_main(generate_csr())?;
 

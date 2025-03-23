@@ -37,6 +37,8 @@ use super::constants::{FINISHED_SETUP_BYTE, TERMINAL_FD_BYTE, USER_NS_SETUP_BYTE
 /// TODO: Instead
 static INSTANCE_LOCK: AtomicBool = AtomicBool::new(false);
 
+const LOG_FILE_PATH: &'static str = "log";
+
 // We want to be able to support subscribing to any events that occur for a
 
 pub struct ContainerRuntime {
@@ -109,6 +111,8 @@ struct ContainerWaiter {
     container_dir: LocalPathBuf,
     // TODO: a LocalFile is unappropriate with a this as it is not seekable.
     output_streams: Vec<(LogStream, LocalFile)>,
+
+    log_writer: Arc<FileLogWriter>,
 
     // TODO: MAke this one-shot
     event_receiver: channel::Receiver<ContainerStatus>,
@@ -326,6 +330,10 @@ impl ContainerRuntime {
     /// TODO: If this fails it may leave the container runtime in an invalid
     /// state.
     ///
+    /// TODO: For whatever reason, sometimes containers get stuck and don't boot
+    /// into the child process. Need better bounda on this definitely
+    /// terminating eventually. (does get marked as 'Running' though.
+    ///
     /// NOT CANCEL SAFE
     pub async fn start_container(
         self: &Arc<Self>,
@@ -341,6 +349,34 @@ impl ContainerRuntime {
         // TODO: Also lock down permissions on this dir.
         let container_dir = self.run_dir.join(&container_id);
         file::create_dir_all(&container_dir).await?;
+
+        // Setting up the root directory (that will act as '/' in the container).
+        //
+        // Owner is '[node_user]:[container_group]' with '750' permissions so the
+        // container can read the files but only the node process can write things.
+        let root_dir = container_dir.join("root");
+        {
+            file::create_dir_all(&root_dir).await?;
+
+            file::chown(
+                &root_dir,
+                sys::getresuid()?.real,
+                sys::Gid(container_config.process().user().gid() as i32),
+            )?;
+
+            let mut root_perms = file::Permissions::default();
+            root_perms.set_mode(0o750 | libc::S_ISGID);
+            file::set_permissions(&root_dir, root_perms).await?;
+
+            // TODO: Double check that this preserves the above permissions.
+            nix::mount::mount::<str, str, str, str>(
+                Some("tmpfs"),
+                root_dir.as_str(),
+                Some("tmpfs"),
+                nix::mount::MsFlags::empty(),
+                None,
+            )?;
+        }
 
         let cgroup_dir = self.cgroup_dir.join(&container_id);
         file::create_dir(&cgroup_dir).await?;
@@ -382,6 +418,10 @@ impl ContainerRuntime {
         // TODO: Move this logic into the Cgroup struct (it's useful for implementing
         // openat). TODO: Just open with O_PATH.
         let cgroup_file = file::LocalFile::open(&cgroup_dir)?;
+
+        // Create the empty log file so now so that the log can be read immediately
+        // after the container is started.
+        let log_writer = Arc::new(FileLogWriter::create(&container_dir.join(LOG_FILE_PATH)).await?);
 
         /*
         let parent_pid = parent_container.pid.as_raw();
@@ -440,7 +480,7 @@ impl ContainerRuntime {
             .spawn_process(|| {
                 run_child_process(
                     &container_config,
-                    container_dir.as_ref(),
+                    root_dir.as_ref(),
                     &mut socket_c,
                     &file_mapping,
                 )
@@ -513,6 +553,7 @@ impl ContainerRuntime {
             let waiter_task = executor::spawn(self.clone().container_waiter(ContainerWaiter {
                 container_id: container_id.clone(),
                 container_dir: container_dir.clone(),
+                log_writer,
                 output_streams,
                 event_receiver,
             }));
@@ -588,11 +629,8 @@ impl ContainerRuntime {
             .into());
         }
 
-        let log_path = container_dir.join("log");
+        let log_path = container_dir.join(LOG_FILE_PATH);
 
-        // TODO: For this to work we need to ensure that the log file is synchronously
-        // created before we return the container id to the person that
-        // reuqested it.
         FileLogReader::open(&log_path).await
     }
 
@@ -625,21 +663,19 @@ impl ContainerRuntime {
     }
 
     async fn write_all_to_log(input: &mut ContainerWaiter) -> Result<()> {
-        let log_writer = Arc::new(FileLogWriter::create(&input.container_dir.join("log")).await?);
-
         let streams_list = input
             .output_streams
             .iter()
             .map(|(s, _)| *s)
             .collect::<Vec<_>>();
 
-        log_writer.begin_all_streams(&streams_list).await?;
+        input.log_writer.begin_all_streams(&streams_list).await?;
 
         let mut log_tasks = vec![];
         for (stream, file) in input.output_streams.drain(..) {
             log_tasks.push(ChildTask::spawn(Self::write_log(
                 file,
-                log_writer.clone(),
+                input.log_writer.clone(),
                 stream,
             )));
         }
@@ -648,7 +684,7 @@ impl ContainerRuntime {
             task.join().await;
         }
 
-        log_writer.flush().await?;
+        input.log_writer.flush().await?;
 
         Ok(())
     }

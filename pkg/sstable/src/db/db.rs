@@ -228,11 +228,17 @@ impl EmbeddedDB {
                     .create(options.create_if_missing)
                     .sync_on_flush(options.create_if_missing),
             )
-            .map_err(|_| err_msg("Failed to open the lockfile"))?;
+            .map_err(|e| {
+                format_err!(
+                    "Failed to open the lockfile: {} ; Error: {}",
+                    dir.lock().as_str(),
+                    e
+                )
+            })?;
 
             // TODO: Use a shared lock in read-only mode.
             file.try_lock_exclusive()
-                .map_err(|_| err_msg("Failed to lock database"))?;
+                .map_err(|e| format_err!("Failed to lock database: {}", e))?;
             file
         };
 
@@ -712,7 +718,7 @@ impl EmbeddedDB {
                 let key_range = memtable
                     .table
                     .key_range()
-                                        .ok_or_else(|| err_msg("Empty memtable beign compacted"))?;
+                    .ok_or_else(|| err_msg("Empty memtable beign compacted"))?;
 
                 let selected_level = state.version_set.pick_memtable_level(KeyRangeRef {
                     smallest: &key_range.0,
