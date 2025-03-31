@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-automata = { path = "../../automata" }
 common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
 crypto = { path = "../../crypto" }

@@ -4,17 +4,14 @@ extern crate macros;
 use std::sync::Arc;
 
 use cluster_client::id::entity_id_from_string;
+use cluster_client::ClusterServer;
+use cluster_meta::*;
 use common::args::list::CommaSeparated;
 use common::args::parse_args;
 use common::errors::*;
 use executor_multitask::RootResource;
 use file::LocalPathBuf;
 use rpc_util::NamedPortArg;
-
-use cluster_client::meta::hostname::ClusterMetaHostnameResolver;
-use datastore::meta::store::{run, MetastoreOptions};
-use datastore::meta::EmbeddedDBStateMachineOptions;
-use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
 
 #[derive(Args)]
 struct Args {
@@ -49,28 +46,20 @@ async fn main() -> Result<()> {
         entity_id_from_string(&my_id).ok_or_else(|| err_msg("Invalid worker id"))?
     };
 
-    let mut route_label = RouteLabel::default();
-    route_label.set_value(format!("{}={}", cluster_client::env::ZONE_ENV_VAR, zone));
-
     let root = RootResource::new();
-
     root.register_dependency(creds.clone()).await;
 
     root.register_dependency(
-        run(MetastoreOptions {
-            dir: args.dir,
-            init_port: None,
-            bootstrap_group: false,
-            bootstrap_node_id: Some(id),
-            service_port: args.port.value(),
-            route_labels: vec![route_label],
-            log: SegmentedLogOptions::default(),
-            state_machine: EmbeddedDBStateMachineOptions::default(),
-            tls: Some(crypto::tls::Credentials {
-                client: creds.client_options(),
+        run(ClusterMetastoreOptions {
+            id,
+            port: args.port.value(),
+            zone,
+            creds: crypto::tls::Credentials {
                 server: creds.server_options(),
-            }),
-            hostname_resolver: Arc::new(ClusterMetaHostnameResolver::new(&zone)),
+                client: creds.client_options(),
+            },
+            dir: args.dir,
+            bootstrap: false,
         })
         .await?,
     )

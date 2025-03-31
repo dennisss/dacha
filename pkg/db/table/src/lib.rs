@@ -9,3 +9,4 @@ pub mod query;
 pub mod query_parser;
 mod reflection;
 pub mod table;
+pub mod table_id;

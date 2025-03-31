@@ -16,29 +16,6 @@ import "google/protobuf/any.proto";
 import "pkg/protobuf/compiler/proto/extensions.proto";
 import "pkg/builder/proto/bundle.proto";
 
-// Ids of different tables stored in the main cluster metastore instance.
-// The numerical values of these dis are used as a key prefix in the key-value store.
-enum ClusterTableId {
-    UNKNOWN = 0;
-    Zone = 1;
-    Node = 2;
-    Job = 3;
-    Worker = 4;
-    WorkerByNode = 5;
-    WorkerState = 6;
-    BundleBlob = 7;
-    Object = 8;
-    NodeScheduling = 9;
-    Certificate = 10;
-    CertificateRequest = 11;
-    PrivateKey = 12;
-}
-
-// Stored at a singleton in the metastore.
-message ZoneMetadata {
-    string name = 1;
-}
-
 /*
 Restarting a node:
 - Mark it as draining
@@ -196,7 +173,9 @@ message WorkerStateMetadata {
     uint64 worker_revision = 3;
 }
 
+// Entries used to keep track of all the blobs that are replicated across the cluster
 message BundleBlobMetadata {
+    // TODO: Need to make sure we verify hashes when pulling blobs from potentially insecure servers. 
     builder.BundleBlobSpec spec = 1;
 
     // List of the ids of all nodes which are known to have this blob.

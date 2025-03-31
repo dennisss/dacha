@@ -5,7 +5,7 @@ use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
 use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
 use executor::{cancellation::AlreadyCancelledToken, child_task::ChildTask};
-use executor_multitask::ServiceResource;
+use executor_multitask::{ServiceResource, ServiceResourceGroup};
 use file::{temp::TempDir, LocalPathBuf};
 use protobuf::text::ParseTextProto;
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
@@ -55,24 +55,39 @@ impl TestMetastoreCluster {
         // TODO: Even if just a test, we should block external network communication for
         // this.
 
-        // TODO: Disable multicast as we don't need it in a unit test.
-        let resource = crate::meta::store::run(crate::meta::store::MetastoreOptions {
-            dir: dir.clone(),
-            init_port: None,
-            bootstrap_group: bootstrap,
-            bootstrap_node_id: None,
-            service_port: port,
-            route_labels: self.shared.route_labels.clone(),
-            log: SegmentedLogOptions {
-                target_segment_size: 1 * 1024 * 1024,
-                max_segment_size: 2 * 1024 * 1024,
-            },
-            state_machine,
-            tls: None,
-            hostname_resolver: Arc::new(DefaultHostnameResolver::default()),
-        })
-        .await?;
+        let mut resource = Arc::new(ServiceResourceGroup::new("TestNode"));
 
+        let mut server = rpc::Http2Server::new(Some(port));
+
+        // TODO: Disable multicast as we don't need it in a unit test.
+        resource
+            .register_dependency(
+                crate::meta::store::run(
+                    crate::meta::store::MetastoreOptions {
+                        dir: dir.clone(),
+                        init_port: None,
+                        bootstrap_group: bootstrap,
+                        bootstrap_node_id: None,
+                        service_port: port,
+                        route_labels: self.shared.route_labels.clone(),
+                        log: SegmentedLogOptions {
+                            target_segment_size: 1 * 1024 * 1024,
+                            max_segment_size: 2 * 1024 * 1024,
+                        },
+                        state_machine,
+                        tls: None,
+                        hostname_resolver: Arc::new(DefaultHostnameResolver::default()),
+                        acl_processor: None,
+                    },
+                    &mut server,
+                )
+                .await?,
+            )
+            .await;
+
+        resource.register_dependency(server.start()).await;
+
+        let resource: Arc<dyn ServiceResource> = resource;
         resource.wait_for_ready().await;
 
         // Wait for the leader election to finish.

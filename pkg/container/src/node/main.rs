@@ -12,6 +12,7 @@ use nix::sched::CloneFlags;
 use nix::sys::stat::{umask, Mode};
 use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
+use protobuf::Message;
 use rpc_util::{AddProfilingEndpoints, AddReflection};
 
 use crate::init::{MainProcess, MainProcessOptions};
@@ -27,15 +28,24 @@ const CGROUP_NAMESPACE_SETUP_BYTE: u8 = 0x89;
 
 const FINISHED_BYTE: u8 = 0x90;
 
+const SERVICE_ACL_PROTO: &'static str = r#"
+
+    allow_unauthenticated: false
+
+    rules: [
+        # TODO: Split up ACLs for system level stuff like "/profilez"
+        #{
+         #   path: "/"
+         #   is_directory: true
+         #   principals: ["authenticated"]
+        # }
+    ]
+"#;
+
 #[derive(Args)]
 struct Args {
     /// Path to a NodeConfig textproto configuring this node.
     config: String,
-
-    /// Override of the 'zone' field specified in the NodeConfig.
-    /// NOTE: This is mainly for use in local testing and should generally not
-    /// be used.
-    zone: Option<String>,
 }
 
 fn create_idmap(
@@ -98,12 +108,8 @@ pub fn main() -> Result<()> {
 
     let mut config = NodeConfig::default();
     {
-        let config_data = std::fs::read_to_string(args.config)?;
-        protobuf::text::parse_text_proto(&config_data, &mut config)?;
-    }
-
-    if let Some(zone) = args.zone {
-        config.set_zone(zone);
+        let config_data = std::fs::read(args.config)?;
+        config.parse_merge(&config_data)?;
     }
 
     if config.init_process_args().is_empty() {
@@ -354,16 +360,22 @@ async fn run(
         .spawn_interruptable("cluster::Node", node.run())
         .await;
 
-    let mut server = rpc::Http2Server::new(Some(config.service_port() as u16));
-    server.set_base_path("/rpc"); // TODO: Standardize.
-    server.http_options_mut().tls = node.tls_server_options();
+    // TODO: Parse this much earlier.
+    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
+
+    let mut server = cluster_client::ClusterServer::new_internal(
+        config.service_port() as u16,
+        acl,
+        config.zone(),
+        None,
+        node.tls_server_options(),
+    )?;
     node.add_services(&mut server)?;
-    server.add_reflection()?;
-    server.add_profilez()?;
 
     // TODO: Some of these tasks should be marked as non-blocking so should just be
     // cancelled but not necessary blocked till completion.
-    service.register_dependency(server.start()).await;
+    service.register_dependency(server.start()?).await;
 
     service.wait().await
 }

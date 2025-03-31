@@ -12,7 +12,7 @@ User=cluster-node
 # Mainly to make sure that systemd enables them in the root '/sys/fs/cgroup/cgroup.subtree_control'
 Delegate=yes
 WorkingDirectory=/opt/dacha/node/bundle
-ExecStart=/opt/dacha/node/bundle/built/pkg/container/cluster_node --config=/opt/dacha/node/config.txtpb
+ExecStart=/opt/dacha/node/bundle/built/pkg/container/cluster_node --config=/opt/dacha/node/config.pb
 TimeoutStopSec=30
 
 [Install]

@@ -36,6 +36,22 @@ pub struct EmbeddedDBStateMachineOptions {
     /// NOTE: Options related to how the database is opened shouldn't be
     /// overriden.
     pub db: EmbeddedDBOptions,
+
+    pub processor: Option<Arc<dyn EmbeddedDBStateMachineProcessor>>,
+}
+
+#[async_trait]
+pub trait EmbeddedDBStateMachineProcessor: Send + Sync {
+    /// Called each time the database is loaded (or re-loaded) from
+    /// disk. Will never be called concurrently with apply_change().
+    ///
+    /// If this fails, then the DB will be inaccessible.
+    async fn reload_db(&self, snapshot: Snapshot) -> Result<()>;
+
+    /// Called when a commited write is being written into the database.
+    ///
+    /// If this fails, then the DB will become inaccesible.
+    async fn apply_change(&self, change: &WriteBatch) -> Result<()>;
 }
 
 /// Key-value state machine based on the EmbeddedDB implementation.
@@ -192,6 +208,10 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         write.set_sequence(index.value());
         db.write(&write).await?;
 
+        if let Some(processor) = &self.options.processor {
+            processor.apply_change(&write).await?;
+        }
+
         // Send the change to watchers.
         // TODO: This can be parrallelized with future writes.
         let mut change = WatchResponse::default();
@@ -292,6 +312,12 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         current.0.set_current_snapshot(num);
         let value = current.0.serialize()?;
         current.1.store(&value).await?;
+
+        /// Note that this is called before swap_with to ensure that we always
+        /// strictly call it with larger snapshots.
+        if let Some(processor) = &self.options.processor {
+            processor.reload_db(new_db.snapshot().await).await?;
+        }
 
         self.db.swap_with(new_db).await?;
 

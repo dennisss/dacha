@@ -23,7 +23,7 @@ pub struct ClusterMetaClient {
     zone: String,
     inner: Arc<MetastoreClient>,
     db: Arc<ProtobufDB>,
-    tls_options: Option<crypto::tls::ClientOptionsContainer>,
+    creds: Option<crypto::tls::Credentials>,
 }
 
 impl_resource_passthrough!(ClusterMetaClient, inner);
@@ -32,7 +32,7 @@ impl ClusterMetaClient {
     pub async fn create(
         zone: &str,
         seeds: &[String],
-        tls_options: Option<crypto::tls::ClientOptionsContainer>,
+        creds: Option<crypto::tls::Credentials>,
     ) -> Result<Self> {
         let mut label = RouteLabel::default();
         label.set_value(format!("{}={}", ZONE_ENV_VAR, zone));
@@ -42,7 +42,7 @@ impl ClusterMetaClient {
                 std::slice::from_ref(&label),
                 seeds,
                 Arc::new(ClusterMetaHostnameResolver::new(zone)),
-                tls_options.clone(),
+                creds.as_ref().map(|c| c.client.clone()),
             )
             .await?,
         );
@@ -51,12 +51,12 @@ impl ClusterMetaClient {
             zone: zone.to_string(),
             inner,
             db,
-            tls_options,
+            creds,
         })
     }
 
-    pub(crate) fn tls_options(&self) -> Option<crypto::tls::ClientOptionsContainer> {
-        self.tls_options.clone()
+    pub(crate) fn creds(&self) -> Option<crypto::tls::Credentials> {
+        self.creds.clone()
     }
 
     pub async fn create_from_environment() -> Result<Arc<Self>> {
@@ -87,7 +87,15 @@ impl ClusterMetaClient {
         let creds = get_cluster_credentials().await?;
 
         Ok(Arc::new(
-            Self::create(&zone, &seeds, Some(creds.client_options().clone())).await?,
+            Self::create(
+                &zone,
+                &seeds,
+                Some(crypto::tls::Credentials {
+                    server: creds.server_options(),
+                    client: creds.client_options(),
+                }),
+            )
+            .await?,
         ))
     }
 

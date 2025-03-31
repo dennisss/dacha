@@ -14,12 +14,29 @@ struct Args {
     port: NamedPortArg,
 }
 
+const SERVICE_ACL_PROTO: &'static str = r#"
+
+    allow_unauthenticated: false
+
+    rules: [
+        # Does its own ACL checks internally.
+        {
+            path: "/rpc/cluster.CertificateAuthority"
+            is_directory: true
+            principals: ["authenticated"]
+        }
+    ]
+"#;
+
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let creds = get_cluster_credentials().await?;
     let client = ClusterMetaClient::create_from_environment().await?;
+
+    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     let service = RootResource::new();
 
@@ -30,12 +47,9 @@ async fn main() -> Result<()> {
     //     .spawn_interruptable("Manager::run", manager.clone().run())
     //     .await;
 
-    let mut server = rpc::Http2Server::new(Some(args.port.value()));
-    server.http_options_mut().tls = Some(creds.server_options());
-    server.set_base_path("/rpc"); // TODO: Standardize.
+    let mut server = cluster_client::ClusterServer::new(args.port.value(), acl, client)?;
     server.add_service(inst.into_service())?;
-    server.add_reflection()?;
-    service.register_dependency(server.start()).await;
+    service.register_dependency(server.start()?).await;
 
     service.wait().await
 }

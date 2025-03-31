@@ -23,7 +23,7 @@ use container::{
 };
 use container::{
     ContainerNodeStub, Label, Labels, WorkerMetadata, WorkerSpec, WorkerSpec_Port,
-    WorkerSpec_Volume, WorkerStateMetadata, WriteInputRequest, ZoneMetadata,
+    WorkerSpec_Volume, WorkerStateMetadata, WriteInputRequest,
 };
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;

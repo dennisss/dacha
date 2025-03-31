@@ -171,6 +171,8 @@ impl LocalPath {
         self.inner.starts_with(SEGMENT_DELIMITER)
     }
 
+    // TODO: Audit all usages of this to see if we should be respecting possibly
+    // absolute paths.
     pub fn join<P: AsRef<LocalPath>>(&self, other: P) -> LocalPathBuf {
         let mut p = self.to_owned();
         p.push(other);

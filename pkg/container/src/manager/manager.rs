@@ -3,14 +3,16 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use cluster_client::acl::principal::Principal;
 use cluster_client::meta::*;
+use cluster_client::service::address::ServiceName;
 use common::errors::*;
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
 use datastore_meta_client::MetastoreClient;
 use datastore_meta_client::MetastoreTransaction;
 use db_table::db::{ProtobufDB, ProtobufDBTransaction};
-use db_table::{query, query_one};
+use db_table::{query, query_one, raw_query};
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
 
@@ -92,13 +94,18 @@ TODO: We need to check that the node last_seen timeout is much longer than it ta
 /// NOTE: Cloning a 'Manager' instance will reference the same internal object.
 #[derive(Clone)]
 pub struct Manager {
+    zone: String,
     db: Arc<ProtobufDB>,
     rng: Arc<dyn SharedRng>,
 }
 
 impl Manager {
-    pub fn new(db: Arc<ProtobufDB>, rng: Arc<dyn SharedRng>) -> Self {
-        Self { db, rng }
+    pub fn new(zone: &str, db: Arc<ProtobufDB>, rng: Arc<dyn SharedRng>) -> Self {
+        Self {
+            zone: zone.into(),
+            db,
+            rng,
+        }
     }
 
     /// Entrypoint of the background manager thread which periodically ensures
@@ -258,8 +265,6 @@ impl Manager {
         if existing_job.is_none() {
             // A job can only be created if there are no job whose name is a prefix of the
             // new job name (at segment boundaries).
-            //
-            // TODO: First check whether or not the job just plain old exists.
             //
             // In other words, for every '[job_name_i]' in the cluster already,
             // '[job_name_i].' must not be a prefix of '[new_job_name].'
@@ -471,6 +476,32 @@ impl Manager {
             // Update the worker
             // TODO: Skip this if the worker hasn't changed at all.
             txn.put::<WorkerMetadataTable>(&new_worker).await?;
+
+            // Authorize the assigned node to write to the WorkerStateMetadata row for this
+            // worker.
+            if existing_worker.is_none() {
+                // TODO: Make a utility for doing this.
+
+                let q = raw_query!(
+                    WorkerStateMetadataTable,
+                    "worker_name = ?",
+                    new_worker.spec().name()
+                );
+                let key =
+                    ProtobufDBTransaction::primary_key_prefix::<WorkerStateMetadataTable>(&q)?;
+
+                let mut proto = KeyPrefixACLProto::default();
+                proto.set_prefix(key);
+                proto.add_writers(
+                    Principal::Entity(ServiceName::for_node(
+                        &self.zone,
+                        new_worker.assigned_node(),
+                    )?)
+                    .to_string(),
+                );
+
+                txn.put::<KeyPrefixACLTable>(&proto).await?;
+            }
 
             // Update the node
             {
@@ -840,6 +871,7 @@ mod tests {
         )?;
 
         let manager = Manager::new(
+            "testing",
             db.clone(),
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
@@ -935,6 +967,7 @@ mod tests {
         )?;
 
         let manager = Manager::new(
+            "testing",
             db.clone(), // TODO: Always use an independent client interface?
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
@@ -1231,6 +1264,7 @@ mod tests {
         )?;
 
         let manager = Manager::new(
+            "testing",
             db.clone(),
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );

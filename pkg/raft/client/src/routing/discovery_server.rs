@@ -32,4 +32,15 @@ impl DiscoveryService for DiscoveryServer {
 
         Ok(())
     }
+
+    async fn Read(
+        &self,
+        request: rpc::ServerRequest<ReadRequest>,
+        response: &mut rpc::ServerResponse<Announcement>,
+    ) -> Result<()> {
+        let route_store = self.route_store.lock().await;
+        response.value = route_store.serialize();
+
+        Ok(())
+    }
 }

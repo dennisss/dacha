@@ -10,7 +10,7 @@ use executor::{channel, lock, lock_async};
 use raft::proto::LogEntryData;
 use raft::ReadIndex;
 use raft::{proto::LogPosition, proto::Term, LogIndex, PendingExecutionResult};
-use sstable::db::{Snapshot, SnapshotIteratorOptions, WriteBatch};
+use sstable::db::{Snapshot, SnapshotIteratorOptions, WriteBatch, WriteBatchBuilder};
 use sstable::iterable::Iterable;
 
 use crate::meta::key_ranges::KeyRanges;
@@ -175,7 +175,18 @@ impl TransactionManager {
 
         let mut writes_size = 0;
 
+        let mut last_key = None;
         for op in transaction.writes() {
+            if let Some(last_key) = last_key.take() {
+                if last_key >= op.key() {
+                    return Err(rpc::Status::invalid_argument(
+                        "Transaction must provide a sorted list of writes.",
+                    )
+                    .into());
+                }
+            }
+            last_key = Some(op.key());
+
             // Add some approximate log entry overhead per write.
             writes_size += 32;
 
@@ -362,7 +373,7 @@ impl TransactionManager {
     }
 
     fn create_write_batch(transaction: &Transaction) -> Result<WriteBatch> {
-        let mut write = WriteBatch::new();
+        let mut write = WriteBatchBuilder::new();
 
         for op in transaction.writes() {
             match op.typ_case() {
@@ -381,7 +392,7 @@ impl TransactionManager {
             }
         }
 
-        Ok(write)
+        Ok(write.build())
     }
 
     /// Atomically acquires all of the requested locks.

@@ -99,6 +99,7 @@ message Transaction {
     repeated KeyRange reads = 2;
 
     // New mutations to perform on the databse.
+    // These MUST be in sorted order of key.
     repeated Operation writes = 3;
 }
 

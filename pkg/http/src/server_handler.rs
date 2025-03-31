@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ pub trait ServerHandler: 'static + Send + Sync {
     /// issued (aka after TCP/TLS but before HTTP negotation).
     ///
     /// Returns whether or not we should continue running the connection.
-    async fn handle_connection(&self, _context: &ServerConnectionContext) -> bool {
+    async fn handle_connection(&self, _context: &mut ServerConnectionContext) -> bool {
         true
     }
 
@@ -41,7 +42,7 @@ pub trait ServerHandler: 'static + Send + Sync {
 
 #[async_trait]
 impl<T: ServerHandler> ServerHandler for Arc<T> {
-    async fn handle_connection(&self, context: &ServerConnectionContext) -> bool {
+    async fn handle_connection(&self, context: &mut ServerConnectionContext) -> bool {
         self.as_ref().handle_connection(context).await
     }
 
@@ -56,6 +57,8 @@ impl<T: ServerHandler> ServerHandler for Arc<T> {
 
 /// General information about a connection to a server (a single connection may
 /// be re-used by multiple requests).
+///
+/// TODO: Disallow mutating anything other than the handler_data.
 #[derive(Clone, Debug)]
 pub struct ServerConnectionContext {
     /// Unique id for this connection.
@@ -65,7 +68,13 @@ pub struct ServerConnectionContext {
 
     pub peer_port: u16,
 
+    /// If set, the connection was made over TLS with the given metadata
+    /// produced during the handshake.
     pub tls: Option<crypto::tls::HandshakeSummary>,
+
+    /// Server specific connection wide data populated by
+    /// 'ServerHandler::handle_connection'.
+    pub handler_data: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 /// Metadata about the incoming request.

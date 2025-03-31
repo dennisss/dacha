@@ -14,7 +14,7 @@ use crate::iterable::Iterable;
 use crate::table::CompressionType;
 use crate::{EmbeddedDB, EmbeddedDBOptions};
 
-use super::{SnapshotIterator, SnapshotIteratorOptions};
+use super::{SnapshotIterator, SnapshotIteratorOptions, WriteBatchBuilder};
 
 struct TestDB {
     dir: TempDir,
@@ -482,7 +482,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
 
         let db = EmbeddedDB::open(dir.path(), options).await?;
 
-        let mut batch = WriteBatch::new();
+        let mut batch = WriteBatchBuilder::new();
 
         for i in 1000..10000usize {
             let key = i.to_string();

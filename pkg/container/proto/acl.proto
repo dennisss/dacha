@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package cluster;
+
+// ACL limiting access to all keys in the metastore with prefix 'prefix'.
+// Note that ACLs are additive: to access a specific key, a principal must be in at least one of
+// the KeyPrefixACLs for some prefix of the key.
+message KeyPrefixACLProto {
+    bytes prefix = 1;
+
+    repeated string readers = 2;
+
+    repeated string writers = 3;
+}
+
+message GroupMembership {
+    string group_name = 1;
+
+    // If true, the member is a principal that can might expand to more than one terminal entity.
+    // The value of this can always be determined by looking at the 'member' string but is
+    // exposed in the key explicitly to skip only long member lists.
+    bool expands = 2;
+
+    string member = 3;
+}
+
+// ACLs limiting access to a single service.
+// - These restrict high level access to specific HTTP paths/methods.
+// - Certain services may need to do additional ACL checks based on the contents of the request.
+message ServiceACLProto {
+    // If true, allow a client without a valid TLS client certificate to connect.
+    bool allow_unauthenticated = 1;
+
+    // Rules granting access to specific URLs on the server to users.
+    //
+    // By default, no user is allowed to access any URLs and access must be granted by at least
+    // one rule.
+    message Rule {
+        // Matches the requested HTTP path.
+        string path = 1;
+
+        // If true, 'path' is interprated as a directory rather than as an exact match.
+        // (basically adds '(/.*)?' to the regex for path matching)
+        bool is_directory = 2;
+
+        // TODO: Implement me.
+        string method = 3;
+
+        // List of principals that are allowed to call this URL.
+        repeated string principals = 4;
+    }
+    repeated Rule rules = 2;
+}

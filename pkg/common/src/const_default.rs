@@ -51,6 +51,10 @@ impl<T> ConstDefault for Vec<T> {
     const DEFAULT: Self = Vec::new();
 }
 
+impl<T> ConstDefault for &'static [T] {
+    const DEFAULT: Self = &[];
+}
+
 macro_rules! impl_array {
     ($size:expr) => {
         impl<T: ConstDefault> ConstDefault for [T; $size] {

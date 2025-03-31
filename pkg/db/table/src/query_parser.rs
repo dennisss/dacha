@@ -33,6 +33,23 @@ macro_rules! query {
     }};
 }
 
+// TODO: Maybe rename since we have a differnet struct named RawQuery.
+#[macro_export]
+macro_rules! raw_query {
+    ($t:ty, $e:expr $(, $v:expr)* ) => {{
+        let mut builder = $crate::query_parser::QueryBuilder::create($e)?;
+        $(
+        builder.bind($v);
+        )*
+
+        use $crate::common::const_default::ConstDefault;
+        type Message = <$t as $crate::table::ProtobufTableTag>::Message;
+
+        let query = builder.build(&Message::DEFAULT)?;
+        query
+    }};
+}
+
 // TODO: Add a limit=1 clause.
 #[macro_export]
 macro_rules! query_one {

@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
             state_machine: EmbeddedDBStateMachineOptions::default(),
             tls: todo!(),
             hostname_resolver: todo!(),
+            acl_processor: None,
         })
         .await?,
     )

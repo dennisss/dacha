@@ -8,6 +8,8 @@ use common::io::{IoError, IoErrorKind, Readable};
 
 const MESSAGE_HEADER_SIZE: usize = 5;
 
+const DEFAULT_MAX_MESSAGE_SIZE: usize = 8 * 1024 * 1024; // 8MiB
+
 pub struct Message {
     pub data: Bytes,
 
@@ -49,8 +51,17 @@ impl<'a> MessageReader<'a> {
             return Err(err_msg("Decoding compressed messages not supported"));
         }
 
-        // TODO: Need to enforce some reasonable limits on max size.
         let size = u32::from_be_bytes(*array_ref![header, 1, 4]) as usize;
+
+        // TODO: Make configurable and live once we get rid of all the violators of
+        // this.
+        if size > DEFAULT_MAX_MESSAGE_SIZE {
+            eprintln!("Very large message received: {} bytes", size);
+
+            // TODO: We can return rpc Status (but only on the server side).
+            // return Err(format_err!("Received message was too large to
+            // process: {} bytes", size))l
+        }
 
         let mut data = vec![];
         data.reserve_exact(size);

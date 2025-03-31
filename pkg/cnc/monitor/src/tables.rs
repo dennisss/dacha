@@ -1,5 +1,6 @@
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
+use db_table::{sparse_struct, table_id};
 
 use crate::db::*;
 
@@ -9,7 +10,7 @@ impl ProtobufTableTag for MachineTable {
     type Message = MachineProto;
 
     fn table_id() -> u32 {
-        1
+        table_id!(32)
     }
 
     fn table_name() -> &'static str {
@@ -17,16 +18,14 @@ impl ProtobufTableTag for MachineTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[MachineProto::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
                 fixed_size: true,
             }],
-        }]
+        })]
     }
 }
 
@@ -36,7 +35,7 @@ impl ProtobufTableTag for FileTable {
     type Message = FileProto;
 
     fn table_id() -> u32 {
-        2
+        table_id!(33)
     }
 
     fn table_name() -> &'static str {
@@ -44,16 +43,14 @@ impl ProtobufTableTag for FileTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[FileProto::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
                 fixed_size: true,
             }],
-        }]
+        })]
     }
 }
 
@@ -63,7 +60,7 @@ impl ProtobufTableTag for MediaFragmentTable {
     type Message = MediaFragment;
 
     fn table_id() -> u32 {
-        3
+        table_id!(34)
     }
 
     fn table_name() -> &'static str {
@@ -71,10 +68,8 @@ impl ProtobufTableTag for MediaFragmentTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
             fields: &[
                 ProtobufKeyField {
                     path: &[MediaFragment::CAMERA_ID_FIELD_NUM_RAW],
@@ -87,7 +82,7 @@ impl ProtobufTableTag for MediaFragmentTable {
                     fixed_size: true,
                 },
             ],
-        }]
+        })]
     }
 }
 
@@ -97,7 +92,7 @@ impl ProtobufTableTag for ProgramRunTable {
     type Message = ProgramRun;
 
     fn table_id() -> u32 {
-        4
+        table_id!(35)
     }
 
     fn table_name() -> &'static str {
@@ -106,10 +101,8 @@ impl ProtobufTableTag for ProgramRunTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[
-            ProtobufTableKey {
+            sparse_struct!(ProtobufTableKey {
                 index_id: PRIMARY_KEY_ID,
-                index_name: None,
-                filter: None,
                 fields: &[
                     ProtobufKeyField {
                         path: &[ProgramRun::MACHINE_ID_FIELD_NUM_RAW],
@@ -122,11 +115,10 @@ impl ProtobufTableTag for ProgramRunTable {
                         fixed_size: true,
                     },
                 ],
-            },
-            ProtobufTableKey {
+            }),
+            sparse_struct!(ProtobufTableKey {
                 index_id: 1,
                 index_name: Some("ByFile"),
-                filter: None,
                 fields: &[
                     ProtobufKeyField {
                         path: &[ProgramRun::FILE_ID_FIELD_NUM_RAW],
@@ -144,7 +136,7 @@ impl ProtobufTableTag for ProgramRunTable {
                         fixed_size: true,
                     },
                 ],
-            },
+            }),
         ]
     }
 }
@@ -155,7 +147,7 @@ impl ProtobufTableTag for MetricSampleTable {
     type Message = MetricSample;
 
     fn table_id() -> u32 {
-        5
+        table_id!(36)
     }
 
     fn table_name() -> &'static str {
@@ -163,7 +155,7 @@ impl ProtobufTableTag for MetricSampleTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
             index_name: None,
             filter: None,
@@ -179,7 +171,7 @@ impl ProtobufTableTag for MetricSampleTable {
                     fixed_size: true,
                 },
             ],
-        }]
+        })]
     }
 }
 
@@ -189,7 +181,7 @@ impl ProtobufTableTag for ProgramPreviewTable {
     type Message = ProgramPreviewProto;
 
     fn table_id() -> u32 {
-        8
+        table_id!(39)
     }
 
     fn table_name() -> &'static str {
@@ -197,9 +189,8 @@ impl ProtobufTableTag for ProgramPreviewTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
             fields: &[
                 ProtobufKeyField {
                     path: &[ProgramPreviewProto::FILE_ID_FIELD_NUM_RAW],
@@ -212,34 +203,6 @@ impl ProtobufTableTag for ProgramPreviewTable {
                     fixed_size: true,
                 },
             ],
-        }]
-    }
-}
-
-// TODO: Use me.
-pub struct TableSchemaTable {}
-
-impl ProtobufTableTag for TableSchemaTable {
-    type Message = TableSchema;
-
-    fn table_id() -> u32 {
-        1_000_000
-    }
-
-    fn table_name() -> &'static str {
-        "TableSchema"
-    }
-
-    fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
-            index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
-            fields: &[ProtobufKeyField {
-                path: &[TableSchema::TABLE_ID_FIELD_NUM_RAW],
-                direction: Direction::Ascending,
-                fixed_size: false,
-            }],
-        }]
+        })]
     }
 }

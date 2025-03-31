@@ -238,10 +238,21 @@ impl DiscoveryClient {
         request: &Announcement,
     ) -> Result<()> {
         let stub = DiscoveryStub::new(channel);
-        let res = stub
-            .Announce(&rpc::ClientRequestContext::default(), request)
-            .await
-            .result?;
+
+        let res = {
+            if request.routes().is_empty() {
+                stub.Read(
+                    &rpc::ClientRequestContext::default(),
+                    &ReadRequest::default(),
+                )
+                .await
+                .result?
+            } else {
+                stub.Announce(&rpc::ClientRequestContext::default(), request)
+                    .await
+                    .result?
+            }
+        };
 
         let mut store = self.route_store.lock().await;
         store.apply(&res);

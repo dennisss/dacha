@@ -42,11 +42,13 @@ use executor::cancellation::AlreadyCancelledToken;
 use executor_multitask::ServiceResource;
 use file::temp::TempDir;
 use file::{project_dir, project_path, LocalPath, LocalPathBuf};
-use hostname::ClusterMetaHostnameResolver;
+use hostname::{ClusterMetaHostnameResolver, ROOT_SERVER_ID};
 use protobuf::text::{parse_text_proto, ParseTextProto};
+use protobuf::Message;
 use raft::log::segmented_log::SegmentedLogOptions;
 use raft::proto::Configuration_ServerRole;
 
+use crate::acl::{authorize_node, bootstrap_acls};
 use crate::ssh::*;
 use crate::start_job_command::start_job_impl;
 use crate::system_jobs::*;
@@ -151,13 +153,15 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             &[],
             // TODO: TLS here needs to use the root credentials since we may not yet regular
             // credentials.
-            Some(root_creds.tls.client.clone()),
+            Some(root_creds.tls.clone()),
         )
         .await?,
     );
     let db = meta_client.db();
 
     if cmd.bootstrap {
+        // TODO: Make this all one transaction.
+
         // TODO: Need to support refreshing this.
         cluster_ca::insert_certificate_into_registry(
             meta_client.db().as_ref(),
@@ -174,8 +178,7 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             .insert::<PrivateKeyMetadataTable>(&key_meta)
             .await?;
 
-        // TODO:
-        // - Setup metastore ACLs
+        bootstrap_acls(&cmd.zone, &db).await?;
     }
 
     let operator: Box<dyn MachineOperator> = {
@@ -217,6 +220,9 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
     };
 
     println!("Node Id: {}", entity_id_to_string(node_id).unwrap());
+
+    // TODO: Don't need to do this if already authorized.
+    authorize_node(node_id, &cmd.zone, &db).await?;
 
     // TODO: Verify that the node id doesn't exist in the metastore (can happen if
     // machine if wasn't sufficiently randomized) or is zero
@@ -425,21 +431,13 @@ async fn run_local_metastore(
     // TODO: Implement completely in memory.
     let local_metastore_dir = file::temp::TempDir::create()?;
 
-    // TODO: Debuplicate with the job creation code.
-    let mut route_label = raft::proto::RouteLabel::default();
-    route_label.set_value(format!("{}={}", cluster_client::env::ZONE_ENV_VAR, zone));
-
-    let res = datastore::meta::store::run(datastore::meta::store::MetastoreOptions {
+    let res = cluster_meta::run(cluster_meta::ClusterMetastoreOptions {
+        id: ROOT_SERVER_ID,
+        port,
+        zone,
         dir: local_metastore_dir.path().to_owned(),
-        init_port: None,
-        bootstrap_group: true,
-        service_port: port,
-        bootstrap_node_id: Some(1), // Special id owned by the root.
-        route_labels: vec![route_label],
-        log: SegmentedLogOptions::default(),
-        state_machine: datastore::meta::EmbeddedDBStateMachineOptions::default(),
-        hostname_resolver: Arc::new(ClusterMetaHostnameResolver::new(&zone)),
-        tls,
+        creds: tls.unwrap(),
+        bootstrap: true,
     })
     .await;
 
@@ -587,6 +585,7 @@ async fn setup_remote_node_server(
     // installed
 
     // Delete any old built artifacts data.
+    // TODO: Must use sudo if we are using newcgroup.
     let bundle_dir = base_dir.join("bundle");
     operator
         .run(&format!("rm -rf {}", bundle_dir.as_str()))
@@ -605,27 +604,6 @@ async fn setup_remote_node_server(
 
     operator.upload(b"", bundle_dir.join("WORKSPACE")).await?;
 
-    /*
-    // TODO: This is the only file in the bundle not owned by
-    // 'cluster-user:cluster-user'
-    // TODO: Find a better place to store this logic that is shared with local
-    // executions.
-    let newcgroup_path = bundle_dir.join("built/pkg/container/newcgroup");
-    operator
-        .run(&format!(
-            "sudo chown root:{} {}",
-            NODE_USER,
-            newcgroup_path.as_str()
-        ))
-        .await?;
-    operator
-        .run(&format!("sudo chmod 750 {}", newcgroup_path.as_str()))
-        .await?;
-    operator
-        .run(&format!("sudo chmod u+s {}", newcgroup_path.as_str()))
-        .await?;
-    */
-
     let mut node_config = {
         let s = file::read_to_string(project_path!("pkg/container/config/node.txtpb")).await?;
         NodeConfig::parse_text(&s)?
@@ -636,15 +614,36 @@ async fn setup_remote_node_server(
     node_config.set_data_dir(data_dir.as_str());
     node_config.set_secure(true);
 
-    // TODO: Generate this with the correct zone.
+    let node_config_data = node_config.serialize()?;
+    operator
+        .upload(&node_config_data, base_dir.join("config.pb"))
+        .await?;
+
     // TODO: It isn't really worth hving this in the bundle since that confuses it
     // with built assets.
 
-    let node_config_data = protobuf::text::serialize_text_proto(&node_config);
-    operator
-        .upload(node_config_data.as_bytes(), base_dir.join("config.txtpb"))
-        .await?;
+    // TODO: This is the only file in the bundle not owned by
+    // 'cluster-user:cluster-user'
+    // TODO: Find a better place to store this logic that is shared with local
+    // executions.
+    if !node_config.cgroup_dir().is_empty() {
+        let newcgroup_path = bundle_dir.join("built/pkg/container/newcgroup");
+        operator
+            .run(&format!(
+                "sudo chown root:{} {}",
+                NODE_USER,
+                newcgroup_path.as_str()
+            ))
+            .await?;
+        operator
+            .run(&format!("sudo chmod 750 {}", newcgroup_path.as_str()))
+            .await?;
+        operator
+            .run(&format!("sudo chmod u+s {}", newcgroup_path.as_str()))
+            .await?;
+    }
 
+    // TODO: Merge this with the bundle build rule.
     {
         let key = "pkg/container/config/node.service";
 
@@ -782,7 +781,8 @@ async fn bootstrap_system_jobs(
     local_metastore_resource: Arc<dyn ServiceResource>,
 ) -> Result<()> {
     // Start a local manager instance.
-    let manager = Manager::new(db.clone(), Arc::new(crypto::random::global_rng())).into_service();
+    let manager =
+        Manager::new(zone, db.clone(), Arc::new(crypto::random::global_rng())).into_service();
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
     let manager_stub = cluster_client::ManagerStub::new(manager_channel);
 
@@ -798,8 +798,6 @@ async fn bootstrap_system_jobs(
         &request_context,
     )
     .await?;
-
-    println!("DONE CA JOB START");
 
     // Since the node can't yet query any CA job, it can't create the CA by itself
     // yet. So we need to manually start the first CA worker with a locally
@@ -862,13 +860,12 @@ async fn bootstrap_system_jobs(
             .result?;
     }
 
-    println!("123455 =============");
-
     /*
     TODO: Must wait for it to be healthy.
 
     Or minimally check for "state: RUNNING"
     */
+    /*
     {
         for i in 0..10 {
             let res = node
@@ -886,6 +883,7 @@ async fn bootstrap_system_jobs(
             executor::sleep(Duration::from_secs(1)).await?;
         }
     }
+    */
 
     // First setup a local manager
 
@@ -909,11 +907,6 @@ async fn bootstrap_system_jobs(
 
         server.id()
     };
-
-    // TODO: Might as well do this earlier?
-    let mut zone_record = ZoneMetadata::default();
-    zone_record.set_name(zone);
-    db.insert::<ZoneMetadataTable>(&zone_record).await?;
 
     // For this to work, we first need a certificate authority.
     // - So how do I boot

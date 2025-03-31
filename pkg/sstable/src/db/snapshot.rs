@@ -20,6 +20,7 @@ use super::merge_iterator::MergeIterator;
 /// collection or compaction of the underlying table data.
 ///
 /// TODO: This must internally hold a reference to the LockFile
+#[derive(Clone)]
 pub struct Snapshot {
     pub(crate) options: Arc<EmbeddedDBOptions>,
 

@@ -7,7 +7,7 @@ impl ProtobufTableTag for RequestCacheEntryTable {
     type Message = RequestCacheEntry;
 
     fn table_id() -> u32 {
-        1
+        table_id!(31)
     }
 
     fn table_name() -> &'static str {
@@ -16,9 +16,8 @@ impl ProtobufTableTag for RequestCacheEntryTable {
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         todo!()
-            & [ProtobufTableKey {
+            & [sparse_struct!(ProtobufTableKey {
                 index_id: PRIMARY_KEY_ID,
-                index_name: None,
                 fields: &[
                     ProtobufKeyField {
                         path: &[
@@ -34,6 +33,6 @@ impl ProtobufTableTag for RequestCacheEntryTable {
                         fixed_size: false,
                     },
                 ],
-            }]
+            })]
     }
 }

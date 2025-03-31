@@ -47,6 +47,7 @@ impl Status {
     status_ctor!(already_exists, AlreadyExists);
     status_ctor!(failed_precondition, FailedPrecondition);
     status_ctor!(unimplemented, Unimplemented);
+    status_ctor!(permission_denied, PermissionDenied);
     status_ctor!(unknown, Unknown);
 
     pub fn code(&self) -> StatusCode {

@@ -1,3 +1,4 @@
+use macros::ConstDefault;
 use protobuf::{FieldNumber, StaticMessage, TypedFieldNumber};
 
 pub const PRIMARY_KEY_ID: u32 = 0;
@@ -15,12 +16,22 @@ pub trait ProtobufTableTag {
     /// database.
     fn table_name() -> &'static str;
 
+    /// If true, then this table will ALWAYS only have a single index (the
+    /// primary key).
+    ///
+    /// This is a requirement for per-row ACLs since we can't easily ACL
+    /// restrict indexes.
+    fn single_index_table() -> bool {
+        false
+    }
+
     /// Lists all fields that are present in the primary/secondary keys.
     ///
     /// NOTE: This MUST be in sorted index_id order.
     fn indexed_keys() -> &'static [ProtobufTableKey];
 }
 
+#[derive(ConstDefault)]
 pub struct ProtobufTableKey {
     /// Unique id for this key. Must equal PRIMARY_KEY_ID for the primary key.
     pub index_id: u32,
@@ -34,6 +45,19 @@ pub struct ProtobufTableKey {
     /// - For unique indexes, this can contain zero or more of the primary key's
     ///   fields.
     pub fields: &'static [ProtobufKeyField],
+
+    /// Query expression which must evaluate to true on a row for it to be
+    /// included in this index.
+    ///
+    /// If a field's value is implied by the filter, then it shouln't be
+    /// included in the 'fields'. TODO: Validate this.
+    ///
+    /// NOTE: No filter is allowed on the primary key.
+    pub filter: Option<&'static str>,
+
+    /// If true, this index will permanently only contain a single column
+    /// family.
+    pub single_column_family: bool,
 }
 
 pub struct ProtobufKeyField {
@@ -69,9 +93,26 @@ macro_rules! define_singleton_table {
                 &[$crate::table::ProtobufTableKey {
                     index_id: $crate::table::PRIMARY_KEY_ID,
                     index_name: None,
+                    single_column_family: false,
+                    filter: None,
                     fields: &[],
                 }]
             }
         }
     };
+}
+
+#[macro_export]
+macro_rules! sparse_struct {
+    ($name:ty { $( $field:ident : $v:expr ),* $(,)? }) => {{
+        const VALUE: $name = {
+            let mut s = <$name as $crate::common::const_default::ConstDefault>::DEFAULT;
+            $(
+                s.$field = $v;
+            )*
+            s
+        };
+
+        VALUE
+    }};
 }

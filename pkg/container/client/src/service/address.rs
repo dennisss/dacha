@@ -25,6 +25,8 @@ pub struct ServiceAddress {
 ///
 /// Note that ServiceNames always reference a specific zone and don't use the
 /// 'local' zone.
+///
+/// TODO: REname to 'EntityName'
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub struct ServiceName {
     zone: String,
@@ -163,8 +165,8 @@ impl ServiceName {
         mut name_parts: Vec<&str>,
         current_zone: Option<&str>,
     ) -> Result<Self, ServiceParseError> {
-        // Name must contain at least a zone, an entity type and an entity name.
-        if name_parts.len() < 3 {
+        // Name must contain at least a zone, an entity type.
+        if name_parts.len() < 2 {
             return Err(ServiceParseError::NameTooShort);
         }
 
@@ -311,7 +313,7 @@ mod tests {
 
     use super::*;
 
-    #[testcase]
+    #[test]
     fn parse_job_address_with_port() -> Result<()> {
         let addr = ServiceAddress::parse_relative_addr(
             "_my_port.adder_server.user.job.local.cluster.internal",
@@ -338,7 +340,17 @@ mod tests {
         Ok(())
     }
 
-    #[testcase]
+    #[test]
+    fn parse_root_name() -> Result<()> {
+        let addr = ServiceName::parse("root.home.cluster.internal")?;
+
+        assert_eq!(addr.entity(), &ServiceEntity::Root);
+        assert_eq!(addr.zone(), "home");
+
+        Ok(())
+    }
+
+    #[test]
     fn parse_worker_address_with_port() -> Result<()> {
         let addr = ServiceAddress::parse_relative_addr(
             "a12345.adder_client.user.worker.local.cluster.internal",

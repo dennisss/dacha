@@ -74,12 +74,47 @@ pub(crate) struct QueryAllOf {
 }
 
 impl QueryAllOf {
-    pub fn and(&mut self, field: &[FieldNumber], comp: QueryComparison) -> &mut Self {
+    pub(crate) fn and(&mut self, field: &[FieldNumber], comp: QueryComparison) -> &mut Self {
         self.fields.entry(field.to_vec()).or_default().push(comp);
         self
     }
+
+    /// Attempts to form a query 'x' such that 'x = self AND other'
+    pub(crate) fn subtract(&self, other: &Query) -> Option<QueryAllOf> {
+        if other.any_of.len() != 1 {
+            // TODO: Implement > 1
+            return None;
+        }
+
+        for (num, value) in &other.any_of[0].fields {
+            // TODO: Need to check for intersections.
+
+            let self_value = match self.fields.get(num) {
+                Some(v) => v,
+                None => return None,
+            };
+
+            if self_value != value {
+                return None;
+            }
+        }
+
+        let mut out = HashMap::default();
+
+        for (num, value) in &self.fields {
+            // NOTE: Don't need to check the values for equivalence since we did that above.
+            if other.any_of[0].fields.contains_key(num) {
+                continue;
+            }
+
+            out.insert(num.clone(), value.clone());
+        }
+
+        Some(QueryAllOf { fields: out })
+    }
 }
 
+#[derive(PartialEq, Clone)]
 pub struct QueryComparison {
     pub op: QueryOp,
     pub rhs: QueryValue,
@@ -94,7 +129,7 @@ pub enum QueryOp {
     GreaterThanOrEqual,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum QueryValue {
     I32(i32),
     I64(i64),
@@ -152,6 +187,12 @@ impl<'a> From<&'a String> for QueryValue {
 impl<'a> From<&'a [u8]> for QueryValue {
     fn from(value: &'a [u8]) -> Self {
         Self::Bytes(value.to_vec())
+    }
+}
+
+impl From<Vec<u8>> for QueryValue {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Bytes(value)
     }
 }
 

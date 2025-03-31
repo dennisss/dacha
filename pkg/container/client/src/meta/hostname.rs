@@ -2,6 +2,10 @@ use raft_client::RouteHostnameResolver;
 
 use crate::{id::entity_id_to_string, service::address::ServiceName};
 
+/// Server id used for the first server started in the metastore for
+/// bootstrapping purposes.
+pub const ROOT_SERVER_ID: u64 = 1;
+
 pub struct ClusterMetaHostnameResolver {
     zone: String,
 }
@@ -16,7 +20,7 @@ impl ClusterMetaHostnameResolver {
 
 impl RouteHostnameResolver for ClusterMetaHostnameResolver {
     fn route_hostname(&self, route: &raft_client::proto::Route) -> Option<String> {
-        if route.server_id().value() == 1 {
+        if route.server_id().value() == ROOT_SERVER_ID {
             return Some(ServiceName::for_root(&self.zone).unwrap().to_string());
         }
 

@@ -78,6 +78,10 @@ message Announcement {
     google.protobuf.Timestamp time = 2;
 }
 
+message ReadRequest {}
+
 service Discovery {
     rpc Announce (Announcement) returns (Announcement);
+
+    rpc Read (ReadRequest) returns (Announcement);
 }

@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::mem::discriminant;
 
 use base_error::*;
+use parsing::binary::be_u8;
 use parsing::parse_next;
 use protobuf::reflection::{Reflect, Reflection, ReflectionMut};
 use protobuf::MessageReflection;
@@ -32,15 +33,23 @@ impl<'a> KeyBuilder<'a> {
     ) -> Result<Vec<u8>> {
         let mut builder = Self::new(table_id, index_key_config, message);
 
-        for field in index_key_config.fields {
+        for (field_i, field) in index_key_config.fields.iter().enumerate() {
             let r = field_by_path(message, field.path)?;
+
+            let is_last_field = field_i == index_key_config.fields.len() - 1;
 
             // NOTE: Since we are iterating over the fields from the config and reflecting a
             // Tag::Message type, the types and field order are correct.
-            builder.append_raw(field, r)?;
+            builder.append_raw(field, is_last_field, r)?;
         }
 
         Ok(builder.finish())
+    }
+
+    pub fn table_prefix(table_id: u32) -> Vec<u8> {
+        let mut out = vec![];
+        KeyEncoder::encode_varuint(table_id as u64, false, &mut out);
+        out
     }
 
     pub fn new(
@@ -78,7 +87,11 @@ impl<'a> KeyBuilder<'a> {
             return Err(err_msg("Incompatible values being packed into key."));
         }
 
-        self.append_raw(field, value)
+        self.append_raw(
+            field,
+            self.next_field_index == self.index_key_config.fields.len(),
+            value,
+        )
     }
 
     pub fn finish(mut self) -> Vec<u8> {
@@ -90,7 +103,12 @@ impl<'a> KeyBuilder<'a> {
     /// This assumes:
     /// - Fields are appended in the right order.
     /// - The value is the correct data type.
-    fn append_raw(&mut self, field: &ProtobufKeyField, value: Reflection) -> Result<()> {
+    fn append_raw(
+        &mut self,
+        field: &ProtobufKeyField,
+        is_last_field: bool,
+        value: Reflection,
+    ) -> Result<()> {
         let inverted = field.direction == Direction::Descending;
 
         // NOTE: We don't use 'encode_end_bytes' for the final field to eventually
@@ -101,11 +119,21 @@ impl<'a> KeyBuilder<'a> {
                     return Err(err_msg("Inverted string keys not supported"));
                 }
 
+                if self.index_key_config.single_column_family && is_last_field {
+                    KeyEncoder::encode_end_bytes(v.as_bytes(), &mut self.out);
+                    return Ok(());
+                }
+
                 KeyEncoder::encode_bytes(v.as_bytes(), &mut self.out);
             }
             Reflection::Bytes(v) => {
                 if inverted {
                     return Err(err_msg("Inverted bytes keys not supported"));
+                }
+
+                if self.index_key_config.single_column_family && is_last_field {
+                    KeyEncoder::encode_end_bytes(v, &mut self.out);
+                    return Ok(());
                 }
 
                 KeyEncoder::encode_bytes(v, &mut self.out);
@@ -125,9 +153,17 @@ impl<'a> KeyBuilder<'a> {
                     KeyEncoder::encode_varuint(*v, inverted, &mut self.out)
                 }
             }
+            Reflection::Bool(v) => {
+                let mut v = *v;
+                if inverted {
+                    v = !v;
+                }
+
+                self.out.push(if v { 1 } else { 0 });
+            }
+
             // Reflection::I32(v) => ,
             // Reflection::I64(_) => todo!(),
-            // Reflection::Bool(_) => todo!(),
             _ => {
                 return Err(err_msg("Index contains un-indexable field"));
             }
@@ -152,17 +188,32 @@ impl<'a> KeyBuilder<'a> {
             return Err(err_msg("Wrong key index"));
         }
 
-        for field in index_key_config.fields {
+        for (field_i, field) in index_key_config.fields.iter().enumerate() {
             let r = field_by_path_mut(message, field.path)?;
 
+            let is_last_field = field_i == index_key_config.fields.len() - 1;
             let inverted = field.direction == Direction::Descending;
 
             match r {
                 ReflectionMut::String(v) => {
+                    if is_last_field && index_key_config.single_column_family {
+                        let bytes = parse_next!(key, KeyEncoder::decode_end_bytes);
+                        v.clear();
+                        v.push_str(std::str::from_utf8(bytes)?);
+                        continue;
+                    }
+
                     let bytes = parse_next!(key, KeyEncoder::decode_bytes);
                     *v = String::from_utf8(bytes)?;
                 }
                 ReflectionMut::Bytes(v) => {
+                    if is_last_field && index_key_config.single_column_family {
+                        let bytes = parse_next!(key, KeyEncoder::decode_end_bytes);
+                        v.clear();
+                        v.extend_from_slice(bytes);
+                        continue;
+                    }
+
                     let bytes = parse_next!(key, KeyEncoder::decode_bytes);
                     v.clear();
                     v.extend_from_slice(&bytes);
@@ -181,6 +232,19 @@ impl<'a> KeyBuilder<'a> {
                     } else {
                         *v = parse_next!(key, |input| KeyEncoder::decode_varuint(input, inverted));
                     }
+                }
+                ReflectionMut::Bool(v) => {
+                    let mut raw_v = match parse_next!(key, be_u8) {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(err_msg("Unknown bool value")),
+                    };
+
+                    if inverted {
+                        raw_v = !raw_v;
+                    }
+
+                    *v = raw_v;
                 }
                 _ => {
                     return Err(err_msg("Index contains un-indexable field"));

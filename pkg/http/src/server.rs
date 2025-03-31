@@ -532,6 +532,7 @@ impl Server {
             peer_addr: raw_peer_addr.ip().clone(),
             peer_port: raw_peer_addr.port(),
             tls: None,
+            handler_data: None,
         };
 
         let (mut read_stream, mut write_stream) = stream.split();
@@ -566,7 +567,11 @@ impl Server {
             write_stream = Box::new(app.writer);
         }
 
-        if !shared.handler.handle_connection(&connection_context).await {
+        if !shared
+            .handler
+            .handle_connection(&mut connection_context)
+            .await
+        {
             return Ok(());
         }
 

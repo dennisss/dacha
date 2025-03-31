@@ -5,17 +5,10 @@ use builder::proto::BundleBlobSpec;
 use common::errors::*;
 use container_proto::cluster::*;
 use db_table::db::ProtobufDB;
-use db_table::{define_singleton_table, query, query_one, table::*};
+use db_table::{define_singleton_table, query, query_one, sparse_struct, table::*, table_id};
 use protobuf::{Message, StaticMessage};
 
 use crate::proto::{Labels, WorkerEvent, WorkerMetadata};
-
-const WORKERS_TABLE_ID: u64 = 11;
-const NODE_ID_TABLE_ID: u64 = 12;
-const BLOBS_TABLE_ID: u64 = 13;
-const EVENTS_TABLE_ID: u64 = 14;
-const EVENTS_TIMESTAMP_ID: u64 = 15;
-const NODE_LABELS_ID: u64 = 16;
 
 /// Table that contains only the WorkerMetadata for workers that are assigned to
 /// the current node.
@@ -25,7 +18,7 @@ impl ProtobufTableTag for LocalWorkerMetadataTable {
     type Message = WorkerMetadata;
 
     fn table_id() -> u32 {
-        11
+        table_id!(26)
     }
 
     fn table_name() -> &'static str {
@@ -33,10 +26,8 @@ impl ProtobufTableTag for LocalWorkerMetadataTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[
                     WorkerMetadata::SPEC_FIELD_NUM_RAW,
@@ -45,7 +36,7 @@ impl ProtobufTableTag for LocalWorkerMetadataTable {
                 direction: Direction::Ascending,
                 fixed_size: false,
             }],
-        }]
+        })]
     }
 }
 
@@ -63,7 +54,7 @@ impl ProtobufTableTag for LocalBundleBlobSpecTable {
     type Message = BundleBlobSpec;
 
     fn table_id() -> u32 {
-        13
+        table_id!(27)
     }
 
     fn table_name() -> &'static str {
@@ -71,16 +62,14 @@ impl ProtobufTableTag for LocalBundleBlobSpecTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[BundleBlobSpec::ID_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
                 fixed_size: false,
             }],
-        }]
+        })]
     }
 }
 
@@ -107,7 +96,7 @@ impl ProtobufTableTag for WorkerEventTable {
     type Message = WorkerEvent;
 
     fn table_id() -> u32 {
-        14
+        table_id!(28)
     }
 
     fn table_name() -> &'static str {
@@ -115,10 +104,8 @@ impl ProtobufTableTag for WorkerEventTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
             fields: &[
                 ProtobufKeyField {
                     path: &[WorkerEvent::WORKER_NAME_FIELD_NUM_RAW],
@@ -131,13 +118,13 @@ impl ProtobufTableTag for WorkerEventTable {
                     fixed_size: false,
                 },
             ],
-        }]
+        })]
     }
 }
 
 define_singleton_table!(WorkerEventLatestTimestampTable {
     message: WorkerEventLatestTimestamp,
-    table_id: 15,
+    table_id: table_id!(29),
     table_name: "WorkerEventLatestTimestamp"
 });
 
@@ -169,7 +156,7 @@ impl ProtobufTableTag for WorkerRuntimeMetadataTable {
     type Message = WorkerRuntimeMetadata;
 
     fn table_id() -> u32 {
-        19
+        table_id!(30)
     }
 
     fn table_name() -> &'static str {
@@ -177,15 +164,13 @@ impl ProtobufTableTag for WorkerRuntimeMetadataTable {
     }
 
     fn indexed_keys() -> &'static [ProtobufTableKey] {
-        &[ProtobufTableKey {
+        &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
-            index_name: None,
-            filter: None,
             fields: &[ProtobufKeyField {
                 path: &[WorkerRuntimeMetadata::WORKER_NAME_FIELD_NUM_RAW],
                 direction: Direction::Ascending,
                 fixed_size: false,
             }],
-        }]
+        })]
     }
 }

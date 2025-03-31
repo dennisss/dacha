@@ -341,7 +341,7 @@ impl Node {
         self.clone().inner.run_impl()
     }
 
-    pub fn add_services(&self, rpc_server: &mut rpc::Http2Server) -> Result<()> {
+    pub fn add_services(&self, rpc_server: &mut rpc::Http2RequestHandler) -> Result<()> {
         rpc_server.add_service(self.inner.clone().into_service())?;
         rpc_server.add_service(self.inner.shared.blobs.clone().into_service())?;
         Ok(())
@@ -458,9 +458,16 @@ impl NodeInner {
         // TODO: Make sure that this aggressively blocks till ready.
         let meta_client = {
             if !self.shared.meta_client.has_value().await {
-                let meta_client = Arc::new(
-                    ClusterMetaClient::create(zone, &[], self.tls_client_options()).await?,
-                );
+                let creds = self
+                    .shared
+                    .credentials
+                    .as_ref()
+                    .map(|c| crypto::tls::Credentials {
+                        server: c.node_server_options(),
+                        client: c.node_client_options(),
+                    });
+
+                let meta_client = Arc::new(ClusterMetaClient::create(zone, &[], creds).await?);
                 self.shared.meta_client.set(meta_client).await?;
             }
 

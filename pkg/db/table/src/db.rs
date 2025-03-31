@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use base_error::*;
@@ -6,11 +8,13 @@ use common::bytes::Bytes;
 use common::const_default::StaticDefault;
 use db_kv::*;
 use executor::sync::AsyncRwLock;
+use executor::sync::SyncMutex;
 use protobuf::{Message, MessageReflection, StaticMessage};
 
 use crate::key::KeyBuilder;
 use crate::key_utils::*;
 use crate::query::*;
+use crate::query_parser::QueryBuilder;
 use crate::reflection::clear_field_by_path;
 use crate::reflection::field_by_path;
 use crate::reflection::field_by_path_mut;
@@ -145,7 +149,8 @@ pub struct ProtobufDBTransaction<'a> {
 
     txn: Box<dyn KeyValueStoreTransaction + 'a>,
 
-    // If true, then a write operation did not
+    // If true, then a write operation did not complete successfully so this transaction must be
+    // scraped.
     poisoned: bool,
 }
 
@@ -182,6 +187,10 @@ impl<'a> ProtobufDBTransaction<'a> {
             out.push(message);
             Ok(())
         };
+
+        /*
+        TODO: Also attempt to execute the entire query using one of the indexes (subtract the filter and extract out common fields out of each clause)
+        */
 
         // TODO: Need to merge any clauses that refer to overlapping sets.
         // TODO: Parallelize the clauses after we do query planning.
@@ -223,7 +232,7 @@ impl<'a> ProtobufDBTransaction<'a> {
     }
 
     fn get_index_key(
-        clause: &QueryAllOf,
+        mut clause: &QueryAllOf,
         table_id: u32,
         key_config: &ProtobufTableKey,
         default_message: &dyn MessageReflection,
@@ -237,6 +246,21 @@ impl<'a> ProtobufDBTransaction<'a> {
         let mut num_prefix_fields_matched = 0;
 
         let mut cost = 1;
+
+        let filter_query = match key_config.filter {
+            Some(v) => Some(QueryBuilder::create(v)?.build(default_message)?),
+            None => None,
+        };
+
+        let filtered_clause = match filter_query {
+            Some(v) => clause.subtract(&v),
+            None => None,
+        };
+
+        let mut clause = clause;
+        if let Some(c) = &filtered_clause {
+            clause = c;
+        }
 
         for field in key_config.fields {
             let inverted = field.direction == Direction::Descending;
@@ -258,9 +282,6 @@ impl<'a> ProtobufDBTransaction<'a> {
                     continue;
                 }
             }
-
-            // TODO: Should also implement indexing of field presence
-            // - e.g. only create a column if the secondary key are present.
 
             let mut got_min = false;
             let mut got_max = false;
@@ -319,6 +340,7 @@ impl<'a> ProtobufDBTransaction<'a> {
         }
 
         for _ in 0..(clause.fields.len() - num_prefix_fields_matched) {
+            // TODO: USe '3' if we are partially reducing the cardinality with the 'filter'
             cost *= 4;
         }
 
@@ -408,6 +430,10 @@ impl<'a> ProtobufDBTransaction<'a> {
 
             let primary_key =
                 KeyBuilder::message_key(Tag::table_id(), primary_key_config, &secondary_msg)?;
+
+            // TODO: There's some opportunity for optimization here since if the entries are
+            // sorted by primary key, we should be able to get higher performance than doing
+            // amny single row lookups by sharing an iterator on the db.
 
             let entry = self
                 .get_one_row(&primary_key)
@@ -521,6 +547,20 @@ impl<'a> ProtobufDBTransaction<'a> {
         self.start_critical_section()?;
 
         for key_config in Tag::indexed_keys() {
+            let filter_query = match key_config.filter {
+                Some(v) => Some(QueryBuilder::create(v)?.build(Tag::Message::static_default())?),
+                None => None,
+            };
+
+            let indexed = match filter_query {
+                Some(v) => v.matches(value)?,
+                None => true,
+            };
+
+            if !indexed {
+                continue;
+            }
+
             let key = KeyBuilder::message_key(Tag::table_id(), key_config, value)?;
             self.txn.delete(&key).await?;
         }
@@ -571,9 +611,12 @@ impl<'a> ProtobufDBTransaction<'a> {
                 // - 'value' is a protobuf with all fields in the message except those in the
                 //   key.
 
-                // TODO: We no longer use ordering to check this.
                 if key_config.index_name.is_some() {
-                    return Err(err_msg("First key must be the primary key"));
+                    return Err(err_msg("Primary key can't have a custom name"));
+                }
+
+                if key_config.filter.is_some() {
+                    return Err(err_msg("Primary key can't have a custom name"));
                 }
 
                 let mut key_value = value.clone();
@@ -590,13 +633,43 @@ impl<'a> ProtobufDBTransaction<'a> {
                 // - 'value' is all fields of the primary key that aren't included in this
                 //   secondary key.
 
-                if let Some(old_value) = old_value {
-                    let old_key = KeyBuilder::message_key(Tag::table_id(), &key_config, old_value)?;
-                    if old_key == key {
-                        continue;
-                    }
+                // TODO: If the filter query implies a field's value, we don't need to store it
+                // in the 'key'/'value'.
 
-                    self.txn.delete(&old_key).await?;
+                let filter_query = match key_config.filter {
+                    Some(v) => {
+                        Some(QueryBuilder::create(v)?.build(Tag::Message::static_default())?)
+                    }
+                    None => None,
+                };
+
+                let new_indexed = match filter_query.as_ref() {
+                    Some(v) => v.matches(value)?,
+                    None => true,
+                };
+
+                if let Some(old_value) = old_value {
+                    let old_indexed = match filter_query.as_ref() {
+                        Some(v) => v.matches(old_value)?,
+                        None => true,
+                    };
+
+                    if old_indexed {
+                        let old_key =
+                            KeyBuilder::message_key(Tag::table_id(), &key_config, old_value)?;
+
+                        // NOTE: We don't need to compare the values since we currently only ever
+                        // store the primary key which can't change.
+                        if old_key == key && new_indexed {
+                            continue;
+                        }
+
+                        self.txn.delete(&old_key).await?;
+                    }
+                }
+
+                if !new_indexed {
+                    continue;
                 }
 
                 let mut secondary_value = Tag::Message::default();
@@ -636,5 +709,78 @@ impl<'a> ProtobufDBTransaction<'a> {
         }
 
         Ok(())
+    }
+
+    /// Gets a key which is the prefix of all data in a table (and not the
+    /// prefix of any data in any other table).
+    pub fn table_key_prefix<Tag: ProtobufTableTag>() -> Vec<u8> {
+        KeyBuilder::table_prefix(Tag::table_id())
+    }
+
+    pub fn primary_key_prefix<Tag: ProtobufTableTag>(query: &Query) -> Result<Vec<u8>> {
+        if query.any_of.len() != 1 {
+            return Err(err_msg(
+                "Expected just one any_of clause to match the primary key",
+            ));
+        }
+
+        let key = Self::get_index_key(
+            &query.any_of[0],
+            Tag::table_id(),
+            &Tag::indexed_keys()[0],
+            Tag::Message::static_default(),
+        )?;
+
+        if key.cost != 1 {
+            return Err(err_msg("Query can not be fully matched by the primary key"));
+        }
+
+        Ok(key.start_key)
+    }
+}
+
+/// Helper to decode raw key-value pairs containing primary key values from the
+/// underlying database.
+pub struct ProtobufDBKeyValueDecoder<Tag> {
+    prefix: Vec<u8>,
+    tag: PhantomData<Tag>,
+}
+
+impl<Tag: ProtobufTableTag> ProtobufDBKeyValueDecoder<Tag> {
+    pub fn new() -> Self {
+        // TODO: Avoid assuming that the first index is the primary key.
+        let prefix = KeyBuilder::new(
+            Tag::table_id(),
+            &Tag::indexed_keys()[0],
+            Tag::Message::static_default(),
+        )
+        .finish();
+
+        Self {
+            prefix,
+            tag: PhantomData,
+        }
+    }
+
+    pub fn decode_deletion(&self, key: &[u8]) -> Result<Option<Tag::Message>> {
+        if !key.starts_with(&self.prefix) {
+            return Ok(None);
+        }
+
+        let mut msg = Tag::Message::default();
+        KeyBuilder::decode_key(Tag::table_id(), &Tag::indexed_keys()[0], &key, &mut msg)?;
+
+        Ok(Some(msg))
+    }
+
+    pub fn decode_value(&self, key: &[u8], value: &[u8]) -> Result<Option<Tag::Message>> {
+        if !key.starts_with(&self.prefix) {
+            return Ok(None);
+        }
+
+        let mut msg = Tag::Message::parse(value)?;
+        KeyBuilder::decode_key(Tag::table_id(), &Tag::indexed_keys()[0], &key, &mut msg)?;
+
+        Ok(Some(msg))
     }
 }

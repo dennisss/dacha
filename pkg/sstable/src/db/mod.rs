@@ -16,4 +16,4 @@ pub use backup::Backup;
 pub use db::EmbeddedDB;
 pub use options::EmbeddedDBOptions;
 pub use snapshot::{Snapshot, SnapshotIterator, SnapshotIteratorOptions};
-pub use write_batch::{Write, WriteBatch, WriteBatchIterator};
+pub use write_batch::{Write, WriteBatch, WriteBatchBuilder, WriteBatchIterator};

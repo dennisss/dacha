@@ -1,5 +1,7 @@
+use std::ops::Deref;
+
 use common::errors::*;
-use protobuf::wire::parse_varint;
+use protobuf::wire::{parse_varint, serialize_varint};
 
 use crate::db::internal_key::*;
 use crate::encoding::*;
@@ -135,15 +137,22 @@ pub enum Write<'a> {
     Deletion { key: &'a [u8] },
 }
 
-// TODO: Ensure that all changes in a WriteBatch touch distinct keys. Otherwise
-// we can't apply all of the writes with the same sequence.
+/// Batch of writes to execute on the database.
+///
+/// Note that we require all keys touched in a batch to be unique and inserted
+/// into the batch in lexicographically sorted order. Uniqueness is required for
+/// correctness since we can't have two of the same key for the same sequence.
+///
+/// TODO: May need to adjust the sorting if we ever support different
+/// comparators.
 #[derive(Clone)]
 pub struct WriteBatch {
     data: Vec<u8>,
 }
 
 impl WriteBatch {
-    pub fn new() -> Self {
+    /// NOTE: This is only useful inside of the WriteBatchBuilder.
+    fn new() -> Self {
         let data = vec![0u8; 8 + 4];
         Self { data }
     }
@@ -171,37 +180,6 @@ impl WriteBatch {
         u32::from_le_bytes(*count_ref) as usize
     }
 
-    fn increment_count(&mut self) {
-        let count_ref = array_mut_ref![self.data, 8, 4];
-        let mut count = u32::from_le_bytes(*count_ref);
-        count += 1;
-        *count_ref = count.to_le_bytes();
-    }
-
-    pub fn put(&mut self, key: &[u8], value: &[u8]) -> &mut Self {
-        self.increment_count();
-
-        self.data.push(ValueType::Value.to_value());
-        serialize_slice(key, &mut self.data);
-        serialize_slice(value, &mut self.data);
-
-        self
-    }
-
-    pub fn delete(&mut self, key: &[u8]) -> &mut Self {
-        self.increment_count();
-
-        self.data.push(ValueType::Deletion.to_value());
-        serialize_slice(key, &mut self.data);
-
-        self
-    }
-
-    pub fn clear(&mut self) {
-        self.data.truncate(0);
-        self.data.resize(8 + 4, 0);
-    }
-
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         // TODO: Perform way more validation
         Ok(Self {
@@ -215,5 +193,76 @@ impl WriteBatch {
 
     pub fn iter(&self) -> Result<WriteBatchIterator> {
         WriteBatchIterator::new(&self.data)
+    }
+}
+
+/// Builds a WriteBatch. The same restrictions about key ordering apply when
+/// using this.
+pub struct WriteBatchBuilder {
+    batch: WriteBatch,
+
+    /// Offset and length of the last written key within 'data'.
+    last_key: Option<(usize, usize)>,
+}
+
+impl WriteBatchBuilder {
+    pub fn new() -> Self {
+        Self {
+            batch: WriteBatch::new(),
+            last_key: None,
+        }
+    }
+
+    fn increment_count(&mut self) {
+        let count_ref = array_mut_ref![self.batch.data, 8, 4];
+        let mut count = u32::from_le_bytes(*count_ref);
+        count += 1;
+        *count_ref = count.to_le_bytes();
+    }
+
+    fn push_key(&mut self, key: &[u8]) {
+        if let Some((last_key_index, last_key_len)) = self.last_key.take() {
+            let last_key = &self.batch.data[last_key_index..(last_key_index + last_key_len)];
+            assert!(last_key < key);
+        }
+
+        serialize_varint(key.len() as u64, &mut self.batch.data);
+
+        let i = self.batch.data.len();
+        self.batch.data.extend_from_slice(key);
+        self.last_key = Some((i, key.len()));
+    }
+
+    pub fn put(&mut self, key: &[u8], value: &[u8]) -> &mut Self {
+        self.increment_count();
+        self.batch.data.push(ValueType::Value.to_value());
+        self.push_key(key);
+        serialize_slice(value, &mut self.batch.data);
+        self
+    }
+
+    pub fn delete(&mut self, key: &[u8]) -> &mut Self {
+        self.increment_count();
+        self.batch.data.push(ValueType::Deletion.to_value());
+        self.push_key(key);
+        self
+    }
+
+    pub fn clear(&mut self) {
+        self.batch.data.truncate(0);
+        self.batch.data.resize(8 + 4, 0);
+        self.last_key = None;
+    }
+
+    pub fn build(self) -> WriteBatch {
+        self.batch
+    }
+}
+
+impl Deref for WriteBatchBuilder {
+    type Target = WriteBatch;
+
+    fn deref(&self) -> &Self::Target {
+        &self.batch
     }
 }

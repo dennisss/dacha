@@ -5,6 +5,7 @@ extern crate macros;
 #[macro_use]
 extern crate regexp_macros;
 
+mod acl;
 mod events_command;
 mod labels_command;
 mod list_command;

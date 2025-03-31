@@ -876,6 +876,7 @@ mod tests {
                 peer_addr: IPAddress::V4([0, 0, 0, 0]),
                 peer_port: 0,
                 tls: None,
+                handler_data: None,
             },
             request_handler: Box::new(CalculatorServerHandler {}),
         };

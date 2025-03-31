@@ -634,13 +634,12 @@ dependencies = [
  "builder",
  "cluster_ca",
  "cluster_client",
+ "cluster_meta",
  "common",
  "compression",
  "container",
  "container_proto",
  "crypto",
- "datastore",
- "datastore_meta_client",
  "db_table",
  "executor",
  "executor_multitask",
@@ -664,7 +663,6 @@ dependencies = [
 name = "cluster_client"
 version = "0.1.0"
 dependencies = [
- "automata",
  "base_radix",
  "builder_proto",
  "common",
@@ -697,9 +695,11 @@ dependencies = [
  "cluster_client",
  "common",
  "compression",
+ "container_proto",
  "crypto",
  "datastore",
  "datastore_meta_client",
+ "db_kv",
  "db_table",
  "executor",
  "executor_multitask",
@@ -712,6 +712,7 @@ dependencies = [
  "raft",
  "rpc",
  "rpc_util",
+ "sstable",
 ]
 
 [[package]]

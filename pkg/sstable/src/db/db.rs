@@ -1294,16 +1294,16 @@ impl EmbeddedDB {
     }
 
     pub async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let mut batch = WriteBatch::new();
+        let mut batch = WriteBatchBuilder::new();
         batch.put(key, value);
 
-        self.write(&batch).await
+        self.write(&batch.build()).await
     }
 
     pub async fn delete(&self, key: &[u8]) -> Result<()> {
-        let mut batch = WriteBatch::new();
+        let mut batch = WriteBatchBuilder::new();
         batch.delete(key);
-        self.write(&batch).await
+        self.write(&batch.build()).await
     }
 
     /// Updates the current compaction waterline in the database.
