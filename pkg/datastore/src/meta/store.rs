@@ -6,6 +6,7 @@ use std::sync::Arc;
 use common::bytes::Bytes;
 use common::errors::*;
 use datastore_meta_client::constants::*;
+use db_table::key_utils::prefix_key_range;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor_multitask::{RootResource, ServiceResource, ServiceResourceGroup};
@@ -24,6 +25,8 @@ use sstable::iterable::Iterable;
 use crate::meta::state_machine::*;
 use crate::meta::transaction::*;
 use crate::proto::*;
+
+use super::ACLProcessor;
 
 /*
 
@@ -78,6 +81,8 @@ pub struct MetastoreOptions {
     pub hostname_resolver: Arc<dyn raft_client::RouteHostnameResolver>,
 
     pub tls: Option<crypto::tls::Credentials>,
+
+    pub acl_processor: Option<Arc<dyn ACLProcessor>>,
 }
 
 #[derive(Clone)]
@@ -95,6 +100,8 @@ struct Shared {
     transaction_manager: TransactionManager,
 
     next_local_id: AtomicUsize,
+
+    acl_processor: Option<Arc<dyn ACLProcessor>>,
 }
 
 impl Metastore {
@@ -150,12 +157,28 @@ impl Metastore {
             .await
             .map_err(|e| e.to_rpc_status())?;
 
-        // TODO: Support changing to a specific read_index (will require checking the
-        // flush index).
         let snapshot = self.shared.state_machine.snapshot().await;
 
         let start_key = request.keys().start_key();
         let end_key = request.keys().end_key();
+
+        if end_key <= start_key {
+            return Err(
+                rpc::Status::invalid_argument("Reading an empty (or negative) key range").into(),
+            );
+        }
+
+        // NOTE: This is called after 'begin_read' so that we know we are on the leader
+        // and are checking ACLs against a recent snapshot.
+        if let Some(processor) = &self.shared.acl_processor {
+            processor
+                .before_read(
+                    &snapshot,
+                    std::slice::from_ref(request.keys()),
+                    &request.context,
+                )
+                .await?;
+        }
 
         let mut iter_options = SnapshotIteratorOptions::default();
         if request.read_index() > 0 {
@@ -199,6 +222,35 @@ impl Metastore {
         request: rpc::ServerRequest<ExecuteRequest>,
         response: &mut rpc::ServerResponse<'a, ExecuteResponse>,
     ) -> Result<()> {
+        // TODO: Move all the request validation in 'execute()' to here.
+        // - Also validate that reads are sequential and non-overlapping.
+
+        // ACL checked are applied before entering the transaction logic to avoid
+        // acquiring reader/writer locks on any rows.
+        if let Some(processor) = &self.shared.acl_processor {
+            // Avoid returning a potentially stale ACL response if we are not executing on
+            // the lader.
+            //
+            // TODO: Instead acquire a read index?
+            self.shared
+                .node
+                .server()
+                .currently_leader()
+                .await
+                .map_err(|e| rpc::Status::unavailable("Not currently the leader"))?;
+
+            let snapshot = self.shared.state_machine.snapshot().await;
+
+            processor
+                .before_execute(
+                    &snapshot,
+                    request.value.transaction(),
+                    // std::slice::from_ref(request.keys()),
+                    &request.context,
+                )
+                .await?;
+        }
+
         let index = self
             .shared
             .transaction_manager
@@ -219,12 +271,42 @@ impl Metastore {
     //
     // TODO: Support ignoring changes from the same client as the one that initiated
     // the watch?
+    //
+    // TODO: Limit max time of one stream so that we eventually re-check ACLs
     async fn watch_impl<'a>(
         &self,
         request: rpc::ServerRequest<WatchRequest>,
         response: &mut rpc::ServerStreamResponse<'a, WatchResponse>,
     ) -> Result<()> {
         let client_id = Self::get_client_id(&request)?;
+
+        if let Some(processor) = &self.shared.acl_processor {
+            // Avoid returning a potentially stale ACL response if we are not executing on
+            // the lader.
+            //
+            // TODO: Instead acquire a read index?
+            self.shared
+                .node
+                .server()
+                .currently_leader()
+                .await
+                .map_err(|e| rpc::Status::unavailable("Not currently the leader"))?;
+
+            let mut key_range = KeyRange::default();
+            let (s, e) = prefix_key_range(request.key_prefix());
+            key_range.set_start_key(s.as_ref());
+            key_range.set_end_key(e.as_ref());
+
+            let snapshot = self.shared.state_machine.snapshot().await;
+
+            processor
+                .before_read(
+                    &snapshot,
+                    std::slice::from_ref(&key_range),
+                    &request.context,
+                )
+                .await?;
+        }
 
         let registration = self
             .shared
@@ -382,7 +464,10 @@ impl KeyValueStoreService for Metastore {
     }
 }
 
-pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> {
+pub async fn run(
+    options: MetastoreOptions,
+    rpc_handler: &mut rpc::Http2RequestHandler,
+) -> Result<Arc<dyn ServiceResource>> {
     if !file::exists(&options.dir).await? {
         file::create_dir(&options.dir).await?;
     }
@@ -396,12 +481,6 @@ pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> 
     let state_machine =
         Arc::new(EmbeddedDBStateMachine::open(&options.dir, &options.state_machine).await?);
     service.register_dependency(state_machine.clone()).await;
-
-    // TODO: Must limit what percentage of request slots can be used for user facing
-    // requests since we also use this for server-to-server Raft requests.
-    let mut rpc_server = rpc::Http2Server::new(Some(options.service_port));
-    rpc_server.set_base_path("/rpc"); // TODO: Standardize.
-    rpc_server.http_options_mut().tls = options.tls.as_ref().map(|c| c.server.clone());
 
     let local_address = http::uri::Authority {
         user: None,
@@ -421,7 +500,7 @@ pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> 
             state_machine: state_machine.clone(),
             log_options: options.log,
             route_labels: options.route_labels.clone(),
-            rpc_server: &mut rpc_server,
+            rpc_handler,
             rpc_server_address: local_address,
             hostname_resolver: options.hostname_resolver,
             tls_options: options.tls.map(|c| c.client.clone()),
@@ -437,28 +516,24 @@ pub async fn run(options: MetastoreOptions) -> Result<Arc<dyn ServiceResource>> 
             state_machine,
             transaction_manager: TransactionManager::new(),
             next_local_id: AtomicUsize::new(1),
+            acl_processor: options.acl_processor,
         }),
     };
 
-    rpc_server.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+    rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
         node.clone(),
         ClientManagementIntoService::into_service(instance.clone()),
     )))?;
 
-    rpc_server.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+    rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
         node.clone(),
         KeyValueStoreIntoService::into_service(instance.clone()),
     )))?;
 
-    rpc_server.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+    rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
         node.clone(),
         ServerManagementIntoService::into_service(instance.clone()),
     )))?;
-
-    rpc_server.add_reflection()?;
-    rpc_server.add_profilez()?;
-
-    service.register_dependency(rpc_server.start()).await;
 
     Ok(service)
 }

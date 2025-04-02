@@ -65,7 +65,7 @@ struct CurrentSegment {
 impl CameraRecorder {
     pub async fn create(
         camera_id: u64,
-mut camera_subscriber: CameraSubscriber,
+        mut camera_subscriber: CameraSubscriber,
         db: Arc<ProtobufDB>,
         data_dir: &LocalPath,
     ) -> Result<Self> {
@@ -112,9 +112,9 @@ mut camera_subscriber: CameraSubscriber,
         if next_frame_sequence != frame.sequence {
             let n = frame.sequence - next_frame_sequence;
             return Err(format_err!(
-"Missed some frames while recording. Skipped {} frames.",
+                "Missed some frames while recording. Skipped {} frames.",
                 n
-));
+            ));
         }
 
         self.next_frame_sequence_number = Some(frame.sequence + 1);
@@ -139,6 +139,7 @@ mut camera_subscriber: CameraSubscriber,
                 options.independent_segments = true;
                 options.skip_to_key_frame = true;
 
+                // TODO: Need to Bootstrap with init data.
                 self.mp4_builder.insert(MP4Builder::new(
                     frame.format.width,
                     frame.format.height,

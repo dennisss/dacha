@@ -51,10 +51,10 @@ pub use collections::*;
 pub use extension::{ExtensionRef, ExtensionSet, ExtensionTag};
 #[cfg(feature = "alloc")]
 pub use merge::*;
-pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage};
+pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage, SerializeOptions, OutputBuffer};
 #[cfg(feature = "std")]
 pub use reflection::{EnumReflection, FieldDescriptorShort, MessageReflection, StringPtr};
-pub use types::{EnumValue, ExtensionNumberType, FieldNumber, TypedFieldNumber};
+pub use types::{EnumValue, ExtensionNumberType, FieldNumber, TypedFieldNumber, MAX_FIELD_NUMBER};
 #[cfg(feature = "std")]
 pub use unknown::UnknownFieldSet;
 #[cfg(feature = "std")]

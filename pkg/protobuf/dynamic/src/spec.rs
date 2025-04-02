@@ -239,7 +239,8 @@ pub struct MapField {
 
 pub type Ranges = Vec<Range>;
 
-// Upper and lower bounds are inclusive.
+// All numbers from the first number (inclusive) to the second number
+// (exclusive).
 pub type Range = (FieldNumber, FieldNumber);
 
 #[derive(Debug, Clone)]
@@ -371,9 +372,20 @@ impl MessageDescriptor {
                         proto.add_extension_range(r);
                     }
                 }
-                MessageItem::Reserved(r) => {
-                    // TODO
-                }
+                MessageItem::Reserved(r) => match r {
+                    Reserved::Ranges(ranges) => {
+                        for (s, e) in ranges {
+                            let r = proto.new_reserved_range();
+                            r.set_start(*s as i32);
+                            r.set_end(*e as i32);
+                        }
+                    }
+                    Reserved::Fields(names) => {
+                        for s in names {
+                            proto.add_reserved_name(s.clone());
+                        }
+                    }
+                },
                 MessageItem::Option(opt) => {
                     proto.options_mut().add_uninterpreted_option(opt.to_proto());
                 }

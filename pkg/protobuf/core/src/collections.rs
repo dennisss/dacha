@@ -11,6 +11,24 @@ use common::const_default::ConstDefault;
 
 use crate::reflection::*;
 
+// TODO: Move into a shared crate.
+struct OptionIter<T> {
+    iter: Option<T>
+}
+
+impl<T: Iterator> Iterator for OptionIter<T> {
+    type Item = T::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(iter) = &mut self.iter {
+            iter.next()
+        } else {
+            None
+        }
+    }
+}
+
+
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct MapField<K: Clone + PartialEq + Hash + Eq, V: Clone> {
     inner: Option<HashMap<K, V>>,
@@ -20,16 +38,27 @@ impl<K: Clone + PartialEq + Hash + Eq, V: Clone> ConstDefault for MapField<K, V>
     const DEFAULT: Self = Self { inner: None };
 }
 
-impl<K: Clone + PartialEq + Hash + Eq, V: Clone> MapField<K, V> {
+impl<K: Clone + PartialOrd + Ord + PartialEq + Hash + Eq, V: Clone> MapField<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let map = self.inner.get_or_insert_with(|| HashMap::default());
         map.insert(key, value)
     }
 
     pub fn entries(&self) -> impl Iterator<Item = (&K, &V)> {
-        MapFieldIter {
+        OptionIter {
             iter: self.inner.as_ref().map(|v| v.iter()),
         }
+    }
+
+    pub fn entries_sorted(&self) -> impl Iterator<Item = (&K, &V)> {
+        let iter = self.inner.as_ref().map(|inner| {
+            let mut keys = inner.keys().collect::<Vec<&K>>();
+            keys.sort();
+
+            keys.into_iter().map(move |k| (k, inner.get(k).unwrap()))
+        });
+
+        OptionIter { iter }
     }
 
     pub fn get<Q: Hash + Eq + ?Sized>(&self, k: &Q) -> Option<&V>
@@ -37,22 +66,6 @@ impl<K: Clone + PartialEq + Hash + Eq, V: Clone> MapField<K, V> {
         K: Borrow<Q>,
     {
         self.inner.as_ref().and_then(|map| map.get(k))
-    }
-}
-
-pub struct MapFieldIter<'a, K, V> {
-    iter: Option<std::collections::hash_map::Iter<'a, K, V>>,
-}
-
-impl<'a, K, V> Iterator for MapFieldIter<'a, K, V> {
-    type Item = (&'a K, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(iter) = &mut self.iter {
-            iter.next()
-        } else {
-            None
-        }
     }
 }
 
@@ -140,25 +153,9 @@ impl<T: Eq + Hash> SetField<T> {
         self.get_mut().remove(value)
     }
 
-    pub fn iter(&self) -> SetFieldIter<T> {
-        SetFieldIter {
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        OptionIter {
             iter: self.inner.as_ref().map(|s| s.iter()),
-        }
-    }
-}
-
-pub struct SetFieldIter<'a, T> {
-    iter: Option<std::collections::hash_set::Iter<'a, T>>,
-}
-
-impl<'a, T> Iterator for SetFieldIter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(iter) = &mut self.iter {
-            iter.next()
-        } else {
-            None
         }
     }
 }

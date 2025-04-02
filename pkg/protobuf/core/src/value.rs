@@ -7,7 +7,7 @@ use common::list::Appendable;
 
 use crate::bytes::*;
 use crate::codecs::*;
-use crate::message::{Enum, Message, MessagePtr};
+use crate::message::{Enum, Message, MessagePtr, SerializeOptions, OutputBuffer};
 use crate::reflection::*;
 use crate::types::{EnumValue, FieldNumber};
 use crate::wire::*;
@@ -45,10 +45,11 @@ impl Value {
         Ok(())
     }
 
-    pub fn serialize_to<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_to(
         &self,
         field_number: FieldNumber,
-        out: &mut A,
+        options: &SerializeOptions,
+        out: &mut OutputBuffer,
     ) -> Result<()> {
         // TODO: Ignore fields with default values in proto3 (by using the sparse
         // serializers).
@@ -58,10 +59,10 @@ impl Value {
 
         match self {
             Self::Singular(v) => {
-                v.serialize_singular_value(field_number, out)?;
+                v.serialize_singular_value(field_number, options, out)?;
             }
             Self::Repeated(v) => {
-                v.serialize(field_number, out)?;
+                v.serialize(field_number, options, out)?;
             }
         }
 
@@ -162,7 +163,9 @@ macro_rules! define_primitive_values {
                 })
             }
 
-            fn serialize_singular_value<A: Appendable<Item = u8> + ?Sized>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
+            fn serialize_singular_value(
+                &self, field_num: FieldNumber, options: &SerializeOptions, out: &mut OutputBuffer
+            ) -> Result<()> {
                 match self {
                     $(
                     SingularValue::$name($v) => {
@@ -173,7 +176,7 @@ macro_rules! define_primitive_values {
                         EnumCodec::serialize_sparse(field_num, v.as_ref(), out)?
                     }
                     SingularValue::Message(v) => {
-                        MessageCodec::serialize(field_num, v.as_ref(), out)?
+                        MessageCodec::serialize(field_num, v.as_ref(), options, out)?
                     }
                 };
                 Ok(())
@@ -301,13 +304,17 @@ macro_rules! define_primitive_values {
                 Ok(())
             }
 
-            fn serialize<A: Appendable<Item = u8> + ?Sized>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
+            fn serialize(
+                &self, field_num: FieldNumber, options: &SerializeOptions, out: &mut OutputBuffer
+            ) -> Result<()> {
                 match self {
                     RepeatedValues::Enum { values, .. } => {
                         EnumCodec::serialize_repeated_dyn(field_num, &values[..], out)?;
                     }
                     RepeatedValues::Message { values, .. } => {
-                        MessageCodec::serialize_repeated(field_num, &values, out)?;
+                        // TODO: If the field is a map, then we need to sort the values by the key field (while respecting the original order's merge semantics).
+
+                        MessageCodec::serialize_repeated(field_num, &values, options, out)?;
                     }
                     $(
                     RepeatedValues::$name { values, .. } => {

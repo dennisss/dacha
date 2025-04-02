@@ -2,12 +2,14 @@ use core::marker::PhantomData;
 
 use common::const_default::ConstDefault;
 use common::errors::Result;
-use common::list::{Appendable, ByteCounter};
+use common::list::{ByteCounter};
 
-use crate::message::StaticMessage;
+use crate::message::{StaticMessage, OutputBuffer};
 use crate::wire::*;
 use crate::{types::*, MessagePtr};
-use crate::{Enum, Message};
+use crate::{Enum, Message, SerializeOptions};
+
+const MIN_VALUES_TO_PACK: usize = 2;
 
 /*
 /// A converter that translates some native Rust type to/from WireFields.
@@ -24,15 +26,15 @@ pub trait WireFieldCodec<'a> {
     /// This always pushes a single WireField into the output buffer.
     ///
     /// TODO: Evaluate if there are any performance concerns with this returning a WireError rather than A::Error which it is possible.
-    fn serialize<A: Appendable<Item = u8>>(
-        field_number: FieldNumber, value: &Self::Type, out: &mut A
+    fn serialize(
+        field_number: FieldNumber, value: &Self::Type, out: &mut OutputBuffer
     ) -> WireResult<()>;
 
     /// Serializes a single value only if it is not equal to its default value.
     ///
     /// TODO: This is not proto2 compatible as default values could be defined at the message level.
-    fn serialize_sparse<A: Appendable<Item = u8>>(
-        field_number: FieldNumber, value: &Self::Type, out: &mut A
+    fn serialize_sparse(
+        field_number: FieldNumber, value: &Self::Type, out: &mut OutputBuffer
     ) -> WireResult<()>;
 }
 */
@@ -40,14 +42,14 @@ pub trait WireFieldCodec<'a> {
 macro_rules! impl_serialize_repeated_packed {
     ($t:ty, $serialize_single_value:expr) => {
         // TODO: Implement an alternative version for an alloc friendly environment.
-        pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized>(
+        pub fn serialize_repeated(
             field_number: FieldNumber,
             values: &[$t],
-            out: &mut A,
-        ) -> Result<(), A::Error> {
+            out: &mut OutputBuffer,
+        ) -> Result<()> {
             // Don't serialize empty lists. For very short lists, just use normal non-packed
             // serialization as it will probably be more compact.
-            if values.len() < 2 {
+            if values.len() < MIN_VALUES_TO_PACK {
                 for value in values {
                     Self::serialize(field_number, *value, out)?;
                 }
@@ -97,11 +99,11 @@ macro_rules! define_varint_codec {
                     .map(|v| v.and_then(|v| ($from_wire)(v)))
             }
 
-            pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+            pub fn serialize(
                 field_number: FieldNumber,
                 value: $t,
-                out: &mut A,
-            ) -> Result<(), A::Error> {
+                out: &mut OutputBuffer,
+            ) -> Result<()> {
                 WireField {
                     field_number,
                     value: WireValue::Varint(($to_wire)(value)),
@@ -109,11 +111,11 @@ macro_rules! define_varint_codec {
                 .serialize(out)
             }
 
-            pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
+            pub fn serialize_sparse(
                 field_number: FieldNumber,
                 value: $t,
-                out: &mut A,
-            ) -> Result<(), A::Error> {
+                out: &mut OutputBuffer,
+            ) -> Result<()> {
                 if value != $default {
                     Self::serialize(field_number, value, out)?;
                 }
@@ -122,10 +124,10 @@ macro_rules! define_varint_codec {
 
             impl_serialize_repeated_packed!($t, Self::serialize_single_value);
 
-            fn serialize_single_value<A: Appendable<Item = u8> + ?Sized>(
+            fn serialize_single_value(
                 value: $t,
-                out: &mut A,
-            ) -> Result<(), A::Error> {
+                out: &mut OutputBuffer,
+            ) -> Result<()> {
                 WireValue::Varint(($to_wire)(value)).serialize(out)
             }
         }
@@ -182,11 +184,11 @@ macro_rules! define_word_codec {
                     .map(|v| v.map(|v| ($from_wire)(*v)))
             }
 
-            pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+            pub fn serialize(
                 field_number: FieldNumber,
                 value: $t,
-                out: &mut A,
-            ) -> Result<(), A::Error> {
+                out: &mut OutputBuffer,
+            ) -> Result<()> {
                 let buf = ($to_wire)(value);
                 WireField {
                     field_number,
@@ -195,11 +197,11 @@ macro_rules! define_word_codec {
                 .serialize(out)
             }
 
-            pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
+            pub fn serialize_sparse(
                 field_number: FieldNumber,
                 value: $t,
-                out: &mut A,
-            ) -> Result<(), A::Error> {
+                out: &mut OutputBuffer,
+            ) -> Result<()> {
                 if value != $default {
                     Self::serialize(field_number, value, out)?;
                 }
@@ -324,11 +326,11 @@ impl StringCodec {
         core::iter::once(Self::parse(field))
     }
 
-    pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize(
         field_number: FieldNumber,
         value: &str,
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         WireField {
             field_number,
             value: WireValue::LengthDelim(value.as_bytes()),
@@ -336,22 +338,22 @@ impl StringCodec {
         .serialize(out)
     }
 
-    pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_sparse(
         field_number: FieldNumber,
         value: &str,
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         if value.len() > 0 {
             Self::serialize(field_number, value, out)?;
         }
         Ok(())
     }
 
-    pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized, S: AsRef<str>>(
+    pub fn serialize_repeated<S: AsRef<str>>(
         field_number: FieldNumber,
         values: &[S],
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         for value in values {
             Self::serialize(field_number, value.as_ref(), out)?;
         }
@@ -378,11 +380,11 @@ impl BytesCodec {
         core::iter::once(Self::parse(field))
     }
 
-    pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize(
         field_number: FieldNumber,
         value: &[u8],
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         WireField {
             field_number,
             value: WireValue::LengthDelim(value),
@@ -390,22 +392,22 @@ impl BytesCodec {
         .serialize(out)
     }
 
-    pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_sparse(
         field_number: FieldNumber,
         value: &[u8],
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         if value.len() > 0 {
             Self::serialize(field_number, value, out)?;
         }
         Ok(())
     }
 
-    pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized, B: AsRef<[u8]>>(
+    pub fn serialize_repeated<B: AsRef<[u8]>>(
         field_number: FieldNumber,
         values: &[B],
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         for value in values {
             Self::serialize(field_number, value.as_ref(), out)?;
         }
@@ -445,20 +447,20 @@ impl EnumCodec {
         Ok(())
     }
 
-    pub fn serialize<E: 'static + Enum + ?Sized, A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize<E: 'static + Enum + ?Sized>(
         field_number: FieldNumber,
         value: &E,
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         // TODO: Support up to 64bits?
         Int32Codec::serialize(field_number, value.value(), out)
     }
 
-    pub fn serialize_sparse<E: 'static + Enum + ?Sized, A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_sparse<E: 'static + Enum + ?Sized>(
         field_number: FieldNumber,
         value: &E,
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         // TODO: This one is tricky!
         if value.value() != 0 {
             Self::serialize(field_number, value, out)?;
@@ -466,13 +468,13 @@ impl EnumCodec {
         Ok(())
     }
 
-    pub fn serialize_repeated<E: Enum, A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_repeated<E: Enum>(
         field_number: FieldNumber,
         values: &[E],
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         // TODO: Deduplicate this with the other optimizations.
-        if values.len() < 2 {
+        if values.len() < MIN_VALUES_TO_PACK {
             for value in values {
                 Int32Codec::serialize(field_number, value.value(), out)?;
             }
@@ -502,13 +504,13 @@ impl EnumCodec {
 
     // TODO: Deduplicate with the previous one.
     #[cfg(feature = "alloc")]
-    pub fn serialize_repeated_dyn<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_repeated_dyn(
         field_number: FieldNumber,
         values: &[alloc::boxed::Box<dyn Enum>],
-        out: &mut A,
-    ) -> Result<(), A::Error> {
+        out: &mut OutputBuffer,
+    ) -> Result<()> {
         // TODO: Deduplicate this with the other optimizations.
-        if values.len() < 2 {
+        if values.len() < MIN_VALUES_TO_PACK {
             for value in values {
                 Int32Codec::serialize(field_number, value.value(), out)?;
             }
@@ -563,12 +565,14 @@ impl<M: Message + ?Sized> MessageCodec<M> {
     }
 
     #[cfg(feature = "alloc")]
-    pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize(
         field_number: FieldNumber,
         value: &M,
-        out: &mut A,
+        options: &SerializeOptions,
+        out: &mut OutputBuffer,
     ) -> Result<()> {
-        let data = value.serialize()?;
+        let mut data = vec![];
+        value.serialize_to(options, &mut data)?;
         WireField {
             field_number,
             value: WireValue::LengthDelim(&data),
@@ -578,25 +582,27 @@ impl<M: Message + ?Sized> MessageCodec<M> {
     }
 
     #[cfg(feature = "alloc")]
-    pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_repeated(
         field_number: FieldNumber,
         values: &[MessagePtr<M>],
-        out: &mut A,
+        options: &SerializeOptions,
+        out: &mut OutputBuffer,
     ) -> Result<()> {
         for value in values.iter() {
-            Self::serialize(field_number, value.as_ref(), out)?;
+            Self::serialize(field_number, value.as_ref(), options, out)?;
         }
 
         Ok(())
     }
 
     #[cfg(feature = "alloc")]
-    pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_sparse(
         field_number: FieldNumber,
         value: &M,
-        out: &mut A,
+        options: &SerializeOptions,
+        out: &mut OutputBuffer,
     ) -> Result<()> {
-        Self::serialize(field_number, value, out)
+        Self::serialize(field_number, value, options, out)
     }
 }
 
@@ -608,15 +614,16 @@ impl<M: Message + Sized> MessageCodec<M> {
     /// TODO: Also make this the default mode once the length calculation
     /// becomes efficient for most message types.
     #[cfg(not(feature = "alloc"))]
-    pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize(
         field_number: FieldNumber,
         value: &M,
-        out: &mut A,
+        options: &SerializeOptions,
+        out: &mut OutputBuffer,
     ) -> Result<()> {
         // TODO: optimize this when the size of messages is statically known (or for
         // repeated fields).
         let mut length_counter = ByteCounter::new();
-        value.serialize_to(&mut length_counter)?;
+        value.serialize_to(options, &mut length_counter)?;
 
         // TODO: Deduplicate this with the logic for serializing LengthDelim fields.
         Tag {
@@ -625,30 +632,32 @@ impl<M: Message + Sized> MessageCodec<M> {
         }
         .serialize(out)?;
         serialize_varint(length_counter.total_bytes() as u64, out)?;
-        value.serialize_to(out)?;
+        value.serialize_to(options, out)?;
 
         Ok(())
     }
 
     #[cfg(not(feature = "alloc"))]
-    pub fn serialize_repeated<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_repeated(
         field_number: FieldNumber,
         values: &[MessagePtr<M>],
-        out: &mut A,
+        options: &SerializeOptions,
+        out: &mut OutputBuffer,
     ) -> Result<()> {
         for value in values.iter() {
-            Self::serialize(field_number, value.as_ref(), out)?;
+            Self::serialize(field_number, value.as_ref(), options, out)?;
         }
 
         Ok(())
     }
 
     #[cfg(not(feature = "alloc"))]
-    pub fn serialize_sparse<A: Appendable<Item = u8> + ?Sized>(
+    pub fn serialize_sparse(
         field_number: FieldNumber,
         value: &M,
-        out: &mut A,
+        options: &SerializeOptions,
+        out: &mut OutputBuffer,
     ) -> Result<()> {
-        Self::serialize(field_number, value, out)
+        Self::serialize(field_number, value, options, out)
     }
 }

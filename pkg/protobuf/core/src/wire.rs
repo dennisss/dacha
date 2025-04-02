@@ -1,9 +1,9 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::intrinsics::unlikely;
-use core::result::Result;
 
-use common::list::{Appendable, ByteCounter};
+use common::list::{ByteCounter, Appendable};
+use common::errors::Result;
 
 use crate::types::FieldNumber;
 use crate::{Enum, Message};
@@ -237,7 +237,7 @@ impl<'a> WireField<'a> {
     pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
         &self,
         out: &mut A,
-    ) -> Result<(), A::Error> {
+    ) -> Result<()> {
         let wire_type = match self.value {
             WireValue::Varint(_) => WireType::Varint,
             WireValue::Word64(_) => WireType::Word64,
@@ -458,24 +458,24 @@ impl<'a> WireValue<'a> {
     pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
         &self,
         out: &mut A,
-    ) -> Result<(), A::Error> {
+    ) -> Result<()> {
         match self {
-            WireValue::Varint(n) => serialize_varint(*n, out),
-            WireValue::Word64(v) => out.extend_from_slice(&v[..]),
+            WireValue::Varint(n) => serialize_varint(*n, out)?,
+            WireValue::Word64(v) => out.extend_from_slice(&v[..])?,
             WireValue::LengthDelim(v) => {
                 serialize_varint(v.len() as u64, out)?;
-                out.extend_from_slice(v)
+                out.extend_from_slice(v)?;
             }
             #[cfg(feature = "alloc")]
             WireValue::Group(items) => {
                 for i in items {
                     i.serialize(out)?;
                 }
-
-                Ok(())
             }
-            WireValue::Word32(v) => out.extend_from_slice(&v[..]),
-        }
+            WireValue::Word32(v) => out.extend_from_slice(&v[..])?,
+        };
+
+        Ok(())
     }
 }
 

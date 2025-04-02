@@ -191,7 +191,6 @@ impl Compiler {
         lines.add("#[cfg(feature = \"alloc\")] use alloc::string::String;\n");
         lines.add("#[cfg(feature = \"alloc\")] use alloc::boxed::Box;\n");
         lines.add("use common::errors::*;");
-        lines.add("use common::list::Appendable;");
         lines.add("use common::collections::FixedString;");
         lines.add("use common::fixed::vec::FixedVec;");
         lines.add("use common::const_default::{ConstDefault, StaticDefault};");
@@ -1642,7 +1641,7 @@ impl Compiler {
                 #[cfg(feature = "alloc")]
                 fn serialize(&self) -> Result<Vec<u8>> {{
                     let mut data = Vec::new();
-                    self.serialize_to(&mut data)?;
+                    self.serialize_to({pkg}::SerializeOptions::static_default(), &mut data)?;
                     Ok(data)
                 }}
 
@@ -1828,15 +1827,28 @@ impl Compiler {
         lines.add("\t\tOk(())");
         lines.add("\t}");
 
-        lines
-            .add("\tfn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {");
+        lines.add(format!(
+            "
+            fn serialize_to(
+                &self, options: &{runtime_pkg}::SerializeOptions, out: &mut {runtime_pkg}::OutputBuffer
+            ) -> Result<()> {{
+            ",
+            runtime_pkg = self.options.runtime_package,
+        ));
 
         // TODO: Sort the serialization by the field numbers so that we get nice cross
         // version compatible formats.
 
+        let mut sorted_fields = msg.fields().collect::<Vec<_>>();
+        sorted_fields.sort_by_key(|f| f.proto().number());
+
         // TODO: Need to implement packed serialization/deserialization.
-        for field in msg.fields() {
-            if field.proto().has_oneof_index() {
+        for field in sorted_fields {
+            // Note: We iterate over every variation of the oneof. This is potentially slow for very large
+            // oneofs, but makes it easier to ensure that fields are serialized in a sorted order for
+            // determinism purposes.
+            if let Some(oneof) = field.oneof()? {
+                self.compile_oneof_field_serialize(&field, &oneof, &mut lines)?;
                 continue;
             }
 
@@ -1897,21 +1909,31 @@ impl Compiler {
                 }
             };
 
+            let options_field = {
+                if is_message {
+                    "options, "
+                } else {
+                    ""
+                }
+            };
+
             let serialize_line = format!(
-                "\t\t\t{}({}, {}v{}, out)?;",
+                "\t\t\t{}({}, {}v{}, {}out)?;",
                 serialize_method,
                 field.proto().number(),
                 reference_str,
-                post_reference_str
+                post_reference_str,
+                options_field
             );
 
             if is_repeated {
                 if self.is_unordered_set(&field)? {
                     // TODO: Support packed serialization of a SetField.
+                    // TODO: Need a deterministic version.
                     lines.add(format!(
                         "
                     for v in self.{name}.iter() {{
-                        {typeclass}Codec::serialize({field_num}, {ref_str}v{post_str}, out)?;
+                        {typeclass}Codec::serialize({field_num}, {ref_str}v{post_str}, {opts}out)?;
                     }}
                     ",
                         typeclass = typeclass,
@@ -1919,6 +1941,7 @@ impl Compiler {
                         field_num = field.proto().number(),
                         ref_str = reference_str,
                         post_str = post_reference_str,
+                        opts = options_field
                     ));
                 } else if self.is_map_field(&field)?.is_some() {
                     let kv_struct_name = self
@@ -1926,26 +1949,38 @@ impl Compiler {
                         .unwrap()
                         .typename;
 
+                    // TODO: NEed to make this deterministic if needed.
                     // TODO: Optimize this serialization.
+                    // ^ Yes.
                     lines.add(format!(
                         "
-                        for (k, v) in self.{name}.entries() {{
-                            let mut e = {inner_name}::default();
-                            e.set_key(k);
-                            e.set_value(v.clone());
-                            MessageCodec::serialize({field_num}, &e, out)?;
+                        if options.deterministic {{
+                            for (k, v) in self.{name}.entries_sorted() {{
+                                let mut e = {inner_name}::default();
+                                e.set_key(k);
+                                e.set_value(v.clone());
+                                MessageCodec::serialize({field_num}, &e, options, out)?;
+                            }}
+                        }} else {{
+                            for (k, v) in self.{name}.entries() {{
+                                let mut e = {inner_name}::default();
+                                e.set_key(k);
+                                e.set_value(v.clone());
+                                MessageCodec::serialize({field_num}, &e, options, out)?;
+                            }}
                         }}
-                    ",
+                        ",
                         name = name,
                         inner_name = kv_struct_name,
                         field_num = field.proto().number()
-                    ))
+                    ));
                 } else {
                     lines.add(format!(
-                        "{typeclass}Codec::serialize_repeated({field_num}, &self.{name}, out)?;",
+                        "{typeclass}Codec::serialize_repeated({field_num}, &self.{name}, {opts}out)?;",
                         typeclass = typeclass,
                         name = name,
-                        field_num = field.proto().number()
+                        field_num = field.proto().number(),
+                        opts = options_field
                     ));
                 }
             } else {
@@ -1955,8 +1990,8 @@ impl Compiler {
                     lines.add(format!("\t\tif let Some(v) = self.{}.as_ref() {{", name));
                     if is_message {
                         lines.add(format!(
-                            "\t\tMessageCodec::serialize({}, v.as_ref(), out)?;",
-                            field.proto().number()
+                            "\t\tMessageCodec::serialize({}, v.as_ref(), options, out)?;",
+                            field.proto().number(),
                         ));
                     } else {
                         lines.add(serialize_line);
@@ -1985,61 +2020,14 @@ impl Compiler {
             }
         }
 
-        for oneof in msg.oneofs() {
-            let oneof_typename = self.oneof_typename(&oneof);
-            let oneof_fieldname = Self::field_name_inner(&oneof.proto().name());
-
-            lines.add(format!("\t\tmatch &self.{} {{", oneof_fieldname));
-
-            for field in oneof.fields() {
-                let oneof_case = common::snake_to_camel_case(&field.proto().name());
-
-                // TODO: Dedup with above
-                let typeclass = self.field_codec_name(&field);
-
-                // TODO: Deduplicate with above.
-                let pass_reference = match field.proto().typ() {
-                    FieldDescriptorProto_Type::TYPE_STRING => true,
-                    FieldDescriptorProto_Type::TYPE_MESSAGE
-                    | FieldDescriptorProto_Type::TYPE_ENUM => true,
-                    FieldDescriptorProto_Type::TYPE_BYTES => true,
-                    _ => false,
-                };
-
-                let mut reference = if pass_reference { "" } else { "*" };
-
-                // Need to convert the &MessagePtr<Message> to an &Message
-                let post_reference = if typeclass == "Message" && !self.is_primitive(&field)? {
-                    ".as_ref()"
-                } else {
-                    ""
-                };
-
-                lines.add(format!(
-                    "\t\t\t{oneof_typename}::{oneof_case}(v) => {{
-                        {typeclass}Codec::serialize({field_num}, {reference}v{post_reference}, out)?; }}",
-                    oneof_typename = oneof_typename,
-                    oneof_case = oneof_case,
-                    typeclass = typeclass,
-                    reference = reference,
-                    post_reference = post_reference,
-                    field_num = field.proto().number()
-                ));
-            }
-
-            lines.add(format!("\t\t\t{}::NOT_SET => {{}}", oneof_typename));
-
-            lines.add("\t\t}");
-        }
-
         // TODO: When we don't have 'std', still use a boolean to track if we were
         // exposed to any unknown fields.
         if can_have_extensions {
             lines.add("#[cfg(feature = \"std\")]");
-            lines.add(r#"self.extensions.serialize_to(out)?;"#);
+            lines.add(r#"self.extensions.serialize_to(options, out)?;"#);
         } else if !is_typed_num {
             lines.add("#[cfg(feature = \"std\")]");
-            lines.add(r#"self.unknown_fields.serialize_to(out)?;"#);
+            lines.add(r#"self.unknown_fields.serialize_to(options, out)?;"#);
         }
 
         lines.add("\t\tOk(())");
@@ -2297,6 +2285,61 @@ impl Compiler {
         lines.add("}");
 
         Ok(lines.to_string())
+    }
+
+    /// Compiles the code for serializing a field that is part of a oneof.
+    fn compile_oneof_field_serialize(&self, field: &FieldDescriptor, oneof: &OneOfDescriptor, lines: &mut LineBuilder) -> Result<()> {
+
+        let oneof_typename = self.oneof_typename(oneof);
+        let oneof_fieldname = Self::field_name_inner(&oneof.proto().name());
+        let oneof_case = common::snake_to_camel_case(&field.proto().name());
+
+        // TODO: Dedup with above
+        let typeclass = self.field_codec_name(&field);
+
+        // TODO: Deduplicate with above.
+        let pass_reference = match field.proto().typ() {
+            FieldDescriptorProto_Type::TYPE_STRING => true,
+            FieldDescriptorProto_Type::TYPE_MESSAGE
+            | FieldDescriptorProto_Type::TYPE_ENUM => true,
+            FieldDescriptorProto_Type::TYPE_BYTES => true,
+            _ => false,
+        };
+
+        let mut reference = if pass_reference { "" } else { "*" };
+
+        // Need to convert the &MessagePtr<Message> to an &Message
+        let post_reference = if typeclass == "Message" && !self.is_primitive(&field)? {
+            ".as_ref()"
+        } else {
+            ""
+        };
+
+        let opts = {
+            if self.is_message(&field)? {
+                "options, "
+            } else {
+                ""
+            }
+        };
+
+        lines.add(format!(
+            r#"
+            if let {oneof_typename}::{oneof_case}(v) = &self.{oneof_fieldname} {{
+                {typeclass}Codec::serialize({field_num}, {reference}v{post_reference}, {opts}out)?;
+            }}
+            "#,
+            oneof_fieldname = oneof_fieldname,
+            oneof_typename = oneof_typename,
+            oneof_case = oneof_case,
+            typeclass = typeclass,
+            reference = reference,
+            post_reference = post_reference,
+            field_num = field.proto().number(),
+            opts = opts
+        ));
+
+        Ok(())
     }
 
     // TODO: 'path' will always be empty?

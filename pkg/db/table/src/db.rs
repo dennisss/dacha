@@ -25,9 +25,6 @@ TODO: A potential innefficiency with this approach is that protobufs would be us
 
 Remaining TODOs
 - Remove some of the templating
-- Normalize protobuf serialization to be in sorted field number order.
-- WriteBatch needs to have sorted distinct keys
-- Simplify the key hierarchy of the metastore.
 
 - Ensure that the DB interface is fully cancel safe.
 
@@ -624,7 +621,8 @@ impl<'a> ProtobufDBTransaction<'a> {
                     clear_field_by_path(&mut key_value, field.path)?;
                 }
 
-                let value_bytes = key_value.serialize()?;
+                let mut value_bytes = vec![];
+                key_value.serialize_to(&protobuf::SerializeOptions::deterministic(), &mut value_bytes)?;
 
                 self.txn.put(&key, &value_bytes).await?;
             } else {
@@ -702,7 +700,9 @@ impl<'a> ProtobufDBTransaction<'a> {
                     }
                 }
 
-                let value_bytes = secondary_value.serialize()?;
+                // TODO: This can usually be optimized since we can skip attempting to serialize any fields not in the primary key.
+                let mut value_bytes = vec![];
+                secondary_value.serialize_to(&protobuf::SerializeOptions::deterministic(), &mut value_bytes)?;
 
                 self.txn.put(&key, &value_bytes).await?;
             }

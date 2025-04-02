@@ -15,7 +15,7 @@ use common::errors::*;
 use parsing::*;
 use protobuf_core::text::TextMessage;
 use protobuf_core::tokenizer::{capital_letter, decimal_digit, letter, Token};
-use protobuf_core::FieldNumber;
+use protobuf_core::{FieldNumber, MAX_FIELD_NUMBER};
 
 use crate::spec::*;
 
@@ -449,12 +449,12 @@ parser!(range<&str, Range> => seq!(c => {
     let upper_parser = seq!(c => {
         c.next(is(ident, "to"))?;
         let v = c.next(int_lit)
-            .or_else(|_| c.next(is(ident, "max")).map(|_| std::u64::MAX))?;
+            .or_else(|_| c.next(is(ident, "max")).map(|_| MAX_FIELD_NUMBER as u64))?;
         Ok(v)
     });
 
     let upper = c.next(opt(upper_parser))?.unwrap_or(lower);
-    Ok((lower as FieldNumber, upper  as FieldNumber))
+    Ok((lower as FieldNumber, (upper + 1) as FieldNumber))
 }));
 
 // Proto 2 and 3

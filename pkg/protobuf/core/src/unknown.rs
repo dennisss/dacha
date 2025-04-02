@@ -4,6 +4,9 @@ use common::const_default::ConstDefault;
 use common::errors::*;
 use common::{bytes::Bytes, list::Appendable};
 
+use crate::message::{OutputBuffer, SerializeOptions};
+use crate::wire::{WireResult, WireError};
+
 /// Set of unknown fields/extensions which were're referenced in the main schema
 /// of a message.
 ///
@@ -26,7 +29,15 @@ impl ConstDefault for UnknownFieldSet {
 }
 
 impl UnknownFieldSet {
-    pub fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    pub fn serialize_to(&self, options: &SerializeOptions, out: &mut OutputBuffer) -> WireResult<()> {
+        if options.deterministic && !self.is_empty() {
+            return Err(WireError::UnknownFieldsDropped);
+        }
+
         for field in &self.fields {
             out.extend_from_slice(&field[..]);
         }

@@ -7,13 +7,12 @@ use std::cmp::PartialEq;
 use std::collections::HashMap;
 
 use common::errors::*;
-use common::list::Appendable;
 use protobuf_core::reflection::RepeatedFieldReflection;
 use protobuf_core::reflection::{Reflect, Reflection, ReflectionMut};
 use protobuf_core::wire::{WireError, WireField, WireFieldIter};
 use protobuf_core::BytesField;
 use protobuf_core::{codecs::*, ExtensionSet};
-use protobuf_core::{EnumValue, FieldNumber, WireResult};
+use protobuf_core::{EnumValue, FieldNumber, WireResult, OutputBuffer};
 use protobuf_core::{RepeatedValues, SingularValue, Value};
 use protobuf_descriptor::{FieldDescriptorProto_Label, FieldDescriptorProto_Type};
 
@@ -22,18 +21,20 @@ use crate::spec::Syntax;
 
 #[derive(Clone, PartialEq)]
 pub struct DynamicMessage {
-    /// Sparse map of field values for this message. Only contains fields that
-    /// have been touched by the user.
+    /// Sparse list of field values for this message. Only contains fields that
+    /// have been touched by the user. The index of fields corresponds to the
+    /// fields_short list in the MessageDescriptor (which is a sorted list).
     ///
-    /// - In proto2 (or proto3 explicit optional), existence in this map implies
+    /// - In proto2 (or proto3 explicit optional), a non-None value implies
     ///   field presence.
     /// - In proto3, the value must be further compared to the default value to
     ///   check for presence.
     ///
-    /// NOTE: Field numbers are frequently sequential and pretty easy to hash.
-    /// TODO: We should just be able to make this a flat Vec based on the order
-    /// in the field descriptor (have on shared hash map)
-    fields: HashMap<FieldNumber, Value, SumHasherBuilder>,
+    /// TODO: Compress 'Option<Value>' into a one level 'OptionalValue' enum
+    /// (need some memory benchmarks though).
+    ///
+    /// TODO: Combine all oneof fields into one (number, Value) pair.
+    fields: Vec<Option<Value>>,
 
     // TODO: Need to cache default values for any non-trivial fields.
     extensions: ExtensionSet,
@@ -43,8 +44,12 @@ pub struct DynamicMessage {
 
 impl DynamicMessage {
     pub fn new(desc: MessageDescriptor) -> Self {
+        let mut fields = vec![];
+        fields.reserve_exact(desc.fields_short().len());
+        fields.resize(desc.fields_short().len(), None);
+
         Self {
-            fields: HashMap::with_hasher(SumHasherBuilder::default()),
+            fields,
             extensions: ExtensionSet::default(),
             desc,
         }
@@ -152,16 +157,19 @@ impl protobuf_core::Message for DynamicMessage {
                 }
             };
 
+            let field_index = self
+                .desc
+                .field_sorted_index(wire_field.field.field_number)
+                .unwrap();
+
             let is_repeated =
                 field_desc.proto().label() == FieldDescriptorProto_Label::LABEL_REPEATED;
 
             // TODO: Only generate if needed.
             let default_value = Self::default_value_for_field(&field_desc)?;
 
-            let mut existing_field = self
-                .fields
-                .entry(wire_field.field.field_number)
-                .or_insert_with(|| Value::new(default_value, is_repeated));
+            let mut existing_field = self.fields[field_index]
+                .get_or_insert_with(|| Value::new(default_value, is_repeated));
 
             existing_field.parse_merge(&wire_field.field)?;
         }
@@ -171,20 +179,30 @@ impl protobuf_core::Message for DynamicMessage {
 
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut out = vec![];
-        self.serialize_to(&mut out)?;
+        self.serialize_to(&protobuf_core::SerializeOptions::default(), &mut out)?;
         Ok(out)
     }
 
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to(&self, options: &protobuf_core::SerializeOptions, out: &mut OutputBuffer) -> Result<()> {
+        if options.deterministic {
+            return Err(err_msg("Determistic serialization not implemented for dynamic messages"));
+        }
+
         // TODO: Go in field number order.
         // TODO: Ignore fields with default values in proto3 (by using the sparse
         // serializers).
+        // ^ Need to test by setting and unsetting some fields to verify it works when non-None.
 
-        for (field_num, field) in &self.fields {
-            field.serialize_to(*field_num, out)?;
+        for (field, field_desc) in self.fields.iter().zip(self.desc.fields_short()) {
+            let field = match field.as_ref() {
+                Some(v) => v,
+                None => continue,
+            };
+
+            field.serialize_to(field_desc.number, options, out)?;
         }
 
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
 
         Ok(())
     }
@@ -208,11 +226,21 @@ impl protobuf_core::MessageReflection for DynamicMessage {
     }
 
     fn clear_field_with_number(&mut self, num: FieldNumber) {
-        self.fields.remove(&num);
+        let field_index = match self.desc.field_sorted_index(num) {
+            Some(v) => v,
+            None => return,
+        };
+
+        self.fields[field_index] = None;
     }
 
     fn has_field_with_number(&self, num: FieldNumber) -> bool {
-        let field = match self.fields.get(&num) {
+        let field_index = match self.desc.field_sorted_index(num) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        let field = match &self.fields[field_index] {
             Some(v) => v,
             None => return false,
         };
@@ -249,7 +277,12 @@ impl protobuf_core::MessageReflection for DynamicMessage {
 
     // TODO: This must also return if a valuid thing.
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
-        let field = match self.fields.get(&num) {
+        let field_index = match self.desc.field_sorted_index(num) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        let field = match &self.fields[field_index] {
             Some(v) => v,
             None => {
                 // Returning a default value.
@@ -269,11 +302,14 @@ impl protobuf_core::MessageReflection for DynamicMessage {
     fn field_by_number_mut<'a>(&'a mut self, num: FieldNumber) -> Option<ReflectionMut<'a>> {
         // TODO: Mutating a oneof field should clear all of the other ones.
 
-        if !self.fields.contains_key(&num) {
-            let field_desc = match self.desc.field_by_number(num) {
-                Some(v) => v,
-                None => return None,
-            };
+        let field_index = match self.desc.field_sorted_index(num) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        if self.fields[field_index].is_none() {
+            // Should never fail since we resolved a field index.
+            let field_desc = self.desc.field_by_number(num).unwrap();
 
             use FieldDescriptorProto_Type::*;
 
@@ -287,10 +323,10 @@ impl protobuf_core::MessageReflection for DynamicMessage {
 
             let default_field = Value::new(default_value, is_repeated);
 
-            self.fields.insert(num, default_field);
+            self.fields[field_index] = Some(default_field);
         }
 
-        self.fields.get_mut(&num).map(|f| f.reflect_mut())
+        self.fields[field_index].as_mut().map(|f| f.reflect_mut())
     }
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {

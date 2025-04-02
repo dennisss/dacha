@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use common::const_default::StaticDefault;
 use core::fmt::Debug;
+use core::convert::Infallible;
 
 use common::errors::*;
 use common::list::Appendable;
@@ -21,6 +22,26 @@ pub trait StaticMessageTraits =
     ConstDefault + StaticDefault + Clone + Message + Default + MessageReflection;
 #[cfg(not(feature = "alloc"))]
 pub trait StaticMessageTraits = ConstDefault + StaticDefault + Clone + Message + Default;
+
+
+#[derive(Clone, Default)]
+pub struct SerializeOptions {
+    pub deterministic: bool,
+}
+
+impl SerializeOptions {
+    pub fn deterministic() -> Self {
+        Self { deterministic: true }
+    }
+}
+
+impl StaticDefault for SerializeOptions {
+    fn static_default() -> &'static Self {
+        &Self { deterministic: false }
+    }
+}
+
+pub trait OutputBuffer = Appendable<Item = u8, Error = Infallible> + ?Sized;
 
 /// Message whose definition is well known to the binary.
 /// Usually these will be declared with code generation.
@@ -60,11 +81,7 @@ pub trait Message: Send + Sync + 'static {
         Ok(data)
     } */
 
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()>
-    where
-        Self: Sized;
-
-    // TODO: Add serialize_to with Appendable.
+    fn serialize_to(&self, options: &SerializeOptions, out: &mut OutputBuffer) -> Result<()>;
 
     // TODO: should be a shared reference?
     // fn descriptor() -> Descriptor;

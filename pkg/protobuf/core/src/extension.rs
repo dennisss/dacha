@@ -5,14 +5,14 @@ use core::ops::Deref;
 use std::collections::HashMap;
 
 use common::hash::SumHasherBuilder;
-use common::list::Appendable;
 use common::{const_default::ConstDefault, errors::*};
 
 use crate::{
     types::ExtensionNumberType,
     unknown::UnknownFieldSet,
     wire::{WireField, WireFieldIter, WireValue},
-    Enum, Message, SingularValue, StringPtr, Value, WireError, WireResult,
+    Enum, Message, SingularValue, StringPtr, Value, WireError, WireResult, OutputBuffer,
+    SerializeOptions,
 };
 
 pub enum ExtensionRef<'a, T> {
@@ -91,6 +91,11 @@ pub struct Extension {
 }
 
 impl ExtensionSet {
+    /// Returns true if there are no extensions and no unknown fields.
+    pub fn is_empty(&self) -> bool {
+        self.extensions.as_ref().map(|e| e.is_empty()).unwrap_or(true) && self.unknown_fields.is_empty()
+    }
+
     pub fn unknown_fields(&self) -> &UnknownFieldSet {
         &self.unknown_fields
     }
@@ -105,13 +110,17 @@ impl ExtensionSet {
         Ok(())
     }
 
-    pub fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+    pub fn serialize_to(&self, options: &SerializeOptions, out: &mut OutputBuffer) -> Result<()> {
+        if options.deterministic && !self.is_empty() {
+            return Err(WireError::UnknownFieldsDropped.into());
+        }
+
         // TODO: Explicitly ignore any numbers that overlap with the defined extensions.
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
 
         if let Some(extensions) = &self.extensions {
             for (num, ext) in extensions {
-                ext.value.serialize_to(*num, out)?;
+                ext.value.serialize_to(*num, options, out)?;
             }
         }
 

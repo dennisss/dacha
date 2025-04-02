@@ -3,6 +3,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use common::hash::FastHasherBuilder;
 use core::borrow::Borrow;
 use std::collections::HashSet;
 use std::ops::DerefMut;
@@ -525,6 +526,11 @@ impl DescriptorPool {
             ));
         }
 
+        let mut fields_map = HashMap::default();
+        for (i, field) in fields_short.iter().enumerate() {
+            fields_map.insert(field.number, i);
+        }
+
         let desc = TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner {
             name: name.clone(),
             file_index: scope.file_index,
@@ -532,6 +538,7 @@ impl DescriptorPool {
             syntax: scope.syntax,
             proto,
             fields_short,
+            fields_map,
             children,
         }));
         write.new_types.push((name.clone(), desc));
@@ -1323,6 +1330,10 @@ impl MessageDescriptor {
         &self.inner.fields_short
     }
 
+    pub fn field_sorted_index(&self, num: FieldNumber) -> Option<usize> {
+        self.inner.fields_map.get(&num).cloned()
+    }
+
     pub fn field_by_number(&self, num: FieldNumber) -> Option<FieldDescriptor> {
         for i in 0..self.inner.proto.field_len() {
             let field: &protobuf_descriptor::FieldDescriptorProto = &self.inner.proto.field()[i];
@@ -1357,6 +1368,7 @@ struct MessageDescriptorInner {
     syntax: Syntax,
     proto: pb::DescriptorProto,
     fields_short: Vec<FieldDescriptorShort>,
+    fields_map: HashMap<FieldNumber, usize, FastHasherBuilder>,
 
     children: Vec<TypeName>,
 }
@@ -1513,6 +1525,22 @@ impl FieldDescriptor {
             .pool
             .find_relative_type(&self.message.inner.name.name, self.proto().type_name())
     }
+
+    pub fn oneof(&self) -> Result<Option<OneOfDescriptor>> {
+        if !self.proto().has_oneof_index() {
+            return Ok(None);
+        }
+
+        let index = self.proto().oneof_index() as usize;
+        if index >= self.message.inner.proto.oneof_decl().len() {
+            return Err(err_msg("Oneof index is out of bounds"));
+        }
+
+        Ok(Some(OneOfDescriptor {
+            message: self.message.clone(),
+            index
+        }))
+    }
 }
 
 pub struct OneOfDescriptor {
@@ -1529,6 +1557,7 @@ impl OneOfDescriptor {
         &self.message
     }
 
+    // TODO: Somewhere we need to validate that any field that has oneof_index has a oneof_desl associated with it.
     pub fn fields<'a>(&'a self) -> impl Iterator<Item = FieldDescriptor> + 'a {
         self.message.fields().filter(move |f| {
             f.proto().has_oneof_index() && f.proto().oneof_index() == (self.index as i32)
