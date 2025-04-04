@@ -93,8 +93,8 @@ impl Default for CompilerOptions {
     fn default() -> Self {
         Self {
             descriptor_pool_options: DescriptorPoolOptions::default(),
-            runtime_package: "::protobuf".into(),
-            rpc_package: "::rpc".into(),
+            runtime_package: "protobuf".into(),
+            rpc_package: "rpc".into(),
             should_format: false,
             allowlisted_paths: None,
         }
@@ -1830,7 +1830,7 @@ impl Compiler {
         lines.add(format!(
             "
             fn serialize_to(
-                &self, options: &{runtime_pkg}::SerializeOptions, out: &mut {runtime_pkg}::OutputBuffer
+                &self, options: &{runtime_pkg}::SerializeOptions, out: &mut dyn {runtime_pkg}::OutputBuffer
             ) -> Result<()> {{
             ",
             runtime_pkg = self.options.runtime_package,
@@ -2000,12 +2000,13 @@ impl Compiler {
                 } else {
                     // TODO: Should borrow the value when using messages
                     lines.add(format!(
-                        "\t\t{}({}, {}self.{}{}, out)?;",
+                        "\t\t{}({}, {}self.{}{}, {}out)?;",
                         serialize_method,
                         field.proto().number(),
                         reference_str,
                         name,
-                        post_reference_str
+                        post_reference_str,
+                        options_field
                     ));
                 }
 

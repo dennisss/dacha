@@ -112,13 +112,16 @@ pub struct EmbeddedDBOptions {
     /// disable_wal value used to create it.
     pub disable_wal: bool,
 
-    /// If given a non-zero value N, we will not garbage collect any mutations
-    /// with a sequence number > N. This includes both Put and Delete
-    /// mutations.
+    /// If true, the database will track a 'compaction_waterline' variable. During compactions,
+    /// we will not garbage collect any mutations with a sequence number > N.
+    ///
+    /// If false, then effectively the database compacts using a 'compaction_waterline' equal to
+    /// the last sequence being flushed to tables.
     ///
     /// NOTE: This option can NOT be turned off or on. It must stay the same
     /// since database initialization.
     ///
+    /// Semantics:
     /// - If a key has a real non-deleted value, the latest value entry will
     ///   never be deleted.
     /// - Stale puts/delete entries (those do not have the latest sequence for a
@@ -126,6 +129,12 @@ pub struct EmbeddedDBOptions {
     ///   entry is also below the compaction_waterline.
     ///   - This is to prevent an old entry from immediately being compacted as
     ///     soon as a newer entry is added.
+    ///
+    /// Usage semantics:
+    /// - A consistent 'point in time' snapshot of all key values is available for reading
+    ///   at any 'sequence >= compaction_waterline'.
+    /// - A complete list of changes is available for all changes with
+    ///   'sequence >= compaction_waterline + 1'
     ///
     /// WARNING: It is the caller's responsible to verify that only
     /// non-compacted sequence ranges are used when querying a database with

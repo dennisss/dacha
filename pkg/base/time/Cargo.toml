@@ -1,6 +1,7 @@
 [package]
 name = "base_time"
 version = "0.0.0"
+edition = "2018"
 
 [dependencies]
 base_error = { path = "../error" }

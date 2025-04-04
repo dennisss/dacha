@@ -1005,7 +1005,7 @@ mod tests {
 
         channel_options.response_interceptor = Some(client_interceptor.clone());
 
-        let channel = { Arc::new(rpc::Http2Channel::create(channel_options).await?) };
+        let channel = Arc::new(rpc::Http2Channel::create(channel_options).await?);
 
         let stub = AdderStub::new(channel);
 

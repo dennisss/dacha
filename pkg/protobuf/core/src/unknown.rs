@@ -33,7 +33,7 @@ impl UnknownFieldSet {
         self.fields.is_empty()
     }
 
-    pub fn serialize_to(&self, options: &SerializeOptions, out: &mut OutputBuffer) -> WireResult<()> {
+    pub fn serialize_to(&self, options: &SerializeOptions, out: &mut dyn OutputBuffer) -> WireResult<()> {
         if options.deterministic && !self.is_empty() {
             return Err(WireError::UnknownFieldsDropped);
         }

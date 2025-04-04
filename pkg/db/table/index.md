@@ -13,6 +13,13 @@ In the underlying key-value store, we simply store the serialized protobuf as th
 
 Note that each part of the key is encoded will a lexicographically sortable compact representation with decodable length (so it is possible to segment the key afterwards assuming you know the type of each field).
 
+A value of each key-value row is generated as follows:
+
+- For the primary key row, this is just the serialized binary proto excluding any fields specified in the key.
+- For index fields, the value is the primary key serialized as a binary proto excluding any fields specified in the key.
+
+In both cases, the protos are serialized deterministically (ascending field order in wire format) to enable future optimizations to take advance of the sorted field ordering to do faster comparisons to a sorted query.
+
 ## Usage
 
 TODO

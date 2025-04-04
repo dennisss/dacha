@@ -1,11 +1,9 @@
-Protocol Buffers
-================
+# Protocol Buffers
 
 This package does parsing of .proto file descriptors, code generation, and parses proto messages in binary wire or text format. This supports proto 2 and 3.
 
 
-Package Names
--------------
+## Package Names
 
 As Rust does not allow for arbitrary module names in files, the Rust path to the generated message types is relative to the folder/file in which the .proto file is located.
 
@@ -19,9 +17,23 @@ Inside of .proto files, all types are references by proto buffer package names a
 Package structure:
 - Need to be able to compile the descriptors 
 
+## Deterministic Serialization
 
-TODOs
------
+When requested, serialization can be canonical/deterministic. This is slower but is consistent over time. The serialization works as follows:
+
+- Fields are serialized in order of ascending tag order.
+- Varints are serialized with the minimum number of bytes.
+- Non-'present' fields (e.g. fields in proto3 with default value) are skipped. 
+- Scalar repeated fields are packed if they have >1 items.
+- An error will be returned if the message has extensions or unknown fields.
+    - Unknown fields are hard to support since we can't canonicalize submessages / maps in unknown fields
+
+Caveats:
+
+- We can't canonicalize already serialized protos (e.g. Any protos) so the user must separately ensure that those were also always serialized determin.
+
+
+## TODOs
 
 - Validate that Proto2 enums can't be added in Proto3 messages.
 

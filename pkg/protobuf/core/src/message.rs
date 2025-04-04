@@ -81,7 +81,7 @@ pub trait Message: Send + Sync + 'static {
         Ok(data)
     } */
 
-    fn serialize_to(&self, options: &SerializeOptions, out: &mut OutputBuffer) -> Result<()>;
+    fn serialize_to(&self, options: &SerializeOptions, out: &mut dyn OutputBuffer) -> Result<()>;
 
     // TODO: should be a shared reference?
     // fn descriptor() -> Descriptor;

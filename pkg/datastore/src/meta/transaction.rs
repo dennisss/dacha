@@ -499,12 +499,10 @@ impl TransactionManager {
         snapshot: &Snapshot,
         latest_commited_index: LogIndex,
     ) -> Result<bool> {
-        if transaction.read_index() < snapshot.compaction_waterline().unwrap() {
+        if transaction.read_index() < snapshot.compaction_waterline() {
             return Err(rpc::Status::aborted("Transaction's read_index is too old.").into());
         }
 
-        // TODO: Change the iterator to have a lower bound on the sequence (as that way
-        // we can skip reaidng from disk).
         if transaction.read_index() > latest_commited_index.value() {
             return Err(
                 rpc::Status::invalid_argument("Transaction read_index is in the future").into(),

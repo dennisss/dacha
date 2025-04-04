@@ -623,43 +623,18 @@ impl EmbeddedDB {
 
             made_progress = true;
 
-            // Update the compaction waterline in the version
-            // TODO: The manifest write can be batched with any table compactions that occur
-            // in the same loop.
+            // Get the latest compaction waterline value.
+            // NOTE: This is only saved to the manifest later down if a change to the version occurs.
             let mut compaction_waterline = None;
             if shared.options.enable_compaction_waterline {
                 let next_compaction_waterline =
                     shared.next_compaction_waterline.load(Ordering::SeqCst);
-
-                let last_compaction_waterline = {
-                    let state = shared.state.read().await?;
-                    state.version_set.compaction_waterline().unwrap()
-                };
-
-                if next_compaction_waterline > last_compaction_waterline {
-                    let mut version_edit = VersionEdit::default();
-                    version_edit.compaction_waterline = Some(next_compaction_waterline);
-
-                    drop(state);
-
-                    let mut out = vec![];
-                    version_edit.serialize(&mut out)?;
-                    manifest.append(&out).await?;
-                    manifest.flush().await?;
-
-                    lock!(state <= shared.state.write().await?, {
-                        state.version_set.apply_new_edit(version_edit, vec![]);
-                    });
-
-                    continue;
-                }
-
                 compaction_waterline = Some(next_compaction_waterline);
             }
 
             // Check if we've hit the size limit for the mutable memtable.
             //
-            // If so, we'll make it immutable and start a new log for the
+            // If so, we'll make it immutable and start a new log for the new mutable memtable.
             //
             // TODO: How do we gurantee that no one is still writing to the table?
             // TODO: Pre-allocate the entire memtable with contiguous memory so that it is
@@ -728,6 +703,15 @@ impl EmbeddedDB {
                 let mut version_edit = VersionEdit::default();
                 version_edit.last_sequence = Some(memtable.last_sequence);
                 version_edit.next_file_number = Some(state.version_set.next_file_number());
+
+                // NOTE: We only need to update this when there are changes to the table set.
+                if shared.options.enable_compaction_waterline {
+                    let next_compaction_waterline = compaction_waterline.unwrap();
+                    let last_compaction_waterline = state.version_set.compaction_waterline().unwrap();
+                    if next_compaction_waterline > last_compaction_waterline {
+                        version_edit.compaction_waterline = Some(next_compaction_waterline);
+                    }
+                }
 
                 // We want to discard the old log as it is no longer needed.
                 // Will always be not-None here if we didn't disable the WAL.
@@ -812,6 +796,15 @@ impl EmbeddedDB {
                 let mut version_edit = VersionEdit::default();
                 // Store the next file number (will be used to allocate file numbers later);
                 version_edit.next_file_number = Some(state.version_set.next_file_number());
+
+                // NOTE: We only need to update this when there are changes to the table set.
+                if shared.options.enable_compaction_waterline {
+                    let next_compaction_waterline = compaction_waterline.unwrap();
+                    let last_compaction_waterline = state.version_set.compaction_waterline().unwrap();
+                    if next_compaction_waterline > last_compaction_waterline {
+                        version_edit.compaction_waterline = Some(next_compaction_waterline);
+                    }
+                }
 
                 // TODO: If this is not level 0, then we can optimize this with a LevelIterator.
                 //
@@ -1159,7 +1152,8 @@ impl EmbeddedDB {
         Snapshot {
             options: self.shared.options.clone(),
             last_sequence: state.log_last_sequence,
-            compaction_waterline: state.version_set.compaction_waterline(),
+            compaction_waterline: state.version_set.compaction_waterline()
+                .unwrap_or(state.version_set.last_sequence()),
             memtables,
             version: state.version_set.latest_version().clone(),
         }
@@ -1312,11 +1306,11 @@ impl EmbeddedDB {
     ///   existing ones won't be effected.
     /// - Note that the waterline is only allowed to go up, and attempts to
     ///   decrease it will be ignored.
+    /// - The waterline value is only persisted to disk when a compaction happens
+    ///   so re-opening the database shortly after a call to update_compaction_waterline()
+    ///   will lose the newest waterline value.
     ///
     /// See enable_compaction_waterline for the semantics of this.
-    ///
-    /// WARNING: Each update requires a disk write so this shouldn't be called
-    /// too frequently.
     pub fn update_compaction_waterline(&self, value: u64) -> Result<()> {
         if !self.shared.options.enable_compaction_waterline {
             return Err(err_msg("enable_compaction_waterline is not enabled"));
@@ -1338,6 +1332,7 @@ impl EmbeddedDB {
                 continue;
             }
 
+            // May allow us to compact old tables with many stale values.
             let _ = self.shared.compaction_notifier.try_send(());
         }
     }

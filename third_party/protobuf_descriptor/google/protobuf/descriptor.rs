@@ -14,7 +14,6 @@ use common::collections::FixedString;
 use common::const_default::{ConstDefault, StaticDefault};
 use common::errors::*;
 use common::fixed::vec::FixedVec;
-use common::list::Appendable;
 use protobuf_core::*;
 
 use protobuf_core::codecs::*;
@@ -26,7 +25,7 @@ use protobuf_core::reflection::*;
 
 #[cfg(feature = "std")]
 pub static FILE_DESCRIPTOR_0F2934D003718DD8: protobuf_core::StaticFileDescriptor = protobuf_core::StaticFileDescriptor {
-                proto: b"\x0a\x20google\x2fprotobuf\x2fdescriptor\x2eproto\x12\x0fgoogle\x2eprotobuf\x22\x3a\x0a\x11FileDescriptorSet\x12\x23\x0a\x04file\x18\x01\x20\x03\x28\x0b2\x13FileDescriptorProtoB\x00\x3a\x00\x22\xa2\x03\x0a\x13FileDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x11\x0a\x07package\x18\x02\x20\x01\x28\x09B\x00\x12\x14\x0a\x0adependency\x18\x03\x20\x03\x28\x09B\x00\x12\x1b\x0a\x11public\x5fdependency\x18\x0a\x20\x03\x28\x05B\x00\x12\x19\x0a\x0fweak\x5fdependency\x18\x0b\x20\x03\x28\x05B\x00\x12\x27\x0a\x0cmessage\x5ftype\x18\x04\x20\x03\x28\x0b2\x0fDescriptorProtoB\x00\x12\x28\x0a\x09enum\x5ftype\x18\x05\x20\x03\x28\x0b2\x13EnumDescriptorProtoB\x00\x12\x29\x0a\x07service\x18\x06\x20\x03\x28\x0b2\x16ServiceDescriptorProtoB\x00\x12\x29\x0a\x09extension\x18\x07\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x1e\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0bFileOptionsB\x00\x12\x2a\x0a\x10source\x5fcode\x5finfo\x18\x09\x20\x01\x28\x0b2\x0eSourceCodeInfoB\x00\x12\x10\x0a\x06syntax\x18\x0c\x20\x01\x28\x09B\x00\x12\x11\x0a\x07edition\x18\x0d\x20\x01\x28\x09B\x00\x3a\x00\x22\x94\x04\x0a\x0fDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x25\x0a\x05field\x18\x02\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x29\x0a\x09extension\x18\x06\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x26\x0a\x0bnested\x5ftype\x18\x03\x20\x03\x28\x0b2\x0fDescriptorProtoB\x00\x12\x28\x0a\x09enum\x5ftype\x18\x04\x20\x03\x28\x0b2\x13EnumDescriptorProtoB\x00\x12\x29\x0a\x0fextension\x5frange\x18\x05\x20\x03\x28\x0b2\x0eExtensionRangeB\x00\x12\x2a\x0a\x0aoneof\x5fdecl\x18\x08\x20\x03\x28\x0b2\x14OneofDescriptorProtoB\x00\x12\x21\x0a\x07options\x18\x07\x20\x01\x28\x0b2\x0eMessageOptionsB\x00\x12\x27\x0a\x0ereserved\x5frange\x18\x09\x20\x03\x28\x0b2\x0dReservedRangeB\x00\x12\x17\x0a\x0dreserved\x5fname\x18\x0a\x20\x03\x28\x09B\x00\x1a\x5c\x0a\x0eExtensionRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x12\x28\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x15ExtensionRangeOptionsB\x00\x3a\x00\x1a1\x0a\x0dReservedRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x3a\x00\x3a\x00\x22\x89\x03\x0a\x15ExtensionRangeOptions\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x12\x25\x0a\x0bdeclaration\x18\x02\x20\x03\x28\x0b2\x0bDeclarationB\x03\x88\x01\x02\x12\x1e\x0a\x08features\x182\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x125\x0a\x0cverification\x18\x03\x20\x01\x28\x0b2\x11VerificationState\x3a\x0aUNVERIFIEDB\x00\x1an\x0a\x0bDeclaration\x12\x10\x0a\x06number\x18\x01\x20\x01\x28\x05B\x00\x12\x13\x0a\x09full\x5fname\x18\x02\x20\x01\x28\x09B\x00\x12\x0e\x0a\x04type\x18\x03\x20\x01\x28\x09B\x00\x12\x12\x0a\x08reserved\x18\x05\x20\x01\x28\x08B\x00\x12\x12\x0a\x08repeated\x18\x06\x20\x01\x28\x08B\x00\x3a\x00\x22\x3a\x0a\x11VerificationState\x12\x11\x0a\x0bDECLARATION\x10\x00\x1a\x00\x12\x10\x0a\x0aUNVERIFIED\x10\x01\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xbe\x05\x0a\x14FieldDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x10\x0a\x06number\x18\x03\x20\x01\x28\x05B\x00\x12\x16\x0a\x05label\x18\x04\x20\x01\x28\x0b2\x05LabelB\x00\x12\x14\x0a\x04type\x18\x05\x20\x01\x28\x0b2\x04TypeB\x00\x12\x13\x0a\x09type\x5fname\x18\x06\x20\x01\x28\x09B\x00\x12\x12\x0a\x08extendee\x18\x02\x20\x01\x28\x09B\x00\x12\x17\x0a\x0ddefault\x5fvalue\x18\x07\x20\x01\x28\x09B\x00\x12\x15\x0a\x0boneof\x5findex\x18\x09\x20\x01\x28\x05B\x00\x12\x13\x0a\x09json\x5fname\x18\x0a\x20\x01\x28\x09B\x00\x12\x1f\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0cFieldOptionsB\x00\x12\x19\x0a\x0fproto3\x5foptional\x18\x11\x20\x01\x28\x08B\x00\x22\xdc\x02\x0a\x04Type\x12\x11\x0a\x0bTYPE\x5fDOUBLE\x10\x01\x1a\x00\x12\x10\x0a\x0aTYPE\x5fFLOAT\x10\x02\x1a\x00\x12\x10\x0a\x0aTYPE\x5fINT64\x10\x03\x1a\x00\x12\x11\x0a\x0bTYPE\x5fUINT64\x10\x04\x1a\x00\x12\x10\x0a\x0aTYPE\x5fINT32\x10\x05\x1a\x00\x12\x12\x0a\x0cTYPE\x5fFIXED64\x10\x06\x1a\x00\x12\x12\x0a\x0cTYPE\x5fFIXED32\x10\x07\x1a\x00\x12\x0f\x0a\x09TYPE\x5fBOOL\x10\x08\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSTRING\x10\x09\x1a\x00\x12\x10\x0a\x0aTYPE\x5fGROUP\x10\x0a\x1a\x00\x12\x12\x0a\x0cTYPE\x5fMESSAGE\x10\x0b\x1a\x00\x12\x10\x0a\x0aTYPE\x5fBYTES\x10\x0c\x1a\x00\x12\x11\x0a\x0bTYPE\x5fUINT32\x10\x0d\x1a\x00\x12\x0f\x0a\x09TYPE\x5fENUM\x10\x0e\x1a\x00\x12\x13\x0a\x0dTYPE\x5fSFIXED32\x10\x0f\x1a\x00\x12\x13\x0a\x0dTYPE\x5fSFIXED64\x10\x10\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSINT32\x10\x11\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSINT64\x10\x12\x1a\x00\x1a\x00\x22K\x0a\x05Label\x12\x14\x0a\x0eLABEL\x5fOPTIONAL\x10\x01\x1a\x00\x12\x14\x0a\x0eLABEL\x5fREQUIRED\x10\x02\x1a\x00\x12\x14\x0a\x0eLABEL\x5fREPEATED\x10\x03\x1a\x00\x1a\x00\x3a\x00\x22I\x0a\x14OneofDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x1f\x0a\x07options\x18\x02\x20\x01\x28\x0b2\x0cOneofOptionsB\x00\x3a\x00\x22\xef\x01\x0a\x13EnumDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x29\x0a\x05value\x18\x02\x20\x03\x28\x0b2\x18EnumValueDescriptorProtoB\x00\x12\x1e\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0bEnumOptionsB\x00\x12\x2b\x0a\x0ereserved\x5frange\x18\x04\x20\x03\x28\x0b2\x11EnumReservedRangeB\x00\x12\x17\x0a\x0dreserved\x5fname\x18\x05\x20\x03\x28\x09B\x00\x1a5\x0a\x11EnumReservedRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x3a\x00\x3a\x00\x22c\x0a\x18EnumValueDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x10\x0a\x06number\x18\x02\x20\x01\x28\x05B\x00\x12\x23\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x10EnumValueOptionsB\x00\x3a\x00\x22v\x0a\x16ServiceDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x27\x0a\x06method\x18\x02\x20\x03\x28\x0b2\x15MethodDescriptorProtoB\x00\x12\x21\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0eServiceOptionsB\x00\x3a\x00\x22\xbe\x01\x0a\x15MethodDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x14\x0a\x0ainput\x5ftype\x18\x02\x20\x01\x28\x09B\x00\x12\x15\x0a\x0boutput\x5ftype\x18\x03\x20\x01\x28\x09B\x00\x12\x20\x0a\x07options\x18\x04\x20\x01\x28\x0b2\x0dMethodOptionsB\x00\x12\x21\x0a\x10client\x5fstreaming\x18\x05\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x21\x0a\x10server\x5fstreaming\x18\x06\x20\x01\x28\x08\x3a\x05falseB\x00\x3a\x00\x22\xc8\x06\x0a\x0bFileOptions\x12\x16\x0a\x0cjava\x5fpackage\x18\x01\x20\x01\x28\x09B\x00\x12\x1e\x0a\x14java\x5fouter\x5fclassname\x18\x08\x20\x01\x28\x09B\x00\x12\x24\x0a\x13java\x5fmultiple\x5ffiles\x18\x0a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x29\x0a\x1djava\x5fgenerate\x5fequals\x5fand\x5fhash\x18\x14\x20\x01\x28\x08B\x02\x18\x01\x12\x27\x0a\x16java\x5fstring\x5fcheck\x5futf8\x18\x1b\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x2b\x0a\x0coptimize\x5ffor\x18\x09\x20\x01\x28\x0b2\x0cOptimizeMode\x3a\x05SPEEDB\x00\x12\x14\x0a\x0ago\x5fpackage\x18\x0b\x20\x01\x28\x09B\x00\x12\x24\x0a\x13cc\x5fgeneric\x5fservices\x18\x10\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x26\x0a\x15java\x5fgeneric\x5fservices\x18\x11\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x24\x0a\x13py\x5fgeneric\x5fservices\x18\x12\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x25\x0a\x14php\x5fgeneric\x5fservices\x18\x2a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x17\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x20\x0a\x10cc\x5fenable\x5farenas\x18\x1f\x20\x01\x28\x08\x3a\x04trueB\x00\x12\x1b\x0a\x11objc\x5fclass\x5fprefix\x18\x24\x20\x01\x28\x09B\x00\x12\x1a\x0a\x10csharp\x5fnamespace\x18\x25\x20\x01\x28\x09B\x00\x12\x16\x0a\x0cswift\x5fprefix\x18\x27\x20\x01\x28\x09B\x00\x12\x1a\x0a\x10php\x5fclass\x5fprefix\x18\x28\x20\x01\x28\x09B\x00\x12\x17\x0a\x0dphp\x5fnamespace\x18\x29\x20\x01\x28\x09B\x00\x12\x20\x0a\x16php\x5fmetadata\x5fnamespace\x18\x2c\x20\x01\x28\x09B\x00\x12\x16\x0a\x0cruby\x5fpackage\x18\x2d\x20\x01\x28\x09B\x00\x12\x1e\x0a\x08features\x182\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x22B\x0a\x0cOptimizeMode\x12\x0b\x0a\x05SPEED\x10\x01\x1a\x00\x12\x0f\x0a\x09CODE\x5fSIZE\x10\x02\x1a\x00\x12\x12\x0a\x0cLITE\x5fRUNTIME\x10\x03\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xba\x02\x0a\x0eMessageOptions\x12\x28\x0a\x17message\x5fset\x5fwire\x5fformat\x18\x01\x20\x01\x28\x08\x3a\x05falseB\x00\x120\x0a\x1fno\x5fstandard\x5fdescriptor\x5faccessor\x18\x02\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x13\x0a\x09map\x5fentry\x18\x07\x20\x01\x28\x08B\x00\x122\x0a\x26deprecated\x5flegacy\x5fjson\x5ffield\x5fconflicts\x18\x0b\x20\x01\x28\x08B\x02\x18\x01\x12\x1e\x0a\x08features\x18\x0c\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\x84\x08\x0a\x0cFieldOptions\x12\x1e\x0a\x05ctype\x18\x01\x20\x01\x28\x0b2\x05CType\x3a\x06STRINGB\x00\x12\x10\x0a\x06packed\x18\x02\x20\x01\x28\x08B\x00\x12\x23\x0a\x06jstype\x18\x06\x20\x01\x28\x0b2\x06JSType\x3a\x09JS\x5fNORMALB\x00\x12\x15\x0a\x04lazy\x18\x05\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x20\x0a\x0funverified\x5flazy\x18\x0f\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x15\x0a\x04weak\x18\x0a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1d\x0a\x0cdebug\x5fredact\x18\x10\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x24\x0a\x09retention\x18\x11\x20\x01\x28\x0b2\x0fOptionRetentionB\x00\x12\x23\x0a\x07targets\x18\x13\x20\x03\x28\x0b2\x10OptionTargetTypeB\x00\x12\x2a\x0a\x10edition\x5fdefaults\x18\x14\x20\x03\x28\x0b2\x0eEditionDefaultB\x00\x12\x1e\x0a\x08features\x18\x15\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x1a6\x0a\x0eEditionDefault\x12\x11\x0a\x07edition\x18\x01\x20\x01\x28\x09B\x00\x12\x0f\x0a\x05value\x18\x02\x20\x01\x28\x09B\x00\x3a\x00\x227\x0a\x05CType\x12\x0c\x0a\x06STRING\x10\x00\x1a\x00\x12\x0a\x0a\x04CORD\x10\x01\x1a\x00\x12\x12\x0a\x0cSTRING\x5fPIECE\x10\x02\x1a\x00\x1a\x00\x22\x3d\x0a\x06JSType\x12\x0f\x0a\x09JS\x5fNORMAL\x10\x00\x1a\x00\x12\x0f\x0a\x09JS\x5fSTRING\x10\x01\x1a\x00\x12\x0f\x0a\x09JS\x5fNUMBER\x10\x02\x1a\x00\x1a\x00\x22\x5d\x0a\x0fOptionRetention\x12\x17\x0a\x11RETENTION\x5fUNKNOWN\x10\x00\x1a\x00\x12\x17\x0a\x11RETENTION\x5fRUNTIME\x10\x01\x1a\x00\x12\x16\x0a\x10RETENTION\x5fSOURCE\x10\x02\x1a\x00\x1a\x00\x22\xa2\x02\x0a\x10OptionTargetType\x12\x19\x0a\x13TARGET\x5fTYPE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x16\x0a\x10TARGET\x5fTYPE\x5fFILE\x10\x01\x1a\x00\x12\x21\x0a\x1bTARGET\x5fTYPE\x5fEXTENSION\x5fRANGE\x10\x02\x1a\x00\x12\x19\x0a\x13TARGET\x5fTYPE\x5fMESSAGE\x10\x03\x1a\x00\x12\x17\x0a\x11TARGET\x5fTYPE\x5fFIELD\x10\x04\x1a\x00\x12\x17\x0a\x11TARGET\x5fTYPE\x5fONEOF\x10\x05\x1a\x00\x12\x16\x0a\x10TARGET\x5fTYPE\x5fENUM\x10\x06\x1a\x00\x12\x1c\x0a\x16TARGET\x5fTYPE\x5fENUM\x5fENTRY\x10\x07\x1a\x00\x12\x19\x0a\x13TARGET\x5fTYPE\x5fSERVICE\x10\x08\x1a\x00\x12\x18\x0a\x12TARGET\x5fTYPE\x5fMETHOD\x10\x09\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22v\x0a\x0cOneofOptions\x12\x1e\x0a\x08features\x18\x01\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xdd\x01\x0a\x0bEnumOptions\x12\x15\x0a\x0ballow\x5falias\x18\x02\x20\x01\x28\x08B\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x122\x0a\x26deprecated\x5flegacy\x5fjson\x5ffield\x5fconflicts\x18\x06\x20\x01\x28\x08B\x02\x18\x01\x12\x1e\x0a\x08features\x18\x07\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xb6\x01\x0a\x10EnumValueOptions\x12\x1b\x0a\x0adeprecated\x18\x01\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1e\x0a\x08features\x18\x02\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x12\x1d\x0a\x0cdebug\x5fredact\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\x95\x01\x0a\x0eServiceOptions\x12\x1e\x0a\x08features\x18\x22\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x12\x1b\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x3a\x05falseB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\xb2\x02\x0a\x0dMethodOptions\x12\x1b\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x3a\x05falseB\x00\x12B\x0a\x11idempotency\x5flevel\x18\x22\x20\x01\x28\x0b2\x10IdempotencyLevel\x3a\x13IDEMPOTENCY\x5fUNKNOWNB\x00\x12\x1e\x0a\x08features\x18\x23\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x22X\x0a\x10IdempotencyLevel\x12\x19\x0a\x13IDEMPOTENCY\x5fUNKNOWN\x10\x00\x1a\x00\x12\x15\x0a\x0fNO\x5fSIDE\x5fEFFECTS\x10\x01\x1a\x00\x12\x10\x0a\x0aIDEMPOTENT\x10\x02\x1a\x00\x1a\x00\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x3a\x00\x22\x8f\x02\x0a\x13UninterpretedOption\x12\x18\x0a\x04name\x18\x02\x20\x03\x28\x0b2\x08NamePartB\x00\x12\x1a\x0a\x10identifier\x5fvalue\x18\x03\x20\x01\x28\x09B\x00\x12\x1c\x0a\x12positive\x5fint\x5fvalue\x18\x04\x20\x01\x28\x04B\x00\x12\x1c\x0a\x12negative\x5fint\x5fvalue\x18\x05\x20\x01\x28\x03B\x00\x12\x16\x0a\x0cdouble\x5fvalue\x18\x06\x20\x01\x28\x01B\x00\x12\x16\x0a\x0cstring\x5fvalue\x18\x07\x20\x01\x28\x0cB\x00\x12\x19\x0a\x0faggregate\x5fvalue\x18\x08\x20\x01\x28\x09B\x00\x1a9\x0a\x08NamePart\x12\x13\x0a\x09name\x5fpart\x18\x01\x20\x02\x28\x09B\x00\x12\x16\x0a\x0cis\x5fextension\x18\x02\x20\x02\x28\x08B\x00\x3a\x00\x3a\x00\x22\xb6\x06\x0a\x0aFeatureSet\x12B\x0a\x0efield\x5fpresence\x18\x01\x20\x01\x28\x0b2\x0dFieldPresenceB\x1b\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x10\x0a\x042023\x12\x08EXPLICIT\x124\x0a\x09enum\x5ftype\x18\x02\x20\x01\x28\x0b2\x08EnumTypeB\x17\x88\x01\x01\x9a\x01\x02\x06\x01\xa2\x01\x0c\x0a\x042023\x12\x04OPEN\x12Q\x0a\x17repeated\x5ffield\x5fencoding\x18\x03\x20\x01\x28\x0b2\x15RepeatedFieldEncodingB\x19\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x0e\x0a\x042023\x12\x06PACKED\x12M\x0a\x10message\x5fencoding\x18\x05\x20\x01\x28\x0b2\x0fMessageEncodingB\x22\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x17\x0a\x042023\x12\x0fLENGTH\x5fPREFIXED\x12\x3a\x0a\x0bjson\x5fformat\x18\x06\x20\x01\x28\x0b2\x0aJsonFormatB\x19\x88\x01\x01\x9a\x01\x03\x03\x06\x01\xa2\x01\x0d\x0a\x042023\x12\x05ALLOW\x22f\x0a\x0dFieldPresence\x12\x1c\x0a\x16FIELD\x5fPRESENCE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0e\x0a\x08EXPLICIT\x10\x01\x1a\x00\x12\x0e\x0a\x08IMPLICIT\x10\x02\x1a\x00\x12\x15\x0a\x0fLEGACY\x5fREQUIRED\x10\x03\x1a\x00\x1a\x00\x22\x3f\x0a\x08EnumType\x12\x17\x0a\x11ENUM\x5fTYPE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0a\x0a\x04OPEN\x10\x01\x1a\x00\x12\x0c\x0a\x06CLOSED\x10\x02\x1a\x00\x1a\x00\x22\x5e\x0a\x15RepeatedFieldEncoding\x12\x25\x0a\x1fREPEATED\x5fFIELD\x5fENCODING\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0c\x0a\x06PACKED\x10\x01\x1a\x00\x12\x0e\x0a\x08EXPANDED\x10\x02\x1a\x00\x1a\x00\x22\x5b\x0a\x0fMessageEncoding\x12\x1e\x0a\x18MESSAGE\x5fENCODING\x5fUNKNOWN\x10\x00\x1a\x00\x12\x15\x0a\x0fLENGTH\x5fPREFIXED\x10\x01\x1a\x00\x12\x0f\x0a\x09DELIMITED\x10\x02\x1a\x00\x1a\x00\x22P\x0a\x0aJsonFormat\x12\x19\x0a\x13JSON\x5fFORMAT\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0b\x0a\x05ALLOW\x10\x01\x1a\x00\x12\x18\x0a\x12LEGACY\x5fBEST\x5fEFFORT\x10\x02\x1a\x00\x1a\x00\x2a\x06\x08\xe8\x07\x10\xe8\x07\x2a\x06\x08\xe9\x07\x10\xe9\x07\x2a\x06\x08\x8bN\x10\x8fN\x3a\x00\x22\xcb\x01\x0a\x12FeatureSetDefaults\x12\x2c\x0a\x08defaults\x18\x01\x20\x03\x28\x0b2\x18FeatureSetEditionDefaultB\x00\x12\x19\x0a\x0fminimum\x5fedition\x18\x02\x20\x01\x28\x09B\x00\x12\x19\x0a\x0fmaximum\x5fedition\x18\x03\x20\x01\x28\x09B\x00\x1aO\x0a\x18FeatureSetEditionDefault\x12\x11\x0a\x07edition\x18\x01\x20\x01\x28\x09B\x00\x12\x1e\x0a\x08features\x18\x02\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x3a\x00\x3a\x00\x22\xc1\x01\x0a\x0eSourceCodeInfo\x12\x1c\x0a\x08location\x18\x01\x20\x03\x28\x0b2\x08LocationB\x00\x1a\x8e\x01\x0a\x08Location\x12\x10\x0a\x04path\x18\x01\x20\x03\x28\x05B\x02\x10\x01\x12\x10\x0a\x04span\x18\x02\x20\x03\x28\x05B\x02\x10\x01\x12\x1a\x0a\x10leading\x5fcomments\x18\x03\x20\x01\x28\x09B\x00\x12\x1b\x0a\x11trailing\x5fcomments\x18\x04\x20\x01\x28\x09B\x00\x12\x23\x0a\x19leading\x5fdetached\x5fcomments\x18\x06\x20\x03\x28\x09B\x00\x3a\x00\x3a\x00\x22\xe1\x01\x0a\x11GeneratedCodeInfo\x12\x20\x0a\x0aannotation\x18\x01\x20\x03\x28\x0b2\x0aAnnotationB\x00\x1a\xa7\x01\x0a\x0aAnnotation\x12\x10\x0a\x04path\x18\x01\x20\x03\x28\x05B\x02\x10\x01\x12\x15\x0a\x0bsource\x5ffile\x18\x02\x20\x01\x28\x09B\x00\x12\x0f\x0a\x05begin\x18\x03\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x04\x20\x01\x28\x05B\x00\x12\x1c\x0a\x08semantic\x18\x05\x20\x01\x28\x0b2\x08SemanticB\x00\x220\x0a\x08Semantic\x12\x0a\x0a\x04NONE\x10\x00\x1a\x00\x12\x09\x0a\x03SET\x10\x01\x1a\x00\x12\x0b\x0a\x05ALIAS\x10\x02\x1a\x00\x1a\x00\x3a\x00\x3a\x00B\x7e\x0a\x13com\x2egoogle\x2eprotobufB\x10DescriptorProtosH\x01Z\x2dgoogle\x2egolang\x2eorg\x2fprotobuf\x2ftypes\x2fdescriptorpb\xf8\x01\x01\xa2\x02\x03GPB\xaa\x02\x1aGoogle\x2eProtobuf\x2eReflectionb\x06proto2",
+                proto: b"\x0a\x20google\x2fprotobuf\x2fdescriptor\x2eproto\x12\x0fgoogle\x2eprotobuf\x22\x3a\x0a\x11FileDescriptorSet\x12\x23\x0a\x04file\x18\x01\x20\x03\x28\x0b2\x13FileDescriptorProtoB\x00\x3a\x00\x22\xa2\x03\x0a\x13FileDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x11\x0a\x07package\x18\x02\x20\x01\x28\x09B\x00\x12\x14\x0a\x0adependency\x18\x03\x20\x03\x28\x09B\x00\x12\x1b\x0a\x11public\x5fdependency\x18\x0a\x20\x03\x28\x05B\x00\x12\x19\x0a\x0fweak\x5fdependency\x18\x0b\x20\x03\x28\x05B\x00\x12\x27\x0a\x0cmessage\x5ftype\x18\x04\x20\x03\x28\x0b2\x0fDescriptorProtoB\x00\x12\x28\x0a\x09enum\x5ftype\x18\x05\x20\x03\x28\x0b2\x13EnumDescriptorProtoB\x00\x12\x29\x0a\x07service\x18\x06\x20\x03\x28\x0b2\x16ServiceDescriptorProtoB\x00\x12\x29\x0a\x09extension\x18\x07\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x1e\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0bFileOptionsB\x00\x12\x2a\x0a\x10source\x5fcode\x5finfo\x18\x09\x20\x01\x28\x0b2\x0eSourceCodeInfoB\x00\x12\x10\x0a\x06syntax\x18\x0c\x20\x01\x28\x09B\x00\x12\x11\x0a\x07edition\x18\x0d\x20\x01\x28\x09B\x00\x3a\x00\x22\x94\x04\x0a\x0fDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x25\x0a\x05field\x18\x02\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x29\x0a\x09extension\x18\x06\x20\x03\x28\x0b2\x14FieldDescriptorProtoB\x00\x12\x26\x0a\x0bnested\x5ftype\x18\x03\x20\x03\x28\x0b2\x0fDescriptorProtoB\x00\x12\x28\x0a\x09enum\x5ftype\x18\x04\x20\x03\x28\x0b2\x13EnumDescriptorProtoB\x00\x12\x29\x0a\x0fextension\x5frange\x18\x05\x20\x03\x28\x0b2\x0eExtensionRangeB\x00\x12\x2a\x0a\x0aoneof\x5fdecl\x18\x08\x20\x03\x28\x0b2\x14OneofDescriptorProtoB\x00\x12\x21\x0a\x07options\x18\x07\x20\x01\x28\x0b2\x0eMessageOptionsB\x00\x12\x27\x0a\x0ereserved\x5frange\x18\x09\x20\x03\x28\x0b2\x0dReservedRangeB\x00\x12\x17\x0a\x0dreserved\x5fname\x18\x0a\x20\x03\x28\x09B\x00\x1a\x5c\x0a\x0eExtensionRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x12\x28\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x15ExtensionRangeOptionsB\x00\x3a\x00\x1a1\x0a\x0dReservedRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x3a\x00\x3a\x00\x22\x8a\x03\x0a\x15ExtensionRangeOptions\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x12\x25\x0a\x0bdeclaration\x18\x02\x20\x03\x28\x0b2\x0bDeclarationB\x03\x88\x01\x02\x12\x1e\x0a\x08features\x182\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x125\x0a\x0cverification\x18\x03\x20\x01\x28\x0b2\x11VerificationState\x3a\x0aUNVERIFIEDB\x00\x1at\x0a\x0bDeclaration\x12\x10\x0a\x06number\x18\x01\x20\x01\x28\x05B\x00\x12\x13\x0a\x09full\x5fname\x18\x02\x20\x01\x28\x09B\x00\x12\x0e\x0a\x04type\x18\x03\x20\x01\x28\x09B\x00\x12\x12\x0a\x08reserved\x18\x05\x20\x01\x28\x08B\x00\x12\x12\x0a\x08repeated\x18\x06\x20\x01\x28\x08B\x00\x3a\x00J\x04\x08\x04\x10\x05\x22\x3a\x0a\x11VerificationState\x12\x11\x0a\x0bDECLARATION\x10\x00\x1a\x00\x12\x10\x0a\x0aUNVERIFIED\x10\x01\x1a\x00\x1a\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00\x22\xbe\x05\x0a\x14FieldDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x10\x0a\x06number\x18\x03\x20\x01\x28\x05B\x00\x12\x16\x0a\x05label\x18\x04\x20\x01\x28\x0b2\x05LabelB\x00\x12\x14\x0a\x04type\x18\x05\x20\x01\x28\x0b2\x04TypeB\x00\x12\x13\x0a\x09type\x5fname\x18\x06\x20\x01\x28\x09B\x00\x12\x12\x0a\x08extendee\x18\x02\x20\x01\x28\x09B\x00\x12\x17\x0a\x0ddefault\x5fvalue\x18\x07\x20\x01\x28\x09B\x00\x12\x15\x0a\x0boneof\x5findex\x18\x09\x20\x01\x28\x05B\x00\x12\x13\x0a\x09json\x5fname\x18\x0a\x20\x01\x28\x09B\x00\x12\x1f\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0cFieldOptionsB\x00\x12\x19\x0a\x0fproto3\x5foptional\x18\x11\x20\x01\x28\x08B\x00\x22\xdc\x02\x0a\x04Type\x12\x11\x0a\x0bTYPE\x5fDOUBLE\x10\x01\x1a\x00\x12\x10\x0a\x0aTYPE\x5fFLOAT\x10\x02\x1a\x00\x12\x10\x0a\x0aTYPE\x5fINT64\x10\x03\x1a\x00\x12\x11\x0a\x0bTYPE\x5fUINT64\x10\x04\x1a\x00\x12\x10\x0a\x0aTYPE\x5fINT32\x10\x05\x1a\x00\x12\x12\x0a\x0cTYPE\x5fFIXED64\x10\x06\x1a\x00\x12\x12\x0a\x0cTYPE\x5fFIXED32\x10\x07\x1a\x00\x12\x0f\x0a\x09TYPE\x5fBOOL\x10\x08\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSTRING\x10\x09\x1a\x00\x12\x10\x0a\x0aTYPE\x5fGROUP\x10\x0a\x1a\x00\x12\x12\x0a\x0cTYPE\x5fMESSAGE\x10\x0b\x1a\x00\x12\x10\x0a\x0aTYPE\x5fBYTES\x10\x0c\x1a\x00\x12\x11\x0a\x0bTYPE\x5fUINT32\x10\x0d\x1a\x00\x12\x0f\x0a\x09TYPE\x5fENUM\x10\x0e\x1a\x00\x12\x13\x0a\x0dTYPE\x5fSFIXED32\x10\x0f\x1a\x00\x12\x13\x0a\x0dTYPE\x5fSFIXED64\x10\x10\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSINT32\x10\x11\x1a\x00\x12\x11\x0a\x0bTYPE\x5fSINT64\x10\x12\x1a\x00\x1a\x00\x22K\x0a\x05Label\x12\x14\x0a\x0eLABEL\x5fOPTIONAL\x10\x01\x1a\x00\x12\x14\x0a\x0eLABEL\x5fREQUIRED\x10\x02\x1a\x00\x12\x14\x0a\x0eLABEL\x5fREPEATED\x10\x03\x1a\x00\x1a\x00\x3a\x00\x22I\x0a\x14OneofDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x1f\x0a\x07options\x18\x02\x20\x01\x28\x0b2\x0cOneofOptionsB\x00\x3a\x00\x22\xef\x01\x0a\x13EnumDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x29\x0a\x05value\x18\x02\x20\x03\x28\x0b2\x18EnumValueDescriptorProtoB\x00\x12\x1e\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0bEnumOptionsB\x00\x12\x2b\x0a\x0ereserved\x5frange\x18\x04\x20\x03\x28\x0b2\x11EnumReservedRangeB\x00\x12\x17\x0a\x0dreserved\x5fname\x18\x05\x20\x03\x28\x09B\x00\x1a5\x0a\x11EnumReservedRange\x12\x0f\x0a\x05start\x18\x01\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x02\x20\x01\x28\x05B\x00\x3a\x00\x3a\x00\x22c\x0a\x18EnumValueDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x10\x0a\x06number\x18\x02\x20\x01\x28\x05B\x00\x12\x23\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x10EnumValueOptionsB\x00\x3a\x00\x22v\x0a\x16ServiceDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x27\x0a\x06method\x18\x02\x20\x03\x28\x0b2\x15MethodDescriptorProtoB\x00\x12\x21\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0eServiceOptionsB\x00\x3a\x00\x22\xbe\x01\x0a\x15MethodDescriptorProto\x12\x0e\x0a\x04name\x18\x01\x20\x01\x28\x09B\x00\x12\x14\x0a\x0ainput\x5ftype\x18\x02\x20\x01\x28\x09B\x00\x12\x15\x0a\x0boutput\x5ftype\x18\x03\x20\x01\x28\x09B\x00\x12\x20\x0a\x07options\x18\x04\x20\x01\x28\x0b2\x0dMethodOptionsB\x00\x12\x21\x0a\x10client\x5fstreaming\x18\x05\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x21\x0a\x10server\x5fstreaming\x18\x06\x20\x01\x28\x08\x3a\x05falseB\x00\x3a\x00\x22\xc9\x06\x0a\x0bFileOptions\x12\x16\x0a\x0cjava\x5fpackage\x18\x01\x20\x01\x28\x09B\x00\x12\x1e\x0a\x14java\x5fouter\x5fclassname\x18\x08\x20\x01\x28\x09B\x00\x12\x24\x0a\x13java\x5fmultiple\x5ffiles\x18\x0a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x29\x0a\x1djava\x5fgenerate\x5fequals\x5fand\x5fhash\x18\x14\x20\x01\x28\x08B\x02\x18\x01\x12\x27\x0a\x16java\x5fstring\x5fcheck\x5futf8\x18\x1b\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x2b\x0a\x0coptimize\x5ffor\x18\x09\x20\x01\x28\x0b2\x0cOptimizeMode\x3a\x05SPEEDB\x00\x12\x14\x0a\x0ago\x5fpackage\x18\x0b\x20\x01\x28\x09B\x00\x12\x24\x0a\x13cc\x5fgeneric\x5fservices\x18\x10\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x26\x0a\x15java\x5fgeneric\x5fservices\x18\x11\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x24\x0a\x13py\x5fgeneric\x5fservices\x18\x12\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x25\x0a\x14php\x5fgeneric\x5fservices\x18\x2a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x17\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x20\x0a\x10cc\x5fenable\x5farenas\x18\x1f\x20\x01\x28\x08\x3a\x04trueB\x00\x12\x1b\x0a\x11objc\x5fclass\x5fprefix\x18\x24\x20\x01\x28\x09B\x00\x12\x1a\x0a\x10csharp\x5fnamespace\x18\x25\x20\x01\x28\x09B\x00\x12\x16\x0a\x0cswift\x5fprefix\x18\x27\x20\x01\x28\x09B\x00\x12\x1a\x0a\x10php\x5fclass\x5fprefix\x18\x28\x20\x01\x28\x09B\x00\x12\x17\x0a\x0dphp\x5fnamespace\x18\x29\x20\x01\x28\x09B\x00\x12\x20\x0a\x16php\x5fmetadata\x5fnamespace\x18\x2c\x20\x01\x28\x09B\x00\x12\x16\x0a\x0cruby\x5fpackage\x18\x2d\x20\x01\x28\x09B\x00\x12\x1e\x0a\x08features\x182\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x22B\x0a\x0cOptimizeMode\x12\x0b\x0a\x05SPEED\x10\x01\x1a\x00\x12\x0f\x0a\x09CODE\x5fSIZE\x10\x02\x1a\x00\x12\x12\x0a\x0cLITE\x5fRUNTIME\x10\x03\x1a\x00\x1a\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00J\x04\x08\x26\x10\x27\x22\xd3\x02\x0a\x0eMessageOptions\x12\x28\x0a\x17message\x5fset\x5fwire\x5fformat\x18\x01\x20\x01\x28\x08\x3a\x05falseB\x00\x120\x0a\x1fno\x5fstandard\x5fdescriptor\x5faccessor\x18\x02\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x13\x0a\x09map\x5fentry\x18\x07\x20\x01\x28\x08B\x00\x122\x0a\x26deprecated\x5flegacy\x5fjson\x5ffield\x5fconflicts\x18\x0b\x20\x01\x28\x08B\x02\x18\x01\x12\x1e\x0a\x08features\x18\x0c\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00J\x04\x08\x04\x10\x05J\x04\x08\x05\x10\x06J\x04\x08\x06\x10\x07J\x04\x08\x08\x10\x09J\x04\x08\x09\x10\x0a\x22\x8b\x08\x0a\x0cFieldOptions\x12\x1e\x0a\x05ctype\x18\x01\x20\x01\x28\x0b2\x05CType\x3a\x06STRINGB\x00\x12\x10\x0a\x06packed\x18\x02\x20\x01\x28\x08B\x00\x12\x23\x0a\x06jstype\x18\x06\x20\x01\x28\x0b2\x06JSType\x3a\x09JS\x5fNORMALB\x00\x12\x15\x0a\x04lazy\x18\x05\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x20\x0a\x0funverified\x5flazy\x18\x0f\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x15\x0a\x04weak\x18\x0a\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1d\x0a\x0cdebug\x5fredact\x18\x10\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x24\x0a\x09retention\x18\x11\x20\x01\x28\x0b2\x0fOptionRetentionB\x00\x12\x23\x0a\x07targets\x18\x13\x20\x03\x28\x0b2\x10OptionTargetTypeB\x00\x12\x2a\x0a\x10edition\x5fdefaults\x18\x14\x20\x03\x28\x0b2\x0eEditionDefaultB\x00\x12\x1e\x0a\x08features\x18\x15\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x1a6\x0a\x0eEditionDefault\x12\x11\x0a\x07edition\x18\x01\x20\x01\x28\x09B\x00\x12\x0f\x0a\x05value\x18\x02\x20\x01\x28\x09B\x00\x3a\x00\x227\x0a\x05CType\x12\x0c\x0a\x06STRING\x10\x00\x1a\x00\x12\x0a\x0a\x04CORD\x10\x01\x1a\x00\x12\x12\x0a\x0cSTRING\x5fPIECE\x10\x02\x1a\x00\x1a\x00\x22\x3d\x0a\x06JSType\x12\x0f\x0a\x09JS\x5fNORMAL\x10\x00\x1a\x00\x12\x0f\x0a\x09JS\x5fSTRING\x10\x01\x1a\x00\x12\x0f\x0a\x09JS\x5fNUMBER\x10\x02\x1a\x00\x1a\x00\x22\x5d\x0a\x0fOptionRetention\x12\x17\x0a\x11RETENTION\x5fUNKNOWN\x10\x00\x1a\x00\x12\x17\x0a\x11RETENTION\x5fRUNTIME\x10\x01\x1a\x00\x12\x16\x0a\x10RETENTION\x5fSOURCE\x10\x02\x1a\x00\x1a\x00\x22\xa2\x02\x0a\x10OptionTargetType\x12\x19\x0a\x13TARGET\x5fTYPE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x16\x0a\x10TARGET\x5fTYPE\x5fFILE\x10\x01\x1a\x00\x12\x21\x0a\x1bTARGET\x5fTYPE\x5fEXTENSION\x5fRANGE\x10\x02\x1a\x00\x12\x19\x0a\x13TARGET\x5fTYPE\x5fMESSAGE\x10\x03\x1a\x00\x12\x17\x0a\x11TARGET\x5fTYPE\x5fFIELD\x10\x04\x1a\x00\x12\x17\x0a\x11TARGET\x5fTYPE\x5fONEOF\x10\x05\x1a\x00\x12\x16\x0a\x10TARGET\x5fTYPE\x5fENUM\x10\x06\x1a\x00\x12\x1c\x0a\x16TARGET\x5fTYPE\x5fENUM\x5fENTRY\x10\x07\x1a\x00\x12\x19\x0a\x13TARGET\x5fTYPE\x5fSERVICE\x10\x08\x1a\x00\x12\x18\x0a\x12TARGET\x5fTYPE\x5fMETHOD\x10\x09\x1a\x00\x1a\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00J\x04\x08\x04\x10\x05J\x04\x08\x12\x10\x13\x22q\x0a\x0cOneofOptions\x12\x1e\x0a\x08features\x18\x01\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00\x22\xde\x01\x0a\x0bEnumOptions\x12\x15\x0a\x0ballow\x5falias\x18\x02\x20\x01\x28\x08B\x00\x12\x1b\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x122\x0a\x26deprecated\x5flegacy\x5fjson\x5ffield\x5fconflicts\x18\x06\x20\x01\x28\x08B\x02\x18\x01\x12\x1e\x0a\x08features\x18\x07\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00J\x04\x08\x05\x10\x06\x22\xb1\x01\x0a\x10EnumValueOptions\x12\x1b\x0a\x0adeprecated\x18\x01\x20\x01\x28\x08\x3a\x05falseB\x00\x12\x1e\x0a\x08features\x18\x02\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x12\x1d\x0a\x0cdebug\x5fredact\x18\x03\x20\x01\x28\x08\x3a\x05falseB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00\x22\x90\x01\x0a\x0eServiceOptions\x12\x1e\x0a\x08features\x18\x22\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x12\x1b\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x3a\x05falseB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00\x22\xad\x02\x0a\x0dMethodOptions\x12\x1b\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x3a\x05falseB\x00\x12B\x0a\x11idempotency\x5flevel\x18\x22\x20\x01\x28\x0b2\x10IdempotencyLevel\x3a\x13IDEMPOTENCY\x5fUNKNOWNB\x00\x12\x1e\x0a\x08features\x18\x23\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x124\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOptionB\x00\x22X\x0a\x10IdempotencyLevel\x12\x19\x0a\x13IDEMPOTENCY\x5fUNKNOWN\x10\x00\x1a\x00\x12\x15\x0a\x0fNO\x5fSIDE\x5fEFFECTS\x10\x01\x1a\x00\x12\x10\x0a\x0aIDEMPOTENT\x10\x02\x1a\x00\x1a\x00\x2a\x09\x08\xe8\x07\x10\x80\x80\x80\x80\x02\x3a\x00\x22\x8f\x02\x0a\x13UninterpretedOption\x12\x18\x0a\x04name\x18\x02\x20\x03\x28\x0b2\x08NamePartB\x00\x12\x1a\x0a\x10identifier\x5fvalue\x18\x03\x20\x01\x28\x09B\x00\x12\x1c\x0a\x12positive\x5fint\x5fvalue\x18\x04\x20\x01\x28\x04B\x00\x12\x1c\x0a\x12negative\x5fint\x5fvalue\x18\x05\x20\x01\x28\x03B\x00\x12\x16\x0a\x0cdouble\x5fvalue\x18\x06\x20\x01\x28\x01B\x00\x12\x16\x0a\x0cstring\x5fvalue\x18\x07\x20\x01\x28\x0cB\x00\x12\x19\x0a\x0faggregate\x5fvalue\x18\x08\x20\x01\x28\x09B\x00\x1a9\x0a\x08NamePart\x12\x13\x0a\x09name\x5fpart\x18\x01\x20\x02\x28\x09B\x00\x12\x16\x0a\x0cis\x5fextension\x18\x02\x20\x02\x28\x08B\x00\x3a\x00\x3a\x00\x22\xc4\x06\x0a\x0aFeatureSet\x12B\x0a\x0efield\x5fpresence\x18\x01\x20\x01\x28\x0b2\x0dFieldPresenceB\x1b\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x10\x0a\x042023\x12\x08EXPLICIT\x124\x0a\x09enum\x5ftype\x18\x02\x20\x01\x28\x0b2\x08EnumTypeB\x17\x88\x01\x01\x9a\x01\x02\x06\x01\xa2\x01\x0c\x0a\x042023\x12\x04OPEN\x12Q\x0a\x17repeated\x5ffield\x5fencoding\x18\x03\x20\x01\x28\x0b2\x15RepeatedFieldEncodingB\x19\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x0e\x0a\x042023\x12\x06PACKED\x12M\x0a\x10message\x5fencoding\x18\x05\x20\x01\x28\x0b2\x0fMessageEncodingB\x22\x88\x01\x01\x9a\x01\x02\x04\x01\xa2\x01\x17\x0a\x042023\x12\x0fLENGTH\x5fPREFIXED\x12\x3a\x0a\x0bjson\x5fformat\x18\x06\x20\x01\x28\x0b2\x0aJsonFormatB\x19\x88\x01\x01\x9a\x01\x03\x03\x06\x01\xa2\x01\x0d\x0a\x042023\x12\x05ALLOW\x22f\x0a\x0dFieldPresence\x12\x1c\x0a\x16FIELD\x5fPRESENCE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0e\x0a\x08EXPLICIT\x10\x01\x1a\x00\x12\x0e\x0a\x08IMPLICIT\x10\x02\x1a\x00\x12\x15\x0a\x0fLEGACY\x5fREQUIRED\x10\x03\x1a\x00\x1a\x00\x22\x3f\x0a\x08EnumType\x12\x17\x0a\x11ENUM\x5fTYPE\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0a\x0a\x04OPEN\x10\x01\x1a\x00\x12\x0c\x0a\x06CLOSED\x10\x02\x1a\x00\x1a\x00\x22\x5e\x0a\x15RepeatedFieldEncoding\x12\x25\x0a\x1fREPEATED\x5fFIELD\x5fENCODING\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0c\x0a\x06PACKED\x10\x01\x1a\x00\x12\x0e\x0a\x08EXPANDED\x10\x02\x1a\x00\x1a\x00\x22\x5b\x0a\x0fMessageEncoding\x12\x1e\x0a\x18MESSAGE\x5fENCODING\x5fUNKNOWN\x10\x00\x1a\x00\x12\x15\x0a\x0fLENGTH\x5fPREFIXED\x10\x01\x1a\x00\x12\x0f\x0a\x09DELIMITED\x10\x02\x1a\x00\x1a\x00\x22P\x0a\x0aJsonFormat\x12\x19\x0a\x13JSON\x5fFORMAT\x5fUNKNOWN\x10\x00\x1a\x00\x12\x0b\x0a\x05ALLOW\x10\x01\x1a\x00\x12\x18\x0a\x12LEGACY\x5fBEST\x5fEFFORT\x10\x02\x1a\x00\x1a\x00\x2a\x06\x08\xe8\x07\x10\xe9\x07\x2a\x06\x08\xe9\x07\x10\xea\x07\x2a\x06\x08\x8bN\x10\x90N\x3a\x00J\x04\x08\x04\x10\x05J\x06\x08\xe7\x07\x10\xe8\x07\x22\xcb\x01\x0a\x12FeatureSetDefaults\x12\x2c\x0a\x08defaults\x18\x01\x20\x03\x28\x0b2\x18FeatureSetEditionDefaultB\x00\x12\x19\x0a\x0fminimum\x5fedition\x18\x02\x20\x01\x28\x09B\x00\x12\x19\x0a\x0fmaximum\x5fedition\x18\x03\x20\x01\x28\x09B\x00\x1aO\x0a\x18FeatureSetEditionDefault\x12\x11\x0a\x07edition\x18\x01\x20\x01\x28\x09B\x00\x12\x1e\x0a\x08features\x18\x02\x20\x01\x28\x0b2\x0aFeatureSetB\x00\x3a\x00\x3a\x00\x22\xc1\x01\x0a\x0eSourceCodeInfo\x12\x1c\x0a\x08location\x18\x01\x20\x03\x28\x0b2\x08LocationB\x00\x1a\x8e\x01\x0a\x08Location\x12\x10\x0a\x04path\x18\x01\x20\x03\x28\x05B\x02\x10\x01\x12\x10\x0a\x04span\x18\x02\x20\x03\x28\x05B\x02\x10\x01\x12\x1a\x0a\x10leading\x5fcomments\x18\x03\x20\x01\x28\x09B\x00\x12\x1b\x0a\x11trailing\x5fcomments\x18\x04\x20\x01\x28\x09B\x00\x12\x23\x0a\x19leading\x5fdetached\x5fcomments\x18\x06\x20\x03\x28\x09B\x00\x3a\x00\x3a\x00\x22\xe1\x01\x0a\x11GeneratedCodeInfo\x12\x20\x0a\x0aannotation\x18\x01\x20\x03\x28\x0b2\x0aAnnotationB\x00\x1a\xa7\x01\x0a\x0aAnnotation\x12\x10\x0a\x04path\x18\x01\x20\x03\x28\x05B\x02\x10\x01\x12\x15\x0a\x0bsource\x5ffile\x18\x02\x20\x01\x28\x09B\x00\x12\x0f\x0a\x05begin\x18\x03\x20\x01\x28\x05B\x00\x12\x0d\x0a\x03end\x18\x04\x20\x01\x28\x05B\x00\x12\x1c\x0a\x08semantic\x18\x05\x20\x01\x28\x0b2\x08SemanticB\x00\x220\x0a\x08Semantic\x12\x0a\x0a\x04NONE\x10\x00\x1a\x00\x12\x09\x0a\x03SET\x10\x01\x1a\x00\x12\x0b\x0a\x05ALIAS\x10\x02\x1a\x00\x1a\x00\x3a\x00\x3a\x00B\x7e\x0a\x13com\x2egoogle\x2eprotobufB\x10DescriptorProtosH\x01Z\x2dgoogle\x2egolang\x2eorg\x2fprotobuf\x2ftypes\x2fdescriptorpb\xf8\x01\x01\xa2\x02\x03GPB\xaa\x02\x1aGoogle\x2eProtobuf\x2eReflectionb\x06proto2",
                 dependencies: &[]
             };
 #[derive(Clone, Default, PartialEq, ConstDefault)]
@@ -50,6 +49,7 @@ impl StaticDefault for FileDescriptorSet {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FileDescriptorSet {
     type Type = Self;
 
@@ -59,7 +59,9 @@ impl ReflectStatic for FileDescriptorSet {
 }
 
 impl FileDescriptorSet {
-    pub const FILE_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const FILE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorSet> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const FILE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
 
     pub fn file(&self) -> &[MessagePtr<FileDescriptorProto>] {
         &self.file
@@ -107,7 +109,7 @@ impl protobuf_core::Message for FileDescriptorSet {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -144,10 +146,15 @@ impl protobuf_core::Message for FileDescriptorSet {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
-        MessageCodec::serialize_repeated(1, &self.file, out)?;
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
+        MessageCodec::serialize_repeated(1, &self.file, options, out)?;
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -251,6 +258,7 @@ impl StaticDefault for FileDescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FileDescriptorProto {
     type Type = Self;
 
@@ -260,19 +268,45 @@ impl ReflectStatic for FileDescriptorProto {
 }
 
 impl FileDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const DEPENDENCY_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const PUBLIC_DEPENDENCY_FIELD_NUM: protobuf_core::FieldNumber = 10;
-    pub const WEAK_DEPENDENCY_FIELD_NUM: protobuf_core::FieldNumber = 11;
-    pub const MESSAGE_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const SERVICE_FIELD_NUM: protobuf_core::FieldNumber = 6;
-    pub const EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 7;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 8;
-    pub const SOURCE_CODE_INFO_FIELD_NUM: protobuf_core::FieldNumber = 9;
-    pub const SYNTAX_FIELD_NUM: protobuf_core::FieldNumber = 12;
-    pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 13;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const PACKAGE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const PACKAGE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const DEPENDENCY_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const DEPENDENCY_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const PUBLIC_DEPENDENCY_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(10);
+    pub const PUBLIC_DEPENDENCY_FIELD_NUM_RAW: protobuf_core::FieldNumber = 10;
+    pub const WEAK_DEPENDENCY_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(11);
+    pub const WEAK_DEPENDENCY_FIELD_NUM_RAW: protobuf_core::FieldNumber = 11;
+    pub const MESSAGE_TYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(4);
+    pub const MESSAGE_TYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const ENUM_TYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const SERVICE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(6);
+    pub const SERVICE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
+    pub const EXTENSION_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(7);
+    pub const EXTENSION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 7;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(8);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 8;
+    pub const SOURCE_CODE_INFO_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(9);
+    pub const SOURCE_CODE_INFO_FIELD_NUM_RAW: protobuf_core::FieldNumber = 9;
+    pub const SYNTAX_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(12);
+    pub const SYNTAX_FIELD_NUM_RAW: protobuf_core::FieldNumber = 12;
+    pub const EDITION_FIELD_NUM: protobuf_core::TypedFieldNumber<FileDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(13);
+    pub const EDITION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 13;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -601,7 +635,7 @@ impl protobuf_core::Message for FileDescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -674,7 +708,12 @@ impl protobuf_core::Message for FileDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -682,18 +721,18 @@ impl protobuf_core::Message for FileDescriptorProto {
             StringCodec::serialize(2, v, out)?;
         }
         StringCodec::serialize_repeated(3, &self.dependency, out)?;
-        Int32Codec::serialize_repeated(10, &self.public_dependency, out)?;
-        Int32Codec::serialize_repeated(11, &self.weak_dependency, out)?;
-        MessageCodec::serialize_repeated(4, &self.message_type, out)?;
-        MessageCodec::serialize_repeated(5, &self.enum_type, out)?;
-        MessageCodec::serialize_repeated(6, &self.service, out)?;
-        MessageCodec::serialize_repeated(7, &self.extension, out)?;
+        MessageCodec::serialize_repeated(4, &self.message_type, options, out)?;
+        MessageCodec::serialize_repeated(5, &self.enum_type, options, out)?;
+        MessageCodec::serialize_repeated(6, &self.service, options, out)?;
+        MessageCodec::serialize_repeated(7, &self.extension, options, out)?;
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(8, v.as_ref(), out)?;
+            MessageCodec::serialize(8, v.as_ref(), options, out)?;
         }
         if let Some(v) = self.source_code_info.as_ref() {
-            MessageCodec::serialize(9, v.as_ref(), out)?;
+            MessageCodec::serialize(9, v.as_ref(), options, out)?;
         }
+        Int32Codec::serialize_repeated(10, &self.public_dependency, out)?;
+        Int32Codec::serialize_repeated(11, &self.weak_dependency, out)?;
         if let Some(v) = self.syntax.as_ref() {
             StringCodec::serialize(12, v, out)?;
         }
@@ -701,7 +740,7 @@ impl protobuf_core::Message for FileDescriptorProto {
             StringCodec::serialize(13, v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -905,6 +944,7 @@ impl StaticDefault for DescriptorProto_ExtensionRange {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for DescriptorProto_ExtensionRange {
     type Type = Self;
 
@@ -914,9 +954,15 @@ impl ReflectStatic for DescriptorProto_ExtensionRange {
 }
 
 impl DescriptorProto_ExtensionRange {
-    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const START_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto_ExtensionRange> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const START_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto_ExtensionRange> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const END_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto_ExtensionRange> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
 
     pub fn start(&self) -> i32 {
         self.start.unwrap_or_default()
@@ -994,7 +1040,7 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -1029,7 +1075,12 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
             Int32Codec::serialize(1, *v, out)?;
         }
@@ -1037,10 +1088,10 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
             Int32Codec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), options, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -1153,6 +1204,7 @@ impl StaticDefault for DescriptorProto_ReservedRange {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for DescriptorProto_ReservedRange {
     type Type = Self;
 
@@ -1162,8 +1214,12 @@ impl ReflectStatic for DescriptorProto_ReservedRange {
 }
 
 impl DescriptorProto_ReservedRange {
-    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const START_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto_ReservedRange> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const START_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto_ReservedRange> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const END_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
 
     pub fn start(&self) -> i32 {
         self.start.unwrap_or_default()
@@ -1219,7 +1275,7 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -1253,7 +1309,12 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
             Int32Codec::serialize(1, *v, out)?;
         }
@@ -1261,7 +1322,7 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
             Int32Codec::serialize(2, *v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -1373,6 +1434,7 @@ impl StaticDefault for DescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for DescriptorProto {
     type Type = Self;
 
@@ -1382,16 +1444,36 @@ impl ReflectStatic for DescriptorProto {
 }
 
 impl DescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const FIELD_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 6;
-    pub const NESTED_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const EXTENSION_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const ONEOF_DECL_FIELD_NUM: protobuf_core::FieldNumber = 8;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 7;
-    pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 9;
-    pub const RESERVED_NAME_FIELD_NUM: protobuf_core::FieldNumber = 10;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const FIELD_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const FIELD_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const EXTENSION_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(6);
+    pub const EXTENSION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
+    pub const NESTED_TYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const NESTED_TYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(4);
+    pub const ENUM_TYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const EXTENSION_RANGE_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const EXTENSION_RANGE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const ONEOF_DECL_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(8);
+    pub const ONEOF_DECL_FIELD_NUM_RAW: protobuf_core::FieldNumber = 8;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(7);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 7;
+    pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(9);
+    pub const RESERVED_RANGE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 9;
+    pub const RESERVED_NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<DescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(10);
+    pub const RESERVED_NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 10;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -1682,7 +1764,7 @@ impl protobuf_core::Message for DescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -1756,23 +1838,28 @@ impl protobuf_core::Message for DescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
-        MessageCodec::serialize_repeated(2, &self.field, out)?;
-        MessageCodec::serialize_repeated(6, &self.extension, out)?;
-        MessageCodec::serialize_repeated(3, &self.nested_type, out)?;
-        MessageCodec::serialize_repeated(4, &self.enum_type, out)?;
-        MessageCodec::serialize_repeated(5, &self.extension_range, out)?;
-        MessageCodec::serialize_repeated(8, &self.oneof_decl, out)?;
+        MessageCodec::serialize_repeated(2, &self.field, options, out)?;
+        MessageCodec::serialize_repeated(3, &self.nested_type, options, out)?;
+        MessageCodec::serialize_repeated(4, &self.enum_type, options, out)?;
+        MessageCodec::serialize_repeated(5, &self.extension_range, options, out)?;
+        MessageCodec::serialize_repeated(6, &self.extension, options, out)?;
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(7, v.as_ref(), out)?;
+            MessageCodec::serialize(7, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(9, &self.reserved_range, out)?;
+        MessageCodec::serialize_repeated(8, &self.oneof_decl, options, out)?;
+        MessageCodec::serialize_repeated(9, &self.reserved_range, options, out)?;
         StringCodec::serialize_repeated(10, &self.reserved_name, out)?;
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -1944,6 +2031,7 @@ impl common::const_default::ConstDefault for ExtensionRangeOptions_VerificationS
     const DEFAULT: Self = Self::DECLARATION;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for ExtensionRangeOptions_VerificationState {
     type Type = Self;
 
@@ -1999,12 +2087,29 @@ impl protobuf_core::Enum for ExtensionRangeOptions_VerificationState {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for ExtensionRangeOptions_VerificationState {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for ExtensionRangeOptions_VerificationState {
+    fn num_possible_values(&self) -> usize {
+        2
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+
+            _ => return None,
+        })
     }
 }
 
@@ -2034,6 +2139,7 @@ impl StaticDefault for ExtensionRangeOptions_Declaration {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for ExtensionRangeOptions_Declaration {
     type Type = Self;
 
@@ -2043,11 +2149,24 @@ impl ReflectStatic for ExtensionRangeOptions_Declaration {
 }
 
 impl ExtensionRangeOptions_Declaration {
-    pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const FULL_NAME_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const TYP_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const RESERVED_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const REPEATED_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const NUMBER_FIELD_NUM: protobuf_core::TypedFieldNumber<ExtensionRangeOptions_Declaration> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NUMBER_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const FULL_NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        ExtensionRangeOptions_Declaration,
+    > = protobuf_core::TypedFieldNumber::new(2);
+    pub const FULL_NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const TYP_FIELD_NUM: protobuf_core::TypedFieldNumber<ExtensionRangeOptions_Declaration> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const TYP_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const RESERVED_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        ExtensionRangeOptions_Declaration,
+    > = protobuf_core::TypedFieldNumber::new(5);
+    pub const RESERVED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const REPEATED_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        ExtensionRangeOptions_Declaration,
+    > = protobuf_core::TypedFieldNumber::new(6);
+    pub const REPEATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
 
     pub fn number(&self) -> i32 {
         self.number.unwrap_or_default()
@@ -2154,7 +2273,7 @@ impl protobuf_core::Message for ExtensionRangeOptions_Declaration {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -2191,7 +2310,12 @@ impl protobuf_core::Message for ExtensionRangeOptions_Declaration {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.number.as_ref() {
             Int32Codec::serialize(1, *v, out)?;
         }
@@ -2208,7 +2332,7 @@ impl protobuf_core::Message for ExtensionRangeOptions_Declaration {
             BoolCodec::serialize(6, *v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -2341,6 +2465,7 @@ impl StaticDefault for ExtensionRangeOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for ExtensionRangeOptions {
     type Type = Self;
 
@@ -2350,10 +2475,19 @@ impl ReflectStatic for ExtensionRangeOptions {
 }
 
 impl ExtensionRangeOptions {
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
-    pub const DECLARATION_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 50;
-    pub const VERIFICATION_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        ExtensionRangeOptions,
+    > = protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
+    pub const DECLARATION_FIELD_NUM: protobuf_core::TypedFieldNumber<ExtensionRangeOptions> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const DECLARATION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<ExtensionRangeOptions> =
+        protobuf_core::TypedFieldNumber::new(50);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 50;
+    pub const VERIFICATION_FIELD_NUM: protobuf_core::TypedFieldNumber<ExtensionRangeOptions> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const VERIFICATION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
 
     pub fn uninterpreted_option(&self) -> &[MessagePtr<UninterpretedOption>] {
         &self.uninterpreted_option
@@ -2479,7 +2613,7 @@ impl protobuf_core::Message for ExtensionRangeOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -2523,17 +2657,22 @@ impl protobuf_core::Message for ExtensionRangeOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
-        MessageCodec::serialize_repeated(2, &self.declaration, out)?;
-        if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(50, v.as_ref(), out)?;
-        }
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
+        MessageCodec::serialize_repeated(2, &self.declaration, options, out)?;
         if let Some(v) = self.verification.as_ref() {
             EnumCodec::serialize(3, v, out)?;
         }
+        if let Some(v) = self.features.as_ref() {
+            MessageCodec::serialize(50, v.as_ref(), options, out)?;
+        }
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -2667,6 +2806,7 @@ impl common::const_default::ConstDefault for FieldDescriptorProto_Type {
     const DEFAULT: Self = Self::TYPE_DOUBLE;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldDescriptorProto_Type {
     type Type = Self;
 
@@ -2770,12 +2910,45 @@ impl protobuf_core::Enum for FieldDescriptorProto_Type {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FieldDescriptorProto_Type {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FieldDescriptorProto_Type {
+    fn num_possible_values(&self) -> usize {
+        18
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+            3 => 4,
+            4 => 5,
+            5 => 6,
+            6 => 7,
+            7 => 8,
+            8 => 9,
+            9 => 10,
+            10 => 11,
+            11 => 12,
+            12 => 13,
+            13 => 14,
+            14 => 15,
+            15 => 16,
+            16 => 17,
+            17 => 18,
+
+            _ => return None,
+        })
     }
 }
 
@@ -2798,6 +2971,7 @@ impl common::const_default::ConstDefault for FieldDescriptorProto_Label {
     const DEFAULT: Self = Self::LABEL_OPTIONAL;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldDescriptorProto_Label {
     type Type = Self;
 
@@ -2856,12 +3030,30 @@ impl protobuf_core::Enum for FieldDescriptorProto_Label {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FieldDescriptorProto_Label {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FieldDescriptorProto_Label {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+
+            _ => return None,
+        })
     }
 }
 
@@ -2896,6 +3088,7 @@ impl StaticDefault for FieldDescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldDescriptorProto {
     type Type = Self;
 
@@ -2905,17 +3098,39 @@ impl ReflectStatic for FieldDescriptorProto {
 }
 
 impl FieldDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const LABEL_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const TYP_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const TYPE_NAME_FIELD_NUM: protobuf_core::FieldNumber = 6;
-    pub const EXTENDEE_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const DEFAULT_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 7;
-    pub const ONEOF_INDEX_FIELD_NUM: protobuf_core::FieldNumber = 9;
-    pub const JSON_NAME_FIELD_NUM: protobuf_core::FieldNumber = 10;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 8;
-    pub const PROTO3_OPTIONAL_FIELD_NUM: protobuf_core::FieldNumber = 17;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const NUMBER_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const NUMBER_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const LABEL_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(4);
+    pub const LABEL_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const TYP_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const TYP_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const TYPE_NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(6);
+    pub const TYPE_NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
+    pub const EXTENDEE_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const EXTENDEE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const DEFAULT_VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(7);
+    pub const DEFAULT_VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 7;
+    pub const ONEOF_INDEX_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(9);
+    pub const ONEOF_INDEX_FIELD_NUM_RAW: protobuf_core::FieldNumber = 9;
+    pub const JSON_NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(10);
+    pub const JSON_NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 10;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(8);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 8;
+    pub const PROTO3_OPTIONAL_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(17);
+    pub const PROTO3_OPTIONAL_FIELD_NUM_RAW: protobuf_core::FieldNumber = 17;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -3136,7 +3351,7 @@ impl protobuf_core::Message for FieldDescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -3179,9 +3394,17 @@ impl protobuf_core::Message for FieldDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
+        }
+        if let Some(v) = self.extendee.as_ref() {
+            StringCodec::serialize(2, v, out)?;
         }
         if let Some(v) = self.number.as_ref() {
             Int32Codec::serialize(3, *v, out)?;
@@ -3195,11 +3418,11 @@ impl protobuf_core::Message for FieldDescriptorProto {
         if let Some(v) = self.type_name.as_ref() {
             StringCodec::serialize(6, v, out)?;
         }
-        if let Some(v) = self.extendee.as_ref() {
-            StringCodec::serialize(2, v, out)?;
-        }
         if let Some(v) = self.default_value.as_ref() {
             StringCodec::serialize(7, v, out)?;
+        }
+        if let Some(v) = self.options.as_ref() {
+            MessageCodec::serialize(8, v.as_ref(), options, out)?;
         }
         if let Some(v) = self.oneof_index.as_ref() {
             Int32Codec::serialize(9, *v, out)?;
@@ -3207,14 +3430,11 @@ impl protobuf_core::Message for FieldDescriptorProto {
         if let Some(v) = self.json_name.as_ref() {
             StringCodec::serialize(10, v, out)?;
         }
-        if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(8, v.as_ref(), out)?;
-        }
         if let Some(v) = self.proto3_optional.as_ref() {
             BoolCodec::serialize(17, *v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -3399,6 +3619,7 @@ impl StaticDefault for OneofDescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for OneofDescriptorProto {
     type Type = Self;
 
@@ -3408,8 +3629,12 @@ impl ReflectStatic for OneofDescriptorProto {
 }
 
 impl OneofDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<OneofDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<OneofDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -3470,7 +3695,7 @@ impl protobuf_core::Message for OneofDescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -3504,15 +3729,20 @@ impl protobuf_core::Message for OneofDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(2, v.as_ref(), out)?;
+            MessageCodec::serialize(2, v.as_ref(), options, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -3617,6 +3847,7 @@ impl StaticDefault for EnumDescriptorProto_EnumReservedRange {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for EnumDescriptorProto_EnumReservedRange {
     type Type = Self;
 
@@ -3626,8 +3857,14 @@ impl ReflectStatic for EnumDescriptorProto_EnumReservedRange {
 }
 
 impl EnumDescriptorProto_EnumReservedRange {
-    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const START_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        EnumDescriptorProto_EnumReservedRange,
+    > = protobuf_core::TypedFieldNumber::new(1);
+    pub const START_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        EnumDescriptorProto_EnumReservedRange,
+    > = protobuf_core::TypedFieldNumber::new(2);
+    pub const END_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
 
     pub fn start(&self) -> i32 {
         self.start.unwrap_or_default()
@@ -3683,7 +3920,7 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -3717,7 +3954,12 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
             Int32Codec::serialize(1, *v, out)?;
         }
@@ -3725,7 +3967,7 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
             Int32Codec::serialize(2, *v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -3832,6 +4074,7 @@ impl StaticDefault for EnumDescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for EnumDescriptorProto {
     type Type = Self;
 
@@ -3841,11 +4084,21 @@ impl ReflectStatic for EnumDescriptorProto {
 }
 
 impl EnumDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const VALUE_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const RESERVED_NAME_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(4);
+    pub const RESERVED_RANGE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const RESERVED_NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const RESERVED_NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -3994,7 +4247,7 @@ impl protobuf_core::Message for EnumDescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -4043,18 +4296,23 @@ impl protobuf_core::Message for EnumDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
-        MessageCodec::serialize_repeated(2, &self.value, out)?;
+        MessageCodec::serialize_repeated(2, &self.value, options, out)?;
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(4, &self.reserved_range, out)?;
+        MessageCodec::serialize_repeated(4, &self.reserved_range, options, out)?;
         StringCodec::serialize_repeated(5, &self.reserved_name, out)?;
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -4186,6 +4444,7 @@ impl StaticDefault for EnumValueDescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for EnumValueDescriptorProto {
     type Type = Self;
 
@@ -4195,9 +4454,15 @@ impl ReflectStatic for EnumValueDescriptorProto {
 }
 
 impl EnumValueDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumValueDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const NUMBER_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumValueDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const NUMBER_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumValueDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -4275,7 +4540,7 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -4310,7 +4575,12 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -4318,10 +4588,10 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
             Int32Codec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), options, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -4435,6 +4705,7 @@ impl StaticDefault for ServiceDescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for ServiceDescriptorProto {
     type Type = Self;
 
@@ -4444,9 +4715,15 @@ impl ReflectStatic for ServiceDescriptorProto {
 }
 
 impl ServiceDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const METHOD_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<ServiceDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const METHOD_FIELD_NUM: protobuf_core::TypedFieldNumber<ServiceDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const METHOD_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<ServiceDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -4537,7 +4814,7 @@ impl protobuf_core::Message for ServiceDescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -4576,16 +4853,21 @@ impl protobuf_core::Message for ServiceDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
-        MessageCodec::serialize_repeated(2, &self.method, out)?;
+        MessageCodec::serialize_repeated(2, &self.method, options, out)?;
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), options, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -4702,6 +4984,7 @@ impl StaticDefault for MethodDescriptorProto {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for MethodDescriptorProto {
     type Type = Self;
 
@@ -4711,12 +4994,24 @@ impl ReflectStatic for MethodDescriptorProto {
 }
 
 impl MethodDescriptorProto {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const INPUT_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const OUTPUT_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const CLIENT_STREAMING_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const SERVER_STREAMING_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const INPUT_TYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const INPUT_TYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const OUTPUT_TYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const OUTPUT_TYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(4);
+    pub const OPTIONS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const CLIENT_STREAMING_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const CLIENT_STREAMING_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const SERVER_STREAMING_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodDescriptorProto> =
+        protobuf_core::TypedFieldNumber::new(6);
+    pub const SERVER_STREAMING_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
 
     pub fn name(&self) -> &str {
         self.name.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -4847,7 +5142,7 @@ impl protobuf_core::Message for MethodDescriptorProto {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -4885,7 +5180,12 @@ impl protobuf_core::Message for MethodDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -4896,7 +5196,7 @@ impl protobuf_core::Message for MethodDescriptorProto {
             StringCodec::serialize(3, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            MessageCodec::serialize(4, v.as_ref(), out)?;
+            MessageCodec::serialize(4, v.as_ref(), options, out)?;
         }
         if let Some(v) = self.client_streaming.as_ref() {
             BoolCodec::serialize(5, *v, out)?;
@@ -4905,7 +5205,7 @@ impl protobuf_core::Message for MethodDescriptorProto {
             BoolCodec::serialize(6, *v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -5042,6 +5342,7 @@ impl common::const_default::ConstDefault for FileOptions_OptimizeMode {
     const DEFAULT: Self = Self::SPEED;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FileOptions_OptimizeMode {
     type Type = Self;
 
@@ -5100,12 +5401,30 @@ impl protobuf_core::Enum for FileOptions_OptimizeMode {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FileOptions_OptimizeMode {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FileOptions_OptimizeMode {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+
+            _ => return None,
+        })
     }
 }
 
@@ -5151,6 +5470,7 @@ impl StaticDefault for FileOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FileOptions {
     type Type = Self;
 
@@ -5160,28 +5480,73 @@ impl ReflectStatic for FileOptions {
 }
 
 impl FileOptions {
-    pub const JAVA_PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const JAVA_OUTER_CLASSNAME_FIELD_NUM: protobuf_core::FieldNumber = 8;
-    pub const JAVA_MULTIPLE_FILES_FIELD_NUM: protobuf_core::FieldNumber = 10;
-    pub const JAVA_GENERATE_EQUALS_AND_HASH_FIELD_NUM: protobuf_core::FieldNumber = 20;
-    pub const JAVA_STRING_CHECK_UTF8_FIELD_NUM: protobuf_core::FieldNumber = 27;
-    pub const OPTIMIZE_FOR_FIELD_NUM: protobuf_core::FieldNumber = 9;
-    pub const GO_PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 11;
-    pub const CC_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 16;
-    pub const JAVA_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 17;
-    pub const PY_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 18;
-    pub const PHP_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 42;
-    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 23;
-    pub const CC_ENABLE_ARENAS_FIELD_NUM: protobuf_core::FieldNumber = 31;
-    pub const OBJC_CLASS_PREFIX_FIELD_NUM: protobuf_core::FieldNumber = 36;
-    pub const CSHARP_NAMESPACE_FIELD_NUM: protobuf_core::FieldNumber = 37;
-    pub const SWIFT_PREFIX_FIELD_NUM: protobuf_core::FieldNumber = 39;
-    pub const PHP_CLASS_PREFIX_FIELD_NUM: protobuf_core::FieldNumber = 40;
-    pub const PHP_NAMESPACE_FIELD_NUM: protobuf_core::FieldNumber = 41;
-    pub const PHP_METADATA_NAMESPACE_FIELD_NUM: protobuf_core::FieldNumber = 44;
-    pub const RUBY_PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 45;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 50;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const JAVA_PACKAGE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const JAVA_PACKAGE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const JAVA_OUTER_CLASSNAME_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(8);
+    pub const JAVA_OUTER_CLASSNAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 8;
+    pub const JAVA_MULTIPLE_FILES_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(10);
+    pub const JAVA_MULTIPLE_FILES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 10;
+    pub const JAVA_GENERATE_EQUALS_AND_HASH_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        FileOptions,
+    > = protobuf_core::TypedFieldNumber::new(20);
+    pub const JAVA_GENERATE_EQUALS_AND_HASH_FIELD_NUM_RAW: protobuf_core::FieldNumber = 20;
+    pub const JAVA_STRING_CHECK_UTF8_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(27);
+    pub const JAVA_STRING_CHECK_UTF8_FIELD_NUM_RAW: protobuf_core::FieldNumber = 27;
+    pub const OPTIMIZE_FOR_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(9);
+    pub const OPTIMIZE_FOR_FIELD_NUM_RAW: protobuf_core::FieldNumber = 9;
+    pub const GO_PACKAGE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(11);
+    pub const GO_PACKAGE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 11;
+    pub const CC_GENERIC_SERVICES_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(16);
+    pub const CC_GENERIC_SERVICES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 16;
+    pub const JAVA_GENERIC_SERVICES_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(17);
+    pub const JAVA_GENERIC_SERVICES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 17;
+    pub const PY_GENERIC_SERVICES_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(18);
+    pub const PY_GENERIC_SERVICES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 18;
+    pub const PHP_GENERIC_SERVICES_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(42);
+    pub const PHP_GENERIC_SERVICES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 42;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(23);
+    pub const DEPRECATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 23;
+    pub const CC_ENABLE_ARENAS_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(31);
+    pub const CC_ENABLE_ARENAS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 31;
+    pub const OBJC_CLASS_PREFIX_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(36);
+    pub const OBJC_CLASS_PREFIX_FIELD_NUM_RAW: protobuf_core::FieldNumber = 36;
+    pub const CSHARP_NAMESPACE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(37);
+    pub const CSHARP_NAMESPACE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 37;
+    pub const SWIFT_PREFIX_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(39);
+    pub const SWIFT_PREFIX_FIELD_NUM_RAW: protobuf_core::FieldNumber = 39;
+    pub const PHP_CLASS_PREFIX_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(40);
+    pub const PHP_CLASS_PREFIX_FIELD_NUM_RAW: protobuf_core::FieldNumber = 40;
+    pub const PHP_NAMESPACE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(41);
+    pub const PHP_NAMESPACE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 41;
+    pub const PHP_METADATA_NAMESPACE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(44);
+    pub const PHP_METADATA_NAMESPACE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 44;
+    pub const RUBY_PACKAGE_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(45);
+    pub const RUBY_PACKAGE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 45;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(50);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 50;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<FileOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn java_package(&self) -> &str {
         self.java_package.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -5628,7 +5993,7 @@ impl protobuf_core::Message for FileOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -5686,24 +6051,23 @@ impl protobuf_core::Message for FileOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.java_package.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.java_outer_classname.as_ref() {
             StringCodec::serialize(8, v, out)?;
         }
-        if let Some(v) = self.java_multiple_files.as_ref() {
-            BoolCodec::serialize(10, *v, out)?;
-        }
-        if let Some(v) = self.java_generate_equals_and_hash.as_ref() {
-            BoolCodec::serialize(20, *v, out)?;
-        }
-        if let Some(v) = self.java_string_check_utf8.as_ref() {
-            BoolCodec::serialize(27, *v, out)?;
-        }
         if let Some(v) = self.optimize_for.as_ref() {
             EnumCodec::serialize(9, v, out)?;
+        }
+        if let Some(v) = self.java_multiple_files.as_ref() {
+            BoolCodec::serialize(10, *v, out)?;
         }
         if let Some(v) = self.go_package.as_ref() {
             StringCodec::serialize(11, v, out)?;
@@ -5717,11 +6081,14 @@ impl protobuf_core::Message for FileOptions {
         if let Some(v) = self.py_generic_services.as_ref() {
             BoolCodec::serialize(18, *v, out)?;
         }
-        if let Some(v) = self.php_generic_services.as_ref() {
-            BoolCodec::serialize(42, *v, out)?;
+        if let Some(v) = self.java_generate_equals_and_hash.as_ref() {
+            BoolCodec::serialize(20, *v, out)?;
         }
         if let Some(v) = self.deprecated.as_ref() {
             BoolCodec::serialize(23, *v, out)?;
+        }
+        if let Some(v) = self.java_string_check_utf8.as_ref() {
+            BoolCodec::serialize(27, *v, out)?;
         }
         if let Some(v) = self.cc_enable_arenas.as_ref() {
             BoolCodec::serialize(31, *v, out)?;
@@ -5741,6 +6108,9 @@ impl protobuf_core::Message for FileOptions {
         if let Some(v) = self.php_namespace.as_ref() {
             StringCodec::serialize(41, v, out)?;
         }
+        if let Some(v) = self.php_generic_services.as_ref() {
+            BoolCodec::serialize(42, *v, out)?;
+        }
         if let Some(v) = self.php_metadata_namespace.as_ref() {
             StringCodec::serialize(44, v, out)?;
         }
@@ -5748,11 +6118,11 @@ impl protobuf_core::Message for FileOptions {
             StringCodec::serialize(45, v, out)?;
         }
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(50, v.as_ref(), out)?;
+            MessageCodec::serialize(50, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -6041,6 +6411,7 @@ impl StaticDefault for MessageOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for MessageOptions {
     type Type = Self;
 
@@ -6050,13 +6421,29 @@ impl ReflectStatic for MessageOptions {
 }
 
 impl MessageOptions {
-    pub const MESSAGE_SET_WIRE_FORMAT_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const NO_STANDARD_DESCRIPTOR_ACCESSOR_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const MAP_ENTRY_FIELD_NUM: protobuf_core::FieldNumber = 7;
-    pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM: protobuf_core::FieldNumber = 11;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 12;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const MESSAGE_SET_WIRE_FORMAT_FIELD_NUM: protobuf_core::TypedFieldNumber<MessageOptions> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const MESSAGE_SET_WIRE_FORMAT_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const NO_STANDARD_DESCRIPTOR_ACCESSOR_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        MessageOptions,
+    > = protobuf_core::TypedFieldNumber::new(2);
+    pub const NO_STANDARD_DESCRIPTOR_ACCESSOR_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::TypedFieldNumber<MessageOptions> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const DEPRECATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const MAP_ENTRY_FIELD_NUM: protobuf_core::TypedFieldNumber<MessageOptions> =
+        protobuf_core::TypedFieldNumber::new(7);
+    pub const MAP_ENTRY_FIELD_NUM_RAW: protobuf_core::FieldNumber = 7;
+    pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        MessageOptions,
+    > = protobuf_core::TypedFieldNumber::new(11);
+    pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 11;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<MessageOptions> =
+        protobuf_core::TypedFieldNumber::new(12);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 12;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<MessageOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn message_set_wire_format(&self) -> bool {
         self.message_set_wire_format.unwrap_or(false)
@@ -6222,7 +6609,7 @@ impl protobuf_core::Message for MessageOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -6265,7 +6652,12 @@ impl protobuf_core::Message for MessageOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.message_set_wire_format.as_ref() {
             BoolCodec::serialize(1, *v, out)?;
         }
@@ -6282,11 +6674,11 @@ impl protobuf_core::Message for MessageOptions {
             BoolCodec::serialize(11, *v, out)?;
         }
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(12, v.as_ref(), out)?;
+            MessageCodec::serialize(12, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -6438,6 +6830,7 @@ impl common::const_default::ConstDefault for FieldOptions_CType {
     const DEFAULT: Self = Self::STRING;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldOptions_CType {
     type Type = Self;
 
@@ -6496,12 +6889,30 @@ impl protobuf_core::Enum for FieldOptions_CType {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FieldOptions_CType {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FieldOptions_CType {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -6524,6 +6935,7 @@ impl common::const_default::ConstDefault for FieldOptions_JSType {
     const DEFAULT: Self = Self::JS_NORMAL;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldOptions_JSType {
     type Type = Self;
 
@@ -6582,12 +6994,30 @@ impl protobuf_core::Enum for FieldOptions_JSType {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FieldOptions_JSType {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FieldOptions_JSType {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -6610,6 +7040,7 @@ impl common::const_default::ConstDefault for FieldOptions_OptionRetention {
     const DEFAULT: Self = Self::RETENTION_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldOptions_OptionRetention {
     type Type = Self;
 
@@ -6668,12 +7099,30 @@ impl protobuf_core::Enum for FieldOptions_OptionRetention {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FieldOptions_OptionRetention {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FieldOptions_OptionRetention {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -6703,6 +7152,7 @@ impl common::const_default::ConstDefault for FieldOptions_OptionTargetType {
     const DEFAULT: Self = Self::TARGET_TYPE_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldOptions_OptionTargetType {
     type Type = Self;
 
@@ -6782,12 +7232,37 @@ impl protobuf_core::Enum for FieldOptions_OptionTargetType {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FieldOptions_OptionTargetType {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FieldOptions_OptionTargetType {
+    fn num_possible_values(&self) -> usize {
+        10
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            4 => 4,
+            5 => 5,
+            6 => 6,
+            7 => 7,
+            8 => 8,
+            9 => 9,
+
+            _ => return None,
+        })
     }
 }
 
@@ -6813,6 +7288,7 @@ impl StaticDefault for FieldOptions_EditionDefault {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldOptions_EditionDefault {
     type Type = Self;
 
@@ -6822,8 +7298,12 @@ impl ReflectStatic for FieldOptions_EditionDefault {
 }
 
 impl FieldOptions_EditionDefault {
-    pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const VALUE_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const EDITION_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions_EditionDefault> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const EDITION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions_EditionDefault> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
 
     pub fn edition(&self) -> &str {
         self.edition.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -6879,7 +7359,7 @@ impl protobuf_core::Message for FieldOptions_EditionDefault {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -6913,7 +7393,12 @@ impl protobuf_core::Message for FieldOptions_EditionDefault {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.edition.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -6921,7 +7406,7 @@ impl protobuf_core::Message for FieldOptions_EditionDefault {
             StringCodec::serialize(2, v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -7036,6 +7521,7 @@ impl StaticDefault for FieldOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FieldOptions {
     type Type = Self;
 
@@ -7045,19 +7531,45 @@ impl ReflectStatic for FieldOptions {
 }
 
 impl FieldOptions {
-    pub const CTYPE_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const PACKED_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const JSTYPE_FIELD_NUM: protobuf_core::FieldNumber = 6;
-    pub const LAZY_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const UNVERIFIED_LAZY_FIELD_NUM: protobuf_core::FieldNumber = 15;
-    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const WEAK_FIELD_NUM: protobuf_core::FieldNumber = 10;
-    pub const DEBUG_REDACT_FIELD_NUM: protobuf_core::FieldNumber = 16;
-    pub const RETENTION_FIELD_NUM: protobuf_core::FieldNumber = 17;
-    pub const TARGETS_FIELD_NUM: protobuf_core::FieldNumber = 19;
-    pub const EDITION_DEFAULTS_FIELD_NUM: protobuf_core::FieldNumber = 20;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 21;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const CTYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const CTYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const PACKED_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const PACKED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const JSTYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(6);
+    pub const JSTYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
+    pub const LAZY_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const LAZY_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const UNVERIFIED_LAZY_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(15);
+    pub const UNVERIFIED_LAZY_FIELD_NUM_RAW: protobuf_core::FieldNumber = 15;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const DEPRECATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const WEAK_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(10);
+    pub const WEAK_FIELD_NUM_RAW: protobuf_core::FieldNumber = 10;
+    pub const DEBUG_REDACT_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(16);
+    pub const DEBUG_REDACT_FIELD_NUM_RAW: protobuf_core::FieldNumber = 16;
+    pub const RETENTION_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(17);
+    pub const RETENTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 17;
+    pub const TARGETS_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(19);
+    pub const TARGETS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 19;
+    pub const EDITION_DEFAULTS_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(20);
+    pub const EDITION_DEFAULTS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 20;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(21);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 21;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<FieldOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn ctype(&self) -> FieldOptions_CType {
         self.ctype.unwrap_or(FieldOptions_CType::STRING)
@@ -7348,7 +7860,7 @@ impl protobuf_core::Message for FieldOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -7405,27 +7917,32 @@ impl protobuf_core::Message for FieldOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.ctype.as_ref() {
             EnumCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.packed.as_ref() {
             BoolCodec::serialize(2, *v, out)?;
         }
-        if let Some(v) = self.jstype.as_ref() {
-            EnumCodec::serialize(6, v, out)?;
+        if let Some(v) = self.deprecated.as_ref() {
+            BoolCodec::serialize(3, *v, out)?;
         }
         if let Some(v) = self.lazy.as_ref() {
             BoolCodec::serialize(5, *v, out)?;
         }
-        if let Some(v) = self.unverified_lazy.as_ref() {
-            BoolCodec::serialize(15, *v, out)?;
-        }
-        if let Some(v) = self.deprecated.as_ref() {
-            BoolCodec::serialize(3, *v, out)?;
+        if let Some(v) = self.jstype.as_ref() {
+            EnumCodec::serialize(6, v, out)?;
         }
         if let Some(v) = self.weak.as_ref() {
             BoolCodec::serialize(10, *v, out)?;
+        }
+        if let Some(v) = self.unverified_lazy.as_ref() {
+            BoolCodec::serialize(15, *v, out)?;
         }
         if let Some(v) = self.debug_redact.as_ref() {
             BoolCodec::serialize(16, *v, out)?;
@@ -7434,13 +7951,13 @@ impl protobuf_core::Message for FieldOptions {
             EnumCodec::serialize(17, v, out)?;
         }
         EnumCodec::serialize_repeated(19, &self.targets, out)?;
-        MessageCodec::serialize_repeated(20, &self.edition_defaults, out)?;
+        MessageCodec::serialize_repeated(20, &self.edition_defaults, options, out)?;
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(21, v.as_ref(), out)?;
+            MessageCodec::serialize(21, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -7643,6 +8160,7 @@ impl StaticDefault for OneofOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for OneofOptions {
     type Type = Self;
 
@@ -7652,8 +8170,12 @@ impl ReflectStatic for OneofOptions {
 }
 
 impl OneofOptions {
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<OneofOptions> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<OneofOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn features(&self) -> &FeatureSet {
         self.features
@@ -7727,7 +8249,7 @@ impl protobuf_core::Message for OneofOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -7765,13 +8287,18 @@ impl protobuf_core::Message for OneofOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(1, v.as_ref(), out)?;
+            MessageCodec::serialize(1, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -7878,6 +8405,7 @@ impl StaticDefault for EnumOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for EnumOptions {
     type Type = Self;
 
@@ -7887,11 +8415,22 @@ impl ReflectStatic for EnumOptions {
 }
 
 impl EnumOptions {
-    pub const ALLOW_ALIAS_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM: protobuf_core::FieldNumber = 6;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 7;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const ALLOW_ALIAS_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumOptions> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const ALLOW_ALIAS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumOptions> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const DEPRECATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        EnumOptions,
+    > = protobuf_core::TypedFieldNumber::new(6);
+    pub const DEPRECATED_LEGACY_JSON_FIELD_CONFLICTS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumOptions> =
+        protobuf_core::TypedFieldNumber::new(7);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 7;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn allow_alias(&self) -> bool {
         self.allow_alias.unwrap_or_default()
@@ -8021,7 +8560,7 @@ impl protobuf_core::Message for EnumOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -8062,7 +8601,12 @@ impl protobuf_core::Message for EnumOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.allow_alias.as_ref() {
             BoolCodec::serialize(2, *v, out)?;
         }
@@ -8073,11 +8617,11 @@ impl protobuf_core::Message for EnumOptions {
             BoolCodec::serialize(6, *v, out)?;
         }
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(7, v.as_ref(), out)?;
+            MessageCodec::serialize(7, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -8216,6 +8760,7 @@ impl StaticDefault for EnumValueOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for EnumValueOptions {
     type Type = Self;
 
@@ -8225,10 +8770,18 @@ impl ReflectStatic for EnumValueOptions {
 }
 
 impl EnumValueOptions {
-    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const DEBUG_REDACT_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumValueOptions> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const DEPRECATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumValueOptions> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const DEBUG_REDACT_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumValueOptions> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const DEBUG_REDACT_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<EnumValueOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn deprecated(&self) -> bool {
         self.deprecated.unwrap_or(false)
@@ -8336,7 +8889,7 @@ impl protobuf_core::Message for EnumValueOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -8376,19 +8929,24 @@ impl protobuf_core::Message for EnumValueOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
             BoolCodec::serialize(1, *v, out)?;
         }
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(2, v.as_ref(), out)?;
+            MessageCodec::serialize(2, v.as_ref(), options, out)?;
         }
         if let Some(v) = self.debug_redact.as_ref() {
             BoolCodec::serialize(3, *v, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -8511,6 +9069,7 @@ impl StaticDefault for ServiceOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for ServiceOptions {
     type Type = Self;
 
@@ -8520,9 +9079,15 @@ impl ReflectStatic for ServiceOptions {
 }
 
 impl ServiceOptions {
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 34;
-    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 33;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<ServiceOptions> =
+        protobuf_core::TypedFieldNumber::new(34);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 34;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::TypedFieldNumber<ServiceOptions> =
+        protobuf_core::TypedFieldNumber::new(33);
+    pub const DEPRECATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 33;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<ServiceOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn features(&self) -> &FeatureSet {
         self.features
@@ -8613,7 +9178,7 @@ impl protobuf_core::Message for ServiceOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -8652,16 +9217,21 @@ impl protobuf_core::Message for ServiceOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
-        if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(34, v.as_ref(), out)?;
-        }
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
             BoolCodec::serialize(33, *v, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        if let Some(v) = self.features.as_ref() {
+            MessageCodec::serialize(34, v.as_ref(), options, out)?;
+        }
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -8771,6 +9341,7 @@ impl common::const_default::ConstDefault for MethodOptions_IdempotencyLevel {
     const DEFAULT: Self = Self::IDEMPOTENCY_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for MethodOptions_IdempotencyLevel {
     type Type = Self;
 
@@ -8829,12 +9400,30 @@ impl protobuf_core::Enum for MethodOptions_IdempotencyLevel {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for MethodOptions_IdempotencyLevel {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for MethodOptions_IdempotencyLevel {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -8862,6 +9451,7 @@ impl StaticDefault for MethodOptions {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for MethodOptions {
     type Type = Self;
 
@@ -8871,10 +9461,18 @@ impl ReflectStatic for MethodOptions {
 }
 
 impl MethodOptions {
-    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 33;
-    pub const IDEMPOTENCY_LEVEL_FIELD_NUM: protobuf_core::FieldNumber = 34;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 35;
-    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodOptions> =
+        protobuf_core::TypedFieldNumber::new(33);
+    pub const DEPRECATED_FIELD_NUM_RAW: protobuf_core::FieldNumber = 33;
+    pub const IDEMPOTENCY_LEVEL_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodOptions> =
+        protobuf_core::TypedFieldNumber::new(34);
+    pub const IDEMPOTENCY_LEVEL_FIELD_NUM_RAW: protobuf_core::FieldNumber = 34;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodOptions> =
+        protobuf_core::TypedFieldNumber::new(35);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 35;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::TypedFieldNumber<MethodOptions> =
+        protobuf_core::TypedFieldNumber::new(999);
+    pub const UNINTERPRETED_OPTION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 999;
 
     pub fn deprecated(&self) -> bool {
         self.deprecated.unwrap_or(false)
@@ -8987,7 +9585,7 @@ impl protobuf_core::Message for MethodOptions {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -9027,7 +9625,12 @@ impl protobuf_core::Message for MethodOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
             BoolCodec::serialize(33, *v, out)?;
         }
@@ -9035,11 +9638,11 @@ impl protobuf_core::Message for MethodOptions {
             EnumCodec::serialize(34, v, out)?;
         }
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(35, v.as_ref(), out)?;
+            MessageCodec::serialize(35, v.as_ref(), options, out)?;
         }
-        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
+        MessageCodec::serialize_repeated(999, &self.uninterpreted_option, options, out)?;
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -9161,6 +9764,7 @@ impl StaticDefault for UninterpretedOption_NamePart {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for UninterpretedOption_NamePart {
     type Type = Self;
 
@@ -9170,8 +9774,13 @@ impl ReflectStatic for UninterpretedOption_NamePart {
 }
 
 impl UninterpretedOption_NamePart {
-    pub const NAME_PART_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const IS_EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const NAME_PART_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption_NamePart> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const NAME_PART_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const IS_EXTENSION_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        UninterpretedOption_NamePart,
+    > = protobuf_core::TypedFieldNumber::new(2);
+    pub const IS_EXTENSION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
 
     pub fn name_part(&self) -> &str {
         self.name_part.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -9227,7 +9836,7 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -9261,7 +9870,12 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.name_part.as_ref() {
             StringCodec::serialize(1, v, out)?;
         } else {
@@ -9273,7 +9887,7 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
             return Err(MessageSerializeError::RequiredFieldNotSet.into());
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -9382,6 +9996,7 @@ impl StaticDefault for UninterpretedOption {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for UninterpretedOption {
     type Type = Self;
 
@@ -9391,13 +10006,27 @@ impl ReflectStatic for UninterpretedOption {
 }
 
 impl UninterpretedOption {
-    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const IDENTIFIER_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const POSITIVE_INT_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const NEGATIVE_INT_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const DOUBLE_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 6;
-    pub const STRING_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 7;
-    pub const AGGREGATE_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 8;
+    pub const NAME_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const NAME_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const IDENTIFIER_VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const IDENTIFIER_VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const POSITIVE_INT_VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption> =
+        protobuf_core::TypedFieldNumber::new(4);
+    pub const POSITIVE_INT_VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const NEGATIVE_INT_VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const NEGATIVE_INT_VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const DOUBLE_VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption> =
+        protobuf_core::TypedFieldNumber::new(6);
+    pub const DOUBLE_VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
+    pub const STRING_VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption> =
+        protobuf_core::TypedFieldNumber::new(7);
+    pub const STRING_VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 7;
+    pub const AGGREGATE_VALUE_FIELD_NUM: protobuf_core::TypedFieldNumber<UninterpretedOption> =
+        protobuf_core::TypedFieldNumber::new(8);
+    pub const AGGREGATE_VALUE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 8;
 
     pub fn name(&self) -> &[MessagePtr<UninterpretedOption_NamePart>] {
         &self.name
@@ -9565,7 +10194,7 @@ impl protobuf_core::Message for UninterpretedOption {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -9608,8 +10237,13 @@ impl protobuf_core::Message for UninterpretedOption {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
-        MessageCodec::serialize_repeated(2, &self.name, out)?;
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
+        MessageCodec::serialize_repeated(2, &self.name, options, out)?;
         if let Some(v) = self.identifier_value.as_ref() {
             StringCodec::serialize(3, v, out)?;
         }
@@ -9629,7 +10263,7 @@ impl protobuf_core::Message for UninterpretedOption {
             StringCodec::serialize(8, v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -9776,6 +10410,7 @@ impl common::const_default::ConstDefault for FeatureSet_FieldPresence {
     const DEFAULT: Self = Self::FIELD_PRESENCE_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSet_FieldPresence {
     type Type = Self;
 
@@ -9837,12 +10472,31 @@ impl protobuf_core::Enum for FeatureSet_FieldPresence {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FeatureSet_FieldPresence {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FeatureSet_FieldPresence {
+    fn num_possible_values(&self) -> usize {
+        4
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 3,
+
+            _ => return None,
+        })
     }
 }
 
@@ -9865,6 +10519,7 @@ impl common::const_default::ConstDefault for FeatureSet_EnumType {
     const DEFAULT: Self = Self::ENUM_TYPE_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSet_EnumType {
     type Type = Self;
 
@@ -9923,12 +10578,30 @@ impl protobuf_core::Enum for FeatureSet_EnumType {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FeatureSet_EnumType {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FeatureSet_EnumType {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -9951,6 +10624,7 @@ impl common::const_default::ConstDefault for FeatureSet_RepeatedFieldEncoding {
     const DEFAULT: Self = Self::REPEATED_FIELD_ENCODING_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSet_RepeatedFieldEncoding {
     type Type = Self;
 
@@ -10009,12 +10683,30 @@ impl protobuf_core::Enum for FeatureSet_RepeatedFieldEncoding {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FeatureSet_RepeatedFieldEncoding {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FeatureSet_RepeatedFieldEncoding {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -10037,6 +10729,7 @@ impl common::const_default::ConstDefault for FeatureSet_MessageEncoding {
     const DEFAULT: Self = Self::MESSAGE_ENCODING_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSet_MessageEncoding {
     type Type = Self;
 
@@ -10095,12 +10788,30 @@ impl protobuf_core::Enum for FeatureSet_MessageEncoding {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FeatureSet_MessageEncoding {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FeatureSet_MessageEncoding {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -10123,6 +10834,7 @@ impl common::const_default::ConstDefault for FeatureSet_JsonFormat {
     const DEFAULT: Self = Self::JSON_FORMAT_UNKNOWN;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSet_JsonFormat {
     type Type = Self;
 
@@ -10181,12 +10893,30 @@ impl protobuf_core::Enum for FeatureSet_JsonFormat {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for FeatureSet_JsonFormat {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for FeatureSet_JsonFormat {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -10215,6 +10945,7 @@ impl StaticDefault for FeatureSet {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSet {
     type Type = Self;
 
@@ -10224,11 +10955,21 @@ impl ReflectStatic for FeatureSet {
 }
 
 impl FeatureSet {
-    pub const FIELD_PRESENCE_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const REPEATED_FIELD_ENCODING_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const MESSAGE_ENCODING_FIELD_NUM: protobuf_core::FieldNumber = 5;
-    pub const JSON_FORMAT_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const FIELD_PRESENCE_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSet> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const FIELD_PRESENCE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSet> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const ENUM_TYPE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const REPEATED_FIELD_ENCODING_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSet> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const REPEATED_FIELD_ENCODING_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const MESSAGE_ENCODING_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSet> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const MESSAGE_ENCODING_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
+    pub const JSON_FORMAT_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSet> =
+        protobuf_core::TypedFieldNumber::new(6);
+    pub const JSON_FORMAT_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
 
     pub fn field_presence(&self) -> FeatureSet_FieldPresence {
         self.field_presence.unwrap_or_default()
@@ -10348,7 +11089,7 @@ impl protobuf_core::Message for FeatureSet {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -10385,7 +11126,12 @@ impl protobuf_core::Message for FeatureSet {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.field_presence.as_ref() {
             EnumCodec::serialize(1, v, out)?;
         }
@@ -10402,7 +11148,7 @@ impl protobuf_core::Message for FeatureSet {
             EnumCodec::serialize(6, v, out)?;
         }
         #[cfg(feature = "std")]
-        self.extensions.serialize_to(out)?;
+        self.extensions.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -10534,6 +11280,7 @@ impl StaticDefault for FeatureSetDefaults_FeatureSetEditionDefault {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSetDefaults_FeatureSetEditionDefault {
     type Type = Self;
 
@@ -10543,8 +11290,14 @@ impl ReflectStatic for FeatureSetDefaults_FeatureSetEditionDefault {
 }
 
 impl FeatureSetDefaults_FeatureSetEditionDefault {
-    pub const EDITION_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const FEATURES_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const EDITION_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        FeatureSetDefaults_FeatureSetEditionDefault,
+    > = protobuf_core::TypedFieldNumber::new(1);
+    pub const EDITION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const FEATURES_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        FeatureSetDefaults_FeatureSetEditionDefault,
+    > = protobuf_core::TypedFieldNumber::new(2);
+    pub const FEATURES_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
 
     pub fn edition(&self) -> &str {
         self.edition.as_ref().map(|v| v.as_ref()).unwrap_or("")
@@ -10605,7 +11358,7 @@ impl protobuf_core::Message for FeatureSetDefaults_FeatureSetEditionDefault {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -10639,15 +11392,20 @@ impl protobuf_core::Message for FeatureSetDefaults_FeatureSetEditionDefault {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         if let Some(v) = self.edition.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.features.as_ref() {
-            MessageCodec::serialize(2, v.as_ref(), out)?;
+            MessageCodec::serialize(2, v.as_ref(), options, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -10752,6 +11510,7 @@ impl StaticDefault for FeatureSetDefaults {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for FeatureSetDefaults {
     type Type = Self;
 
@@ -10761,9 +11520,15 @@ impl ReflectStatic for FeatureSetDefaults {
 }
 
 impl FeatureSetDefaults {
-    pub const DEFAULTS_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const MINIMUM_EDITION_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const MAXIMUM_EDITION_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const DEFAULTS_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSetDefaults> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const DEFAULTS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const MINIMUM_EDITION_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSetDefaults> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const MINIMUM_EDITION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const MAXIMUM_EDITION_FIELD_NUM: protobuf_core::TypedFieldNumber<FeatureSetDefaults> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const MAXIMUM_EDITION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
 
     pub fn defaults(&self) -> &[MessagePtr<FeatureSetDefaults_FeatureSetEditionDefault>] {
         &self.defaults
@@ -10859,7 +11624,7 @@ impl protobuf_core::Message for FeatureSetDefaults {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -10898,8 +11663,13 @@ impl protobuf_core::Message for FeatureSetDefaults {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
-        MessageCodec::serialize_repeated(1, &self.defaults, out)?;
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
+        MessageCodec::serialize_repeated(1, &self.defaults, options, out)?;
         if let Some(v) = self.minimum_edition.as_ref() {
             StringCodec::serialize(2, v, out)?;
         }
@@ -10907,7 +11677,7 @@ impl protobuf_core::Message for FeatureSetDefaults {
             StringCodec::serialize(3, v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -11023,6 +11793,7 @@ impl StaticDefault for SourceCodeInfo_Location {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for SourceCodeInfo_Location {
     type Type = Self;
 
@@ -11032,11 +11803,23 @@ impl ReflectStatic for SourceCodeInfo_Location {
 }
 
 impl SourceCodeInfo_Location {
-    pub const PATH_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const SPAN_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const LEADING_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const TRAILING_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const LEADING_DETACHED_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const PATH_FIELD_NUM: protobuf_core::TypedFieldNumber<SourceCodeInfo_Location> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const PATH_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const SPAN_FIELD_NUM: protobuf_core::TypedFieldNumber<SourceCodeInfo_Location> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const SPAN_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const LEADING_COMMENTS_FIELD_NUM: protobuf_core::TypedFieldNumber<SourceCodeInfo_Location> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const LEADING_COMMENTS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const TRAILING_COMMENTS_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        SourceCodeInfo_Location,
+    > = protobuf_core::TypedFieldNumber::new(4);
+    pub const TRAILING_COMMENTS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const LEADING_DETACHED_COMMENTS_FIELD_NUM: protobuf_core::TypedFieldNumber<
+        SourceCodeInfo_Location,
+    > = protobuf_core::TypedFieldNumber::new(6);
+    pub const LEADING_DETACHED_COMMENTS_FIELD_NUM_RAW: protobuf_core::FieldNumber = 6;
 
     pub fn path(&self) -> &[i32] {
         &self.path
@@ -11178,7 +11961,7 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -11227,7 +12010,12 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         Int32Codec::serialize_repeated(1, &self.path, out)?;
         Int32Codec::serialize_repeated(2, &self.span, out)?;
         if let Some(v) = self.leading_comments.as_ref() {
@@ -11238,7 +12026,7 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
         }
         StringCodec::serialize_repeated(6, &self.leading_detached_comments, out)?;
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -11368,6 +12156,7 @@ impl StaticDefault for SourceCodeInfo {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for SourceCodeInfo {
     type Type = Self;
 
@@ -11377,7 +12166,9 @@ impl ReflectStatic for SourceCodeInfo {
 }
 
 impl SourceCodeInfo {
-    pub const LOCATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const LOCATION_FIELD_NUM: protobuf_core::TypedFieldNumber<SourceCodeInfo> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const LOCATION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
 
     pub fn location(&self) -> &[MessagePtr<SourceCodeInfo_Location>] {
         &self.location
@@ -11429,7 +12220,7 @@ impl protobuf_core::Message for SourceCodeInfo {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -11466,10 +12257,15 @@ impl protobuf_core::Message for SourceCodeInfo {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
-        MessageCodec::serialize_repeated(1, &self.location, out)?;
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
+        MessageCodec::serialize_repeated(1, &self.location, options, out)?;
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -11559,6 +12355,7 @@ impl common::const_default::ConstDefault for GeneratedCodeInfo_Annotation_Semant
     const DEFAULT: Self = Self::NONE;
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for GeneratedCodeInfo_Annotation_Semantic {
     type Type = Self;
 
@@ -11617,12 +12414,30 @@ impl protobuf_core::Enum for GeneratedCodeInfo_Annotation_Semantic {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl protobuf_core::reflection::Reflect for GeneratedCodeInfo_Annotation_Semantic {
     fn reflect(&self) -> protobuf_core::reflection::Reflection {
         protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl protobuf_core::EnumReflection for GeneratedCodeInfo_Annotation_Semantic {
+    fn num_possible_values(&self) -> usize {
+        3
+    }
+
+    fn possible_value(&self, i: usize) -> Option<protobuf_core::EnumValue> {
+        Some(match i {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+
+            _ => return None,
+        })
     }
 }
 
@@ -11651,6 +12466,7 @@ impl StaticDefault for GeneratedCodeInfo_Annotation {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for GeneratedCodeInfo_Annotation {
     type Type = Self;
 
@@ -11660,11 +12476,21 @@ impl ReflectStatic for GeneratedCodeInfo_Annotation {
 }
 
 impl GeneratedCodeInfo_Annotation {
-    pub const PATH_FIELD_NUM: protobuf_core::FieldNumber = 1;
-    pub const SOURCE_FILE_FIELD_NUM: protobuf_core::FieldNumber = 2;
-    pub const BEGIN_FIELD_NUM: protobuf_core::FieldNumber = 3;
-    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 4;
-    pub const SEMANTIC_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const PATH_FIELD_NUM: protobuf_core::TypedFieldNumber<GeneratedCodeInfo_Annotation> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const PATH_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
+    pub const SOURCE_FILE_FIELD_NUM: protobuf_core::TypedFieldNumber<GeneratedCodeInfo_Annotation> =
+        protobuf_core::TypedFieldNumber::new(2);
+    pub const SOURCE_FILE_FIELD_NUM_RAW: protobuf_core::FieldNumber = 2;
+    pub const BEGIN_FIELD_NUM: protobuf_core::TypedFieldNumber<GeneratedCodeInfo_Annotation> =
+        protobuf_core::TypedFieldNumber::new(3);
+    pub const BEGIN_FIELD_NUM_RAW: protobuf_core::FieldNumber = 3;
+    pub const END_FIELD_NUM: protobuf_core::TypedFieldNumber<GeneratedCodeInfo_Annotation> =
+        protobuf_core::TypedFieldNumber::new(4);
+    pub const END_FIELD_NUM_RAW: protobuf_core::FieldNumber = 4;
+    pub const SEMANTIC_FIELD_NUM: protobuf_core::TypedFieldNumber<GeneratedCodeInfo_Annotation> =
+        protobuf_core::TypedFieldNumber::new(5);
+    pub const SEMANTIC_FIELD_NUM_RAW: protobuf_core::FieldNumber = 5;
 
     pub fn path(&self) -> &[i32] {
         &self.path
@@ -11784,7 +12610,7 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -11825,7 +12651,12 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
         Int32Codec::serialize_repeated(1, &self.path, out)?;
         if let Some(v) = self.source_file.as_ref() {
             StringCodec::serialize(2, v, out)?;
@@ -11840,7 +12671,7 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
             EnumCodec::serialize(5, v, out)?;
         }
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }
@@ -11970,6 +12801,7 @@ impl StaticDefault for GeneratedCodeInfo {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ReflectStatic for GeneratedCodeInfo {
     type Type = Self;
 
@@ -11979,7 +12811,9 @@ impl ReflectStatic for GeneratedCodeInfo {
 }
 
 impl GeneratedCodeInfo {
-    pub const ANNOTATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const ANNOTATION_FIELD_NUM: protobuf_core::TypedFieldNumber<GeneratedCodeInfo> =
+        protobuf_core::TypedFieldNumber::new(1);
+    pub const ANNOTATION_FIELD_NUM_RAW: protobuf_core::FieldNumber = 1;
 
     pub fn annotation(&self) -> &[MessagePtr<GeneratedCodeInfo_Annotation>] {
         &self.annotation
@@ -12031,7 +12865,7 @@ impl protobuf_core::Message for GeneratedCodeInfo {
     #[cfg(feature = "alloc")]
     fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.serialize_to(&mut data)?;
+        self.serialize_to(protobuf_core::SerializeOptions::static_default(), &mut data)?;
         Ok(data)
     }
 
@@ -12068,10 +12902,15 @@ impl protobuf_core::Message for GeneratedCodeInfo {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
-        MessageCodec::serialize_repeated(1, &self.annotation, out)?;
+
+    fn serialize_to(
+        &self,
+        options: &protobuf_core::SerializeOptions,
+        out: &mut protobuf_core::OutputBuffer,
+    ) -> Result<()> {
+        MessageCodec::serialize_repeated(1, &self.annotation, options, out)?;
         #[cfg(feature = "std")]
-        self.unknown_fields.serialize_to(out)?;
+        self.unknown_fields.serialize_to(options, out)?;
         Ok(())
     }
 }

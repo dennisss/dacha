@@ -110,7 +110,7 @@ impl ExtensionSet {
         Ok(())
     }
 
-    pub fn serialize_to(&self, options: &SerializeOptions, out: &mut OutputBuffer) -> Result<()> {
+    pub fn serialize_to(&self, options: &SerializeOptions, out: &mut dyn OutputBuffer) -> Result<()> {
         if options.deterministic && !self.is_empty() {
             return Err(WireError::UnknownFieldsDropped.into());
         }

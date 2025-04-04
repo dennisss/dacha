@@ -49,7 +49,7 @@ impl Value {
         &self,
         field_number: FieldNumber,
         options: &SerializeOptions,
-        out: &mut OutputBuffer,
+        out: &mut dyn OutputBuffer,
     ) -> Result<()> {
         // TODO: Ignore fields with default values in proto3 (by using the sparse
         // serializers).

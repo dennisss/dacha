@@ -1,6 +1,7 @@
 [package]
 name = "regexp_macros"
 version = "0.0.0"
+edition = "2018"
 
 [lib]
 proc-macro = true

@@ -183,7 +183,7 @@ impl protobuf_core::Message for DynamicMessage {
         Ok(out)
     }
 
-    fn serialize_to(&self, options: &protobuf_core::SerializeOptions, out: &mut OutputBuffer) -> Result<()> {
+    fn serialize_to(&self, options: &protobuf_core::SerializeOptions, out: &mut dyn OutputBuffer) -> Result<()> {
         if options.deterministic {
             return Err(err_msg("Determistic serialization not implemented for dynamic messages"));
         }

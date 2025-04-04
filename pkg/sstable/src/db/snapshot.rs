@@ -28,7 +28,8 @@ pub struct Snapshot {
     /// any values with a higher sequence than this.
     pub(crate) last_sequence: u64,
 
-    pub(crate) compaction_waterline: Option<u64>,
+    //// The effective waterline that was used to compact all the entries in 'version'.
+    pub(crate) compaction_waterline: u64,
 
     pub(crate) memtables: Vec<Arc<MemTable>>,
 
@@ -51,7 +52,7 @@ impl Snapshot {
             ));
         }
 
-        if options.last_sequence.unwrap() < self.compaction_waterline.unwrap_or(0) {
+        if options.last_sequence.unwrap() < self.compaction_waterline {
             return Err(err_msg(
                 "Requested sequence is below the compaction waterline so may have been compacted.",
             ));
@@ -106,7 +107,7 @@ impl Snapshot {
         self.last_sequence
     }
 
-    pub fn compaction_waterline(&self) -> Option<u64> {
+    pub fn compaction_waterline(&self) -> u64 {
         self.compaction_waterline
     }
 

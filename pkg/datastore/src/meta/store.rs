@@ -182,7 +182,7 @@ impl Metastore {
 
         let mut iter_options = SnapshotIteratorOptions::default();
         if request.read_index() > 0 {
-            if request.read_index() < snapshot.compaction_waterline().unwrap() {
+            if request.read_index() < snapshot.compaction_waterline() {
                 return Err(rpc::Status::aborted("Request's read_index is too old.").into());
             }
 
