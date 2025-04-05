@@ -4,7 +4,6 @@ extern crate core;
 #[macro_use]
 extern crate common;
 extern crate crypto;
-extern crate datastore;
 extern crate http;
 extern crate parsing;
 extern crate protobuf;

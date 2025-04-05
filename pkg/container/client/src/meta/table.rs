@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use builder_proto::builder::BundleBlobSpec;
 use common::errors::*;
 use container_proto::cluster::*;
-use datastore_meta_client::MetastoreClient;
+use db_txn_client::MetastoreClient;
 use db_table::table::*;
 use db_table::table_id;
 use db_table::{define_singleton_table, sparse_struct};

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use container_proto::cluster::ObjectMetadata;
-use datastore_meta_client::MetastoreClient;
+use db_txn_client::MetastoreClient;
 use db_table::db::ProtobufDB;
 use db_table::query_one;
 use executor_multitask::impl_resource_passthrough;

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package db.meta;
+package db.txn;
 
 import "google/protobuf/empty.proto";
 

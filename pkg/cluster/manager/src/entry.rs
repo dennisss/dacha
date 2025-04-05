@@ -8,9 +8,9 @@ use db_table::db::ProtobufDB;
 use executor::bundle::TaskResultBundle;
 use executor_multitask::RootResource;
 use rpc_util::{AddReflection, NamedPortArg};
+use container_proto::cluster::*;
 
-use crate::manager::manager::Manager;
-use crate::proto::*;
+use crate::Manager;
 
 const SERVICE_ACL_PROTO: &'static str = r#"
     allow_unauthenticated: false

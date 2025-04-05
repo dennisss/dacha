@@ -1,4 +1,13 @@
-pub mod main;
+#![feature(extract_if)]
+
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate macros;
+#[macro_use]
+extern crate regexp_macros;
+
+pub mod entry;
 mod manager;
 
 use cluster_client::id::{entity_id_to_string, normalize_entity_id};

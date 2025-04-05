@@ -1,0 +1,33 @@
+[package]
+name = "db_txn"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+db_kv = { path = "../kv" }
+db_txn_proto = { path = "./proto" }
+db_table = { path = "../table" }
+db_txn_client = { path = "./client" }
+protobuf = { path = "../../protobuf" }
+macros = { path = "../../macros" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+crypto = { path = "../../crypto" }
+base_radix = { path = "../../base/radix" }
+sstable = { path = "../../sstable" }
+raft = { path = "../../raft" }
+raft_client = { path = "../../raft/client" }
+file = { path = "../../file" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
+net = { path = "../../net" }
+http = { path = "../../http" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

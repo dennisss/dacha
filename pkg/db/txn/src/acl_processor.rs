@@ -1,5 +1,5 @@
-use common::errors::*;
-use datastore_proto::db::meta::*;
+use base_error::*;
+use db_txn_proto::db::txn::*;
 use sstable::db::{Snapshot, WriteBatch};
 
 /// Hooks called before reads/writes on the metastore to enforce

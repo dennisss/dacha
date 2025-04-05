@@ -31,7 +31,7 @@ use common::errors::*;
 
 use builder::{BuildConfigTarget, Builder};
 use common::errors::*;
-use container::manager::Manager;
+use cluster_manager::Manager;
 use container::NodeConfig;
 use container_proto::cluster::*;
 use crypto::random::{RngExt, SharedRngExt};

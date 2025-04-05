@@ -20,6 +20,7 @@ compression = { path = "../../compression" }
 cluster_client = { path = "../../container/client" }
 cluster_ca = { path = "../ca" }
 cluster_meta = { path = "../meta" }
+cluster_manager = { path = "../manager" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
 net = { path = "../../net" }

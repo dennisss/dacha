@@ -3,7 +3,7 @@ use std::sync::{Arc, Weak};
 
 use common::bytes::Bytes;
 use common::const_default::ConstDefault;
-use common::errors::*;
+use base_error::*;
 use db_table::key_utils::single_key_range;
 use executor::sync::AsyncMutex;
 use executor::{channel, lock, lock_async};
@@ -12,10 +12,10 @@ use raft::ReadIndex;
 use raft::{proto::LogPosition, proto::Term, LogIndex, PendingExecutionResult};
 use sstable::db::{Snapshot, SnapshotIteratorOptions, WriteBatch, WriteBatchBuilder};
 use sstable::iterable::Iterable;
+use db_kv::KeyRanges;
+use db_txn_proto::db::txn::*;
 
-use crate::meta::key_ranges::KeyRanges;
-use crate::meta::state_machine::EmbeddedDBStateMachine;
-use crate::proto::*;
+use crate::state_machine::EmbeddedDBStateMachine;
 
 const MAX_READ_RANGES_PER_TRANSACTION: usize = 10;
 

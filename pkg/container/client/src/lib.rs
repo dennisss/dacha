@@ -6,7 +6,7 @@ extern crate core;
 #[macro_use]
 extern crate common;
 #[macro_use]
-extern crate datastore_meta_client;
+extern crate db_txn_client;
 
 pub mod acl;
 pub mod credentials;

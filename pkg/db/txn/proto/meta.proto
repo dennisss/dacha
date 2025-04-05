@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-package db.meta;
+package db.txn;
 
 import "google/protobuf/timestamp.proto";
-import "pkg/datastore/proto/key_value.proto";
+import "pkg/db/txn/proto/key_value.proto";
 
 // Value stored in the CURRENT file in the metastore's data directory. Contains information about
 // the current state of which files are in use in the data directory.
@@ -21,4 +21,3 @@ message ClientInfo {
     // List of the user keys for locks currently held by this client.
     repeated bytes held_locks = 1;
 }
-

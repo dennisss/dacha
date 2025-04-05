@@ -22,8 +22,8 @@ executor_multitask = { path = "../executor/multitask" }
 file = { path = "../file" }
 crypto = { path = "../crypto" }
 base_radix = { path = "../base/radix" }
-datastore_proto = { path = "./proto" }
-datastore_meta_client = { path = "./meta/client" }
+db_txn_client = { path = "../db/txn/client" }
+db_txn_proto = { path = "../db/txn/proto" }
 
 [features]
 default = ["std"]

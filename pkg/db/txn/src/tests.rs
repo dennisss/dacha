@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use common::errors::*;
+use base_error::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
+use db_txn_client::{MetastoreClient, MetastoreClientInterface};
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor_multitask::ServiceResource;
@@ -11,9 +11,9 @@ use file::temp::TempDir;
 use protobuf::text::ParseTextProto;
 use raft::proto::{Configuration_ServerRole, RouteLabel, ServerId, Status};
 use rpc_util::AddProfilingEndpoints;
+use db_txn_proto::db::txn::KeyValueEntry;
 
-use crate::meta::test_store::TestMetastore;
-use crate::proto::KeyValueEntry;
+use crate::test_store::TestMetastore;
 
 use super::TestMetastoreCluster;
 

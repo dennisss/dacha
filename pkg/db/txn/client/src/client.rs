@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use common::async_fn::AsyncFn1;
 use common::bytes::Bytes;
 use common::errors::*;
-use datastore_proto::db::meta::*;
+use db_txn_proto::db::txn::*;
 use db_table::key_utils::*;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
@@ -256,6 +256,8 @@ impl MetastoreClient {
         if let Some(transaction_state_permit) = transaction_state {
             lock!(transaction_state <= transaction_state_permit, {
                 request.set_read_index(transaction_state.read_index);
+
+                // TODO: Ensure the ranges are all non-overlapping.
                 transaction_state.reads.push(request.keys().clone());
             });
         }
@@ -488,6 +490,9 @@ pub struct MetastoreTransaction<'a> {
 }
 
 struct MetastoreTransactionState {
+    // TODO: Implement this field to ensure we never double commit sub or whole transaction.
+    // commited: bool,
+
     read_index: u64,
     reads: Vec<KeyRange>,
     writes: BTreeMap<Bytes, Operation>,

@@ -1,30 +1,31 @@
 [package]
-name = "cluster_client"
+name = "cluster_manager"
 version = "0.1.0"
 edition = "2018"
 
 [dependencies]
 common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
-crypto = { path = "../../crypto" }
-protobuf = { path = "../../protobuf" }
+base_error = { path = "../../base/error" }
 db_table = { path = "../../db/table" }
+db_txn_client = { path = "../../db/txn/client" }
+crypto = { path = "../../crypto" }
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+protobuf = { path = "../../protobuf" }
 http = { path = "../../http" }
 macros = { path = "../../macros" }
-db_txn_client = { path = "../../db/txn/client" }
-db_txn_proto = { path = "../../db/txn/proto" }
+compression = { path = "../../compression" }
+cluster_client = { path = "../../container/client" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
 net = { path = "../../net" }
-raft_client = { path = "../../raft/client" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
-failure = "0.1.8"
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 sys = { path = "../../sys" }
-container_proto = { path = "../proto" }
-builder_proto = { path = "../../builder/proto" }
+container_proto = { path = "../../container/proto" }
 
 [features]
 default = ["std"]

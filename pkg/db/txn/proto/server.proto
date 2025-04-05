@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package db.meta;
+package db.txn;
 
 import "pkg/raft/proto/consensus.proto";
 import "google/protobuf/empty.proto";

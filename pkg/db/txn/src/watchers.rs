@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use common::bytes::Bytes;
-use common::errors::*;
+use base_error::*;
 use executor::sync::AsyncMutex;
 use executor::{channel, lock};
-
-use crate::proto::WatchResponse;
+use db_txn_proto::db::txn::WatchResponse;
 
 pub struct Watchers {
     state: Arc<AsyncMutex<WatchersState>>,

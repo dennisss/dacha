@@ -7,16 +7,15 @@ use cluster_client::acl::principal::Principal;
 use cluster_client::meta::*;
 use cluster_client::service::address::ServiceName;
 use common::errors::*;
-use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use datastore_meta_client::MetastoreClient;
-use datastore_meta_client::MetastoreTransaction;
+use db_txn_client::MetastoreClient;
+use db_txn_client::MetastoreTransaction;
+use db_txn_client::run_transaction;
 use db_table::db::{ProtobufDB, ProtobufDBTransaction};
 use db_table::{query, query_one, raw_query};
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
-
-use crate::proto::*;
+use container_proto::cluster::*;
 
 /*
 When a manager test starts up, it will
@@ -684,7 +683,7 @@ impl Manager {
             // doesn't exist yet.
             let mut name = job_name.to_string();
             name.push('.');
-            name.push_str(&crate::manager::new_worker_id(self.rng.as_ref()).await);
+            name.push_str(&crate::new_worker_id(self.rng.as_ref()).await);
             name
         };
 

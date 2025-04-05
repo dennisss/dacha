@@ -2,7 +2,7 @@ use core::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 use executor::cancellation::{
     AlreadyCancelledToken, CancellationToken, EitherCancelledToken, TriggerableCancellationToken,
 };

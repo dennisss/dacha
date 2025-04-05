@@ -13,8 +13,8 @@ crypto = { path = "../../crypto" }
 protobuf = { path = "../../protobuf" }
 http = { path = "../../http" }
 macros = { path = "../../macros" }
-datastore = { path = "../../datastore" }
-datastore_meta_client = { path = "../../datastore/meta/client" }
+db_txn = { path = "../../db/txn" }
+db_txn_proto = { path = "../../db/txn/proto" }
 compression = { path = "../../compression" }
 cluster_client = { path = "../../container/client" }
 container_proto = { path = "../../container/proto" }

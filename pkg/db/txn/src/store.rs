@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use datastore_meta_client::constants::*;
+use db_txn_client::constants::*;
 use db_table::key_utils::prefix_key_range;
 use executor::channel;
 use executor::child_task::ChildTask;
@@ -21,12 +21,11 @@ use raft::StateMachine;
 use rpc_util::{AddProfilingEndpoints, AddReflection};
 use sstable::db::{SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
+use db_txn_proto::db::txn::*;
 
-use crate::meta::state_machine::*;
-use crate::meta::transaction::*;
-use crate::proto::*;
-
-use super::ACLProcessor;
+use crate::state_machine::*;
+use crate::transaction::*;
+use crate::acl_processor::ACLProcessor;
 
 /*
 

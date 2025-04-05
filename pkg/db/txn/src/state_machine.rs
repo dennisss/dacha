@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::lock_async;
 use executor::sync::AsyncMutex;
@@ -17,10 +17,10 @@ use sstable::db::SnapshotIteratorOptions;
 use sstable::db::{Backup, Snapshot, Write, WriteBatch};
 use sstable::iterable::Iterable;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
+use db_txn_proto::db::txn::*;
 
-use crate::meta::state_machine_db::EmbeddedDBStateMachineDatabase;
-use crate::meta::watchers::*;
-use crate::proto::*;
+use crate::state_machine_db::EmbeddedDBStateMachineDatabase;
+use crate::watchers::*;
 
 /*
 TODO: Rather than having synced path logic, we can maybe just always force syncing when opening files

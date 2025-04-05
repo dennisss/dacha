@@ -609,7 +609,6 @@ dependencies = [
  "compression",
  "container_proto",
  "crypto",
- "datastore_meta_client",
  "db_table",
  "executor",
  "executor_multitask",
@@ -634,6 +633,7 @@ dependencies = [
  "builder",
  "cluster_ca",
  "cluster_client",
+ "cluster_manager",
  "cluster_meta",
  "common",
  "compression",
@@ -668,9 +668,9 @@ dependencies = [
  "common",
  "container_proto",
  "crypto",
- "datastore_meta_client",
- "datastore_proto",
  "db_table",
+ "db_txn_client",
+ "db_txn_proto",
  "executor",
  "executor_multitask",
  "failure",
@@ -687,6 +687,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_manager"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "base_radix",
+ "cluster_client",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "db_txn_client",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "macros",
+ "net",
+ "protobuf",
+ "protobuf_builtins",
+ "regexp_macros",
+ "rpc",
+ "rpc_util",
+ "sys",
+]
+
+[[package]]
 name = "cluster_meta"
 version = "0.1.0"
 dependencies = [
@@ -697,10 +725,10 @@ dependencies = [
  "compression",
  "container_proto",
  "crypto",
- "datastore",
- "datastore_meta_client",
  "db_kv",
  "db_table",
+ "db_txn",
+ "db_txn_proto",
  "executor",
  "executor_multitask",
  "file",
@@ -900,9 +928,8 @@ dependencies = [
  "compression",
  "container_proto",
  "crypto",
- "datastore",
- "datastore_meta_client",
  "db_table",
+ "db_txn_client",
  "executor",
  "executor_multitask",
  "failure",
@@ -1099,32 +1126,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "datastore"
-version = "0.1.0"
-dependencies = [
- "base_radix",
- "common",
- "crypto",
- "datastore_meta_client",
- "datastore_proto",
- "db_table",
- "executor",
- "executor_multitask",
- "file",
- "http",
- "macros",
- "net",
- "parsing",
- "protobuf",
- "protobuf_builtins",
- "raft",
- "raft_client",
- "rpc",
- "rpc_util",
- "sstable",
-]
-
-[[package]]
 name = "datastore_bundle"
 version = "0.1.0"
 dependencies = [
@@ -1143,37 +1144,6 @@ dependencies = [
  "sstable",
  "uuid",
  "uuid_macros",
-]
-
-[[package]]
-name = "datastore_meta_client"
-version = "0.0.0"
-dependencies = [
- "common",
- "crypto",
- "datastore_proto",
- "db_kv",
- "db_table",
- "executor",
- "executor_multitask",
- "http",
- "net",
- "protobuf_builtins",
- "raft_client",
- "rpc",
-]
-
-[[package]]
-name = "datastore_proto"
-version = "0.0.0"
-dependencies = [
- "common",
- "macros",
- "protobuf",
- "protobuf_builtins",
- "protobuf_compiler",
- "raft_proto",
- "rpc",
 ]
 
 [[package]]
@@ -1205,6 +1175,66 @@ dependencies = [
  "macros",
  "parsing",
  "protobuf",
+]
+
+[[package]]
+name = "db_txn"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "crypto",
+ "db_kv",
+ "db_table",
+ "db_txn_client",
+ "db_txn_proto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "protobuf_builtins",
+ "raft",
+ "raft_client",
+ "rpc",
+ "rpc_util",
+ "sstable",
+]
+
+[[package]]
+name = "db_txn_client"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "crypto",
+ "db_kv",
+ "db_table",
+ "db_txn_proto",
+ "executor",
+ "executor_multitask",
+ "http",
+ "net",
+ "protobuf_builtins",
+ "raft_client",
+ "rpc",
+]
+
+[[package]]
+name = "db_txn_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "raft_proto",
+ "rpc",
 ]
 
 [[package]]
@@ -3392,7 +3422,6 @@ version = "0.1.0"
 dependencies = [
  "common",
  "crypto",
- "datastore",
  "db_table",
  "executor",
  "file",

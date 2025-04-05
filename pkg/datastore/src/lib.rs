@@ -14,6 +14,3 @@ extern crate rpc_util;
 extern crate sstable;
 #[macro_use]
 extern crate parsing;
-
-pub mod meta;
-pub use datastore_proto::db::meta as proto;

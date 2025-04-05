@@ -14,7 +14,6 @@ regexp_macros = { path = "../../automata/regexp_macros" }
 protobuf = { path = "../../protobuf" }
 http = { path = "../../http" }
 macros = { path = "../../macros" }
-datastore_meta_client = { path = "../../datastore/meta/client" }
 compression = { path = "../../compression" }
 cluster_client = { path = "../../container/client" }
 rpc = { path = "../../rpc" }

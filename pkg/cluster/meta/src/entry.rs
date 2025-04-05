@@ -7,8 +7,8 @@ use cluster_client::ClusterServer;
 use common::args::list::CommaSeparated;
 use common::args::parse_args;
 use common::errors::*;
-use datastore::meta::store::MetastoreOptions;
-use datastore::meta::EmbeddedDBStateMachineOptions;
+use db_txn::store::MetastoreOptions;
+use db_txn::EmbeddedDBStateMachineOptions;
 use executor_multitask::{RootResource, ServiceResource, ServiceResourceGroup};
 use file::LocalPathBuf;
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
@@ -41,12 +41,12 @@ const SERVICE_ACL_PROTO: &'static str = r#"
 
         # RPCs do their own ACL validation per key range.
         {
-            path: "/rpc/db.meta.KeyValueStore"
+            path: "/rpc/db.txn.KeyValueStore"
             is_directory: true
             principals: ["authenticated"]
         },
         {
-            path: "/rpc/db.meta.ClientManagement"
+            path: "/rpc/db.txn.ClientManagement"
             is_directory: true
             principals: ["authenticated"]
         },
@@ -103,7 +103,7 @@ pub async fn run(options: ClusterMetastoreOptions) -> Result<Arc<dyn ServiceReso
 
     resources
         .register_dependency(
-            datastore::meta::store::run(
+            db_txn::store::run(
                 MetastoreOptions {
                     dir: options.dir,
                     init_port: None,

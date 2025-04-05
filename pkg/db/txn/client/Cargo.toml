@@ -1,0 +1,23 @@
+[package]
+name = "db_txn_client"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../../common" }
+http = { path = "../../../http" }
+rpc = { path = "../../../rpc" }
+net = { path = "../../../net" }
+crypto = { path = "../../../crypto" }
+db_kv = { path = "../../../db/kv" }
+db_table = { path = "../../../db/table" }
+raft_client = { path = "../../../raft/client" }
+protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
+executor = { path = "../../../executor" }
+executor_multitask = { path = "../../../executor/multitask" }
+db_txn_proto = { path = "../proto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

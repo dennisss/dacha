@@ -15,7 +15,6 @@ use cluster_client::service::create_rpc_channel;
 use common::errors::*;
 use common::failure::ResultExt;
 use common::io::{Readable, Writeable};
-use container::manager::Manager;
 use container::{
     AllocateBundleBlobsRequest, AllocateBundleBlobsResponse, BundleBlobMetadata, JobSpec,
     ListWorkersRequest, ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,

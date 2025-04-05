@@ -1,17 +1,18 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::errors::*;
+use base_error::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use datastore_meta_client::{MetastoreClient, MetastoreClientInterface};
+use db_txn_client::{MetastoreClient, MetastoreClientInterface};
 use executor::{cancellation::AlreadyCancelledToken, child_task::ChildTask};
 use executor_multitask::{ServiceResource, ServiceResourceGroup};
 use file::{temp::TempDir, LocalPathBuf};
 use protobuf::text::ParseTextProto;
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
 use raft_client::DefaultHostnameResolver;
+use db_txn_proto::db::txn::*;
 
-use crate::{meta::EmbeddedDBStateMachineOptions, proto::KeyValueEntry};
+use crate::EmbeddedDBStateMachineOptions;
 
 /// In-process set of metastore instances for testing.
 pub struct TestMetastoreCluster {
@@ -62,8 +63,8 @@ impl TestMetastoreCluster {
         // TODO: Disable multicast as we don't need it in a unit test.
         resource
             .register_dependency(
-                crate::meta::store::run(
-                    crate::meta::store::MetastoreOptions {
+                crate::store::run(
+                    crate::store::MetastoreOptions {
                         dir: dir.clone(),
                         init_port: None,
                         bootstrap_group: bootstrap,

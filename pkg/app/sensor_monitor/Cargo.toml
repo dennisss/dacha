@@ -12,7 +12,6 @@ sstable = { path = "../../sstable" }
 crypto = { path = "../../crypto" }
 web = { path = "../../web" }
 rpc = { path = "../../rpc" }
-datastore = { path = "../../datastore" }
 protobuf = { path = "../../protobuf" }
 macros = { path = "../../macros" }
 graphics = { path = "../../graphics" }
