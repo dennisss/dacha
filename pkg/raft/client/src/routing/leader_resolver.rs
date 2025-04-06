@@ -20,9 +20,6 @@ use super::route_resolver::RouteResolver;
 ///
 /// This key stores a binary encoded LeaderHint proto
 ///
-/// TODO: Include the group id in this and maybe also include metadata keys on
-/// the server identity.
-///
 /// TODO: Limit visibility to only the raft.* crates.
 pub const LEADER_HINT_KEY: &'static str = "raft-leader-hint-bin";
 
@@ -88,10 +85,10 @@ struct CurrentHint {
 }
 
 impl LeaderResolver {
-    pub fn create(route_store: RouteStore, group_id: GroupId) -> Self {
+    pub fn create(route_store: RouteStore) -> Self {
         Self {
             route_store: route_store.clone(),
-            inner: RouteResolver::create(route_store.clone(), group_id, None),
+            inner: RouteResolver::create(route_store.clone(), None),
             current_hint: SyncMutex::new(CurrentHint {
                 value: LeaderHint::default(),
                 change_time: Instant::now(),

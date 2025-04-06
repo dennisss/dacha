@@ -8,12 +8,12 @@ worker {
 
     args: [
         "/volumes/bundle/built/pkg/cluster/meta/cluster_meta",
-        "--port=rpc",
+        "--port=service",
         "--dir=/volumes/data"
     ]
 
     ports {
-        name: "rpc"
+        name: "service"
         type: TCP
     }
 

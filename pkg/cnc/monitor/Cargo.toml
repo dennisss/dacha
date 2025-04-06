@@ -15,6 +15,7 @@ executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 db_kv = { path = "../../db/kv" }
 db_table = { path = "../../db/table" }
+db_txn = { path = "../../db/txn" }
 file = { path = "../../file" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
@@ -36,7 +37,6 @@ math = { path = "../../math" }
 perf = { path = "../../perf" }
 net = { path = "../../net" }
 graphics = { path = "../../graphics" }
-sstable = { path = "../../sstable" }
 media_camera = { path = "../../media/camera" }
 video = { path = "../../media/video" }
 compression = { path = "../../compression" }

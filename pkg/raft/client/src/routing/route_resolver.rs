@@ -18,16 +18,14 @@ pub struct RouteResolver {
 
 struct Shared {
     route_store: RouteStore,
-    group_id: GroupId,
     server_id: SyncMutex<Option<ServerId>>,
     listeners: SyncMutex<Vec<http::ResolverChangeListener>>,
 }
 
 impl RouteResolver {
-    pub fn create(route_store: RouteStore, group_id: GroupId, server_id: Option<ServerId>) -> Self {
+    pub fn create(route_store: RouteStore, server_id: Option<ServerId>) -> Self {
         let shared = Arc::new(Shared {
             route_store,
-            group_id,
             server_id: SyncMutex::new(server_id),
             listeners: SyncMutex::new(vec![]),
         });
@@ -103,7 +101,7 @@ impl http::Resolver for RouteResolver {
         if let Some(id) = &self.shared.server_id.read()? {
             server_ids.push(*id);
         } else {
-            for id in route_store.remote_servers(self.shared.group_id) {
+            for id in route_store.remote_servers() {
                 server_ids.push(id);
             }
         }
@@ -111,7 +109,7 @@ impl http::Resolver for RouteResolver {
         let mut endpoints = vec![];
 
         for id in server_ids {
-            let route = match route_store.lookup(self.shared.group_id, id) {
+            let route = match route_store.lookup(id) {
                 Some(id) => id,
                 None => {
                     // This will only happen if we are resolving a specific server id and that id

@@ -118,7 +118,7 @@ impl DiscoveryClient {
 
                 if self.options.active_broadcaster {
                     // TODO: Make sure this doesn't get marked as a usage of the route.
-                    for route in route_store.selected_routes() {
+                    for route in route_store.remote_routes() {
                         maybe_select_addr(route.target().addr().into());
                     }
                 }

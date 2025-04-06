@@ -8,9 +8,9 @@ use executor::sync::{AsyncMutex, AsyncRwLock, AsyncVariable};
 use executor_multitask::{impl_resource_passthrough, TaskResource};
 use file::LocalPathBuf;
 use media_camera::camera_manager::CameraManager;
+use db_table::ProtobufDB;
 
 use crate::camera_recorder::CameraRecorder;
-use crate::db::ProtobufDB;
 use crate::devices::AvailableDevice;
 use crate::{config::MachineConfigContainer, player::Player};
 

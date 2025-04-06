@@ -119,18 +119,3 @@ impl Configuration {
     //     self.members().iter().chain(self.learners().iter())
     // }
 }
-
-impl GroupId {
-    pub fn to_string(&self) -> String {
-        self.value().to_string()
-    }
-}
-
-impl FromStr for GroupId {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
-        let mut id = GroupId::default();
-        *id.value_mut() = s.parse()?;
-        Ok(id)
-    }
-}

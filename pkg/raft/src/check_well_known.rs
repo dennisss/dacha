@@ -48,7 +48,6 @@ const ROUTE_ACK_EXPIRATION: Duration = Duration::from_secs(5);
 pub(super) async fn check_if_well_known(
     route_store: RouteStore,
     channel_factory: Arc<RouteChannelFactory>,
-    group_id: GroupId,
 ) -> Result<()> {
     let mut backoff =
         net::backoff::ExponentialBackoff::new(net::backoff::ExponentialBackoffOptions {
@@ -67,7 +66,7 @@ pub(super) async fn check_if_well_known(
             net::backoff::ExponentialBackoffResult::Stop => todo!(),
         }
 
-        match check_if_well_known_once(&route_store, channel_factory.clone(), group_id).await {
+        match check_if_well_known_once(&route_store, channel_factory.clone()).await {
             Ok(v) => {
                 if v {
                     break;
@@ -87,7 +86,6 @@ pub(super) async fn check_if_well_known(
 async fn check_if_well_known_once(
     route_store: &RouteStore,
     channel_factory: Arc<RouteChannelFactory>,
-    group_id: GroupId,
 ) -> Result<bool> {
     // Find a remote server in our group.
     let remote_server_id = {
@@ -101,7 +99,7 @@ async fn check_if_well_known_once(
 
         // TODO: Filter to only 'ready' routes
         let servers = route_store
-            .remote_servers(group_id)
+            .remote_servers()
             .into_iter()
             .collect::<Vec<_>>();
         if servers.is_empty() {
@@ -111,7 +109,7 @@ async fn check_if_well_known_once(
         *crypto::random::clocked_rng().choose(&servers)
     };
 
-    let mut status = get_status(&channel_factory, group_id, remote_server_id).await?;
+    let mut status = get_status(&channel_factory, remote_server_id).await?;
 
     if status.leader_hint().value() == 0 {
         return Err(err_msg("Server doesn't know about the leader"));
@@ -121,7 +119,7 @@ async fn check_if_well_known_once(
     // need to fetch from the leader to ensure that we aren't looking at a stale
     // configuration).
     if status.role() != Status_Role::LEADER {
-        status = get_status(&channel_factory, group_id, status.leader_hint()).await?;
+        status = get_status(&channel_factory, status.leader_hint()).await?;
     }
 
     if status.role() != Status_Role::LEADER {
@@ -141,7 +139,7 @@ async fn check_if_well_known_once(
         let now = SystemTime::now();
 
         for server in status.configuration().servers() {
-            let mut knows_us = match route_store.lookup_last_ack_time(group_id, server.id()) {
+            let mut knows_us = match route_store.lookup_last_ack_time(server.id()) {
                 Some(Some(t)) => t + ROUTE_ACK_EXPIRATION > now,
                 _ => false,
             };
@@ -176,7 +174,6 @@ async fn check_if_well_known_once(
 
 async fn get_status(
     channel_factory: &RouteChannelFactory,
-    group_id: GroupId,
     server_id: ServerId,
 ) -> Result<Status> {
     let stub = ConsensusStub::new(channel_factory.create(server_id).await?);

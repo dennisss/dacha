@@ -74,7 +74,7 @@ impl ServiceResolver {
     ) -> Result<Arc<dyn http::Resolver>> {
         if ServiceAddress::is_service_address(address) {
             return Ok(Arc::new(
-                Self::create(address, meta_client_factory.await?).await?,
+                Self::create(address, meta_client_factory.await?)?,
             ));
         }
 
@@ -91,7 +91,7 @@ impl ServiceResolver {
 
     /// TODO: Support having a fallback to a regular public DNS name if this
     /// resolver doesn't support it.
-    pub async fn create(address: &str, meta_client: Arc<ClusterMetaClient>) -> Result<Self> {
+    pub fn create(address: &str, meta_client: Arc<ClusterMetaClient>) -> Result<Self> {
         let service_address = ServiceAddress::parse_relative_addr(address, meta_client.zone())?;
 
         if service_address.name.zone() != meta_client.zone() {

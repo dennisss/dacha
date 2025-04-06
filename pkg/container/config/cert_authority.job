@@ -8,11 +8,11 @@ worker {
 
     args: [
         "/volumes/bundle/built/pkg/cluster/ca/cluster_ca",
-        "--port=rpc"
+        "--port=service"
     ]
 
     ports {
-        name: "rpc"
+        name: "service"
         type: TCP
     }
 

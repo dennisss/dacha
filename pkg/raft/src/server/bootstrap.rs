@@ -46,21 +46,19 @@ pub async fn bootstrap_first_server_with_id(server_id: ServerId, log: &dyn Log) 
 /// This is done by reaching up to existing servers in the cluster and reaching
 /// consensus on a unique unused id.
 pub async fn generate_new_server_id(
-    group_id: GroupId,
     channel_factory: &dyn ChannelFactory,
 ) -> Result<ServerId> {
     let mut request = ProposeRequest::default();
     request.set_wait(true);
     request.data_mut().set_noop(true);
 
-    let proposal = propose_entry(group_id, channel_factory, &request).await?;
+    let proposal = propose_entry(channel_factory, &request).await?;
 
     // Casting LogIndex to ServerId.
     Ok(proposal.index().value().into())
 }
 
 pub(super) async fn propose_entry(
-    group_id: GroupId,
     channel_factory: &dyn ChannelFactory,
     request: &ProposeRequest,
 ) -> Result<LogPosition> {
@@ -110,7 +108,7 @@ pub(super) async fn propose_entry(
 
         let response = stub
             .Propose(
-                &ServerIdentity::new_anonymous_request_context(group_id, leader_id)?,
+                &ServerIdentity::new_anonymous_request_context(leader_id)?,
                 request,
             )
             .await;

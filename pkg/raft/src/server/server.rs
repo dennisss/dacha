@@ -192,7 +192,7 @@ pub struct ServerInitialState<R> {
     ///
     /// TODO: Instead pre-sync the initial metadata.
     ///
-    /// MUST already have a group_id and server_id set if this is a new server.
+    /// MUST already have a server_id set if this is a new server.
     pub meta: ServerMetadata,
 
     /// File used to persist the above metadata.
@@ -337,7 +337,7 @@ impl<R: Send + 'static> Server<R> {
         };
 
         let shared = Arc::new(ServerShared {
-            identity: ServerIdentity::new(meta.group_id(), meta.id()),
+            identity: ServerIdentity::new(meta.id()),
             state: AsyncMutex::new(state),
             channel_factory,
             log,
@@ -385,7 +385,6 @@ impl<R: Send + 'static> Server<R> {
         // replicated from the leader (possibly due to us not noticing that a previous
         // failed proposal attempt actually succeeded.)
         let res = crate::server::bootstrap::propose_entry(
-            self.shared.identity.group_id,
             self.shared.channel_factory.as_ref(),
             &request,
         )

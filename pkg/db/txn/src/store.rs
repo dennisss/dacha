@@ -63,13 +63,6 @@ pub struct TransactionalDBOptions {
 
     pub log: SegmentedLogOptions,
 
-    // TODO: Validate that exactly one of init_port and bootstrap are provided.
-    /// Port used for listening for RPC signals for bootstrapping this server in
-    /// a new cluster.
-    ///
-    /// Not used for already setup clusters.
-    pub init_port: Option<u16>,
-
     pub bootstrap_group: bool,
 
     pub bootstrap_node_id: Option<u64>,
@@ -498,7 +491,6 @@ impl TransactionalDB {
         let node = Arc::new(
             raft::Node::create(raft::NodeOptions {
                 dir,
-                init_port: options.init_port,
                 bootstrap_group: options.bootstrap_group,
                 bootstrap_node_id: options.bootstrap_node_id.map(|v| v.into()),
                 seed_list: vec![], // Will just find everyone via multi-cast
@@ -545,6 +537,17 @@ impl TransactionalDB {
         Ok(service)
     }
 
+    /*
+    TODO: There are a number of optimizations this could implement since it is a purely in-process DB:
+    - Zero copy RPC over LocalChannel
+    - Can immediately discard log once snapshot is executed (since don't need to replicate to other servers)
+    - Don't need a compaction waterline if snapshot is locally obtained (just need to guard memtable)
+    - Don't need remote broadcasting or RPC server
+    - Don't need to block for the server to become the leader.
+    - Should prefer to not return rpc::Status to avoid propagating it outwards.
+
+    TODO: do not propsgate RPC errors out of calls to the client.
+    */
     pub async fn create_local(dir: &LocalPath) -> Result<TransactionalDBClient> {
         let mut rpc_handler = rpc::Http2RequestHandler::new();
 
@@ -555,7 +558,6 @@ impl TransactionalDB {
             dir: dir.to_owned(),
             state_machine: EmbeddedDBStateMachineOptions::default(),
             log: SegmentedLogOptions::default(),
-            init_port: None,
             bootstrap_group: true,
             bootstrap_node_id: Some(1),
             service_port: 0, // Unused. 0 will disable discovery.

@@ -9,7 +9,7 @@ pub async fn create_rpc_channel(
     address: &str,
     meta_client: Arc<ClusterMetaClient>,
 ) -> Result<Arc<dyn rpc::Channel>> {
-    let resolver = Arc::new(ServiceResolver::create(address, meta_client.clone()).await?);
+    let resolver = Arc::new(ServiceResolver::create(address, meta_client.clone())?);
 
     let mut options: rpc::Http2ChannelOptions =
         http::ClientOptions::from_resolver(resolver).try_into_result()?;

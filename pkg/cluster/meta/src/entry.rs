@@ -109,7 +109,6 @@ pub async fn run(options: ClusterMetastoreOptions) -> Result<Arc<dyn ServiceReso
             TransactionalDB::create(
                 TransactionalDBOptions {
                     dir: options.dir,
-                    init_port: None,
                     bootstrap_group: options.bootstrap,
                     bootstrap_node_id: Some(options.id),
                     service_port: options.port,

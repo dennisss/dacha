@@ -101,9 +101,6 @@ pub struct NodeOptions<'a, R> {
     /// threads.
     pub dir: DirLock,
 
-    /// Port used to use the init service if this is an un-initialized server.
-    pub init_port: Option<u16>,
-
     /// If true, we will create a new empty log with this as the first member of
     /// the corresponding raft group.
     ///
@@ -281,7 +278,6 @@ impl<R: 'static + Send> Node<R> {
             let meta = ServerMetadata::parse(&meta_data)?;
 
             channel_factory = Arc::new(RouteChannelFactory::new(
-                meta.group_id(),
                 route_store.clone(),
                 options.tls_options.clone(),
             ));
@@ -298,62 +294,22 @@ impl<R: 'static + Send> Node<R> {
                 ));
             }
 
-            // Get a group id (or None to imply that we should bootstrap a new group).
-            //
-            // When not bootstraping we will wait for either:
-            // - A background error to occur
-            // - A ServerInit::Bootstrap RPC to come to tell us to bootstrap ourselves
-            // - We discover a peer on the network that is already initialized.
-            let group_id_or_bootstrap: Option<GroupId> = {
-                if options.bootstrap_group {
-                    None
-                } else {
-                    let init_signal = ServerInit::maybe_wait_for_init(options.init_port).fuse();
-                    let found_peer = raft_client::utils::find_peer_group_id(&route_store).fuse();
-                    let background_error = resources.wait_for_termination().fuse();
-
-                    pin_mut!(init_signal, found_peer, background_error);
-
-                    select! {
-                        res = init_signal => {
-                            res?;
-                            None
-                        }
-                        gid = found_peer => {
-                            Some(gid)
-                        }
-                        res = background_error => {
-                            res?;
-                            // Most likely the program is currently being shut down.
-                            return Err(err_msg("Discovery thread exited early"));
-                        }
-                    }
-                }
-            };
-
-            let (group_id, bootstrap) = match group_id_or_bootstrap {
-                Some(gid) => (gid, false),
-                None => (random::clocked_rng().uniform::<u64>().into(), true),
-            };
-
             channel_factory = Arc::new(RouteChannelFactory::new(
-                group_id,
                 route_store.clone(),
                 options.tls_options.clone(),
             ));
 
             let id = {
                 if let Some(id) = options.bootstrap_node_id {
-                    if bootstrap {
+                    if options.bootstrap_group {
                         crate::server::bootstrap::bootstrap_first_server_with_id(id, &log).await?;
                     }
 
                     id
-                } else if bootstrap {
+                } else if options.bootstrap_group {
                     crate::server::bootstrap::bootstrap_first_server(&log).await?
                 } else {
                     crate::server::bootstrap::generate_new_server_id(
-                        group_id,
                         channel_factory.as_ref(),
                     )
                     .await?
@@ -364,7 +320,6 @@ impl<R: 'static + Send> Node<R> {
 
             let mut server_meta = ServerMetadata::default();
             server_meta.set_id(id);
-            server_meta.set_group_id(group_id);
 
             // We save the meta file to disk last such that if the meta file exists, then we
             // know that we have a complete set of files on disk
@@ -422,7 +377,6 @@ impl<R: 'static + Send> Node<R> {
                         let mut route_store = route_store.lock().await;
 
                         let mut local_route = Route::default();
-                        local_route.set_group_id(server.identity().group_id);
                         local_route.set_server_id(server.identity().server_id);
                         local_route.target_mut().set_addr(address);
 
@@ -463,7 +417,6 @@ impl<R: 'static + Send> Node<R> {
                     crate::check_well_known::check_if_well_known(
                         route_store,
                         channel_factory,
-                        server.identity().group_id,
                     )
                     .await?;
 
@@ -492,60 +445,5 @@ impl<R: 'static + Send> Node<R> {
 
     pub fn channel_factory(&self) -> &RouteChannelFactory {
         &self.channel_factory
-    }
-}
-
-/// Simple RPC service implementation that just waits until a user calls it once
-/// to let us know that it.
-struct ServerInit {
-    sender: channel::Sender<()>,
-}
-
-#[async_trait]
-impl ServerInitService for ServerInit {
-    async fn Bootstrap(
-        &self,
-        req: rpc::ServerRequest<BootstrapRequest>,
-        res: &mut rpc::ServerResponse<BootstrapResponse>,
-    ) -> Result<()> {
-        let _ = self.sender.try_send(());
-        Ok(())
-    }
-}
-
-impl ServerInit {
-    async fn maybe_wait_for_init(port: Option<u16>) -> Result<()> {
-        let port = match port {
-            Some(v) => v,
-            None => executor::futures::pending().await,
-        };
-
-        Self::wait_for_init(port).await
-    }
-
-    async fn wait_for_init(port: u16) -> Result<()> {
-        // TODO: Because we are using a root resource here, the server won't stop if we
-        // cancelled the wait_for_init future.
-
-        let service = RootResource::new();
-
-        let (sender, receiver) = channel::bounded(1);
-
-        let mut rpc_server = ::rpc::Http2Server::new(Some(port));
-        rpc_server.add_service(Self { sender }.into_service())?;
-        rpc_server.add_reflection()?;
-        service.register_dependency(rpc_server.start()).await;
-
-        executor::future::race(
-            async move {
-                service.wait().await?;
-                Err(err_msg("Shutdown before init"))
-            },
-            async move {
-                receiver.recv().await?;
-                Ok(())
-            },
-        )
-        .await
     }
 }

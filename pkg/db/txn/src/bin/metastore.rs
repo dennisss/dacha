@@ -61,7 +61,6 @@ async fn main() -> Result<()> {
     root.register_dependency(
         run(TransactionalDBOptions {
             dir: args.dir,
-            init_port: args.init_port.as_ref().map(|v| v.value()),
             bootstrap_group: false,
             bootstrap_node_id: None,
             service_port: args.port.value(),

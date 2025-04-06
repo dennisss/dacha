@@ -6,13 +6,12 @@ use cnc_monitor_proto::cnc::*;
 use common::io::Writeable;
 use executor::lock;
 use executor::sync::{AsyncMutex, AsyncRwLock, AsyncVariable};
-use executor_multitask::{impl_resource_passthrough, TaskResource};
 use file::{LocalPath, LocalPathBuf};
 use media_camera::camera_manager::{CameraManager, CameraSubscriber};
 use media_camera::frame::{ImageFormat, ImageFrame};
 use video::mp4::{self, MP4Builder, MP4BuilderOptions};
+use db_table::ProtobufDB;
 
-use crate::db::ProtobufDB;
 use crate::tables::MediaFragmentTable;
 use crate::{config::MachineConfigContainer, player::Player};
 

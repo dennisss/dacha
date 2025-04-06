@@ -62,7 +62,7 @@ impl RouteHostnameResolver for DefaultHostnameResolver {
     }
 
     fn anonymous_route_hostname(&self) -> String {
-        "metastore".to_string()
+        "raft".to_string()
     }
 }
 
@@ -77,7 +77,7 @@ pub struct RouteStore {
 struct State {
     /// TODO: When a connection times out we want to automatically remove it
     /// from this list.
-    peers: HashMap<(GroupId, ServerId), PeerState>,
+    peers: HashMap<ServerId, PeerState>,
     local_route: Option<Route>,
 
     /// NOTE: These never change after the constructor.
@@ -134,7 +134,7 @@ impl<'a> RouteStoreGuard<'a> {
     pub fn set_local_route(&mut self, mut route: Route) {
         self.state
             .peers
-            .remove(&(route.group_id(), route.server_id()));
+            .remove(&route.server_id());
 
         for label in self.state.labels.iter().cloned() {
             route.add_labels(label);
@@ -163,6 +163,26 @@ impl<'a> RouteStoreGuard<'a> {
     }
 
     fn should_select_route(&self, route: &Route) -> bool {
+        // Check local labels are a subset of remote labels.
+        for local_label in &self.state.labels {
+            if local_label.optional() {
+                continue;
+            }
+
+            let mut found = false;
+            for remote_label in route.labels() {
+                if local_label.value() == remote_label.value() {
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found {
+                return false;
+            }
+        }
+
+        // Check remote labels are a subset of local labels.
         for remote_label in route.labels() {
             if remote_label.optional() {
                 continue;
@@ -184,58 +204,41 @@ impl<'a> RouteStoreGuard<'a> {
         true
     }
 
-    pub fn selected_routes(&self) -> impl Iterator<Item = &Route> {
+    pub fn remote_routes(&self) -> impl Iterator<Item = &Route> {
         // let this = &*self;
         self.state
             .peers
             .values()
-            .filter(move |r| self.should_select_route(&r.route))
             .map(|p| &p.route)
     }
 
     /// Looks up routing information for connecting to another server in the
     /// cluster by id. Also marks the request with routing metadata if a
     /// route is fond.
-    pub fn lookup(&self, group_id: GroupId, server_id: ServerId) -> Option<&Route> {
+    pub fn lookup(&self, server_id: ServerId) -> Option<&Route> {
         // TODO: Use the local route version if available.
 
         // TODO: Mark the route as recently used.
 
         self.state
             .peers
-            .get(&(group_id, server_id))
-            .filter(|r| self.should_select_route(&r.route))
+            .get(&server_id)
             .map(|p| &p.route)
     }
 
     pub fn lookup_last_ack_time(
         &self,
-        group_id: GroupId,
         server_id: ServerId,
     ) -> Option<Option<SystemTime>> {
         self.state
             .peers
-            .get(&(group_id, server_id))
-            .filter(|r| self.should_select_route(&r.route))
+            .get(&server_id)
             .map(|p| p.last_acknowledged_us)
     }
 
-    pub fn remote_groups(&self) -> HashSet<GroupId> {
-        let mut groups = HashSet::new();
-        for route in self.selected_routes() {
-            groups.insert(route.group_id());
-        }
-
-        groups
-    }
-
-    pub fn remote_servers(&self, group_id: GroupId) -> HashSet<ServerId> {
+    pub fn remote_servers(&self) -> HashSet<ServerId> {
         let mut servers = HashSet::new();
-        for route in self.selected_routes() {
-            if route.group_id() != group_id {
-                continue;
-            }
-
+        for route in self.remote_routes() {
             servers.insert(route.server_id());
         }
 
@@ -287,10 +290,12 @@ impl<'a> RouteStoreGuard<'a> {
         let mut producer_knows_us = false;
 
         for new_route in an.routes().iter() {
-            let new_route_key = (new_route.group_id(), new_route.server_id());
-
+            if !self.should_select_route(new_route) {
+                continue;
+            }
+            
             if let Some(local_route) = &self.state.local_route {
-                if (local_route.group_id(), local_route.server_id()) == new_route_key {
+                if local_route.server_id() == new_route.server_id() {
                     if local_route.target() == new_route.target() {
                         producer_knows_us = true;
                     }
@@ -300,7 +305,7 @@ impl<'a> RouteStoreGuard<'a> {
             }
 
             if new_route.is_local_route() {
-                producer_id = Some((new_route.group_id(), new_route.server_id()));
+                producer_id = Some(new_route.server_id());
             }
 
             // We will only accept the new path if it is fresher than the existing route
@@ -308,7 +313,7 @@ impl<'a> RouteStoreGuard<'a> {
             let should_insert = match self
                 .state
                 .peers
-                .get(&(new_route.group_id(), new_route.server_id()))
+                .get(&new_route.server_id())
                 .map(|p| &p.route)
             {
                 Some(old_route) => {
@@ -320,7 +325,7 @@ impl<'a> RouteStoreGuard<'a> {
 
             if should_insert && SystemTime::from(new_route.last_seen()) >= time_horizon {
                 self.state.peers.insert(
-                    (new_route.group_id(), new_route.server_id()),
+                    new_route.server_id(),
                     PeerState {
                         route: new_route.as_ref().clone(),
                         last_acknowledged_us: None,

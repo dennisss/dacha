@@ -72,7 +72,6 @@ impl TestMetastoreCluster {
                 TransactionalDB::create(
                     crate::store::TransactionalDBOptions {
                         dir: dir.clone(),
-                        init_port: None,
                         bootstrap_group: bootstrap,
                         bootstrap_node_id: None,
                         service_port: port,

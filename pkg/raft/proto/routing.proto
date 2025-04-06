@@ -9,9 +9,6 @@ import "google/protobuf/timestamp.proto";
 // Record describing how a specific server in a Raft group can be reached for requests.
 message Route {
     // REQUIRED
-    GroupId group_id = 1;
-
-    // REQUIRED
     ServerId server_id = 2;
 
     // Address/protocol information on how to make connections via this route.
@@ -31,15 +28,12 @@ message Route {
 
     // Application specific labels that describe the server pointed to by this route.
     // These can be used as selectors for finding specific servers in a network.
-    //
-    // NOTE: Regardless of the labels associated with a route, all distinct servers in a network
-    // MUST have unique (group_id, server_id) pairs.
     repeated RouteLabel labels = 6;
 
     // If true, this route points to the server that sent the announcement in which it is contained.
     bool is_local_route = 7;
 
-    reserved 5;
+    reserved 1, 5;
 }
 
 message RouteLabel {
@@ -67,7 +61,7 @@ message RouteTarget {
 }
 
 // Thin-serializable state of the server
-// Other details like the group_id and from_id are separately managed
+// Other details like the from_id are separately managed
 message Announcement {
     // Emitted as a routes vector
     // Merged with the rest of our data
@@ -76,6 +70,12 @@ message Announcement {
     // Time at which this announcement.
     // REQUIRED
     google.protobuf.Timestamp time = 2;
+
+    // Label values that are present in all routes.
+    // These are extracted to compress the announcement.
+    //
+    // TODO: Implement this.
+    repeated RouteLabel common_labels = 3;
 }
 
 message ReadRequest {}

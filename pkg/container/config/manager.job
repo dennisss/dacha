@@ -2,19 +2,19 @@ name: "system.manager"
 replicas: 1
 worker {
     args: [
-        "/volumes/bundle/built/pkg/container/cluster_manager",
-        "--port=rpc"
+        "/volumes/bundle/built/pkg/cluster/manager/cluster_manager",
+        "--port=service"
     ]
 
     ports {
-        name: "rpc"
+        name: "service"
         type: TCP
     }
 
     volumes: [
         {
             name: "bundle"
-            build_target: "//pkg/container:cluster_manager_bundle"
+            build_target: "//pkg/cluster/manager:bundle"
         }
     ]
 }

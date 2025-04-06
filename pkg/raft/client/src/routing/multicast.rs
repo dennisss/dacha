@@ -96,6 +96,8 @@ impl DiscoveryMulticast {
             let data_stale = last_local_route.as_ref() != route_store.local_route();
             last_local_route = route_store.local_route().cloned();
 
+            // TODO: If our route is still fresh due to DiscoveryClient sending it to other servers which sent it back to us, then we probably don't need to do multicast ourselves.
+
             if !a.routes().is_empty() && (time_elapsed || data_stale) {
                 drop(route_store);
 
@@ -183,7 +185,7 @@ impl DiscoveryMulticast {
 
 #[cfg(test)]
 mod tests {
-    use crate::proto::{GroupId, Route, ServerId};
+    use crate::proto::{Route, ServerId};
 
     use super::*;
 
@@ -195,7 +197,6 @@ mod tests {
         {
             let mut route_store = route_store1.lock().await;
             let mut local_route = Route::default();
-            local_route.set_group_id(1000);
             local_route.set_server_id(10);
             local_route.set_addr("first_server");
             route_store.set_local_route(local_route);
@@ -205,7 +206,6 @@ mod tests {
         {
             let mut route_store = route_store2.lock().await;
             let mut local_route = Route::default();
-            local_route.set_group_id(1000);
             local_route.set_server_id(20);
             local_route.set_addr("second_server");
             route_store.set_local_route(local_route);
@@ -223,10 +223,7 @@ mod tests {
 
         server.join().await?;
 
-        let mut group_id = GroupId::default();
-        group_id.set_value(1000u64);
-
-        let servers2 = route_store2.lock().await.remote_servers(group_id);
+        let servers2 = route_store2.lock().await.remote_servers();
 
         let mut server_id1 = ServerId::default();
         server_id1.set_value(10u64);

@@ -414,7 +414,6 @@ impl<R: Send + 'static> ServerShared<R> {
                 // TODO: Use a reference based type to serialize this.
                 let mut server_metadata = ServerMetadata::default();
                 server_metadata.set_id(state.inst.id().clone());
-                server_metadata.set_group_id(self.identity.group_id.clone());
                 server_metadata.set_meta(state.inst.meta().clone());
                 server_metadata.set_config(state.inst.config_snapshot().to_proto());
 

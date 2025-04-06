@@ -60,7 +60,7 @@ Doing discovery in a GCP instance
 impl TransactionalDBClient {
     /// Creates a new client instance.
     ///
-    /// The store servers will automatically be discovered via multicast. The
+    /// The store servers will automatically be discovered via multicast asyncronously. The
     /// main downside of this is that it may take a few seconds to receive the
     /// next broadcast in order to connect.
     pub async fn create(
@@ -113,18 +113,9 @@ impl TransactionalDBClient {
                 .await;
         }
 
-        // TODO: If we get rid of the notion of group_ids, then getting rid of this will
-        // mean that the Node reconcile_loop will no longer block for the client to get
-        // a complete set of routes to ge available before attempting to send out
-        // requests.
-
         // TODO: In the resolver, also subscribe to one of the server's CurrentStatus.
-        // Whenever the set of members changes, use that info to prune the routes we
-        // have on the client side.
-        // TODO: If we get rid of the groups concept, then that would make this way simpler
-        let channel_factory =
-            raft_client::RouteChannelFactory::find_group(route_store.clone(), tls_options.clone())
-                .await;
+
+        let channel_factory = raft_client::RouteChannelFactory::new(route_store.clone(), tls_options.clone());
 
         let channel = channel_factory.create_leader().await?;
 
@@ -208,7 +199,7 @@ impl TransactionalDBClient {
         let mut out = vec![];
 
         let guard = cluster.route_store.lock().await;
-        for route in guard.selected_routes() {
+        for route in guard.remote_routes() {
             out.push((
                 SystemTime::from(route.last_seen()),
                 route.target().addr().to_string(),
