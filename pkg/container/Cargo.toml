@@ -31,6 +31,7 @@ executor_multitask = { path = "../executor/multitask" }
 file = { path = "../file" }
 sys = { path = "../sys" }
 container_proto = { path = "./proto" }
+db_txn = { path = "../db/txn" }
 db_txn_client = { path = "../db/txn/client" }
 
 [features]

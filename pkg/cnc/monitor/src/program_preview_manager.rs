@@ -7,13 +7,12 @@ use cnc_monitor_proto::cnc::{MachineConfig, ProgramPreviewProto};
 use common::io::Writeable;
 use crypto::hasher::Hasher;
 use crypto::sip::SipHasher;
-use db_table::query_one;
+use db_table::{query_one, ProtobufDB};
 use executor::child_task::ChildTask;
 use executor::sync::{AsyncMutex, AsyncVariable};
 use executor::{lock, lock_async};
 use protobuf::Message;
 
-use crate::db::*;
 use crate::files::FileReference;
 use crate::program::new_progress_tracker;
 use crate::program_preview::ProgramPreview;

@@ -13,7 +13,6 @@ use db_table::db::ProtobufDB;
 use executor::lock;
 use executor::sync::SyncMutex;
 use file::{LocalFile, LocalFileOpenOptions, LocalPathBuf};
-use sstable::EmbeddedDB;
 
 use crate::node::workers_table::*;
 use crate::proto::*;

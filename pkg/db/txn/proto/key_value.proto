@@ -69,10 +69,10 @@ message KeyRange {
 message ReadResponse {
     // Key-value pairs retrieved by executing the query in the ReadRequest.
     // Values that were deleted will be excluded.
-    KeyValueEntry entry = 1;
+    KeyValueEntryProto entry = 1;
 }
 
-message KeyValueEntry {
+message KeyValueEntryProto {
     bytes key = 1;
 
     bytes value = 2;
@@ -136,5 +136,5 @@ message WatchRequest {
 }
 
 message WatchResponse {
-    repeated KeyValueEntry entries = 1;
+    repeated KeyValueEntryProto entries = 1;
 }

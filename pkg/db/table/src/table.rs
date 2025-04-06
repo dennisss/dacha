@@ -31,7 +31,7 @@ pub trait ProtobufTableTag {
     fn indexed_keys() -> &'static [ProtobufTableKey];
 }
 
-#[derive(ConstDefault)]
+#[derive(Debug, ConstDefault)]
 pub struct ProtobufTableKey {
     /// Unique id for this key. Must equal PRIMARY_KEY_ID for the primary key.
     pub index_id: u32,
@@ -60,6 +60,7 @@ pub struct ProtobufTableKey {
     pub single_column_family: bool,
 }
 
+#[derive(Debug)]
 pub struct ProtobufKeyField {
     /// TODO: Make this more type safe.
     pub path: &'static [FieldNumber],

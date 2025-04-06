@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use base_error::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use db_txn_client::{MetastoreClient, MetastoreClientInterface};
+use db_txn_client::TransactionalDBClient;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor_multitask::ServiceResource;
@@ -11,11 +11,45 @@ use file::temp::TempDir;
 use protobuf::text::ParseTextProto;
 use raft::proto::{Configuration_ServerRole, RouteLabel, ServerId, Status};
 use rpc_util::AddProfilingEndpoints;
-use db_txn_proto::db::txn::KeyValueEntry;
+use db_txn_proto::db::txn::KeyValueEntryProto;
+use db_table::key_utils::prefix_key_range;
+use db_kv::{KeyValueEntry, KeyValueStore, KeyValueStoreTransaction, KeyValueIteratorOptions};
 
 use crate::test_store::TestMetastore;
-
+use crate::store::TransactionalDB;
 use super::TestMetastoreCluster;
+
+#[async_trait]
+pub trait GetPrefix {
+    async fn get_prefix<'a>(&'a self, prefix: &[u8]) -> Result<Vec<KeyValueEntry>>;
+}
+
+#[async_trait]
+impl<'a> GetPrefix for &'a dyn KeyValueStoreTransaction {
+    async fn get_prefix<'b>(&'b self, prefix: &[u8]) -> Result<Vec<KeyValueEntry>> {
+        let (start_key, end_key) = prefix_key_range(prefix);
+
+        let mut iter = self.iter(KeyValueIteratorOptions {
+            start_key: start_key.into(),
+            end_key: end_key.into()
+        }).await?;
+
+        let mut out = vec![];
+        while let Some(entry) = iter.next().await? {
+            out.push(entry);
+        }
+
+        Ok(out)
+    }
+}
+
+
+fn make_entry(key: &[u8], value: &[u8]) -> KeyValueEntry {
+    KeyValueEntry {
+        key: key.into(),
+        value: value.into()
+    }
+}
 
 #[testcase]
 async fn basic_pointwise_operations() -> Result<()> {
@@ -27,28 +61,28 @@ async fn basic_pointwise_operations() -> Result<()> {
     assert_eq!(client1.get(b"oranges").await?, None);
 
     client1.put(b"apples", b"one").await?;
-    assert_eq!(client1.get(b"apples").await?, Some(b"one".to_vec()));
+    assert_eq!(client1.get(b"apples").await?, Some(b"one"[..].into()));
     assert_eq!(client1.get(b"oranges").await?, None);
 
     client1.put(b"oranges", b"two").await?;
-    assert_eq!(client1.get(b"apples").await?, Some(b"one".to_vec()));
-    assert_eq!(client1.get(b"oranges").await?, Some(b"two".to_vec()));
+    assert_eq!(client1.get(b"apples").await?, Some(b"one"[..].into()));
+    assert_eq!(client1.get(b"oranges").await?, Some(b"two"[..].into()));
 
     client1.delete(b"apples").await?;
     assert_eq!(client1.get(b"apples").await?, None);
-    assert_eq!(client1.get(b"oranges").await?, Some(b"two".to_vec()));
+    assert_eq!(client1.get(b"oranges").await?, Some(b"two"[..].into()));
 
     // Deleting an already deleted key should be a no-op.
     client1.delete(b"apples").await?;
     client1.delete(b"apples").await?;
     assert_eq!(client1.get(b"apples").await?, None);
-    assert_eq!(client1.get(b"oranges").await?, Some(b"two".to_vec()));
+    assert_eq!(client1.get(b"oranges").await?, Some(b"two"[..].into()));
 
     // Create many different generations of "oranges"
     client1.put(b"oranges", b"3").await?;
     client1.put(b"oranges", b"4").await?;
     client1.put(b"oranges", b"5").await?;
-    assert_eq!(client1.get(b"oranges").await?, Some(b"5".to_vec()));
+    assert_eq!(client1.get(b"oranges").await?, Some(b"5"[..].into()));
 
     Ok(())
 }
@@ -75,47 +109,33 @@ async fn get_range_of_keys() -> Result<()> {
         client1.put(key.as_bytes(), b"x").await?;
     }
 
-    let mut fruit = client1.get_prefix(b"/fruit/").await?;
-    for entry in &mut fruit {
-        entry.set_sequence(0u64); // Ignore for comparisons.
-    }
-
+    let fruit = client1.get_prefix(b"/fruit/").await?;
     assert_eq!(
         &fruit[..],
         &[
-            KeyValueEntry::parse_text(r#"key: "/fruit/apple" value: "x" "#)?,
-            KeyValueEntry::parse_text(r#"key: "/fruit/blueberry" value: "x" "#)?,
-            KeyValueEntry::parse_text(r#"key: "/fruit/orange" value: "x" "#)?,
-        ]
+            make_entry(b"/fruit/apple", b"x"),
+            make_entry(b"/fruit/blueberry", b"x"),
+            make_entry(b"/fruit/orange", b"x"),
+        ][..]
     );
 
-    let mut morefruit = client1.get_prefix(b"/fruit").await?;
-    for entry in &mut morefruit {
-        entry.set_sequence(0u64); // Ignore for comparisons.
-    }
-
+    let morefruit = client1.get_prefix(b"/fruit").await?;
     assert_eq!(
         &morefruit[..],
         &[
-            KeyValueEntry::parse_text(r#"key: "/fruit/apple" value: "x" "#)?,
-            KeyValueEntry::parse_text(r#"key: "/fruit/blueberry" value: "x" "#)?,
-            KeyValueEntry::parse_text(r#"key: "/fruit/orange" value: "x" "#)?,
-            KeyValueEntry::parse_text(r#"key: "/fruitcake/christmas" value: "x" "#)?,
-        ]
+            make_entry(b"/fruit/apple", b"x"),
+            make_entry(b"/fruit/blueberry", b"x"),
+            make_entry(b"/fruit/orange", b"x"),
+            make_entry(b"/fruitcake/christmas", b"x"),
+        ][..]
     );
 
     client1.delete(b"/vegetable/carrot").await?;
 
-    let mut veges = client1.get_prefix(b"/vege").await?;
-    for entry in &mut veges {
-        entry.set_sequence(0u64); // Ignore for comparisons.
-    }
-
+    let veges = client1.get_prefix(b"/vege").await?;
     assert_eq!(
         &veges[..],
-        &[KeyValueEntry::parse_text(
-            r#"key: "/vegetable/lettuce" value: "x" "#
-        )?,]
+        &[make_entry(b"/vegetable/lettuce", b"x"),][..]
     );
 
     Ok(())
@@ -137,29 +157,29 @@ async fn transactions_test() -> Result<()> {
     client1.put(b"apples", b"1").await?;
     client1.put(b"oranges", b"2").await?;
 
-    let txn2 = client2.new_transaction().await?;
-    assert_eq!(txn2.get(b"apples").await?, Some(b"1".to_vec()));
+    let mut txn2 = client2.new_transaction().await?;
+    assert_eq!(txn2.get(b"apples").await?, Some(b"1"[..].into()));
 
     // Write only visible inside of the transactions.
     txn2.put(b"apples", b"3").await?;
-    assert_eq!(client1.get(b"apples").await?, Some(b"1".to_vec()));
-    assert_eq!(txn2.get(b"apples").await?, Some(b"3".to_vec()));
+    assert_eq!(client1.get(b"apples").await?, Some(b"1"[..].into()));
+    assert_eq!(txn2.get(b"apples").await?, Some(b"3"[..].into()));
 
     // Make a write that is not visible to the transaction.
     client1.put(b"oranges", b"4").await?;
-    assert_eq!(client1.get(b"oranges").await?, Some(b"4".to_vec()));
+    assert_eq!(client1.get(b"oranges").await?, Some(b"4"[..].into()));
 
     // But by reading the key, it should now be in our read set.
-    assert_eq!(txn2.get(b"oranges").await?, Some(b"2".to_vec()));
+    assert_eq!(txn2.get(b"oranges").await?, Some(b"2"[..].into()));
 
     // So commiting our transaction will fail.
     assert_is_failed_txn(txn2.commit().await);
 
     // No changes from the commit should be visible.
-    assert_eq!(client1.get(b"apples").await?, Some(b"1".to_vec()));
-    assert_eq!(client1.get(b"oranges").await?, Some(b"4".to_vec()));
-    assert_eq!(client2.get(b"apples").await?, Some(b"1".to_vec()));
-    assert_eq!(client2.get(b"oranges").await?, Some(b"4".to_vec()));
+    assert_eq!(client1.get(b"apples").await?, Some(b"1"[..].into()));
+    assert_eq!(client1.get(b"oranges").await?, Some(b"4"[..].into()));
+    assert_eq!(client2.get(b"apples").await?, Some(b"1"[..].into()));
+    assert_eq!(client2.get(b"oranges").await?, Some(b"4"[..].into()));
 
     Ok(())
 }
@@ -182,13 +202,13 @@ async fn transaction_key_range_test() -> Result<()> {
     }
 
     {
-        let txn1 = client1.new_transaction().await?;
-        let txn2 = client2.new_transaction().await?;
+        let mut txn1 = client1.new_transaction().await?;
+        let mut txn2 = client2.new_transaction().await?;
 
-        assert_eq!(txn1.get_prefix(b"/fruit/").await?.len(), 3);
+        assert_eq!(txn1.as_ref().get_prefix(b"/fruit/").await?.len(), 3);
         txn1.put(b"/count", b"3").await?;
 
-        assert_eq!(txn2.get_prefix(b"/fruit/").await?.len(), 3);
+        assert_eq!(txn2.as_ref().get_prefix(b"/fruit/").await?.len(), 3);
         txn2.put(b"/count", b"3").await?;
 
         txn1.commit().await?;
@@ -196,14 +216,14 @@ async fn transaction_key_range_test() -> Result<()> {
     }
 
     {
-        let txn1 = client1.new_transaction().await?;
-        let txn2 = client2.new_transaction().await?;
+        let mut txn1 = client1.new_transaction().await?;
+        let mut txn2 = client2.new_transaction().await?;
 
-        assert_eq!(txn1.get_prefix(b"/fruit/").await?.len(), 3);
+        assert_eq!(txn1.as_ref().get_prefix(b"/fruit/").await?.len(), 3);
         txn1.put(b"/fruit/cherry", b"y").await?;
         txn1.put(b"/count", b"4").await?;
 
-        assert_eq!(txn2.get_prefix(b"/fruit/").await?.len(), 3);
+        assert_eq!(txn2.as_ref().get_prefix(b"/fruit/").await?.len(), 3);
         txn2.put(b"/fruit/melon", b"z").await?;
         txn2.put(b"/count", b"4").await?;
 
@@ -213,14 +233,14 @@ async fn transaction_key_range_test() -> Result<()> {
 
     // Non-overlapping ranges.
     {
-        let txn1 = client1.new_transaction().await?;
-        let txn2 = client2.new_transaction().await?;
+        let mut txn1 = client1.new_transaction().await?;
+        let mut txn2 = client2.new_transaction().await?;
 
-        assert_eq!(txn1.get_prefix(b"/fruit/").await?.len(), 4);
+        assert_eq!(txn1.as_ref().get_prefix(b"/fruit/").await?.len(), 4);
         txn1.put(b"/fruit/pear", b"y").await?;
         txn1.put(b"/count", b"5").await?;
 
-        assert_eq!(txn2.get_prefix(b"/vegetable/").await?.len(), 2);
+        assert_eq!(txn2.as_ref().get_prefix(b"/vegetable/").await?.len(), 2);
         txn2.put(b"/vegetable/arugula", b"z").await?;
         txn2.put(b"/count_v", b"3").await?;
 
@@ -309,8 +329,8 @@ async fn multi_node_test() -> Result<()> {
     }
 
     for i in 0..200 {
-        assert_eq!(client0.get(b"/a/1").await?, Some(b"hello".to_vec()));
-        assert_eq!(client0.get(b"/a/2").await?, Some(b"world".to_vec()));
+        assert_eq!(client0.get(b"/a/1").await?, Some(b"hello"[..].into()));
+        assert_eq!(client0.get(b"/a/2").await?, Some(b"world"[..].into()));
     }
 
     // TODO: Grab a read index here and verify that much later we can still read
@@ -460,9 +480,9 @@ async fn multi_node_test() -> Result<()> {
     {
         let mut data = client.get_prefix(b"/").await?;
         assert_eq!(data.len(), 200);
-        data.sort_by_key(|e| e.key().to_vec());
+        data.sort_by_key(|e| e.key.clone());
         assert_eq!(
-            &data.iter().map(|e| e.key().to_vec()).collect::<Vec<_>>(),
+            &data.iter().map(|e| e.key.to_vec()).collect::<Vec<_>>(),
             &all_keys
         );
     }
@@ -490,9 +510,9 @@ async fn multi_node_test() -> Result<()> {
     {
         let mut data = client.get_prefix(b"/").await?;
         assert_eq!(data.len(), 200);
-        data.sort_by_key(|e| e.key().to_vec());
+        data.sort_by_key(|e| e.key.clone());
         assert_eq!(
-            &data.iter().map(|e| e.key().to_vec()).collect::<Vec<_>>(),
+            &data.iter().map(|e| e.key.to_vec()).collect::<Vec<_>>(),
             &all_keys
         );
     }
@@ -590,9 +610,9 @@ async fn multi_node_test() -> Result<()> {
     {
         let mut data = client.get_prefix(b"/").await?;
         assert_eq!(data.len(), 200);
-        data.sort_by_key(|e| e.key().to_vec());
+        data.sort_by_key(|e| e.key.clone());
         assert_eq!(
-            &data.iter().map(|e| e.key().to_vec()).collect::<Vec<_>>(),
+            &data.iter().map(|e| e.key.to_vec()).collect::<Vec<_>>(),
             &all_keys
         );
     }
@@ -616,7 +636,7 @@ async fn multi_node_test() -> Result<()> {
         executor::sleep(Duration::from_millis(100)).await;
 
         let value = client.get(&key).await?;
-        assert_eq!(value, Some(vec![i]));
+        assert_eq!(value, Some(vec![i].into()));
 
         executor::sleep(Duration::from_millis(100)).await;
     }
@@ -674,7 +694,7 @@ async fn multi_node_test() -> Result<()> {
         executor::sleep(Duration::from_millis(10)).await;
 
         let value = client.get(&key).await?;
-        assert_eq!(value, Some(vec![2 * i]));
+        assert_eq!(value, Some(vec![2 * i].into()));
 
         executor::sleep(Duration::from_millis(10)).await;
     }
@@ -718,6 +738,22 @@ async fn multi_node_test() -> Result<()> {
     node0.close().await?;
     node1.close().await?;
     node2.close().await?;
+
+    Ok(())
+}
+
+
+#[testcase]
+async fn local_instance() -> Result<()> {
+    let temp_dir = TempDir::create()?;
+    
+    let client = TransactionalDB::create_local(&temp_dir.path().join("local_dir")).await?;
+
+    assert_eq!(client.get(b"key").await?, None);
+
+    client.put(b"key", b"my_value").await?;
+
+    assert_eq!(client.get(b"key").await?, Some(b"my_value"[..].into()));
 
     Ok(())
 }

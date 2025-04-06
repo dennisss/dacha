@@ -36,6 +36,7 @@ pub trait ProtobufTableTag {
     */
 }
 
+#[derive(Debug)]
 pub struct ProtobufTableKey {
     /// None implies this is the primary key
     pub index_name: Option<String>,

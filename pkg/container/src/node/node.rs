@@ -31,8 +31,7 @@ use nix::unistd::chown;
 use nix::unistd::Gid;
 use protobuf::Message;
 use protobuf::StaticMessage;
-use sstable::transactional::TransactionalEmbeddedDB;
-use sstable::{EmbeddedDB, EmbeddedDBOptions};
+use db_txn::TransactionalDB;
 
 use crate::node::blob_store::*;
 use crate::node::credentials::NodeCredentialsManager;
@@ -200,16 +199,12 @@ impl Node {
 
         println!("Node Id: {}", entity_id_to_string(id).unwrap());
 
-        let mut db_options = EmbeddedDBOptions::default();
-        db_options.create_if_missing = true;
+        let db = {
+            let client = TransactionalDB::create_local(
+                &LocalPath::new(config.data_dir()).join(NODE_DB_PATH)).await?;
 
-        let db = Arc::new(ProtobufDB::new(Arc::new(
-            TransactionalEmbeddedDB::open(
-                &LocalPath::new(config.data_dir()).join(NODE_DB_PATH),
-                db_options,
-            )
-            .await?,
-        )));
+            Arc::new(ProtobufDB::new(Arc::new(client)))
+        };
 
         let meta_client = Arc::new(Eventually::new());
 

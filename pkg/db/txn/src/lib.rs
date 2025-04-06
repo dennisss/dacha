@@ -11,7 +11,7 @@ extern crate parsing;
 mod acl_processor;
 mod state_machine;
 mod state_machine_db;
-pub mod store;
+mod store;
 mod test_store;
 mod transaction;
 mod watchers;
@@ -22,5 +22,5 @@ mod tests;
 pub use test_store::*;
 
 pub use state_machine::{EmbeddedDBStateMachineOptions, EmbeddedDBStateMachineProcessor};
-
+pub use store::{TransactionalDBOptions, TransactionalDB};
 pub use acl_processor::ACLProcessor;

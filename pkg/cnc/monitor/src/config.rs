@@ -6,8 +6,7 @@ use cnc_monitor_proto::cnc::{AxisConfig, MachineConfig};
 use common::hash::FastHasherBuilder;
 use crypto::random::RngExt;
 use protobuf::{Message, MessageReflection};
-
-use crate::db::ProtobufDB;
+use db_table::ProtobufDB;
 
 /// Stores the configuration for a machine.
 ///

@@ -11,7 +11,6 @@ mod camera_controller;
 mod camera_recorder;
 mod change;
 mod config;
-mod db;
 mod devices;
 mod fake_machine;
 mod files;
@@ -31,7 +30,6 @@ mod serial_send_buffer;
 pub mod syslog_parser;
 mod tables;
 mod timestamped_value;
-mod users;
 
 use std::time::Duration;
 

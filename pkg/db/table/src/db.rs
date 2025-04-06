@@ -151,6 +151,7 @@ pub struct ProtobufDBTransaction<'a> {
     poisoned: bool,
 }
 
+#[derive(Debug)]
 struct QueryIndexKeyRange {
     start_key: Vec<u8>,
     end_key: Vec<u8>,

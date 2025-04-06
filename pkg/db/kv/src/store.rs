@@ -21,6 +21,11 @@ pub trait KeyValueStore: Send + Sync {
 /// Note that parallel reads and writes are not supported.
 #[async_trait]
 pub trait KeyValueStoreTransaction: Send + Sync {
+    // Looks up a single key in the database.
+    //
+    // Implementers may just implement this using iter() or provide a more optimized version.
+    async fn get(&self, key: &[u8]) -> Result<Option<Bytes>>;
+
     // TODO: Need an optimized version for single key lookups?
     //
     // TODO: Ensure this doesn't lock the full range if we don't end up iterating
@@ -43,6 +48,7 @@ pub trait KeyValueStoreTransaction: Send + Sync {
     async fn commit(&mut self) -> Result<()>;
 }
 
+#[derive(Debug)]
 pub struct KeyValueIteratorOptions {
     pub start_key: Bytes,
 
@@ -56,7 +62,7 @@ pub trait KeyValueStoreIterator: Send {
     async fn next(&mut self) -> Result<Option<KeyValueEntry>>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyValueEntry {
     pub key: Bytes,
     pub value: Bytes,

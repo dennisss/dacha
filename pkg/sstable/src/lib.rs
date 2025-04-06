@@ -23,7 +23,6 @@ pub mod record_log;
 pub mod iterable;
 pub mod log_writer;
 pub mod table;
-pub mod transactional;
 
 /*
 Were will be use a SyncedFile?

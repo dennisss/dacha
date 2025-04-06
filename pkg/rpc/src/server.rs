@@ -10,6 +10,7 @@ use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
+use common::hash::FastHasherBuilder;
 use executor::cancellation::CancellationToken;
 use executor::channel::spsc;
 use executor::child_task::ChildTask;
@@ -35,7 +36,6 @@ type StartCallback = Box<dyn FnOnce(Arc<dyn ServiceResource>) + Send + Sync + 's
 pub struct Http2Server {
     http_options: http::ServerOptions,
     handler: Http2RequestHandler,
-    start_callbacks: Vec<StartCallback>,
 }
 
 impl Http2Server {
@@ -48,7 +48,6 @@ impl Http2Server {
         Self {
             http_options,
             handler: Http2RequestHandler::new(),
-            start_callbacks: vec![],
         }
     }
 
@@ -69,15 +68,7 @@ impl Http2Server {
 
         Ok(())
     }
-
-    /// Adds a callback which will be executed when the RPC server has started
-    /// loading.
-    pub fn add_start_callback<F: FnOnce(Arc<dyn ServiceResource>) + Send + Sync + 'static>(
-        &mut self,
-        callback: F,
-    ) {
-        self.start_callbacks.push(Box::new(callback));
-    }
+    
     pub fn enable_cors(&mut self) {
         self.handler.enable_cors = true;
     }
@@ -90,30 +81,21 @@ impl Http2Server {
         Arc::get_mut(&mut self.handler.codec_options).unwrap()
     }
 
-    fn to_inner_server(self) -> (http::Server, Vec<StartCallback>) {
-        (
-            http::Server::new(self.handler, self.http_options),
-            self.start_callbacks,
-        )
+    fn to_inner_server(self) -> http::Server {
+        http::Server::new(self.handler, self.http_options)
     }
 
     pub async fn bind(self) -> Result<BoundHttp2Server> {
-        let (server, start_callbacks) = self.to_inner_server();
+        let server = self.to_inner_server();
         let bound_http_server = server.bind().await?;
         Ok(BoundHttp2Server {
             bound_http_server,
-            start_callbacks,
         })
     }
 
     pub fn start(self) -> Arc<dyn ServiceResource> {
-        let (server, start_callbacks) = self.to_inner_server();
-        let r = Arc::new(server.start());
-        for c in start_callbacks {
-            c(r.clone())
-        }
-
-        r
+        let server = self.to_inner_server();
+        Arc::new(server.start())
     }
 }
 
@@ -133,7 +115,6 @@ impl DerefMut for Http2Server {
 
 pub struct BoundHttp2Server {
     bound_http_server: http::BoundServer,
-    start_callbacks: Vec<StartCallback>,
 }
 
 impl BoundHttp2Server {
@@ -142,20 +123,15 @@ impl BoundHttp2Server {
     }
 
     pub fn start(self) -> Arc<dyn ServiceResource> {
-        let r = Arc::new(self.bound_http_server.start());
-        for c in self.start_callbacks {
-            c(r.clone())
-        }
-
-        r
+        Arc::new(self.bound_http_server.start())
     }
 }
 
 /// Implementation of the HTTP2 request handler for processing RPC requests.
 pub struct Http2RequestHandler {
-    request_handlers: HashMap<String, Box<dyn http::ServerHandler>>,
+    request_handlers: HashMap<String, Box<dyn http::ServerHandler>, FastHasherBuilder>,
 
-    services: HashMap<String, Arc<dyn Service>>,
+    services: HashMap<String, Arc<dyn Service>, FastHasherBuilder>,
 
     pub(crate) codec_options: Arc<ServerCodecOptions>,
 
@@ -169,8 +145,8 @@ pub struct Http2RequestHandler {
 impl Http2RequestHandler {
     pub fn new() -> Self {
         Self {
-            request_handlers: HashMap::new(),
-            services: HashMap::new(),
+            request_handlers: HashMap::default(),
+            services: HashMap::default(),
             codec_options: Arc::new(ServerCodecOptions::default()),
             enable_cors: false,
             base_path: String::new(),
@@ -178,11 +154,12 @@ impl Http2RequestHandler {
     }
 
     pub(crate) fn new_single_service(service: Arc<dyn Service>, enable_cors: bool) -> Self {
-        let mut services = HashMap::new();
+        let mut services = HashMap::default();
         services.insert(service.service_name().to_string(), service);
 
+        // TODO: Dedup this with above.
         Self {
-            request_handlers: HashMap::new(),
+            request_handlers: HashMap::default(),
             enable_cors,
             codec_options: Arc::new(ServerCodecOptions::default()),
             services,
@@ -300,7 +277,7 @@ impl Http2RequestHandler {
         let path_parts = rpc_path.split('/').collect::<Vec<_>>();
         if path_parts.len() != 3 || path_parts[0].len() != 0 {
             // TODO: Convert to a grpc error (UNIMPLEMENTED).
-            return Err(err_msg("Invalid path"));
+            return Err(format_err!("Invalid path: {}", rpc_path));
         }
 
         let service_name = path_parts[1];

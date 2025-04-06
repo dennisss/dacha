@@ -3,15 +3,17 @@ use std::time::Duration;
 
 use base_error::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use db_txn_client::{MetastoreClient, MetastoreClientInterface};
+use db_txn_client::TransactionalDBClient;
 use executor::{cancellation::AlreadyCancelledToken, child_task::ChildTask};
 use executor_multitask::{ServiceResource, ServiceResourceGroup};
+use executor::sync::Eventually;
 use file::{temp::TempDir, LocalPathBuf};
 use protobuf::text::ParseTextProto;
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
 use raft_client::DefaultHostnameResolver;
 use db_txn_proto::db::txn::*;
 
+use crate::store::{TransactionalDB, TransactionalDBOptions};
 use crate::EmbeddedDBStateMachineOptions;
 
 /// In-process set of metastore instances for testing.
@@ -59,12 +61,16 @@ impl TestMetastoreCluster {
         let mut resource = Arc::new(ServiceResourceGroup::new("TestNode"));
 
         let mut server = rpc::Http2Server::new(Some(port));
+        server.set_base_path("/rpc");
+
+        let rpc_server_ready = Arc::new(Eventually::new());
+        rpc_server_ready.set(()).await?;
 
         // TODO: Disable multicast as we don't need it in a unit test.
         resource
             .register_dependency(
-                crate::store::run(
-                    crate::store::MetastoreOptions {
+                TransactionalDB::create(
+                    crate::store::TransactionalDBOptions {
                         dir: dir.clone(),
                         init_port: None,
                         bootstrap_group: bootstrap,
@@ -81,6 +87,7 @@ impl TestMetastoreCluster {
                         acl_processor: None,
                     },
                     &mut server,
+                    rpc_server_ready,
                 )
                 .await?,
             )
@@ -106,8 +113,8 @@ impl TestMetastoreCluster {
     }
 
     /// Creates a client which connects to all the nodes in this cluster.
-    pub async fn create_client(&self) -> Result<MetastoreClient> {
-        MetastoreClient::create(
+    pub async fn create_client(&self) -> Result<TransactionalDBClient> {
+        TransactionalDBClient::create(
             &self.shared.route_labels,
             &[],
             Arc::new(DefaultHostnameResolver::default()),
@@ -162,8 +169,8 @@ impl TestMetastore {
 
     /// Creates a new client instance that is directly connected to just thie
     /// metastore node.
-    pub async fn create_client(&self) -> Result<MetastoreClient> {
-        MetastoreClient::create_direct(net::ip::SocketAddr::new(
+    pub async fn create_client(&self) -> Result<TransactionalDBClient> {
+        TransactionalDBClient::create_direct(net::ip::SocketAddr::new(
             net::ip::IPAddress::V4([127, 0, 0, 1]),
             self.port,
         ))

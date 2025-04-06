@@ -7,8 +7,8 @@ use cluster_client::ClusterServer;
 use common::args::list::CommaSeparated;
 use common::args::parse_args;
 use common::errors::*;
-use db_txn::store::MetastoreOptions;
-use db_txn::EmbeddedDBStateMachineOptions;
+use db_txn::{EmbeddedDBStateMachineOptions, TransactionalDB, TransactionalDBOptions};
+use executor::sync::Eventually;
 use executor_multitask::{RootResource, ServiceResource, ServiceResourceGroup};
 use file::LocalPathBuf;
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
@@ -101,10 +101,13 @@ pub async fn run(options: ClusterMetastoreOptions) -> Result<Arc<dyn ServiceReso
         Some(options.creds.server.clone()),
     )?;
 
+
+    let rpc_server_ready = Arc::new(Eventually::new());
+
     resources
         .register_dependency(
-            db_txn::store::run(
-                MetastoreOptions {
+            TransactionalDB::create(
+                TransactionalDBOptions {
                     dir: options.dir,
                     init_port: None,
                     bootstrap_group: options.bootstrap,
@@ -118,12 +121,19 @@ pub async fn run(options: ClusterMetastoreOptions) -> Result<Arc<dyn ServiceReso
                     acl_processor: Some(acl_processor.clone()),
                 },
                 &mut server,
+                rpc_server_ready.clone(),
             )
             .await?,
         )
         .await;
 
-    resources.register_dependency(server.start()?).await;
+    let rpc_server = server.start()?;
+    resources.register_dependency(rpc_server.clone()).await;
+
+    executor::spawn(async move {
+        rpc_server.wait_for_ready().await;
+        let _ = rpc_server_ready.set(()).await;
+    });
 
     Ok(resources)
 }

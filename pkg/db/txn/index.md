@@ -1,6 +1,8 @@
-# Metastore
+# Transactional DB
 
 This is a simple, small, and strongly consistent key value store for slow changing metadata. It can also serve as a distributed lock manager for other serivces. This is meant to take the place of services like Google Chubby, Etcd, or Apache Zookeeper.
+
+TODO: Update this.
 
 ## Features
 
@@ -69,6 +71,19 @@ We use the `EmbeddedDB` interface to store the internal tables mentioned above o
     - A special `CompactionWaterline` singleton table stores the value of the oldest sequence we want to compact.
     - Every hour, we search the `TransactionTime` table for the next oldest transaction from time 'Now - 24 hours' and set that transaction's sequence as the new value of the `CompactionWaterline` singleton.
     - Additionally we have custom logic to ensure that no individual key revision is compacted if the next revision after the compaction window was < 24 hours since now.
+
+
+- Once we have a waterline value, we know that values <= the index have been around for at least 1 day
+- Latest value is never compacted.
+- Second to latest value is only compacted if there is a newer value with index <= the compaction waterline
+- Tables with many 'second-to-last' values are guaranteed to be fully cleaned up once the compaction waterline exceeds the latest sequence in the table.
+    - So for each table, I want to have:
+        - Largest sequence number
+        - Largest sequence number (for a row which has a secondary value)
+        - Count of deleted records
+        - Size of data in deleted records
+- To be replaced, the next value must also be 
+
 
 The complicated compaction scheme described above is used to ensure that long lived transactions and distributed snapshots are possible:
 

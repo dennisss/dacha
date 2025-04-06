@@ -2,16 +2,19 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::bytes::Bytes;
 use common::errors::*;
 use db_txn_client::constants::*;
+use db_txn_client::TransactionalDBClient;
 use db_table::key_utils::prefix_key_range;
 use executor::channel;
 use executor::child_task::ChildTask;
+use executor::sync::Eventually;
 use executor_multitask::{RootResource, ServiceResource, ServiceResourceGroup};
 use file::dir_lock::DirLock;
-use file::LocalPathBuf;
+use file::{LocalPathBuf, LocalPath};
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
 use raft::log::segmented_log::SegmentedLogOptions;
@@ -19,7 +22,7 @@ use raft::proto::RouteLabel;
 use raft::PendingExecutionResult;
 use raft::StateMachine;
 use rpc_util::{AddProfilingEndpoints, AddReflection};
-use sstable::db::{SnapshotIteratorOptions, WriteBatch};
+use sstable::db::{Snapshot, SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
 use db_txn_proto::db::txn::*;
 
@@ -51,10 +54,14 @@ Also, the channel factory doesn't do channel caching.
 
 // XXX: If I store the method name in the
 
-pub struct MetastoreOptions {
+pub struct TransactionalDBOptions {
     /// Path to the directory used to store all of the store's data (at least
     /// this machine's copy).
     pub dir: LocalPathBuf,
+
+    pub state_machine: EmbeddedDBStateMachineOptions,
+
+    pub log: SegmentedLogOptions,
 
     // TODO: Validate that exactly one of init_port and bootstrap are provided.
     /// Port used for listening for RPC signals for bootstrapping this server in
@@ -73,10 +80,6 @@ pub struct MetastoreOptions {
 
     pub route_labels: Vec<RouteLabel>,
 
-    pub state_machine: EmbeddedDBStateMachineOptions,
-
-    pub log: SegmentedLogOptions,
-
     pub hostname_resolver: Arc<dyn raft_client::RouteHostnameResolver>,
 
     pub tls: Option<crypto::tls::Credentials>,
@@ -85,7 +88,7 @@ pub struct MetastoreOptions {
 }
 
 #[derive(Clone)]
-pub struct Metastore {
+pub struct TransactionalDB {
     shared: Arc<Shared>,
 }
 
@@ -103,7 +106,7 @@ struct Shared {
     acl_processor: Option<Arc<dyn ACLProcessor>>,
 }
 
-impl Metastore {
+impl TransactionalDB {
     fn get_client_id<T: protobuf::StaticMessage>(request: &rpc::ServerRequest<T>) -> Result<&str> {
         match request.context.metadata.get_text(CLIENT_ID_KEY) {
             Ok(Some(v)) => Ok(v),
@@ -277,7 +280,7 @@ impl Metastore {
         request: rpc::ServerRequest<WatchRequest>,
         response: &mut rpc::ServerStreamResponse<'a, WatchResponse>,
     ) -> Result<()> {
-        let client_id = Self::get_client_id(&request)?;
+        // let client_id = Self::get_client_id(&request)?;
 
         if let Some(processor) = &self.shared.acl_processor {
             // Avoid returning a potentially stale ACL response if we are not executing on
@@ -383,7 +386,7 @@ impl Metastore {
 }
 
 #[async_trait]
-impl ClientManagementService for Metastore {
+impl ClientManagementService for TransactionalDB {
     async fn NewClient(
         &self,
         request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
@@ -395,7 +398,7 @@ impl ClientManagementService for Metastore {
 }
 
 #[async_trait]
-impl ServerManagementService for Metastore {
+impl ServerManagementService for TransactionalDB {
     async fn ConfigChange(
         &self,
         request: rpc::ServerRequest<ConfigChangeRequest>,
@@ -429,7 +432,7 @@ impl ServerManagementService for Metastore {
 }
 
 #[async_trait]
-impl KeyValueStoreService for Metastore {
+impl KeyValueStoreService for TransactionalDB {
     async fn Snapshot(
         &self,
         request: rpc::ServerRequest<SnapshotRequest>,
@@ -463,76 +466,120 @@ impl KeyValueStoreService for Metastore {
     }
 }
 
-pub async fn run(
-    options: MetastoreOptions,
-    rpc_handler: &mut rpc::Http2RequestHandler,
-) -> Result<Arc<dyn ServiceResource>> {
-    if !file::exists(&options.dir).await? {
-        file::create_dir(&options.dir).await?;
+impl TransactionalDB {
+
+    pub async fn create(
+        options: TransactionalDBOptions,
+        rpc_handler: &mut rpc::Http2RequestHandler,
+        rpc_server_ready: Arc<Eventually<()>>
+    ) -> Result<Arc<dyn ServiceResource>> {
+        if !file::exists(&options.dir).await? {
+            file::create_dir(&options.dir).await?;
+        }
+
+        let dir = DirLock::open(&options.dir).await?;
+
+        let service = Arc::new(ServiceResourceGroup::new("TransactionalDB"));
+
+        // TODO: Add a resource dependency on this. Should be stopped after the RPC
+        // server
+        let state_machine =
+            Arc::new(EmbeddedDBStateMachine::open(&options.dir, &options.state_machine).await?);
+        service.register_dependency(state_machine.clone()).await;
+
+        let local_address = http::uri::Authority {
+            user: None,
+            host: http::uri::Host::IP(net::local_ip()?),
+            port: Some(options.service_port),
+        }
+        .to_string()?;
+
+        // TODO: Add the state machine as a dependency of the node.
+        let node = Arc::new(
+            raft::Node::create(raft::NodeOptions {
+                dir,
+                init_port: options.init_port,
+                bootstrap_group: options.bootstrap_group,
+                bootstrap_node_id: options.bootstrap_node_id.map(|v| v.into()),
+                seed_list: vec![], // Will just find everyone via multi-cast
+                state_machine: state_machine.clone(),
+                log_options: options.log,
+                route_labels: options.route_labels.clone(),
+                rpc_handler,
+                rpc_server_ready,
+                rpc_server_address: local_address,
+                hostname_resolver: options.hostname_resolver,
+                tls_options: options.tls.map(|c| c.client.clone()),
+                enable_discovery: options.service_port != 0,
+            })
+            .await?,
+        );
+
+        service.register_dependency(node.clone()).await;
+
+        let instance = TransactionalDB {
+            shared: Arc::new(Shared {
+                node: node.clone(),
+                state_machine,
+                transaction_manager: TransactionManager::new(),
+                next_local_id: AtomicUsize::new(1),
+                acl_processor: options.acl_processor,
+            }),
+        };
+
+        rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+            node.clone(),
+            ClientManagementIntoService::into_service(instance.clone()),
+        )))?;
+
+        rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+            node.clone(),
+            KeyValueStoreIntoService::into_service(instance.clone()),
+        )))?;
+
+        rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+            node.clone(),
+            ServerManagementIntoService::into_service(instance.clone()),
+        )))?;
+
+        Ok(service)
     }
 
-    let dir = DirLock::open(&options.dir).await?;
+    pub async fn create_local(dir: &LocalPath) -> Result<TransactionalDBClient> {
+        let mut rpc_handler = rpc::Http2RequestHandler::new();
 
-    let service = Arc::new(ServiceResourceGroup::new("Metastore"));
+        let rpc_server_ready = Arc::new(Eventually::new());
+        rpc_server_ready.set(()).await?;
 
-    // TODO: Add a resource dependency on this. Should be stopped after the RPC
-    // server
-    let state_machine =
-        Arc::new(EmbeddedDBStateMachine::open(&options.dir, &options.state_machine).await?);
-    service.register_dependency(state_machine.clone()).await;
+        let service = Self::create(TransactionalDBOptions {
+            dir: dir.to_owned(),
+            state_machine: EmbeddedDBStateMachineOptions::default(),
+            log: SegmentedLogOptions::default(),
+            init_port: None,
+            bootstrap_group: true,
+            bootstrap_node_id: Some(1),
+            service_port: 0, // Unused. 0 will disable discovery.
+            route_labels: vec![],
+            hostname_resolver: Arc::new(raft_client::DefaultHostnameResolver::default()),
+            tls: None,
+            acl_processor: None
+        }, &mut rpc_handler, rpc_server_ready).await?;
 
-    let local_address = http::uri::Authority {
-        user: None,
-        host: http::uri::Host::IP(net::local_ip()?),
-        port: Some(options.service_port),
+        let channel = Arc::new(rpc::LocalChannel::from_handler(Arc::new(rpc_handler)));
+
+        let client = TransactionalDBClient::create_local(channel, service).await;
+
+        // TODO: Generalize this and instead use wait_for_ready() on the service.
+        for _ in 0..5000 {
+            let status = client.current_status().await?;
+            if status.role() == raft::proto::Status_Role::LEADER {
+                break;
+            }
+
+            executor::sleep(Duration::from_millis(1)).await?;
+        }
+
+        Ok(client)
     }
-    .to_string()?;
 
-    // TODO: Add the state machine as a dependency of the node.
-    let node = Arc::new(
-        raft::Node::create(raft::NodeOptions {
-            dir,
-            init_port: options.init_port,
-            bootstrap_group: options.bootstrap_group,
-            bootstrap_node_id: options.bootstrap_node_id.map(|v| v.into()),
-            seed_list: vec![], // Will just find everyone via multi-cast
-            state_machine: state_machine.clone(),
-            log_options: options.log,
-            route_labels: options.route_labels.clone(),
-            rpc_handler,
-            rpc_server_address: local_address,
-            hostname_resolver: options.hostname_resolver,
-            tls_options: options.tls.map(|c| c.client.clone()),
-        })
-        .await?,
-    );
-
-    service.register_dependency(node.clone()).await;
-
-    let instance = Metastore {
-        shared: Arc::new(Shared {
-            node: node.clone(),
-            state_machine,
-            transaction_manager: TransactionManager::new(),
-            next_local_id: AtomicUsize::new(1),
-            acl_processor: options.acl_processor,
-        }),
-    };
-
-    rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
-        node.clone(),
-        ClientManagementIntoService::into_service(instance.clone()),
-    )))?;
-
-    rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
-        node.clone(),
-        KeyValueStoreIntoService::into_service(instance.clone()),
-    )))?;
-
-    rpc_handler.add_service(Arc::new(raft::LeaderServiceWrapper::new(
-        node.clone(),
-        ServerManagementIntoService::into_service(instance.clone()),
-    )))?;
-
-    Ok(service)
 }

@@ -29,11 +29,6 @@ use common::errors::*;
 use executor_multitask::RootResource;
 use file::LocalPathBuf;
 use rpc_util::NamedPortArg;
-
-use datastore::meta::{
-    store::{run, MetastoreOptions},
-    EmbeddedDBStateMachineOptions,
-};
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
 
 #[derive(Args)]
@@ -61,8 +56,10 @@ async fn main() -> Result<()> {
 
     let root = RootResource::new();
 
+    // TODO:
+    /*
     root.register_dependency(
-        run(MetastoreOptions {
+        run(TransactionalDBOptions {
             dir: args.dir,
             init_port: args.init_port.as_ref().map(|v| v.value()),
             bootstrap_group: false,
@@ -78,6 +75,7 @@ async fn main() -> Result<()> {
         .await?,
     )
     .await;
+    */
 
     root.wait().await
 }

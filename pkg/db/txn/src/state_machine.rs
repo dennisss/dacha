@@ -217,7 +217,7 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         let mut change = WatchResponse::default();
         for res in write.iter()? {
             let write = res?;
-            let mut entry = KeyValueEntry::default();
+            let mut entry = KeyValueEntryProto::default();
             entry.set_sequence(index.value());
             match write {
                 Write::Deletion { key } => {

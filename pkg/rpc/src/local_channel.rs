@@ -27,6 +27,10 @@ impl LocalChannel {
         }
     }
 
+    pub fn from_handler(handler: Arc<Http2RequestHandler>) -> Self {
+        Self { handler }
+    }
+
     async fn request_handler(
         handler: Arc<Http2RequestHandler>,
         service_name: String,

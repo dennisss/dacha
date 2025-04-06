@@ -247,14 +247,16 @@ async fn main() -> Result<()> {
             init_port: Some(4000),
             bootstrap_node_id: None,
             bootstrap_group: args.bootstrap,
-            seed_list: None,
+            seed_list: vec![],
             state_machine: state_machine.clone(),
             log_options: SegmentedLogOptions::default(),
             route_labels: vec![],
-            rpc_server: &mut rpc_server,
+            rpc_handler: &mut rpc_server,
+            rpc_server_ready: todo!(),
             rpc_server_address,
             tls_options: None,
             hostname_resolver: todo!(),
+            enable_discovery: true,
         })
         .await?,
     );

@@ -19,10 +19,10 @@ use executor::{channel, lock};
 use executor_multitask::{impl_resource_passthrough, TaskResource};
 use file::{LocalFile, LocalPath, LocalPathBuf};
 use protobuf::Message;
+use db_table::ProtobufDB;
 
 use crate::change::{ChangeEvent, ChangePublisher};
 use crate::config::MachineConfigContainer;
-use crate::db::ProtobufDB;
 use crate::files::FileReference;
 use crate::program::*;
 use crate::serial_controller::{PendingCommand, SerialController, DEFAULT_COMMAND_TIMEOUT};

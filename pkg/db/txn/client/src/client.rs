@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use common::async_fn::AsyncFn1;
 use common::bytes::Bytes;
 use common::errors::*;
+use db_kv::KeyValueEntry;
 use db_txn_proto::db::txn::*;
 use db_table::key_utils::*;
 use executor::cancellation::AlreadyCancelledToken;
@@ -21,15 +22,13 @@ use raft_client::{RouteChannelFactory, RouteStore};
 
 use crate::constants::*;
 
-/// Maximum number of times metastore transactions should be retried if
+/// Maximum number of times transactions should be retried if they fail due to conflicting writes.
 pub const MAX_TRANSACTION_RETRIES: usize = 5;
 
-/// Client library for talking to metastore servers to read/write data.
+/// Client library for talking to transactional db servers to read/write data.
 ///
-/// See the MetastoreClientInterface trait for all available methods.
-pub struct MetastoreClient {
-    client_id: String,
-
+/// See the KeyValueStore trait for all available methods.
+pub struct TransactionalDBClient {
     /// Main channel in this client which is used to execute requests against
     channel: Arc<dyn rpc::Channel>,
 
@@ -45,7 +44,7 @@ struct ClusterState {
     route_channel_factory: RouteChannelFactory,
 }
 
-impl_resource_passthrough!(MetastoreClient, resources);
+impl_resource_passthrough!(TransactionalDBClient, resources);
 
 /*
 Doing discovery in a GCP instance
@@ -58,7 +57,7 @@ Doing discovery in a GCP instance
 
 */
 
-impl MetastoreClient {
+impl TransactionalDBClient {
     /// Creates a new client instance.
     ///
     /// The store servers will automatically be discovered via multicast. The
@@ -72,7 +71,7 @@ impl MetastoreClient {
     ) -> Result<Self> {
         let route_store = raft_client::RouteStore::new(labels, hostname_resolver);
 
-        let resources = ServiceResourceGroup::new("MetastoreClient");
+        let resources = ServiceResourceGroup::new("TransactionalDBClient");
 
         // TODO: Require the route_store to be initialized for the client to be
         // considered to be healthy.
@@ -122,6 +121,7 @@ impl MetastoreClient {
         // TODO: In the resolver, also subscribe to one of the server's CurrentStatus.
         // Whenever the set of members changes, use that info to prune the routes we
         // have on the client side.
+        // TODO: If we get rid of the groups concept, then that would make this way simpler
         let channel_factory =
             raft_client::RouteChannelFactory::find_group(route_store.clone(), tls_options.clone())
                 .await;
@@ -153,7 +153,18 @@ impl MetastoreClient {
 
         let channel = Arc::new(rpc::Http2Channel::create(options).await?);
 
-        Self::create_impl(channel, ServiceResourceGroup::new("MetastoreClient"), None).await
+        Self::create_impl(channel, ServiceResourceGroup::new("TransactionalDBClient"), None).await
+    }
+
+    pub async fn create_local(channel: Arc<dyn rpc::Channel>, resource: Arc<dyn ServiceResource>) -> Self {
+        let resources = ServiceResourceGroup::new("TransactionalDBClient");
+        resources.register_dependency(resource).await;
+        
+        Self {
+            channel,
+            resources,
+            cluster: None
+        }
     }
 
     async fn create_impl(
@@ -163,21 +174,7 @@ impl MetastoreClient {
     ) -> Result<Self> {
         resources.register_dependency(channel.clone()).await;
 
-        // TODO: Make this asyncronous?
-        let client_id = {
-            let stub = ClientManagementStub::new(channel.clone());
-
-            let req = protobuf_builtins::google::protobuf::Empty::default();
-            let mut ctx = rpc::ClientRequestContext::default();
-            ctx.http.wait_for_ready = true;
-            ctx.idempotent = true;
-            let res = stub.NewClient(&ctx, &req).await;
-
-            res.result?.client_id().to_string()
-        };
-
         Ok(Self {
-            client_id,
             channel,
             resources,
             cluster,
@@ -199,7 +196,7 @@ impl MetastoreClient {
     }
 
     /// Retrieves a list of known server addresses. Can be used to seed a future
-    /// MetastoreClient instance.
+    /// TransactionalDBClient instance.
     ///
     /// The list is sorted from most to least likely to be currently healthy.
     async fn known_servers(&self) -> Vec<String> {
@@ -229,9 +226,6 @@ impl MetastoreClient {
     /// Request context to use if we are not running in a transaction.
     fn default_request_context(&self) -> Result<rpc::ClientRequestContext> {
         let mut request_context = rpc::ClientRequestContext::default();
-        request_context
-            .metadata
-            .add_text(CLIENT_ID_KEY, &self.client_id)?;
         // TODO: Label this in the protobuf service description?
         request_context.idempotent = true;
         Ok(request_context)
@@ -242,7 +236,7 @@ impl MetastoreClient {
         &self,
         key: &[u8],
         transaction_state: Option<AsyncMutexPermit<'_, MetastoreTransactionState>>,
-    ) -> Result<Option<Vec<u8>>> {
+    ) -> Result<Option<Bytes>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
         let mut request_context = self.default_request_context()?;
         request_context.buffer_full_response = true;
@@ -265,7 +259,7 @@ impl MetastoreClient {
         let mut response = stub.Read(&request_context, &request).await;
         let value = if let Some(res) = response.recv().await {
             if !res.entry().deleted() {
-                Some(res.entry().value().to_vec())
+                Some(res.entry().value().into())
             } else {
                 None
             }
@@ -290,7 +284,7 @@ impl MetastoreClient {
         start_key: &[u8],
         end_key: &[u8],
         transaction_state_permit: Option<AsyncMutexPermit<'_, MetastoreTransactionState>>,
-    ) -> Result<Vec<KeyValueEntry>> {
+    ) -> Result<Vec<KeyValueEntryProto>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
         let mut request_context = self.default_request_context()?;
         request_context.buffer_full_response = true;
@@ -406,7 +400,7 @@ impl MetastoreClient {
         // TODO: Eventually undrain.
         {
             let cluster = self.cluster.as_ref().ok_or_else(|| {
-                err_msg("Must use a cluster wide MetastoreClient to drain servers")
+                err_msg("Must use a cluster wide TransactionalDBClient to drain servers")
             })?;
 
             let stub = ServerManagementStub::new(cluster.route_channel_factory.create(id).await?);
@@ -428,54 +422,39 @@ impl MetastoreClient {
     }
 }
 
-//// Interface for interacting with the metastore's key-value file system.
-///
-/// TODO: Deprecate this in favor of the standard one in db_kv.
-#[async_trait]
-pub trait MetastoreClientInterface: Send + Sync {
-    /// Looks up a single value from the metastore.
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
+// Helpers
+impl TransactionalDBClient {
+    pub async fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+        self.get_impl(key, None).await
+    }
 
-    /// Looks
-    async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>>;
+    pub async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
+        let items = self.get_range_impl(start_key, end_key, None).await?;
 
-    async fn get_prefix(&self, prefix: &[u8]) -> Result<Vec<KeyValueEntry>> {
+        Ok(items.into_iter().map(|v| {
+            db_kv::KeyValueEntry {
+                key: v.key().into(),
+                value: v.value().into(),
+            }
+        }).collect())
+    }
+
+    pub async fn get_prefix(&self, prefix: &[u8]) -> Result<Vec<KeyValueEntry>> {
         let (start_key, end_key) = prefix_key_range(prefix);
         self.get_range(&start_key, &end_key).await
     }
 
-    async fn put(&self, key: &[u8], value: &[u8]) -> Result<()>;
-
-    async fn delete(&self, key: &[u8]) -> Result<()>;
-
-    async fn new_transaction<'a>(&'a self) -> Result<MetastoreTransaction<'a>>;
-}
-
-#[async_trait]
-impl MetastoreClientInterface for MetastoreClient {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        self.get_impl(key, None).await
-    }
-
-    async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
-        self.get_range_impl(start_key, end_key, None).await
-    }
-
-    async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         self.put_impl(key, value).await
     }
 
-    async fn delete(&self, key: &[u8]) -> Result<()> {
+    pub async fn delete(&self, key: &[u8]) -> Result<()> {
         self.delete_impl(key).await
-    }
-
-    async fn new_transaction<'a>(&'a self) -> Result<MetastoreTransaction<'a>> {
-        self.new_transaction_impl().await
     }
 }
 
 #[async_trait]
-impl db_kv::KeyValueStore for MetastoreClient {
+impl db_kv::KeyValueStore for TransactionalDBClient {
     async fn new_transaction<'a>(
         &'a self,
     ) -> Result<Box<dyn db_kv::KeyValueStoreTransaction + 'a>> {
@@ -500,7 +479,7 @@ struct MetastoreTransactionState {
 
 enum MetastoreTransactionClass<'a> {
     TopLevel {
-        client: &'a MetastoreClient,
+        client: &'a TransactionalDBClient,
         state: AsyncMutex<MetastoreTransactionState>,
     },
     /// A transaction that was started inside of another transaction. This is
@@ -509,37 +488,17 @@ enum MetastoreTransactionClass<'a> {
     /// Committing a nested transaction is a no-op as it is instead committed
     /// later as part of the root transaction.
     Nested {
-        client: &'a MetastoreClient,
+        client: &'a TransactionalDBClient,
         state: &'a AsyncMutex<MetastoreTransactionState>,
     },
 }
 
 #[async_trait]
-impl<'a> MetastoreClientInterface for MetastoreTransaction<'a> {
-    // TODO: Must also read from the local state
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+impl<'a> db_kv::KeyValueStoreTransaction for MetastoreTransaction<'a> {
+    async fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
         self.get_impl(key).await
     }
 
-    async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
-        self.get_range_impl(start_key, end_key).await
-    }
-
-    async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        self.put_impl(key, value).await
-    }
-
-    async fn delete(&self, key: &[u8]) -> Result<()> {
-        self.delete_impl(key).await
-    }
-
-    async fn new_transaction<'b>(&'b self) -> Result<MetastoreTransaction<'b>> {
-        self.new_transaction_impl().await
-    }
-}
-
-#[async_trait]
-impl<'a> db_kv::KeyValueStoreTransaction for MetastoreTransaction<'a> {
     async fn iter<'b>(
         &'b self,
         options: db_kv::KeyValueIteratorOptions,
@@ -572,13 +531,13 @@ impl<'a> db_kv::KeyValueStoreTransaction for MetastoreTransaction<'a> {
 }
 
 struct VecIterator {
-    entries: Vec<KeyValueEntry>,
+    entries: Vec<KeyValueEntryProto>,
     i: usize,
 }
 
 #[async_trait]
 impl db_kv::KeyValueStoreIterator for VecIterator {
-    async fn next(&mut self) -> Result<Option<db_kv::KeyValueEntry>> {
+    async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
         if self.i < self.entries.len() {
             let v = &self.entries[self.i];
             self.i += 1;
@@ -602,7 +561,7 @@ impl<'a> MetastoreTransaction<'a> {
     async fn get_top_level<'b>(
         &'b self,
     ) -> (
-        &'b MetastoreClient,
+        &'b TransactionalDBClient,
         AsyncMutexPermit<'b, MetastoreTransactionState>,
     ) {
         match &self.class {
@@ -616,7 +575,7 @@ impl<'a> MetastoreTransaction<'a> {
     }
 
     /// CANCEL SAFE
-    async fn get_impl(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    async fn get_impl(&self, key: &[u8]) -> Result<Option<Bytes>> {
         let (client, state_permit) = self.get_top_level().await;
 
         let state = state_permit.read_exclusive();
@@ -624,7 +583,7 @@ impl<'a> MetastoreTransaction<'a> {
         if let Some(op) = state.writes.get(key) {
             match op.typ_case() {
                 OperationTypeCase::Put(value) => {
-                    return Ok(Some(value.to_vec()));
+                    return Ok(Some(value.as_ref().into()));
                 }
                 OperationTypeCase::Delete(_) => {
                     return Ok(None);
@@ -637,7 +596,7 @@ impl<'a> MetastoreTransaction<'a> {
     }
 
     /// CANCEL SAFE
-    async fn get_range_impl(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
+    async fn get_range_impl(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntryProto>> {
         let (client, state_permit) = self.get_top_level().await;
 
         self.get_range_with_lock(start_key, end_key, client, state_permit)
@@ -649,9 +608,9 @@ impl<'a> MetastoreTransaction<'a> {
         &self,
         start_key: &[u8],
         end_key: &[u8],
-        client: &MetastoreClient,
+        client: &TransactionalDBClient,
         state_permit: AsyncMutexPermit<'_, MetastoreTransactionState>,
-    ) -> Result<Vec<KeyValueEntry>> {
+    ) -> Result<Vec<KeyValueEntryProto>> {
         let state = state_permit.read_exclusive();
 
         let written_values = {
@@ -660,7 +619,7 @@ impl<'a> MetastoreTransaction<'a> {
                 .writes
                 .range::<[u8], _>((Bound::Included(start_key), Bound::Excluded(end_key)))
             {
-                let mut entry = KeyValueEntry::default();
+                let mut entry = KeyValueEntryProto::default();
                 entry.set_key(op.key());
 
                 match op.typ_case() {
@@ -780,8 +739,6 @@ impl<'a> MetastoreTransaction<'a> {
 pub struct WatchStream {
     response: rpc::ClientStreamingResponse<WatchResponse>,
 }
-
-//
 
 // TODO: Improve this (need to specifically check for Aborted errors).
 /// TODO: This needs to detect retryable/cancellation related errors.

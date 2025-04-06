@@ -10,3 +10,6 @@ pub mod query_parser;
 mod reflection;
 pub mod table;
 pub mod table_id;
+
+pub use db::ProtobufDB;
+pub use table::*;

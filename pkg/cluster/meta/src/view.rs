@@ -29,6 +29,11 @@ struct ViewTransaction<'a> {
 
 #[async_trait]
 impl<'a> KeyValueStoreTransaction for ViewTransaction<'a> {
+
+    async fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+        self.inst.snapshot.get(key).await
+    }
+
     async fn iter<'b>(
         &'b self,
         options: KeyValueIteratorOptions,

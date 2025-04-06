@@ -1,8 +1,6 @@
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
-use db_table::{sparse_struct, table_id};
-
-use crate::db::*;
+use db_table::*;
 
 pub struct MachineTable {}
 

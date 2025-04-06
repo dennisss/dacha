@@ -7,13 +7,12 @@ use cnc_monitor_proto::cnc::*;
 use common::hash::SumHasherBuilder;
 use crypto::hasher::Hasher;
 use crypto::sip::SipHasher;
-use db_table::query;
+use db_table::{query, ProtobufDB};
 use executor::lock;
 use executor::sync::AsyncMutex;
 use executor_multitask::{impl_resource_passthrough, TaskResource};
 use protobuf::Message;
 
-use crate::db::ProtobufDB;
 use crate::tables::MetricSampleTable;
 
 /*

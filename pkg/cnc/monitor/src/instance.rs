@@ -7,13 +7,14 @@ use base_error::*;
 use cnc_monitor_proto::cnc::*;
 use common::io::{Readable, Writeable};
 use crypto::random::SharedRngExt;
-use db_table::query;
+use db_table::{query, ProtobufDB};
+use db_txn::TransactionalDB;
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor::sync::AsyncMutex;
 use executor::sync::AsyncRwLock;
 use executor::{channel, lock, lock_async};
-use executor_multitask::{impl_resource_passthrough, ServiceResource, TaskResource};
+use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup, TaskResource};
 use file::{LocalPath, LocalPathBuf};
 use media_camera::camera_manager::CameraManager;
 use protobuf::Message;
@@ -21,7 +22,6 @@ use protobuf::Message;
 use crate::camera_controller::CameraController;
 use crate::change::{ChangeDistributer, ChangeEvent};
 use crate::config::MachineConfigContainer;
-use crate::db::{create_db_instance, ProtobufDB};
 use crate::files::{FileManager, FileReference};
 use crate::metric::MetricStore;
 use crate::player::Player;
@@ -46,11 +46,10 @@ type FileId = u64;
 pub struct MonitorImpl {
     shared: Arc<Shared>,
 
-    /// Resource running Self::run().
-    task_resource: TaskResource,
+    resources: ServiceResourceGroup,
 }
 
-impl_resource_passthrough!(MonitorImpl, task_resource);
+impl_resource_passthrough!(MonitorImpl, resources);
 
 struct Shared {
     local_data_dir: LocalPathBuf,
@@ -210,7 +209,13 @@ impl MonitorImpl {
     pub async fn create(local_data_dir: &LocalPath, make_fake_machines: bool) -> Result<Self> {
         let changes = ChangeDistributer::create();
 
-        let db = Arc::new(create_db_instance(&local_data_dir.join("db")).await?);
+        let resources = ServiceResourceGroup::new("MonitorImpl");
+
+        let db = {
+            let client = Arc::new(TransactionalDB::create_local(&local_data_dir.join("db")).await?);
+            resources.register_dependency(client.clone()).await;            
+            Arc::new(ProtobufDB::new(client))
+        };
 
         let mut state = State::default();
 
@@ -284,14 +289,12 @@ impl MonitorImpl {
             program_preview_manager,
         });
 
-        let task_resource = TaskResource::spawn_interruptable(
-            "MonitorImpl::run",
-            Self::run(shared.clone(), reconcile_receiver),
-        );
+        resources.spawn_interruptable(
+            "MonitorImpl::run", Self::run(shared.clone(), reconcile_receiver)).await;
 
         Ok(Self {
             shared,
-            task_resource,
+            resources,
         })
     }
 
@@ -910,7 +913,7 @@ impl MonitorImpl {
                 break;
             }
 
-// At most one update per second and at least one update per 10 seconds.
+            // At most one update per second and at least one update per 10 seconds.
             executor::sleep(Duration::from_secs(1)).await?;
             executor::timeout(Duration::from_secs(10 - 1), subscriber.wait()).await;
         }

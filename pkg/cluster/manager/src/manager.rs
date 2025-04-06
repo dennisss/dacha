@@ -8,8 +8,6 @@ use cluster_client::meta::*;
 use cluster_client::service::address::ServiceName;
 use common::errors::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use db_txn_client::MetastoreClient;
-use db_txn_client::MetastoreTransaction;
 use db_txn_client::run_transaction;
 use db_table::db::{ProtobufDB, ProtobufDBTransaction};
 use db_table::{query, query_one, raw_query};

@@ -131,9 +131,15 @@ pub struct NodeOptions<'a, R> {
 
     /// NOTE: A single RPC server can only have one Node instance attached to
     /// it.
-    pub rpc_server: &'a mut rpc::Http2Server,
+    pub rpc_handler: &'a mut rpc::Http2RequestHandler,
 
-    /// Address (ip + port) at which the 'rpc_server' will be available once it
+    /// Value which becomes available once the RPC server is up and has started accepting RPCs.
+    ///
+    /// The node will use this to prevent participation in the cluster until we are able
+    /// to receive messages from other nodes.
+    pub rpc_server_ready: Arc<Eventually<()>>,
+
+    /// Address (ip + port) at which the 'rpc_handler' will be available once it
     /// has been started.
     ///
     /// TODO: Consider instead making an accessor method on the Http2Server to
@@ -142,6 +148,10 @@ pub struct NodeOptions<'a, R> {
 
     /// TLS options to use for connecting to other nodes.
     pub tls_options: Option<crypto::tls::ClientOptionsContainer>,
+
+    /// If true, setup the standard multicase server and seed rpc client for finding
+    /// other nodes.
+    pub enable_discovery: bool,
 }
 
 /// Simple implementation of a complete Raft based server instance.
@@ -204,6 +214,7 @@ pub struct Node<R> {
     empty_log: bool,
 }
 
+// Same as impl_resource_passthrough (but that macro doesn't support templates).
 #[async_trait]
 impl<R: 'static + Send> ServiceResource for Node<R> {
     async fn add_cancellation_token(
@@ -230,7 +241,7 @@ impl<R: 'static + Send> Node<R> {
         // - This is required for bootstrapping.
         // - Note that the route_store hasn't been initialized with our route yet, so it
         //   is ok for this to be started before our RPC server is ready.
-        {
+        if options.enable_discovery {
             let discovery_multicast = DiscoveryMulticast::create(route_store.clone()).await?;
             resources
                 .register_dependency(Arc::new(discovery_multicast.start()))
@@ -384,18 +395,13 @@ impl<R: 'static + Send> Node<R> {
         // NOTE: The server should be started before we start participating in the raft
         // group.
         options
-            .rpc_server
+            .rpc_handler
             .add_service(DiscoveryServer::new(route_store.clone()).into_service())?;
         options
-            .rpc_server
+            .rpc_handler
             .add_service(server.clone().into_service())?;
 
-        let rpc_server_resource = Arc::new(Eventually::<Arc<dyn ServiceResource>>::new());
-
-        let rpc_server_resource2 = rpc_server_resource.clone();
-        options.rpc_server.add_start_callback(move |r| {
-            executor::spawn(async move { rpc_server_resource2.set(r).await });
-        });
+        let rpc_server_ready = options.rpc_server_ready;
 
         let dir = Arc::new(options.dir);
 
@@ -404,13 +410,12 @@ impl<R: 'static + Send> Node<R> {
             let route_store = route_store.clone();
             let address = options.rpc_server_address.clone();
             let dir_lock = dir.clone();
-            let rpc_server_resource = rpc_server_resource.clone();
+            let rpc_server_ready = rpc_server_ready.clone();
 
             resources
                 .spawn_interruptable("raft::Server::run", async move {
                     // Wait for the server to be listening.
-                    let rpc_server_resource = rpc_server_resource.get().await;
-                    rpc_server_resource.wait_for_ready().await;
+                    rpc_server_ready.get().await;
 
                     // Setup the discovery server with our server identity.
                     {
@@ -442,8 +447,8 @@ impl<R: 'static + Send> Node<R> {
         // until the leader has populated our log with at least one entry
         if empty_log {
             let server = server.clone();
-            let rpc_server_resource = rpc_server_resource.clone();
             let route_store = route_store.clone();
+            let rpc_server_ready = rpc_server_ready.clone();
             let channel_factory = channel_factory.clone();
 
             // TODO: If we restart after already receigin this, then we may not need to join
@@ -451,8 +456,7 @@ impl<R: 'static + Send> Node<R> {
             resources
                 .spawn_interruptable("raft::Server::join_group", async move {
                     // Wait for the rpc server to be listening.
-                    let rpc_server_resource = rpc_server_resource.get().await;
-                    rpc_server_resource.wait_for_ready().await;
+                    rpc_server_ready.get().await;
 
                     // As soon as we join the group, the leader will attempt to send us requests so
                     // make sure that most nodes know who we are so that those requests don't fail.

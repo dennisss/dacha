@@ -4,7 +4,7 @@ extern crate macros;
 use common::args::parse_args;
 use common::errors::*;
 use rpc_util::NamedPortArg;
-
+use db_kv::{KeyValueStore, KeyValueStoreTransaction};
 use crypto::random::{Rng, SharedRng};
 
 // TODO: Test the implementation by repeatably using a transaction to increment
@@ -13,7 +13,8 @@ use crypto::random::{Rng, SharedRng};
 
 use db_txn_client::*;
 
-async fn increment_counter(txn: &dyn MetastoreClientInterface) -> Result<()> {
+/*
+async fn increment_counter(txn: &dyn KeyValueStoreTransaction) -> Result<()> {
     let mut current_num = 0;
     if let Some(value) = txn.get(b"/counter").await? {
         current_num = std::str::from_utf8(&value)?.parse::<usize>()?;
@@ -27,10 +28,12 @@ async fn increment_counter(txn: &dyn MetastoreClientInterface) -> Result<()> {
         .await?;
     Ok(())
 }
+*/
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let client = MetastoreClient::create(&[], &[], None).await?;
+    /*
+    let client = TransactionalDBClient::create(&[], &[], None).await?;
 
     {
         let mut data = vec![0; 1024 * 1024];
@@ -70,6 +73,7 @@ async fn main() -> Result<()> {
     for item in items {
         println!("{:?}", item);
     }
+    */
 
     Ok(())
 }

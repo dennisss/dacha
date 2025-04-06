@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use container_proto::cluster::ObjectMetadata;
-use db_txn_client::MetastoreClient;
+use db_txn_client::TransactionalDBClient;
 use db_table::db::ProtobufDB;
 use db_table::query_one;
 use executor_multitask::impl_resource_passthrough;
@@ -21,7 +21,7 @@ use super::hostname::ClusterMetaHostnameResolver;
 ///
 pub struct ClusterMetaClient {
     zone: String,
-    inner: Arc<MetastoreClient>,
+    inner: Arc<TransactionalDBClient>,
     db: Arc<ProtobufDB>,
     creds: Option<crypto::tls::Credentials>,
 }
@@ -38,7 +38,7 @@ impl ClusterMetaClient {
         label.set_value(format!("{}={}", ZONE_ENV_VAR, zone));
 
         let inner = Arc::new(
-            MetastoreClient::create(
+            TransactionalDBClient::create(
                 std::slice::from_ref(&label),
                 seeds,
                 Arc::new(ClusterMetaHostnameResolver::new(zone)),
@@ -103,7 +103,7 @@ impl ClusterMetaClient {
         &self.zone
     }
 
-    pub fn inner(&self) -> &MetastoreClient {
+    pub fn inner(&self) -> &TransactionalDBClient {
         &self.inner
     }
 

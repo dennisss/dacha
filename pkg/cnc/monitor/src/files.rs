@@ -9,8 +9,8 @@ use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::SyncMutex;
 use file::LocalPathBuf;
+use db_table::ProtobufDB;
 
-use crate::db::ProtobufDB;
 use crate::program::new_progress_tracker;
 use crate::{
     change::{ChangeEvent, ChangePublisher},

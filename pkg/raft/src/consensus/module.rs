@@ -270,6 +270,7 @@ impl std::fmt::Display for NotLeaderError {
 }
 
 /// Error that may occur while attempting to resolve/finalize a read index.
+#[derive(Debug)]
 pub enum ReadIndexError {
     StaleIndex,
 
