@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::ClusterMetaClient;
 use cluster_client::meta::table::*;
 use common::errors::*;
 use container_proto::cluster::*;
 
-use crate::utils::{connect_to_node, connect_to_node_id, NodeStubs};
+use crate::utils::{connect_to_node_id, NodeStubs};
 
 #[derive(Args)]
 pub struct ListCommand {
@@ -14,11 +14,7 @@ pub struct ListCommand {
     #[arg(positional)]
     kind: Option<ObjectKind>,
 
-    /// Address of the node from which to query the objects.
-    ///
     /// NOTE: Note all object kinds will be supported in this mode.
-    node_addr: Option<String>,
-
     node_id: Option<u64>,
 }
 
@@ -38,14 +34,6 @@ enum ObjectKind {
 }
 
 pub async fn run_list(cmd: ListCommand) -> Result<()> {
-    let creds = cluster_client::credentials::get_cluster_credentials().await?;
-
-    if let Some(node_addr) = &cmd.node_addr {
-        let node = connect_to_node(node_addr, Some(creds.client_options())).await?;
-        run_list_on_node(node).await?;
-        return Ok(());
-    }
-
     let meta_client = ClusterMetaClient::create_from_environment().await?;
     let db = meta_client.db();
 

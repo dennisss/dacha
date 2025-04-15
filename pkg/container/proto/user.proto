@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package cluster;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
+message User {
+    // User name used for signing in with a password.
+    string name = 1;
+
+    // If non-empty, this is a hashed/encoded version of the password for this user.
+    string password_digest = 3;
+}
+
+service UserAuthentication {
+    // // Looks like information about the currently logged in user/session based on the client's
+    // // provided authentication keys.
+    // //
+    // // If the client isn't currently logged in, then an empty message (with Ok status) is returned.
+    // rpc SessionInfo (SessionInfoRequest) returns (SessionInfoResponse);
+
+    rpc CreateUser (CreateUserRequest) returns (CreateUserResponse);
+
+    // Login by exchanging a user name, password, and CSR for a client TLS certificate.
+    rpc Login (LoginRequest) returns (LoginResponse);
+
+    rpc ChangePassword (ChangePasswordRequest) returns (ChangePasswordResponse);
+}
+
+message CreateUserRequest {
+    string user_name = 1;
+
+    string user_password = 2;
+}
+
+message CreateUserResponse {
+
+}
+
+message LoginRequest {
+    string user_name = 1;
+
+    string user_password = 2;
+
+    // X509 Certificate signing request.
+    bytes csr = 3;
+}
+
+message LoginResponse {
+    repeated bytes certificate = 1;
+}
+
+message ChangePasswordRequest {
+    string user_name = 1;
+
+    // If non-empty, check that the existing password matches this before performing the change.
+    string current_password = 2;
+
+    string new_password = 3;
+}
+
+message ChangePasswordResponse {}
+
+
+message SessionInfoRequest {
+
+}
+
+message SessionInfoResponse {
+    User user = 1;
+    Session session = 2;
+}
+
+message Session {
+    fixed64 id = 1;
+    
+    string user_name = 2;
+    
+    // 16 byte secret value that can be used by a client to authenticate with this 
+    bytes auth_key = 3;
+
+    bool deleted = 4;
+
+    SessionMetadata metadata = 5;
+}
+
+message SessionMetadata {
+    string ip = 1;
+
+    string user_agent = 2;
+}

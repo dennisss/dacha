@@ -296,6 +296,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
 
 [[package]]
+name = "base_algorithms"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+]
+
+[[package]]
 name = "base_args"
 version = "0.0.0"
 dependencies = [
@@ -602,6 +609,7 @@ name = "cluster_ca"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_algorithms",
  "base_error",
  "base_radix",
  "cluster_client",
@@ -657,12 +665,14 @@ dependencies = [
  "rpc",
  "rpc_util",
  "sys",
+ "terminal",
 ]
 
 [[package]]
 name = "cluster_client"
 version = "0.1.0"
 dependencies = [
+ "automata",
  "base_radix",
  "builder_proto",
  "common",
@@ -676,11 +686,13 @@ dependencies = [
  "failure",
  "file",
  "http",
+ "http_util",
  "macros",
  "net",
  "protobuf",
  "protobuf_builtins",
  "raft_client",
+ "regexp_macros",
  "rpc",
  "rpc_util",
  "sys",
@@ -784,9 +796,11 @@ dependencies = [
  "base_util",
  "bgcode",
  "cam",
+ "cluster_client",
  "cnc_monitor_proto",
  "common",
  "compression",
+ "container_proto",
  "crypto",
  "db_kv",
  "db_table",
@@ -798,6 +812,7 @@ dependencies = [
  "gcode",
  "graphics",
  "http",
+ "http_util",
  "image",
  "json",
  "libcamera",
@@ -1336,6 +1351,7 @@ checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 name = "executor"
 version = "0.1.0"
 dependencies = [
+ "base_algorithms",
  "base_error",
  "common",
  "failure",
@@ -1991,15 +2007,16 @@ dependencies = [
  "common",
  "crypto",
  "db_table",
+ "db_txn",
  "executor",
  "executor_multitask",
  "file",
  "http",
  "http_cache_proto",
+ "http_util",
  "macros",
  "parsing",
  "protobuf",
- "sstable",
 ]
 
 [[package]]
@@ -2010,6 +2027,17 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
+]
+
+[[package]]
+name = "http_util"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "http",
+ "mime_types",
 ]
 
 [[package]]
@@ -2136,7 +2164,9 @@ name = "labeler"
 version = "0.1.0"
 dependencies = [
  "base_error",
+ "cluster_client",
  "common",
+ "container_proto",
  "crypto",
  "executor",
  "executor_multitask",
@@ -2148,6 +2178,7 @@ dependencies = [
  "labeler_proto",
  "macros",
  "parsing",
+ "protobuf",
  "ptouch",
  "rpc",
  "rpc_util",
@@ -2363,6 +2394,7 @@ dependencies = [
  "executor_multitask",
  "file",
  "http",
+ "http_util",
  "json",
  "libcamera",
  "macros",
@@ -3216,6 +3248,7 @@ dependencies = [
  "executor_multitask",
  "failure",
  "http",
+ "http_util",
  "macros",
  "net",
  "parsing",
@@ -3274,6 +3307,7 @@ dependencies = [
 name = "rpi_controller"
 version = "0.1.0"
 dependencies = [
+ "cluster_client",
  "common",
  "executor",
  "executor_multitask",
@@ -3370,7 +3404,9 @@ name = "screen_grabber"
 version = "0.1.0"
 dependencies = [
  "base_error",
+ "cluster_client",
  "common",
+ "container_proto",
  "crypto",
  "executor",
  "executor_multitask",
@@ -3378,10 +3414,12 @@ dependencies = [
  "gemini",
  "google_auth",
  "http",
+ "http_util",
  "image",
  "json",
  "macros",
  "parsing",
+ "protobuf",
  "rpc",
  "rpc_util",
  "screen_grabber_proto",
@@ -3665,6 +3703,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "terminal"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "base_util",
+ "common",
+ "executor",
+ "file",
+ "libc",
+ "macros",
+ "nix 0.21.0",
+ "sys",
 ]
 
 [[package]]

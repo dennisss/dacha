@@ -8,6 +8,7 @@ common = { path = "../../common" }
 sys = { path = "../../sys" }
 file = { path = "../../file" }
 rpi = { path = "../" }
+cluster_client = { path = "../../container/client" }
 peripherals = { path = "../../peripherals" }
 peripherals_devices = { path = "../../peripherals/devices" }
 executor = { path = "../../executor" }

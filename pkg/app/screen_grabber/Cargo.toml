@@ -11,10 +11,14 @@ executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 crypto = { path = "../../crypto" }
+cluster_client = { path = "../../container/client" }
+container_proto = { path = "../../container/proto" }
 macros = { path = "../../macros" }
 http = { path = "../../http" }
+http_util = { path = "../../http/util" }
 json = { path = "../../format/json" }
 web = { path = "../../web" }
+protobuf = { path = "../../protobuf" }
 parsing = { path = "../../parsing" }
 screen_grabber_proto = { path = "./proto" }
 rpc = { path = "../../rpc" }

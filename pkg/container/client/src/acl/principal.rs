@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use common::{errors::*, hash::FastHasherBuilder};
 
 use crate::service::address::{ServiceEntity, ServiceName};
+use crate::service::zone::LOCAL_ZONE;
 
 pub type PrincipalSet = HashSet<Principal, FastHasherBuilder>;
 
@@ -25,11 +26,14 @@ pub type PrincipalSet = HashSet<Principal, FastHasherBuilder>;
 ///   - Any worker of any job recognized by the local cluster.
 ///   - '*' can be used to match a wildcard DNS segment (not containing a '.').
 ///   - '**' can be used to match any number of arbitrary DNS segments.
-/// - 'zone:zone_name:group:group_name'
+/// - 'group:[zone_name/]:group_name'
 ///   - A group of entities. The group definition exists in a single cluster's
-///     metastore (located via the given zone name).
+///     metastore (located via the given zone name or the local zone if none specified).
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Principal {
+    /// Matches no entities.
+    Nobody,
+
     /// Matches every entity (whether authenticated or not).
     Unauthenticated,
 
@@ -52,6 +56,14 @@ pub enum Principal {
 
 impl Principal {
     pub fn parse(value: &str) -> Result<Self> {
+        Self::parse_relative(value, None)
+    }
+
+    pub fn parse_relative(value: &str, current_zone: Option<&str>) -> Result<Self> {
+        if value == "nobody" {
+            return Ok(Self::Nobody);
+        }
+
         if value == "unauthenticated" {
             return Ok(Self::Unauthenticated);
         }
@@ -61,20 +73,47 @@ impl Principal {
         }
 
         if let Some(name) = value.strip_prefix("dns:") {
-            // TODO: Do worker normalization.
-            let name = ServiceName::parse(name)?;
+            let mut name = ServiceName::parse_relative(name, current_zone)?;
+
+            if let ServiceEntity::Worker {
+                job_name,
+                worker_id,
+            } = name.entity()
+            {
+                let normalized = ServiceName::for_job(name.zone(), &job_name)?;
+                name = normalized;
+            }
+
             return Ok(Self::Entity(name));
         }
 
         if let Some(pattern) = value.strip_prefix("pattern:") {
+            if let Some(prefix) = pattern.strip_suffix(".local.cluster.internal") {
+                let zone = current_zone.ok_or_else(|| err_msg("Not parsing relative pattern"))?;
+                return Ok(Self::Pattern(format!("{}.{}.cluster.internal", prefix, zone)));
+            }
+
             return Ok(Self::Pattern(pattern.to_string()));
         }
 
-        let parts = value.split(':').collect::<Vec<_>>();
-        if parts.len() == 4 && parts[0] == "zone" && parts[2] == "group" {
+        if let Some(name) = value.strip_prefix("group:") {
+            let (zone, group) = match name.split_once("/") {
+                Some((mut zone, group)) => {
+                    if zone == LOCAL_ZONE {
+                        zone = current_zone.ok_or_else(|| err_msg("Not parsing relative group"))?;
+                    }
+
+                    (zone, group)
+                },
+                None => {
+                    let zone = current_zone.ok_or_else(|| err_msg("Not parsing relative group"))?;
+                    (zone, name)
+                }
+            };
+
             return Ok(Self::Group {
-                zone: parts[1].to_string(),
-                name: parts[3].to_string(),
+                zone: zone.to_string(),
+                name: group.to_string(),
             });
         }
 
@@ -85,11 +124,12 @@ impl Principal {
         // TODO: Must validate the zone and group name allows for reparsing.
 
         match self {
+            Principal::Nobody => "nobody".into(),
             Principal::Unauthenticated => "unauthenticated".into(),
             Principal::Authenticated => "authenticated".into(),
             Principal::Entity(name) => format!("dns:{}", name.to_string()),
             Principal::Pattern(v) => format!("pattern:{}", v),
-            Principal::Group { zone, name } => format!("zone:{}:group:{}", zone, name),
+            Principal::Group { zone, name } => format!("group:{}/{}", zone, name),
         }
     }
 }

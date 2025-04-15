@@ -9,7 +9,7 @@ use builder::current_platform;
 use builder::proto::BundleSpec;
 use cluster_client::env::*;
 use cluster_client::id::entity_id_to_string;
-use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::ClusterMetaClient;
 use cluster_client::meta::{
     constants::*, BundleBlobMetadataTable, NodeMetadataTable, WorkerMetadataTable,
     WorkerStateMetadataTable,
@@ -111,7 +111,7 @@ struct NodeShared {
 
     /// Available once we have connected and registered our node in the meta
     /// store.
-    meta_client: Arc<Eventually<Arc<ClusterMetaClient>>>,
+    meta_client: Arc<ClusterMetaClient>,
 
     /// Timestamp (in unix micros) of the last event we've recorded. This is
     /// used to ensure that all recorded events use a monotonic timestamp (at
@@ -200,12 +200,14 @@ impl Node {
         println!("Node Id: {}", entity_id_to_string(id).unwrap());
 
         let db = {
+            // TODO: We need to track this as one of the service resources.
             let client = TransactionalDB::create_local(
                 &LocalPath::new(config.data_dir()).join(NODE_DB_PATH)).await?;
 
             Arc::new(ProtobufDB::new(Arc::new(client)))
         };
 
+        // Just passed to the NodeCredentialsManager
         let meta_client = Arc::new(Eventually::new());
 
         let event_channel = channel::unbounded();
@@ -232,6 +234,19 @@ impl Node {
             } else {
                 None
             }
+        };
+
+        let meta_client = {
+            let creds = credentials
+                .as_ref()
+                .map(|c| crypto::tls::Credentials {
+                    server: c.node_server_options(),
+                    client: c.node_client_options(),
+                });
+
+            let client = Arc::new(ClusterMetaClient::create(config.zone(), &[], creds).await?);
+            meta_client.set(client.clone()).await?;
+            client
         };
 
         let mut uid_allocator = IdAllocator::new(context.container_uids.clone());
@@ -332,6 +347,10 @@ impl Node {
         Ok(Self { inner: inst })
     }
 
+    pub fn meta_client(&self) -> Arc<ClusterMetaClient> {
+        self.inner.shared.meta_client.clone()
+    }
+    
     pub fn run(&self) -> impl std::future::Future<Output = Result<()>> {
         self.clone().inner.run_impl()
     }
@@ -340,15 +359,6 @@ impl Node {
         rpc_server.add_service(self.inner.clone().into_service())?;
         rpc_server.add_service(self.inner.shared.blobs.clone().into_service())?;
         Ok(())
-    }
-
-    /// Gets the TLS options to use for running the node HTTP server.
-    pub fn tls_server_options(&self) -> Option<crypto::tls::ServerOptionsContainer> {
-        self.inner
-            .shared
-            .credentials
-            .as_ref()
-            .map(|s| s.node_server_options())
     }
 }
 
@@ -450,24 +460,7 @@ impl NodeInner {
         // client seems to get stuck and return 'Exceeded max number of retries' errors
         // due to the backend list in the LoadBalancedClient being empty.
 
-        // TODO: Make sure that this aggressively blocks till ready.
-        let meta_client = {
-            if !self.shared.meta_client.has_value().await {
-                let creds = self
-                    .shared
-                    .credentials
-                    .as_ref()
-                    .map(|c| crypto::tls::Credentials {
-                        server: c.node_server_options(),
-                        client: c.node_client_options(),
-                    });
-
-                let meta_client = Arc::new(ClusterMetaClient::create(zone, &[], creds).await?);
-                self.shared.meta_client.set(meta_client).await?;
-            }
-
-            self.shared.meta_client.get().await
-        };
+        // TODO: Block for the meta client to be healthy (able to find the leader) before trying to issue real RPCs.
 
         // Perform initial update of our node entry.
         // This is a good sanity check that we are well connected to the metastore
@@ -485,7 +478,7 @@ impl NodeInner {
     }
 
     async fn update_node_metadata(&self) -> Result<()> {
-        let db = self.shared.meta_client.get().await.db();
+        let db = self.shared.meta_client.db();
 
         let platform = current_platform()?;
 
@@ -515,8 +508,6 @@ impl NodeInner {
     // - May also trigger push to volatile configs like labels and the connected
     //   devices list.
     async fn run_heartbeat_loop(self) -> Result<()> {
-        let meta_client = self.shared.meta_client.get().await;
-
         // Stop doing heartbeats this until we have a more efficient node heartbeat
         // mechansim that doesn't require writing to disc in the metastore.
         return Ok(());
@@ -536,8 +527,6 @@ impl NodeInner {
 
     // TODO: We need to refactor this to watch the metastore for changes.
     async fn run_reconcile_loop(self) -> Result<()> {
-        let meta_client = self.shared.meta_client.get().await;
-
         // TODO: Always wait for at least one TLS registry refresh cycle since boot
         // before we allow scheduling workers (to avoid unnecessary turbulence).
         // - This mainly becomes complicated if system workers are involved.
@@ -559,7 +548,7 @@ impl NodeInner {
         &self,
         workers: &[WorkerMetadata],
     ) -> Result<HashMap<String, WorkerStateMetadata>> {
-        let db = self.shared.meta_client.get().await.db();
+        let db = self.shared.meta_client.db();
 
         let mut out = HashMap::new();
 
@@ -587,7 +576,7 @@ impl NodeInner {
     /// TODO: Run this with it's own backoff loop.
     /// TODO: Make sure that all external requests have deadlines.
     async fn reconcile_workers(&self) -> Result<()> {
-        let db = self.shared.meta_client.get().await.db();
+        let db = self.shared.meta_client.db();
 
         let intended_workers = query!(db, WorkerMetadataTable, "assigned_node = ?", self.shared.id);
 
@@ -1157,15 +1146,9 @@ impl NodeInner {
             // NOTE: Assuming the metastore didn't die, there should be valid seeds
             // available for regular workers (those that don't start at node startup) since
             // we check with the metastore before starting them.
-            if self.shared.meta_client.has_value().await {
-                let client = self.shared.meta_client.get().await;
-
-                let seeds = client.seeds().await?;
-
-                container_config
-                    .process_mut()
-                    .add_env(format!("{}={}", META_STORE_SEEDS_ENV_VAR, seeds));
-            }
+            container_config
+                .process_mut()
+                .add_env(format!("{}={}", META_STORE_SEEDS_ENV_VAR, self.shared.meta_client.seeds().await?));
         }
 
         container_config.process_mut().set_cwd(worker.spec.cwd());
@@ -1566,8 +1549,8 @@ impl NodeInner {
             return Ok(());
         }
 
-        let meta_client = self.shared.meta_client.get().await;
-        let db = self.shared.meta_client.get().await.db();
+        let meta_client = &self.shared.meta_client;
+        let db = self.shared.meta_client.db();
 
         // TODO: Once a node fetches a blob it becomes a replica of that blob. When
         // should we update the BundleBlobMetadata entry?

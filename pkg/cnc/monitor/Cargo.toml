@@ -11,6 +11,8 @@ common = { path = "../../common" }
 macros = { path = "../../macros" }
 protobuf = { path = "../../protobuf" }
 crypto = { path = "../../crypto" }
+cluster_client = { path = "../../container/client" }
+container_proto = { path = "../../container/proto" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 db_kv = { path = "../../db/kv" }
@@ -21,6 +23,7 @@ rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
 usb = { path = "../../usb" }
 http = { path = "../../http" }
+http_util = { path = "../../http/util" }
 web = { path = "../../web" }
 parsing = { path = "../../parsing" }
 image = { path = "../../image" }

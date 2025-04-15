@@ -26,6 +26,7 @@ use file::LocalPathBuf;
 use http::header::*;
 use http::status_code::*;
 use http_cache::DiskCache;
+use http_util::{bad_request, internal_server_error};
 use parsing::ascii::AsciiString;
 
 #[derive(Args)]
@@ -69,10 +70,7 @@ impl Service {
                 req.head.uri.to_string()?
             );
 
-            return Ok(http::ResponseBuilder::new()
-                .status(BAD_REQUEST)
-                .body(http::EmptyBody())
-                .build()?);
+            return Ok(bad_request());
         }
 
         let request = http::RequestBuilder::new()
@@ -96,11 +94,7 @@ impl http::ServerHandler for Service {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("Request failed: {}", e);
-                http::ResponseBuilder::new()
-                    .status(INTERNAL_SERVER_ERROR)
-                    .body(http::EmptyBody())
-                    .build()
-                    .unwrap()
+                internal_server_error()
             }
         };
 

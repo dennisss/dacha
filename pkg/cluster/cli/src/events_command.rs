@@ -1,6 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use common::errors::*;
+use cluster_client::ClusterMetaClient;
 
 use crate::utils::WorkerNodeSelector;
 
@@ -10,11 +11,11 @@ pub struct EventsCommand {
 }
 
 pub async fn run_events(cmd: EventsCommand) -> Result<()> {
-    let creds = cluster_client::credentials::get_cluster_credentials().await?;
+    let meta_client = ClusterMetaClient::create_from_environment().await?;
 
     let node = cmd
         .worker_selector
-        .connect(Some(creds.client_options()))
+        .connect(meta_client.clone())
         .await?;
     let request_context = rpc::ClientRequestContext::default();
 

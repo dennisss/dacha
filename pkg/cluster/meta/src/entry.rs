@@ -25,18 +25,17 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         {
             path: "/rpc/raft.Consensus"
             is_directory: true
-            # TODO: The '<zone>' here is annoying.
-            principals: ["dns:meta.system.job.<zone>.cluster.internal"]
+            principals: ["dns:meta.system.job.local.cluster.internal"]
         },
         {
             path: "/rpc/db.meta.ServerManagement"
             is_directory: true,
-            principals: ["dns:meta.system.job.<zone>.cluster.internal"]
+            principals: ["dns:meta.system.job.local.cluster.internal"]
         },
         {
             path: "/rpc/raft.Discovery/Announce"
             is_directory: false,
-            principals: ["dns:meta.system.job.<zone>.cluster.internal"]
+            principals: ["dns:meta.system.job.local.cluster.internal"]
         },
 
         # RPCs do their own ACL validation per key range.
@@ -86,10 +85,7 @@ pub async fn run(options: ClusterMetastoreOptions) -> Result<Arc<dyn ServiceReso
     state_machine.processor = Some(acl_processor.clone());
 
     let mut acl = container_proto::cluster::ServiceACLProto::default();
-    protobuf::text::parse_text_proto(
-        &SERVICE_ACL_PROTO.replace("<zone>", &options.zone),
-        &mut acl,
-    )?;
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     // TODO: Must limit what percentage of request slots can be used for user facing
     // requests since we also use this for server-to-server Raft requests.

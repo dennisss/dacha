@@ -35,6 +35,7 @@ members = [
 	"pkg/protobuf/json/proto",
 	"pkg/automata",
 	"pkg/http",
+	"pkg/http/util",
 	"pkg/http/cache",
 	"pkg/http/cache/proto",
 	"pkg/rpc",
@@ -148,6 +149,7 @@ members = [
 	"pkg/base/error",
 	"pkg/base/time",
 	"pkg/base/util",
+	"pkg/base/algorithms",
 	"pkg/format/markdown",
 	"pkg/format/markdown/test",
 	"pkg/base/args",
@@ -180,6 +182,7 @@ members = [
 	"pkg/dev/source",
 	"pkg/dev/source/proto",
 	"pkg/dev/git",
+	"pkg/dev/terminal",
 	"pkg/things/labeler",
 	"pkg/things/labeler/proto"
 ]

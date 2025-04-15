@@ -4,8 +4,6 @@ use container_proto::cluster::Labels;
 use db_table::query_one;
 use protobuf::Message;
 
-use crate::utils::NodeSelector;
-
 /// Maximum combined serialized size of all custom labels associated with a
 /// single node.
 const MAX_LABELS_SIZE: usize = 4096;

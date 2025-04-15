@@ -299,6 +299,8 @@ impl<R: 'static + Send> Node<R> {
                 options.tls_options.clone(),
             ));
 
+            // TODO: Should perform an 'all clear check' : If we detect any other servers with the same route labels within the routestore initialization window, we should error out instead of bootstrapping.
+
             let id = {
                 if let Some(id) = options.bootstrap_node_id {
                     if options.bootstrap_group {

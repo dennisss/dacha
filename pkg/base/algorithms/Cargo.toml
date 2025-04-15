@@ -1,0 +1,12 @@
+[package]
+name = "base_algorithms"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../error", default-features = false }
+
+[features]
+default = ["std"]
+alloc = ["base_error/alloc"]
+std = ["alloc", "base_error/std"]

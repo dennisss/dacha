@@ -16,7 +16,7 @@ extern crate macros;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
-use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::ClusterMetaClient;
 use common::errors::*;
 use rpc_test::proto::adder::*;
 

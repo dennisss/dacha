@@ -1,4 +1,5 @@
 use common::errors::*;
+use cluster_client::ClusterMetaClient;
 
 use crate::utils::WorkerNodeSelector;
 
@@ -16,11 +17,11 @@ pub struct LogCommand {
 }
 
 pub async fn run_log(cmd: LogCommand) -> Result<()> {
-    let creds = cluster_client::credentials::get_cluster_credentials().await?;
+    let meta_client = ClusterMetaClient::create_from_environment().await?;
 
     let node = cmd
         .worker_selector
-        .connect(Some(creds.client_options()))
+        .connect(meta_client.clone())
         .await?;
 
     let request_context = rpc::ClientRequestContext::default();

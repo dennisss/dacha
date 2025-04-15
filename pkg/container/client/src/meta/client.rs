@@ -1,8 +1,9 @@
 use core::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use common::errors::*;
-use container_proto::cluster::ObjectMetadata;
+use container_proto::cluster::{ObjectMetadata, UserEnvProto};
 use db_txn_client::TransactionalDBClient;
 use db_table::db::ProtobufDB;
 use db_table::query_one;
@@ -10,9 +11,11 @@ use executor_multitask::impl_resource_passthrough;
 use protobuf::{Message, StaticMessage};
 use protobuf_builtins::google::protobuf::Any;
 use raft_client::proto::RouteLabel;
+use crypto::tls::FileCredentialsLoader;
+use file::LocalPath;
 
-use crate::credentials::get_cluster_credentials;
 use crate::env::ZONE_ENV_VAR;
+use crate::env::CREDENTIALS_DIR_ENV_VAR;
 use crate::meta::ObjectMetadataTable;
 
 use super::constants::META_STORE_SEEDS_ENV_VAR;
@@ -55,19 +58,15 @@ impl ClusterMetaClient {
         })
     }
 
-    pub(crate) fn creds(&self) -> Option<crypto::tls::Credentials> {
+    pub fn creds(&self) -> Option<crypto::tls::Credentials> {
         self.creds.clone()
     }
 
     pub async fn create_from_environment() -> Result<Arc<Self>> {
-        let zone = std::env::var(ZONE_ENV_VAR).map_err(|_| {
-            format_err!(
-                "Expected the {} environment variable to be set",
-                ZONE_ENV_VAR,
-            )
-        })?;
+        let zone = Self::zone_from_environment().await?;
+        let env = EnvVarsOverlay::create(&zone).await?;
 
-        let mut seeds = std::env::var(META_STORE_SEEDS_ENV_VAR)
+        let mut seeds = env.get(META_STORE_SEEDS_ENV_VAR)
             .unwrap_or_default()
             .split(',')
             .map(|s| s.to_string())
@@ -82,9 +81,27 @@ impl ClusterMetaClient {
             )
         }
 
-        // TODO: Allow having an insecure cluster?
-        // TODO: Add this credentials loader to the resource group.
-        let creds = get_cluster_credentials().await?;
+
+        let creds;
+
+        if std::env::var("CLUSTER_SUDO").is_ok() {
+            // TODO: Check for "CLUSTER_SUDO=yes"
+
+            let home = std::env::var("HOME")?;
+            let dir = LocalPath::new(&home).join(".dacha/zone").join(&zone).join("root");
+            // TODO: Check dir exists.
+
+            creds = Arc::new(FileCredentialsLoader::create(&dir).await?);
+
+            // TODO: Check we have a certificate and registry in the 'creds'
+
+        } else {
+            // TODO: Allow having an insecure cluster?
+            // TODO: Add this credentials loader to the resource group.
+            let dir = env.get(CREDENTIALS_DIR_ENV_VAR)?;
+            creds = Arc::new(FileCredentialsLoader::create(LocalPath::new(&dir)).await?);
+        }
+
 
         Ok(Arc::new(
             Self::create(
@@ -96,6 +113,29 @@ impl ClusterMetaClient {
                 }),
             )
             .await?,
+        ))
+    }
+
+    async fn zone_from_environment() -> Result<String> {
+        if let Ok(v) = std::env::var(ZONE_ENV_VAR) {
+            return Ok(v);
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            let default_path = LocalPath::new(&home).join(".dacha/default_zone");
+            if file::exists(&default_path).await? {
+                return file::read_to_string(&default_path).await;
+            }
+        }
+
+        if std::env::var("SHELL").is_ok() {
+            // TODO: Improve user feedback.
+            return Err(err_msg("Not logged in to any zone."));
+        }
+
+        Err(format_err!(
+            "Expected the {} environment variable to be set",
+            ZONE_ENV_VAR,
         ))
     }
 
@@ -155,3 +195,41 @@ impl ClusterMetaClient {
         Ok(())
     }
 }
+
+struct EnvVarsOverlay {
+    user_vars: HashMap<String, String>
+}
+
+impl EnvVarsOverlay {
+    pub async fn create(zone: &str) -> Result<Self> {
+        let mut user_vars = HashMap::new();
+        if let Ok(home) = std::env::var("HOME") {
+            let path = LocalPath::new(&home).join(".dacha/zone").join(zone).join("env");
+            if file::exists(&path).await? {
+                let data = file::read_to_string(&path).await?;
+                let mut proto = UserEnvProto::default();
+                protobuf::text::parse_text_proto(&data, &mut proto)?;
+
+                for var in proto.vars() {
+                    user_vars.insert(var.key().to_string(), var.value().to_string());
+                }
+            }
+        }
+
+        Ok(Self { user_vars })
+    }
+
+    pub fn get(&self, name: &str) -> Result<String> {
+        if let Ok(v) = std::env::var(name) {
+            return Ok(v);
+        }
+
+        if let Some(v) = self.user_vars.get(name) {
+            return Ok(v.clone());
+        }
+
+        Err(format_err!("Unable to find environment variable: {}", name))
+    }
+
+}
+

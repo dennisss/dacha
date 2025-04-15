@@ -1,3 +1,4 @@
+
 pub fn not_found() -> http::Response {
     http::ResponseBuilder::new()
         .status(http::status_code::NOT_FOUND)

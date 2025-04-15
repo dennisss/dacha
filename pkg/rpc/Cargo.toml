@@ -10,6 +10,7 @@ regexp_macros = { path = "../automata/regexp_macros" }
 parsing = { path = "../parsing" }
 compression = { path = "../compression" }
 http = { path = "../http" }
+http_util = { path = "../http/util" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 failure = "0.1.8"

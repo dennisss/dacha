@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 base_error = { path = "../base/error", default-features = false }
+base_algorithms = { path = "../base/algorithms", default-features = false }
 common = { path = "../common", default-features = false }
 peripherals_raw = { path = "../peripherals/raw", default-features = false }
 sys = { path = "../sys", optional = true }
@@ -13,5 +14,5 @@ failure = { version = "0.1.8", optional = true }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "base_error/alloc", "peripherals_raw/alloc"]
-std = ["common/std", "base_error/std", "sys", "failure", "peripherals_raw/std"]
+alloc = ["common/alloc", "base_error/alloc", "base_algorithms/alloc", "peripherals_raw/alloc"]
+std = ["common/std", "base_error/std", "base_algorithms/alloc", "sys", "failure", "peripherals_raw/std"]

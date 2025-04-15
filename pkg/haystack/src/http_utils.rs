@@ -7,13 +7,6 @@ use protobuf_json::MessageJsonSerialize;
 
 // TODO: Need a better space for these shared helpers
 
-pub fn bad_request() -> http::Response {
-    http::ResponseBuilder::new()
-        .status(http::status_code::BAD_REQUEST)
-        .build()
-        .unwrap()
-}
-
 pub fn invalid_method() -> http::Response {
     text_response(http::status_code::METHOD_NOT_ALLOWED, "Method not allowed")
 }
@@ -89,10 +82,7 @@ impl<
             Ok(resp) => resp,
             Err(e) => {
                 // eprintln!("{} {}: {:?}", method, uri, e);
-                http::ResponseBuilder::new()
-                    .status(http::status_code::INTERNAL_SERVER_ERROR)
-                    .build()
-                    .unwrap()
+                http_util::internal_server_error()
             }
         }
     }

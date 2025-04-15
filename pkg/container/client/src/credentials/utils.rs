@@ -2,7 +2,7 @@ use common::errors::*;
 
 use crate::service::address::ServiceName;
 
-pub fn get_http_server_peer_identity(
+pub(crate) fn get_http_server_peer_identity(
     conn: &http::ServerConnectionContext,
 ) -> Result<Option<ServiceName>> {
     let tls = conn
@@ -25,7 +25,7 @@ pub fn get_http_server_peer_identity(
     Ok(Some(ServiceName::parse(&cn)?))
 }
 
-pub fn get_server_peer_identity(context: &rpc::ServerRequestContext) -> Result<ServiceName> {
+pub(crate) fn get_server_peer_identity(context: &rpc::ServerRequestContext) -> Result<ServiceName> {
     let conn = context
         .connection
         .as_ref()

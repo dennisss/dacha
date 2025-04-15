@@ -1,11 +1,11 @@
 use alloc::boxed::Box;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::time::Duration;
 use std::borrow::ToOwned;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap, HashSet};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, Instant};
 
 use base_error::*;
 use executor_multitask::{impl_resource_passthrough, TaskResource};
@@ -28,13 +28,15 @@ const TMP_FILE_SUFFIX: &'static str = ".tmp";
 /// consolidate multiple writes done in a short amount of time.
 const LOADER_BATCHING_DELAY: Duration = Duration::from_millis(200);
 
+const GARBAGE_COLLECTION_DELAY: Duration = Duration::from_secs(2);
+
 #[derive(Clone)]
 pub struct Credentials {
     pub client: ClientOptionsContainer,
     pub server: ServerOptionsContainer,
 }
 
-/// Manages writes to a directory (initially empty) contianing TLS credentials.
+/// Manages writes to a directory (initially empty) containing TLS credentials.
 ///
 /// One 'FileCredentialsManager' instance can write to the directory while any
 /// number of 'FileCredentialsLoader' instances can read from the directory
@@ -53,13 +55,24 @@ pub struct Credentials {
 /// don't try reading them).
 pub struct FileCredentialsManager {
     dir: LocalPathBuf,
-    certificates: Option<Vec<Arc<Certificate>>>,
-    registry: Option<Arc<CertificateRegistry>>,
-    keys: HashMap<String, Arc<PrivateKey>>,
+    
+    data: CredentialsData,
 
     // These are kept in sync with the above variables.
     // TODO: We should deferentiate between the readable and writeable versions of this.
     tls_options: Option<(ClientOptionsContainer, ServerOptionsContainer)>,
+
+    last_write: Instant,
+}
+
+struct CredentialsData {
+    // A BTreeMap is used so that when iterating, we treat the empty name
+    // certificate as the primary one.
+    certificates: BTreeMap<String, Vec<Arc<Certificate>>>,
+    
+    registry: Option<Arc<CertificateRegistry>>,
+
+    keys: HashMap<String, Arc<PrivateKey>>,
 }
 
 impl FileCredentialsManager {
@@ -73,8 +86,25 @@ impl FileCredentialsManager {
     ///
     /// TODO: Lock the directory
     pub async fn create(dir: &LocalPath) -> Result<Self> {
+        let data = Self::load_once(dir).await?;
+
+        let mut tls_options = None;
+        if !data.certificates.is_empty() {
+            let (c, s) = Self::create_tls_options(&data).await?;
+            tls_options = Some((c.into(), s.into()));
+        }
+
+        Ok(Self {
+            dir: dir.to_owned(),
+            data,
+            tls_options,
+            last_write: Instant::now()
+        })
+    }
+
+    async fn load_once(dir: &LocalPath) -> Result<CredentialsData> {
         let mut registry = None;
-        let mut certificates = None;
+        let mut certificates = BTreeMap::new();
         let mut keys = HashMap::new();
 
         for entry in file::read_dir(dir)? {
@@ -91,7 +121,23 @@ impl FileCredentialsManager {
                     return Err(err_msg("Empty certificates file"));
                 }
 
-                certificates = Some(certs);
+                certificates.insert("".to_string(), certs);
+                continue;
+            }
+
+            if let Some(name) = entry.name().strip_prefix("certificate.") {
+                let name = match name.strip_suffix(".pem") {
+                    Some(v) => v.to_ascii_lowercase(),
+                    None => continue 
+                };
+
+                let data = file::read(path).await?;
+                let certs = Certificate::from_pem(data.into())?;
+                if certs.is_empty() {
+                    return Err(err_msg("Empty certificates file"));
+                }
+
+                certificates.insert(name.to_string(), certs);
                 continue;
             }
 
@@ -120,33 +166,21 @@ impl FileCredentialsManager {
             }
         }
 
-        let mut tls_options = None;
-        if let Some(certs) = &certificates {
-            let cert_key_id =
-                base_radix::hex_encode(certs[0].subject_key_id()).to_ascii_lowercase();
-
-            let cert_key = keys
-                .get(&cert_key_id)
-                .ok_or_else(|| err_msg("Missing key for certificate"))?;
-
-            let (c, s) =
-                Self::create_tls_options(&certs[..], cert_key.clone(), registry.clone()).await?;
-            tls_options = Some((c.into(), s.into()));
-        }
-
-        Ok(Self {
-            dir: dir.to_owned(),
-            certificates,
+        Ok(CredentialsData {
             registry,
-            keys,
-            tls_options,
+            certificates,
+            keys
         })
+    }
+
+    pub fn dir(&self) -> &LocalPath {
+        &self.dir
     }
 
     /// Returns non-None if there is a custom registry has been loaded into the
     /// directory.
     pub fn registry(&self) -> Option<Arc<CertificateRegistry>> {
-        self.registry.clone()
+        self.data.registry.clone()
     }
 
     pub async fn write_registry(&mut self, registry: Arc<CertificateRegistry>) -> Result<()> {
@@ -159,7 +193,7 @@ impl FileCredentialsManager {
 
         Self::atomic_write(&path, value.as_bytes()).await?;
 
-        self.registry = Some(registry);
+        self.data.registry = Some(registry);
         self.update_tls_options().await?;
 
         Ok(())
@@ -167,21 +201,55 @@ impl FileCredentialsManager {
 
     /// NOTE: For a certificate to exist, its private key must also exist.
     pub fn certificates(&self) -> Option<&[Arc<Certificate>]> {
-        self.certificates.as_ref().map(|v| v.as_ref())
+        self.certificates_with_name("")
+    }
+
+    pub fn certificates_with_name(&self, name: &str) -> Option<&[Arc<Certificate>]> {
+        self.data.certificates.get(name).map(|v| v.as_ref())
     }
 
     pub fn certificates_with_private_key(&self) -> Option<(&[Arc<Certificate>], &Arc<PrivateKey>)> {
-        if let Some(certs) = &self.certificates {
+        if let Some(certs) = self.data.certificates.get("") {
             let key_id = base_radix::hex_encode(certs[0].subject_key_id()).to_ascii_lowercase();
-            let key = self.keys.get(&key_id).unwrap();
+            let key = self.data.keys.get(&key_id).unwrap();
             Some((&certs, key))
         } else {
             None
         }
     }
 
+    /// Gets the raw file system path to a certificate and private key PEM file.
+    ///
+    /// AVOID USING
+    pub fn certificate_and_pkey_path(&self, name: &str) -> Option<(LocalPathBuf, LocalPathBuf)> {
+        let certs = match self.data.certificates.get(name) {
+            Some(v) => v,
+            None => return None
+        };
+
+        let path = if name.is_empty() {
+            self.dir.join(CERTIFICATE_FILE)
+        } else {
+            self.dir.join(format!("certificate.{}.pem", name))
+        };
+
+        let key_id = base_radix::hex_encode(certs[0].subject_key_id()).to_ascii_lowercase();
+        let key = self.dir.join(format!("private_key.{}.pem", key_id));
+
+        Some((path, key))
+    }
+
     pub async fn write_certificates(
         &mut self,
+        certificates: &[Arc<Certificate>],
+        private_key: Arc<PrivateKey>,
+    ) -> Result<()> {
+        self.write_certificates_with_name("", certificates, private_key).await
+    }
+
+    pub async fn write_certificates_with_name(
+        &mut self,
+        name: &str,
         certificates: &[Arc<Certificate>],
         private_key: Arc<PrivateKey>,
     ) -> Result<()> {
@@ -190,22 +258,62 @@ impl FileCredentialsManager {
         }
 
         let key_id = base_radix::hex_encode(certificates[0].subject_key_id()).to_ascii_lowercase();
-        if !self.keys.contains_key(&key_id) {
+        if !self.data.keys.contains_key(&key_id) {
             let key_data = private_key.to_pem();
             let key_path = self.dir.join(format!("private_key.{}.pem", key_id));
 
             Self::atomic_write(&key_path, key_data.as_bytes()).await?;
 
-            self.keys.insert(key_id, private_key.clone());
+            self.data.keys.insert(key_id, private_key.clone());
         }
 
-        let path = self.dir.join(CERTIFICATE_FILE);
+        let path = if name.is_empty() {
+            self.dir.join(CERTIFICATE_FILE)
+        } else {
+            self.dir.join(format!("certificate.{}.pem", name))
+        };
         let value = Certificate::to_pem(certificates);
 
         Self::atomic_write(&path, value.as_bytes()).await?;
 
-        self.certificates = Some(certificates.to_vec());
+        self.data.certificates.insert(name.to_string(), certificates.to_vec());
         self.update_tls_options().await?;
+
+        self.last_write = Instant::now();
+
+        Ok(())
+    }
+
+    /// Deletes all keys not referenced by some certificate.
+    ///
+    /// Call after completing a batch of writes to the credentials.
+    pub async fn gc(&mut self) -> Result<()> {
+        // Allow some time for clients to read the latest credentials before deleting old files.
+        let now = Instant::now();
+        if let Some(remaining) = (self.last_write + GARBAGE_COLLECTION_DELAY).checked_duration_since(now) {
+            executor::sleep(remaining).await?;
+        }
+
+        let mut referenced_keys = HashSet::new();
+        for certificates in self.data.certificates.values() {
+            let key_id = base_radix::hex_encode(certificates[0].subject_key_id()).to_ascii_lowercase();
+            referenced_keys.insert(key_id);
+        }
+
+        let mut keys_to_delete = vec![];
+        for key in self.data.keys.keys() {
+            if !referenced_keys.contains(key) {
+                keys_to_delete.push(key.clone());
+            }
+        }
+
+        for key_id in keys_to_delete {
+            self.data.keys.remove(&key_id);
+
+            let key_path = self.dir.join(format!("private_key.{}.pem", key_id));
+            file::remove_file(&key_path).await?;
+        }
+
         Ok(())
     }
 
@@ -232,17 +340,11 @@ impl FileCredentialsManager {
     }
 
     async fn update_tls_options(&mut self) -> Result<()> {
-        let certs = match self.certificates.as_ref() {
-            Some(v) => v,
-            None => return Ok(()),
-        };
+        if self.data.certificates.is_empty() {
+            return Ok(());
+        }
 
-        let private_key = {
-            let key_id = base_radix::hex_encode(certs[0].subject_key_id()).to_ascii_lowercase();
-            self.keys.get(&key_id).unwrap().clone()
-        };
-
-        let (c, s) = Self::create_tls_options(certs, private_key, self.registry.clone()).await?;
+        let (c, s) = Self::create_tls_options(&self.data).await?;
 
         if let Some(v) = &self.tls_options {
             v.0.set(c.into());
@@ -255,24 +357,38 @@ impl FileCredentialsManager {
     }
 
     async fn create_tls_options(
-        certificates: &[Arc<Certificate>],
-        private_key: Arc<PrivateKey>,
-        registry: Option<Arc<CertificateRegistry>>,
+        data: &CredentialsData
     ) -> Result<(ClientOptions, ServerOptions)> {
         // TODO: Don't reload the registry if it hasn't changed (since this is usually
         // fairly big)
         let registry = {
-            if let Some(r) = registry {
-                r
+            if let Some(r) = &data.registry {
+                r.clone()
             } else {
                 // TODO: Should cache this.
                 Arc::new(CertificateRegistry::public_roots().await?)
             }
         };
 
+        let mut identities = vec![];
+
+        for certs in data.certificates.values() {
+            let cert_key_id =
+                base_radix::hex_encode(certs[0].subject_key_id()).to_ascii_lowercase();
+
+            let cert_key = data.keys
+                .get(&cert_key_id)
+                .ok_or_else(|| err_msg("Missing key for certificate"))?;
+
+            identities.push(CertificateIdentity {
+                certificates: certs.clone(),
+                private_key: cert_key.clone()
+            });
+        }
+
         // TODO: Block writing to swap.
         let mut server_options =
-            ServerOptions::recommended_with(certificates.to_vec(), private_key);
+            ServerOptions::recommended_with_identities(identities);
         server_options.certificate_request = Some(CertificateRequestOptions {
             root_certificate_registry: CertificateRegistrySource::Custom(registry.clone()),
             trust_remote_certificate: false,
@@ -281,6 +397,8 @@ impl FileCredentialsManager {
         let mut client_options = ClientOptions::recommended();
         client_options.certificate_request.root_certificate_registry =
             CertificateRegistrySource::Custom(registry.clone());
+
+        // NOTE: Only the first identify will be used for client auth.
         client_options.certificate_auth = Some(server_options.certificate_auth.clone());
 
         Ok((client_options, server_options))
@@ -294,10 +412,19 @@ impl FileCredentialsManager {
 /// write, this will automatically reload the in-memory state.
 ///
 /// Specifically this internally maintains:
-/// - 1 x509 certificate chain (1 main certificate and a series of intermediates
+/// - N named certificate identifies each consisting of:
+///   - 1 x509 certificate chain (1 main certificate and a series of intermediates
 ///   up to a root ca).
-/// - 1 private key (corresponding to the above certificate)
-/// - 1 x509 root certificate registry (for N certificates)
+///   - 1 private key (corresponding to the above certificate)
+/// - 1 x509 root certificate registry (for M certificates)
+///
+/// The TLS semantics are to use the certificate identifies in priority of
+/// lexicograpic ordering of the names. Only the first identity will be used
+/// for client authentication but all will be considered as options for the server
+/// identity if a server/host name is sent by the client.
+///
+/// The typical usage will be to give the dynamic identity a name of "" which is
+/// always first in priority.
 ///
 /// NOTE: The Client/ServerOptionsContainers will stop getting updated if this
 /// loader is dropped.
@@ -318,18 +445,15 @@ impl FileCredentialsLoader {
     /// Loads credentials once and optionally starts watching for credential
     /// changes in the background.
     pub async fn create(dir: &LocalPath) -> Result<Self> {
-        let mut watcher = Watcher {
-            // TODO: Move error remapping closer to the syscall.
-            inner: LocalFileWatcher::create()
-                .map_err(|e| format_err!("While opening file watcher: {}", e))?,
-            mtimes: HashMap::new(),
-        };
+        // TODO: Move error remapping closer to the syscall.
+        let mut watcher = LocalFileWatcher::create()
+            .map_err(|e| format_err!("While opening file watcher: {}", e))?;
 
         // NOTE: We need to watch the directory and not individual files since the
         // renames will make references to the files obsolete.
-        watcher.inner.mark(dir)?;
+        watcher.mark(dir)?;
 
-        let (client_options, server_options) = Self::load_once(dir, &mut watcher).await?;
+        let (client_options, server_options) = Self::load_once(dir).await?;
 
         let shared = Arc::new(Shared {
             dir: dir.to_owned(),
@@ -346,13 +470,14 @@ impl FileCredentialsLoader {
     }
 
     pub fn certificate(&self) -> Arc<Certificate> {
-        self.server_options().get().certificate_auth.certificates[0].clone()
+        self.server_options().get().certificate_auth.identities[0].certificates[0].clone()
     }
 
     pub fn private_key(&self) -> Arc<PrivateKey> {
         self.server_options()
             .get()
             .certificate_auth
+            .identities[0]
             .private_key
             .clone()
     }
@@ -368,11 +493,13 @@ impl FileCredentialsLoader {
         }
     }
 
-    async fn continously_reload(shared: Arc<Shared>, mut watcher: Watcher) -> Result<()> {
+    async fn continously_reload(shared: Arc<Shared>, mut watcher: LocalFileWatcher) -> Result<()> {
         loop {
             watcher.wait().await?;
+            executor::sleep(LOADER_BATCHING_DELAY).await?;
+            // TODO: Mark any recent changes in the watcher as don (read the watcher fd with 'no wait' read flags).
 
-            let (c, s) = Self::load_once(&shared.dir, &mut watcher).await?;
+            let (c, s) = Self::load_once(&shared.dir).await?;
             shared.client_options.set(Arc::new(c));
             shared.server_options.set(Arc::new(s));
         }
@@ -382,42 +509,9 @@ impl FileCredentialsLoader {
 
     async fn load_once(
         dir: &LocalPath,
-        watcher: &mut Watcher,
     ) -> Result<(ClientOptions, ServerOptions)> {
-        let registry_path = dir.join(REGISTRY_FILE);
-        let cert_path = dir.join(CERTIFICATE_FILE);
-
-        watcher.track(&registry_path).await?;
-        watcher.track(&cert_path).await?;
-
-        // TODO: Don't reload the registry if it hasn't changed (since this is usually
-        // fairly big)
-        let registry = {
-            if file::exists(&registry_path).await? {
-                Some(Arc::new(CertificateRegistry::from_pem(
-                    file::read(&registry_path).await?.into(),
-                )?))
-            } else {
-                None
-            }
-        };
-
-        let cert = {
-            let data = file::read(&cert_path).await?;
-            Certificate::from_pem(data.into())?
-        };
-
-        if cert.is_empty() {
-            return Err(err_msg("Empty certificates set was read"));
-        }
-
-        let private_key = {
-            let key_id = base_radix::hex_encode(cert[0].subject_key_id()).to_ascii_lowercase();
-            let key_path = dir.join(format!("private_key.{}.pem", key_id));
-            Arc::new(PrivateKey::from_pem(file::read(key_path).await?.into())?)
-        };
-
-        FileCredentialsManager::create_tls_options(&cert, private_key, registry).await
+        let data = FileCredentialsManager::load_once(dir).await?;
+        FileCredentialsManager::create_tls_options(&data).await
     }
 
     pub fn server_options(&self) -> ServerOptionsContainer {
@@ -429,39 +523,6 @@ impl FileCredentialsLoader {
     }
 }
 
-struct Watcher {
-    inner: LocalFileWatcher,
-    mtimes: HashMap<String, SystemTime>,
-}
-
-impl Watcher {
-    pub async fn track(&mut self, path: &LocalPath) -> Result<()> {
-        let meta = file::metadata(path).await?;
-        self.mtimes.insert(path.as_str().into(), meta.modified());
-
-        Ok(())
-    }
-
-    pub async fn wait(&mut self) -> Result<()> {
-        loop {
-            self.inner.wait().await?;
-            executor::sleep(LOADER_BATCHING_DELAY).await?;
-
-            let mut changed = false;
-            for (path, last_mtime) in &self.mtimes {
-                let meta = file::metadata(LocalPath::new(path)).await?;
-                if meta.modified() > *last_mtime {
-                    changed = true;
-                    break;
-                }
-            }
-
-            if changed {
-                return Ok(());
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -510,7 +571,7 @@ mod tests {
         let tmp = TempDir::create()?;
 
         let mut manager = FileCredentialsManager::create(tmp.path()).await?;
-        assert!(manager.registry.is_none());
+        assert!(manager.registry().is_none());
         assert!(manager.certificates_with_private_key().is_none());
 
         let creds1 = make_creds().await?;

@@ -11,10 +11,10 @@ use std::{
 use common::{errors::*, io::Writeable};
 use crypto::{hasher::Hasher, random::SharedRng, sha256::SHA256Hasher};
 use db_table::{db::ProtobufDB, query_one};
+use db_txn::TransactionalDB;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 use http_cache_proto::RequestCacheEntry;
 use protobuf::{Message, StaticMessage};
-use sstable::{transactional::TransactionalEmbeddedDB, EmbeddedDBOptions};
 use table::RequestCacheEntryTable;
 
 // TODO: Make sure that we don't cache any transport level headers.
@@ -42,11 +42,7 @@ pub struct DiskCache {
 
 impl DiskCache {
     pub async fn open(client: http::SimpleClient, dir: &LocalPath) -> Result<Self> {
-        let mut options = EmbeddedDBOptions::default();
-        options.create_if_missing = true;
-        options.error_if_exists = false;
-
-        let metadata = TransactionalEmbeddedDB::open(&dir.join("metadata"), options).await?;
+        let metadata = TransactionalDB::create_local(&dir.join("metadata")).await?;
 
         let blobs_dir = dir.join("blobs");
         file::create_dir_all(&blobs_dir).await?;

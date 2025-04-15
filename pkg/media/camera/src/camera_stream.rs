@@ -6,6 +6,7 @@ use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::AsyncVariable;
 use video::mp4::MP4BuilderOptions;
+use http_util::internal_server_error;
 
 use crate::camera_manager::{CameraManager, CameraSubscriber};
 
@@ -14,11 +15,7 @@ pub async fn respond_with_any_camera_stream(camera_manager: &CameraManager) -> h
         Ok(v) => v,
         Err(e) => {
             eprintln!("{}", e);
-            http::ResponseBuilder::new()
-                .status(http::status_code::INTERNAL_SERVER_ERROR)
-                .body(http::EmptyBody())
-                .build()
-                .unwrap()
+            internal_server_error()
         }
     }
 }

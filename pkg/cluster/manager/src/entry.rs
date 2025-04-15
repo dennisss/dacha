@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use cluster_client::credentials::get_cluster_credentials;
-use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::ClusterMetaClient;
 use cluster_client::ClusterServer;
 use common::errors::*;
 use db_table::db::ProtobufDB;
@@ -31,9 +30,6 @@ async fn main_with_port(port: u16) -> Result<()> {
     // TODO: In order to shut down, the manager should release any locks it has.
 
     let service = RootResource::new();
-
-    let creds = get_cluster_credentials().await?;
-    service.register_dependency(creds.clone()).await;
 
     let client = ClusterMetaClient::create_from_environment().await?;
     service.register_dependency(client.clone()).await;

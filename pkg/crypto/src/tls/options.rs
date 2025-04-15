@@ -145,14 +145,19 @@ impl ServerOptions {
         certificates: Vec<Arc<x509::Certificate>>,
         private_key: Arc<x509::PrivateKey>,
     ) -> Self {
-        let client_options = ClientOptions::recommended();
-
-        Self {
-            certificate_request: None,
-            certificate_auth: CertificateAuthenticationOptions {
+        Self::recommended_with_identities(vec![
+            CertificateIdentity {
                 certificates,
                 private_key,
-            },
+            }
+        ])
+    }
+
+    pub fn recommended_with_identities(identities: Vec<CertificateIdentity>) -> Self {
+        let client_options = ClientOptions::recommended();
+        Self {
+            certificate_request: None,
+            certificate_auth: CertificateAuthenticationOptions { identities },
             alpn_ids: vec![],
             supported_cipher_suites: client_options.supported_cipher_suites,
             supported_groups: client_options.supported_groups,
@@ -187,6 +192,18 @@ pub struct CertificateRequestOptions {
 
 #[derive(Clone)]
 pub struct CertificateAuthenticationOptions {
+    /// All available certificate identities that can used for identifying the local TLS
+    /// client/server with the remote server/client.
+    ///
+    /// - Based on the requested host name, we will go through this list and pick the first
+    ///   this is supported.
+    /// - For client authentication or server authentication if no host name is provided,
+    ///   the first identity is used.
+    pub identities: Vec<CertificateIdentity>
+}
+
+#[derive(Clone)]
+pub struct CertificateIdentity {
     /// Certificates to advertise to the client.
     ///
     /// This must contain at least 1 certificate where:

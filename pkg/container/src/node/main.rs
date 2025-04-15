@@ -29,16 +29,57 @@ const CGROUP_NAMESPACE_SETUP_BYTE: u8 = 0x89;
 const FINISHED_BYTE: u8 = 0x90;
 
 const SERVICE_ACL_PROTO: &'static str = r#"
-
     allow_unauthenticated: false
 
     rules: [
-        # TODO: Split up ACLs for system level stuff like "/profilez"
-        #{
-         #   path: "/"
-         #   is_directory: true
-         #   principals: ["authenticated"]
-        # }
+        {
+            path: "/rpc/cluster.BundleBlobStore/List"
+            principals: ["group:cluster-readers"]
+        },
+        # Nodes download blobs from other nodes.
+        {
+            path: "/rpc/cluster.BundleBlobStore/Download"
+            principals: ["pattern:*.node.local.cluster.internal"]
+        },
+        {
+            path: "/rpc/cluster.BundleBlobStore/Delete"
+            principals: ["nobody"]
+        },
+        # Blobs uploaded during job creation
+        # TODO: Eventually switch to requiring a 'JWT' from the manager.
+        {
+            path: "/rpc/cluster.BundleBlobStore/Upload"
+            principals: ["group:cluster-admins"]
+        },
+        {
+            path: "/rpc/cluster.ContainerNode/GetEvents"
+            principals: ["group:cluster-admins"]
+        },
+        {
+            path: "/rpc/cluster.ContainerNode/GetLogs"
+            principals: ["group:cluster-admins"]
+        },
+        {
+            path: "/rpc/cluster.ContainerNode/ReplicateBlob"
+            principals: ["nobody"]
+        },
+        {
+            path: "/rpc/cluster.ContainerNode/WriteInput"
+            principals: ["group:cluster-admins"]
+        },
+        # Only used by root during bootstrapping
+        {
+            path: "/rpc/cluster.ContainerNode/StartWorker"
+            principals: ["nobody"]
+        },
+        {
+            path: "/rpc/cluster.ContainerNode/ListWorkers"
+            principals: ["group:cluster-admins"]
+        },
+        {
+            path: "/rpc/cluster.ContainerNode/Identity"
+            principals: ["group:cluster-readers"]
+        }
     ]
 "#;
 
@@ -364,12 +405,10 @@ async fn run(
     let mut acl = container_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
-    let mut server = cluster_client::ClusterServer::new_internal(
+    let mut server = cluster_client::ClusterServer::new(
         config.service_port() as u16,
         acl,
-        config.zone(),
-        None,
-        node.tls_server_options(),
+        node.meta_client()
     )?;
     node.add_services(&mut server)?;
 

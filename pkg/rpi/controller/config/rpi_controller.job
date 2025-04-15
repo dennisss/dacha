@@ -20,8 +20,7 @@ worker {
     args: [
         # TODO: Pre-validate that this file exists in the bundle
         "/volumes/bundle/built/pkg/rpi/controller/rpi_controller",
-        "--rpc_port=rpc",
-        "--web_port=web",
+        "--port=service",
         "--config_name=rpi_rack_r5"
     ]
 
@@ -34,11 +33,7 @@ worker {
 
     ports: [
         {
-            name: "rpc"
-            type: TCP
-        },
-        {
-            name: "web"
+            name: "service"
             type: TCP
         }
     ]

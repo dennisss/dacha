@@ -24,6 +24,8 @@ regexp!(BLOB_ID_PATTERN => "^([a-z0-9]+):([0-9a-f]+)$");
 /// Must fit in a linux file name.
 const BLOB_ID_MAX_LENGTH: usize = 255;
 
+// TODO: This is not a robust system since we don't verify that blobs don't get corrupted over time.
+
 /// Error produced while trying to read a blob.
 pub enum ReadBlobError {
     /// The blob doesn't exist locally.

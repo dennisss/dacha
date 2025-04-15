@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use alloc::string::String;
 
 use common::bytes::Bytes;
 
@@ -19,6 +20,10 @@ pub struct HandshakeSummary {
     /// a valid expiration time, chain of trust, and its private keys have
     /// been verified to be known by the remote endpoint.
     pub certificate: Option<Arc<x509::Certificate>>,
+
+    /// For servers, this is the 'server name' requested by the client.
+    pub requested_server_name: Option<String>,
+
     // TODO: For servers, this should also include the ServerName used (or for clients the server
     // name that was received).
 }

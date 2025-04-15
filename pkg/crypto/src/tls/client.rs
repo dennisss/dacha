@@ -218,33 +218,38 @@ impl<'a> ClientHandshakeExecutor<'a> {
             key_schedule.server_finished(&self.executor.handshake_transcript);
 
         if let Some(cert_request) = cert_request {
-            let options = match &self.options.certificate_auth {
-                Some(v) => v,
-                None => {
-                    // Lack of the options means that we wouldn't have send the post_handshake_auth
-                    // message.
-                    return Err(err_msg("Didn't advertise support for certificate auth"));
+            if let Some(options) = &self.options.certificate_auth {
+                if options.identities.is_empty() {
+                    return Err(err_msg("No available client identity"));
                 }
-            };
+    
+                let identity = &options.identities[0];
+    
+                let server_supported_algoritms = find_signature_algorithms(&cert_request.extensions)
+                    .ok_or_else(|| err_msg("Missing supporting algorithms in CR"))?;
+    
+                self.executor
+                    .send_certificate(identity, cert_request.certificate_request_context)
+                    .await?;
+    
+                let cert_verify = self
+                    .executor
+                    .create_certificate_verify(
+                        &key_schedule,
+                        &server_supported_algoritms.algorithms,
+                        &identity.private_key,
+                    )
+                    .await?;
+                self.executor
+                    .send_handshake_message(Handshake::CertificateVerify(cert_verify))
+                    .await?;
+            } else {
+                // Server requested client certificate auth, but it isn't supported on the client
+                // so send a list of zero certificates.
 
-            let server_supported_algoritms = find_signature_algorithms(&cert_request.extensions)
-                .ok_or_else(|| err_msg("Missing supporting algorithms in CR"))?;
-
-            self.executor
-                .send_certificate(options, cert_request.certificate_request_context)
-                .await?;
-
-            let cert_verify = self
-                .executor
-                .create_certificate_verify(
-                    &key_schedule,
-                    &server_supported_algoritms.algorithms,
-                    &options.private_key,
-                )
-                .await?;
-            self.executor
-                .send_handshake_message(Handshake::CertificateVerify(cert_verify))
-                .await?;
+                self.executor
+                    .send_empty_certificate(cert_request.certificate_request_context).await?;
+            }
         }
 
         let verify_data_client =

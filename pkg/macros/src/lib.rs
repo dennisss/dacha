@@ -25,6 +25,7 @@ mod race;
 mod reflect;
 mod testcase;
 mod utils;
+mod command_args;
 
 #[derive(Debug)]
 struct BlanketInput {
@@ -172,4 +173,9 @@ pub fn error(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn executor_main(attr: TokenStream, item: TokenStream) -> TokenStream {
     executor_main::run(attr, item)
+}
+
+#[proc_macro]
+pub fn command_args(input: TokenStream) -> TokenStream {
+    command_args::command_args(input)
 }

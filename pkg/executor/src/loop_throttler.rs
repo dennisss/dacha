@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use base_algorithms::token_bucket::TokenBucket;
+
 use crate::cancellation::CancellationToken;
 
 /// Throttler for loops to protect against infinite looping.
@@ -7,39 +9,21 @@ use crate::cancellation::CancellationToken;
 /// Internally this uses a token bucket based throttling approach to rate limit
 /// each loop iteration.
 pub struct LoopThrottler {
-    remaining_tokens: usize,
-    max_tokens: usize,
-    time_per_token: Duration,
-    last_time: Instant,
+    bucket: TokenBucket
 }
 
 impl LoopThrottler {
     pub fn new(max_tokens: usize, refresh_window: Duration) -> Self {
-        let time_per_token = refresh_window / (max_tokens as u32);
-
         Self {
-            remaining_tokens: max_tokens,
-            max_tokens,
-            time_per_token,
-            last_time: Instant::now(),
+            bucket: TokenBucket::new(max_tokens, refresh_window)
         }
     }
 
     pub async fn start_iteration(&mut self) {
         let mut did_sleep = false;
         loop {
-            // Update number of remaining tokens.
-            let now = Instant::now();
-            let increment = ((now - self.last_time).as_micros() as u64)
-                / (self.time_per_token.as_micros() as u64);
-            self.last_time += self.time_per_token * (increment as u32);
-            self.remaining_tokens = core::cmp::min(
-                self.max_tokens,
-                self.remaining_tokens + (increment as usize),
-            );
-
-            if self.remaining_tokens == 0 {
-                crate::sleep(self.time_per_token).await;
+            if !self.bucket.take(1) {
+                crate::sleep(self.bucket.time_per_token()).await;
                 did_sleep = true;
                 continue;
             }
@@ -48,7 +32,6 @@ impl LoopThrottler {
                 crate::yield_now().await;
             }
 
-            self.remaining_tokens -= 1;
             break;
         }
     }

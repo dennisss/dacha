@@ -246,8 +246,9 @@ impl NodeCredentialsManager {
         node_event_receiver: channel::Receiver<()>,
         node_credendials: FileCredentialsManager,
     ) -> Result<()> {
-        // NOTE: This will never return if the node is not in a cluster zone.
         let meta_client = shared.meta_client.get().await;
+
+        // TODO: Block on the meta client becoming healthy.
 
         // Note that channel creation should never fail unless the address is invalid.
         let channel = create_rpc_channel(
@@ -374,6 +375,7 @@ impl NodeCredentialsManager {
         loop {
             Self::update_registry_once(shared, creds).await?;
             Self::update_credentials_once(shared, &node_name, creds).await?;
+            creds.gc().await?;
 
             // TODO: Allow cancellation.
             // 2 hours
@@ -460,6 +462,8 @@ impl NodeCredentialsManager {
                 (shared.callback)(worker_name);
                 cert_changed = false;
             }
+
+            creds.gc().await?;
 
             // 2 hours
             executor::timeout(Duration::from_secs(60 * 60 * 2), event_receiver.recv()).await;

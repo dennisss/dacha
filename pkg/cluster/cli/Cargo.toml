@@ -33,6 +33,7 @@ file = { path = "../../file" }
 sys = { path = "../../sys" }
 container_proto = { path = "../../container/proto" }
 container = { path = "../../container" }
+terminal = { path = "../../dev/terminal" }
 
 [features]
 default = ["std"]

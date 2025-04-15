@@ -26,5 +26,6 @@ pub const WORKER_NAME_ENV_VAR: &'static str = "CLUSTER_WORKER";
 /// Environment variable containing the path to the directory containing
 /// client/server TLS certificates and keys to use.
 ///
-/// Prefer to use get_cluster_credentials() instead of accessing this directly.
+/// AVOID READING THIS DIRECTLY. Prefer to use
+/// ClusterMetaClient::create_from_environment.
 pub const CREDENTIALS_DIR_ENV_VAR: &'static str = "CLUSTER_CREDENTIALS";

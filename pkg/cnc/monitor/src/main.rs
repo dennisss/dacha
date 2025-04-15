@@ -20,6 +20,7 @@ extern crate common;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use base_error::*;
+use base_util::zip_all::ZipAllIterator;
 use cnc_monitor::MonitorImpl;
 use cnc_monitor_proto::cnc::MonitorIntoService;
 use executor_multitask::RootResource;
@@ -29,43 +30,50 @@ use http::{
     static_file_handler::{StaticFileBody, StaticFileHandler},
     ServerHandler,
 };
+use http_util::{bad_request, not_found, internal_server_error};
 use parsing::ascii::AsciiString;
 use rpc_util::NamedPortArg;
-use web::WebServerHandler;
+use cluster_client::ClusterMetaClient;
 
-/// TODO: Move this to a shared crate.
-pub struct ZipAllIterator<A, B> {
-    a: A,
-    b: B,
-}
+const SERVICE_ACL_PROTO: &'static str = r#"
+    rules: [
+        # Static file serving.
+        {
+            path: "/"
+            is_directory: false
+            principals: ["authenticated"]
+        },
+        {
+            path: "/ui"
+            is_directory: true
+            principals: ["authenticated"]
+        },
+        {
+            path: "/assets"
+            is_directory: true
+            principals: ["authenticated"]
+        },
 
-impl<T, Y, A: Iterator<Item = T>, B: Iterator<Item = Y>> Iterator for ZipAllIterator<A, B> {
-    type Item = (Option<T>, Option<Y>);
+        # 
+        {
+            path: "/data"
+            is_directory: true
+            principals: []
+        },
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let a = self.a.next();
-        let b = self.b.next();
-        if a.is_none() && b.is_none() {
-            return None;
+        {
+            path: "/api"
+            is_directory: true
+            principals: []
+        },
+
+        {
+            path: "/rpc/cnc.Monitor"
+            is_directory: true
+            principals: ["group:cluster-admins"]
         }
-
-        Some((a, b))
-    }
-}
-
-pub fn bad_request() -> http::Response {
-    http::ResponseBuilder::new()
-        .status(http::status_code::BAD_REQUEST)
-        .build()
-        .unwrap()
-}
-
-pub fn not_found_request() -> http::Response {
-    http::ResponseBuilder::new()
-        .status(http::status_code::NOT_FOUND)
-        .build()
-        .unwrap()
-}
+    ]
+"#;
 
 fn extract_path_params(path: &str, pattern: &str) -> Option<HashMap<String, String>> {
     // TODO: Ensure that the path is first normalized
@@ -73,10 +81,7 @@ fn extract_path_params(path: &str, pattern: &str) -> Option<HashMap<String, Stri
     let path_parts = path.split('/');
     let pattern_parts = pattern.split('/');
 
-    let iter = ZipAllIterator {
-        a: path_parts,
-        b: pattern_parts,
-    };
+    let iter = ZipAllIterator::new(path_parts, pattern_parts);
 
     let mut params = HashMap::default();
 
@@ -104,37 +109,23 @@ fn extract_path_params(path: &str, pattern: &str) -> Option<HashMap<String, Stri
 #[derive(Args)]
 struct Args {
     port: NamedPortArg,
-    local_data_dir: LocalPathBuf,
 
-    tls_certificate: LocalPathBuf,
-    tls_key: LocalPathBuf,
+    local_data_dir: LocalPathBuf,
 
     #[arg(default = false)]
     make_fake_machines: bool,
 }
 
-struct HttpHandler {
+struct ApiHttpHandler {
     instance: Arc<MonitorImpl>,
-    inner: WebServerHandler,
-    data_handler: StaticFileHandler,
-    rpc_handler: rpc::Http2RequestHandler,
 }
 
-impl HttpHandler {
-    async fn handle_api_request(&self, request: http::Request) -> http::Response {
-        match self.handle_api_request_impl(request).await {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("API Failure: {}", e);
-                http::ResponseBuilder::new()
-                    .status(http::status_code::INTERNAL_SERVER_ERROR)
-                    .build()
-                    .unwrap()
-            }
-        }
-    }
-
-    async fn handle_api_request_impl(&self, request: http::Request) -> Result<http::Response> {
+impl ApiHttpHandler {
+    async fn handle_request_impl<'a>(
+        &self,
+        request: http::Request,
+        context: http::ServerRequestContext<'a>
+    ) -> Result<http::Response> {
         /*
         - Check for 'auth_key' cookie
         - Base64 decode
@@ -156,9 +147,6 @@ impl HttpHandler {
         1. Switch to a router implementation so that we can ensure each path has access control.
         2. Lock down which local files can be accessed via the static file handler.
         */
-
-        // /api/
-        // /api/rpc/
 
         let path = request.head.uri.path.as_str();
 
@@ -237,7 +225,7 @@ impl HttpHandler {
             return self.instance.get_camera_feed(machine_id, camera_id).await;
         }
 
-        Ok(not_found_request())
+        Ok(not_found())
     }
 
     fn parse_query(request: &http::Request) -> Result<HashMap<String, String>> {
@@ -263,51 +251,21 @@ impl HttpHandler {
     }
 }
 
-impl HttpHandler {
-    async fn handle_request_impl<'a>(
-        &self,
-        mut request: http::Request,
-        context: http::ServerRequestContext<'a>,
-    ) -> http::Response {
-        if request.head.uri.path.as_str().starts_with("/api/") {
-            return self.handle_api_request(request).await;
-        }
-
-        if request.head.uri.path.as_str() == "/profilez" {
-            return rpc_util::ProfilezRequestHandler {}
-                .handle_request(request, context)
-                .await;
-        }
-
-        if let Some(path) = request.head.uri.path.as_str().strip_prefix("/rpc/") {
-            request.head.uri.path = AsciiString::new(&format!("/{}", path));
-            return self.rpc_handler.handle_request(request, context).await;
-        }
-
-        if let Some(path) = request.head.uri.path.as_str().strip_prefix("/data/") {
-            request.head.uri.path = AsciiString::new(&format!("/{}", path));
-            return self.data_handler.handle_request(request, context).await;
-        }
-
-        if request.head.uri.path.as_str().starts_with("/ui/") {
-            request.head.uri.path = AsciiString::new("/");
-        }
-
-        self.inner.handle_request(request, context).await
-    }
-}
-
 #[async_trait]
-impl http::ServerHandler for HttpHandler {
+impl http::ServerHandler for ApiHttpHandler {
     async fn handle_request<'a>(
         &self,
         request: http::Request,
         context: http::ServerRequestContext<'a>,
     ) -> http::Response {
-        self.handle_request_impl(request, context).await
+        match self.handle_request_impl(request, context).await {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("API Failure: {}", e);
+                internal_server_error()
+            }
+        }
     }
-
-    // TODO: Passthrough connection handling to the rpc hnadler.
 }
 
 #[executor_main]
@@ -319,60 +277,47 @@ async fn main() -> Result<()> {
     println!("Starting...");
     let start_time = Instant::now();
 
-    let certificate_file = file::read(args.tls_certificate).await?.into();
-    let private_key_file = file::read(args.tls_key).await?.into();
+    let client = ClusterMetaClient::create_from_environment().await?;
 
-    let mut tls_options =
-        crypto::tls::ServerOptions::recommended(certificate_file, private_key_file)?;
+    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
+
+    let mut server = cluster_client::ClusterServer::new(args.port.value(), acl, client)?;
 
     let monitor =
         Arc::new(MonitorImpl::create(&args.local_data_dir, args.make_fake_machines).await?);
     service.register_dependency(monitor.clone()).await;
+    server.add_service(monitor.clone().into_service())?;
 
-    let mut rpc_handler = rpc::Http2RequestHandler::new();
-    rpc_handler.add_service(monitor.clone().into_service())?;
+    let data_handler = StaticFileHandler::new_with_options(
+        &args.local_data_dir,
+        StaticFileHandlerOptions {
+            // - The only untrusted files are user uploaded file blobs which we always
+            //   store with no extension.
+            // - .svg files must have a Content-Type else they won't be rendered in
+            //   browsers.
+            // - .zz files are used with Content-Encoding headers to decode.
+            trust_file_extension: true,
 
-    service
-        .register_dependency({
-            let vars = json::Value::Object(map!(
-                "rpc_port" => &json::Value::Number(args.port.value() as f64)
-            ));
+            mount_path: "/data".to_string(),
+        },
+    );
+    server.add_request_handler("/data", true, data_handler)?;
 
-            let web_handler = web::WebServerHandler::new(web::WebServerOptions {
-                pages: vec![web::WebPageOptions {
-                    title: "CNC Monitor".into(),
-                    path: "/".into(),
-                    script_path: "built/pkg/cnc/monitor/app.js".into(),
-                    vars: Some(vars),
-                }],
-            });
 
-            let handler = HttpHandler {
-                instance: monitor,
-                inner: web_handler,
-                data_handler: StaticFileHandler::new_with_options(
-                    &args.local_data_dir,
-                    StaticFileHandlerOptions {
-                        // - The only untrusted files are user uploaded file blobs which we always
-                        //   store with no extension.
-                        // - .svg files must have a Content-Type else they won't be rendered in
-                        //   browsers.
-                        // - .zz files are used with Content-Encoding headers to decode.
-                        trust_file_extension: true,
-                    },
-                ),
-                rpc_handler,
-            };
+    let web_handler = Arc::new(web::WebPageHandler::create(web::WebPageOptions {
+        title: "CNC Monitor".into(),
+        script_path: "built/pkg/cnc/monitor/app.js".into(),
+        vars: None,
+    }).await?);
+    server.add_request_handler("/", false, web_handler.clone())?;
+    server.add_request_handler("/ui", true, web_handler.clone())?;
 
-            let mut options = http::ServerOptions::default();
-            options.port = Some(args.port.value());
-            options.tls = Some(tls_options.clone());
-            options.force_http2 = true;
+    server.add_request_handler("/assets", true, web::assets_handler())?;
 
-            let web_server = http::Server::new(handler, options);
-            Arc::new(web_server.start())
-        })
-        .await;
+    server.add_request_handler("/api", true, ApiHttpHandler {
+        instance: monitor,
+    });
 
     // TODO: Actually wait for resource readiness and make this a standard metric
     // that we report.

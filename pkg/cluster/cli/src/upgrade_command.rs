@@ -1,4 +1,4 @@
-use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::ClusterMetaClient;
 use common::errors::*;
 
 use crate::start_job_command::start_job_impl;

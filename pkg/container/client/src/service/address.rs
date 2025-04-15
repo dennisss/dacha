@@ -1,8 +1,5 @@
 use crate::id::{entity_id_from_string, entity_id_to_string, is_valid_entity_id};
-
-pub const LOCAL_ZONE: &'static str = "local";
-
-pub const GLOBAL_ZONE: &'static str = "global";
+use crate::service::zone::*;
 
 const NAME_SUFFIX: &'static str = ".cluster.internal";
 
@@ -34,11 +31,13 @@ pub struct ServiceName {
     entity: ServiceEntity,
 }
 
+// TODO: Prevent a user from constructing this without going through one of the parsing helpers.
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub enum ServiceEntity {
     Node { id: u64 },
     Job { job_name: String },
     Worker { job_name: String, worker_id: String },
+    User { name: String },
     Root,
 }
 
@@ -49,6 +48,7 @@ pub enum ServiceParseError {
     InvalidNodeId,
     UnknownEntity,
     InvalidZone,
+    InvalidEntityName,
 }
 
 impl std::fmt::Display for ServiceParseError {
@@ -69,7 +69,7 @@ impl ServiceAddress {
         address: &str,
         current_zone: &str,
     ) -> Result<Self, ServiceParseError> {
-        if current_zone == LOCAL_ZONE {
+        if !is_valid_zone(current_zone) {
             return Err(ServiceParseError::InvalidZone);
         }
 
@@ -95,7 +95,7 @@ impl ServiceAddress {
 
 impl ServiceName {
     pub fn for_job(zone: &str, job_name: &str) -> Result<Self, ServiceParseError> {
-        if zone == LOCAL_ZONE {
+        if !is_valid_zone(zone) {
             return Err(ServiceParseError::InvalidZone);
         }
 
@@ -108,7 +108,7 @@ impl ServiceName {
     }
 
     pub fn for_worker(zone: &str, worker_name: &str) -> Result<Self, ServiceParseError> {
-        if zone == LOCAL_ZONE {
+        if !is_valid_zone(zone) {
             return Err(ServiceParseError::InvalidZone);
         }
 
@@ -126,7 +126,7 @@ impl ServiceName {
     }
 
     pub fn for_node(zone: &str, node_id: u64) -> Result<Self, ServiceParseError> {
-        if zone == LOCAL_ZONE {
+        if !is_valid_zone(zone) {
             return Err(ServiceParseError::InvalidZone);
         }
 
@@ -140,8 +140,23 @@ impl ServiceName {
         })
     }
 
+    pub fn for_user(zone: &str, name: &str) -> Result<Self, ServiceParseError> {
+        if !is_valid_zone(zone) {
+            return Err(ServiceParseError::InvalidZone);
+        }
+
+        if !is_valid_user_name(name) {
+            return Err(ServiceParseError::InvalidEntityName);
+        }
+
+        Ok(Self {
+            zone: zone.to_string(),
+            entity: ServiceEntity::User { name: name.to_string() },
+        })
+    }
+
     pub fn for_root(zone: &str) -> Result<Self, ServiceParseError> {
-        if zone == LOCAL_ZONE {
+        if !is_valid_zone(zone) {
             return Err(ServiceParseError::InvalidZone);
         }
 
@@ -152,13 +167,20 @@ impl ServiceName {
     }
 
     pub fn parse(name: &str) -> Result<Self, ServiceParseError> {
+        Self::parse_relative(name, None)
+    }
+
+    pub fn parse_relative(
+        name: &str,
+        current_zone: Option<&str>
+    ) -> Result<Self, ServiceParseError> {
         let raw_name = name
             .strip_suffix(NAME_SUFFIX)
             .ok_or(ServiceParseError::NotClusterAddress)?;
 
         let mut name_parts = raw_name.split(".").collect::<Vec<_>>();
 
-        Self::parse_impl(name_parts, None)
+        Self::parse_impl(name_parts, current_zone)
     }
 
     fn parse_impl(
@@ -180,6 +202,10 @@ impl ServiceName {
                 }
             }
         } else if zone == GLOBAL_ZONE {
+            return Err(ServiceParseError::InvalidZone);
+        }
+
+        if !is_valid_zone(zone) {
             return Err(ServiceParseError::InvalidZone);
         }
 
@@ -220,6 +246,18 @@ impl ServiceName {
                     job_name,
                     worker_id,
                 }
+            }
+            "user" => {
+                if name_parts.len() != 1 {
+                    return Err(ServiceParseError::NameTooShort);
+                }
+                
+                let name = name_parts[0];
+                if !is_valid_user_name(name) {
+                    return Err(ServiceParseError::InvalidEntityName);
+                }
+
+                ServiceEntity::User { name: name.to_string() }
             }
             "root" => {
                 if name_parts.len() != 0 {
@@ -289,6 +327,9 @@ impl ServiceName {
                     NAME_SUFFIX
                 )
             }
+            ServiceEntity::User { name } => {
+                format!("{}.user.{}{}", name, self.zone, NAME_SUFFIX)
+            }
             ServiceEntity::Root => {
                 format!("root.{}{}", self.zone, NAME_SUFFIX)
             }
@@ -302,7 +343,7 @@ impl ServiceName {
             ServiceEntity::Node { .. }
             | ServiceEntity::Job { .. }
             | ServiceEntity::Worker { .. } => true,
-            ServiceEntity::Root => false,
+            ServiceEntity::Root | ServiceEntity::User { .. } => false,
         }
     }
 }
@@ -346,6 +387,18 @@ mod tests {
 
         assert_eq!(addr.entity(), &ServiceEntity::Root);
         assert_eq!(addr.zone(), "home");
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_user_name() -> Result<()> {
+        let addr = ServiceName::parse("dennis.user.home.cluster.internal")?;
+
+        assert_eq!(addr.entity(), &ServiceEntity::User { name: "dennis".into() });
+        assert_eq!(addr.zone(), "home");
+
+        assert_eq!(addr.to_string(), "dennis.user.home.cluster.internal");
 
         Ok(())
     }

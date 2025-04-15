@@ -51,6 +51,10 @@ impl Deref for CertificateVerified {
 }
 
 impl CertificateVerified {
+    pub fn inner(&self) -> Arc<Certificate> {
+        self.certificate.clone()
+    }
+
     /// Assuming we can trust the certificate, verifies a self-signed
     /// certificate.
     pub fn verify_self_signed(

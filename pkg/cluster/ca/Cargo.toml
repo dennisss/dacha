@@ -7,6 +7,7 @@ edition = "2018"
 common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
 base_error = { path = "../../base/error" }
+base_algorithms = { path = "../../base/algorithms" }
 db_table = { path = "../../db/table" }
 crypto = { path = "../../crypto" }
 automata = { path = "../../automata" }

@@ -11,6 +11,7 @@ use http::ServerHandler;
 use rpc_util::AddReflection;
 use rpc_util::ProfilezRequestHandler;
 use rpc_util::PROFILEZ_PATH;
+use protobuf::Message;
 
 use crate::acl::checker::*;
 use crate::credentials::get_http_server_peer_identity;
@@ -19,6 +20,23 @@ use crate::server::acl::*;
 use crate::server::handler::*;
 use crate::server::router::PathRouter;
 use crate::service::address::ServiceName;
+
+const DEFAULT_SERVICE_ACL_PROTO: &'static str = r#"
+    rules: [
+        {
+            path: "/rpc/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo"
+            is_directory: false
+            principals: ["group:cluster-readers"]
+        },
+        {
+            path: "/profilez"
+            is_directory: false
+            principals: ["group:cluster-admins"]
+        }
+    ]
+"#;
+
+// TODO: By default, if not running in the cluster (e.g. on a local developer's machine, disallow remote connections or enforce that only that user can access everything)
 
 /// NOTE: This struct only exists during construction of the server.
 pub struct ClusterServer {
@@ -30,9 +48,13 @@ pub struct ClusterServer {
 
 impl ClusterServer {
     pub fn new(port: u16, acl: ServiceACLProto, client: Arc<ClusterMetaClient>) -> Result<Self> {
+        let mut full_acl = ServiceACLProto::default();
+        protobuf::text::parse_text_proto(DEFAULT_SERVICE_ACL_PROTO, &mut full_acl)?;
+        full_acl.merge_from(&acl)?;
+
         let mut inst = Self::new_internal(
             port,
-            acl,
+            full_acl,
             client.zone(),
             Some(client.db().clone()),
             client.creds().as_ref().map(|c| c.server.clone()),

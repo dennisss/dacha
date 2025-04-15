@@ -5,10 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 use std::{collections::HashSet, sync::Arc};
 
 use builder::proto::{BundleBlobFormat, BundleSpec};
-use cluster_client::credentials::get_cluster_credentials;
-use cluster_client::env::ZONE_ENV_VAR;
-use cluster_client::meta::client::ClusterMetaClient;
-use cluster_client::meta::constants::META_STORE_SEEDS_ENV_VAR;
+use cluster_client::ClusterMetaClient;
 use cluster_client::meta::*;
 use cluster_client::service::address::{ServiceAddress, ServiceName};
 use cluster_client::service::create_rpc_channel;
@@ -57,14 +54,14 @@ pub struct StartWorkerCommand {
     #[arg(positional)]
     worker_spec_path: String,
 
-    /// Should be of the 'ip:port'
-    node_addr: String,
+    /// TODO: Standard on using the string node ids?
+    node_id: u64,
 }
 
 pub async fn run_start_worker(cmd: StartWorkerCommand) -> Result<()> {
-    let creds = cluster_client::credentials::get_cluster_credentials().await?;
+    let meta_client = ClusterMetaClient::create_from_environment().await?;
 
-    let node = connect_to_node(&cmd.node_addr, Some(creds.client_options())).await?;
+    let node = connect_to_node_id(meta_client.clone(), cmd.node_id).await?;
 
     let mut terminal_mode = false;
 

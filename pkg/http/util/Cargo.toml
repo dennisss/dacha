@@ -1,0 +1,16 @@
+[package]
+name = "http_util"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+http = { path = "../" }
+mime_types = { path = "../../../third_party/mime_types" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

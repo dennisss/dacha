@@ -58,6 +58,7 @@ pub async fn check_entity_allowed(
     // TODO: Check all cheap to evaluate principals before groups.
     while let Some(allowed_principal) = pending.pop() {
         match &allowed_principal {
+            Principal::Nobody => {}
             Principal::Unauthenticated => return Ok(true),
             Principal::Authenticated => {
                 if entity.is_some() {

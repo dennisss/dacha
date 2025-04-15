@@ -16,6 +16,10 @@ mod start_job_command;
 mod system_jobs;
 mod upgrade_command;
 mod utils;
+mod create_user_command;
+mod root_credentials;
+mod login_command;
+mod nss;
 
 pub use events_command::*;
 pub use labels_command::*;
@@ -24,3 +28,5 @@ pub use log_command::*;
 pub use setup_node_command::*;
 pub use start_job_command::*;
 pub use upgrade_command::*;
+pub use create_user_command::*;
+pub use login_command::*;

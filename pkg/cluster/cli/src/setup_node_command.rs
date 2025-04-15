@@ -22,13 +22,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cluster_ca::*;
-use cluster_client::credentials::ROOT_CERT_DURATION;
 use cluster_client::id::{entity_id_to_string, normalize_entity_id};
-use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::ClusterMetaClient;
 use cluster_client::meta::*;
+use cluster_client::service::create_rpc_channel;
 use cluster_client::service::address::{ServiceAddress, ServiceEntity, ServiceName};
-use common::errors::*;
-
 use builder::{BuildConfigTarget, Builder};
 use common::errors::*;
 use cluster_manager::Manager;
@@ -53,6 +51,10 @@ use crate::ssh::*;
 use crate::start_job_command::start_job_impl;
 use crate::system_jobs::*;
 use crate::utils::*;
+use crate::root_credentials::*;
+use crate::create_user_command::{run_create_user_impl, read_stdin_password};
+use crate::login_command::login_impl;
+use crate::nss::check_have_nss_utils;
 
 /// Name of the user on the node's Linux system which will own all main files
 /// like node binaries.
@@ -61,6 +63,15 @@ const ASSET_OWNER: &'static str = "cluster-user";
 /// Name of the user on the node's Linux system which will execute the node
 /// binary.
 const NODE_USER: &'static str = "cluster-node";
+
+/// Directory which contains all the node config, executables, and user data.
+const NODE_ROOT_DIR: &'static str = "/opt/dacha/node";
+
+/// List of all groups which (if they exist on the Linux machine) will be allowed
+/// to be delegated through the container runtime for containers to access.
+const MANAGED_GROUPS: &'static [&'static str] = &[
+    "gpio", "plugdev", "dialout", "i2c", "spi", "video", "audio", "edisk",
+];
 
 // TODO: Support parsing "\\n" in a regexp?
 // TODO: Support specifying that the pattern must start at the beginning of the
@@ -71,7 +82,6 @@ regexp!(CPUINFO_MODEL => "(?:^|\n)Model\\s+:\\s+([^\n]+)\n");
 
 #[derive(Args)]
 pub struct SetupNodeCommand {
-    /// TODO: Check non-null
     zone: String,
 
     /// If true, this is the first node in the cluster zone so we should
@@ -81,8 +91,19 @@ pub struct SetupNodeCommand {
     /// Directory in which the root CA private key and TLS certificate are
     /// located.
     ///
+    /// If not provided, then we assume that this is available in 
+    /// '$HOME/.dacha/credentials/root/[zone]'
+    ///
     /// When bootstrap=true, a new key/certificate will be written here.
-    tls_root: LocalPathBuf,
+    tls_root: Option<LocalPathBuf>,
+
+    /// Name of the first user to create in the cluster.
+    ///
+    /// Only relevant is --bootstrap=true. This first user will be set up as an admin
+    /// and the local Linux user will be auto-logged in as this user.
+    ///
+    /// REQUIRED if 'bootstrap'
+    first_user_name: Option<String>,
 
     /// IP Address of the node machine to setup. This machine needs to be
     /// accessible via SSH.
@@ -90,11 +111,12 @@ pub struct SetupNodeCommand {
     /// Either 'node_addr' or 'local_node' must be specified.
     node_addr: Option<String>,
 
-    /// Path to a directory in which to store data for bringing up a local node
-    /// running on the current machine.
+    /// If true, initialize the local machine as a node. This sets up a single
+    /// system wide node running as a systemd service similarly to what is done
+    /// by node_addr. 
     ///
     /// Either 'local_node' or 'node_addr' must be specified.
-    local_node: Option<LocalPathBuf>,
+    local_node: bool,
 
     /// For the purposes of initializing the cluster, a local metastore instance
     /// will be brought up before one is running in the cluster.
@@ -110,27 +132,37 @@ pub struct SetupNodeCommand {
 /// TODO: Improve this so that we can continue running it if a previous run
 /// failed (mainly needed for the non-bootstrapping case)
 pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
-    // TODO: Validate that the zone name matches a good pattern (a-z0-9_).
-
-    if cmd.zone.is_empty() {
-        return Err(err_msg("Empty --zone provided"));
+    if !cluster_client::service::zone::is_valid_zone(&cmd.zone) {
+        return Err(format_err!("Invalid --zone argument provided with value: {}", cmd.zone));
     }
 
-    if cmd.zone == "local" {
-        return Err(err_msg("Zone can't be 'local'"));
-    }
+    check_have_nss_utils().await?;
 
     println!("Zone: {}", cmd.zone);
+    println!("Bootstrap: {:?}", cmd.bootstrap);
 
+    let root_creds_dir = get_root_credentials_dir(&cmd.zone, &cmd.tls_root)?;
     let root_creds =
-        load_or_create_root_credentials(&cmd.tls_root, &cmd.zone, cmd.bootstrap).await?;
+        load_or_create_root_credentials(&root_creds_dir, &cmd.zone, cmd.bootstrap).await?;
+
+    let mut first_user_password = None;
+    if cmd.bootstrap {
+        let user_name = cmd.first_user_name.as_ref()
+            .ok_or_else(|| err_msg("--first_user_name must be provided when bootstrapping"))?;
+
+        println!("First User Name: {}", user_name);
+        println!("Enter a first user password:");
+        first_user_password = Some(read_stdin_password(true).await?);
+    }
+
+    // Give a few seconds for the user to cancel if something looks wrong.
+    println!("Starting...");
+    executor::sleep(Duration::from_secs(5)).await?;
 
     // When cluster bootstrapping, we need to run a standalone metastore replica
     // until the node can run it by itself.
     let mut local_metastore_resource = None;
     if cmd.bootstrap {
-        // TODO: Because the group_id will be different across runs, the bootstrap
-        // script isn't currently retryable.
         local_metastore_resource = Some(
             run_local_metastore(
                 cmd.local_metastore_port,
@@ -212,7 +244,7 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             let id = normalize_entity_id(u64::from_be_bytes(*array_ref![data, 0, 8]));
 
             id
-        } else if cmd.local_node.is_some() {
+        } else if cmd.local_node {
             normalize_entity_id(crypto::random::clocked_rng().uniform::<u64>())
         } else {
             return Err(err_msg("Neither flag is set."));
@@ -273,11 +305,12 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
     };
 
     println!("Setting up node runtime:");
+    let node_path = LocalPath::new(NODE_ROOT_DIR);
     let node_config = {
         if cmd.node_addr.is_some() {
             setup_remote_node_server(
                 operator.as_ref(),
-                LocalPath::new("/opt/dacha/node"),
+                node_path,
                 &cmd.zone,
                 node_id,
                 node_tls,
@@ -285,15 +318,14 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
                 true,
             )
             .await?
-        } else if let Some(node_path) = &cmd.local_node {
-            // TODO: Use the current user as the owner.
+        } else if cmd.local_node {
             setup_remote_node_server(
                 operator.as_ref(),
-                node_path.as_ref(),
+                node_path,
                 &cmd.zone,
                 node_id,
                 node_tls,
-                "dennis",
+                &std::env::var("USER")?,
                 false,
             )
             .await?
@@ -330,6 +362,21 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             local_metastore_resource.unwrap(),
         )
         .await?;
+
+
+        println!("Creating first user...");
+        let user_name = cmd.first_user_name.unwrap();
+        let user_password = first_user_password.unwrap();
+
+        run_create_user_impl(meta_client.clone(), &user_name, &user_password, &[
+            "cluster-readers".into(),
+            "cluster-admins".into()
+        ]).await?;
+    
+
+        // TODO: Use an unauthenticated meta_client.
+        println!("Logging in to the user...");
+        login_impl(meta_client.clone(), &user_name, &user_password).await?;
     }
 
     //
@@ -400,21 +447,17 @@ async fn load_or_create_root_credentials(
         manager.write_certificates(&[cert], key.clone()).await?;
     }
 
-    if manager.certificates().unwrap().len() != 1 {
+    let (certs, pkey) = manager.certificates_with_private_key().unwrap();
+
+    if certs.len() != 1 {
         return Err(err_msg(
             "Expected exactly one root certificate for a single zone",
         ));
     }
 
     Ok(RootCredentials {
-        private_key: manager
-            .server_options()
-            .unwrap()
-            .get()
-            .certificate_auth
-            .private_key
-            .clone(),
-        certificate: manager.certificates().unwrap()[0].clone(),
+        private_key: pkey.clone(),
+        certificate: certs[0].clone(),
         registry: manager.registry().unwrap(),
         tls: Credentials {
             client: manager.client_options().unwrap(),
@@ -720,18 +763,11 @@ async fn setup_remote_node_server(
 
         subgid.push_str(&format!("{}:400000:65536\n", NODE_USER));
 
-        let target_groups = &[
-            "gpio", "plugdev", "dialout", "i2c", "spi", "video", "audio", "edisk",
-        ];
-
         for group in groups {
-            if target_groups.iter().find(|g| *g == &group.name).is_some() {
+            if MANAGED_GROUPS.iter().find(|g| *g == &group.name).is_some() {
                 subgid.push_str(&format!("{}:{}:1\n", NODE_USER, group.id));
             }
         }
-
-        println!("{}", subgid);
-        println!("");
 
         operator
             .upload(subgid.as_bytes(), "/tmp/next_subgid")

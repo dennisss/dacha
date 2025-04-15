@@ -275,10 +275,6 @@ impl ClientHello {
             formats: vec![ECPointFormat::uncompressed],
         }));
 
-        if options.certificate_auth.is_some() {
-            extensions.push(Extension::PostHandshakeAuth);
-        }
-
         // TODO: PSK if any must always be the last extension.
 
         // XXX: See

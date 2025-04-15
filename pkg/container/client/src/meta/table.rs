@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::marker::PhantomData;
 
 use builder_proto::builder::BundleBlobSpec;
 use common::errors::*;

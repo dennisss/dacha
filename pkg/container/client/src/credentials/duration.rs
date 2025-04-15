@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::service::address::{ServiceEntity, ServiceName};
 
-pub const ROOT_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 365 * 4); // 4 years.
+const ROOT_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 365 * 4); // 4 years.
 
 /// Amount of time after which we insert a new root certificate into the
 /// metastore until every client will have the certificate in its local
@@ -13,18 +13,24 @@ pub const ROOT_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 365 
 /// parent certificate)
 pub const ROOT_CERT_PROPAGATION_DELAY: Duration = Duration::from_secs(60 * 60 * 24 * 30); // 1 month.
 
-pub const NODE_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 180); // 0.5 years
+const NODE_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 180); // 0.5 years
 
 /// NOTE: If the CA or metastore nodes go down, then they must down come back
 /// online within this amount of time to avoid the cluter needing to be
 /// re-bootstrapped.
 ///
 /// TODO: Lower this temporarily during node testing.
-pub const WORKER_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 31); // 1 month
+const WORKER_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 31); // 1 month
 
 /// Minimum amount of time remaining on a worker certificate in order to trying
 /// to immediately starting the worker (if it isn't already started).
 pub const WORKER_CERT_MIN_REMAINING: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
+
+const USER_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 31); // 1 month
+
+/// Duration used for certificates that just live on developer/user machines to enable
+/// connection to servers not running in a cluster (on 'localhost'). 
+pub const LOCALHOST_CERT_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 365 * 4); // 4 years
 
 /// Gets the default certificate lifetime for specific types of entites.
 ///
@@ -37,6 +43,7 @@ pub fn cert_duration_for_entity(entity: &ServiceEntity) -> Option<Duration> {
         ServiceEntity::Node { .. } => NODE_CERT_DURATION,
         ServiceEntity::Worker { .. } => WORKER_CERT_DURATION,
         ServiceEntity::Root => ROOT_CERT_DURATION,
+        ServiceEntity::User { .. } => USER_CERT_DURATION,
         ServiceEntity::Job { .. } => {
             return None;
         }

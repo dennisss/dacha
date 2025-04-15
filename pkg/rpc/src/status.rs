@@ -49,6 +49,7 @@ impl Status {
     status_ctor!(unimplemented, Unimplemented);
     status_ctor!(permission_denied, PermissionDenied);
     status_ctor!(unknown, Unknown);
+    status_ctor!(resource_exhausted, ResourceExhausted);
 
     pub fn code(&self) -> StatusCode {
         self.code

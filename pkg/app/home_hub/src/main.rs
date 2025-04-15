@@ -85,7 +85,7 @@ impl App {
         let args = common::args::parse_args::<Args>()?;
 
         let mut meta_client =
-            cluster_client::meta::client::ClusterMetaClient::create_from_environment().await?;
+            cluster_client::ClusterMetaClient::create_from_environment().await?;
 
         let config = meta_client
             .get_object::<Config>(&args.config_object)

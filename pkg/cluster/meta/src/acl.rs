@@ -73,7 +73,7 @@ impl KeyPrefixACLProcessor {
         let mut acls = HashMap::<Vec<u8>, KeyPrefixACL, FastHasherBuilder>::default();
 
         for proto in db.list::<KeyPrefixACLTable>().await? {
-            acls.insert(proto.prefix().to_vec(), Self::proto_to_acl(&proto)?);
+            acls.insert(proto.prefix().to_vec(), self.proto_to_acl(&proto)?);
         }
 
         lock!(state <= self.state.write().await?, {
@@ -83,15 +83,15 @@ impl KeyPrefixACLProcessor {
         Ok(())
     }
 
-    fn proto_to_acl(proto: &KeyPrefixACLProto) -> Result<KeyPrefixACL> {
+    fn proto_to_acl(&self, proto: &KeyPrefixACLProto) -> Result<KeyPrefixACL> {
         let mut readers = vec![];
         for s in proto.readers() {
-            readers.push(Principal::parse(s)?);
+            readers.push(Principal::parse_relative(s, Some(&self.zone))?);
         }
 
         let mut writers = vec![];
         for s in proto.writers() {
-            writers.push(Principal::parse(s)?);
+            writers.push(Principal::parse_relative(s, Some(&self.zone))?);
         }
 
         Ok(KeyPrefixACL { readers, writers })
@@ -116,7 +116,7 @@ impl KeyPrefixACLProcessor {
             };
 
             // TODO: Only need to form this if !deleted.
-            let new_rule = Self::proto_to_acl(&msg)?;
+            let new_rule = self.proto_to_acl(&msg)?;
 
             // TODO: If the hash map needs to be resized, do that with a reader lock before
             // swapping the whole map.

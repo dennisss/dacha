@@ -14,6 +14,9 @@ use crate::status_code;
 
 #[derive(Default)]
 pub struct StaticFileHandlerOptions {
+    // TODO: In the rpc code, we call this the 'base_path', so maybe standardize this naming better.
+    pub mount_path: String,
+
     /// If true, infer and return a Content-Type header based on the file
     /// extension of the requested path. By default, this is false and the
     /// Content-Type is always application/octet-stream.
@@ -22,7 +25,6 @@ pub struct StaticFileHandlerOptions {
 
 /// HTTP request handler which serves static files from the local file system.
 pub struct StaticFileHandler {
-    // mount_path: UriPath,
     base_path: LocalPathBuf, /* Need to be able to detect content types of files (either from
                               * extensions or binary) Need to be able to know
                               * if a content type is compressable (or if it is already
@@ -65,7 +67,10 @@ impl ServerHandler for StaticFileHandler {
     async fn handle_request<'a>(&self, request: Request, _: ServerRequestContext<'a>) -> Response {
         let mut file_path = self.base_path.clone();
 
-        let mut segments = request.head.uri.path.as_ref().split('/');
+        let path = request.head.uri.path.as_str()
+            .strip_prefix(&self.options.mount_path).unwrap_or("");
+
+        let mut segments = path.split('/');
 
         // Switch the initial empty segment before the first '/'
         segments.next();

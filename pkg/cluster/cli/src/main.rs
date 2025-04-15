@@ -120,7 +120,6 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 use std::time::Duration;
 
-use cluster_client::credentials::get_cluster_credentials;
 use cluster_client::env::ZONE_ENV_VAR;
 use cluster_client::id::entity_id_to_string;
 use cluster_client::meta::constants::META_STORE_SEEDS_ENV_VAR;
@@ -129,7 +128,7 @@ use common::failure::ResultExt;
 use common::io::{Readable, Writeable};
 
 use cluster_cli::*;
-use cluster_client::meta::client::ClusterMetaClient;
+use cluster_client::ClusterMetaClient;
 use cluster_client::meta::*;
 
 #[derive(Args)]
@@ -139,15 +138,19 @@ pub struct Args {
 
 #[derive(Args)]
 enum Command {
-    // /// Initializes a new cluster. This should only be called once when
-    // /// initially setting up a new set of nodes.
-    // ///
-    // /// Before this is run, there must already be at least one node machine
-    // /// running.
-    // #[arg(name = "bootstrap")]
-    // Bootstrap(BootstrapCommand),
+    /// Installs or upgrades the node runtime on a single machine via SSH.
+    ///
+    /// For the first node in a cluster, this should also be run with --bootstrap to
+    /// optionally also bootstrap the entire cluster by installing core system jobs on the
+    /// node.
     #[arg(name = "setup_node")]
     SetupNode(SetupNodeCommand),
+
+    #[arg(name = "create_user")]
+    CreateUser(CreateUserCommand),
+
+    #[arg(name = "login")]
+    Login(LoginCommand),
 
     /// Re-builds all system cluster components (metastore, manager) and updates
     /// them in a running cluster.
@@ -179,33 +182,6 @@ enum Command {
 
     #[arg(name = "labels")]
     Labels(LabelsCommand),
-
-    #[arg(name = "envvars")]
-    EnvVars(EnvVarsCommand),
-}
-
-#[derive(Args)]
-struct EnvVarsCommand {}
-
-async fn run_envvars(cmd: EnvVarsCommand) -> Result<()> {
-    let meta_client = ClusterMetaClient::create_from_environment().await?;
-
-    // Wait for server discovery.
-    // TODO: Instead check that the RouteStore has marked initializers as done
-    // running.
-    executor::sleep(Duration::from_secs(4)).await;
-
-    let seeds = meta_client.seeds().await?;
-
-    let zone_var = format!("export {}={}", ZONE_ENV_VAR, meta_client.zone());
-    let seed_var = format!("export {}={}", META_STORE_SEEDS_ENV_VAR, seeds);
-
-    println!(
-        "Append the following to ~/.bashrc:\n\n{}\n{}\n",
-        zone_var, seed_var
-    );
-
-    Ok(())
 }
 
 #[executor_main]
@@ -213,6 +189,8 @@ async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     match args.command {
         Command::SetupNode(cmd) => run_setup_node(cmd).await,
+        Command::CreateUser(cmd) => run_create_user(cmd).await,
+        Command::Login(cmd) => run_login(cmd).await,
         Command::Upgrade(cmd) => run_upgrade(cmd).await,
         Command::List(cmd) => run_list(cmd).await,
         Command::StartWorker(cmd) => run_start_worker(cmd).await,
@@ -220,6 +198,5 @@ async fn main() -> Result<()> {
         Command::StartJob(cmd) => run_start_job(cmd).await,
         Command::Events(cmd) => run_events(cmd).await,
         Command::Labels(cmd) => run_labels(cmd).await,
-        Command::EnvVars(cmd) => run_envvars(cmd).await,
     }
 }

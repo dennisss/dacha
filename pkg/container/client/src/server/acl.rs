@@ -40,7 +40,7 @@ impl ServiceACL {
             }
 
             for s in proto.principals() {
-                principals.push(Principal::parse(s)?);
+                principals.push(Principal::parse_relative(s, Some(zone))?);
             }
 
             router.add_route(

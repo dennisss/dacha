@@ -18,6 +18,7 @@ use executor_multitask::ServiceResource;
 use http::header::*;
 use http::status_code::*;
 use http::Body;
+use http_util::not_found;
 
 use crate::buffer_queue::BufferQueue;
 use crate::buffer_queue::BufferQueueCursor;
@@ -173,6 +174,10 @@ impl Http2RequestHandler {
         self.base_path = base_path.to_string();
     }
 
+    pub fn codec_options_mut(&mut self) -> &mut ServerCodecOptions {
+        Arc::get_mut(&mut self.codec_options).unwrap()
+    }
+
     pub fn add_service(&mut self, service: Arc<dyn Service>) -> Result<()> {
         let service_name = service.service_name().to_string();
         if self.services.contains_key(&service_name) {
@@ -267,10 +272,7 @@ impl Http2RequestHandler {
         let rpc_path = match request.head.uri.path.as_ref().strip_prefix(&self.base_path) {
             Some(v) => v,
             None => {
-                return Ok(http::ResponseBuilder::new()
-                    .status(http::status_code::NOT_FOUND)
-                    .build()
-                    .unwrap());
+                return Ok(not_found());
             }
         };
 

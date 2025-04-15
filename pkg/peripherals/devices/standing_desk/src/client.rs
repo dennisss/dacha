@@ -32,7 +32,7 @@ impl Client {
                 radio_bridge_addr,
                 async move {
                     Ok(
-                        cluster_client::meta::client::ClusterMetaClient::create_from_environment()
+                        cluster_client::ClusterMetaClient::create_from_environment()
                             .await?,
                     )
                 },

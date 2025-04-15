@@ -17,6 +17,7 @@ crypto = { path = "../../crypto" }
 web = { path = "../../web" }
 rpc = { path = "../../rpc" }
 http = { path = "../../http" }
+http_util = { path = "../../http/util" }
 rpc_util = { path = "../../rpc/util" }
 json = { path = "../../format/json" }
 video = { path = "../video" }

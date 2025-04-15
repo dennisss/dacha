@@ -27,7 +27,7 @@ impl<T> PathRouter<T> {
             return Err(err_msg("Registered routes must be absolute"));
         }
 
-        if path.ends_with("/") {
+        if path.ends_with("/") && path != "/" {
             return Err(err_msg("Route must not end in '/'"));
         }
 
@@ -119,5 +119,19 @@ mod tests {
         assert_eq!(router.route("/dir"), Some(("/dir", &2)));
         assert_eq!(router.route("/dir/"), Some(("/dir", &2)));
         assert_eq!(router.route("/dir/a/b/c"), Some(("/dir", &2)));
+    }
+
+    #[test]
+    fn routing_root() {
+        let mut router = PathRouter::<usize>::default();
+
+        assert_eq!(router.route("/"), None);
+        assert_eq!(router.route("/hello"), None);
+
+        router.add_route("/", false, 1).unwrap();
+        router.add_route("/hello", false, 2).unwrap();
+
+        assert_eq!(router.route("/"), Some(("/", &1)));
+        assert_eq!(router.route("/hello"), Some(("/hello", &2)));
     }
 }

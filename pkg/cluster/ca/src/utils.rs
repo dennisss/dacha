@@ -70,6 +70,7 @@ pub async fn sign_leaf_certificate(
         } => {
             subject_alt_names.push(ServiceName::for_job(name.zone(), &job_name)?.to_string());
         }
+        ServiceEntity::User { .. } => {}
         ServiceEntity::Job { .. } | ServiceEntity::Root => panic!(),
     }
 

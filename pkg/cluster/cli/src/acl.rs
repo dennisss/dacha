@@ -125,6 +125,8 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         make_table_acl::<CertificateMetadataTable>(&[&cluster_readers], &[&ca_job]),
         // Secrets
         make_table_acl::<PrivateKeyMetadataTable>(&[&ca_job], &[&ca_job]),
+        // Due to containing password hashes, this is secret.
+        make_table_acl::<UserTable>(&[&ca_job], &[&ca_job]),
         // Not secret information so just granting cluster wide access for simplicity.
         make_table_acl::<BundleBlobMetadataTable>(&[&cluster_readers], &[&manager_job]),
     ])

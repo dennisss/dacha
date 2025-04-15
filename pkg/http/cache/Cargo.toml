@@ -13,9 +13,10 @@ executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 parsing = { path = "../../parsing" }
 macros = { path = "../../macros" }
-sstable = { path = "../../sstable" }
 protobuf = { path = "../../protobuf" }
 http = { path = ".." }
+http_util = { path = "../util" }
+db_txn = { path = "../../db/txn" }
 db_table = { path = "../../db/table" }
 
 [features]

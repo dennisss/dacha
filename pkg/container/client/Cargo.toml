@@ -10,6 +10,7 @@ crypto = { path = "../../crypto" }
 protobuf = { path = "../../protobuf" }
 db_table = { path = "../../db/table" }
 http = { path = "../../http" }
+http_util = { path = "../../http/util" }
 macros = { path = "../../macros" }
 db_txn_client = { path = "../../db/txn/client" }
 db_txn_proto = { path = "../../db/txn/proto" }
@@ -25,6 +26,8 @@ file = { path = "../../file" }
 sys = { path = "../../sys" }
 container_proto = { path = "../proto" }
 builder_proto = { path = "../../builder/proto" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+automata = { path = "../../automata" }
 
 [features]
 default = ["std"]

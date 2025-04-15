@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let meta_client =
-        cluster_client::meta::client::ClusterMetaClient::create_from_environment().await?;
+        cluster_client::ClusterMetaClient::create_from_environment().await?;
 
     if let Some(new_config) = args.set_config {
         let mut config = Config::default();

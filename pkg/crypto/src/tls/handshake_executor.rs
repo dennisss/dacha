@@ -14,9 +14,8 @@ use crate::tls::handshake::{Certificate, CertificateEntry, CertificateVerify, Ha
 use crate::tls::key_schedule::KeySchedule;
 use crate::tls::record_stream::{Message, RecordReader, RecordWriter};
 use crate::tls::transcript::Transcript;
+use crate::tls::options::{CertificateIdentity, CertificateRequestOptions};
 use crate::x509;
-
-use super::{CertificateAuthenticationOptions, CertificateRequestOptions};
 
 const TLS13_CERTIFICATEVERIFY_CLIENT_CTX: &'static [u8] = b"TLS 1.3, client CertificateVerify";
 const TLS13_CERTIFICATEVERIFY_SERVER_CTX: &'static [u8] = b"TLS 1.3, server CertificateVerify";
@@ -96,24 +95,19 @@ impl<'a> HandshakeExecutor<'a> {
 
     pub async fn send_certificate(
         &mut self,
-        options: &CertificateAuthenticationOptions,
+        identity: &CertificateIdentity,
         certificate_request_context: Bytes,
     ) -> Result<()> {
         // TODO: In the future this will need to be clever enough to pick between
         // multiple certificates based on the supported signature algorithms on the
         // remote machine.
 
-        // While it is technically allowed for a client to send 0 certificates (and skip
-        // the CertificateVerify), we don't currently support this. For now the client
-        // must just not set the certificate_auth options upfront if certificate
-        // authentication shouldn't be performed.
-        if options.certificates.len() < 1 {
+        if identity.certificates.len() < 1 {
             return Err(err_msg("Expected to send at least one certificate"));
         }
 
-        // TODO: Must verify that this contains at least one certificate.
         let mut certificate_list = vec![];
-        for cert in &options.certificates {
+        for cert in &identity.certificates {
             certificate_list.push(CertificateEntry {
                 cert: cert.raw.to_der().into(), /* TODO: Can we implement this without
                                                  * re-serialization. */
@@ -124,6 +118,18 @@ impl<'a> HandshakeExecutor<'a> {
         let certs = Handshake::Certificate(Certificate {
             certificate_request_context,
             certificate_list,
+        });
+
+        self.send_handshake_message(certs).await
+    }
+
+    pub async fn send_empty_certificate(
+        &mut self,
+        certificate_request_context: Bytes,
+    ) -> Result<()> {
+        let certs = Handshake::Certificate(Certificate {
+            certificate_request_context,
+            certificate_list: vec![],
         });
 
         self.send_handshake_message(certs).await

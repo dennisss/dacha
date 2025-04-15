@@ -121,8 +121,14 @@ impl<'a> ServerHandshakeExecutor<'a> {
             (secret, public)
         };
 
-        // TODO: Check that the ServerName against our host name (or the host name or
+        // TODO: Check that the ServerName against our host name (the one requested via HTTP) (or the host name or
         // our certificates).
+
+        if self.options.certificate_auth.identities.is_empty() {
+            return Err(err_msg("No server identifies configured"));
+        }
+
+        let identity;
 
         // When being requested with an ip address, we won't have a host name.
         if let Some(server_name) = find_server_name_from_client(&client_hello.extensions)? {
@@ -130,16 +136,33 @@ impl<'a> ServerHandshakeExecutor<'a> {
                 return Err(err_msg("Expected request to have exactly one name"));
             }
 
-            // TODO: Check that certificate_auth has at least one cert.
-            let name = std::str::from_utf8(&server_name.names[0].data)?;
-            if server_name.names[0].typ != NameType::host_name
-                || !self.options.certificate_auth.certificates[0].for_dns_name(name)?
-            {
+            if server_name.names[0].typ != NameType::host_name {
                 return Err(format_err!(
-                    "Our certificate is not valid for the requested domain: {}",
-                    name
-                ));
+                    "Only host_name type server names are supported. Instead got: {:?}",
+                    server_name.names[0].typ));
             }
+            
+            let name = std::str::from_utf8(&server_name.names[0].data)?;
+            
+            let mut chosen_identity = None;
+
+            for ident in &self.options.certificate_auth.identities {
+                // TODO: Check that have at least one ceritificate in this vec.
+                if ident.certificates[0].for_dns_name(name)? {
+                    chosen_identity = Some(ident);
+                    break;
+                }
+            }
+
+            identity = chosen_identity.ok_or_else(|| format_err!(
+                "Our certificate(s) is not valid for the requested domain: {}",
+                name
+            ))?;
+
+            self.summary.requested_server_name = Some(name.into());
+
+        } else {
+            identity = &self.options.certificate_auth.identities[0];
         }
 
         // Find a KeyShareClientHello and use that to return a ServerHello
@@ -229,7 +252,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
         let cert_req_send = self.maybe_send_certificate_request(&client_hello).await?;
 
         self.executor
-            .send_certificate(&self.options.certificate_auth, Bytes::new())
+            .send_certificate(identity, Bytes::new())
             .await?;
 
         let cert_ver = self
@@ -237,7 +260,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
             .create_certificate_verify(
                 &key_schedule,
                 &client_signature_algorithms_ext.algorithms,
-                &self.options.certificate_auth.private_key,
+                &identity.private_key,
             )
             .await?;
 
@@ -275,8 +298,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
                 .process_certificate(raw_certificate, certificate_registry, options, None)
                 .await?;
 
-            // NOTE: A client is allowed to advertise that they can do post_handshake_auth
-            // and still send no certificates (and no CertificateVerify).
+            // NOTE: A client is allowed to send a list of zero certifies if they don't support .
             if let Some(cert) = cert {
                 self.executor
                     .receive_certificate_verify_v13(
@@ -310,9 +332,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
     }
 
     async fn maybe_send_certificate_request(&mut self, client_hello: &ClientHello) -> Result<bool> {
-        if !has_post_handshake_auth(&client_hello.extensions)
-            || self.options.certificate_request.is_none()
-        {
+        if self.options.certificate_request.is_none() {
             return Ok(false);
         }
 
