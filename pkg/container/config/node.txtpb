@@ -1,7 +1,7 @@
 # proto-file: pkg/container/src/proto/node.proto
 # proto-message: NodeConfig
 
-data_dir: "/opt/dacha/node/data"
+# data_dir: "/opt/dacha/node/data"
 # cgroup_dir: "/sys/fs/cgroup/dacha"
 service_port: 10400
 graceful_shutdown_timeout_secs: 10

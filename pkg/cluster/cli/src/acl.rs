@@ -16,6 +16,7 @@ pub async fn authorize_node(node_id: u64, zone: &str, db: &ProtobufDB) -> Result
     let q = raw_query!(NodeMetadataTable, "id = ?", node_id);
     let key = ProtobufDBTransaction::primary_key_prefix::<NodeMetadataTable>(&q)?;
 
+    // TODO: Skip adding this if the node is already authorized.
     let mut proto = KeyPrefixACLProto::default();
     proto.set_prefix(key);
     proto.add_writers(Principal::Entity(ServiceName::for_node(zone, node_id)?).to_string());

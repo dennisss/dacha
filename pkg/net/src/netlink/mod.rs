@@ -161,6 +161,7 @@ impl<'a> NetlinkMessageReceiver<'a> {
 
 #[derive(Default, Debug)]
 pub struct Interface {
+    pub index: u32,
     pub name: String,
     pub loopback: bool,
     pub up: bool,
@@ -193,7 +194,7 @@ pub struct InterfaceAddr {
     pub local_address: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum InterfaceAddrFamily {
     INET,
     INET6,
@@ -252,6 +253,7 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
         // println!("{:?}", info);
 
         let iface = interfaces.entry(info.ifi_index as usize).or_default();
+        iface.index = info.ifi_index as u32;
 
         iface.up = info.ifi_flags & (libc::IFF_UP as u32) != 0;
         iface.loopback = info.ifi_flags & (libc::IFF_LOOPBACK as u32) != 0;
@@ -336,13 +338,179 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
     Ok(interfaces.into_values().collect())
 }
 
+#[derive(Debug)]
+pub struct Route {
+    pub family: InterfaceAddrFamily,
+    pub typ: RouteType,
+    pub table: RouteTable,
+    pub scope: RouteScope,
+    pub source: Option<Vec<u8>>,
+    pub preferred_source: Option<Vec<u8>>,
+    pub destination: Option<Vec<u8>>,
+    pub gateway: Option<Vec<u8>>,
+    pub priority: Option<u32>,
+    pub metrics: Option<u32>,
+    pub input_interface_index: Option<u32>,
+    pub output_interface_index: Option<u32>,
+}
+
+enum_def_with_unknown!(RouteType u8 =>
+    Unicast = libc::RTN_UNICAST,
+    Local = libc::RTN_LOCAL,
+    Broadcast = libc::RTN_BROADCAST,
+    Anycast = libc::RTN_ANYCAST,
+    Multicast = libc::RTN_MULTICAST,
+    Blackhole = libc::RTN_BLACKHOLE,
+    Unreachable = libc::RTN_UNREACHABLE,
+    Prohibit = libc::RTN_PROHIBIT,
+    Throw = libc::RTN_THROW,
+    NAT = libc::RTN_NAT
+);
+
+enum_def_with_unknown!(RouteScope u8 =>
+    Universe = libc::RT_SCOPE_UNIVERSE,
+    Site = libc::RT_SCOPE_SITE,
+    Link = libc::RT_SCOPE_LINK,
+    Host = libc::RT_SCOPE_HOST,
+    Nowhere = libc::RT_SCOPE_NOWHERE
+);
+
+enum_def_with_unknown!(RouteTable u8 =>
+    Default = libc::RT_TABLE_DEFAULT,
+    Main = libc::RT_TABLE_MAIN,
+    Local = libc::RT_TABLE_LOCAL
+);
+
+
+pub fn read_routes() -> Result<Vec<Route>> {
+    let sock = NetlinkSocket::create()?;
+
+    let mut link_request = vec![];
+    serialize_cstruct(
+        &nlmsghdr {
+            nlmsg_len: 0,
+            nlmsg_type: libc::RTM_GETROUTE,
+            nlmsg_flags: (libc::NLM_F_DUMP | libc::NLM_F_REQUEST) as u16,
+            nlmsg_seq: 1,
+            nlmsg_pid: 0,
+        },
+        &mut link_request,
+    );
+    serialize_cstruct(&ifinfomsg::default(), &mut link_request);
+    sock.send_to_kernel(&mut link_request)?;
+
+    let mut message_receiver = sock.recv_messages();
+
+    let mut out = vec![];
+
+    while let Some((message_header, mut message_payload)) = message_receiver.next()? {
+        let info: &rtmsg = parse_next!(message_payload, parse_cstruct);
+
+        let family = match info.rtm_family as i32 {
+            libc::AF_INET => InterfaceAddrFamily::INET,
+            libc::AF_INET6 => InterfaceAddrFamily::INET6,
+            _ => {
+                // println!("UNKNOWN ADDR FAMILY");
+                continue
+            },
+        };
+
+        let typ = RouteType::from_value(info.rtm_type);
+        let scope = RouteScope::from_value(info.rtm_scope);
+
+        let mut route = Route {
+            family,
+            typ,
+            scope,
+            table: RouteTable::from_value(info.rtm_table),
+            source: None,
+            preferred_source: None,
+            destination: None,
+            gateway: None,
+            metrics: None,
+            priority: None,
+            input_interface_index: None,
+            output_interface_index: None,
+        };
+
+        while !message_payload.is_empty() {
+            let (attr, value): (&rtattr, _) =
+                parse_next!(message_payload, parse_cstruct_with_payload);
+
+            if attr.rta_type == libc::RTA_DST {
+                route.destination = Some(value.to_vec());
+            } else if attr.rta_type == libc::RTA_SRC {
+                route.source = Some(value.to_vec());
+            } else if attr.rta_type == libc::RTA_PREFSRC {
+                route.preferred_source = Some(value.to_vec());
+            } else if attr.rta_type == libc::RTA_GATEWAY {
+                route.gateway = Some(value.to_vec());
+            } else if attr.rta_type == libc::RTA_PRIORITY {
+                if value.len() != 4 {
+                    return Err(err_msg("Invalid u32"));
+                }
+
+                route.priority = Some(u32::from_le_bytes(*array_ref![value, 0, 4]));
+            } else if attr.rta_type == libc::RTA_METRICS {
+                if value.len() != 4 {
+                    return Err(err_msg("Invalid u32"));
+                }
+
+                route.metrics = Some(u32::from_le_bytes(*array_ref![value, 0, 4]));
+            } else if attr.rta_type == libc::RTA_IIF {
+                if value.len() != 4 {
+                    return Err(err_msg("Invalid u32"));
+                }
+
+                route.input_interface_index = Some(u32::from_le_bytes(*array_ref![value, 0, 4]));
+            } else if attr.rta_type == libc::RTA_OIF {
+                if value.len() != 4 {
+                    return Err(err_msg("Invalid u32"));
+                }
+
+                route.output_interface_index = Some(u32::from_le_bytes(*array_ref![value, 0, 4]));
+            } else if attr.rta_type == libc::RTA_TABLE {
+                // TODO
+            } else if attr.rta_type == libc::RTA_PREF {
+                // TODO
+            } else if attr.rta_type == libc::RTA_CACHEINFO {
+                // TODO:
+            }
+            else {
+                // println!("Unknown attr: {:?}", attr);
+            }
+        }
+
+        out.push(route);
+    }
+
+    Ok(out)
+}
+
 /// Tries to find the local network ip address of the current machine.
 ///
-/// We assume that there is only one active network interface on the machine.
+/// Basically we to pick the IP address associated with the interface used by the default
+/// global route on the machine.
 ///
 /// If both a V4 and V6 address are available, we will prefer the V4 address (as
 /// it is likely shorter and more user friendly).
 pub fn local_ip() -> Result<IPAddress> {
+    let mut routes = read_routes()?.into_iter()
+        .filter(|route| {
+            route.scope == RouteScope::Universe &&
+            route.typ == RouteType::Unicast &&
+            route.output_interface_index.is_some()
+        })
+        .collect::<Vec<_>>();
+
+    routes.sort_by_key(|route| route.priority.unwrap_or_default());
+
+    if routes.is_empty() {
+        return Err(err_msg("Unable to find any default routes"));
+    }
+
+    let iface_index = routes[0].output_interface_index.unwrap();
+
     let ifaces = read_interfaces()?;
 
     let mut found_ip = None;
@@ -351,11 +519,9 @@ pub fn local_ip() -> Result<IPAddress> {
             continue;
         }
 
-        /*
-        if iface.addrs.len() > 0 && found_ip.is_some() {
-            return Err(err_msg("Multiple candidate local ips"));
+        if iface.index != iface_index {
+            continue;
         }
-        */
 
         let mut found_v4 = false;
 
@@ -476,6 +642,7 @@ struct ifinfomsg {
     ifi_change: sys::c_uint,  /* change mask */
 }
 
+
 // These are also aligned to 4 bytes (both the start of the data and the end of
 // the data)
 
@@ -501,4 +668,20 @@ struct ifaddrmsg {
     ifa_flags: sys::c_uchar,     /* Address flags */
     ifa_scope: sys::c_uchar,     /* Address scope */
     ifa_index: sys::c_uint,      /* Interface index */
+}
+
+
+#[repr(C)]
+#[derive(Debug, Default)]
+struct rtmsg {
+    rtm_family: sys::c_uchar,   /* Address family of route */
+    rtm_dst_len: sys::c_uchar,  /* Length of destination */
+    rtm_src_len: sys::c_uchar,  /* Length of source */
+    rtm_tos: sys::c_uchar,      /* TOS filter */
+    rtm_table: sys::c_uchar,    /* Routing table ID;
+                                   see RTA_TABLE below */
+    rtm_protocol: sys::c_uchar, /* Routing protocol; see below */
+    rtm_scope: sys::c_uchar,    /* See below */
+    rtm_type: sys::c_uchar,     /* See below */
+    rtm_flags: sys::c_uint,
 }

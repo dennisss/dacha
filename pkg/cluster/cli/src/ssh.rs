@@ -8,8 +8,10 @@ use file::LocalPath;
 
 #[async_trait]
 pub trait MachineOperator: Send + Sync + 'static {
-    /// Runs a bash command on the machine.
-    async fn run(&self, command: &str) -> Result<String>;
+    /// Runs a bash command on the machine and returns the stdout.
+    async fn run(&self, command: &str) -> Result<Vec<u8>>;
+
+    async fn file_exists_impl(&self, remote_path: &LocalPath) -> Result<bool>;
 
     async fn create_dir_all_impl(&self, remote_path: &LocalPath) -> Result<()>;
 
@@ -24,10 +26,14 @@ pub trait MachineOperator: Send + Sync + 'static {
         local_path: &LocalPath,
     ) -> Result<()>;
 
-    async fn download_impl(&self, remote_path: &LocalPath) -> Result<String>;
+    async fn download_impl(&self, remote_path: &LocalPath) -> Result<Vec<u8>>;
 }
 
 impl dyn MachineOperator {
+    pub async fn file_exists<P: AsRef<LocalPath> + Send>(&self, remote_path: P) -> Result<bool> {
+        self.file_exists_impl(remote_path.as_ref()).await
+    }
+
     pub async fn create_dir_all<P: AsRef<LocalPath> + Send>(&self, remote_path: P) -> Result<()> {
         self.create_dir_all_impl(remote_path.as_ref()).await
     }
@@ -58,8 +64,12 @@ impl dyn MachineOperator {
             .await
     }
 
-    pub async fn download<P: AsRef<LocalPath> + Send>(&self, remote_path: P) -> Result<String> {
+    pub async fn download<P: AsRef<LocalPath> + Send>(&self, remote_path: P) -> Result<Vec<u8>> {
         self.download_impl(remote_path.as_ref()).await
+    }
+
+    pub async fn download_string<P: AsRef<LocalPath> + Send>(&self, remote_path: P) -> Result<String> {
+        Ok(String::from_utf8(self.download_impl(remote_path.as_ref()).await?)?)
     }
 }
 
@@ -68,7 +78,7 @@ pub struct LocalOperator {}
 
 #[async_trait]
 impl MachineOperator for LocalOperator {
-    async fn run(&self, command: &str) -> Result<String> {
+    async fn run(&self, command: &str) -> Result<Vec<u8>> {
         let output = Command::new("/bin/bash").args(["-c", command]).output()?;
         if !output.status.success() {
             std::io::stdout().write_all(&output.stdout).unwrap();
@@ -76,7 +86,11 @@ impl MachineOperator for LocalOperator {
             return Err(err_msg("Command failed"));
         }
 
-        Ok(String::from_utf8(output.stdout)?)
+        Ok(output.stdout)
+    }
+
+    async fn file_exists_impl(&self, remote_path: &LocalPath) -> Result<bool> {
+        file::exists(remote_path).await
     }
 
     async fn create_dir_all_impl(&self, remote_path: &LocalPath) -> Result<()> {
@@ -114,8 +128,8 @@ impl MachineOperator for LocalOperator {
         file::copy(remote_path, local_path).await
     }
 
-    async fn download_impl(&self, remote_path: &LocalPath) -> Result<String> {
-        file::read_to_string(remote_path).await
+    async fn download_impl(&self, remote_path: &LocalPath) -> Result<Vec<u8>> {
+        file::read(remote_path).await
     }
 }
 
@@ -141,7 +155,7 @@ impl SSHClient {
     /// Runs a command on the remote server.
     ///
     /// Returns the stdout result if successful.
-    fn run_impl(&self, command: &str) -> Result<String> {
+    fn run_impl(&self, command: &str) -> Result<Vec<u8>> {
         let mut args = vec![];
         args.push(format!("{}@{}", self.user, self.addr));
         args.extend(self.args.clone());
@@ -154,7 +168,7 @@ impl SSHClient {
             return Err(err_msg("Command failed"));
         }
 
-        Ok(String::from_utf8(output.stdout)?)
+        Ok(output.stdout)
     }
 
     fn run_scp(&self, source: &str, destination: &str) -> Result<()> {
@@ -172,12 +186,54 @@ impl SSHClient {
 
         Ok(())
     }
+
+    fn file_exists_in_dir(&self, dir: &LocalPath, file_name: &str) -> Result<bool> {
+        let contents = String::from_utf8(self.run_impl(&format!("ls {}", dir.as_str()))?)?;
+        for line in contents.lines() {
+            let line = line.trim();
+            if line == file_name {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
 }
 
 #[async_trait]
 impl MachineOperator for SSHClient {
-    async fn run(&self, command: &str) -> Result<String> {
+    async fn run(&self, command: &str) -> Result<Vec<u8>> {
         self.run_impl(command)
+    }
+
+    async fn file_exists_impl(&self, remote_path: &LocalPath) -> Result<bool> {
+        // NOTE: We want to differentiate between a file appearing to not
+        // exist due to permission issues or the parent directory not existing
+        // and actually not existing. So we ls each parent directory until we
+        // can't any more to dodge these issues.
+
+        let remote_path = remote_path.normalized();
+        if !remote_path.is_absolute() {
+            return Err(err_msg("Only absolute paths are supported"));
+        }
+
+        let mut dir = file::LocalPathBuf::from("/");
+
+        for segment in remote_path.segments() {
+            match segment {
+                file::LocalPathSegment::Root => {}
+                file::LocalPathSegment::File(name) => {
+                    if !self.file_exists_in_dir(&dir, name)? {
+                        return Ok(false);
+                    }
+                    
+                    dir.push(name);
+                }
+                _ => todo!()
+            }
+        }
+
+        Ok(true)
     }
 
     async fn create_dir_all_impl(&self, remote_path: &LocalPath) -> Result<()> {
@@ -237,7 +293,39 @@ impl MachineOperator for SSHClient {
     }
 
     // TODO: Figure out if this works with binary files.
-    async fn download_impl(&self, remote_path: &LocalPath) -> Result<String> {
+    async fn download_impl(&self, remote_path: &LocalPath) -> Result<Vec<u8>> {
         self.run_impl(&format!("cat {}", remote_path.as_str()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[testcase]
+    async fn ssh_file_exists() -> Result<()> {
+        // TODO: Make a hermetic version of this with mock command calls.
+
+        let op = SSHClient::new("10.2.0.1", "cluster-user", vec![
+            "-i".into(),
+            "~/.ssh/id_cluster".into()
+        ]);
+
+        let op: &dyn MachineOperator = &op;
+
+        assert_eq!(op.file_exists("/").await?, true);
+        assert_eq!(op.file_exists("/nonexistent").await?, false);
+        assert_eq!(op.file_exists("/proc/cpuinfo").await?, true);
+        // Will error out
+        // assert_eq!(op.file_exists("/root/somefile").await?, true);
+
+        assert_eq!(op.file_exists("/etc/machine-id").await?, true);
+        assert_eq!(op.file_exists("/etc/dir/a/b/c").await?, false);
+
+        Ok(())
+    }
+
+
+
+}
+

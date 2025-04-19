@@ -64,9 +64,6 @@ const ASSET_OWNER: &'static str = "cluster-user";
 /// binary.
 const NODE_USER: &'static str = "cluster-node";
 
-/// Directory which contains all the node config, executables, and user data.
-const NODE_ROOT_DIR: &'static str = "/opt/dacha/node";
-
 /// List of all groups which (if they exist on the Linux machine) will be allowed
 /// to be delegated through the container runtime for containers to access.
 const MANAGED_GROUPS: &'static [&'static str] = &[
@@ -117,6 +114,21 @@ pub struct SetupNodeCommand {
     ///
     /// Either 'local_node' or 'node_addr' must be specified.
     local_node: bool,
+
+    /// Path on the node machine used to store all node configs, data, and binaries.
+    #[arg(default = "/opt/dacha/node")]
+    base_dir: String,
+
+    /// If true (default), enable the service so that it starts up automatically on
+    /// system restarts.
+    #[arg(default = true)]
+    enable_service: bool,
+
+    /// Extra argumetns to pass to SSH. This is only relevant when using 'node_addr'.
+    ///
+    /// NOTE: Arguments with spaces in with are currently not supported.
+    #[arg(default = "")]
+    ssh_args: String,
 
     /// For the purposes of initializing the cluster, a local metastore instance
     /// will be brought up before one is running in the cluster.
@@ -215,127 +227,106 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
 
     let operator: Box<dyn MachineOperator> = {
         if let Some(node_addr) = &cmd.node_addr {
-            // TODO: Make the SSH key configurable.
-            // TODO: Eventually verify the host SSH cert.
+            if cmd.ssh_args.contains("\"") || cmd.ssh_args.contains("'") || cmd.ssh_args.contains("\\") {
+                return Err(err_msg("Parsing escaped ssh_args is not supported"));
+            }
+
+            let args = cmd.ssh_args.split_whitespace().filter_map(|v| {
+                let v = v.trim();
+                if v.is_empty() {
+                    return None;
+                }
+                
+                Some(v.to_string())
+            }).collect::<Vec<_>>();
 
             Box::new(SSHClient::new(
                 node_addr.as_str(),
                 ASSET_OWNER,
-                vec![
-                    "-i".to_string(),
-                    "~/.ssh/id_cluster".to_string(),
-                    "-o".to_string(),
-                    "UserKnownHostsFile=/dev/null".to_string(),
-                    "-o".to_string(),
-                    "StrictHostKeyChecking=no".to_string(),
-                ],
+                args,
             ))
         } else {
             Box::new(LocalOperator::default())
         }
     };
 
+    let node_dir = LocalPath::new(&cmd.base_dir);
+
     let node_id = {
-        if cmd.node_addr.is_some() {
-            let hex = operator.download("/etc/machine-id").await?;
-            println!("Node Machine Id: {}", hex);
+        let hex = operator.download_string("/etc/machine-id").await?;
+        println!("Node Machine Id: {}", hex);
 
-            let data = base_radix::hex_decode(hex.trim())?;
-            let id = normalize_entity_id(u64::from_be_bytes(*array_ref![data, 0, 8]));
+        let data = base_radix::hex_decode(hex.trim())?;
+        let id = normalize_entity_id(u64::from_be_bytes(*array_ref![data, 0, 8]));
 
-            id
-        } else if cmd.local_node {
-            normalize_entity_id(crypto::random::clocked_rng().uniform::<u64>())
-        } else {
-            return Err(err_msg("Neither flag is set."));
-        }
+        id
     };
 
     println!("Node Id: {}", entity_id_to_string(node_id).unwrap());
 
-    // TODO: Don't need to do this if already authorized.
+    // Verifying that we aren't re-using an existing node id (unless it was used for this same machine).
+    // TODO: Acquire a metastore lock for setting up new nodes to avoid concurrent setups with conflicting ids.
+    {
+        let config_path = node_dir.join("config.pb");
+        if operator.file_exists(&config_path).await? {
+            let old_node_config = {
+                let data = operator.download(&config_path).await?;
+                let mut config = NodeConfig::default();
+                config.parse_merge(&data)?;
+                config
+            };
+
+            if old_node_config.zone() != cmd.zone {
+                return Err(format_err!("Node already configured for a different zone: {}", old_node_config.zone()));
+            }
+
+            if old_node_config.id() != node_id {
+                return Err(format_err!("Node already configured with a different id: {}", old_node_config.id()));
+            }
+        } else {
+            let existing_meta = query_one!(db, NodeMetadataTable, "id = ?", node_id);
+            if existing_meta.is_some() {
+                return Err(err_msg("Node already exists with this id. /etc/machine-id probably wasn't randomly initialized."));
+            }
+        }
+    }
+
     authorize_node(node_id, &cmd.zone, &db).await?;
 
-    // TODO: Verify that the node id doesn't exist in the metastore (can happen if
-    // machine if wasn't sufficiently randomized) or is zero
-
-    // TODO: explicitly authorize the node to write to the metastore.
-
-    // TODO: Setup initial metastore ACLs (must allow the node to write to its own
-    // NodeMetadata row)
-
-    // Creating node TLS identity.
-    // TODO: Only do this if the node doesn't already have a valid identity on the
-    // server.
-    let node_tls = {
-        //
-
-        let private_key =
-            crypto::x509::PrivateKey::generate(crypto::x509::PrivateKeyType::ECDSA_SECP256R1)
-                .await?;
-
-        // TODO: Insert into registry.
-
-        let mut csr = crypto::x509::CertificateRequestBuilder::default();
-        // TODO: Use a utility to generate this.
-        csr.set_common_name(&format!(
-            "{}.node.{}.cluster.internal",
-            entity_id_to_string(node_id).unwrap(),
-            cmd.zone
-        ))?;
-        let csr = csr.build(&private_key).await?;
-
-        let cert = sign_leaf_certificate(
-            &ServiceName::for_node(&cmd.zone, node_id)?,
-            csr,
-            &root_creds.certificate,
-            &root_creds.private_key,
-        )
-        .await?;
-
-        insert_certificate_into_registry(meta_client.db().as_ref(), &cert, node_id).await?;
-
-        // TODO: Also add in the sAN
-
-        NodeTLSData {
-            certificate: vec![cert],
-            private_key: Arc::new(private_key),
-            registry: root_creds.registry.clone(),
-        }
-    };
-
     println!("Setting up node runtime:");
-    let node_path = LocalPath::new(NODE_ROOT_DIR);
     let node_config = {
-        if cmd.node_addr.is_some() {
-            setup_remote_node_server(
-                operator.as_ref(),
-                node_path,
-                &cmd.zone,
-                node_id,
-                node_tls,
-                ASSET_OWNER,
-                true,
-            )
-            .await?
-        } else if cmd.local_node {
-            setup_remote_node_server(
-                operator.as_ref(),
-                node_path,
-                &cmd.zone,
-                node_id,
-                node_tls,
-                &std::env::var("USER")?,
-                false,
-            )
-            .await?
-        } else {
-            todo!()
-        }
+        let remote = cmd.node_addr.is_some();
+
+        let node_user = {
+            if cmd.node_addr.is_some() {
+                ASSET_OWNER.to_string()
+            } else if cmd.local_node {
+                std::env::var("USER")?
+            } else {
+                todo!()
+            }
+        };
+
+        setup_remote_node_server(
+            operator.as_ref(),
+            node_dir,
+            &cmd.zone,
+            db.clone(),
+            &root_creds,
+            node_id,
+            &node_user,
+            remote,
+            cmd.bootstrap,
+            cmd.enable_service,
+        )
+        .await?
     };
 
     // Note that when bootstrapping, this is required so that the manager can
     // schedule the metastore worker immediately without retrying.
+    //
+    // TODO: This currently doesn't work if we try to restart the only node in a single node cluster
+    // (that runs the metastore).
     println!("Waiting for node to register itself:");
     loop {
         if let Some(_) = query_one!(db, NodeMetadataTable, "id = ?", node_id) {
@@ -506,14 +497,15 @@ async fn setup_remote_node_server(
     operator: &dyn MachineOperator,
     base_dir: &LocalPath,
     zone: &str,
+    db: Arc<ProtobufDB>,
+    root_creds: &RootCredentials,
     node_id: u64,
-    tls_data: NodeTLSData,
     asset_owner: &str,
     is_remote: bool,
+    bootstrap: bool,
+    enable_service: bool,
 ) -> Result<NodeConfig> {
-    // TODO: Verify stuff like cgroup v2 presence.
-
-    // TODO: Can't setup the data directory after it is already setup.
+    check_using_cgroup_v2(operator).await?;
 
     {
         println!("Stopping old node");
@@ -530,7 +522,7 @@ async fn setup_remote_node_server(
         println!("Setup user: {}", NODE_USER);
 
         let has_user = operator
-            .download("/etc/passwd")
+            .download_string("/etc/passwd")
             .await?
             .lines()
             .find(|v| v.starts_with(&format!("{}:", NODE_USER)))
@@ -552,7 +544,7 @@ async fn setup_remote_node_server(
     // TODO: Add some unit testing for these against goldens.
     let build_config_target = {
         let lscpu_output = operator.run("lscpu").await?;
-        let cpuinfo_output = operator.download("/proc/cpuinfo").await?;
+        let cpuinfo_output = operator.download_string("/proc/cpuinfo").await?;
 
         let architecture = LSCPU_ARCHITECTURE
             .exec(&lscpu_output)
@@ -662,9 +654,6 @@ async fn setup_remote_node_server(
         .upload(&node_config_data, base_dir.join("config.pb"))
         .await?;
 
-    // TODO: It isn't really worth hving this in the bundle since that confuses it
-    // with built assets.
-
     // TODO: This is the only file in the bundle not owned by
     // 'cluster-user:cluster-user'
     // TODO: Find a better place to store this logic that is shared with local
@@ -686,65 +675,89 @@ async fn setup_remote_node_server(
             .await?;
     }
 
-    // TODO: Merge this with the bundle build rule.
-    {
-        let key = "pkg/container/config/node.service";
+    // Set up the data directory with the node's TLS certificate.
+    if !operator.file_exists(&data_dir).await? {
+        // Creating node TLS identity
+        let tls_data = {
+            let private_key =
+                crypto::x509::PrivateKey::generate(crypto::x509::PrivateKeyType::ECDSA_SECP256R1)
+                    .await?;
 
-        let remote_path = bundle_dir.join(key);
-        operator
-            .create_dir_all(remote_path.parent().unwrap())
+            let mut csr = crypto::x509::CertificateRequestBuilder::default();
+            
+            let name = ServiceName::for_node(zone, node_id)?;
+            csr.set_common_name(&name.to_string())?;
+            let csr = csr.build(&private_key).await?;
+
+            let cert = sign_leaf_certificate(
+                &name,
+                csr,
+                &root_creds.certificate,
+                &root_creds.private_key,
+            )
             .await?;
-        operator
-            .upload_file(project_dir().join(key), remote_path)
-            .await?;
-    }
 
-    // TODO: Only do this if it doesn't already exist.
+            insert_certificate_into_registry(&db, &cert, node_id).await?;
 
-    operator.create_dir_all(&data_dir).await?;
+            NodeTLSData {
+                certificate: vec![cert],
+                private_key: Arc::new(private_key),
+                registry: root_creds.registry.clone(),
+            }
+        };
 
-    {
-        // TODO: Reference a constant.
-        // TODO: Must do before the permissions lock down.
-        let cert_dir = data_dir.join("credentials/node");
+        operator.create_dir_all(&data_dir).await?;
 
-        let tmp = TempDir::create()?;
-        let mut manager = FileCredentialsManager::create(tmp.path()).await?;
-        // Write all the stuff.
-        manager.write_registry(tls_data.registry).await?;
-        manager
-            .write_certificates(&tls_data.certificate, tls_data.private_key)
-            .await?;
-        drop(manager);
-
-        operator.create_dir_all(&cert_dir).await?;
-        for entry in file::read_dir(tmp.path())? {
-            // TODO: Support uploading sub directories.
+        {
+            // TODO: Reference a constant.
+            let cert_dir = data_dir.join("credentials/node");
+    
+            let tmp = TempDir::create()?;
+            let mut manager = FileCredentialsManager::create(tmp.path()).await?;
+            // Write all the stuff.
+            manager.write_registry(tls_data.registry).await?;
+            manager
+                .write_certificates(&tls_data.certificate, tls_data.private_key)
+                .await?;
+            drop(manager);
+    
+            operator.create_dir_all(&cert_dir).await?;
+            for entry in file::read_dir(tmp.path())? {
+                // TODO: Support uploading sub directories.
+                operator
+                    .upload_file(tmp.path().join(entry.name()), cert_dir.join(entry.name()))
+                    .await?;
+            }
+        }
+    
+        // Lock down permissions to the data.
+        // (needs to be done after the credentials are all loaded).
+        {
             operator
-                .upload_file(tmp.path().join(entry.name()), cert_dir.join(entry.name()))
+                .run(&format!(
+                    "sudo chown -R {owner}:{owner} {dir}",
+                    owner = NODE_USER,
+                    dir = data_dir.as_str()
+                ))
+                .await?;
+            operator
+                .run(&format!("sudo chmod -R 700 {}", data_dir.as_str()))
                 .await?;
         }
-    }
 
-    // Lock down permissions to the data.
-    // (needs to be done after the credentials are all loaded).
-    {
-        operator
-            .run(&format!(
-                "sudo chown -R {owner}:{owner} {dir}",
-                owner = NODE_USER,
-                dir = data_dir.as_str()
-            ))
-            .await?;
-        operator
-            .run(&format!("sudo chmod -R 700 {}", data_dir.as_str()))
-            .await?;
+    } else {
+        // We allow skipping during bootstrapping to allow for continuing if a failure occured later on.
+        // if bootstrap {
+        //     return Err(err_msg("Bootstrapping but the node already has data set up."));
+        // }
+
+        println!("Node Data Directory Already Exists! Not re-initializing.");
     }
 
     // TODO: Don't do this twice if the current file already has the data.
     println!("Setting up /etc/subuid");
     {
-        let mut subuid = cleaned_uidmap(&operator.download("/etc/subuid").await?, NODE_USER);
+        let mut subuid = cleaned_uidmap(&operator.download_string("/etc/subuid").await?, NODE_USER);
 
         subuid.push_str(&format!("{}:400000:65536", NODE_USER));
 
@@ -756,10 +769,10 @@ async fn setup_remote_node_server(
 
     println!("Setting up /etc/subgid");
     {
-        let groups_data = operator.download("/etc/group").await?;
+        let groups_data = operator.download_string("/etc/group").await?;
         let groups = container::node::shadow::read_groups_from_data(&groups_data)?;
 
-        let mut subgid = cleaned_uidmap(&operator.download("/etc/subgid").await?, NODE_USER);
+        let mut subgid = cleaned_uidmap(&operator.download_string("/etc/subgid").await?, NODE_USER);
 
         subgid.push_str(&format!("{}:400000:65536\n", NODE_USER));
 
@@ -777,14 +790,32 @@ async fn setup_remote_node_server(
 
     // TODO: Also keep other files like /boot/config.txt in sync
 
-    {
-        operator
-            .run("sudo systemctl enable /opt/dacha/node/bundle/pkg/container/config/node.service")
-            .await?;
-        operator.run("sudo systemctl start cluster-node").await?;
+    let service_file = file::read_to_string(project_path!("pkg/container/config/node.service")).await?
+        .replace("{base_dir}", base_dir.as_str());
+    operator.upload(service_file.as_bytes(), "/tmp/cluster-node.service").await?;
+    operator.run("sudo cp /tmp/cluster-node.service /etc/systemd/system/cluster-node.service").await?;
+
+    if enable_service {
+        operator.run("sudo systemctl enable cluster-node").await?;
     }
 
+    operator.run("sudo systemctl start cluster-node").await?;
+
     Ok(node_config)
+}
+
+async fn check_using_cgroup_v2(operator: &dyn MachineOperator) -> Result<()> {
+    let data = operator.download_string("/proc/cgroups").await?;
+
+    for line in data.lines().skip(1) {
+        let fields = line.split_whitespace().collect::<Vec<&str>>();
+        if fields[1] != "0" {
+            return Err(format_err!("Not using cgroups v2 for '{}' subsystem", fields[0]));
+        }
+    }
+
+
+    Ok(())
 }
 
 fn cleaned_uidmap(data: &str, remove_user: &str) -> String {
@@ -798,12 +829,6 @@ fn cleaned_uidmap(data: &str, remove_user: &str) -> String {
     out.push('\n');
     out
 }
-
-/*
-Main issue:
-- When an in-cluster metastore replica is added, it will use a CA that is not known to the
-
-*/
 
 // Sets up all the core system jobs to run on the first
 async fn bootstrap_system_jobs(

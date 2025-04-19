@@ -4,8 +4,7 @@ group(
     name = "cluster_node_deps",
     deps = [
         ":cluster_node",
-        ":container_init",
-        ":newcgroup",
+        ":container_init"
     ]
 )
 
