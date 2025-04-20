@@ -252,9 +252,8 @@ impl MachineOperator for SSHClient {
         )
     }
 
-    // TODO: Verify this forms with binary files.
     async fn upload_impl(&self, data: &[u8], remote_path: &LocalPath) -> Result<()> {
-        let command = format!("cp /dev/stdin {}", remote_path.as_str());
+        let command = format!("cp --no-preserve=all /dev/stdin {}", remote_path.as_str());
 
         let mut args = vec![];
         args.push(format!("{}@{}", self.user, self.addr));
@@ -270,6 +269,7 @@ impl MachineOperator for SSHClient {
 
         let mut stdin = child.stdin.take().unwrap();
         stdin.write_all(data)?;
+        drop(stdin);
 
         let output = child.wait_with_output()?;
         if !output.status.success() {

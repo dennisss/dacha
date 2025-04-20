@@ -113,6 +113,7 @@ pub struct SetupNodeCommand {
     /// by node_addr. 
     ///
     /// Either 'local_node' or 'node_addr' must be specified.
+    #[arg(default = false)]
     local_node: bool,
 
     /// Path on the node machine used to store all node configs, data, and binaries.
@@ -639,6 +640,7 @@ async fn setup_remote_node_server(
 
     operator.upload(b"", bundle_dir.join("WORKSPACE")).await?;
 
+    println!("Creating node config...");
     let mut node_config = {
         let s = file::read_to_string(project_path!("pkg/container/config/node.txtpb")).await?;
         NodeConfig::parse_text(&s)?
@@ -677,6 +679,8 @@ async fn setup_remote_node_server(
 
     // Set up the data directory with the node's TLS certificate.
     if !operator.file_exists(&data_dir).await? {
+        println!("Generating initial node credentials...");
+
         // Creating node TLS identity
         let tls_data = {
             let private_key =
@@ -706,6 +710,7 @@ async fn setup_remote_node_server(
             }
         };
 
+        println!("Creating node data directory...");
         operator.create_dir_all(&data_dir).await?;
 
         {
@@ -790,10 +795,30 @@ async fn setup_remote_node_server(
 
     // TODO: Also keep other files like /boot/config.txt in sync
 
+    /*
+    TODO: Check if app armor is actually enabled first.
+
+    $ cat /sys/module/apparmor/parameters/enabled
+    Y
+    */
+    // This is a hacky way to check if we are operating in the locked down Ubuntu versions.
+    // Sadly it doesn't seem particularly easy to write backwards/forwards compatible profiles.
+    if operator.file_exists("/etc/apparmor.d/runc").await? {
+        println!("Installing apparmor profile...");
+
+        let profile = file::read_to_string(project_path!("pkg/cluster/config/apparmor")).await?
+            .replace("{base_dir}", base_dir.as_str());
+        operator.upload(profile.as_bytes(), "/tmp/cluster-apparmor").await?;
+
+        operator.run("sudo cp --no-preserve=all /tmp/cluster-apparmor /etc/apparmor.d/cluster-node").await?;
+        operator.run("sudo apparmor_parser -r -W /etc/apparmor.d/cluster-node").await?;
+    }
+
+    println!("Installing systemd servoce...");
     let service_file = file::read_to_string(project_path!("pkg/container/config/node.service")).await?
         .replace("{base_dir}", base_dir.as_str());
     operator.upload(service_file.as_bytes(), "/tmp/cluster-node.service").await?;
-    operator.run("sudo cp /tmp/cluster-node.service /etc/systemd/system/cluster-node.service").await?;
+    operator.run("sudo cp --no-preserve=all /tmp/cluster-node.service /etc/systemd/system/cluster-node.service").await?;
 
     if enable_service {
         operator.run("sudo systemctl enable cluster-node").await?;

@@ -7,7 +7,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 Restart=always
-RestartSec=5
+RestartSec=20
 User=cluster-node
 # Mainly to make sure that systemd enables them in the root '/sys/fs/cgroup/cgroup.subtree_control'
 Delegate=yes

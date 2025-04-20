@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::errors::*;
 use executor_multitask::RootResource;
@@ -143,6 +144,15 @@ fn find_container_ids_range(id_map: &[IdMapping]) -> Result<IdRange> {
 // TODO: NEed to forward ctrl-c and have graceful shutdown.
 
 pub fn main() -> Result<()> {
+    let r = main_inner().map_err(|e| format_err!("Container Node Main Failed: {}", e));
+
+    // Wait and extra second for any child process stdout logging to happen.
+    std::thread::sleep(Duration::from_secs(1));
+
+    r
+}
+
+fn main_inner() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let supervisor_pid = unsafe { sys::getpid() };
@@ -236,6 +246,8 @@ pub fn main() -> Result<()> {
     newgidmap(root_process.pid(), &gidmap)?;
 
     if config.cgroup_dir() != current_cgroup_dir {
+        println!("Run newcgroup");
+
         // Move the root process into its own cgroup.
         newcgroup(root_process.pid(), config.cgroup_dir())
             .map_err(|e| format_err!("While trying to create node's cgroup: {}", e))?;
@@ -319,7 +331,14 @@ fn run_root_process(
     config: &NodeConfig,
     setup_child: SetupSocketChild,
 ) -> sys::ExitCode {
-    let result = executor::run_main(run(context, config, setup_child)).unwrap();
+    let result = match executor::run_main(run(context, config, setup_child)) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Executor Error: {}", e);
+            return 1;
+        }
+    };
+
     let code = match result {
         Ok(()) => 0,
         Err(e) => {
@@ -332,6 +351,18 @@ fn run_root_process(
 }
 
 async fn run(
+    context: &NodeContext,
+    config: &NodeConfig,
+    setup_child: SetupSocketChild,
+) -> Result<()> {
+    let r = run_inner(context, config, setup_child).await;
+    // TODO: Check if systemd will actually print stderr to journalctl. Else, I still need this
+    // redundant logging.
+    println!("Run inner state: {:?}", r);
+    r
+}
+
+async fn run_inner(
     context: &NodeContext,
     config: &NodeConfig,
     mut setup_child: SetupSocketChild,
@@ -377,7 +408,8 @@ async fn run(
         Option::<&str>::None,
     )?;
 
-    // TODO: Create the root directory and set permissions to 600
+    println!("Data Dir: {}", config.data_dir());
+
     // NOTE: This directory should be created with mode 700 where the user running
     // the container node is the owner.
     if !file::exists(LocalPath::new(config.data_dir())).await? {

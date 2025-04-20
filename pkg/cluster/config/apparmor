@@ -1,0 +1,14 @@
+# This policy is based on '/etc/apparmor.d/runc' distributed with recent Ubuntu distros.
+# Due to https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces
+# we can't use user namespaces by default without explicit outout of apparmor for the
+# contain runtime (which is what this file will do).
+
+# This profile allows everything and only exists to give the
+# application a name instead of having the label "unconfined"
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile runc {base_dir}/bundle/built/pkg/container/cluster_node flags=(unconfined) {
+  userns,
+}

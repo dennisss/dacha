@@ -44,13 +44,15 @@ pub struct SetupSocketParent {
 
 impl SetupSocketParent {
     pub fn notify(&mut self, event_id: u8) -> Result<()> {
-        self.socket.write_all(&[event_id])?;
+        self.socket.write_all(&[event_id])
+            .map_err(|e| format_err!("SetupSocketParent::notify({}) failed: {}", event_id, e))?;
         Ok(())
     }
 
     pub fn wait(&mut self, event_id: u8) -> Result<()> {
         let mut buf = [0u8; 1];
-        self.socket.read_exact(&mut buf)?;
+        self.socket.read_exact(&mut buf)
+            .map_err(|e| format_err!("SetupSocketParent::wait({}) failed: {}", event_id, e))?;
         if buf[0] != event_id {
             return Err(format_err!(
                 "Expected event {:x} but got {:x}",
@@ -76,7 +78,7 @@ impl SetupSocketParent {
             &[IoVec::from_mut_slice(&mut buf)],
             Some(&mut cmsg_buffer),
             MsgFlags::MSG_CMSG_CLOEXEC,
-        )?;
+        ).map_err(|e| format_err!("SetupSocketParent::recv_fd({}) failed: {}", event_id, e))?;
         if msg.bytes == 0 {
             return Err(err_msg("Child hung up before receiving fd."));
         }
@@ -108,13 +110,15 @@ pub struct SetupSocketChild {
 
 impl SetupSocketChild {
     pub fn notify(&mut self, event_id: u8) -> Result<()> {
-        self.socket.write_all(&[event_id])?;
+        self.socket.write_all(&[event_id])
+            .map_err(|e| format_err!("SetupSocketChild::notify({}) failed: {}", event_id, e))?;
         Ok(())
     }
 
     pub fn wait(&mut self, event_id: u8) -> Result<()> {
         let mut buf = [0u8; 1];
-        self.socket.read_exact(&mut buf)?;
+        self.socket.read_exact(&mut buf)
+            .map_err(|e| format_err!("SetupSocketChild::wait({}) failed: {}", event_id, e))?;
         if buf[0] != event_id {
             return Err(format_err!(
                 "Expected event {:x} but got {:x}",
