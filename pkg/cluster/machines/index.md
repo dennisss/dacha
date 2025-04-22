@@ -1,0 +1,1 @@
+This directory contains documentation on physical servers/computers that I've set up and how I've set them up.

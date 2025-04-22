@@ -803,10 +803,13 @@ async fn setup_remote_node_server(
     */
     // This is a hacky way to check if we are operating in the locked down Ubuntu versions.
     // Sadly it doesn't seem particularly easy to write backwards/forwards compatible profiles.
-    if operator.file_exists("/etc/apparmor.d/runc").await? {
+    if operator.file_exists("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").await? &&
+       operator.download_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").await?.trim() == "1" {
         println!("Installing apparmor profile...");
 
-        let profile = file::read_to_string(project_path!("pkg/cluster/config/apparmor")).await?
+        // TODO: Make a single command.
+
+        let profile = file::read_to_string(project_path!("pkg/cluster/config/ubuntu_apparmor")).await?
             .replace("{base_dir}", base_dir.as_str());
         operator.upload(profile.as_bytes(), "/tmp/cluster-apparmor").await?;
 

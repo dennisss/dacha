@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package cluster;
+
+message NodeSetupConfig {
+    string node_ip = 1;
+    
+    string node_user = 2;
+    
+    repeated string ssh_args = 3;
+
+    string base_dir = 5;
+
+    repeated ZFSEncryptedDataset zfs_datasets = 4;
+}
+
+message ZFSEncryptedDataset {
+    string name = 1;
+
+    string local_key_path = 2;
+    
+    string remote_key_path = 3;
+}

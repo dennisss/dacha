@@ -68,30 +68,38 @@ pub struct Mount {
     pub options: String,
 }
 
-pub fn mounts() -> Result<Vec<Mount>> {
-    let mut out = vec![];
-    let data = blocking_read_to_string("/proc/mounts")?;
-    for line in data.lines() {
-        if line.trim().is_empty() {
-            continue;
+impl Mount {
+    pub fn parse_lines(data: &str) -> Result<Vec<Self>> {
+        let mut out = vec![];
+        for line in data.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+    
+            let mut fields = line.split(' ');
+    
+            let device = fields.next().unwrap().to_string();
+            let mount_point = fields.next().unwrap().to_string();
+            let fs_type = fields.next().unwrap().to_string();
+            let options = fields.next().unwrap().to_string();
+    
+            out.push(Mount {
+                device,
+                mount_point,
+                fs_type,
+                options,
+            });
         }
-
-        let mut fields = line.split(' ');
-
-        let device = fields.next().unwrap().to_string();
-        let mount_point = fields.next().unwrap().to_string();
-        let fs_type = fields.next().unwrap().to_string();
-        let options = fields.next().unwrap().to_string();
-
-        out.push(Mount {
-            device,
-            mount_point,
-            fs_type,
-            options,
-        });
+    
+        Ok(out)
     }
 
-    Ok(out)
+
+}
+
+pub fn mounts() -> Result<Vec<Mount>> {
+    let data = blocking_read_to_string("/proc/mounts")?;
+    Mount::parse_lines(&data)
 }
 
 #[cfg(test)]

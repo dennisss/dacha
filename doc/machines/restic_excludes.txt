@@ -1,5 +1,0 @@
-node_modules
-$HOME/workspace/dacha/target
-$HOME/workspace/dacha/
-$HOME/.cargo
-$HOME/.cache

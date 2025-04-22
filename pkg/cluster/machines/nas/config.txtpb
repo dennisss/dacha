@@ -1,0 +1,19 @@
+
+
+node_ip: "10.1.1.4"
+node_user: "cluster-user"
+ssh_args: ["-i", "~/.ssh/id_cluster"]
+base_dir: "/zfs/flash/data/node"
+
+zfs_datasets: [
+    {
+        name: "tank/data"
+        local_key_path: "~/.credentials/nas-data.key"
+        remote_key_path: "/zfs/keys/data.key"
+    },
+    {
+        name: "flash/data"
+        local_key_path: "~/.credentials/nas-data.key"
+        remote_key_path: "/zfs/keys/data.key"
+    }
+]

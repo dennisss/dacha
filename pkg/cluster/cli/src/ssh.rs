@@ -6,6 +6,23 @@ use std::process::{Command, Stdio};
 use common::errors::*;
 use file::LocalPath;
 
+#[derive(Default)]
+pub struct UploadOptions {
+    pub sudo: bool,
+}
+
+impl UploadOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn sudo(&mut self) -> &mut Self {
+        self.sudo = true;
+        self
+    }
+}
+
+
 #[async_trait]
 pub trait MachineOperator: Send + Sync + 'static {
     /// Runs a bash command on the machine and returns the stdout.
@@ -15,10 +32,10 @@ pub trait MachineOperator: Send + Sync + 'static {
 
     async fn create_dir_all_impl(&self, remote_path: &LocalPath) -> Result<()>;
 
-    async fn upload_file_impl(&self, local_path: &LocalPath, remote_path: &LocalPath)
+    async fn upload_file_impl(&self, local_path: &LocalPath, remote_path: &LocalPath, options: &UploadOptions)
         -> Result<()>;
 
-    async fn upload_impl(&self, data: &[u8], remote_path: &LocalPath) -> Result<()>;
+    async fn upload_impl(&self, data: &[u8], remote_path: &LocalPath, options: &UploadOptions) -> Result<()>;
 
     async fn download_file_impl(
         &self,
@@ -43,7 +60,17 @@ impl dyn MachineOperator {
         local_path: P,
         remote_path: P2,
     ) -> Result<()> {
-        self.upload_file_impl(local_path.as_ref(), remote_path.as_ref())
+        self.upload_file_with(local_path, remote_path, &UploadOptions::default())
+            .await
+    }
+
+    pub async fn upload_file_with<P: AsRef<LocalPath> + Send, P2: AsRef<LocalPath> + Send>(
+        &self,
+        local_path: P,
+        remote_path: P2,
+        options: &UploadOptions
+    ) -> Result<()> {
+        self.upload_file_impl(local_path.as_ref(), remote_path.as_ref(), options)
             .await
     }
 
@@ -52,7 +79,16 @@ impl dyn MachineOperator {
         data: &[u8],
         remote_path: P,
     ) -> Result<()> {
-        self.upload_impl(data, remote_path.as_ref()).await
+        self.upload_with(data, remote_path, &UploadOptions::default()).await
+    }
+
+    pub async fn upload_with<P: AsRef<LocalPath> + Send>(
+        &self,
+        data: &[u8],
+        remote_path: P,
+        options: &UploadOptions
+    ) -> Result<()> {
+        self.upload_impl(data, remote_path.as_ref(), options).await
     }
 
     pub async fn download_file<P: AsRef<LocalPath> + Send, P2: AsRef<LocalPath> + Send>(
@@ -101,7 +137,12 @@ impl MachineOperator for LocalOperator {
         &self,
         local_path: &LocalPath,
         remote_path: &LocalPath,
+        options: &UploadOptions
     ) -> Result<()> {
+        if options.sudo {
+            return Err(err_msg("Unimplemented"));
+        }
+
         file::copy(local_path, remote_path).await?;
 
         // Propagate executable bits.
@@ -116,7 +157,16 @@ impl MachineOperator for LocalOperator {
         Ok(())
     }
 
-    async fn upload_impl(&self, data: &[u8], remote_path: &LocalPath) -> Result<()> {
+    async fn upload_impl(
+        &self,
+        data: &[u8],
+        remote_path: &LocalPath,
+        options: &UploadOptions
+    ) -> Result<()> {
+        if options.sudo {
+            return Err(err_msg("Unimplemented"));
+        }
+
         file::write(remote_path, data).await
     }
 
@@ -245,15 +295,28 @@ impl MachineOperator for SSHClient {
         &self,
         local_path: &LocalPath,
         remote_path: &LocalPath,
+        options: &UploadOptions
     ) -> Result<()> {
+        if options.sudo {
+            return Err(err_msg("Unimplemented"));
+        }
+
         self.run_scp(
             local_path.as_str(),
             &format!("{}@{}:{}", self.user, self.addr, remote_path.as_str()),
         )
     }
 
-    async fn upload_impl(&self, data: &[u8], remote_path: &LocalPath) -> Result<()> {
-        let command = format!("cp --no-preserve=all /dev/stdin {}", remote_path.as_str());
+    async fn upload_impl(&self, data: &[u8], remote_path: &LocalPath, options: &UploadOptions) -> Result<()> {
+        // TODO: First delete, touch, chmod, etc. Can be done with ';' separated commands to do in one go. (but not sure if bash will stop on failures).
+        let command = {
+            // TODO: Have both paths use 'tee'.
+            if options.sudo {
+                format!("sudo tee {} > /dev/null", remote_path.as_str())
+            } else {
+                format!("cp --no-preserve=all /dev/stdin {}", remote_path.as_str())
+            }
+        };
 
         let mut args = vec![];
         args.push(format!("{}@{}", self.user, self.addr));

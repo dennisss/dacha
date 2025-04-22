@@ -182,6 +182,9 @@ enum Command {
 
     #[arg(name = "labels")]
     Labels(LabelsCommand),
+
+    #[arg(name = "unlock")]
+    Unlock(UnlockCommand),
 }
 
 #[executor_main]
@@ -198,5 +201,6 @@ async fn main() -> Result<()> {
         Command::StartJob(cmd) => run_start_job(cmd).await,
         Command::Events(cmd) => run_events(cmd).await,
         Command::Labels(cmd) => run_labels(cmd).await,
+        Command::Unlock(cmd) => run_unlock(cmd).await,
     }
 }
