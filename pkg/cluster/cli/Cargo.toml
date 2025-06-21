@@ -6,6 +6,7 @@ edition = "2018"
 [dependencies]
 common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
+base_units = { path = "../../base/units" }
 db_table = { path = "../../db/table" }
 crypto = { path = "../../crypto" }
 automata = { path = "../../automata" }

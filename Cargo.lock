@@ -504,6 +504,7 @@ dependencies = [
  "gerber",
  "graphics",
  "image",
+ "kicad",
  "macros",
  "math",
  "parsing",
@@ -605,6 +606,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_bridge"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "cluster_client",
+ "common",
+ "compression",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "http",
+ "http_util",
+ "macros",
+ "net",
+ "parsing",
+ "sys",
+]
+
+[[package]]
 name = "cluster_ca"
 version = "0.1.0"
 dependencies = [
@@ -638,6 +659,7 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "base_radix",
+ "base_units",
  "builder",
  "cluster_ca",
  "cluster_client",
@@ -696,6 +718,7 @@ dependencies = [
  "rpc",
  "rpc_util",
  "sys",
+ "web",
 ]
 
 [[package]]
@@ -756,6 +779,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_proxy"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "base_radix",
+ "cluster_client",
+ "cluster_proxy_proto",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "db_txn_client",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "macros",
+ "net",
+ "protobuf",
+ "protobuf_builtins",
+ "regexp_macros",
+ "rpc",
+ "rpc_util",
+ "sys",
+]
+
+[[package]]
+name = "cluster_proxy_proto"
+version = "0.0.0"
+dependencies = [
+ "builder_proto",
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -793,6 +859,7 @@ dependencies = [
  "automata",
  "base_error",
  "base_radix",
+ "base_units",
  "base_util",
  "bgcode",
  "cam",
@@ -2151,6 +2218,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "kicad"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "kicad_proto",
+ "macros",
+ "math",
+ "parsing",
+ "protobuf",
+ "protobuf_core",
+ "reflection",
+ "xml",
+]
+
+[[package]]
+name = "kicad_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+]
+
+[[package]]
 name = "kv-log-macro"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2523,11 +2619,31 @@ dependencies = [
  "common",
  "crypto",
  "executor",
+ "executor_multitask",
  "libc",
  "macros",
  "nix 0.21.0",
  "parsing",
  "parsing_compiler",
+ "regexp_macros",
+ "sys",
+]
+
+[[package]]
+name = "net_router"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_radix",
+ "base_util",
+ "common",
+ "crypto",
+ "executor",
+ "libc",
+ "macros",
+ "net",
+ "nix 0.21.0",
+ "parsing",
  "regexp_macros",
  "sys",
 ]
@@ -2957,6 +3073,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "printer"
+version = "0.1.0"
+dependencies = [
+ "base_util",
+ "common",
+ "executor",
+ "file",
+ "macros",
+ "sys",
+ "usb",
+]
+
+[[package]]
 name = "proc-macro-hack"
 version = "0.5.20+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3313,6 +3442,7 @@ dependencies = [
  "executor_multitask",
  "file",
  "http",
+ "http_util",
  "json",
  "macros",
  "parsing",
@@ -4017,7 +4147,6 @@ dependencies = [
  "protobuf_json",
  "regexp_macros",
  "rpc",
- "rpc_test",
 ]
 
 [[package]]

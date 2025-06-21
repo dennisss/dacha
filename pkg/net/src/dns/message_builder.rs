@@ -4,6 +4,7 @@ use common::errors::*;
 
 use crate::dns::name::*;
 use crate::dns::proto;
+use crate::dns::message::{Question, ResourceRecordData};
 
 pub struct MessageBuilder {
     data: Vec<u8>,
@@ -20,19 +21,41 @@ impl MessageBuilder {
         }
     }
 
-    fn append_name(&mut self, name: Name) {
+    fn append_name(&mut self, name: &Name) {
         self.name_encoder.encode(name, &mut self.data);
     }
 
-    fn append_question(&mut self, name: Name, trailer: proto::QuestionTrailer) {
+    fn append_question(&mut self, name: &Name, trailer: proto::QuestionTrailer) {
+        self.header.num_questions += 1;
         self.append_name(name);
         trailer.serialize(&mut self.data).unwrap();
     }
 
+    /// Appends a non-question resource record.
+    ///
+    /// NOTE: Must be called after all append_question runs.
+    fn append_record(&mut self, name: &Name, mut trailer: proto::ResourceRecordTrailer, data: &ResourceRecordData) {
+        self.append_name(name);
+
+        let i = self.data.len();
+        self.data.resize(i + proto::ResourceRecordTrailer::size_of(), 0);
+        let j = self.data.len();
+        data.serialize(&mut self.name_encoder, &mut self.data);
+
+        trailer.data_len = (self.data.len() - j) as u16;
+
+        let mut t = vec![];
+        trailer.serialize(&mut t).unwrap();
+        self.data[i..j].copy_from_slice(&t[..]);
+    }
+
     fn build(mut self) -> Vec<u8> {
+        // TODO: Directly serialize into the data buffer.
         let mut header = vec![];
         self.header.serialize(&mut header).unwrap();
         self.data[0..header.len()].copy_from_slice(&header);
+
+        // TODO: Truncate if too long.
 
         self.data
     }
@@ -68,12 +91,11 @@ impl QueryBuilder {
     /// NOTE: Generally you should only have 1 question per query message.
     pub fn add_question(
         &mut self,
-        name: Name,
+        name: &Name,
         typ: proto::RecordType,
         class: proto::Class,
         unicast_response: bool,
     ) {
-        self.message_builder.header.num_questions += 1;
         self.message_builder.append_question(
             name,
             proto::QuestionTrailer {
@@ -93,4 +115,57 @@ pub struct ReplyBuilder {
     message_builder: MessageBuilder,
 }
 
-impl ReplyBuilder {}
+impl ReplyBuilder {
+    pub fn new(id: u16) -> Self {
+        Self {
+            message_builder: MessageBuilder::new(proto::Header {
+                id,
+                flags: proto::Flags {
+                    reply: true,
+                    opcode: proto::OpCode::Query,
+                    authoritive_answer: false,
+                    truncated: false,
+                    recursion_desired: false,
+                    recursion_available: false,
+                    zero: 0,
+                    response_code: proto::ResponseCode::NoError,
+                },
+                num_questions: 0,
+                num_answers: 0,
+                num_authority_records: 0,
+                num_additional_records: 0,
+            }),
+        }
+    }
+
+    pub fn set_response_code(&mut self, response_code: proto::ResponseCode) {
+        self.message_builder.header.flags.response_code = response_code;
+    }
+
+    // NOTE: Should only be added by the server.
+    pub(super) fn add_question(&mut self, question: &Question<'_>) {
+        self.message_builder.append_question(question.name(), question.trailer.clone());
+    }
+
+    pub fn add_answer(
+        &mut self,
+        name: &Name,
+        typ: proto::RecordType,
+        class: proto::Class,
+        ttl: u32,
+        data: &ResourceRecordData
+    ) {
+        self.message_builder.header.num_answers += 1;
+        self.message_builder.append_record(name, proto::ResourceRecordTrailer {
+            typ,
+            cache_flush: 0,
+            class,
+            ttl,
+            data_len: 0,
+        }, data);
+    }
+
+    pub fn build(self) -> Vec<u8> {
+        self.message_builder.build()
+    }
+}

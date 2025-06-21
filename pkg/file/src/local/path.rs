@@ -31,7 +31,7 @@ Some notes on normalization:
 */
 
 // TODO: Implement custom eq?
-#[derive(Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
+#[derive(Clone, PartialOrd, Ord, PartialEq, Eq, Default, Hash)]
 pub struct LocalPathBuf {
     inner: String,
 }
@@ -82,6 +82,22 @@ impl LocalPathBuf {
     pub fn as_path(&self) -> &LocalPath {
         self.as_ref()
     }
+
+    pub fn from_trusted_string(s: &str) -> Result<Self> {
+        let mut path = if let Some(p) = s.strip_prefix("~") {
+            let p = p.trim_start_matches("/");
+            let home = std::env::var("HOME")?;
+            LocalPath::new(&home).join(p)
+        } else {
+            LocalPathBuf::from(s)
+        };
+
+        if !path.is_absolute() {
+            path = crate::current_dir()?.join(path);
+        }
+
+        Ok(path.normalized())
+    }
 }
 
 impl<S: AsRef<str>> PartialEq<S> for LocalPathBuf {
@@ -104,19 +120,7 @@ impl common::args::ArgType for LocalPathBuf {
             common::args::RawArgValue::String(s) => s,
         };
 
-        let mut path = if let Some(p) = s.strip_prefix("~") {
-            let p = p.trim_start_matches("/");
-            let home = std::env::var("HOME")?;
-            LocalPath::new(&home).join(p)
-        } else {
-            LocalPathBuf::from(s)
-        };
-
-        if !path.is_absolute() {
-            path = crate::current_dir()?.join(path);
-        }
-
-        Ok(path.normalized())
+        LocalPathBuf::from_trusted_string(&s)
     }
 }
 

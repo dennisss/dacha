@@ -366,13 +366,16 @@ impl FileCredentialsManager {
                 r.clone()
             } else {
                 // TODO: Should cache this.
-                Arc::new(CertificateRegistry::public_roots().await?)
+                Arc::new(CertificateRegistry::public_roots().await.map_err(
+                    |e| format_err!("While loading public roots: {}", e))?)
             }
         };
 
-        let mut identities = vec![];
+        let mut client_identifies = vec![];
+        let mut server_identities = vec![];
 
-        for certs in data.certificates.values() {
+        let mut first_valid = false;
+        for (i, certs) in data.certificates.values().enumerate() {
             let cert_key_id =
                 base_radix::hex_encode(certs[0].subject_key_id()).to_ascii_lowercase();
 
@@ -380,15 +383,32 @@ impl FileCredentialsManager {
                 .get(&cert_key_id)
                 .ok_or_else(|| err_msg("Missing key for certificate"))?;
 
-            identities.push(CertificateIdentity {
+            // TODO: Make this an approximate check. Anything that is about to
+            // expire should be invalid.
+            if !certs[0].valid_now() {
+                eprintln!("[WARNING] Discarding expired certificate for common name \"{}\"",
+                    certs[0].subject().common_name()?
+                        .unwrap_or_else(|| "<unknown name format>".into()));
+                continue;
+            }
+
+            let identity = CertificateIdentity {
                 certificates: certs.clone(),
                 private_key: cert_key.clone()
-            });
+            };
+
+            // We don't support dynamically selecting client certificates so we always
+            // use the first one.
+            if i == 0 {
+                client_identifies.push(identity.clone());
+            }
+
+            server_identities.push(identity);
         }
 
         // TODO: Block writing to swap.
         let mut server_options =
-            ServerOptions::recommended_with_identities(identities);
+            ServerOptions::recommended_with_identities(server_identities);
         server_options.certificate_request = Some(CertificateRequestOptions {
             root_certificate_registry: CertificateRegistrySource::Custom(registry.clone()),
             trust_remote_certificate: false,
@@ -398,8 +418,9 @@ impl FileCredentialsManager {
         client_options.certificate_request.root_certificate_registry =
             CertificateRegistrySource::Custom(registry.clone());
 
-        // NOTE: Only the first identify will be used for client auth.
-        client_options.certificate_auth = Some(server_options.certificate_auth.clone());
+        client_options.certificate_auth = Some(CertificateAuthenticationOptions {
+            identities: client_identifies
+        });
 
         Ok((client_options, server_options))
     }
@@ -442,7 +463,7 @@ struct Shared {
 impl_resource_passthrough!(FileCredentialsLoader, task);
 
 impl FileCredentialsLoader {
-    /// Loads credentials once and optionally starts watching for credential
+    /// Loads credentials once and starts watching for credential
     /// changes in the background.
     pub async fn create(dir: &LocalPath) -> Result<Self> {
         // TODO: Move error remapping closer to the syscall.
@@ -451,7 +472,8 @@ impl FileCredentialsLoader {
 
         // NOTE: We need to watch the directory and not individual files since the
         // renames will make references to the files obsolete.
-        watcher.mark(dir)?;
+        watcher.mark(dir)
+            .map_err(|e| format_err!("While watching directory: {}", e))?;
 
         let (client_options, server_options) = Self::load_once(dir).await?;
 
@@ -461,7 +483,7 @@ impl FileCredentialsLoader {
             client_options: client_options.into(),
         });
 
-        let task: TaskResource = TaskResource::spawn_interruptable(
+        let task = TaskResource::spawn_interruptable(
             "FileCredentialsLoader",
             Self::continously_reload(shared.clone(), watcher),
         );
@@ -469,17 +491,26 @@ impl FileCredentialsLoader {
         Ok(Self { task, shared })
     }
 
-    pub fn certificate(&self) -> Arc<Certificate> {
-        self.server_options().get().certificate_auth.identities[0].certificates[0].clone()
+    pub fn certificate(&self) -> Option<Arc<Certificate>> {
+        let opts = self.server_options().get();
+        if opts.certificate_auth.identities.is_empty() {
+            return None;
+        }
+
+        Some(opts.certificate_auth.identities[0].certificates[0].clone())
     }
 
-    pub fn private_key(&self) -> Arc<PrivateKey> {
-        self.server_options()
-            .get()
+    pub fn private_key(&self) -> Option<Arc<PrivateKey>> {
+        let opts = self.server_options().get();
+        if opts.certificate_auth.identities.is_empty() {
+            return None;
+        }
+
+        Some(opts
             .certificate_auth
             .identities[0]
             .private_key
-            .clone()
+            .clone())
     }
 
     pub fn registry(&self) -> Arc<CertificateRegistry> {
@@ -495,7 +526,7 @@ impl FileCredentialsLoader {
 
     async fn continously_reload(shared: Arc<Shared>, mut watcher: LocalFileWatcher) -> Result<()> {
         loop {
-            watcher.wait().await?;
+            watcher.wait().await.map_err(|e| format_err!("While waiting for changes: {}", e))?;
             executor::sleep(LOADER_BATCHING_DELAY).await?;
             // TODO: Mark any recent changes in the watcher as don (read the watcher fd with 'no wait' read flags).
 
@@ -581,16 +612,16 @@ mod tests {
             .await?;
 
         let loader = FileCredentialsLoader::create(tmp.path()).await?;
-        assert_eq!(loader.private_key().to_der(), creds1.key.to_der());
-        assert_eq!(loader.certificate().to_der(), creds1.certs[0].to_der());
+        assert_eq!(loader.private_key().unwrap().to_der(), creds1.key.to_der());
+        assert_eq!(loader.certificate().unwrap().to_der(), creds1.certs[0].to_der());
         assert_eq!(loader.registry().to_pem(), creds1.registry.to_pem());
 
         let creds2 = make_creds().await?;
         manager.write_registry(creds2.registry.clone()).await?;
 
         executor::sleep(Duration::from_secs(2)).await?;
-        assert_eq!(loader.private_key().to_der(), creds1.key.to_der());
-        assert_eq!(loader.certificate().to_der(), creds1.certs[0].to_der());
+        assert_eq!(loader.private_key().unwrap().to_der(), creds1.key.to_der());
+        assert_eq!(loader.certificate().unwrap().to_der(), creds1.certs[0].to_der());
         assert_eq!(loader.registry().to_pem(), creds2.registry.to_pem());
         assert!(loader.registry().to_pem() != creds1.registry.to_pem());
 
@@ -599,8 +630,8 @@ mod tests {
             .await?;
 
         executor::sleep(Duration::from_secs(2)).await?;
-        assert_eq!(loader.private_key().to_der(), creds2.key.to_der());
-        assert_eq!(loader.certificate().to_der(), creds2.certs[0].to_der());
+        assert_eq!(loader.private_key().unwrap().to_der(), creds2.key.to_der());
+        assert_eq!(loader.certificate().unwrap().to_der(), creds2.certs[0].to_der());
         assert_eq!(loader.registry().to_pem(), creds2.registry.to_pem());
 
         // What to verify that the loader can handle multiple changes to the same
@@ -613,8 +644,8 @@ mod tests {
             .await?;
 
         executor::sleep(Duration::from_secs(2)).await?;
-        assert_eq!(loader.private_key().to_der(), creds3.key.to_der());
-        assert_eq!(loader.certificate().to_der(), creds3.certs[0].to_der());
+        assert_eq!(loader.private_key().unwrap().to_der(), creds3.key.to_der());
+        assert_eq!(loader.certificate().unwrap().to_der(), creds3.certs[0].to_der());
         assert_eq!(loader.registry().to_pem(), creds3.registry.to_pem());
 
         Ok(())

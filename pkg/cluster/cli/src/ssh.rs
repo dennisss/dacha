@@ -140,7 +140,7 @@ impl MachineOperator for LocalOperator {
         options: &UploadOptions
     ) -> Result<()> {
         if options.sudo {
-            return Err(err_msg("Unimplemented"));
+            return Err(err_msg("Unimplemented (1)"));
         }
 
         file::copy(local_path, remote_path).await?;
@@ -163,8 +163,25 @@ impl MachineOperator for LocalOperator {
         remote_path: &LocalPath,
         options: &UploadOptions
     ) -> Result<()> {
-        if options.sudo {
-            return Err(err_msg("Unimplemented"));
+        if options.sudo {    
+            let mut child = command_args!("sudo tee {remote_path.as_str()}")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+    
+            let mut stdin = child.stdin.take().unwrap();
+            stdin.write_all(data)?;
+            drop(stdin);
+    
+            let output = child.wait_with_output()?;
+            if !output.status.success() {
+                std::io::stdout().write_all(&output.stdout).unwrap();
+                std::io::stderr().write_all(&output.stderr).unwrap();
+                return Err(err_msg("Command failed"));
+            }
+
+            return Ok(());
         }
 
         file::write(remote_path, data).await
@@ -298,7 +315,7 @@ impl MachineOperator for SSHClient {
         options: &UploadOptions
     ) -> Result<()> {
         if options.sudo {
-            return Err(err_msg("Unimplemented"));
+            return Err(err_msg("Unimplemented (3)"));
         }
 
         self.run_scp(

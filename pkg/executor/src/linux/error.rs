@@ -41,6 +41,7 @@ impl<T> RemapErrno<T> for Result<T, Errno> {
                 return e;
             }
 
+            // TODO: Also Include a message in this case.
             errno.into()
         })
     }

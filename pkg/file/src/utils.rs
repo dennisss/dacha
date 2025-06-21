@@ -183,10 +183,10 @@ pub fn exists_sync<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
 }
 
 pub async fn create_dir(path: &LocalPath) -> Result<()> {
-    let path = CString::new(path.as_str())?;
+    let cpath = CString::new(path.as_str())?;
     unsafe {
-        sys::mkdir(path.as_ptr() as *const u8, 0o777)
-            .remap_errno::<FileError, _>(|| String::new())?
+        sys::mkdir(cpath.as_ptr() as *const u8, 0o777)
+            .remap_errno::<FileError, _>(|| format!("mkdir(\"{}\") failed", path.as_str()))?
     }
     Ok(())
 }

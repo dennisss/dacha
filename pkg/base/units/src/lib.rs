@@ -8,5 +8,7 @@ extern crate std;
 extern crate alloc;
 
 mod byte;
+mod duration;
 
 pub use byte::*;
+pub use duration::*;

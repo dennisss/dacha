@@ -42,8 +42,11 @@ pub struct DiskCache {
 
 impl DiskCache {
     pub async fn open(client: http::SimpleClient, dir: &LocalPath) -> Result<Self> {
-        let metadata = TransactionalDB::create_local(&dir.join("metadata")).await?;
+        if !file::exists(dir).await? {
+            file::create_dir(dir).await?;
+        }
 
+        let metadata = TransactionalDB::create_local(&dir.join("metadata")).await?;
         let blobs_dir = dir.join("blobs");
         file::create_dir_all(&blobs_dir).await?;
 

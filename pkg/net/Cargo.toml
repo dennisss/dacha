@@ -12,6 +12,7 @@ automata = { path = "../automata" }
 crypto = { path = "../crypto" }
 sys = { path = "../sys" }
 executor = { path = "../executor" }
+executor_multitask = { path = "../executor/multitask" }
 macros = { path = "../macros" }
 base_radix = { path = "../base/radix" }
 libc = "0.2"

@@ -6,7 +6,8 @@ extern crate file;
 use std::time::Instant;
 
 use base_error::*;
-use cam::{kicad::KicadPCBExport, process_pcb};
+use cam::process_pcb;
+use kicad::export::KicadPCBExport;
 use file::{temp::TempDir, LocalPathBuf};
 use gerber::{
     excellon,

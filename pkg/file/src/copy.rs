@@ -76,6 +76,15 @@ pub async fn run_copy_command(cmd: CopyCommand) -> Result<()> {
                 }
             }
 
+            // TODO: This will only work well if all paths are normalized.
+            if let Some(rel_path) = link_path.strip_prefix(&cmd.from) {
+                link_path = cmd.to.join(rel_path);
+            }
+
+            if cmd.symlink_root.is_some() && !to_path.join(&link_path).starts_with(&cmd.to) {
+                return Err(format_err!("Symlink outside of root: {}", from_path.as_str()));
+            }
+
             crate::symlink(link_path, to_path).await?;
         } else {
             return Err(format_err!("Can't copy {:?}", from_path));

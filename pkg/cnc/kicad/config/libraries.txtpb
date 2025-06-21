@@ -1,0 +1,70 @@
+
+
+libraries: [
+    {
+        path: "third_party/ultralibrarian/rp2040"
+    },
+    {
+        path: "third_party/ultralibrarian/cd-hd2004"
+    },
+    {
+        path: "third_party/ultralibrarian/sls32aia"
+    },
+    {
+        path: "third_party/ultralibrarian/ag5300"
+    },
+    {
+        path: "third_party/kicad_oled"
+    },
+    {
+        path: "third_party/ultralibrarian/amg8854"
+    },
+    {
+        path: "third_party/ultralibrarian/lis2dw12tr"
+    },
+    {
+        path: "third_party/snapeda/te_nema_pcb"
+    },
+    {
+        path: "third_party/digikey/molex_usb_a_male"
+    },
+    {
+        path: "third_party/digikey/molex_fpc_05_4pin_connector"
+    },
+    {
+        path: "third_party/snapeda/ublox_bmd_380"
+    },
+    {
+        path: "third_party/ultralibrarian/aon7296"
+    },
+    {
+        path: "third_party/digikey/tmc2209"
+    },
+    {
+        name: "schurter_gsp"
+        path: "third_party/digikey/schurter_gsp/footprints.pretty"
+    },
+    {
+        name: "Components"
+        path: "pkg/cnc/kicad/components"
+    },
+    {
+        name: "zmpt101b"
+        path: "third_party/snapeda/zmp101b"
+    },
+    {
+        path: "third_party/ultralibrarian/molex_microfit_2x2"
+    },
+    {
+        path: "third_party/snapeda/molex_sas_29p"
+    },
+    {
+        path: "third_party/snapeda/amphenol_mini_sas_hd"
+    },
+    {
+        path: "third_party/digikey/SN74AHCT125DR"
+    },
+    {
+        path: "third_party/digikey/AGQ20012"
+    }
+]

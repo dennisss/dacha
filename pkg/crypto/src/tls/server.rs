@@ -131,19 +131,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
         let identity;
 
         // When being requested with an ip address, we won't have a host name.
-        if let Some(server_name) = find_server_name_from_client(&client_hello.extensions)? {
-            if server_name.names.len() != 1 {
-                return Err(err_msg("Expected request to have exactly one name"));
-            }
-
-            if server_name.names[0].typ != NameType::host_name {
-                return Err(format_err!(
-                    "Only host_name type server names are supported. Instead got: {:?}",
-                    server_name.names[0].typ));
-            }
-            
-            let name = std::str::from_utf8(&server_name.names[0].data)?;
-            
+        if let Some(name) = find_server_name_from_client(&client_hello.extensions)? {            
             let mut chosen_identity = None;
 
             for ident in &self.options.certificate_auth.identities {

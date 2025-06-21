@@ -277,15 +277,15 @@ structs {
         name: "data_len"
         type { primitive: U16 }
     }
-    field {
-        name: "data"
-        type {
-            buffer {
-                element_type { primitive: U8 }
-                length_field_name: "data_len"
-            }
-        }
-    }
+    # field {
+    #     name: "data"
+    #     type {
+    #         buffer {
+    #             element_type { primitive: U8 }
+    #             length_field_name: "data_len"
+    #         }
+    #     }
+    # }
 }
 
 structs {

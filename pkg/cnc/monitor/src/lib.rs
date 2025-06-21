@@ -42,19 +42,3 @@ pub fn round_number(v: f32) -> f32 {
 pub fn round_number_ref(v: &mut f32) {
     *v = round_number(*v);
 }
-
-pub fn format_duration_secs(v: Duration) -> String {
-    let mut s = v.as_secs();
-
-    let mut out = String::new();
-
-    let mins = s / 60;
-    s = s % 60;
-
-    if mins > 0 {
-        out.push_str(&format!("{}m ", mins));
-    }
-
-    out.push_str(&format!("{}s", s));
-    out
-}

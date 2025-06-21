@@ -4,6 +4,7 @@ use std::time::{Duration, Instant, SystemTime};
 use std::{collections::HashMap, sync::Arc};
 
 use base_error::*;
+use base_units::format_duration_secs;
 use cnc_monitor_proto::cnc::*;
 use common::io::{Readable, Writeable};
 use crypto::random::SharedRngExt;
@@ -29,7 +30,7 @@ use crate::program::ProgramSummary;
 use crate::program_preview_manager::*;
 use crate::serial_controller::DEFAULT_COMMAND_TIMEOUT;
 use crate::tables::{FileTable, MachineTable, MediaFragmentTable, ProgramRunTable};
-use crate::{devices::*, format_duration_secs};
+use crate::devices::*;
 use crate::{presets::get_machine_presets, serial_controller::SerialController};
 
 const RETRY_BACKOFF: Duration = Duration::from_secs(10);

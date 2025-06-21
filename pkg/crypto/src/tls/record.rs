@@ -114,6 +114,36 @@ impl Record {
         })
     }
 
+    /// Parsing a record assuming the entire record is already in memory.
+    ///
+    /// TODO: Dedup with Self::read
+    pub fn parse(input: Bytes) -> Result<Self> {
+        if input.len() < 5 {
+            return Err(err_msg("Not enough data for record header"));
+        }
+
+        let typ = ContentType::from_u8(input[0]);
+        let legacy_record_version = u16::from_be_bytes(*array_ref![input, 1, 2]);
+        let length = u16::from_be_bytes(*array_ref![input, 3, 2]) as usize;
+
+        if length > (exp2(14) + 256) {
+            // TODO: Send to the remote end.
+            return Err(err_msg("alert: record_overflow"));
+        }
+
+        if input.len() < 5 + length {
+            return Err(err_msg("Not enough data for entire record"));
+        }
+
+        let data = input.slice(5..(5 + length));
+
+        Ok(Record {
+            typ,
+            legacy_record_version,
+            data,
+        })        
+    }
+
     pub fn serialize(&self, out: &mut Vec<u8>) {
         out.push(self.typ.to_u8());
         out.extend_from_slice(&self.legacy_record_version.to_be_bytes());

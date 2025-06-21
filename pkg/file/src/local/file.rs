@@ -192,7 +192,7 @@ impl LocalFile {
                 let dir_cpath = CString::new(dir_path.as_str())?;
 
                 let dir_fd = sys::OpenFileDescriptor::new(
-                    unsafe { sys::open(dir_cpath.as_ptr(), sys::O_DIRECTORY, 0) }
+                    unsafe { sys::open(dir_cpath.as_ptr(), sys::O_DIRECTORY | sys::O_CLOEXEC, 0) }
                         .remap_errno::<FileError, _>(|| {
                             format!(
                                 "Failed to open local directory at path: {}",

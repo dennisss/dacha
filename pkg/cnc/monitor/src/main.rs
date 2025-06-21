@@ -48,11 +48,6 @@ const SERVICE_ACL_PROTO: &'static str = r#"
             is_directory: true
             principals: ["authenticated"]
         },
-        {
-            path: "/assets"
-            is_directory: true
-            principals: ["authenticated"]
-        },
 
         # 
         {
@@ -312,8 +307,6 @@ async fn main() -> Result<()> {
     }).await?);
     server.add_request_handler("/", false, web_handler.clone())?;
     server.add_request_handler("/ui", true, web_handler.clone())?;
-
-    server.add_request_handler("/assets", true, web::assets_handler())?;
 
     server.add_request_handler("/api", true, ApiHttpHandler {
         instance: monitor,

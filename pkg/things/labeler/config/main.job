@@ -1,0 +1,47 @@
+name: "labeler"
+
+replicas: 1
+
+scheduling {
+    labels {
+        label {
+            key: "labelers"
+            present: true
+        }
+    }
+}
+
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/things/labeler/labeler",
+        "--port=service"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/things/labeler:bundle"
+        }
+    ]
+
+    additional_groups: ["plugdev"]
+    devices: [
+        {
+            source {
+                usb {
+                    # PT-P700
+                    vendor: 0x04f9
+                    product: 0x2061
+                }
+                limit: 100
+            }
+            exclusive: true
+        }
+    ]
+}

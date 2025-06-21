@@ -2,6 +2,7 @@
 
 use std::string::ToString;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::os::unix::fs::PermissionsExt;
 
 use common::errors::*;
 
@@ -30,8 +31,14 @@ impl TempDir {
                 .as_nanos();
             let path = LocalPath::new("/tmp/dacha").join(time.to_string());
 
-            // TODO: Always perform this as the real user and not as root if we are sudo'ed.
-            let _ = std::fs::create_dir("/tmp/dacha");
+            if !std::fs::exists("/tmp/dacha")? {
+                std::fs::create_dir("/tmp/dacha")?;
+
+                // If the temp directory is created for the first time by 'root', we need to make sure that regular users can still use it.
+                let mut perms = std::fs::metadata("/tmp/dacha")?.permissions();
+                perms.set_mode(0o777);
+                std::fs::set_permissions("/tmp/dacha", perms)?;
+            }
 
             if let Err(e) = std::fs::create_dir(&path) {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {

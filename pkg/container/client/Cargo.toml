@@ -17,6 +17,7 @@ db_txn_proto = { path = "../../db/txn/proto" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
 net = { path = "../../net" }
+web = { path = "../../web" }
 raft_client = { path = "../../raft/client" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
 failure = "0.1.8"

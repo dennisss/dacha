@@ -371,8 +371,14 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         let netmask = cmd.netmask.as_ref().unwrap();
         let gateway = cmd.gateway.as_ref().unwrap();
 
+        let interfaces_file = root_dir.path().join("etc/network/interfaces");
+
+        if !file::exists(&interfaces_file).await? {
+            return Err(err_msg("/etc/network/interfaces doesn't exist in the image. Most likely it was built without the 'ifupdown' package."));
+        }
+
         file::append(
-            root_dir.path().join("etc/network/interfaces"),
+            interfaces_file,
             format!(
                 "
                 allow-hotplug eth0
@@ -422,14 +428,30 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
 }
 
 async fn run_extract_command(cmd: ExtractCommand) -> Result<()> {
+    let tmp_dir = file::temp::TempDir::create()?;
+
+    let mut image_path = cmd.image.to_owned();
+
     // Verify that the image isn't compressed
     {
         if cmd.image.extension() == Some("img") {
             // Good
         } else if cmd.image.extension() == Some("gz") {
-            return Err(err_msg(
-                "Image is gzip compressed. Can only extract from an uncompressed image",
-            ));
+            let mut image_file = file::LocalFile::open(&cmd.image)?;
+
+            let gzip_file = compression::gzip::GzipFile::open(image_file).await?;
+            let size = gzip_file.uncompressed_size();
+            println!("[GZip] Pre-extracting image... Inner Size: {:?}", ByteCount::from(size));
+    
+            let mut reader = gzip_file.data_reader();
+
+            image_path = tmp_dir.path().join("image.img");
+
+            let mut out_file = file::LocalFile::open_with_options(
+                &image_path, &file::LocalFileOpenOptions::new().create(true).write(true))?;
+
+            let mut progress = ProgressTracker::new(size);            
+            reader.pipe_with_progress(&mut out_file, &mut |v| progress.update(v)).await?;
         } else {
             return Err(format_err!(
                 "Unsupported image format in file: {}",
@@ -438,7 +460,7 @@ async fn run_extract_command(cmd: ExtractCommand) -> Result<()> {
         }
     }
 
-    let mut image_file = file::LocalFile::open(&cmd.image)?;
+    let mut image_file = file::LocalFile::open(&image_path)?;
 
     // Find the root partition in the image.
     let (part_offset, part_size) = {
@@ -525,6 +547,8 @@ async fn run_extract_command(cmd: ExtractCommand) -> Result<()> {
         println!("Deleting old data...");
         file::remove_dir_all(&cmd.output_dir).await?;
     }
+
+    // TODO: Verify no '/etc/machine-id' or SSH host keys are already present.
 
     println!("Copying files...");
     file::create_dir_all(cmd.output_dir.parent().unwrap()).await?;

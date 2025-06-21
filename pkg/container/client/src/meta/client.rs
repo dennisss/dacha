@@ -7,7 +7,7 @@ use container_proto::cluster::{ObjectMetadata, UserEnvProto};
 use db_txn_client::TransactionalDBClient;
 use db_table::db::ProtobufDB;
 use db_table::query_one;
-use executor_multitask::impl_resource_passthrough;
+use executor_multitask::{impl_resource_passthrough, ServiceResourceGroup};
 use protobuf::{Message, StaticMessage};
 use protobuf_builtins::google::protobuf::Any;
 use raft_client::proto::RouteLabel;
@@ -27,16 +27,20 @@ pub struct ClusterMetaClient {
     inner: Arc<TransactionalDBClient>,
     db: Arc<ProtobufDB>,
     creds: Option<crypto::tls::Credentials>,
+    resources: ServiceResourceGroup,
 }
 
-impl_resource_passthrough!(ClusterMetaClient, inner);
+impl_resource_passthrough!(ClusterMetaClient, resources);
 
 impl ClusterMetaClient {
     pub async fn create(
         zone: &str,
         seeds: &[String],
         creds: Option<crypto::tls::Credentials>,
+        loader: Option<Arc<FileCredentialsLoader>>,
     ) -> Result<Self> {
+        let resources = ServiceResourceGroup::new("ClusterMetaClient");
+
         let mut label = RouteLabel::default();
         label.set_value(format!("{}={}", ZONE_ENV_VAR, zone));
 
@@ -49,12 +53,19 @@ impl ClusterMetaClient {
             )
             .await?,
         );
+        resources.register_dependency(inner.clone()).await;
+
+        if let Some(loader) = loader {
+            resources.register_dependency(loader).await;
+        }
+
         let db = Arc::new(ProtobufDB::new(inner.clone()));
         Ok(Self {
             zone: zone.to_string(),
             inner,
             db,
             creds,
+            resources
         })
     }
 
@@ -111,6 +122,7 @@ impl ClusterMetaClient {
                     server: creds.server_options(),
                     client: creds.client_options(),
                 }),
+                Some(creds)
             )
             .await?,
         ))

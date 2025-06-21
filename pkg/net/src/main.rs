@@ -43,6 +43,17 @@ async fn server() -> Result<()> {
 
 #[executor_main]
 async fn main() -> Result<()> {
+
+    let mut client = dns::Client::create_insecure().await?;
+
+    // TODO: Auto-add the '.'
+    let ip = client.resolve_addr("google.com.").await?;
+
+    println!("{:?}", ip);
+
+
+    return Ok(());
+
     /*
     for route in net::netlink::read_routes()? {
         if route.scope != net::netlink::RouteScope::Universe ||
@@ -67,12 +78,7 @@ async fn main() -> Result<()> {
 
     return Ok(());
 
-    let mut client = dns::Client::create_insecure().await?;
 
-    // TODO: Auto-add the '.'
-    let ip = client.resolve_addr("google.com.").await?;
-
-    println!("{:?}", ip);
 
     /*
     let mut query_builder = QueryBuilder::new(1);

@@ -100,12 +100,8 @@ pub const SEEK_SET: c_uint = 0;
 
 pub use bindings::{
     pollfd, O_APPEND, O_CLOEXEC, O_CREAT, O_EXCL, O_NONBLOCK, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC,
-    O_WRONLY,
+    O_WRONLY, O_DIRECTORY, __O_DIRECT as O_DIRECT
 };
-
-pub const O_DIRECT: u32 = 0o00040000;
-
-pub const O_DIRECTORY: u32 = 0o00200000;
 
 pub use bindings::{
     CLONE_FILES, CLONE_FS, CLONE_IO, CLONE_SETTLS, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM,
@@ -199,6 +195,14 @@ syscall!(
 );
 
 syscall!(fcntl, bindings::SYS_fcntl, fd: c_int, cmd: c_uint, arg: c_ulong => Result<c_int>);
+
+syscall!(
+    sendfile, bindings::SYS_sendfile,
+    out_fd: c_int,
+    in_fd: c_int,
+    offset: *const off_t,
+    count: c_size_t => Result<c_int>
+);
 
 /*
 syscall!(

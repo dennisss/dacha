@@ -419,10 +419,10 @@ async fn run_inner(
     // Drop all supplementary groups. We will only depend on ones in our gid_map.
     nix::unistd::setgroups(&[])?;
 
-    // Files in the data directory will be created without any group/world
-    // permissions. Files which require a less restrictive should be modified on
+    // Files in the data directory will be created without any world
+    // permissions. We will generally use the 'owner' to indicate the writers and 'group' to indicate the readers of files. Files which require a less restrictive should be modified on
     // a case-by-base basis.
-    umask(Mode::from_bits_truncate(0o077));
+    umask(Mode::from_bits_truncate(0o027));
 
     let service = RootResource::new();
 

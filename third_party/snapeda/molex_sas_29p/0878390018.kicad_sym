@@ -1,0 +1,291 @@
+
+(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)
+  (symbol "0878390018" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
+    (property "Reference" "CN" (id 0) (at -10.16 22.86 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Value" "0878390018" (id 1) (at -10.16 -22.86 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Footprint" "0878390018" (id 2) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MF" "Molex" (id 4) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Description" "\n                        \n                            29 Position SAS Receptacle Connector Solder Through Hole\n                        \n" (id 5) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Package" "None" (id 6) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Price" "None" (id 7) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "SnapEDA_Link" "https://www.snapeda.com/parts/0878390018/Molex/view-part/?ref=snap" (id 8) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MP" "0878390018" (id 9) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Availability" "In Stock" (id 10) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Check_prices" "https://www.snapeda.com/parts/0878390018/Molex/view-part/?ref=eda" (id 11) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (symbol "0878390018_0_0"
+      (rectangle (start -10.16 -20.32) (end 10.16 20.32)
+        (stroke (width 0.254)) (fill (type background))
+      )
+      (pin bidirectional line (at -12.7 17.78 0) (length 2.54)
+        (name "RP+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "RP+"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 15.24 0) (length 2.54)
+        (name "RP-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "RP-"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 12.7 0) (length 2.54)
+        (name "TP+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "TP+"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 10.16 0) (length 2.54)
+        (name "TP-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "TP-"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at -12.7 5.08 0) (length 2.54)
+        (name "GNDP"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at -12.7 5.08 0) (length 2.54)
+        (name "GNDP"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at -12.7 5.08 0) (length 2.54)
+        (name "GNDP"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND3"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 -5.08 0) (length 2.54)
+        (name "TS+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "TS+"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 -7.62 0) (length 2.54)
+        (name "TS-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "TS-"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 0.0 0) (length 2.54)
+        (name "RS+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "RS+"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 -2.54 0) (length 2.54)
+        (name "RS-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "RS-"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at -12.7 -12.7 0) (length 2.54)
+        (name "GNDS"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND4"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at -12.7 -12.7 0) (length 2.54)
+        (name "GNDS"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND5"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at -12.7 -12.7 0) (length 2.54)
+        (name "GNDS"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND6"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 -17.78 0) (length 2.54)
+        (name "MNT"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "MNT1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at -12.7 -17.78 0) (length 2.54)
+        (name "MNT"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "MNT2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 17.78 180.0) (length 2.54)
+        (name "3V31"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "3V31"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 15.24 180.0) (length 2.54)
+        (name "3V32"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "3V32"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 12.7 180.0) (length 2.54)
+        (name "3V3_DEVSLP"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "3V33_DEVSLP"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at 12.7 10.16 180.0) (length 2.54)
+        (name "GND1"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND7"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at 12.7 7.62 180.0) (length 2.54)
+        (name "GND2"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND8"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at 12.7 5.08 180.0) (length 2.54)
+        (name "GND3"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND9"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 2.54 180.0) (length 2.54)
+        (name "5V1"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "5V1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 0.0 180.0) (length 2.54)
+        (name "5V2"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "5V2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 -2.54 180.0) (length 2.54)
+        (name "5V3"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "5V3"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at 12.7 -5.08 180.0) (length 2.54)
+        (name "GND4"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND10"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 -7.62 180.0) (length 2.54)
+        (name "GND5_LED"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND11_LED"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin power_in line (at 12.7 -10.16 180.0) (length 2.54)
+        (name "GND6"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "GND12"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 -12.7 180.0) (length 2.54)
+        (name "12V1"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "12V1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 -15.24 180.0) (length 2.54)
+        (name "12V2"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "12V2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin bidirectional line (at 12.7 -17.78 180.0) (length 2.54)
+        (name "12V3"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "12V3"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+    )
+  )
+)

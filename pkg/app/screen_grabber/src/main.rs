@@ -24,16 +24,6 @@ const SERVICE_ACL_PROTO: &'static str = r#"
             principals: ["authenticated"]
         },
         {
-            path: "/favicon.ico"
-            is_directory: false
-            principals: ["authenticated"]
-        },
-        {
-            path: "/assets"
-            is_directory: true
-            principals: ["authenticated"]
-        },
-        {
             path: "/rpc/screen_grabber.ScreenGrabber"
             is_directory: true
             principals: ["authenticated"]
@@ -44,10 +34,6 @@ const SERVICE_ACL_PROTO: &'static str = r#"
 #[derive(Args)]
 struct Args {
     port: NamedPortArg,
-}
-
-async fn not_found_handle_request(mut req: http::Request) -> http::Response {
-    http_util::not_found()
 }
 
 #[executor_main]
@@ -82,8 +68,6 @@ async fn main() -> Result<()> {
         vars: None,
     }).await?;
     server.add_request_handler("/", false, web_handler)?;
-    server.add_request_handler("/assets", true, web::assets_handler())?;
-    server.add_request_handler("/favicon.ico", false, http::HttpFn(not_found_handle_request))?;
 
     service.register_dependency(server.start()?).await;
 

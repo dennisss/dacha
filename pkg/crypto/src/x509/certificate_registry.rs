@@ -77,7 +77,9 @@ impl CertificateRegistry {
     ///
     /// TODO: Cache this and return an immutable Arc<>
     pub async fn public_roots() -> Result<Self> {
-        let mut data = file::read(project_path!("third_party/chromium/root_store.bin")).await?;
+        let project_dir = file::try_project_dir()?;
+
+        let mut data = file::read(project_dir.join("third_party/chromium/root_store.bin")).await?;
 
         let buf = Bytes::from(data);
 

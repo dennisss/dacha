@@ -11,6 +11,7 @@ use crate::dns::name::Name;
 use crate::dns::proto::*;
 use crate::ip::{IPAddress, SocketAddr};
 use crate::udp::UdpSocket;
+use crate::dns::constants::*;
 
 // TODO: Implement in-memory caching, retrying of queries, and timeouts.
 // ^ If we didn't get a response within 200ms, retry with a new id.
@@ -22,8 +23,6 @@ use crate::udp::UdpSocket;
 // TODO: Then how we should we check syscall error codes to avoid failures if
 // part of the packet is lost?
 
-const MAX_PACKET_SIZE: usize = 512;
-const DEFAULT_PORT: u16 = 53;
 
 const MULTICAST_ADDR: IPAddress = IPAddress::V4([224, 0, 0, 251]);
 const MULTICAST_PORT: u16 = 5353;
@@ -103,7 +102,7 @@ impl Client {
         self.last_id = id;
 
         let mut query_builder = QueryBuilder::new(id);
-        query_builder.add_question(name.clone(), typ, class, self.multicast);
+        query_builder.add_question(name, typ, class, self.multicast);
 
         // TODO: Verify that this is at most 512 bytes
         let query_data = query_builder.build();
@@ -166,7 +165,7 @@ impl Client {
     /// the same time).
     async fn wait_for_reply(&mut self, id: u16) -> Result<MessageCell> {
         loop {
-            let mut response = vec![0u8; 512];
+            let mut response = vec![0u8; MAX_PACKET_SIZE];
 
             let n = self.socket.recv(&mut response).await?;
             let reply = MessageCell::new(response, |response| {
@@ -261,6 +260,7 @@ impl Client {
     }
 }
 
+#[derive(Debug)]
 struct ClientResponse {
     messages: Vec<MessageCell>,
     failures: Vec<ResponseCode>,

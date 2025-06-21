@@ -3,6 +3,7 @@ $HOME/workspace/dacha/target
 $HOME/workspace/dacha/built-config
 $HOME/workspace/dacha/built-rust
 $HOME/workspace/dacha/built
+$HOME/workspace/dacha/third_party/pi-gen/deploy
 $HOME/.cargo
 $HOME/.rustup
 $HOME/.cache

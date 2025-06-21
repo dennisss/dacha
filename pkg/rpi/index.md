@@ -2,71 +2,144 @@
 
 This directory contains libraries for building Raspberry Pi applications.
 
+## TLDR
+
+Assuming you don't want to rebuild a Raspberry Pi system image from stratch, download a prebuilt one:
+
+```
+wget -P third_party/pi-gen/deploy/ https://storage.googleapis.com/da-manual-us/raspbian-builds/2025-04-27/2025-04-27-Daspbian-lite.img.gz
+```
+
+Then flash to your Pi's SDCards using the instructions in the `Flashing` section.
+
+If you intent on later recompiling individual cluster binaries for the Pi (currently always needed), also run the commands in steps 1 and 2 of the `Cross Compiling` section.
+
 ## Image
 
 We provide a custom Raspbian Lite image configuration which other instructions assume you are using on your Raspberry Pis. Images can be generated using the `third_party/pi-gen` tool as described in the rest of this section. The image has a good default configuration in `third_party/pi-gen/config` that should NOT need to be edited.
 
 Note: Only using a 64-bit Pi OS is supported right now.
 
-**Custom Image Features**
+### Features
 
-Compared to the standard Raspbian Lite image, our image is meant to be headlessly provisioned in a cluster. Once the base image is flashed, it can be setup in a cluster using the instructions [here](../container/index.md). The unique features of our image is the following:
+Compared to the standard Raspbian Lite image, our image is meant to be headlessly provisioned in a cluster. Once the base image is flashed, it can be setup in a cluster using the instructions [here](../container/index.md). Some of the features of our image is the following:
 
-- Packages/users needed for running a cluster node are pre-installed.
-	- Sets up a `cluster-user` user for manual inspection of the system.
-	- Sets up a `cluster-node` user for running managed cluster binaries.
-		- This user is allowlisted access to GPIO/I2C/SPI/USB/video devices via UDev rules.
+- BTRFS root partition (so most data is read with data integrity checks).
+- Sets up packages/configs needed for the cluster setup process to go smoothly
+	- cgroups v2 enabled.
+	- `cluster-user` main user with no password.
+	- UDev rules to allowlist GPIO/I2C/SPI/USB/video device access.
 - Disables unneeded features like HDMI output / Audio.
 - Has a `periphmem` kernel module for allowing root-less access to PCM/clock peripherals in user space. 
 - Has pre-installed `-dev` packages for compiling programs
 	- These are not actually used on the Pi, but for simplicity are installed to have a consistent sysroot for cross-compilation.
 
-**Step 1**: Create an ssh key that will be used to access all node machines.
+### Development
 
-- `ssh-keygen -t ed25519` and save to `~/.ssh/id_cluster`
+TLDR: Skip this if you don't want to make changes to `pi-gen`.
 
-**Step 2**: Build the image:
+When developing in custom `pi-gen` repository, we strictly build changes on top of the upstream `pi-gen` repository (no-merging). When we want to update to the latest upstream `pi-gen` head, we can run commands like the following to rebase on top of the latest head:
 
-NOTE: If you don't want to build an image yourself, you can download the latest prebuilt one here: [2024-05-04-Daspbian-lite.img](https://storage.googleapis.com/da-manual-us/raspbian-builds/2024-05-04/2024-05-04-Daspbian-lite.img.gz).
+```
+cd third_party/pi-gen
+git remote add upstream https://github.com/RPi-Distro/pi-gen
+git fetch upstream
+git rebase upstream/arm64
+```
 
-Run the following commands to build a new Raspberry Pi SD Card image. This step requires that you have Docker installed:
+### Building
+
+TLDR: Skip if you already downloaded the aforementioned precompiled `.img.gz` file
+
+NOTE: If you don't want to build an image yourself, you can download the latest prebuilt one here: [2025-04-26-Daspbian-lite.img.gz](https://storage.googleapis.com/da-manual-us/raspbian-builds/2025-04-26/2025-04-26-Daspbian-lite.img.gz) and skip to the `Flashing` section.
+
+Run the following commands to build a new Raspberry Pi SD Card image. These steps require that you have Docker installed:
 
 ```bash
-PI_GEN_DIR=third_party/pi-gen
-DATE="$(date +%Y-%m-%d)"
+PI_GEN_DIR=$PWD/third_party/pi-gen
+IMG_DATE="$(date +%Y-%m-%d)"
 
-### Terminal 1
-# In one terminal, start an HTTP cache (will record all the apt packages used).
+mkdir -p "${PI_GEN_DIR}/deploy"
+
+cargo build --bin http_proxy --release
+
+# Start an HTTP cache (will record all the apt packages used).
+# NOTE: The cache is only used for the pi image and not the base debian image.
 cargo run --bin http_proxy --release -- \
-	--port=9000 --cache_dir="${PI_GEN_DIR}/deploy/${DATE}-cache/"
+	--port=9000 --cache_dir="${PI_GEN_DIR}/deploy/${IMG_DATE}-cache/" &
 
-### Terminal 2
 cd $PI_GEN_DIR
 
 # Build the base docker image
 docker build --no-cache -t pi-gen-base:latest ./docker-base
+docker save pi-gen-base:latest | gzip > ${PI_GEN_DIR}/deploy/${IMG_DATE}-pi-gen-base.tar.gz
+
+# Setup ip table rules so that the next docker build can only access the apt proxy.
+# Note that ip table rules don't persist across system restarts.
+
+# Print initial rules
+sudo iptables -L DOCKER-USER --line-numbers
+
+# Expected output of the above command:
+#   Chain DOCKER-USER (1 references)
+#   num  target     prot opt source               destination         
+#   1    RETURN     all  --  anywhere             anywhere   
+
+# Delete the existing rule
+sudo iptables -D DOCKER-USER 1
+
+# Create new rules.
+# NOTE: This assumes that 172.17.0.1 is the docker0 ip (see 'ip addr').
+# This is also hard coded in the 'pi-gen/config' file. We don't use
+# 'host.docker.internal' since it isn't available in the chroot).
+sudo iptables -I DOCKER-USER -i docker0 -d 172.17.0.1 -p tcp --dport 9000 -j ACCEPT
+sudo iptables -A DOCKER-USER -i docker0 -j DROP
+
+# Verify the rules are set up
+sudo iptables -L DOCKER-USER --line-numbers
+
+# Expected output of the above command:
+#   Chain DOCKER-USER (1 references)
+#   num  target     prot opt source               destination         
+#   1    ACCEPT     tcp  --  anywhere             my-host-name            tcp dpt:9000
+#   2    DROP       all  --  anywhere             anywhere
 
 # Build the pi image.
+# TODO: Pipe the IMG_DATE variable into this script to avoid regenerating the data.
 ./build-docker.sh
 
-# Internal command for pushing to GCS
-gsutil -m cp -r "${PI_GEN_DIR}/deploy/${DATE}*" "gs://da-manual-us/raspbian-builds/${DATE}/"
+# Cleanup
+sudo iptables -D DOCKER-USER 1
+sudo iptables -D DOCKER-USER 1
+sudo iptables -A DOCKER-USER -i docker0 -j RETURN
+
+cd ../../
 ```
 
-**Step 3**: Flash the new image to all Pi SDCards.
+At this point you should have an `.img.gz` file in the `third_party/pi-gen/deploy` folder that you can use in the `Flashing` section.
 
-If step #2 was successful, an image should be been written to `third_party/pi-gen/deploy/YYYY-MM-DD-Daspbian-lite.img.gz`.
+Extra internal only commands for publishing the image (don't run these):
 
-This can be done using commands like the following:
+```
+gsutil -m cp -r "${PI_GEN_DIR}/deploy/${IMG_DATE}*" "gs://da-manual-us/raspbian-builds/${IMG_DATE}/"
+```
+
+### Flashing
+
+**Writing to SDCard**
+
+We will now flash this image to a connected SDCard. The below tool will also handle setting up networking, SSH keys, expanding the filesystem, etc.
+
+WARNING: Don't run the below commands before reading this entire section (just in case you need to add network setup flags).
 
 ```
 cargo build --bin rpi_imager --release
 
+# TODO: Modify the image and disk path to match your setup. 
 sudo target/release/rpi_imager write \
-    --image=$PWD/pi-gen/deploy/2024-05-04-Daspbian-lite.img.gz \
-    --disk=/dev/sdb \
+    --image=$PWD/third_party/pi-gen/deploy/2025-04-27-Daspbian-lite.img.gz \
+    --disk=/dev/sdc \
     --ssh_public_key=$HOME/.ssh/id_cluster.pub
-    
 ```
 
 If you want to connect to a WiFI network, modify and append the following arguments to the above command:
@@ -84,9 +157,9 @@ If you want to set a static ip address for the ethernet port, modify and append 
     --gateway=10.1.0.1
 ```
 
-**Step 4** Test connecting
+After flashing, you can insert the SDCard into your Raspberry Pi and power it on.
 
-Once powered on, a Raspberry Pi will have a default hostname of `cluster-node`. If you look up the ip address of the Pi on your router, you can connect it with a command like the following:
+Once powered on, a Raspberry Pi will have a default hostname of `cluster-node`. If you look up the ip address of the Pi on your router (or use the statically configured one), you can connect it with a command like the following:
 
 ```bash
 ssh -i ~/.ssh/id_cluster cluster-user@10.1.0.111
@@ -104,13 +177,15 @@ This section explains how to cross compile programs to run on the Raspberry Pi (
 
 We will extract the Raspbian image's root filesystem to a local directory so that we can reference headers/libraries in it during cross compilation.
 
-Find the path to the uncompressed `.img` file you wrote to Pi SDCards (you may need to manually extract it) and then modify and run the below commands to extract it. The `output_dir` can't be changed:
+Modify the below commands to point to your image file and run them. The `output_dir` can't be changed:
 
 ```
-cargo build --bin rpi_imager
+cargo build --bin rpi_imager --release
 
-sudo ./target/debug/rpi_imager extract \
-	--image=/path/to/raspbian.img \
+sudo rm -rf /opt/dacha/pi/rootfs
+
+sudo ./target/release/rpi_imager extract \
+	--image=$PWD/third_party/pi-gen/deploy/2025-04-27-Daspbian-lite.img.gz \
 	--output_dir=/opt/dacha/pi/rootfs
 ```
 

@@ -68,10 +68,10 @@ pub fn find_signature_algorithms(extensions: &[Extension]) -> Option<&SignatureS
     None
 }
 
-pub fn find_server_name_from_client(extensions: &[Extension]) -> Result<Option<&ServerNameList>> {
+pub fn find_server_name_from_client(extensions: &[Extension]) -> Result<Option<&str>> {
     for e in extensions {
         if let Extension::ServerName(v) = e {
-            let v = match v {
+            let server_name = match v {
                 Some(v) => v,
                 None => {
                     return Err(err_msg(
@@ -80,7 +80,19 @@ pub fn find_server_name_from_client(extensions: &[Extension]) -> Result<Option<&
                 }
             };
 
-            return Ok(Some(v));
+            if server_name.names.len() != 1 {
+                return Err(err_msg("Expected request to have exactly one name"));
+            }
+
+            if server_name.names[0].typ != NameType::host_name {
+                return Err(format_err!(
+                    "Only host_name type server names are supported. Instead got: {:?}",
+                    server_name.names[0].typ));
+            }
+
+            let name = std::str::from_utf8(&server_name.names[0].data)?;
+
+            return Ok(Some(name));
         }
     }
 

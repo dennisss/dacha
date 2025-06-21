@@ -4,6 +4,10 @@ use cluster_client::ClusterMetaClient;
 use cluster_client::meta::table::*;
 use common::errors::*;
 use container_proto::cluster::*;
+use cluster_client::id::{entity_id_to_string, entity_id_from_string};
+use cluster_client::service::address::ServiceName;
+use base_units::ByteCount;
+use terminal::TerminalTableBuilder;
 
 use crate::utils::{connect_to_node_id, NodeStubs};
 
@@ -15,7 +19,7 @@ pub struct ListCommand {
     kind: Option<ObjectKind>,
 
     /// NOTE: Note all object kinds will be supported in this mode.
-    node_id: Option<u64>,
+    node_id: Option<String>,
 }
 
 #[derive(Args)]
@@ -38,7 +42,9 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
     let db = meta_client.db();
 
     if let Some(node_id) = &cmd.node_id {
-        let node = connect_to_node_id(meta_client.clone(), *node_id).await?;
+        let node_id = entity_id_from_string(node_id.as_str()).ok_or_else(|| err_msg("Invalid node_id"))?;
+
+        let node = connect_to_node_id(meta_client.clone(), node_id).await?;
         run_list_on_node(node).await?;
         return Ok(());
     }
@@ -47,18 +53,46 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
 
     match kind {
         ObjectKind::Node => {
-            println!("Nodes:");
             let nodes = db.list::<NodeMetadataTable>().await?;
-            for node in nodes {
-                println!("{:?}", node);
+            let node_scheduling = db.list::<NodeSchedulingMetadataTable>().await?;
+
+            let mut node_scheduling_by_id = HashMap::new();
+            for v in node_scheduling {
+                node_scheduling_by_id.insert(v.node_id(), v);
             }
+
+            let mut table = TerminalTableBuilder::new();
+            table.row().col("ID").col("ADDRESS").col("LABELS");
+
+            for node in nodes {
+
+                let mut labels = String::new();
+
+                if let Some(meta) = node_scheduling_by_id.get(&node.id()) {
+                    for l in meta.labels().label() {
+                        if !labels.is_empty() {
+                            labels.push(',');
+                        }
+
+                        labels.push_str(&format!("{}={}", l.key(), l.value()));
+                    }
+                }
+
+                table.row().col(entity_id_to_string(node.id()).unwrap()).col(node.address()).col(labels);
+            }
+
+            table.print();
         }
         ObjectKind::Job => {
-            println!("Jobs:");
+            let mut table = TerminalTableBuilder::new();
+            table.row().col("NAME").col("REPLICAS");
+
             let jobs = db.list::<JobMetadataTable>().await?;
             for job in jobs {
-                println!("{:?}", job);
+                table.row().col(job.spec().name()).col(job.spec().replicas().to_string());
             }
+
+            table.print();
         }
         ObjectKind::Worker => {
             let mut node_workers = HashMap::new();
@@ -79,7 +113,6 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
                 }
             }
 
-            println!("Workers:");
             let workers = db.list::<WorkerMetadataTable>().await?;
 
             let worker_states = db
@@ -89,6 +122,10 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
                 .map(|s| (s.worker_name().to_string(), s))
                 .collect::<HashMap<_, _>>();
 
+            let mut table = TerminalTableBuilder::new();
+
+            table.row().col("NAME").col("NODE ID").col("STATE").col("NODE STATE");
+
             for worker in workers {
                 let worker_state = worker_states
                     .get(worker.spec().name())
@@ -97,7 +134,7 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
 
                 let mut node_state = String::new();
                 if let Some(node_worker) = node_workers.get(worker.spec().name()) {
-                    node_state = format!("\t({:?})", node_worker.state());
+                    node_state = format!("({:?})", node_worker.state());
                 }
 
                 let state = {
@@ -110,15 +147,43 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
                     }
                 };
 
-                println!("{}\t{:?}{}", worker.spec().name(), state, node_state);
+                let mut name = worker.spec().name().to_string();
+                if worker.spec().ports().len() > 0 {
+
+                    let url = format!("https://{}", ServiceName::for_worker(meta_client.zone(), &name)?.to_string());
+
+                    name = format!("{}{}{}", terminal::start_hyperlink(&url), name, terminal::start_hyperlink(""));
+                }
+
+                table.row()
+                .col(name)
+                .col(entity_id_to_string(worker.assigned_node()).unwrap())
+                .col(format!("{:?}", state))
+                .col(node_state);
             }
+
+            table.print();
         }
         ObjectKind::Blob => {
-            println!("Blobs:");
-            let nodes = db.list::<BundleBlobMetadataTable>().await?;
-            for node in nodes {
-                println!("{:?}", node);
+            let blobs = db.list::<BundleBlobMetadataTable>().await?;
+
+            let mut table = TerminalTableBuilder::new();
+            table.row().col("ID").col("SIZE").col("REPLICAS");
+
+            for blob in blobs {
+                let mut repls = blob.replicas()
+                    .iter()
+                    .map(|r| entity_id_to_string(r.node_id()).unwrap())
+                    .collect::<Vec<String>>()
+                    .join(",");
+
+                table.row()
+                .col(blob.spec().id())
+                .col(format!("{:?}", ByteCount::from(blob.spec().size() as usize)))
+                .col(repls);
             }
+
+            table.print();
         }
     }
 

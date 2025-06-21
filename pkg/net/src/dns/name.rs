@@ -16,7 +16,7 @@ use common::errors::*;
 //   - "00112233d4f0.local."
 //
 // TODO: Consider splitting this into a
-regexp!(LABEL => "^[_A-Za-z0-9](?:-?[A-Za-z0-9 ])*$");
+regexp!(LABEL => "^[_A-Za-z0-9](?:-?[_A-Za-z0-9 ])*$");
 
 // Strict label going completely based on the spec.
 // TODO: Allow conditionally using this.
@@ -171,7 +171,7 @@ impl NameEncoder {
     /// NOTE: This assumes that it is always called with the exact same message
     /// buffer passed in previous calls to encode() on the same encoder
     /// instance.
-    pub fn encode(&mut self, name: Name, message: &mut Vec<u8>) {
+    pub fn encode(&mut self, name: &Name, message: &mut Vec<u8>) {
         if name.labels.len() == 0 {
             message.push(0);
             return;

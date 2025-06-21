@@ -25,6 +25,8 @@ pub struct ClientOptions {
     pub initial_keys_shared: Vec<NamedGroup>,
 
     /// DNS name of the remote server. e.g. "google.com"
+    ///
+    /// TODO: This must be a real dns name and is not allowed to be a literal IPv4/v6 address.
     pub hostname: String,
 
     pub alpn_ids: Vec<Bytes>,

@@ -22,12 +22,15 @@ use crypto::x509::{CertificateRegistry, Certificate, CertificateRequestBuilder, 
 
 use crate::create_user_command::read_stdin_password;
 use crate::nss::{install_nss_certificates, check_have_nss_utils};
+use crate::bridge::setup_bridge;
+use crate::chrome_policy::setup_chrome_cert_policy;
 
 #[derive(Args)]
 pub struct LoginCommand {
     user_name: String,
 
     /// Regenerate certificates even if they aren't near expiring.
+    #[arg(default = false)]
     force_refresh: bool,
 }
 
@@ -53,16 +56,6 @@ pub(crate) async fn login_impl(
     user_password: &str
 ) -> Result<()> {
     let request_context = rpc::ClientRequestContext::default();
-
-    let home = std::env::var("HOME")?;
-
-    let credentials_dir = {
-        LocalPath::new(&home).join(".dacha/zone").join(meta_client.zone()).join("credentials")
-    };
-    println!("User Credentials Dir: {}", credentials_dir.as_str());
-    file::create_dir_all(&credentials_dir).await?;
-    let mut credentials_manager = FileCredentialsManager::create(&credentials_dir).await?;
-
 
     let ca_channel = create_rpc_channel(
         "cert-authority.system.job.local.cluster.internal",
@@ -92,24 +85,6 @@ pub(crate) async fn login_impl(
         csr.build(&private_key).await?
     };
     
-    // Initialize a new registry from the metastore (may include new certificates added since
-    // last time we logged in).
-    // TODO: De-deduplicate this logic.
-    let mut registry = {
-        let certs = query!(meta_client.db(), CertificateMetadataTable, "root = true");
-        if certs.len() == 0 {
-            return Err(err_msg("Unable to find any root certificates"));
-        }
-
-        let mut new_registry = CertificateRegistry::new();
-        for cert in certs {
-            let c = Certificate::read(cert.data().into())?;
-            new_registry.append(&[Arc::new(c)], true)?;
-        }
-
-        new_registry
-    };
-
     let user_certs = {
         let mut req = LoginRequest::default();
         req.set_user_name(user_name);
@@ -126,39 +101,39 @@ pub(crate) async fn login_impl(
         certs
     };
 
+    // Initialize a new registry from the metastore (may include new certificates added since
+    // last time we logged in).
+    // TODO: De-deduplicate this logic.
+    // TODO: Needs to happen after login since we may not have credentials yet.
+    let mut registry = cluster_client::credentials::read_latest_certificate_registry(&meta_client).await?;
+
     let (local_cert, local_key) = create_localhost_identity().await?;
     registry.append(&[local_cert.clone()], true)?;
+
+    let home = std::env::var("HOME")?;
+
+    let credentials_dir = {
+        LocalPath::new(&home).join(".dacha/zone").join(meta_client.zone()).join("credentials")
+    };
+    println!("User Credentials Dir: {}", credentials_dir.as_str());
+    file::create_dir_all(&credentials_dir).await?;
+    let mut credentials_manager = FileCredentialsManager::create(&credentials_dir).await?;
 
     // Write all the credentials to disk.
     credentials_manager.write_registry(Arc::new(registry)).await?;
     credentials_manager.write_certificates(&user_certs, private_key.clone()).await?;
     credentials_manager.write_certificates_with_name("localhost", &[local_cert.clone()], local_key.clone()).await?;
 
-    {
-        let mut env = UserEnvProto::default();
-
-        {
-            let var = env.new_vars();
-            var.set_key(META_STORE_SEEDS_ENV_VAR);
-            var.set_value(meta_client.seeds().await?);
-        }
-
-        {
-            let var = env.new_vars();
-            var.set_key(CREDENTIALS_DIR_ENV_VAR);
-            var.set_value(credentials_dir.as_str());
-        }
-
-        let env_str = protobuf::text::serialize_text_proto(&env);
-
-        file::write(LocalPath::new(&home).join(".dacha/zone").join(meta_client.zone()).join("env"), env_str).await?;
-    }
-
-    file::write(LocalPath::new(&home).join(".dacha/default_zone"), meta_client.zone().to_string()).await?;
+    setup_local_zone_files(
+        &home, meta_client.zone(), credentials_dir.as_str(), &meta_client.seeds().await?).await?;
     
     install_nss_certificates(&mut credentials_manager).await?;
 
     credentials_manager.gc().await?;
+
+    setup_bridge(false).await?;
+
+    setup_chrome_cert_policy(&name.to_string()).await?;
 
     Ok(())
 }
@@ -187,3 +162,30 @@ async fn create_localhost_identity() -> Result<(Arc<Certificate>, Arc<PrivateKey
 
     Ok((cert, private_key))
 }
+
+pub(super) async fn setup_local_zone_files(home: &str, zone: &str, credentials_dir: &str, meta_seeds: &str) -> Result<()> {
+    {
+        let mut env = UserEnvProto::default();
+
+        {
+            let var = env.new_vars();
+            var.set_key(META_STORE_SEEDS_ENV_VAR);
+            var.set_value(meta_seeds);
+        }
+
+        {
+            let var = env.new_vars();
+            var.set_key(CREDENTIALS_DIR_ENV_VAR);
+            var.set_value(credentials_dir);
+        }
+
+        let env_str = protobuf::text::serialize_text_proto(&env);
+
+        file::write(LocalPath::new(&home).join(".dacha/zone").join(zone).join("env"), env_str).await?;
+    }
+
+    file::write(LocalPath::new(&home).join(".dacha/default_zone"), zone.to_string()).await?;
+
+    Ok(())
+}
+

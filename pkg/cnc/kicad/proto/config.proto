@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package kicad;
+
+message LibrariesConfig {
+    repeated LibraryConfig libraries = 1;
+}
+
+message LibraryConfig {
+    string name = 1;
+
+    // Path relative to the repository.
+    string path = 2;
+}

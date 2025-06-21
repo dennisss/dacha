@@ -18,7 +18,7 @@ use executor::sync::PoisonError;
 use executor::JoinHandle;
 use executor::{lock, lock_async};
 use executor_multitask::*;
-use net::ip::IPAddress;
+use net::ip::{IPAddress, SocketAddr};
 use net::tcp::TcpListener;
 use net::tcp::TcpStream;
 
@@ -52,6 +52,11 @@ pub struct ServerOptions {
     /// What to call this server. Used in resource health tracking reports.
     pub name: String,
 
+    /// Interface IP address on which to listen for requests.
+    ///
+    /// Defaults to 0.0.0.0 which will listen on all interfaces.
+    pub ip: IPAddress,
+
     /// Which port to listen to for requests.
     ///
     /// If not set, then a random port will be selected.
@@ -84,6 +89,7 @@ impl Default for ServerOptions {
 
         Self {
             name: "HttpServer".to_string(),
+            ip: IPAddress::V4([0,0,0,0]),
             port: None,
             tls: None,
             force_http2: false,
@@ -326,10 +332,9 @@ impl Server {
     }
 
     async fn create_listener(shared: &ServerShared) -> Result<TcpListener> {
-        // Bind all all interfaces.
         // TODO: Have an explicit keep-alive period at the TCP level and also eventualyl
         // close the connection.
-        TcpListener::bind(format!("0.0.0.0:{}", shared.options.port.unwrap_or(0)).parse()?).await
+        TcpListener::bind(SocketAddr::new(shared.options.ip.clone(), shared.options.port.unwrap_or(0))).await
     }
 
     /// Starts listening on the given port and processes new connections until

@@ -1,22 +1,6 @@
 // Note that code for this command can't depend on having an ambient cluster
 // identify (since it must run before cluster PKI has been set up).
 
-/*
-cargo run --bin cluster_cli -- setup_node --zone=testing --bootstrap --tls_root=/tmp/tls_root --local_node=/opt/dacha/node
-
-CLUSTER_ZONE=testing CLUSTER_CREDENTIALS=/tmp/tls_root cargo run --bin cluster_cli -- list workers
-
-CLUSTER_ZONE=testing CLUSTER_CREDENTIALS=/tmp/tls_root cargo run --bin cluster_cli -- list nodes
-
-TODO: Safety mesaures needed:
-- Must have a well defined local system time before the node can start running.
-- Need automatic detection on each RPC of clock syncronization
-
-
-curl --insecure https://127.0.0.1:10400/profilez > perf.pb
-
-*/
-
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
@@ -199,6 +183,7 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             // TODO: TLS here needs to use the root credentials since we may not yet regular
             // credentials.
             Some(root_creds.tls.clone()),
+            None,
         )
         .await?,
     );
@@ -764,6 +749,7 @@ async fn setup_remote_node_server(
     {
         let mut subuid = cleaned_uidmap(&operator.download_string("/etc/subuid").await?, NODE_USER);
 
+        // TODO: Check that these aren't already occupied.
         subuid.push_str(&format!("{}:400000:65536", NODE_USER));
 
         operator

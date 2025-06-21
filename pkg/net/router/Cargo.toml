@@ -1,0 +1,19 @@
+[package]
+name = "net_router"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../../common" }
+net = { path = "../" }
+base_util = { path = "../../base/util" }
+parsing = { path = "../../parsing" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+automata = { path = "../../automata" }
+crypto = { path = "../../crypto" }
+sys = { path = "../../sys" }
+executor = { path = "../../executor" }
+macros = { path = "../../macros" }
+base_radix = { path = "../../base/radix" }
+libc = "0.2"
+nix = "0.21.0"

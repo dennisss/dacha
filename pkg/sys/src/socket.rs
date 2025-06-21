@@ -56,8 +56,9 @@ define_bit_flags!(SocketFlags c_int {
 
 define_transparent_enum!(SocketProtocol c_int {
     NONE = 0,
-    TCP = (bindings::IPPROTO_IP as c_int),
-    UDP = (bindings::IPPROTO_UDP as c_int)
+    IP = (bindings::IPPROTO_IP as c_int),
+    UDP = (bindings::IPPROTO_UDP as c_int),
+    TCP = (bindings::IPPROTO_TCP as c_int)
 });
 
 #[derive(Clone)]

@@ -11,9 +11,13 @@ mod message;
 mod message_builder;
 mod message_cell;
 mod name;
+mod server;
+mod constants;
 
 pub use client::*;
+pub use server::*;
 pub use message::*;
 pub use message_builder::*;
 pub use name::*;
 pub use proto::{Class, OpCode, RecordType, ResponseCode};
+pub use constants::*;

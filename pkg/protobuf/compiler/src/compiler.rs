@@ -13,7 +13,6 @@ use file::LocalPath;
 use file::LocalPathBuf;
 use protobuf_compiler_proto::dacha::*;
 use protobuf_core::extension::ExtensionTag;
-use protobuf_core::tokenizer::parse_str_lit_inner;
 use protobuf_core::tokenizer::serialize_str_lit;
 use protobuf_core::FieldNumber;
 use protobuf_core::Message;

@@ -1,5 +1,6 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt::Debug;
 
 use common::errors::*;
 
@@ -24,5 +25,11 @@ impl MessageCell {
 
     pub fn get<'a>(&'a self) -> &'a Message<'a> {
         &self.value
+    }
+}
+
+impl Debug for MessageCell {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.value.fmt(f)
     }
 }

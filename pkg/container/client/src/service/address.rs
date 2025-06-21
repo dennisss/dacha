@@ -10,7 +10,7 @@ const NAME_SUFFIX: &'static str = ".cluster.internal";
 ///
 /// Note that unlike a ServiceName, a ServiceAddress can use the 'local' zone to
 /// reference the
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ServiceAddress {
     pub name: ServiceName,
 

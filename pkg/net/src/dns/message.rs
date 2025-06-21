@@ -1,6 +1,8 @@
 use alloc::vec::Vec;
+use core::fmt::Debug;
 
 use common::errors::*;
+use parsing::take_exact;
 
 use crate::dns::name::*;
 use crate::dns::proto::{self, RecordType};
@@ -55,8 +57,16 @@ impl<'a> Message<'a> {
         self.header.flags.reply
     }
 
+    pub fn opcode(&self) -> proto::OpCode {
+        self.header.flags.opcode
+    }
+
     pub fn response_code(&self) -> proto::ResponseCode {
         self.header.flags.response_code
+    }
+
+    pub fn questions(&self) -> &[Question] {
+        &self.questions
     }
 
     pub fn records(&self) -> &[ResourceRecord] {
@@ -66,8 +76,8 @@ impl<'a> Message<'a> {
 
 #[derive(PartialEq, Debug)]
 pub struct Question<'a> {
-    pub name: Name<'a>,
-    trailer: proto::QuestionTrailer,
+    name: Name<'a>,
+    pub(super) trailer: proto::QuestionTrailer,
 }
 
 impl<'a> Question<'a> {
@@ -76,25 +86,59 @@ impl<'a> Question<'a> {
         let trailer = parse_next!(input, proto::QuestionTrailer::parse);
         Ok((Self { name, trailer }, input))
     }
+
+    pub fn name(&self) -> &Name<'a> {
+        &self.name
+    }
+
+    pub fn typ(&self) -> RecordType {
+        self.trailer.typ
+    }
+
+    pub fn class(&self) -> proto::Class {
+        self.trailer.class
+    }
 }
 
-#[derive(PartialEq, Debug)]
+// TODO: PartialEq will not work due to the 'message' reference.
+#[derive(PartialEq)]
 pub struct ResourceRecord<'a> {
     name: Name<'a>,
+
     // TODO: Use a reference for the data in this.
     trailer: proto::ResourceRecordTrailer,
 
+    /// The 'rdata' part of the record. 
+    data: &'a [u8],
+
+    /// Reference to the complete message. This is just used for resolving compressed name references.
     message: &'a [u8],
+}
+
+impl<'a> Debug for ResourceRecord<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ResourceRecord")
+        .field("name", &self.name)
+        .field("type", &self.trailer.typ)
+        .field("cache_flush", &self.trailer.cache_flush)
+        .field("class", &self.trailer.class)
+        .field("ttl", &self.trailer.ttl)
+        .field("rdata", &self.data())
+        .finish()
+    }
 }
 
 impl<'a> ResourceRecord<'a> {
     pub fn parse(mut input: &'a [u8], message: &'a [u8]) -> Result<(Self, &'a [u8])> {
         let name = parse_next!(input, Name::parse, message);
         let trailer = parse_next!(input, proto::ResourceRecordTrailer::parse);
+        let data = parse_next!(input, take_exact(trailer.data_len as usize));
+
         Ok((
             Self {
                 name,
                 trailer,
+                data,
                 message,
             },
             input,
@@ -112,23 +156,23 @@ impl<'a> ResourceRecord<'a> {
     pub fn data(&self) -> Result<ResourceRecordData> {
         match self.trailer.typ {
             RecordType::A => {
-                if self.trailer.data.len() != 4 {
+                if self.data.len() != 4 {
                     return Err(err_msg("IpV4 must be 4 bytes"));
                 }
 
                 Ok(ResourceRecordData::Address(IPAddress::V4(*array_ref![
-                    self.trailer.data,
+                    self.data,
                     0,
                     4
                 ])))
             }
             RecordType::AAAA => {
-                if self.trailer.data.len() != 16 {
+                if self.data.len() != 16 {
                     return Err(err_msg("IpV6 must be 16 bytes"));
                 }
 
                 Ok(ResourceRecordData::Address(IPAddress::V6(*array_ref![
-                    self.trailer.data,
+                    self.data,
                     0,
                     16
                 ])))
@@ -136,7 +180,7 @@ impl<'a> ResourceRecord<'a> {
             // _Service._Proto.Name TTL Class SRV Priority Weight Port Target
             // Defined in https://datatracker.ietf.org/doc/html/rfc2782
             RecordType::SRV => {
-                let mut input = &self.trailer.data[..];
+                let mut input = &self.data[..];
                 let header = parse_next!(input, proto::SRVDataHeader::parse);
                 let target = parse_next!(input, Name::parse, self.message);
                 Ok(ResourceRecordData::Service(SRVRecordData {
@@ -145,7 +189,7 @@ impl<'a> ResourceRecord<'a> {
                 }))
             }
             RecordType::PTR => {
-                let mut input = &self.trailer.data[..];
+                let mut input = &self.data[..];
                 let name = parse_next!(input, Name::parse, self.message);
                 if input.len() != 0 {
                     return Err(err_msg("Extra bytes in PTR record"));
@@ -154,7 +198,7 @@ impl<'a> ResourceRecord<'a> {
                 Ok(ResourceRecordData::Pointer(name))
             }
             RecordType::TXT => {
-                let mut input = &self.trailer.data[..];
+                let mut input = &self.data[..];
 
                 let mut items = vec![];
 
@@ -174,7 +218,7 @@ impl<'a> ResourceRecord<'a> {
             }
 
             // Want something for
-            _ => Ok(ResourceRecordData::Unknown(&self.trailer.data)),
+            _ => Ok(ResourceRecordData::Unknown(&self.data)),
         }
     }
 }
@@ -192,6 +236,29 @@ pub enum ResourceRecordData<'a> {
 
     Unknown(&'a [u8]),
 }
+
+impl<'a> ResourceRecordData<'a> {
+    pub fn serialize(&self, name_encoder: &mut NameEncoder, out: &mut Vec<u8>) {
+        match self {
+            Self::Address(addr) => {
+                out.extend_from_slice(addr.as_bytes());
+            }
+            Self::Pointer(name) => {
+                name_encoder.encode(name, out);
+            }
+            Self::Service(_) => {
+                // TODO
+            }
+            Self::Text(_) => {
+                // TODO
+            }
+            Self::Unknown(data) => {
+                out.extend_from_slice(data);
+            }
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct SRVRecordData<'a> {

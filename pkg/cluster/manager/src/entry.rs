@@ -12,8 +12,13 @@ use container_proto::cluster::*;
 use crate::Manager;
 
 const SERVICE_ACL_PROTO: &'static str = r#"
-    allow_unauthenticated: false
-    rules: []
+    rules: [
+        {
+            path: "/rpc/cluster.Manager"
+            is_directory: true
+            principals: ["group:cluster-admins"]
+        }
+    ]
 "#;
 
 #[derive(Args)]

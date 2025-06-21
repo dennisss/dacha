@@ -98,9 +98,10 @@ impl Executor {
             Self::spawn_thread("exec::epoll", move || Self::epoll_thread_fn(shared))?
         };
 
+        // TODO: Have a dynamically scaling thread pool.
         let num_threads = match options.thread_pool_size.clone() {
             Some(v) => v,
-            None => sys::num_cpus()?,
+            None => sys::num_cpus()?.min(8),
         };
 
         for i in 0..num_threads {

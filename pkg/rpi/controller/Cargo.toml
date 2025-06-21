@@ -19,6 +19,7 @@ protobuf = { path = "../../protobuf" }
 protobuf_json = { path = "../../protobuf/json" }
 rpc = { path = "../../rpc" }
 http = { path = "../../http" }
+http_util = { path = "../../http/util" }
 rpc_util = { path = "../../rpc/util" }
 web = { path = "../../web" }
 json = { path = "../../format/json" }

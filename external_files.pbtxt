@@ -1085,6 +1085,111 @@ files: [
         sha256_sum: "a978dd40607a80f7200b57ace2da91519cb3307f4697894a0130ef975eff874b"
     },
     {
+        path: "doc/zip-clip.stl"
+        size: 32484
+        sha256_sum: "97a395a50961b63158aacc049f72be35e36a9f756aa15c93b4eb2ca5650b869d"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-09-14/backplane.zip"
+        size: 180697
+        sha256_sum: "bbd929fa6910e37a148ae36a17bdbe117a27fdf8b4a111205db8d84d234674e9"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-09-14/bom.csv"
+        size: 361
+        sha256_sum: "4f537527a47c6cf8d7fb4e0643655d20e326ee2f8ba34b44e7a60120c07d6e3f"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-09-14/designators.csv"
+        size: 160
+        sha256_sum: "fa2012180f10b21e5d4266213298b624c57523d27d79bbe27c1b9397ce2b654b"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-09-14/netlist.ipc"
+        size: 19065
+        sha256_sum: "a2ab1df4dfa5e673e5505cf1cd5de7c9fd8371627a55898aff9f44d79224216c"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-09-14/positions.csv"
+        size: 954
+        sha256_sum: "888f94aafb2f5a61b5fd50736dc8e35a78759bef8dfaa6f67fb660df259bd624"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-22-13/backplane.zip"
+        size: 145720
+        sha256_sum: "8036201feee94a894be3581ae8d6fb89456fed93199c8f5ba8b432ce83495d2d"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-22-13/bom.csv"
+        size: 329
+        sha256_sum: "dc4e725c98be13065178cc4d5700606242a67d73aba81570f0b2e2f8574028d5"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-22-13/designators.csv"
+        size: 121
+        sha256_sum: "1035098a5b9ebdf5b29e310a16730230dd721c6c166e3a66e7797f1fd772ea4c"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-22-13/netlist.ipc"
+        size: 14995
+        sha256_sum: "69778125b4a14858c0ac1faff3cc0bdcc7deb7c6784698650c0f71198257ff9d"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r1/production/backplane_2025-05-18_10-22-13/positions.csv"
+        size: 735
+        sha256_sum: "23bee743d826df28ab8aacd7b6301bf12b16df47f2bd7b1aae1fd9d6b6754e12"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-56-01/backplane.zip"
+        size: 165872
+        sha256_sum: "997430bd59564e8fb671e5ee1241b263c594608e8afde709ecd4b5834af568be"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-56-01/bom.csv"
+        size: 300
+        sha256_sum: "4df194094aa2fdfd0d34f048b06dd836bbd231a6bffa39b5e9ce3ef01dca9fb3"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-56-01/designators.csv"
+        size: 119
+        sha256_sum: "4b5c1f76e7a57e5185270f31ff97cc5c19da8c941f527d13c22f05f9d1728076"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-56-01/netlist.ipc"
+        size: 17733
+        sha256_sum: "59a95e55d57547d74abe449e7c26fae7dcd2ec177090f57cf38765a0fbda3670"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-56-01/positions.csv"
+        size: 694
+        sha256_sum: "42f5b9b3d142e55f9317f71044e9377633620cf2b741b2b3c45ad8990ec3c135"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-59-30/backplane.zip"
+        size: 135757
+        sha256_sum: "973f699f585c04ecb686cd4979749b07df52c551a60728020d31dc800b225064"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-59-30/bom.csv"
+        size: 277
+        sha256_sum: "43ad9ed26cceb1d5e7cfa63f06a6272008db51c55864d0e594c08ab8ce8fc5ff"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-59-30/designators.csv"
+        size: 91
+        sha256_sum: "581410776fe6eba79aae3edd9e22cd0059c5423b1d8568e0d6c22bf673f42f65"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-59-30/netlist.ipc"
+        size: 14107
+        sha256_sum: "574527b7da42698717266a46caa8fdac9dcb51cb3dd342399a3eb281b1f966fb"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/boards/backplane-r2/production/backplane_2025-05-31_12-59-30/positions.csv"
+        size: 543
+        sha256_sum: "7f45cb0fd2608da9fc7bc2b431678f1d6d3dfa5eaeba2c7eba92779b356c1947"
+    },
+    {
         path: "pkg/cnc/boards/cnc_controller/board/plot/board-B_Cu.gbl"
         size: 28414
         sha256_sum: "e9f94b91172921bbc576901cb2891bdad2624bebcc3796373b6058cb1de868f1"
@@ -1540,9 +1645,34 @@ files: [
         sha256_sum: "fb89336192452f4e6fa24d771d36df4baf93a5e208ad3086e8d9b77f531252b3"
     },
     {
+        path: "third_party/digikey/AGQ20012/RELAY_AGQ_PAN.stl"
+        size: 12484
+        sha256_sum: "4889118a457aa0156fa19f1cf33387f25623f2317068195ed3caa3b4fefafb92"
+    },
+    {
+        path: "third_party/digikey/SN74AHCT125DR/SN74AHCT125DR.step"
+        size: 493717
+        sha256_sum: "e48cdfbec40ffc940c69c54a896eb16f3f706ee40d1c1df7096c57cdbe5a7e88"
+    },
+    {
         path: "third_party/noctua/Noctua_PWM_specifications_white_paper.pdf"
         size: 699708
         sha256_sum: "a0817e99540ba4e9319381902ba16443847a08474b0fc5306b1543675abf34a7"
+    },
+    {
+        path: "third_party/snapeda/amphenol_mini_sas_hd/G40H11331HR.step"
+        size: 4331444
+        sha256_sum: "ee21d509899a024f47bb7c59c254c095cf0e0a6f05c82d0581feb6d87bbfad5c"
+    },
+    {
+        path: "third_party/snapeda/molex_sas_29p/0878390018.stp"
+        size: 1027473
+        sha256_sum: "8dae5f031ade8aac27b74c1e8632297a41590ce76b5c342d9fe46069f035b5d9"
+    },
+    {
+        path: "third_party/ultralibrarian/molex_microfit_2x2/430450423.stl"
+        size: 49284
+        sha256_sum: "ba92634b565747eaf6b130dcd6dce2a495f761375781ae3e8c08c453d5a7ef47"
     },
     {
         path: "third_party/voron_0/better_guidler/848709-voron-v0-0-02-v02-improved-guidler-27b05244-b2f2-43a1-97c9-f4d2a1c4d633.pdf"

@@ -296,8 +296,6 @@ impl NodeCredentialsManager {
         TODO: Assumption is that the registries internally can handle expired certificates (We shouldn't need to deal with it at this layer)
         */
 
-        let db = meta_client.db();
-
         let mut last_registry = lock!(state <= shared.state.lock().await?, {
             state.latest_registry.clone()
         });
@@ -306,19 +304,9 @@ impl NodeCredentialsManager {
             // TODO: Ideally this would be handled more like a generic 'data push' that
             // gradually rolls out to more and more nodes with each reported health of
             // consuming the data.
-            let certs = query!(db, CertificateMetadataTable, "root = true");
+            let new_registry = Arc::new(
+                cluster_client::credentials::read_latest_certificate_registry(meta_client).await?);
 
-            if certs.len() == 0 {
-                return Err(err_msg("Unable to find any root certificates"));
-            }
-
-            let mut new_registry = CertificateRegistry::new();
-            for cert in certs {
-                let c = Certificate::read(cert.data().into())?;
-                new_registry.append(&[Arc::new(c)], true)?;
-            }
-
-            let new_registry = Arc::new(new_registry);
             let new_hash = Self::hash_registry(&new_registry)?;
 
             let last_hash = Self::hash_registry(&last_registry)?;

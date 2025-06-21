@@ -13,7 +13,6 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 use base_error::*;
 use executor_multitask::RootResource;
 use file::LocalPathBuf;
-use http::static_file_handler::StaticFileHandlerOptions;
 use http::{
     static_file_handler::{StaticFileBody, StaticFileHandler},
     ServerHandler,
@@ -22,65 +21,26 @@ use labeler::service::LabelerImpl;
 use labeler_proto::labeler::LabelerIntoService;
 use parsing::ascii::AsciiString;
 use rpc_util::NamedPortArg;
-use web::WebServerHandler;
+use cluster_client::{ClusterServer, ClusterMetaClient};
 
-pub fn bad_request() -> http::Response {
-    http::ResponseBuilder::new()
-        .status(http::status_code::BAD_REQUEST)
-        .build()
-        .unwrap()
-}
-
-pub fn not_found_request() -> http::Response {
-    http::ResponseBuilder::new()
-        .status(http::status_code::NOT_FOUND)
-        .build()
-        .unwrap()
-}
+const SERVICE_ACL_PROTO: &'static str = r#"
+    rules: [
+        {
+            path: "/"
+            is_directory: false
+            principals: ["authenticated"]
+        },
+        {
+            path: "/rpc/labeler.Labeler"
+            is_directory: true
+            principals: ["group:cluster-admins"]
+        }
+    ]
+"#;
 
 #[derive(Args)]
 struct Args {
     port: NamedPortArg,
-    tls_certificate: LocalPathBuf,
-    tls_key: LocalPathBuf,
-}
-
-struct HttpHandler {
-    instance: Arc<LabelerImpl>,
-    inner: WebServerHandler,
-    rpc_handler: rpc::Http2RequestHandler,
-}
-
-impl HttpHandler {
-    async fn handle_request_impl<'a>(
-        &self,
-        mut request: http::Request,
-        context: http::ServerRequestContext<'a>,
-    ) -> http::Response {
-        if let Some(path) = request.head.uri.path.as_str().strip_prefix("/rpc/") {
-            request.head.uri.path = AsciiString::new(&format!("/{}", path));
-            return self.rpc_handler.handle_request(request, context).await;
-        }
-
-        if request.head.uri.path.as_str().starts_with("/ui/") {
-            request.head.uri.path = AsciiString::new("/");
-        }
-
-        self.inner.handle_request(request, context).await
-    }
-}
-
-#[async_trait]
-impl http::ServerHandler for HttpHandler {
-    async fn handle_request<'a>(
-        &self,
-        request: http::Request,
-        context: http::ServerRequestContext<'a>,
-    ) -> http::Response {
-        self.handle_request_impl(request, context).await
-    }
-
-    // TODO: Passthrough connection handling to the rpc hnadler.
 }
 
 #[executor_main]
@@ -92,49 +52,27 @@ async fn main() -> Result<()> {
     println!("Starting...");
     let start_time = Instant::now();
 
-    let certificate_file = file::read(args.tls_certificate).await?.into();
-    let private_key_file = file::read(args.tls_key).await?.into();
+    let client = ClusterMetaClient::create_from_environment().await?;
+    service.register_dependency(client.clone()).await;
 
-    let mut tls_options =
-        crypto::tls::ServerOptions::recommended(certificate_file, private_key_file)?;
+    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
+
+    let mut server = ClusterServer::new(args.port.value(), acl, client)?;
 
     let mut inst = Arc::new(LabelerImpl::create().await?);
     // TODO: Need some warnings if we ever forget to register these.
     service.register_dependency(inst.clone()).await;
+    server.add_service(inst.clone().into_service())?;
 
-    let mut rpc_handler = rpc::Http2RequestHandler::new();
-    rpc_handler.add_service(inst.clone().into_service())?;
+    let web_handler = web::WebPageHandler::create(web::WebPageOptions {
+        title: "Labeler".into(),
+        script_path: "built/pkg/things/labeler/app.js".into(),
+        vars: None,
+    }).await?;
+    server.add_request_handler("/", false, web_handler)?;
 
-    service
-        .register_dependency({
-            let vars = json::Value::Object(map!(
-                "rpc_port" => &json::Value::Number(args.port.value() as f64)
-            ));
-
-            let web_handler = web::WebServerHandler::new(web::WebServerOptions {
-                pages: vec![web::WebPageOptions {
-                    title: "Labeler".into(),
-                    path: "/".into(),
-                    script_path: "built/pkg/things/labeler/app.js".into(),
-                    vars: Some(vars),
-                }],
-            });
-
-            let handler = HttpHandler {
-                instance: inst,
-                inner: web_handler,
-                rpc_handler,
-            };
-
-            let mut options = http::ServerOptions::default();
-            options.port = Some(args.port.value());
-            options.tls = Some(tls_options.into());
-            options.force_http2 = true;
-
-            let web_server = http::Server::new(handler, options);
-            Arc::new(web_server.start())
-        })
-        .await;
+    service.register_dependency(server.start()?).await;
 
     // TODO: Actually wait for resource readiness and make this a standard metric
     // that we report.

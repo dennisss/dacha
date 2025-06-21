@@ -263,6 +263,7 @@ impl ServiceResolver {
                 .to_string();
 
         Ok(Some(ResolvedEndpoint {
+            // TODO: Consistently have names.
             name: String::new(),
             address,
             authority: http::uri::Authority {

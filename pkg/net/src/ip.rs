@@ -20,6 +20,27 @@ impl IPAddress {
     pub fn parse(input: &[u8]) -> Result<(Self, &[u8])> {
         crate::ip_syntax::parse_ip(input)
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::V4(v) => &v[..],
+            Self::V6(v) => &v[..]
+        }
+    }
+
+    pub fn is_v4(&self) -> bool {
+        match self {
+            Self::V4(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn is_v6(&self) -> bool {
+        match self {
+            Self::V6(_) => true,
+            _ => false
+        }
+    }
 }
 
 impl common::args::ArgType for IPAddress {

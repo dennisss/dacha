@@ -244,7 +244,7 @@ impl Node {
                     client: c.node_client_options(),
                 });
 
-            let client = Arc::new(ClusterMetaClient::create(config.zone(), &[], creds).await?);
+            let client = Arc::new(ClusterMetaClient::create(config.zone(), &[], creds, None).await?);
             meta_client.set(client.clone()).await?;
             client
         };

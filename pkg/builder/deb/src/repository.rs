@@ -47,7 +47,7 @@ impl Repository {
             .request(&request.head, Bytes::new(), &request_context)
             .await?;
         if !response.ok() {
-            return Err(format_err!("Request failed: {:?}", response.status()));
+            return Err(format_err!("Request failed for {:?}: {:?}", request.head.uri, response.status()));
         }
 
         println!("=> Downloaded: {} bytes", response.body.len());
@@ -59,8 +59,8 @@ impl Repository {
     /binary-[arch]/Packages
      */
 
-    pub async fn update(&mut self, distribution: &str, component: &str, arch: &str) -> Result<()> {
-        let mut distribution = self.get_distribution(distribution).await?;
+    pub async fn update(&mut self, distribution_name: &str, component: &str, arch: &str) -> Result<()> {
+        let mut distribution = self.get_distribution(distribution_name).await?;
 
         let packages_file = {
             let packages = format!("{}/binary-{}/Packages", component, arch);
@@ -90,7 +90,7 @@ impl Repository {
             total_size += pkg.size()?;
         }
 
-        println!("Size: {:?}", base_units::ByteCount::from(total_size));
+        println!("{} : {} : {} Size: {:?}", distribution_name, component, arch, base_units::ByteCount::from(total_size));
 
         // distribution.components.insert(componen, v)
 

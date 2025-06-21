@@ -47,7 +47,7 @@ impl UdpBindOptions {
 }
 
 pub struct UdpSocket {
-    fd: OpenFileDescriptor,
+    inner: MessageSocket,
 }
 
 impl UdpSocket {
@@ -82,8 +82,70 @@ impl UdpSocket {
                 format!("sys::bind failed for address: {:?}", addr)
             })?;
 
-            Ok(Self { fd })
+            Ok(Self { inner: MessageSocket::new(fd) })
         }
+    }
+
+    pub async fn send_to(&self, data: &[u8], addr: &SocketAddr) -> Result<usize> {
+        self.inner.send_to(data, addr).await
+    }
+
+    pub async fn recv(&self, output: &mut [u8]) -> Result<usize> {
+        self.inner.recv(output).await
+    }
+
+    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
+        self.inner.recv_from(output).await
+    }
+
+    /// NOTE: Both addresses must be IPv4
+    pub fn join_multicast_v4(
+        &mut self,
+        group_addr: IPAddress,
+        interface_addr: IPAddress,
+    ) -> Result<()> {
+        let group_addr = match group_addr {
+            IPAddress::V4(v) => v,
+            _ => return Err(err_msg("Only IPv4 supported for multicast")),
+        };
+
+        let interface_addr = match interface_addr {
+            IPAddress::V4(v) => v,
+            _ => return Err(err_msg("Only IPv4 supported for multicast")),
+        };
+
+        // 'ip_mreq' struct from 'C'
+        // First field is 'imr_multiaddr'
+        // Second field is 'imr_interface'
+        let mut ip_mreq = [0u8; 8];
+        ip_mreq[0..4].copy_from_slice(&group_addr[..]);
+        ip_mreq[4..8].copy_from_slice(&interface_addr[..]);
+
+        unsafe {
+            sys::setsockopt(
+                &self.inner.fd,
+                sys::SocketOptionLevel::SOL_IP,
+                sys::SocketOption::IP_ADD_MEMBERSHIP,
+                &ip_mreq,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    // TODO: Why do we have this on a UDP socket?
+    pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
+        unsafe { set_tcp_nodelay(&self.inner.fd, on) }
+    }
+}
+
+pub struct MessageSocket {
+    fd: OpenFileDescriptor,
+}
+
+impl MessageSocket {
+    pub fn new(fd: OpenFileDescriptor) -> Self {
+        Self { fd }
     }
 
     pub async fn send_to(&self, data: &[u8], addr: &SocketAddr) -> Result<usize> {
@@ -135,43 +197,6 @@ impl UdpSocket {
 
         Ok((n, addr.into()))
     }
-
-    /// NOTE: Both addresses must be IPv4
-    pub fn join_multicast_v4(
-        &mut self,
-        group_addr: IPAddress,
-        interface_addr: IPAddress,
-    ) -> Result<()> {
-        let group_addr = match group_addr {
-            IPAddress::V4(v) => v,
-            _ => return Err(err_msg("Only IPv4 supported for multicast")),
-        };
-
-        let interface_addr = match interface_addr {
-            IPAddress::V4(v) => v,
-            _ => return Err(err_msg("Only IPv4 supported for multicast")),
-        };
-
-        // 'ip_mreq' struct from 'C'
-        // First field is 'imr_multiaddr'
-        // Second field is 'imr_interface'
-        let mut ip_mreq = [0u8; 8];
-        ip_mreq[0..4].copy_from_slice(&group_addr[..]);
-        ip_mreq[4..8].copy_from_slice(&interface_addr[..]);
-
-        unsafe {
-            sys::setsockopt(
-                &self.fd,
-                sys::SocketOptionLevel::SOL_IP,
-                sys::SocketOption::IP_ADD_MEMBERSHIP,
-                &ip_mreq,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
-        unsafe { set_tcp_nodelay(&self.fd, on) }
-    }
 }
+
+

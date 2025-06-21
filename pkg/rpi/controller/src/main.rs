@@ -5,11 +5,11 @@ Local testing:
         cargo run --bin builder -- build //pkg/rpi/controller:app
 
     Run the server with dummy data:
-        cargo run --bin rpi_controller -- --config_name=minimal --rpc_port=8001 --web_port=8000
+        cargo run --bin rpi_controller -- --config_name=minimal --port=8000
 
 One off RPI testing:
 
-    cargo run --bin rpi_controller -- --config_name=rpi-rack-r5 --rpc_port=8001 --web_port=8000
+    cargo run --bin rpi_controller -- --config_name=rpi-rack-r5 --port=8000
 
     cargo run --bin builder -- build //pkg/rpi/controller:bundle
 
@@ -22,7 +22,7 @@ One off RPI testing:
     tar -xf rpi_fan_control.tar -C dacha
     cd dacha
 
-    ./built/pkg/rpi/controller/rpi_controller --config_name=rpi-rack-r5 --rpc_port=8001 --web_port=8000
+    ./built/pkg/rpi/controller/rpi_controller --config_name=rpi-rack-r5 --port=8000
 
 */
 
@@ -61,6 +61,26 @@ use rpi_controller::{entity_message_factory, fan::*};
 use rpi_controller_proto::rpi::*;
 
 const UPDATE_INTERVAL: Duration = Duration::from_millis(250);
+
+const SERVICE_ACL_PROTO: &'static str = r#"
+    rules: [
+        {
+            path: "/"
+            is_directory: false
+            principals: ["authenticated"]
+        },
+        {
+            path: "/rpc/rpi.Controller/Read"
+            is_directory: false
+            principals: ["group:cluster-admins"]
+        },
+        {
+            path: "/rpc/rpi.Controller/Write"
+            is_directory: false
+            principals: ["group:cluster-admins"]
+        }
+    ]
+"#;
 
 struct Lazy<T, F> {
     value: Option<T>,
@@ -196,11 +216,8 @@ impl ControllerService for ControllerServiceImpl {
 
 #[derive(Args)]
 struct Args {
-    /// Port on which to start the RPC server.
-    rpc_port: NamedPortArg,
-
-    /// Port on which to start the web server.
-    web_port: NamedPortArg,
+    /// Port on which to start the web/RPC server.
+    port: NamedPortArg,
 
     config_name: String,
 }
@@ -219,6 +236,9 @@ async fn main() -> Result<()> {
         _ => return Err(format_err!("Unkown config named: {}", args.config_name)),
     };
 
+    let mut acl = cluster_client::ServiceACLProto::default();
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
+
     let service = Arc::new(ControllerServiceImpl::create(&config).await?);
 
     // TODO: Make this a dependency of the rpc server.
@@ -226,45 +246,28 @@ async fn main() -> Result<()> {
 
     let message_factory = entity_message_factory();
 
-    root_resource
-        .register_dependency({
-            let vars = json::Value::Object(map!(
-                "rpc_port" => &json::Value::String(args.rpc_port.value().to_string())
-            ));
+    let client = cluster_client::ClusterMetaClient::create_from_environment().await?;
+    
+    let mut server = cluster_client::ClusterServer::new(args.port.value(), acl, client)?;
+    server.codec_options_mut().json_parser.message_factory =
+        Some(message_factory.clone());
+    server
+        .codec_options_mut()
+        .json_serializer
+        .message_factory = Some(message_factory.clone());
+    server.add_service(service.clone().into_service())?;
 
-            let web_handler = web::WebServerHandler::new(web::WebServerOptions {
-                pages: vec![web::WebPageOptions {
-                    title: "Fan Control".into(),
-                    path: "/".into(),
-                    script_path: "built/pkg/rpi/controller/app.js".into(),
-                    vars: Some(vars),
-                }],
-            });
+    let web_handler = web::WebPageHandler::create(web::WebPageOptions {
+        title: "Pi Controller".into(),
+        script_path: "built/pkg/rpi/controller/app.js".into(),
+        vars: None,
+    }).await?;
+    server.add_request_handler("/", false, web_handler)?;
 
-            let mut options = http::ServerOptions::default();
-            options.name = "WebServer".to_string();
-            options.port = Some(args.web_port.value());
 
-            let web_server = http::Server::new(web_handler, options);
-            Arc::new(web_server.start())
-        })
-        .await;
+    root_resource.register_dependency(server.start()?).await;
 
-    root_resource
-        .register_dependency({
-            let mut rpc_server = rpc::Http2Server::new(Some(args.rpc_port.value()));
-            rpc_server.add_service(service.clone().into_service())?;
-            rpc_server.enable_cors();
-            rpc_server.http_options_mut().force_http2 = false;
-            rpc_server.codec_options_mut().json_parser.message_factory =
-                Some(message_factory.clone());
-            rpc_server
-                .codec_options_mut()
-                .json_serializer
-                .message_factory = Some(message_factory.clone());
-            rpc_server.start()
-        })
-        .await;
+    println!("Running...");
 
     root_resource.wait().await
 }

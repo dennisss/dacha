@@ -9,7 +9,7 @@ pub mod client;
 mod constants;
 mod credentials;
 pub mod extensions;
-mod extensions_util;
+pub mod extensions_util;
 pub mod handshake;
 mod handshake_executor;
 pub mod handshake_summary;

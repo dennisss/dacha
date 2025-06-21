@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base_error::*;
+use base_units::format_duration_secs;
 use cnc_monitor_proto::cnc::*;
 use common::bit_set::BitSet;
 use common::bytes::Bytes;
@@ -27,7 +28,7 @@ use crate::files::FileReference;
 use crate::program::*;
 use crate::serial_controller::{PendingCommand, SerialController, DEFAULT_COMMAND_TIMEOUT};
 use crate::tables::ProgramRunTable;
-use crate::{format_duration_secs, player_preprocessor::*};
+use crate::player_preprocessor::*;
 
 const MIN_DB_FLUSH_RATE: Duration = Duration::from_secs(30);
 

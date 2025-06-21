@@ -3,6 +3,7 @@ use common::errors::*;
 use container_proto::cluster::Labels;
 use db_table::query_one;
 use protobuf::Message;
+use cluster_client::id::entity_id_from_string;
 
 /// Maximum combined serialized size of all custom labels associated with a
 /// single node.
@@ -10,13 +11,13 @@ const MAX_LABELS_SIZE: usize = 4096;
 
 // NOTE: Each key/value must contain at least one character.
 // Delimiters like '=' and ':' are reserved to allow for selector strings.
-regexp!(LABEL_DATA_PATTERN => "^[a-z0-9_\\-\\.]+$");
+regexp!(LABEL_DATA_PATTERN => "^[a-z0-9_\\-\\.:=]+$");
 
 #[derive(Args)]
 pub struct LabelsCommand {
     sub_command: LabelsSubCommand,
 
-    node_id: u64,
+    node_id: String,
 }
 
 #[derive(Args)]
@@ -56,13 +57,16 @@ fn validate_labels(labels: &Labels) -> Result<()> {
 }
 
 pub async fn run_labels(cmd: LabelsCommand) -> Result<()> {
+    let node_id = entity_id_from_string(&cmd.node_id).ok_or_else(|| err_msg("Invalid --node_id"))?;
+
     let meta_client = ClusterMetaClient::create_from_environment().await?;
     let db = meta_client.db();
 
     let mut txn = db.new_transaction().await?;
 
-    let mut node_meta = query_one!(txn, NodeSchedulingMetadataTable, "node_id = ?", cmd.node_id)
-        .ok_or_else(|| err_msg("Missing metadata for this node"))?;
+    let mut node_meta = query_one!(txn, NodeSchedulingMetadataTable, "node_id = ?", node_id)
+        .unwrap_or_default();
+    node_meta.set_node_id(node_id);
 
     match cmd.sub_command {
         LabelsSubCommand::Get => {}
@@ -73,7 +77,7 @@ pub async fn run_labels(cmd: LabelsCommand) -> Result<()> {
 
             for part in sub_cmd.values.split(",") {
                 let (k, v) = part
-                    .split_once(":")
+                    .split_once("=")
                     .ok_or_else(|| err_msg("Missing : delimiter in label string"))?;
 
                 // Delete any existing entry.

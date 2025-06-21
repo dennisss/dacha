@@ -1,5 +1,7 @@
 // Utilities for setting up metastore ACLs.
 
+use std::collections::HashMap;
+
 use cluster_client::{acl::principal::Principal, meta::*, service::address::ServiceName};
 use common::errors::*;
 use container_proto::cluster::GroupMembership;
@@ -42,6 +44,72 @@ pub async fn bootstrap_acls(zone: &str, db: &ProtobufDB) -> Result<()> {
     Ok(())
 }
 
+pub async fn upgrade_acls(zone: &str, db: &ProtobufDB, write: bool) -> Result<()> {
+    let mut ignored_prefixes = vec![];
+    // Ignore entries from 'authorize_node'
+    ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<NodeMetadataTable>());
+    // Ignore entries from 
+    ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<WorkerStateMetadataTable>());
+
+    let existing = db.list::<KeyPrefixACLTable>().await?;
+
+    let mut existing_map = HashMap::new();
+    for v in &existing {
+        existing_map.insert(v.prefix(), v);
+    }
+
+    let mut intended = get_table_acls(zone)?;
+
+    let mut txn = db.new_transaction().await?;
+
+    for new_entry in &intended {
+        // TODO: Check that no new ones are ignored.
+
+        if let Some(old_entry) = existing_map.remove(new_entry.prefix()) {
+
+            if old_entry != new_entry {
+                println!("EXISTING DIFF: {:?}", new_entry);
+                txn.put::<KeyPrefixACLTable>(&new_entry).await?;
+            }
+            
+            continue;
+        }
+
+        println!("NEW: {:?}", new_entry);
+        txn.put::<KeyPrefixACLTable>(&new_entry).await?;
+    }
+
+    for old_entry in &existing {
+        // Skip ignored entries.
+        {
+            let mut ignored = false;
+            for p in &ignored_prefixes {
+                if old_entry.prefix().starts_with(&p[..]) {
+                    ignored = true;
+                    break;
+                }
+            }
+    
+            if ignored {
+                continue;
+            }    
+        }
+
+        if !existing_map.contains_key(old_entry.prefix()) {
+            continue;
+        }
+
+        println!("DELETE: {:?}", old_entry);
+        txn.remove::<KeyPrefixACLTable>(&old_entry).await?;
+    }
+
+    if write {
+        txn.commit().await?;
+    }
+
+    Ok(())
+}
+
 fn get_group_memberships(zone: &str) -> Vec<GroupMembership> {
     vec![
         {
@@ -80,6 +148,12 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
     }
     .to_string();
 
+    let cluster_admins = Principal::Group {
+        zone: zone.to_string(),
+        name: "cluster-admins".into(),
+    }
+    .to_string();
+
     let manager_job = Principal::Entity(ServiceName::for_job(zone, "system.manager")?).to_string();
 
     let ca_job =
@@ -115,10 +189,13 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         make_table_acl::<WorkerMetadataTable>(&[&cluster_readers], &[&manager_job]),
         make_table_acl::<WorkerStateMetadataTable>(&[&cluster_readers], &[&manager_job]),
         manager_writes_worker_acls,
-        // Just needs to be read/written by the manager job.
-        make_table_acl::<NodeSchedulingMetadataTable>(&[&manager_job], &[&manager_job]),
+        // Read/written by the manager job for worker scheduling.
+        // Read/written by admins for reading/writing node labels.
+        make_table_acl::<NodeSchedulingMetadataTable>(
+            &[&manager_job, &cluster_admins], &[&manager_job, &cluster_admins]),
         // Readers: Need for service resolving.
         // Writers: Individual rows can be written by the corresponding nodes.
+        // TODO: Can relax reader permissions once we have a separate service resolver service.
         make_table_acl::<NodeMetadataTable>(&[&cluster_readers], &[]),
         // Readers: Need a subset of the certificates for CA registry population (the whole table
         //          contains no secrets anyway).

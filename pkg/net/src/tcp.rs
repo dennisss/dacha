@@ -157,6 +157,10 @@ impl TcpStream {
         unsafe { sys::shutdown(self.file.as_raw_fd(), how)? };
         Ok(())
     }
+
+    pub unsafe fn as_raw_fd(&self) -> i32 {
+        **self.file.as_raw_fd()
+    }
 }
 
 #[async_trait]

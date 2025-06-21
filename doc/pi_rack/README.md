@@ -230,11 +230,17 @@ ssh -i ~/.ssh/id_cluster cluster-user@$ADDR
 
 ```
 # Mark that the new cluster node has a pi rack board attached to it.
-cargo run --bin cluster --  labels set "rpi_controller_config:rpi_rack_r5" --node_addr=10.1.1.1:10400
+cargo run --bin cluster_cli -- \
+  labels set --node_id=[insert] "rpi_controller_config=rpi_rack_r5"
 
 # Bring up the controller job
 # NOTE: This only needs to be once done per cluster (the job will auto-replicate to all nodes with the above label set)
-cargo run --bin cluster -- start_job pkg/rpi/controller/config/rpi_controller.job
+cargo run --bin cluster_cli -- \
+  start_job pkg/rpi/controller/config/rpi_controller.job
 
 ```
+
+Monitor the controller app in a web browser by running `cargo run --bin cluster_cli -- list workers` and clicking on individual instances.
+
+
 

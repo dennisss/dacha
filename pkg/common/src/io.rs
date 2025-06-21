@@ -17,7 +17,7 @@ use futures::StreamExt;
 use crate::borrowed::Borrowed;
 use crate::errors::*;
 
-const BUF_SIZE: usize = 4096;
+const BUF_SIZE: usize = 8192;
 
 /// Errors returned by a full/half duplex byte stream (an object implementing
 /// Readable or Writeable).
@@ -473,6 +473,24 @@ pub trait Readable: Send + Unpin {
             }
 
             writer.write_all(&mut buf[0..n]).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn pipe_with_progress(&mut self, writer: &mut dyn Writeable, f: &mut (dyn Send + FnMut(usize) -> ())) -> Result<()> {
+        let mut buf = vec![0u8; BUF_SIZE];
+        let mut done = 0;
+        loop {
+            let n = self.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+
+            writer.write_all(&mut buf[0..n]).await?;
+
+            done += n;
+            f(done);
         }
 
         Ok(())

@@ -1,0 +1,11 @@
+[Unit]
+Description=Cluster Bridge
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=30
+ExecStart={HOME}/.dacha/services/cluster_bridge
+Environment="HOME={HOME}"
+TimeoutStopSec=30
