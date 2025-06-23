@@ -21,7 +21,10 @@ pub async fn authorize_node(node_id: u64, zone: &str, db: &ProtobufDB) -> Result
     // TODO: Skip adding this if the node is already authorized.
     let mut proto = KeyPrefixACLProto::default();
     proto.set_prefix(key);
-    proto.add_writers(Principal::Entity(ServiceName::for_node(zone, node_id)?).to_string());
+
+    let entity = Principal::Entity(ServiceName::for_node(zone, node_id)?).to_string();
+    proto.add_readers(entity.clone());
+    proto.add_writers(entity.clone());
 
     db.insert::<KeyPrefixACLTable>(&proto).await
 }
@@ -31,7 +34,7 @@ pub async fn authorize_node(node_id: u64, zone: &str, db: &ProtobufDB) -> Result
 pub async fn bootstrap_acls(zone: &str, db: &ProtobufDB) -> Result<()> {
     let mut txn = db.new_transaction().await?;
 
-    for v in get_group_memberships(zone) {
+    for v in get_group_memberships(zone)? {
         txn.put::<GroupMembershipTable>(&v).await?;
     }
 
@@ -110,23 +113,55 @@ pub async fn upgrade_acls(zone: &str, db: &ProtobufDB, write: bool) -> Result<()
     Ok(())
 }
 
-fn get_group_memberships(zone: &str) -> Vec<GroupMembership> {
-    vec![
-        {
-            let mut proto = GroupMembership::default();
-            proto.set_group_name("cluster-readers");
-            proto.set_expands(true);
-            proto.set_member(Principal::Pattern("**.job.*.cluster.internal".into()).to_string());
-            proto
-        },
-        {
-            let mut proto = GroupMembership::default();
-            proto.set_group_name("cluster-readers");
-            proto.set_expands(true);
-            proto.set_member(Principal::Pattern("**.node.*.cluster.internal".into()).to_string());
-            proto
-        },
-    ]
+fn make_group_membership(group_name: &str, member: &Principal) -> GroupMembership {
+    let mut proto = GroupMembership::default();
+    proto.set_group_name(group_name);
+    proto.set_expands(match member {
+        Principal::Entity(_) => false,
+        _ => true
+    });
+    proto.set_member(member.to_string());
+    proto
+}
+
+fn get_group_memberships(zone: &str) -> Result<Vec<GroupMembership>> {
+    let manager_job = Principal::Entity(ServiceName::for_job(zone, "system.manager")?);
+    let metastore_job = Principal::Entity(ServiceName::for_job(zone, "system.meta")?);
+    let ca_job = Principal::Entity(ServiceName::for_job(zone, "system.cert-authority")?);
+
+    Ok(vec![
+        make_group_membership(
+            "cluster-clients",
+            &Principal::Pattern("**.job.*.cluster.internal".into())
+        ),
+        make_group_membership(
+            "cluster-clients",
+            &Principal::Pattern("*.node.*.cluster.internal".into())
+        ),
+        // Nodes need to be able to read the list of workers and blobs that should be present on them.
+        // Currently this is achieved by just granting read access to the whole Blob*Metadata and WorkerMetadata tables.
+        //
+        // TODO: Eventually restrict which roles the nodes are allowed to access.
+        make_group_membership(
+            "cluster-readers",
+            &Principal::Pattern(format!("*.node.{}.cluster.internal", zone))
+        ),
+        // Allow the metastore to implement the ServiceResolver service.
+        make_group_membership(
+            "cluster-readers",
+            &metastore_job
+        ),
+        // Manager needs to read all job/worker/blob state.
+        make_group_membership(
+            "cluster-readers",
+            &manager_job
+        ),
+        // Used for reading certificate tables and seeing if nodes were assigned to workers.
+        make_group_membership(
+            "cluster-readers",
+            &ca_job
+        ),
+    ])
 }
 
 fn make_table_acl<Tag: ProtobufTableTag>(readers: &[&str], writers: &[&str]) -> KeyPrefixACLProto {
@@ -142,15 +177,21 @@ fn make_table_acl<Tag: ProtobufTableTag>(readers: &[&str], writers: &[&str]) -> 
 }
 
 fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
+    let cluster_clients = Principal::Group {
+        zone: zone.to_string(),
+        name: "cluster-clients".into(),
+    }
+    .to_string();
+
     let cluster_readers = Principal::Group {
         zone: zone.to_string(),
         name: "cluster-readers".into(),
     }
     .to_string();
 
-    let cluster_admins = Principal::Group {
+    let cluster_owners = Principal::Group {
         zone: zone.to_string(),
-        name: "cluster-admins".into(),
+        name: "cluster-owners".into(),
     }
     .to_string();
 
@@ -178,10 +219,27 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         proto
     };
 
+    // Allow the manager to change the ACLs for the BundleBlobReplicaTable table.
+    //
+    // (individual nodes are allowed to update whether or not they have a blob)
+    let manager_writes_blob_replica_acls = {
+        let q = raw_query!(
+            KeyPrefixACLTable,
+            "prefix = ?",
+            ProtobufDBTransaction::table_key_prefix::<BundleBlobReplicaTable>()
+        );
+        let key = ProtobufDBTransaction::primary_key_prefix::<KeyPrefixACLTable>(&q)?;
+
+        let mut proto = KeyPrefixACLProto::default();
+        proto.set_prefix(key);
+        proto.add_writers(manager_job.clone());
+        proto
+    };
+
     Ok(vec![
         // Readers: Services need to read groups to check their own ACLs.
         // Writers:
-        make_table_acl::<GroupMembershipTable>(&[&cluster_readers], &[]),
+        make_table_acl::<GroupMembershipTable>(&[&cluster_clients], &[]),
         // Readers: Need for service resolving.
         // Writers: Just the manager job
         //          WorkerStateMetadata will also have per-row ACLs allowing nodes to write.
@@ -192,10 +250,11 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         // Read/written by the manager job for worker scheduling.
         // Read/written by admins for reading/writing node labels.
         make_table_acl::<NodeSchedulingMetadataTable>(
-            &[&manager_job, &cluster_admins], &[&manager_job, &cluster_admins]),
+            &[&manager_job, &cluster_owners], &[&manager_job, &cluster_owners]),
         // Readers: Need for service resolving.
         // Writers: Individual rows can be written by the corresponding nodes.
         // TODO: Can relax reader permissions once we have a separate service resolver service.
+        // manager + metastore must be able to read it
         make_table_acl::<NodeMetadataTable>(&[&cluster_readers], &[]),
         // Readers: Need a subset of the certificates for CA registry population (the whole table
         //          contains no secrets anyway).
@@ -207,5 +266,7 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         make_table_acl::<UserTable>(&[&ca_job], &[&ca_job]),
         // Not secret information so just granting cluster wide access for simplicity.
         make_table_acl::<BundleBlobMetadataTable>(&[&cluster_readers], &[&manager_job]),
+        make_table_acl::<BundleBlobReplicaTable>(&[&cluster_readers], &[&manager_job]),
+        manager_writes_blob_replica_acls
     ])
 }

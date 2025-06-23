@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package cluster;
+
+service ServiceResolver {
+    rpc Resolve (ServiceResolverRequest) returns (ServiceResolverResponse);
+}
+
+message ServiceResolverRequest {
+    string address = 1;
+}
+
+message ServiceResolverResponse {
+    // Distinct servers/workers that 
+    repeated ResolvedEndpointProto endpoints = 1;
+}
+
+message ResolvedEndpointProto {
+    string name = 1;
+
+    // 'ip:port' to use for this endpoint.
+    string address = 2;
+
+    string hostname = 3;
+}

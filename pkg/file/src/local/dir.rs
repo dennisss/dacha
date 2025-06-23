@@ -72,6 +72,8 @@ impl LocalDirEntry {
 pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
     // TODO: Check if the file is actually a directory?
 
+    let path = path.as_ref();
+
     let mut out = vec![];
 
     // TODO: If we are checking critical files, it makes sense it us O_DIRECT here?
@@ -81,7 +83,7 @@ pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
 
     loop {
         let mut rest = unsafe { sys::getdents64(dir.as_raw_fd(), &mut buffer) }
-            .remap_errno::<FileError, _>(|| String::new())?;
+            .remap_errno::<FileError, _>(|| format!("getdents64(\"{}\")", path.as_str()))?;
         if rest.is_empty() {
             break;
         }

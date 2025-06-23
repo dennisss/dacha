@@ -312,6 +312,7 @@ impl Manager {
         }
 
         // TODO: Parallelize with the previous query.
+        // TODO: We only really need to lock the rows that we are changing.
         let nodes_scheduling = txn.list::<NodeSchedulingMetadataTable>().await?;
 
         let mut nodes_scheduling_by_id = HashMap::new();
@@ -350,6 +351,7 @@ impl Manager {
         // running workers in this job.
         let mut remaining_nodes = vec![];
         for i in 0..nodes.len() {
+            // TODO: Can probably use u32 for this. 
             remaining_nodes.push(i);
         }
 
@@ -374,6 +376,11 @@ impl Manager {
         remaining_nodes.retain(|i| {
             let node = &nodes[*i];
             Self::filter_by_node_labels(&node.0, &node.1, job.spec().scheduling().labels())
+        });
+
+        let mut remaining_uncordoned_nodes = remaining_nodes.clone();
+        remaining_uncordoned_nodes.retain(|i| {
+            !nodes[*i].1.cordoned()
         });
 
         // TODO: Need to increment ref counts to blobs.
@@ -430,13 +437,13 @@ impl Manager {
                 } else {
                     // TODO: Don't make this a permanent failure. Instead come back to this job
                     // later once we have more nodes.
-                    if remaining_nodes.is_empty() {
+                    if remaining_uncordoned_nodes.is_empty() {
                         update_incomplete = true;
                         break;
                     }
 
-                    let selected_idx = self.rng.between::<usize>(0, remaining_nodes.len()).await;
-                    remaining_nodes[selected_idx]
+                    let selected_idx = self.rng.between::<usize>(0, remaining_uncordoned_nodes.len()).await;
+                    remaining_uncordoned_nodes[selected_idx]
                 }
             };
 
@@ -444,6 +451,7 @@ impl Manager {
             // for the node set for future decisions.
             if job.spec().scheduling().distinct_nodes() {
                 remaining_nodes.retain(|idx| *idx != assigned_node_index);
+                remaining_uncordoned_nodes.retain(|idx| *idx != assigned_node_index);
             }
 
             // Skip if the existing worker is already up to date.
@@ -473,6 +481,37 @@ impl Manager {
             // Update the worker
             // TODO: Skip this if the worker hasn't changed at all.
             txn.put::<WorkerMetadataTable>(&new_worker).await?;
+
+            // Make the node a replica of all referenced blobs.
+            // TODO: Eventually check ahead of time that there is space to fit the blobs.
+            for volume in new_worker.spec().volumes() {
+                if !volume.has_bundle() {
+                    continue;
+                }
+
+                let node_platform = assigned_node.0.platform();
+                
+                let mut blob_id = None;
+
+                // TODO: Deduplicate this selection logic with the node.
+                for variant in volume.bundle().variants() {
+                    if variant.platform() == node_platform {
+                        blob_id = Some(variant.blob().id().to_string());
+                        break;
+                    }
+                }
+
+                let blob_id = match blob_id {
+                    Some(v) => v,
+                    None => continue
+                };   
+
+                let replica_data = query_one!(txn, BundleBlobReplicaTable, "blob_id = ? AND node_id = ?",
+                    &blob_id, assigned_node.0.id());
+                if replica_data.is_none() {
+                    self.create_blob_replica(&blob_id, assigned_node.0.id(), &mut txn).await?;
+                }
+            }
 
             // Authorize the assigned node to write to the WorkerStateMetadata row for this
             // worker.
@@ -733,8 +772,15 @@ impl Manager {
     ) -> Result<()> {
         // TODO: Filter out unhealthy nodes.
         let mut nodes = self.db.list::<NodeMetadataTable>().await?;
-
         self.rng.shuffle(&mut nodes).await;
+
+        // TODO: Parallelize with the previous query.
+        let nodes_scheduling = self.db.list::<NodeSchedulingMetadataTable>().await?;
+
+        let mut nodes_scheduling_by_id = HashMap::new();
+        for data in nodes_scheduling {
+            nodes_scheduling_by_id.insert(data.node_id(), data);
+        }
 
         let mut txn = self.db.new_transaction().await?;
 
@@ -748,10 +794,21 @@ impl Manager {
                     b
                 });
 
+            let mut blob_replicas = query!(txn, BundleBlobReplicaTable, "blob_id = ?", spec.id());
+
+            // Ignore cordoned nodes.
+            blob_replicas.retain(|blob_replica| {
+                if let Some(node_scheduling) = nodes_scheduling_by_id.get(&blob_replica.node_id()) {
+                    return !node_scheduling.cordoned();
+                }
+
+                true
+            });
+
             let mut num_uploaded = 0;
 
             let mut existing_node_ids = HashSet::new();
-            for replica in blob.replicas() {
+            for replica in &blob_replicas {
                 existing_node_ids.insert(replica.node_id());
 
                 if replica.uploaded() {
@@ -763,7 +820,9 @@ impl Manager {
                 continue;
             }
 
-            while blob.replicas().len() < 1 {
+            // Ensure there are enough replicas defined for the blob. 
+            const MIN_REPLICAS: usize = 1;
+            while blob_replicas.len() < 1 {
                 let mut new_node_id = None;
                 for node in &nodes {
                     if !existing_node_ids.contains(&node.id()) {
@@ -773,15 +832,13 @@ impl Manager {
                 }
 
                 let new_node_id = new_node_id.ok_or_else(|| err_msg("Failed to get a node"))?;
-
-                let mut replica = BundleBlobReplica::default();
-                replica.set_node_id(new_node_id);
-                replica.set_timestamp(std::time::SystemTime::now());
-                blob.add_replicas(replica);
+                blob_replicas.push(self.create_blob_replica(spec.id(), new_node_id, &mut txn).await?);
             }
 
+            // Ask the client to push the blob to some subset of the replicas that don't have the
+            // data.
             let mut num_pushing = 0;
-            for replica in blob.replicas() {
+            for replica in &blob_replicas {
                 if replica.uploaded() {
                     continue;
                 }
@@ -797,12 +854,52 @@ impl Manager {
                 response.value.add_new_assignments(assignment);
             }
 
+            // This will insert the entry if one didn't already exist.
             txn.put::<BundleBlobMetadataTable>(&blob).await?;
         }
 
         txn.commit().await?;
 
         Ok(())
+    }
+
+    /// Assuming the entry doesn't already exist, creates a new BundleBlobReplica entry with the blob marked as not uploaded.
+    async fn create_blob_replica(
+        &self, blob_id: &str, node_id: u64, txn: &mut ProtobufDBTransaction<'_>
+    ) -> Result<BundleBlobReplica> {
+        let mut replica = BundleBlobReplica::default();
+        replica.set_blob_id(blob_id);
+        replica.set_node_id(node_id);
+        replica.set_timestamp(std::time::SystemTime::now());
+
+        // Allow the node to update its row in the BunbleBlobReplica table.
+        {
+            // TODO: Make a utility for doing this.
+
+            let q = raw_query!(
+                BundleBlobReplicaTable,
+                "blob_id = ? AND node_id = ?",
+                replica.blob_id(), replica.node_id()
+            );
+            let key =
+                ProtobufDBTransaction::primary_key_prefix::<BundleBlobReplicaTable>(&q)?;
+
+            let mut proto = KeyPrefixACLProto::default();
+            proto.set_prefix(key);
+            proto.add_writers(
+                Principal::Entity(ServiceName::for_node(
+                    &self.zone,
+                    replica.node_id(),
+                )?)
+                .to_string(),
+            );
+
+            txn.put::<KeyPrefixACLTable>(&proto).await?;
+        }
+
+        txn.put::<BundleBlobReplicaTable>(&replica).await?;
+
+        Ok(replica)
     }
 }
 

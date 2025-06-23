@@ -4,7 +4,7 @@ extern crate macros;
 use std::sync::Arc;
 
 use cluster_client::id::entity_id_from_string;
-use cluster_client::ClusterServer;
+use cluster_client::{ClusterServer, ClusterMetaClient};
 use cluster_meta::*;
 use common::args::list::CommaSeparated;
 use common::args::parse_args;
@@ -23,12 +23,8 @@ struct Args {
 async fn main() -> Result<()> {
     let args = parse_args::<Args>()?;
 
-    let creds = cluster_client::credentials::get_cluster_credentials().await?;
-
-    let zone = std::env::var(cluster_client::env::ZONE_ENV_VAR)?;
-    if zone.is_empty() {
-        return Err(err_msg("Missing cluster zone in environment"));
-    }
+    // TODO: We should be able to make this lighter and re-use more state from the main server.
+    let client = ClusterMetaClient::create_from_environment().await?;
 
     let id = {
         // TODO: This is pretty easy to unit test.
@@ -47,17 +43,15 @@ async fn main() -> Result<()> {
     };
 
     let root = RootResource::new();
-    root.register_dependency(creds.clone()).await;
+
+    // TODO: If this has issues finding the leader, then we should still enable the server to run.
+    root.register_dependency(client.clone()).await;
 
     root.register_dependency(
         run(ClusterMetastoreOptions {
             id,
             port: args.port.value(),
-            zone,
-            creds: crypto::tls::Credentials {
-                server: creds.server_options(),
-                client: creds.client_options(),
-            },
+            client,
             dir: args.dir,
             bootstrap: false,
         })

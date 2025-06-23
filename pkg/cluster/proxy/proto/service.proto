@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package cluster;
+
+service Proxy {
+    // Creates a connection to some server accessible by this RPC server.
+    rpc Socket (stream ProxySocketRequest) returns (stream ProxySocketResponse);
+}
+
+message ProxySocketRequest {
+    // Sent in the first packet to the server.
+    // e.g. '192.168.1.2:2000'
+    string target_addr = 1;
+
+    enum Protocol {
+        UNKNOWN = 0;
+        TCP = 1;
+        UDP = 2;
+    }
+
+    Protocol protocol = 2;
+
+    // Next chunk of data to send on this socket.
+    bytes data = 3;
+}
+
+message ProxySocketResponse {
+    // Returned in the first response to indicate that the server successfully established a
+    // connection to the target_addr.
+    bool connected = 1;
+
+    // Next chunk of data received from the target_addr.
+    bytes data = 2;
+}

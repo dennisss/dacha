@@ -11,7 +11,7 @@ use common::hash::FastHasherBuilder;
 use common::io::{Readable, Writeable};
 use crypto::random::RngExt;
 use executor::child_task::ChildTask;
-use executor::sync::AsyncMutex;
+use executor::sync::{AsyncMutex, SyncMutex};
 use executor::sync::AsyncVariable;
 use executor::{channel, lock, lock_async};
 use net::backoff::*;
@@ -293,6 +293,7 @@ struct ClientLocalRequest {
     request: Request,
     request_context: ClientRequestContext,
     response_sender: ResponseSender,
+    response_context: Arc<SyncMutex<ClientResponseContext>>,
 }
 
 struct ConnectionEntry {
@@ -313,6 +314,8 @@ struct ConnectionEntry {
     pending_ping: Option<u64>,
 
     tasks: Vec<ChildTask>,
+
+    context: Arc<ClientConnectionContext>,
 }
 
 enum ConnectionInstance {
@@ -418,6 +421,7 @@ impl ClientInterface for DirectClient {
         }
 
         let (response_sender, response_receiver) = new_response_channel();
+        let returned_context = Arc::new(SyncMutex::new(ClientResponseContext::default()));
 
         {
             let events_permit = self.shared.received_events.lock().await?;
@@ -438,6 +442,7 @@ impl ClientInterface for DirectClient {
                 request,
                 request_context,
                 response_sender,
+                response_context: returned_context.clone(),
             });
 
             // Notify the runner thread to take a look (and possibly shut down the queue).
@@ -457,7 +462,14 @@ impl ClientInterface for DirectClient {
             state.exit();
         }
 
-        response_receiver.recv().await
+        let res = response_receiver.recv().await;
+
+        // TODO: Make this more scalable.
+        returned_context.apply(|c| {
+            response_context.connection_context = c.connection_context.take();
+        })?;
+
+        res
     }
 
     async fn current_state(&self) -> ClientState {
@@ -1092,6 +1104,8 @@ impl DirectClientRunner {
 
         let mut is_secure = false;
 
+        let mut context = ClientConnectionContext::default();
+
         if let Some(client_options) = &shared.options.tls {
             let mut client_options = client_options.get().as_ref().clone();
 
@@ -1107,16 +1121,16 @@ impl DirectClientRunner {
 
             let tls_stream = tls_client.connect(reader, writer, &client_options).await?;
 
-            // TODO: Save handshake info so that the user can access it.
-
             reader = Box::new(tls_stream.reader);
             writer = Box::new(tls_stream.writer);
 
-            if let Some(protocol) = tls_stream.handshake_summary.selected_alpn_protocol {
+            if let Some(protocol) = &tls_stream.handshake_summary.selected_alpn_protocol {
                 if protocol.as_ref() == ALPN_HTTP2.as_bytes() {
                     start_http2 = true;
                 }
             }
+
+            context.tls = Some(tls_stream.handshake_summary);
         }
 
         let event_listener = Box::new(ConnectionListener {
@@ -1155,6 +1169,7 @@ impl DirectClientRunner {
                 tasks: vec![main_task, heartbeat_task],
                 num_outstanding_requests: 0,
                 shutting_down: false,
+                context: Arc::new(context),
             });
         }
 
@@ -1221,6 +1236,7 @@ impl DirectClientRunner {
             tasks: vec![main_task],
             num_outstanding_requests: 0,
             shutting_down: false,
+            context: Arc::new(context),
         })
     }
 
@@ -1335,6 +1351,10 @@ impl DirectClientRunner {
         state: &mut State,
     ) {
         let mut conn = state.connection_pool.get_mut(&connection_id).unwrap();
+
+        let _ = request_entry.response_context.apply(|c| {
+            c.connection_context = Some(conn.context.clone());
+        });
 
         let request = request_entry.request;
         let response_sender = request_entry.response_sender;

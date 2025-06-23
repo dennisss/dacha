@@ -72,12 +72,12 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         {
             path: "/rpc/rpi.Controller/Read"
             is_directory: false
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         },
         {
             path: "/rpc/rpi.Controller/Write"
             is_directory: false
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         }
     ]
 "#;

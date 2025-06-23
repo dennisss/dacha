@@ -34,6 +34,16 @@ use file::{LocalPath, LocalPathBuf};
 /// Called when the credentials for a worker are ready for use.
 pub type WorkerCredentialsReadyCallback = Box<dyn Fn(&str) -> () + Send + Sync>;
 
+
+/// How often to check if the root certificate registry needs to be updated from the metastore.
+const REGISTRY_POLL_PERIOD: Duration = Duration::from_secs(60 * 60 * 2);  // 2 hours
+
+const REGISTRY_POLL_BACKOFF_PERIOD: Duration = Duration::from_secs(60 * 5);  // 5 minutes
+
+const CERTIFICATE_UPDATE_POLL_BACKOFF: Duration = Duration::from_secs(60 * 5);
+
+const CERTIFICATE_UPDATE_POLL_PERIOD: Duration = Duration::from_secs(60 * 60 * 2);  // 2 hours
+
 /// Maintains the state of all node/worker credentials for this cluster node.
 ///
 /// Internal details:
@@ -281,10 +291,10 @@ impl NodeCredentialsManager {
     async fn registry_updater_task(shared: Arc<Shared>, meta_client: Arc<ClusterMetaClient>) {
         loop {
             if let Err(e) = Self::registry_updater_task_inner(&shared, &meta_client).await {
-                eprintln!("[Node Registry Updater] {}", e);
+                eprintln!("[Node Credential Registry Updater] {}", e);
             }
 
-            executor::sleep(Duration::from_secs(60 * 5)).await; // 5 minutes
+            executor::sleep(REGISTRY_POLL_BACKOFF_PERIOD).await;
         }
     }
 
@@ -327,10 +337,9 @@ impl NodeCredentialsManager {
                 last_registry = new_registry;
             }
 
-            // 2 hours.
             // TODO: Needs to be dynamic to allow quickly pulling in CA changes.
             // TODO: Switch to 'watching' the db.
-            executor::sleep(Duration::from_secs(60 * 60 * 2)).await?;
+            executor::sleep(REGISTRY_POLL_PERIOD).await?;
         }
     }
 
@@ -347,8 +356,7 @@ impl NodeCredentialsManager {
                 eprintln!("[Node Credential Refresher] Failed: {}", e);
             }
 
-            executor::timeout(Duration::from_secs(60 * 5), event_receiver.recv()).await;
-            // 5 minutes
+            executor::timeout(CERTIFICATE_UPDATE_POLL_BACKOFF, event_receiver.recv()).await;
         }
     }
 
@@ -366,8 +374,7 @@ impl NodeCredentialsManager {
             creds.gc().await?;
 
             // TODO: Allow cancellation.
-            // 2 hours
-            executor::timeout(Duration::from_secs(60 * 60 * 2), event_receiver.recv()).await;
+            executor::timeout(CERTIFICATE_UPDATE_POLL_PERIOD, event_receiver.recv()).await;
         }
     }
 
@@ -384,10 +391,10 @@ impl NodeCredentialsManager {
             if let Err(e) =
                 Self::worker_updater_task_inner(&shared, &worker_name, &dir, &event_receiver).await
             {
-                eprintln!("[Node Worker Updater] Failed: {}", e);
+                eprintln!("[Node Worker Credentials Updater] Failed: {}", e);
             }
 
-            executor::sleep(Duration::from_secs(60 * 5)).await; // 5 minutes
+            executor::sleep(CERTIFICATE_UPDATE_POLL_BACKOFF).await;
         }
     }
 
@@ -417,6 +424,8 @@ impl NodeCredentialsManager {
                         .and_then(|worker| worker.injected_credentials.take())
                 });
 
+                // TODO: Avoid injecting credentials that are stale.
+
                 if let Some(c) = injected_creds {
                     let private_key =
                         Arc::new(crypto::x509::PrivateKey::from_der(c.private_key().into())?);
@@ -433,10 +442,19 @@ impl NodeCredentialsManager {
                 }
             }
 
+            // NOTE: The 'if cert_changed' statement below this should always run even if this
+            // fails to ensure that we can support injected credentials.
+            //
             // TODO: Allow this to successfully 'time out' just the 'generate_credentials'
             // part of this with some fast follow up.
-            cert_changed |=
-                Self::update_credentials_once(&shared, &service_name, &mut creds).await?;
+            let update_res = {
+                let res = Self::update_credentials_once(&shared, &service_name, &mut creds).await;
+                if let Ok(v) = &res {
+                    cert_changed |= *v;
+                }
+
+                res
+            };
 
             if cert_changed {
                 let not_after =
@@ -451,10 +469,11 @@ impl NodeCredentialsManager {
                 cert_changed = false;
             }
 
+            update_res?;
+
             creds.gc().await?;
 
-            // 2 hours
-            executor::timeout(Duration::from_secs(60 * 60 * 2), event_receiver.recv()).await;
+            executor::timeout(CERTIFICATE_UPDATE_POLL_PERIOD, event_receiver.recv()).await;
         }
     }
 

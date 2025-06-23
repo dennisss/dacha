@@ -207,6 +207,58 @@ impl ProtobufTableTag for BundleBlobMetadataTable {
     }
 }
 
+pub struct BundleBlobReplicaTable {}
+
+impl ProtobufTableTag for BundleBlobReplicaTable {
+    type Message = BundleBlobReplica;
+
+    fn table_id() -> u32 {
+        table_id!(25)
+    }
+
+    fn table_name() -> &'static str {
+        "BundleBlobReplica"
+    }
+
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
+        &[
+            sparse_struct!(ProtobufTableKey {
+                index_id: PRIMARY_KEY_ID,
+                fields: &[
+                    ProtobufKeyField {
+                        path: &[BundleBlobReplica::BLOB_ID_FIELD_NUM_RAW],
+                        direction: Direction::Ascending,
+                        fixed_size: false,
+                    },
+                    ProtobufKeyField {
+                        path: &[BundleBlobReplica::NODE_ID_FIELD_NUM_RAW],
+                        direction: Direction::Ascending,
+                        fixed_size: true,
+                    }
+                ],
+            }),
+            sparse_struct!(ProtobufTableKey {
+                index_id: 1,
+                index_name: Some("ByNode"),
+                fields: &[
+                    ProtobufKeyField {
+                        path: &[BundleBlobReplica::NODE_ID_FIELD_NUM_RAW],
+                        direction: Direction::Ascending,
+                        fixed_size: true,
+                    },
+                    ProtobufKeyField {
+                        path: &[BundleBlobReplica::BLOB_ID_FIELD_NUM_RAW],
+                        direction: Direction::Ascending,
+                        fixed_size: false,
+                    },
+                ],
+            }),
+        ]
+    }
+}
+
+
+
 pub struct NodeMetadataTable {}
 
 impl ProtobufTableTag for NodeMetadataTable {

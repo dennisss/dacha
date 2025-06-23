@@ -156,6 +156,21 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
     println!("Starting...");
     executor::sleep(Duration::from_secs(5)).await?;
 
+    // TODO: Given that we know the port of the local metastore, we can use that to
+    // help find it.
+    let meta_client = Arc::new(
+        ClusterMetaClient::create(
+            &cmd.zone,
+            &[],
+            // NOTE: TLS here needs to use the root credentials since we may not yet regular
+            // credentials.
+            Some(root_creds.tls.clone()),
+            None,
+        )
+        .await?,
+    );
+    let db = meta_client.db();
+
     // When cluster bootstrapping, we need to run a standalone metastore replica
     // until the node can run it by itself.
     let mut local_metastore_resource = None;
@@ -163,8 +178,7 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
         local_metastore_resource = Some(
             run_local_metastore(
                 cmd.local_metastore_port,
-                cmd.zone.clone(),
-                Some(root_creds.tls.clone()),
+                meta_client.clone(),
             )
             .await?,
         );
@@ -173,21 +187,6 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
         // TODO: Get rid of this.
         executor::sleep(Duration::from_secs(2)).await?;
     }
-
-    // TODO: Given that we know the port of the local metastore, we can use that to
-    // help find it.
-    let meta_client = Arc::new(
-        ClusterMetaClient::create(
-            &cmd.zone,
-            &[],
-            // TODO: TLS here needs to use the root credentials since we may not yet regular
-            // credentials.
-            Some(root_creds.tls.clone()),
-            None,
-        )
-        .await?,
-    );
-    let db = meta_client.db();
 
     if cmd.bootstrap {
         // TODO: Make this all one transaction.
@@ -346,8 +345,9 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
         let user_password = first_user_password.unwrap();
 
         run_create_user_impl(meta_client.clone(), &user_name, &user_password, &[
+            "cluster-clients".into(),
             "cluster-readers".into(),
-            "cluster-admins".into()
+            "cluster-owners".into()
         ]).await?;
     
 
@@ -445,8 +445,7 @@ async fn load_or_create_root_credentials(
 
 async fn run_local_metastore(
     port: u16,
-    zone: String,
-    tls: Option<crypto::tls::Credentials>,
+    client: Arc<ClusterMetaClient>,
 ) -> Result<Arc<dyn ServiceResource>> {
     // TODO: Implement completely in memory.
     let local_metastore_dir = file::temp::TempDir::create()?;
@@ -454,9 +453,8 @@ async fn run_local_metastore(
     let res = cluster_meta::run(cluster_meta::ClusterMetastoreOptions {
         id: ROOT_SERVER_ID,
         port,
-        zone,
+        client,
         dir: local_metastore_dir.path().to_owned(),
-        creds: tls.unwrap(),
         bootstrap: true,
     })
     .await;
@@ -803,7 +801,7 @@ async fn setup_remote_node_server(
         operator.run("sudo apparmor_parser -r -W /etc/apparmor.d/cluster-node").await?;
     }
 
-    println!("Installing systemd servoce...");
+    println!("Installing systemd service...");
     let service_file = file::read_to_string(project_path!("pkg/container/config/node.service")).await?
         .replace("{base_dir}", base_dir.as_str());
     operator.upload(service_file.as_bytes(), "/tmp/cluster-node.service").await?;

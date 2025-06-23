@@ -45,6 +45,8 @@ pub struct FileHandle {
     /// If the file descriptor is seekable, the position at which we will next
     /// read/write for operations not specifying an explicit offset.
     offset: Option<u64>,
+
+    flags: RWFlags,
 }
 
 impl FileHandle {
@@ -55,11 +57,20 @@ impl FileHandle {
         Self {
             fd: Arc::new(fd),
             offset: if seekable { Some(0) } else { None },
+            flags: RWFlags::empty(),
         }
     }
 
     pub unsafe fn set_not_seekable(&mut self) {
         self.offset = None;
+    }
+
+    pub fn set_no_wait(&mut self, on: bool) {
+        if on {
+            self.flags |= RWFlags::RWF_NOWAIT;
+        } else {
+            self.flags.remove(RWFlags::RWF_NOWAIT);
+        }
     }
 
     pub unsafe fn as_raw_fd(&self) -> &OpenFileDescriptor {
@@ -77,7 +88,7 @@ impl FileHandle {
         let mut zero = 0;
         let mut offset = self.offset.as_mut().unwrap_or(&mut zero);
 
-        let n = Self::read_vectored_at_impl(&self.fd, *offset, output).await?;
+        let n = Self::read_vectored_at_impl(&self.fd, *offset, output, self.flags).await?;
 
         *offset += n as u64;
 
@@ -87,23 +98,24 @@ impl FileHandle {
     pub async fn read_at(&self, offset: u64, output: &mut [u8]) -> Result<usize> {
         // TODO: Only up to 2^32 bytes can be read in one operation right?
         let buffers = [IoSliceMut::new(output)];
-        Self::read_vectored_at_impl(&self.fd, offset, &buffers).await
+        Self::read_vectored_at_impl(&self.fd, offset, &buffers, self.flags).await
     }
 
     pub async fn read_vectored_at(&self, offset: u64, output: &[IoSliceMut<'_>]) -> Result<usize> {
-        Self::read_vectored_at_impl(&self.fd, offset, output).await
+        Self::read_vectored_at_impl(&self.fd, offset, output, self.flags).await
     }
 
     async fn read_vectored_at_impl(
         fd: &Arc<OpenFileDescriptor>,
         offset: u64,
         output: &[IoSliceMut<'_>],
+        flags: RWFlags,
     ) -> Result<usize> {
         let op = ExecutorOperation::submit(IoUringOp::ReadV {
             fd: ***fd,
             offset,
             buffers: output,
-            flags: RWFlags::empty(),
+            flags,
         })
         .await?;
 

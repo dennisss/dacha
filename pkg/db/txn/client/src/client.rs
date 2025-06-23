@@ -130,6 +130,16 @@ impl TransactionalDBClient {
         .await
     }
 
+    /// Gets a reference to the channel being used to communicate with the DB server replicas.
+    pub fn channel(&self) -> Arc<dyn rpc::Channel> {
+        self.channel.clone()
+    }
+
+    pub async fn wait_for_healthy(&self) -> Result<()> {
+        //
+        todo!()
+    }
+
     /// Directly connect to a metastore instance.
     ///
     /// This is mainly for use for testing where we only need to communicate

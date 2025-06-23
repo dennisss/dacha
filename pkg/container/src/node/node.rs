@@ -12,6 +12,7 @@ use cluster_client::id::entity_id_to_string;
 use cluster_client::ClusterMetaClient;
 use cluster_client::meta::{
     constants::*, BundleBlobMetadataTable, NodeMetadataTable, WorkerMetadataTable,
+    BundleBlobReplicaTable,
     WorkerStateMetadataTable,
 };
 use cluster_client::service::address::{ServiceAddress, ServiceEntity, ServiceName};
@@ -129,12 +130,18 @@ struct NodeShared {
     /// need to re-check all of them.
     state_change_channel: (channel::Sender<()>, channel::Receiver<()>),
 
+    /// Channel used to communicate that a blob fetcher has finished executing.
+    /// 
+    /// This is mainly so that the blob reconciliation loop can update the state of
+    /// blobs in the metastore.
+    blob_change_channel: (channel::Sender<()>, channel::Receiver<()>),
+
     // TODO: Add to list of watched resources.
     credentials: Option<NodeCredentialsManager>,
 }
 
 struct NodeState {
-    workers: Vec<Worker>,
+    workers: HashMap<String, Worker>,
     inner: NodeStateInner,
 }
 
@@ -304,7 +311,7 @@ impl Node {
                 blobs,
                 runtime,
                 state: AsyncMutex::new(NodeState {
-                    workers: vec![],
+                    workers: HashMap::new(),
                     inner,
                 }),
                 credentials,
@@ -314,6 +321,7 @@ impl Node {
                 meta_client,
                 last_event_timestamp: AsyncMutex::new(last_event_timestamp),
                 state_change_channel: channel::bounded(1),
+                blob_change_channel: channel::bounded(1),
             }),
         };
 
@@ -472,6 +480,8 @@ impl NodeInner {
         let mut task_bundle = executor::bundle::TaskResultBundle::new();
         task_bundle.add("run_heartbeat_loop", self.clone().run_heartbeat_loop());
 
+        task_bundle.add("run_blob_loop", self.clone().run_blob_loop());
+
         task_bundle.add("run_reconcile_loop", self.clone().run_reconcile_loop());
 
         task_bundle.join().await
@@ -525,6 +535,52 @@ impl NodeInner {
         }
     }
 
+    async fn run_blob_loop(self) -> Result<()> {
+        loop {
+            self.reconcile_blobs().await?;
+
+            executor::timeout(
+                NODE_HEARTBEAT_INTERVAL,
+                self.shared.blob_change_channel.1.recv(),
+            )
+            .await;
+        }
+    }
+
+    async fn reconcile_blobs(&self) -> Result<()> {
+        // TODO: Eventually delete any local unintended blobs after a time delay.
+        // TODO: Eventually move starting fetching of blobs to here.
+        // TODO: Watch the metastore for changes to the replica set.
+
+        let db = self.shared.meta_client.db();
+
+        let mut txn = db.new_transaction().await?;
+        let mut changed = false;
+
+        let intended_replicas = query!(txn, BundleBlobReplicaTable, "node_id = ?", self.shared.id);
+
+        let have_blobs = self.shared.blobs.list()?;
+        let mut have_blob_ids = HashSet::new();
+        for blob in have_blobs.blob() {
+            have_blob_ids.insert(blob.id());
+        }
+
+        for mut replica in intended_replicas {
+            let uploaded = have_blob_ids.contains(replica.blob_id());
+            if uploaded != replica.uploaded() {
+                replica.set_uploaded(uploaded);
+                txn.put::<BundleBlobReplicaTable>(&replica).await?;
+                changed = true;
+            }
+        }
+
+        if changed {
+            txn.commit().await?;
+        }
+
+        Ok(())
+    }
+
     // TODO: We need to refactor this to watch the metastore for changes.
     async fn run_reconcile_loop(self) -> Result<()> {
         // TODO: Always wait for at least one TLS registry refresh cycle since boot
@@ -573,6 +629,10 @@ impl NodeInner {
     ///
     /// Additionally this updates the WorkerStateMetadata for all workers.
     ///
+    /// NOTE: This doesn't maintain a lock throughout its runtime so will eventually make
+    /// the state consistent with the metastore if there are other ongoing operations
+    /// (e.g. direct StartWorker RPCs to the node).
+    ///
     /// TODO: Run this with it's own backoff loop.
     /// TODO: Make sure that all external requests have deadlines.
     async fn reconcile_workers(&self) -> Result<()> {
@@ -582,8 +642,6 @@ impl NodeInner {
 
         // TODO: Cache this across multiple reconcile_workers() calls.
         let reported_worker_states = self.read_reported_worker_states(&intended_workers).await?;
-
-        let existing_workers = self.list_workers_impl().await?;
 
         let existing_workers_list = self.list_workers_impl().await?;
         let mut existing_workers = HashMap::new();
@@ -655,18 +713,10 @@ impl NodeInner {
         // eventually cleaned up.
         for (_, worker) in existing_workers {
             if worker.state() == WorkerStateProto::DONE {
-                if let Some(creds) = &self.shared.credentials {
-                    creds.remove_worker(worker.spec().name()).await?;
-                }
-
                 // TODO: Eventually add a state before DONE for cleanup like deleting or backing
                 // up worker state before we lose track of it (this needs to persist across
                 // restarts for any local assets).
-                lock!(state <= self.shared.state.lock().await?, {
-                    state
-                        .workers
-                        .retain(|worker| worker.spec.name() != worker.spec.name());
-                });
+                self.remove_worker(worker.spec().name()).await?;
             } else {
                 self.stop_worker(worker.spec().name(), false).await?;
             }
@@ -736,9 +786,11 @@ impl NodeInner {
 
         let worker = state
             .workers
-            .iter_mut()
-            .find(|t| t.spec.name() == worker_name)
-            .unwrap();
+            .get_mut(&worker_name)
+            .ok_or_else(|| format_err!(
+                "Worker named '{}' already removed but container id {} not yet cleaned up.",
+                worker_name, container_id)
+            )?;
 
         let container_meta = self
             .shared
@@ -755,6 +807,7 @@ impl NodeInner {
         }
 
         self.shared.runtime.remove_container(&container_id).await?;
+        state.inner.container_id_to_worker_name.remove(container_id);
 
         let mut event = WorkerEvent::default();
         event.set_worker_name(worker.spec.name());
@@ -787,11 +840,7 @@ impl NodeInner {
         // If the timer id matches the one in the current Stopped state, then we'll send
         // a SIGKILL
 
-        let worker = match state
-            .workers
-            .iter_mut()
-            .find(|t| t.spec.name() == worker_name)
-        {
+        let worker = match state.workers.get_mut(worker_name) {
             Some(t) => t,
             None => {
                 // Most likely a race condition with the timer event being processed
@@ -821,7 +870,9 @@ impl NodeInner {
         // We no longer need to be fetching the blob.
         state.inner.blob_fetchers.remove(blob_id);
 
-        for worker in &mut state.workers {
+        let _ = self.shared.blob_change_channel.0.try_send(());
+
+        for worker in state.workers.values_mut() {
             if let WorkerState::Pending {
                 missing_requirements,
             } = &mut worker.state
@@ -843,11 +894,7 @@ impl NodeInner {
         worker_name: &str,
         state: &mut NodeState,
     ) -> Result<()> {
-        let worker = match state
-            .workers
-            .iter_mut()
-            .find(|t| t.spec.name() == worker_name)
-        {
+        let worker = match state.workers.get_mut(worker_name) {
             Some(t) => t,
             None => {
                 // Most likely a race condition with the timer event being processed
@@ -877,11 +924,7 @@ impl NodeInner {
         event_timer_id: usize,
         state: &mut NodeState,
     ) -> Result<()> {
-        let worker = match state
-            .workers
-            .iter_mut()
-            .find(|t| t.spec.name() == worker_name)
-        {
+        let worker = match state.workers.get_mut(worker_name) {
             Some(t) => t,
             None => {
                 // Most likely a race condition with the timer event being processed
@@ -912,7 +955,7 @@ impl NodeInner {
     async fn list_workers_impl(&self) -> Result<ListWorkersResponse> {
         let state = self.shared.state.lock().await?.read_exclusive();
         let mut out = ListWorkersResponse::default();
-        for worker in &state.workers {
+        for worker in state.workers.values() {
             let mut proto = WorkerProto::default();
             proto.set_spec(worker.spec.clone());
             proto.set_revision(worker.revision);
@@ -944,6 +987,8 @@ impl NodeInner {
 
             out.add_workers(proto);
         }
+
+        out.workers_mut().sort_by(|a, b| a.spec().name().cmp(b.spec().name()));
 
         Ok(out)
     }
@@ -1187,6 +1232,7 @@ impl NodeInner {
                     let blob_lease = match self.shared.blobs.read_lease(blob_id.as_str()) {
                         Ok(v) => v,
                         Err(ReadBlobError::BeingWritten) | Err(ReadBlobError::NotFound) => {
+                            // TODO: Eventually get rid of this and rely on the replication loop.
                             self.start_fetching_blob(state_inner, blob_id.as_str());
                             missing_requirements.blobs.insert(blob_id.clone());
                             continue;
@@ -1251,6 +1297,10 @@ impl NodeInner {
                         // Only the node can write to the directory and only the container user can
                         // read from it.
                         let mut perms = file::metadata(&path).await?.permissions();
+                        // ISGID will make files created in the directory have the same group id
+                        // as the directory.
+                        // TODO: Explicitly have the FileCredentialsManager make files with these
+                        // settings. Currently we depend on the process wide umask.
                         perms.set_mode(0o750 | libc::S_ISGID);
                         file::set_permissions(&path, perms).await?;
                     }
@@ -1324,10 +1374,10 @@ impl NodeInner {
                             }
 
                             num_mounted += 1;
-                            break;
                         }
                     }
 
+                    // TODO: Compare against a dynamically requested amount.
                     if num_mounted == 0 {
                         return Err(rpc::Status::invalid_argument(
                             "Insufficient number of USB devices available",
@@ -1557,10 +1607,11 @@ impl NodeInner {
         let blob_meta = query_one!(db, BundleBlobMetadataTable, "spec.id = ?", blob_id)
             .ok_or_else(|| err_msg("No such blob"))?;
 
-        let uploaded_replicas = blob_meta
-            .replicas()
-            .iter()
-            .filter(|replica| replica.uploaded())
+        let blob_replicas = query!(db, BundleBlobReplicaTable, "blob_id = ?", blob_id);
+
+        let uploaded_replicas = blob_replicas
+            .into_iter()
+            .filter(|replica| replica.uploaded() && replica.node_id() != self.shared.id)
             .collect::<Vec<_>>();
 
         if uploaded_replicas.is_empty() {
@@ -1735,8 +1786,7 @@ impl NodeInner {
     ) -> Result<()> {
         let existing_worker = state
             .workers
-            .iter_mut()
-            .find(|t| t.spec.name() == request.spec().name());
+            .get_mut(request.spec().name());
 
         // If we were given a revision, we will skip the update if it hasn't changed.
         // But, always update if we were credentials to use.
@@ -1758,6 +1808,7 @@ impl NodeInner {
         // TODO: Eventually delete non-persistent workers.
         // TODO: Once a worker has failed, don't restart it on node re-boots.
         let mut meta = WorkerMetadata::default();
+        // NOTE: Credentials aren't saved to the db.
         meta.set_spec(request.spec().clone());
         meta.set_revision(request.revision());
         self.shared
@@ -1780,7 +1831,8 @@ impl NodeInner {
                 worker.pending_update = Some(request.clone());
                 worker
             } else {
-                state.workers.push(Worker {
+                state.workers
+                .insert(request.spec().name().to_string(), Worker {
                     spec: request.spec().clone(),
                     revision: request.revision(),
                     container_id: None,
@@ -1800,7 +1852,8 @@ impl NodeInner {
                         max_num_attempts: 8,
                     }),
                 });
-                state.workers.last_mut().unwrap()
+
+                state.workers.get_mut(request.spec().name()).unwrap()
             }
         };
 
@@ -1839,7 +1892,7 @@ impl NodeInner {
     ) -> Result<()> {
         // NOTE: We can't return a not found error right now as this is used in the
         // node_registration code even when we don't know if the worker is present.
-        let worker = match state.workers.iter_mut().find(|t| t.spec.name() == name) {
+        let worker = match state.workers.get_mut(name) {
             Some(worker) => worker,
             None => {
                 return Ok(());
@@ -1890,6 +1943,31 @@ impl NodeInner {
         }
 
         Ok(())
+    }
+
+    /// Removes a worker if it is already done, not running, and not starting.
+    /// Else does nothing.
+    ///
+    /// NOT CANCEL SAFE
+    async fn remove_worker(&self, name: &str) -> Result<()> {
+        lock_async!(state <= self.shared.state.lock().await?, {
+            if let Some(entry) = state.workers.get(name) {
+                if let WorkerState::Done = &entry.state {
+                    // Good
+                } else {
+                    return Ok(());
+                }
+            } else {
+                return Ok(());
+            }
+            
+            if let Some(creds) = &self.shared.credentials {
+                creds.remove_worker(name).await?;
+            }
+
+            state.workers.remove(name);
+            Ok(())
+        })
     }
 
     fn current_system_timestamp() -> u64 {
@@ -1996,9 +2074,7 @@ impl ContainerNodeService for NodeInner {
 
                 let state = self.shared.state.lock().await?.read_exclusive();
                 let worker = state
-                    .workers
-                    .iter()
-                    .find(|t| t.spec.name() == request.worker_name())
+                    .workers.get(request.worker_name())
                     .ok_or_else(|| {
                         Error::from(rpc::Status::not_found(format!(
                             "No worker found with name: {}",
@@ -2075,9 +2151,7 @@ impl ContainerNodeService for NodeInner {
             let container_id = {
                 let state = self.shared.state.lock().await?.read_exclusive();
                 let worker = state
-                    .workers
-                    .iter()
-                    .find(|t| t.spec.name() == input.worker_name())
+                    .workers.get(input.worker_name())
                     .ok_or_else(|| {
                         Error::from(rpc::Status::not_found(format!(
                             "No worker found with name: {}",

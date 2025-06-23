@@ -572,13 +572,19 @@ impl TransactionalDB {
         let client = TransactionalDBClient::create_local(channel, service).await;
 
         // TODO: Generalize this and instead use wait_for_ready() on the service.
+        let mut am_leader = false;
         for _ in 0..5000 {
             let status = client.current_status().await?;
             if status.role() == raft::proto::Status_Role::LEADER {
+                am_leader = true;
                 break;
             }
 
             executor::sleep(Duration::from_millis(1)).await?;
+        }
+
+        if !am_leader {
+            return Err(err_msg("Created local db but not yet leader."))
         }
 
         Ok(client)

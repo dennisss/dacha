@@ -527,8 +527,26 @@ impl FileCredentialsLoader {
     async fn continously_reload(shared: Arc<Shared>, mut watcher: LocalFileWatcher) -> Result<()> {
         loop {
             watcher.wait().await.map_err(|e| format_err!("While waiting for changes: {}", e))?;
-            executor::sleep(LOADER_BATCHING_DELAY).await?;
-            // TODO: Mark any recent changes in the watcher as don (read the watcher fd with 'no wait' read flags).
+
+            // Capture all events within the batching window after the first event.
+            let batch_timeout = Instant::now() + LOADER_BATCHING_DELAY;
+            loop {
+                let now = Instant::now();
+                let remaining = match batch_timeout.checked_duration_since(now) {
+                    Some(v) => core::cmp::max(v, Duration::from_millis(2)),
+                    None => break
+                };
+
+                let res = match executor::timeout(remaining, watcher.wait()).await {
+                    Ok(v) => v,
+                    Err(_) => {
+                        // Timeout
+                        break;
+                    }
+                };
+
+                res?;
+            }
 
             let (c, s) = Self::load_once(&shared.dir).await?;
             shared.client_options.set(Arc::new(c));

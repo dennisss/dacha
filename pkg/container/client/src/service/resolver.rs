@@ -145,63 +145,29 @@ impl ServiceResolver {
         }
     }
 
+    /// Performs a single round of finding the current values of all the endpoints.
     async fn background_thread_impl(shared: Arc<Shared>) -> Result<()> {
-        // TODO: Ignore timed out nodes
-        // TODO: Ignore non-healthy workers.
+        let stub = ServiceResolverStub::new(shared.meta_client.inner().channel());
 
-        let db = shared.meta_client.db();
+        let ctx = rpc::ClientRequestContext::default();
+
+        let mut request = ServiceResolverRequest::default();
+        request.set_address(shared.service_address.to_string());
+
+        let res = stub.Resolve(&ctx, &request).await.result?;
 
         let mut endpoints = vec![];
 
-        match &shared.service_address.name.entity() {
-            ServiceEntity::Node { id } => {
-                let address = Self::get_node_addr(&shared, *id).await?;
-                endpoints.push(http::ResolvedEndpoint {
-                    name: String::new(),
-                    address,
-                    authority: http::uri::Authority {
-                        user: None,
-                        host: http::uri::Host::Name(shared.service_address.name.to_string()),
-                        port: None,
-                    },
-                });
-            }
-            ServiceEntity::Job { job_name } => {
-                let workers = query!(
-                    db,
-                    WorkerMetadataTable,
-                    "STARTS_WITH(spec.name, ?)",
-                    format!("{}.", job_name)
-                );
-
-                for worker in workers {
-                    if let Some(endpoint) = Self::get_worker_endpoint(&shared, &worker).await? {
-                        endpoints.push(endpoint);
-                    }
-                }
-            }
-            ServiceEntity::Worker {
-                job_name,
-                worker_id,
-            } => {
-                let worker = query_one!(
-                    db,
-                    WorkerMetadataTable,
-                    "spec.name = ?",
-                    format!("{}.{}", job_name, worker_id)
-                )
-                .ok_or_else(|| err_msg("Failed to find worker"))?;
-
-                // TODO: Must check worker state metadata.
-
-                if let Some(endpoint) = Self::get_worker_endpoint(&shared, &worker).await? {
-                    endpoints.push(endpoint);
-                }
-            }
-            _ => {
-                // This should be caught earlier by the 'maybe_reachable' check.
-                return Err(format_err!("Can't connect to service"));
-            }
+        for proto in res.endpoints() {
+            endpoints.push(http::ResolvedEndpoint {
+                name: proto.name().to_string(),
+                address: proto.address().parse()?,
+                authority: http::uri::Authority {
+                    user: None,
+                    host: http::uri::Host::Name(proto.hostname().to_string()),
+                    port: None,
+                },
+            });
         }
 
         lock!(state <= shared.state.lock().await?, {
@@ -222,75 +188,6 @@ impl ServiceResolver {
         });
 
         Ok(())
-    }
-
-    async fn get_worker_endpoint(
-        shared: &Shared,
-        worker: &WorkerMetadata,
-    ) -> Result<Option<http::ResolvedEndpoint>> {
-        // NOTE: Once we run in a txn, this should be cacheable if there are multiple
-        // workers on one node.
-        let node_address = Self::get_node_addr(shared, worker.assigned_node()).await?;
-
-        // TOOD: Must restrict to only healthy workers (so we must look at
-        // WorkerStateMetadata).
-
-        let mut port = None;
-        for port_spec in worker.spec().ports() {
-            if let Some(port_name) = &shared.service_address.port {
-                if port_name != port_spec.name() {
-                    continue;
-                }
-            }
-
-            // TODO: Can I dynamically determine whether to use TLS here?
-
-            port = Some(port_spec.number());
-        }
-
-        // TODO: Log an error in this case?
-        let port = match port {
-            Some(v) => v,
-            None => {
-                return Ok(None);
-            }
-        };
-
-        let address = SocketAddr::new(node_address.ip().clone(), port as u16);
-
-        let host_name =
-            ServiceName::for_worker(&shared.service_address.name.zone(), worker.spec().name())?
-                .to_string();
-
-        Ok(Some(ResolvedEndpoint {
-            // TODO: Consistently have names.
-            name: String::new(),
-            address,
-            authority: http::uri::Authority {
-                user: None,
-                host: http::uri::Host::Name(host_name),
-                port: None,
-            },
-        }))
-    }
-
-    async fn get_node_addr(shared: &Shared, id: u64) -> Result<SocketAddr> {
-        let db = shared.meta_client.db();
-
-        let node_meta = query_one!(db, NodeMetadataTable, "id = ?", id)
-            .ok_or_else(|| err_msg("Missing node"))?;
-
-        let authority = node_meta.address().parse::<http::uri::Authority>()?;
-        let ip = match &authority.host {
-            http::uri::Host::IP(ip) => ip.clone(),
-            _ => {
-                return Err(err_msg("NodeMetadata doesn't contain an ip address"));
-            }
-        };
-
-        let port = authority.port.ok_or_else(|| err_msg("No port in route"))?;
-
-        Ok(SocketAddr::new(ip, port))
     }
 }
 

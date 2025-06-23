@@ -16,7 +16,7 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         {
             path: "/rpc/cluster.Manager"
             is_directory: true
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         }
     ]
 "#;

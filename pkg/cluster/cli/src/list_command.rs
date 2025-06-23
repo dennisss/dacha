@@ -8,6 +8,7 @@ use cluster_client::id::{entity_id_to_string, entity_id_from_string};
 use cluster_client::service::address::ServiceName;
 use base_units::ByteCount;
 use terminal::TerminalTableBuilder;
+use db_table::query;
 
 use crate::utils::{connect_to_node_id, NodeStubs};
 
@@ -171,9 +172,20 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
             table.row().col("ID").col("SIZE").col("REPLICAS");
 
             for blob in blobs {
-                let mut repls = blob.replicas()
+                let blob_replicas = query!(db, BundleBlobReplicaTable, "blob_id = ?", blob.spec().id());
+
+                let mut repls = blob_replicas
                     .iter()
-                    .map(|r| entity_id_to_string(r.node_id()).unwrap())
+                    .map(|r| {
+                        
+                        let id = entity_id_to_string(r.node_id()).unwrap();
+                        
+                        if r.uploaded() {
+                            id
+                        } else {
+                            format!("[{}]", id)
+                        }
+                    })
                     .collect::<Vec<String>>()
                     .join(",");
 

@@ -50,15 +50,15 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         # TODO: Eventually switch to requiring a 'JWT' from the manager.
         {
             path: "/rpc/cluster.BundleBlobStore/Upload"
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         },
         {
             path: "/rpc/cluster.ContainerNode/GetEvents"
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         },
         {
             path: "/rpc/cluster.ContainerNode/GetLogs"
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         },
         {
             path: "/rpc/cluster.ContainerNode/ReplicateBlob"
@@ -66,7 +66,7 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         },
         {
             path: "/rpc/cluster.ContainerNode/WriteInput"
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         },
         # Only used by root during bootstrapping
         {
@@ -75,7 +75,7 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         },
         {
             path: "/rpc/cluster.ContainerNode/ListWorkers"
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         },
         {
             path: "/rpc/cluster.ContainerNode/Identity"

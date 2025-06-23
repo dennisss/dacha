@@ -43,12 +43,12 @@ const DEFAULT_SERVICE_ACL_PROTO: &'static str = r#"
         {
             path: "/profilez"
             is_directory: false
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         },
         {
             path: "/server"
             is_directory: true
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         }
     ]
 "#;
@@ -76,35 +76,15 @@ impl ClusterServer {
         protobuf::text::parse_text_proto(DEFAULT_SERVICE_ACL_PROTO, &mut full_acl)?;
         full_acl.merge_from(&acl)?;
 
-        let mut inst = Self::new_internal(
-            port,
-            full_acl,
-            client.zone(),
-            Some(client.db().clone()),
-            client.creds().as_ref().map(|c| c.server.clone()),
-        )?;
-
-        Ok(inst)
-    }
-
-    /// NOTE: This constructor is just used in environments where we can't
-    /// depend on the metastore (e.g. in the metastore).
-    pub fn new_internal(
-        port: u16,
-        acl: ServiceACLProto,
-        zone: &str,
-        db: Option<Arc<ProtobufDB>>,
-        tls_options: Option<crypto::tls::ServerOptionsContainer>,
-    ) -> Result<Self> {
         let mut rpc_handler = rpc::Http2RequestHandler::new();
         rpc_handler.set_base_path("/rpc");
 
         Ok(Self {
-            zone: zone.to_string(),
+            zone: client.zone().to_string(),
             port,
-            tls_options,
-            db,
-            acl,
+            tls_options: client.creds().as_ref().map(|c| c.server.clone()),
+            db: Some(client.db().clone()),
+            acl: full_acl,
             router: PathRouter::default(),
             rpc_handler,
         })
@@ -127,7 +107,11 @@ impl ClusterServer {
     }
 
     pub fn start(mut self) -> Result<Arc<dyn ServiceResource>> {
-        self.add_request_handler("/assets", true, web::assets_handler())?;
+        // No dependency on having assets to run a server.
+        // TODO: Ideally make this more explicit optin rather than silently exposing this directory.
+        if file::try_project_dir().is_ok() {
+            self.add_request_handler("/assets", true, web::assets_handler())?;
+        }
         self.add_request_handler("/favicon.ico", false, http::HttpFn(not_found_handle_request))?;
         
         self.router.add_route(

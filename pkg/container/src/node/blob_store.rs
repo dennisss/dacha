@@ -144,6 +144,23 @@ impl BundleBlobStore {
         })
     }
 
+    /// Enumerates all present blobs on this server.
+    pub fn list(&self) -> Result<BlobListResponse> {
+        let mut res = BlobListResponse::default();
+
+        self.shared.state.apply(|state| {
+            for entry in state.blobs.values() {
+                if !entry.exists {
+                    continue;
+                }
+
+                res.add_blob(entry.spec.clone());
+            }
+        })?;
+
+        Ok(res)
+    }
+
     /// Looks up a blob in storage and acquires a reader lock/lease on it.
     /// While the returned lease is alive, the caller can read the contents of
     /// the blob.
@@ -517,16 +534,7 @@ impl BundleBlobStoreService for BundleBlobStore {
         request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
         response: &mut rpc::ServerResponse<BlobListResponse>,
     ) -> Result<()> {
-        self.shared.state.apply(|state| {
-            for entry in state.blobs.values() {
-                if !entry.exists {
-                    continue;
-                }
-
-                response.value.add_blob(entry.spec.clone());
-            }
-        })?;
-
+        response.value = self.list()?;
         Ok(())
     }
 

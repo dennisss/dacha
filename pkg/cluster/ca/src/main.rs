@@ -39,7 +39,7 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         {
             path: "/rpc/cluster.UserAuthentication/CreateUser"
             is_directory: false
-            principals: ["group:cluster-admins"]
+            principals: ["group:cluster-owners"]
         }
     ]
 "#;

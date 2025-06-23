@@ -228,20 +228,17 @@ impl KeyPrefixACLProcessor {
             )
             .await?
             {
-                /*
-                println!("Known keys: {:?}", state.acls);
-
-                println!(
-                    "Reject ({} \"{}\"): Allowed: {}",
+                eprintln!(
+                    "Reject ({} \"{}\") from {:?}: Allowed: {}",
                     if writing { "WRITE" } else { "READ" },
                     format_bytes(prefix),
+                    conn.peer,
                     allowed_principles
                         .iter()
                         .map(|v| v.to_string())
                         .collect::<Vec<_>>()
                         .join(",")
                 );
-                */
 
                 return Err(rpc::Status::permission_denied("Access denied to key range").into());
             }

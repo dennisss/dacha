@@ -85,6 +85,10 @@ message NodeSchedulingMetadata {
 
     // NOTE: This is updated by the Manager job.
     repeated uint32 allocated_ports = 3 [(dacha.unordered_set) = true];
+
+    // If true, no new workers or blobs will be added to this node.
+    // Existing workers will continue to run.
+    bool cordoned = 4;
 }
 
 message JobMetadata {
@@ -178,19 +182,24 @@ message BundleBlobMetadata {
     // TODO: Need to make sure we verify hashes when pulling blobs from potentially insecure servers. 
     builder.BundleBlobSpec spec = 1;
 
-    // List of the ids of all nodes which are known to have this blob.
-    repeated BundleBlobReplica replicas = 2;
-
     // Last time this blob was referenced in some registered job.
     // If this is empty, then it is actively in use.
     google.protobuf.Timestamp last_used = 3;
+
+    reserved 2;
 }
 
+// Entry declaring that the state of replicating a blob to a certain node.
 message BundleBlobReplica {
+    string blob_id = 4;
+
     fixed64 node_id = 1;
 
+    // If true, this node has a full copy of this blob.
+    // This is set by the node when it has fully stored a blob (or if it was lost).
     bool uploaded = 2;
 
+    // Last time there was an update to this proto.
     google.protobuf.Timestamp timestamp = 3;
 }
 

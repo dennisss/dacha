@@ -91,6 +91,18 @@ impl ServiceAddress {
 
         Ok(ServiceAddress { name, port })
     }
+
+    pub fn to_string(&self) -> String {
+        let port = match &self.port {
+            Some(p) => format!("_{}.", p),
+            None => String::new()
+        };
+
+        let name = self.name.to_string();
+
+        format!("{}{}", port, name)
+    }
+    
 }
 
 impl ServiceName {

@@ -278,6 +278,8 @@ impl CertificateRegistry {
     ///
     /// TODO: If the user passes in a certificate already in the registry,
     /// deduplicate the memory pointers between them.
+    /// 
+    /// TODO: Make sure this just verifies all the certificulate times at a single point int time (or at least need some more consistent rules for how that is handled.)
     pub fn append(&mut self, certs: &[Arc<Certificate>], trusted: bool) -> Result<()> {
         let mut remaining = certs.to_vec();
         while remaining.len() > 0 {
@@ -315,6 +317,7 @@ impl CertificateRegistry {
                 self.insert(Arc::new(verified_cert))?;
             }
 
+            // TODO: We hit this if the user gives us a certiicate with an unknown parent.
             if !changed {
                 return Err(err_msg(
                     "Appending certificates with unknown parent in chain.",

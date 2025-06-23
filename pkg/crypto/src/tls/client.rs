@@ -208,6 +208,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 &self.certificate_registry,
             )
             .await?;
+        self.summary.certificate = Some(cert);
 
         let verify_data_server =
             key_schedule.verify_data_server(&self.executor.handshake_transcript);

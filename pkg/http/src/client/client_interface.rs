@@ -96,6 +96,14 @@ impl AffinityKeyCache {
 pub struct ClientResponseContext {
     pub selected_endpoint: Option<ResolvedEndpoint>,
     // TODO: Also include the selected protocol.
+
+    /// Connection information for the final/current attempt to send the request.
+    pub connection_context: Option<Arc<ClientConnectionContext>>
+}
+
+#[derive(Clone, Default)]
+pub struct ClientConnectionContext {
+    pub tls: Option<crypto::tls::HandshakeSummary>,
 }
 
 #[async_trait]
