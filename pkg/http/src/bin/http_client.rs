@@ -156,10 +156,10 @@ async fn main() -> Result<()> {
            .await?
            .into();
 
-       tls_options.certificate_auth = Some(crypto::tls::CertificateAuthenticationOptions::create(
+       tls_options.certificate_auth = crypto::tls::CertificateAuthenticationOptions::create(
            certificate_file,
            private_key_file,
-       )?);
+       )?;
     */
 
     let client = http::SimpleClient::new(SimpleClientOptions::default());

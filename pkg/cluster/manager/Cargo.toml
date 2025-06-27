@@ -27,6 +27,9 @@ file = { path = "../../file" }
 sys = { path = "../../sys" }
 container_proto = { path = "../../container/proto" }
 
+[dev-dependencies]
+db_txn = { path = "../../db/txn" }
+
 [features]
 default = ["std"]
 std = ["alloc"]

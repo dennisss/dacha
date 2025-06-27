@@ -53,10 +53,11 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         },
 
         # Read-only
+        # We broadcast this data via multicast so it isn't secret.
         {
             path: "/rpc/raft.Discovery/Read"
             is_directory: false,
-            principals: ["authenticated"]
+            principals: ["unauthenticated"]
         },
         # Does its own ACL checks.
         # Must be accessible by arbitrary clients to resolve services needed for login.

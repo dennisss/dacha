@@ -213,7 +213,9 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         }
 
         // Send the change to watchers.
-        // TODO: This can be parrallelized with future writes.
+        // TODO: This can be pipelined with future writes.
+        // TODO: Only convert to WatchResponse on demand.
+        // TODO: Verify we can't skip data due to restoring from newer snapshots.
         let mut change = WatchResponse::default();
         for res in write.iter()? {
             let write = res?;

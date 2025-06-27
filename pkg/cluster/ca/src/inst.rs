@@ -31,6 +31,7 @@ pub struct CertificateAuthorityImpl {
 
 struct Credentials {
     certificate: Arc<crypto::x509::Certificate>,
+    certificate_bytes: Bytes,
     private_key: Arc<crypto::x509::PrivateKey>,
 }
 
@@ -68,11 +69,13 @@ impl CertificateAuthorityImpl {
         )
         .ok_or_else(|| err_msg("Can't find the certificate id"))?;
 
-        let certificate = Arc::new(crypto::x509::Certificate::read(certs[0].data().into())?);
+        let certificate_bytes: Bytes = certs[0].data().into();
+        let certificate = Arc::new(crypto::x509::Certificate::read(certificate_bytes.clone())?);
         let private_key = Arc::new(crypto::x509::PrivateKey::from_der(key.data().into())?);
 
         Ok(Credentials {
             certificate,
+            certificate_bytes,
             private_key,
         })
     }
@@ -203,6 +206,16 @@ impl CertificateAuthorityImpl {
         // NOTE: We assume that the CA is using a root certificate and doesn't need to
         // be included in the intermediate cert chain.
 
+        Ok(res)
+    }
+
+    async fn get_certificate_registry_impl(
+        &self,
+        request: &GetCertificateRegistryRequest,
+        context: &rpc::ServerRequestContext,
+    ) -> Result<GetCertificateRegistryResponse> {
+        let mut res = GetCertificateRegistryResponse::default();
+        res.add_registry(self.creds.certificate_bytes.as_ref().into());
         Ok(res)
     }
 
@@ -357,6 +370,17 @@ impl CertificateAuthorityService for CertificateAuthorityImpl {
     ) -> Result<()> {
         response.value = self
             .sign_certificate_impl(&request.value, &request.context)
+            .await?;
+        Ok(())
+    }
+
+    async fn GetCertificateRegistry(
+        &self,
+        request: rpc::ServerRequest<GetCertificateRegistryRequest>,
+        response: &mut rpc::ServerResponse<GetCertificateRegistryResponse>,
+    ) -> Result<()> {
+        response.value = self
+            .get_certificate_registry_impl(&request.value, &request.context)
             .await?;
         Ok(())
     }

@@ -14,17 +14,21 @@ use cluster_client::meta::{
     constants::*, BundleBlobMetadataTable, NodeMetadataTable, WorkerMetadataTable,
     BundleBlobReplicaTable,
     WorkerStateMetadataTable,
+    NodeRevisionTable,
 };
 use cluster_client::service::address::{ServiceAddress, ServiceEntity, ServiceName};
 use cluster_client::service::create_rpc_channel;
 use common::errors::*;
 use crypto::random::RngExt;
 use db_table::db::ProtobufDB;
-use db_table::{query, query_one};
+use db_table::db::ProtobufDBTransaction;
+use db_table::{query, query_one, raw_query};
+use db_table::key_utils::single_key_range;
 use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::AsyncMutex;
 use executor::sync::Eventually;
+use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup, TaskResource};
 use executor::{channel, lock_async};
 use file::{LocalPath, LocalPathBuf};
 use net::backoff::*;
@@ -78,10 +82,12 @@ pub struct NodeContext {
     pub local_address: String,
 }
 
-#[derive(Clone)]
 pub struct Node {
     inner: NodeInner,
+    resources: ServiceResourceGroup
 }
+
+impl_resource_passthrough!(Node, resources);
 
 /// Split out from Node to make the service implementations private. Users
 /// should add RPC services with add_services().
@@ -349,18 +355,23 @@ impl Node {
             }
         }
 
+        // TODO: Implement shutdown for this.
+        let resources = ServiceResourceGroup::new("cluster::Node");
+        
+        // TODO: Ensure this remains an optional dependency since we don't want
+        // to depend on the metastore for the node to live.
+        resources.register_dependency(inst.shared.meta_client.clone()).await;
+
+        resources.spawn_interruptable("NodeInner::run_impl", inst.clone().run_impl()).await;
+
         // TODO: Ideally this should run after the server is started so that we can mark
         // ourselves as available at the right time.
 
-        Ok(Self { inner: inst })
+        Ok(Self { resources, inner: inst })
     }
 
     pub fn meta_client(&self) -> Arc<ClusterMetaClient> {
         self.inner.shared.meta_client.clone()
-    }
-    
-    pub fn run(&self) -> impl std::future::Future<Output = Result<()>> {
-        self.clone().inner.run_impl()
     }
 
     pub fn add_services(&self, rpc_server: &mut rpc::Http2RequestHandler) -> Result<()> {
@@ -482,9 +493,33 @@ impl NodeInner {
 
         task_bundle.add("run_blob_loop", self.clone().run_blob_loop());
 
+        task_bundle.add("run_watcher_loop", self.clone().run_watcher_loop());
+
         task_bundle.add("run_reconcile_loop", self.clone().run_reconcile_loop());
 
         task_bundle.join().await
+    }
+
+    /// Watches for changes related to the node in the metastore in order to trigger
+    /// immediate reconciliation.
+    ///
+    /// TODO: This needs its own separate backoff since it is sensitive to the metastore going down or switching leaders
+    ///
+    /// CANCEL SAFE
+    async fn run_watcher_loop(self) -> Result<()> {
+        let q = raw_query!(NodeRevisionTable, "node_id = ?", self.shared.id);
+        let key = ProtobufDBTransaction::primary_key_prefix::<NodeRevisionTable>(&q)?;
+        let (start_key, end_key) = single_key_range(&key);
+
+        let mut watcher = self.shared.meta_client.inner().watch(&start_key, &end_key).await?;
+
+        // TODO: Trigger initial run here.
+
+        loop {
+            let _ = watcher.recv().await?;
+            println!("Received node revision change notification...");
+            let _ = self.shared.state_change_channel.0.try_send(());
+        }
     }
 
     async fn update_node_metadata(&self) -> Result<()> {
@@ -517,6 +552,8 @@ impl NodeInner {
     // - This mainly bumps 'last_seen' to keep the node alive.
     // - May also trigger push to volatile configs like labels and the connected
     //   devices list.
+    //
+    // CANCEL SAFE
     async fn run_heartbeat_loop(self) -> Result<()> {
         // Stop doing heartbeats this until we have a more efficient node heartbeat
         // mechansim that doesn't require writing to disc in the metastore.
@@ -539,6 +576,7 @@ impl NodeInner {
         loop {
             self.reconcile_blobs().await?;
 
+            // TODO: Add jitter.
             executor::timeout(
                 NODE_HEARTBEAT_INTERVAL,
                 self.shared.blob_change_channel.1.recv(),
@@ -590,6 +628,7 @@ impl NodeInner {
         loop {
             self.reconcile_workers().await?;
 
+            // TODO: Add jitter.
             executor::timeout(
                 NODE_HEARTBEAT_INTERVAL,
                 self.shared.state_change_channel.1.recv(),
@@ -650,6 +689,10 @@ impl NodeInner {
             existing_workers.insert(worker.spec().name(), worker);
         }
 
+        let mut num_changes = 0;
+        let now = SystemTime::now();
+        let mut oldest_change = SystemTime::now();
+
         for worker in intended_workers {
             let (current_revision, current_state) =
                 if let Some(existing_worker) = existing_workers.remove(worker.spec().name()) {
@@ -685,6 +728,8 @@ impl NodeInner {
                 state_meta.set_worker_name(worker.spec().name());
                 state_meta.set_state(current_state);
                 state_meta.set_worker_revision(current_revision);
+
+                // TODO: Batch the updates for multiple workers
                 db.insert::<WorkerStateMetadataTable>(&state_meta).await?;
             }
 
@@ -696,7 +741,15 @@ impl NodeInner {
                 let mut req = StartWorkerRequest::default();
                 req.set_spec(worker.spec().clone());
                 req.set_revision(worker.revision());
-                self.start_worker(&req).await?;
+                
+                if self.start_worker(&req).await? {
+                    num_changes += 1;
+                    if worker.has_last_updated() {
+                        oldest_change = core::cmp::min(oldest_change, SystemTime::from(worker.last_updated()));
+                    } else {
+                        eprintln!("WorkerMetadata missing update time");
+                    }
+                }
             } else {
                 // Worker is being drained, so fully stop it.
 
@@ -722,9 +775,17 @@ impl NodeInner {
             }
         }
 
+        // Track how long it takes for changes to the metastore to propagate to the node.
+        if num_changes > 0 {
+            let dur = SystemTime::now().duration_since(oldest_change).unwrap_or(Duration::ZERO);
+            println!("Started/updated {} workers with {:?} latency", num_changes, dur);
+        }
+
         Ok(())
     }
 
+    // Main event loop handling changes to the node.
+    // Failures in this function imply that the node is in a bad state and should stop.
     async fn run_event_loop(self) -> Result<()> {
         loop {
             let event = self.shared.event_channel.1.recv().await?;
@@ -1749,7 +1810,12 @@ impl NodeInner {
     /*
     TODO: THis can fail with '[ESRCH] No such process'
      */
-    pub async fn start_worker(&self, request: &StartWorkerRequest) -> Result<()> {
+    /// Returns true if the worker was changed.
+    ///
+    /// CANCEL SAFE
+    pub async fn start_worker(&self, request: &StartWorkerRequest) -> Result<bool> {
+        // TODO: Need to consolidate this with the manager validation.
+        
         // Do some validation
         if request.spec().name().is_empty() {
             return Err(rpc::Status::invalid_argument("Invalid worker name").into());
@@ -1773,17 +1839,23 @@ impl NodeInner {
             }
         }
 
-        lock_async!(state <= self.shared.state.lock().await?, {
-            self.start_worker_impl(request, &mut state).await
-        })
+        let request = request.clone();
+        let inst = self.clone();
+        executor::spawn(async move {
+            // TODO: Ensure any error from this is always logged.
+            lock_async!(state <= inst.shared.state.lock().await?, {
+                inst.start_worker_impl(&request, &mut state).await
+            })
+        }).join().await
     }
 
     /// ONLY CALL FROM 'Self::start_worker'
+    /// NOT CANCEL SAFE
     async fn start_worker_impl(
         &self,
         request: &StartWorkerRequest,
         state: &mut NodeState,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let existing_worker = state
             .workers
             .get_mut(request.spec().name());
@@ -1793,12 +1865,12 @@ impl NodeInner {
         if request.revision() != 0 && !request.has_credentials() {
             if let Some(worker) = &existing_worker {
                 if worker.revision == request.revision() {
-                    return Ok(());
+                    return Ok(false);
                 }
 
                 if let Some(pending_update) = &worker.pending_update {
                     if pending_update.revision() == request.revision() {
-                        return Ok(());
+                        return Ok(false);
                     }
                 }
             }
@@ -1874,14 +1946,20 @@ impl NodeInner {
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 
     /// TODO: Should we have this compare to the revision of the worker?
+    ///
+    /// NOT CANCEL SAFE
     pub async fn stop_worker(&self, name: &str, force_stop: bool) -> Result<()> {
-        lock_async!(state <= self.shared.state.lock().await?, {
-            self.stop_worker_impl(name, force_stop, &mut state).await
-        })
+        let name = name.to_string();
+        let this = self.clone();
+        executor::spawn(async move {
+            lock_async!(state <= this.shared.state.lock().await?, {
+                this.stop_worker_impl(&name, force_stop, &mut state).await
+            })
+        }).join().await
     }
 
     async fn stop_worker_impl(
@@ -1948,8 +2026,16 @@ impl NodeInner {
     /// Removes a worker if it is already done, not running, and not starting.
     /// Else does nothing.
     ///
-    /// NOT CANCEL SAFE
-    async fn remove_worker(&self, name: &str) -> Result<()> {
+    /// CANCEL SAFE
+    pub async fn remove_worker(&self, name: &str) -> Result<()> {
+        let name = name.to_string();
+        let this = self.clone();
+        executor::spawn(async move {
+            this.remove_worker_impl(&name).await
+        }).join().await
+    }
+
+    async fn remove_worker_impl(&self, name: &str) -> Result<()> {
         lock_async!(state <= self.shared.state.lock().await?, {
             if let Some(entry) = state.workers.get(name) {
                 if let WorkerState::Done = &entry.state {
@@ -2037,7 +2123,8 @@ impl ContainerNodeService for NodeInner {
         // TODO: Instead send the request to the event loop thread to perform as any
         // starting errors should kill the runtime as we will entire an invalid state.
 
-        self.start_worker(&request.value).await
+        self.start_worker(&request.value).await?;
+        Ok(())
     }
 
     // TODO: When the Node closes, we should kill all workers that it has

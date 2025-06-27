@@ -132,9 +132,16 @@ enum TransactionErrorCode {
 
 
 message WatchRequest {
-    bytes key_prefix = 1;
+    KeyRange keys = 1;
+
+    // If true, only send a notification of changes in this key range.
+    // ('entries' will be empty in responses)
+    bool notification_only = 2;
 }
 
 message WatchResponse {
     repeated KeyValueEntryProto entries = 1;
+
+    // If true, one or more changes were skipped due to the watcher not reading writes fast enough.
+    bool skipped = 2;
 }

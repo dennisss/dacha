@@ -372,12 +372,13 @@ impl TransactionalDBClient {
     ///
     /// TODO: Need higher level logic in here for retrying watch failures on new
     /// leaders when this fails.
-    pub async fn watch(&self, key_prefix: &str) -> Result<WatchStream> {
+    pub async fn watch(&self, start_key: &[u8], end_key: &[u8]) -> Result<WatchStream> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
         let request_context = self.default_request_context()?;
 
         let mut request = WatchRequest::default();
-        request.set_key_prefix(key_prefix.as_bytes());
+        request.keys_mut().set_start_key(start_key);
+        request.keys_mut().set_end_key(end_key);
 
         let mut response = stub.Watch(&request_context, &request).await;
 
@@ -740,6 +741,56 @@ impl<'a> MetastoreTransaction<'a> {
 pub struct WatchStream {
     response: rpc::ClientStreamingResponse<WatchResponse>,
 }
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct KeyValueChange {
+    pub key: Bytes,
+
+    /// Will be None if the row was deleted. 
+    pub value: Option<Bytes>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct KeyValueStoreChange {
+    pub entries: Vec<KeyValueChange>,
+}
+
+impl WatchStream {
+    /// Receives a single bundle of changes from the database.
+    ///
+    /// This is guaranteed to return a set of changes representing a complete set of
+    /// database transactions. 1 or more transactions may have been merged together with
+    /// only the final values for each row being guaranteed to be given.
+    pub async fn recv(&mut self) -> Result<KeyValueStoreChange> {
+        let res = match self.response.recv().await {
+            Some(v) => v,
+            None => {
+                self.response.finish().await?;
+                return Err(err_msg("Watching stream terminated early"));
+            }
+        };
+
+        // TODO: Check for skipped flag.
+
+        let mut entries = vec![];
+
+        for proto in res.entries() {
+            entries.push(KeyValueChange {
+                key: proto.key().into(),
+                value: if proto.deleted() {
+                    None
+                } else {
+                    Some(proto.value().into())
+                }
+            });
+        }
+
+        Ok(KeyValueStoreChange {
+            entries
+        })
+    }
+}
+
 
 // TODO: Improve this (need to specifically check for Aborted errors).
 /// TODO: This needs to detect retryable/cancellation related errors.

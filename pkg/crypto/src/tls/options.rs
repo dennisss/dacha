@@ -46,9 +46,10 @@ pub struct ClientOptions {
     /// Settings for how to authenticate the certificate provided by the server.
     pub certificate_request: CertificateRequestOptions,
 
-    /// If present, the client will support authenticating using a certificate
-    /// in response to a server CertificateRequest.
-    pub certificate_auth: Option<CertificateAuthenticationOptions>,
+    /// If present and contains a non-empty list of identities, the client will
+    /// support authenticating using a certificate in response to a server
+    /// CertificateRequest.
+    pub certificate_auth: CertificateAuthenticationOptions,
 }
 
 impl ClientOptions {
@@ -110,7 +111,7 @@ impl ClientOptions {
                 trust_remote_certificate: false,
             },
 
-            certificate_auth: None,
+            certificate_auth: CertificateAuthenticationOptions { identities: vec![] },
         }
     }
 }

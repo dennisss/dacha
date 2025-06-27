@@ -91,11 +91,26 @@ message NodeSchedulingMetadata {
     bool cordoned = 4;
 }
 
+// Stores a node's 'revision' which is a monotonically increasing counter which changes whenever
+// something placed on the node (e.g. a blob or a worker) changes.
+//
+// A node can watch this table to determine if it needs to recheck all its workers/blobs.
+//
+// TODO: Eventually get rid of this once the db_table package supports watching queries.
+message NodeRevision {
+    fixed64 node_id = 1;
+
+    uint64 revision = 2;
+}
+
 message JobMetadata {
     JobSpec spec = 1;
 
     // Monotonic counter which is increased each time the WorkerSpec is changed.
     uint64 worker_revision = 2;
+
+    // Last time there was an update to this proto.
+    google.protobuf.Timestamp last_updated = 3;
 }
 
 // Defines the intent for a single instance of a Worker which we want to run on some specific node.
@@ -126,6 +141,9 @@ message WorkerMetadata {
     // When this is equal to the corresponding JobMetadata::worker_revision, this worker doesn't need
     // to be updated.
     uint64 revision = 4;
+
+    // Last time there was an update to this proto.
+    google.protobuf.Timestamp last_updated = 5;
 }
 
 // Current high level progress of running a worker specified in a corresponding WorkerMetadata entry.

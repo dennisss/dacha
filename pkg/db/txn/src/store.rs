@@ -287,35 +287,27 @@ impl TransactionalDB {
                 .await
                 .map_err(|e| rpc::Status::unavailable("Not currently the leader"))?;
 
-            let mut key_range = KeyRange::default();
-            let (s, e) = prefix_key_range(request.key_prefix());
-            key_range.set_start_key(s.as_ref());
-            key_range.set_end_key(e.as_ref());
-
             let snapshot = self.shared.state_machine.snapshot().await;
 
             processor
                 .before_read(
                     &snapshot,
-                    std::slice::from_ref(&key_range),
+                    std::slice::from_ref(request.keys()),
                     &request.context,
                 )
                 .await?;
         }
 
-        let registration = self
+        let mut registration = self
             .shared
             .state_machine
             .watchers()
-            .register(request.key_prefix())
+            .register(request.keys().start_key(), request.keys().end_key())
             .await;
 
         // Send head so that the client can properly syncronize the time at which
         // watching starts.
         response.send_head().await?;
-
-        // TODO: Must translate back to user keys.
-        // XXX: ^ Yes.
 
         // TODO: If we ever stop being the leader (or we believe that we are a follower
         // that is significantly out of sync, then we should perform a cancellation from

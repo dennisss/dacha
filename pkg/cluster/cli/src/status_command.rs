@@ -20,10 +20,10 @@ pub async fn run_status(cmd: StatusCommand) -> Result<()> {
     let client_opts = creds.client.get();
 
     println!("# Identity");
-    if client_opts.certificate_auth.as_ref().unwrap().identities.is_empty() {
+    if client_opts.certificate_auth.identities.is_empty() {
         println!("<Unauthenticated>");
     } else {
-        let cert = &client_opts.certificate_auth.as_ref().unwrap().identities[0].certificates[0];
+        let cert = &client_opts.certificate_auth.identities[0].certificates[0];
         let name = cert.subject().common_name()?.ok_or_else(|| err_msg("No common name in identity"))?;
 
         let not_after = SystemTime::from(cert.validity().not_after);

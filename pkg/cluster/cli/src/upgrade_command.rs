@@ -4,11 +4,27 @@ use common::errors::*;
 use crate::start_job_command::start_job_impl;
 use crate::system_jobs::*;
 use crate::utils::*;
+use crate::acl::*;
+use crate::bridge::*;
+
+/*
+TODO: Currently must be run with SUDO
+
+```
+CLUSTER_SUDO=yes cargo run --bin cluster_cli -- upgrade
+```
+
+*/
 
 #[derive(Args)]
 pub struct UpgradeCommand {}
 
 pub async fn run_upgrade(cmd: UpgradeCommand) -> Result<()> {
+
+    // // TODO: Also update the bridge if we have it setup (and re-apply any login scripts).
+    // setup_bridge(true).await?;
+    // return Ok(());
+
     let meta_client = ClusterMetaClient::create_from_environment().await?;
     let manager_stub = connect_to_manager(meta_client.clone()).await?;
     let request_context = rpc::ClientRequestContext::default();
@@ -21,25 +37,25 @@ pub async fn run_upgrade(cmd: UpgradeCommand) -> Result<()> {
     let manager_stub = cluster_client::ManagerStub::new(manager_channel);
     */
 
-    // TODO: get_ca_job
+    upgrade_acls(meta_client.zone(), &meta_client.db(), false).await?;
 
-    let meta_job_spec = get_metastore_job(meta_client.zone()).await?;
-    start_job_impl(
-        meta_client.clone(),
-        &manager_stub,
-        &meta_job_spec,
-        &request_context,
-    )
-    .await?;
+    let mut specs = vec![
+        get_ca_job().await?,
+        get_metastore_job(meta_client.zone()).await?,
+        get_manager_job().await?
+    ];
 
-    let manager_job_spec = get_manager_job().await?;
-    start_job_impl(
-        meta_client.clone(),
-        &manager_stub,
-        &manager_job_spec,
-        &request_context,
-    )
-    .await?;
+    for spec in specs {
+        start_job_impl(
+            meta_client.clone(),
+            &manager_stub,
+            &spec,
+            &request_context,
+        )
+        .await?;
+
+        // TODO: Wait until healthy.
+    }
 
     Ok(())
 }

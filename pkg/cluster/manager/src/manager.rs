@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use cluster_client::acl::principal::Principal;
 use cluster_client::meta::*;
@@ -94,6 +94,7 @@ pub struct Manager {
     zone: String,
     db: Arc<ProtobufDB>,
     rng: Arc<dyn SharedRng>,
+    log_timestamps: bool,
 }
 
 impl Manager {
@@ -102,6 +103,7 @@ impl Manager {
             zone: zone.into(),
             db,
             rng,
+            log_timestamps: true,
         }
     }
 
@@ -286,6 +288,11 @@ impl Manager {
 
         job_meta.set_spec(request.spec().clone());
 
+        if self.log_timestamps {
+            job_meta.set_last_updated(SystemTime::now());
+        }
+
+
         txn.put::<JobMetadataTable>(&job_meta).await?;
 
         Ok(())
@@ -402,6 +409,8 @@ impl Manager {
         - Eventually need
         */
 
+        let mut touched_node_ids = HashSet::new();
+
         // TODO: Any workers in a DONE state (or a RestartPolicy preventing from than
         // one )
 
@@ -477,10 +486,15 @@ impl Manager {
                 .await?;
             new_worker.set_spec(new_spec);
             new_worker.set_revision(job.worker_revision());
+            if self.log_timestamps {
+                new_worker.set_last_updated(SystemTime::now());
+            }
+
 
             // Update the worker
-            // TODO: Skip this if the worker hasn't changed at all.
             txn.put::<WorkerMetadataTable>(&new_worker).await?;
+
+            touched_node_ids.insert(new_worker.assigned_node());
 
             // Make the node a replica of all referenced blobs.
             // TODO: Eventually check ahead of time that there is space to fit the blobs.
@@ -590,6 +604,9 @@ impl Manager {
             // TODO: Eventually once the node has stopped the worker, we should delete the
             // WorkerMetadata entry for this.
             existing_worker.set_drain(true);
+            if self.log_timestamps {
+                existing_worker.set_last_updated(SystemTime::now());
+            }
 
             txn.put::<WorkerMetadataTable>(&existing_worker).await?;
 
@@ -607,6 +624,15 @@ impl Manager {
             if dirty {
                 txn.put::<NodeSchedulingMetadataTable>(&node.1).await?;
             }
+        }
+
+        // TODO: Think about whether or not this is good enough (not having a read lock on the old NodeRevision rows).
+        let read_index = txn.read_index().await;
+        for node_id in touched_node_ids {
+            let mut revision = NodeRevision::default();
+            revision.set_node_id(node_id);
+            revision.set_revision(read_index);
+            txn.put::<NodeRevisionTable>(&revision).await?;
         }
 
         txn.commit().await?;
@@ -858,6 +884,8 @@ impl Manager {
             txn.put::<BundleBlobMetadataTable>(&blob).await?;
         }
 
+        // TODO: Update NodeRevisionTable
+
         txn.commit().await?;
 
         Ok(())
@@ -924,7 +952,7 @@ impl ManagerService for Manager {
 
 #[cfg(test)]
 mod tests {
-    use datastore::meta::TestMetastore;
+    use db_txn::TestMetastore;
     use protobuf::text::ParseTextProto;
 
     use super::*;
@@ -964,11 +992,12 @@ mod tests {
         "#,
         )?;
 
-        let manager = Manager::new(
+        let mut manager = Manager::new(
             "testing",
             db.clone(),
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
+        manager.log_timestamps = false;
         manager.start_job_impl(&request).await?;
 
         let expected_workers = vec![WorkerMetadata::parse_text(
@@ -1060,11 +1089,12 @@ mod tests {
             "#,
         )?;
 
-        let manager = Manager::new(
+        let mut manager = Manager::new(
             "testing",
             db.clone(), // TODO: Always use an independent client interface?
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
+        manager.log_timestamps = false;
         manager.start_job_impl(&request).await?;
 
         let expected_workers = vec![
@@ -1357,11 +1387,12 @@ mod tests {
             "#,
         )?;
 
-        let manager = Manager::new(
+        let mut manager = Manager::new(
             "testing",
             db.clone(),
             Arc::new(crypto::random::ChaCha20RNG::new()), // Fixed seed
         );
+        manager.log_timestamps = false;
         manager.start_job_impl(&request).await?;
 
         let mut expected_workers = vec![

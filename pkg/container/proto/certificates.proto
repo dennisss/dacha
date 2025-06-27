@@ -51,6 +51,12 @@ service CertificateAuthority {
     //
     // TODO: Acquire a metastore lock for this.
     rpc SignCertificate (SignCertificateRequest) returns (SignCertificateResponse);
+
+    // Retrieves the current certificate registry (trusted top level CA certificates)
+    //
+    // Currently this is done via an RPC to expose this to unauthenticated clients
+    // that can't read the metastore.
+    rpc GetCertificateRegistry (GetCertificateRegistryRequest) returns (GetCertificateRegistryResponse);
 }
 
 message SignCertificateRequest {
@@ -61,6 +67,15 @@ message SignCertificateRequest {
 message SignCertificateResponse {
     // (in raw DER form)
     repeated bytes certificate = 1;
+}
+
+message GetCertificateRegistryRequest {
+
+}
+
+message GetCertificateRegistryResponse {
+    // (in raw DER form)
+    repeated bytes registry = 1;
 }
 
 message CertificateSecrets {

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use base_error::*;
 use crypto::random::{SharedRng, SharedRngExt};
-use db_txn_client::TransactionalDBClient;
+use db_txn_client::{TransactionalDBClient, KeyValueChange, KeyValueStoreChange};
 use executor::cancellation::AlreadyCancelledToken;
 use executor::child_task::ChildTask;
 use executor_multitask::ServiceResource;
@@ -253,6 +253,79 @@ async fn transaction_key_range_test() -> Result<()> {
 
     Ok(())
 }
+
+#[testcase]
+async fn watcher_test() -> Result<()> {
+    let inst = TestMetastore::create().await?;
+
+    let client1 = inst.create_client().await?;
+    let client2 = inst.create_client().await?;
+
+    client1.put(b"/fruits/apple", b"1").await?;
+
+    let mut watcher = client2.watch(b"/fruits/", b"/fruits/z").await?;
+
+    client1.put(b"/fruits/apple", b"2").await?;
+
+    assert_eq!(watcher.recv().await?, KeyValueStoreChange {
+        entries: vec![
+            KeyValueChange {
+                key: b"/fruits/apple"[..].into(),
+                value: Some(b"2"[..].into())
+            }
+        ]
+    });
+
+    {
+        let mut txn = client1.new_transaction().await?;
+        txn.put(b"/vegetables/tomato", b"5").await?;
+        txn.commit().await?;
+    }
+
+    {
+        let mut txn = client1.new_transaction().await?;
+        txn.put(b"/fruits/orange", b"3").await?;
+        txn.put(b"/vegetables/corn", b"4").await?;
+        txn.commit().await?;
+    }
+
+    assert_eq!(watcher.recv().await?, KeyValueStoreChange {
+        entries: vec![
+            KeyValueChange {
+                key: b"/fruits/orange"[..].into(),
+                value: Some(b"3"[..].into())
+            }
+        ]
+    });
+
+    {
+        let mut txn = client1.new_transaction().await?;
+        txn.put(b"/fruits/orange", b"6").await?;
+        txn.put(b"/fruits/blueberry", b"7").await?;
+        txn.delete(b"/fruits/apple").await?;
+        txn.commit().await?;
+    }
+
+    assert_eq!(watcher.recv().await?, KeyValueStoreChange {
+        entries: vec![
+            KeyValueChange {
+                key: b"/fruits/apple"[..].into(),
+                value: None
+            },
+            KeyValueChange {
+                key: b"/fruits/blueberry"[..].into(),
+                value: Some(b"7"[..].into())
+            },
+            KeyValueChange {
+                key: b"/fruits/orange"[..].into(),
+                value: Some(b"6"[..].into())
+            },
+        ]
+    });
+
+    Ok(())
+}
+
 
 #[testcase]
 async fn multi_node_test() -> Result<()> {

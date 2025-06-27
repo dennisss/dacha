@@ -3,7 +3,7 @@
 
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Instant, Duration};
 
 use cluster_ca::*;
 use cluster_client::id::{entity_id_to_string, normalize_entity_id};
@@ -312,8 +312,15 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
     //
     // TODO: This currently doesn't work if we try to restart the only node in a single node cluster
     // (that runs the metastore).
+    //
+    // TODO: Switch to using a metastore watcher.
+    //
+    // TODO: THis is not very useful when the cluster is already setup. Ideally we mark the node as
+    // restarting and we wait for it to mark itself as newly started (or we compare the start times
+    // before and after in the NodeMetadata).
     println!("Waiting for node to register itself:");
     loop {
+        // TODO: This will fail if we are restarting the node that has the metastore on it.
         if let Some(_) = query_one!(db, NodeMetadataTable, "id = ?", node_id) {
             break;
         }
@@ -345,42 +352,13 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
         let user_password = first_user_password.unwrap();
 
         run_create_user_impl(meta_client.clone(), &user_name, &user_password, &[
-            "cluster-clients".into(),
-            "cluster-readers".into(),
             "cluster-owners".into()
         ]).await?;
     
-
-        // TODO: Use an unauthenticated meta_client.
         println!("Logging in to the user...");
         login_impl(meta_client.clone(), &user_name, &user_password).await?;
     }
 
-    //
-
-    /*
-
-    - For the first node
-        - Prerequisite assumption is that we can already securely connect via SSH to the node
-        - Upload node runtime binary/config
-        - Create + upload initial TLS certificate, registry, and key
-            - For the registry, maybe pull from the metastore if that is already setup
-        - Start running the node
-    - Node will register itself in the metastore
-    - Create the CA job
-        - It will assign to the first node
-        - The node will fail to be unable to start it (because the cert-authority job doesn't exist).
-    - Manually add the CA worker to the node with a worker certificate
-    - CA worker will locally init the private key certificate and put a CertificateSigningRequest in the metastore
-        - This needs to be signed
-        - Serial number will be generated locally and used as the id.
-    - The local script will accept the CA cert and sign it with the root.
-    - CA worker can see that is was accepted once the certificate shows up in the Certificate list
-
-    - From this point on, we just start regular jobs.
-
-
-    */
 
     Ok(())
 }
@@ -875,8 +853,8 @@ async fn bootstrap_system_jobs(
     // Since the node can't yet query any CA job, it can't create the CA by itself
     // yet. So we need to manually start the first CA worker with a locally
     // generated certificate.
-    {
-        let workers = db.list::<WorkerMetadataTable>().await?;
+    let ca_worker = {
+        let mut workers = db.list::<WorkerMetadataTable>().await?;
         if workers.len() != 1 {
             return Err(err_msg("Expected there to be exactly one worker."));
         }
@@ -931,16 +909,24 @@ async fn bootstrap_system_jobs(
             .StartWorker(&request_context, &req)
             .await
             .result?;
-    }
 
-    /*
-    TODO: Must wait for it to be healthy.
+        workers.pop().unwrap()  
+    };
 
-    Or minimally check for "state: RUNNING"
-    */
-    /*
+    // Wait for the CA to be ready. This is good to do before starting other workers
+    // to ensure that certificates can be immediately acquired for other workers
+    // (without error backoff delay).
+    println!("Waiting for CA worker to be ready...");
+    // TODO: Alternative to this would be to monitor the WorkerStateMetadata
+    // table but that won't show intermediate failures.
     {
-        for i in 0..10 {
+        let mut ready = false;
+
+        let end_time = Instant::now() + Duration::from_secs(10);
+
+        while Instant::now() < end_time {
+            executor::sleep(Duration::from_secs(1)).await?;
+
             let res = node
                 .service
                 .ListWorkers(
@@ -950,18 +936,42 @@ async fn bootstrap_system_jobs(
                 .await
                 .result?;
 
-            println!("{:?}", res);
-            println!("====");
+            let worker = match res.workers().iter().find(|w| w.spec().name() == ca_worker.spec().name()) {
+                Some(v) => v,
+                None => continue
+            };
 
-            executor::sleep(Duration::from_secs(1)).await?;
+            if worker.revision() < ca_worker.revision() {
+                continue;
+            }
+
+            if worker.revision() > ca_worker.revision() {
+                return Err(err_msg("Worker superseded by newer revision"));
+            }
+
+            match worker.state() {
+                WorkerStateProto::UNKNOWN | WorkerStateProto::PENDING => {
+                    continue;
+                }
+                WorkerStateProto::RUNNING => {
+                    ready = true;
+                    break;
+                }
+                WorkerStateProto::STOPPING |
+                WorkerStateProto::FORCE_STOPPING |
+                WorkerStateProto::RESTART_BACKOFF |
+                WorkerStateProto::DONE => {
+                    return Err(format_err!("Worker in a bad state: {:?}", worker.state()));
+                }
+            }
         }
+
+        if !ready {
+            return Err(err_msg("Timed out while waiting for worker to be ready"));
+        }
+
+        println!("=> Running!");
     }
-    */
-
-    // First setup a local manager
-
-    // Then we can attempt to start the CA
-    // (and give it a bit of a helping hand)
 
     // Id of the local metastore server which is being used just for bootstrapping
     // the server.
@@ -980,12 +990,6 @@ async fn bootstrap_system_jobs(
 
         server.id()
     };
-
-    // For this to work, we first need a certificate authority.
-    // - So how do I boot
-
-    // 'ca.system.job.local.cluster.internal' is what the node can call to get
-    // certificates -
 
     // TODO: Verify that this actually has created the worker
     println!("Starting metastore job");

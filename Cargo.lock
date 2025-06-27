@@ -734,6 +734,7 @@ dependencies = [
  "container_proto",
  "crypto",
  "db_table",
+ "db_txn",
  "db_txn_client",
  "executor",
  "executor_multitask",

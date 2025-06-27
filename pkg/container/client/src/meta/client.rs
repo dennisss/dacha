@@ -108,7 +108,6 @@ impl ClusterMetaClient {
 
         } else {
             // TODO: Allow having an insecure cluster?
-            // TODO: Add this credentials loader to the resource group.
             let dir = env.get(CREDENTIALS_DIR_ENV_VAR)?;
             creds = Arc::new(FileCredentialsLoader::create(LocalPath::new(&dir)).await?);
         }
@@ -162,6 +161,32 @@ impl ClusterMetaClient {
     pub fn db(&self) -> &Arc<ProtobufDB> {
         &self.db
     }
+
+    /// Makes a client instance that shared the same zone level parameters like
+    /// certificate registries, but does not have any client/server identities.
+    ///
+    /// NOTE: This is only meant for temporary usage and doesn't do stuff like
+    /// reloading of certificates from disk.
+    pub async fn clone_unauthenticated(&self) -> Result<Self> {
+        let creds = self.creds.as_ref().map(|creds| {
+            let mut server = creds.server.get().as_ref().clone();
+            let mut client = creds.client.get().as_ref().clone();
+
+            server.certificate_auth.identities.clear();
+            client.certificate_auth.identities.clear();
+
+            crypto::tls::Credentials { server: server.into(), client: client.into() }
+        });
+
+        let seeds = self.inner().seeds().await;
+
+        Self::create(
+            &self.zone,
+            &seeds,
+            creds,
+            None
+        ).await
+    } 
 
     pub async fn seeds(&self) -> Result<String> {
         let seeds = self.inner().seeds().await;

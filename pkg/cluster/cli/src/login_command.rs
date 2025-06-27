@@ -37,7 +37,6 @@ pub struct LoginCommand {
 pub async fn run_login(cmd: LoginCommand) -> Result<()> {
     check_have_nss_utils().await?;
 
-    // TODO: Need to change to be an anonymous client.
     let meta_client = ClusterMetaClient::create_from_environment().await?;
     let pass = read_stdin_password(false).await?;
 
@@ -55,6 +54,8 @@ pub(crate) async fn login_impl(
     user_name: &str,
     user_password: &str
 ) -> Result<()> {
+    let meta_client = Arc::new(meta_client.clone_unauthenticated().await?);
+
     let request_context = rpc::ClientRequestContext::default();
 
     let ca_channel = create_rpc_channel(
@@ -62,7 +63,7 @@ pub(crate) async fn login_impl(
         meta_client.clone()
     ).await?;
 
-    let auth_service = UserAuthenticationStub::new(ca_channel);
+    let auth_service = UserAuthenticationStub::new(ca_channel.clone());
 
 
     let name = ServiceName::for_user(meta_client.zone(), user_name)?;
@@ -103,9 +104,25 @@ pub(crate) async fn login_impl(
 
     // Initialize a new registry from the metastore (may include new certificates added since
     // last time we logged in).
-    // TODO: De-deduplicate this logic.
-    // TODO: Needs to happen after login since we may not have credentials yet.
-    let mut registry = cluster_client::credentials::read_latest_certificate_registry(&meta_client).await?;
+    //
+    // NOTE: We don't have direct access to the metastore since we are using an unauthenticated
+    // stub.
+    //
+    // TODO: Dedup with read_latest_certificate_registry
+    let mut registry = {
+        let ca_service = CertificateAuthorityStub::new(ca_channel.clone());
+        let req = GetCertificateRegistryRequest::default();
+        let res = ca_service.GetCertificateRegistry(&request_context, &req).await.result?;
+
+
+        let mut new_registry = CertificateRegistry::new();
+        for cert in res.registry() {
+            let c = Certificate::read(cert.as_ref().into())?;
+            new_registry.append(&[Arc::new(c)], true)?;
+        }
+
+        new_registry
+    };
 
     let (local_cert, local_key) = create_localhost_identity().await?;
     registry.append(&[local_cert.clone()], true)?;
@@ -126,7 +143,7 @@ pub(crate) async fn login_impl(
 
     setup_local_zone_files(
         &home, meta_client.zone(), credentials_dir.as_str(), &meta_client.seeds().await?).await?;
-    
+
     install_nss_certificates(&mut credentials_manager).await?;
 
     credentials_manager.gc().await?;

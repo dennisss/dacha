@@ -309,6 +309,31 @@ impl ProtobufTableTag for NodeSchedulingMetadataTable {
     }
 }
 
+pub struct NodeRevisionTable {}
+
+impl ProtobufTableTag for NodeRevisionTable {
+    type Message = NodeRevision;
+
+    fn table_id() -> u32 {
+        table_id!(37)
+    }
+
+    fn table_name() -> &'static str {
+        "NodeRevision"
+    }
+
+    fn indexed_keys() -> &'static [ProtobufTableKey] {
+        &[sparse_struct!(ProtobufTableKey {
+            index_id: PRIMARY_KEY_ID,
+            fields: &[ProtobufKeyField {
+                path: &[NodeRevision::NODE_ID_FIELD_NUM_RAW],
+                direction: Direction::Ascending,
+                fixed_size: true,
+            }],
+        })]
+    }
+}
+
 pub struct ObjectMetadataTable {}
 
 impl ProtobufTableTag for ObjectMetadataTable {

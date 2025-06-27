@@ -394,7 +394,7 @@ impl NodeCredentialsManager {
                 eprintln!("[Node Worker Credentials Updater] Failed: {}", e);
             }
 
-            executor::sleep(CERTIFICATE_UPDATE_POLL_BACKOFF).await;
+            executor::timeout(CERTIFICATE_UPDATE_POLL_BACKOFF, event_receiver.recv()).await;
         }
     }
 

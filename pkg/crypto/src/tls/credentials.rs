@@ -418,9 +418,9 @@ impl FileCredentialsManager {
         client_options.certificate_request.root_certificate_registry =
             CertificateRegistrySource::Custom(registry.clone());
 
-        client_options.certificate_auth = Some(CertificateAuthenticationOptions {
+        client_options.certificate_auth = CertificateAuthenticationOptions {
             identities: client_identifies
-        });
+        };
 
         Ok((client_options, server_options))
     }

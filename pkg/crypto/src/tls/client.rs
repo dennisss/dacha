@@ -219,11 +219,9 @@ impl<'a> ClientHandshakeExecutor<'a> {
             key_schedule.server_finished(&self.executor.handshake_transcript);
 
         if let Some(cert_request) = cert_request {
-            if let Some(options) = &self.options.certificate_auth {
-                if options.identities.is_empty() {
-                    return Err(err_msg("No available client identity"));
-                }
-    
+            if !self.options.certificate_auth.identities.is_empty() {
+                let options = &self.options.certificate_auth;
+
                 let identity = &options.identities[0];
     
                 let server_supported_algoritms = find_signature_algorithms(&cert_request.extensions)

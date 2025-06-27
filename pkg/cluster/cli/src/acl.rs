@@ -15,18 +15,37 @@ use db_table::{
 /// Grants a node the ability to write to its own NodeMetadataTable row in the
 /// metastore.
 pub async fn authorize_node(node_id: u64, zone: &str, db: &ProtobufDB) -> Result<()> {
-    let q = raw_query!(NodeMetadataTable, "id = ?", node_id);
-    let key = ProtobufDBTransaction::primary_key_prefix::<NodeMetadataTable>(&q)?;
-
-    // TODO: Skip adding this if the node is already authorized.
-    let mut proto = KeyPrefixACLProto::default();
-    proto.set_prefix(key);
-
     let entity = Principal::Entity(ServiceName::for_node(zone, node_id)?).to_string();
-    proto.add_readers(entity.clone());
-    proto.add_writers(entity.clone());
 
-    db.insert::<KeyPrefixACLTable>(&proto).await
+    {
+        let q = raw_query!(NodeMetadataTable, "id = ?", node_id);
+        let key = ProtobufDBTransaction::primary_key_prefix::<NodeMetadataTable>(&q)?;
+
+        // TODO: Skip adding this if the node is already authorized.
+        let mut proto = KeyPrefixACLProto::default();
+        proto.set_prefix(key);
+
+        proto.add_readers(entity.clone());
+        proto.add_writers(entity.clone());
+
+        db.insert::<KeyPrefixACLTable>(&proto).await?;
+    }
+
+    {
+        let q = raw_query!(NodeRevisionTable, "node_id = ?", node_id);
+        let key = ProtobufDBTransaction::primary_key_prefix::<NodeRevisionTable>(&q)?;
+
+        // TODO: Skip adding this if the node is already authorized.
+        let mut proto = KeyPrefixACLProto::default();
+        proto.set_prefix(key);
+
+        proto.add_readers(entity.clone());
+        proto.add_writers(entity.clone());
+
+        db.insert::<KeyPrefixACLTable>(&proto).await?;
+    }
+
+    Ok(())
 }
 
 /// TODO: This needs to support deleting any unneeded ACLs should we ever want
@@ -51,8 +70,10 @@ pub async fn upgrade_acls(zone: &str, db: &ProtobufDB, write: bool) -> Result<()
     let mut ignored_prefixes = vec![];
     // Ignore entries from 'authorize_node'
     ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<NodeMetadataTable>());
+    ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<NodeRevisionTable>());
     // Ignore entries from 
     ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<WorkerStateMetadataTable>());
+    ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<BundleBlobReplicaTable>());
 
     let existing = db.list::<KeyPrefixACLTable>().await?;
 
@@ -132,14 +153,24 @@ fn get_group_memberships(zone: &str) -> Result<Vec<GroupMembership>> {
     Ok(vec![
         make_group_membership(
             "cluster-clients",
+            &Principal::Group { name: "cluster-readers".into(), zone: zone.to_string() }
+        ),
+        make_group_membership(
+            "cluster-clients",
             &Principal::Pattern("**.job.*.cluster.internal".into())
         ),
         make_group_membership(
             "cluster-clients",
             &Principal::Pattern("*.node.*.cluster.internal".into())
         ),
+        make_group_membership(
+            "cluster-readers",
+            &Principal::Group { name: "cluster-owners".into(), zone: zone.to_string() }
+        ),
         // Nodes need to be able to read the list of workers and blobs that should be present on them.
         // Currently this is achieved by just granting read access to the whole Blob*Metadata and WorkerMetadata tables.
+        //
+        // This is also currently used for getting the certificate registry.
         //
         // TODO: Eventually restrict which roles the nodes are allowed to access.
         make_group_membership(
@@ -239,7 +270,7 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
     Ok(vec![
         // Readers: Services need to read groups to check their own ACLs.
         // Writers:
-        make_table_acl::<GroupMembershipTable>(&[&cluster_clients], &[]),
+        make_table_acl::<GroupMembershipTable>(&[&cluster_clients], &[&cluster_owners]),
         // Readers: Need for service resolving.
         // Writers: Just the manager job
         //          WorkerStateMetadata will also have per-row ACLs allowing nodes to write.
@@ -251,6 +282,7 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         // Read/written by admins for reading/writing node labels.
         make_table_acl::<NodeSchedulingMetadataTable>(
             &[&manager_job, &cluster_owners], &[&manager_job, &cluster_owners]),
+        make_table_acl::<NodeRevisionTable>(&[&manager_job], &[&manager_job]),
         // Readers: Need for service resolving.
         // Writers: Individual rows can be written by the corresponding nodes.
         // TODO: Can relax reader permissions once we have a separate service resolver service.
@@ -259,9 +291,12 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         // Readers: Need a subset of the certificates for CA registry population (the whole table
         //          contains no secrets anyway).
         // Writers: Just the CA job.
+        //
+        // TODO: Consider restricting readers even more if we make reading of the registry
+        // via the CertificateAuthority.
         make_table_acl::<CertificateMetadataTable>(&[&cluster_readers], &[&ca_job]),
         // Secrets
-        make_table_acl::<PrivateKeyMetadataTable>(&[&ca_job], &[&ca_job]),
+        make_table_acl::<PrivateKeyMetadataTable>(&[&ca_job, &cluster_owners], &[&ca_job]),
         // Due to containing password hashes, this is secret.
         make_table_acl::<UserTable>(&[&ca_job], &[&ca_job]),
         // Not secret information so just granting cluster wide access for simplicity.

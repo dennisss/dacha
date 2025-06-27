@@ -22,9 +22,14 @@ const SERVICE_ACL_PROTO: &'static str = r#"
     rules: [
         # Does its own ACL checks internally.
         {
-            path: "/rpc/cluster.CertificateAuthority"
-            is_directory: true
+            path: "/rpc/cluster.CertificateAuthority/SignCertificate"
+            is_directory: false
             principals: ["authenticated"]
+        },
+        {
+            path: "/rpc/cluster.CertificateAuthority/GetCertificateRegistry"
+            is_directory: false
+            principals: ["unauthenticated"]
         },
         {
             path: "/rpc/cluster.UserAuthentication/Login"

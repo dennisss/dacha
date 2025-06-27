@@ -424,18 +424,14 @@ async fn run_inner(
     // a case-by-base basis.
     umask(Mode::from_bits_truncate(0o027));
 
-    let service = RootResource::new();
-
-    let node = Node::create(&context, &config).await?;
-
-    // TODO: Implement shutdown for this.
-    service
-        .spawn_interruptable("cluster::Node", node.run())
-        .await;
-
     // TODO: Parse this much earlier.
     let mut acl = container_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
+
+    let service = RootResource::new();
+
+    let node: Arc<Node> = Arc::new(Node::create(&context, &config).await?);
+    service.register_dependency(node.clone()).await;
 
     let mut server = cluster_client::ClusterServer::new(
         config.service_port() as u16,

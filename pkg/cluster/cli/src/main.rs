@@ -43,6 +43,9 @@ enum Command {
     #[arg(name = "load_zone_config")]
     LoadZoneConfig(LoadZoneConfigCommand),
 
+    #[arg(name = "set_default_zone")]
+    SetDefaultZone(SetDefaultZoneCommand),
+
     #[arg(name = "status")]
     Status(StatusCommand),
 
@@ -94,6 +97,7 @@ async fn main() -> Result<()> {
         Command::SetupNode(cmd) => run_setup_node(cmd).await,
         Command::SaveZoneConfig(cmd) => run_save_zone_config(cmd).await,
         Command::LoadZoneConfig(cmd) => run_load_zone_config(cmd).await,
+        Command::SetDefaultZone(cmd) => run_set_default_zone(cmd).await,
         Command::Status(cmd) => run_status(cmd).await,
         Command::CreateUser(cmd) => run_create_user(cmd).await,
         Command::Login(cmd) => run_login(cmd).await,

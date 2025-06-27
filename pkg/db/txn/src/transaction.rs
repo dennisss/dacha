@@ -133,7 +133,7 @@ impl<'a> TransactionLockHolder<'a> {
         for item in self.locks.iter() {
             state
                 .locks
-                .range(item.start_key.clone(), item.end_key.clone(), |lock| {
+                .range_mut(item.start_key.clone(), item.end_key.clone(), |lock| {
                     lock.num_references -= 1;
                     lock.num_references > 0
                 });
@@ -335,7 +335,7 @@ impl TransactionManager {
         let mut required_locks = KeyRanges::new();
 
         for range in transaction.reads() {
-            required_locks.range(range.start_key(), range.end_key(), |mode| {
+            required_locks.range_mut(range.start_key(), range.end_key(), |mode| {
                 *mode = TransactionLockMode::Read;
                 true
             });
@@ -345,7 +345,7 @@ impl TransactionManager {
         for op in transaction.writes() {
             let (start_key, end_key) = single_key_range(op.key());
 
-            required_locks.range(start_key, end_key, |mode| {
+            required_locks.range_mut(start_key, end_key, |mode| {
                 *mode = match mode {
                     TransactionLockMode::Read => TransactionLockMode::ReadWrite,
                     TransactionLockMode::None => TransactionLockMode::Write,
@@ -425,7 +425,7 @@ impl TransactionManager {
         for item in locks.iter() {
             state
                 .locks
-                .range(item.start_key.clone(), item.end_key.clone(), |lock| {
+                .range_mut(item.start_key.clone(), item.end_key.clone(), |lock| {
                     if conflict.is_some() {
                         return lock.num_references > 0;
                     }
@@ -466,7 +466,7 @@ impl TransactionManager {
             for item in locks.iter() {
                 state
                     .locks
-                    .range(item.start_key.clone(), item.end_key.clone(), |lock| {
+                    .range_mut(item.start_key.clone(), item.end_key.clone(), |lock| {
                         if num_locked > 0 {
                             lock.num_references -= 1;
                             num_locked -= 1;
