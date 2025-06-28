@@ -11,7 +11,7 @@ TODOs:
 
 ## User Guide
 
-As a pre-requisite, we assume that you have a Raspberry Pi that has been setup in a [cluster](../../container/index.md) and has attached:
+As a pre-requisite, we assume that you have a Raspberry Pi that has been setup in a [cluster](../../cluster/index.md) and has attached:
 
 - A Stream Deck via USB
 - A monitor via HDMI

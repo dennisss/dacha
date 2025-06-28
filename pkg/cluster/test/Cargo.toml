@@ -1,41 +1,33 @@
 [package]
-name = "cluster_cli"
+name = "cluster_test"
 version = "0.1.0"
 edition = "2018"
 
 [dependencies]
 common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
-base_units = { path = "../../base/units" }
+base_error = { path = "../../base/error" }
 db_table = { path = "../../db/table" }
+db_txn_client = { path = "../../db/txn/client" }
 crypto = { path = "../../crypto" }
 automata = { path = "../../automata" }
 regexp_macros = { path = "../../automata/regexp_macros" }
-builder = { path = "../../builder" }
-nix = "0.21.0"
-libc = "0.2.97"
 protobuf = { path = "../../protobuf" }
 http = { path = "../../http" }
 macros = { path = "../../macros" }
 compression = { path = "../../compression" }
 cluster_client = { path = "../../container/client" }
-cluster_ca = { path = "../ca" }
-cluster_meta = { path = "../meta" }
-cluster_manager = { path = "../manager" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
+rpc_test = { path = "../../rpc_test" }
 net = { path = "../../net" }
-raft = { path = "../../raft" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
-failure = "0.1.8"
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 sys = { path = "../../sys" }
+web = { path = "../../web" }
 container_proto = { path = "../../container/proto" }
-container = { path = "../../container" }
-terminal = { path = "../../dev/terminal" }
-grpc_proto = { path = "../../../third_party/grpc_proto" }
 
 [features]
 default = ["std"]

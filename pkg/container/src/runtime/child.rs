@@ -80,6 +80,21 @@ fn run_child_process_inner(
     setup_socket: &mut SetupSocketChild,
     file_mapping: &FileMapping,
 ) -> Result<()> {
+    // Setting up stdin/out/err immediately so that as much as possible gets logged
+    // to the container specific logs.
+    //
+    // TODO: Also try to get the 'terminal' logic to also move further up.
+    for (newfd, file) in file_mapping.iter() {
+        // NOTE: Files created using dup2 don't share file descriptor flags, so
+        // O_CLOEXEC will be disabled for the target fd.
+        let oldfd = unsafe { file.open_raw()? };
+        dup2(oldfd, *newfd)?;
+
+        // NOTE: We will never end up actually calling close() on the
+        // 'oldfd' in te child thread. instead we'll just rely
+        // on O_CLOEXEC to get rid of them once we call execve.
+    }
+
     // Block until the parent is done with setting up our environment.
     setup_socket.wait(USER_NS_SETUP_BYTE)?;
 
@@ -260,13 +275,12 @@ fn run_child_process_inner(
     mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SHARED | MsFlags::MS_REC, None)
         .map_err(|e| format_err!("MS_SHARED root remount failed: {}", e))?;
 
-    exec_child_process(container_config.process(), setup_socket, file_mapping)
+    exec_child_process(container_config.process(), setup_socket)
 }
 
 fn exec_child_process(
     process: &ContainerProcess,
     setup_socket: &mut SetupSocketChild,
-    file_mapping: &FileMapping,
 ) -> Result<()> {
     ///////////
     // All the post-namespace initialization stuff.
@@ -379,17 +393,6 @@ fn exec_child_process(
 
         // Explicitly closing to make it clear that this file doesn't
         // drop(term_primary);
-    } else {
-        for (newfd, file) in file_mapping.iter() {
-            // NOTE: Files created using dup2 don't share file descriptor flags, so
-            // O_CLOEXEC will be disabled for the target fd.
-            let oldfd = unsafe { file.open_raw()? };
-            dup2(oldfd, *newfd)?;
-
-            // NOTE: We will never end up actually calling close() on the
-            // 'oldfd' in te child thread. instead we'll just rely
-            // on O_CLOEXEC to get rid of them once we call execve.
-        }
     }
 
     // TODO: We must protect against having errors before this point since they will

@@ -1,6 +1,8 @@
 // Updates the root CA store used in this repository by pulling it from the
 // Chromium project.
 
+// TODO: Move this to 'crypto/tools'
+
 #[macro_use]
 extern crate common;
 extern crate crypto;
@@ -22,7 +24,7 @@ async fn main() -> Result<()> {
 
     let req = http::RequestBuilder::new()
         .method(http::Method::GET)
-        .uri("https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/root_store.certs?format=TEXT".try_into()?)
+        .uri("https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/root_store.certs?format=TEXT")
         .build()?;
 
     let res = client
@@ -40,6 +42,10 @@ async fn main() -> Result<()> {
 
     let mut cert_registry = crypto::x509::CertificateRegistry::new();
     for entry in pem.entries {
+        if entry.label.as_str() != crypto::pem::PEM_CERTIFICATE_LABEL {
+            return Err(err_msg("Unknown PEM label found in certificate registry."));
+        }
+
         let cert_original_data = Bytes::from(entry.to_binary()?);
 
         let cert = Arc::new(crypto::x509::Certificate::read(cert_original_data.clone())?);

@@ -393,7 +393,7 @@ You can verify it is working by running `nvidia-smi`
 
 ### Cluster Setup
 
-We will follow the cluster node setup guide [here](/pkg/container/index.md) to set up the server as a cluster node. It is a good idea to read that to get a good idea of the semantics but all the needed commands are listed below. Note that newer Ubuntu alredy sets up CGroups V2 so nothing is required for that.
+We will follow the cluster node setup guide [here](/pkg/cluster/index.md) to set up the server as a cluster node. It is a good idea to read that to get a good idea of the semantics but all the needed commands are listed below. Note that newer Ubuntu alredy sets up CGroups V2 so nothing is required for that.
 
 Assuming that the ZFS datasets are currently unlocked and mounted, we used the following commands.
 
@@ -419,6 +419,16 @@ cargo run --bin cluster_cli -- \
     --first_user_name=$USER \
     --bootstrap
 ```
+
+Then setup a label for the node:
+
+```
+cargo run --bin cluster_cli -- list nodes
+
+cargo run --bin cluster_cli -- \
+  labels set --node_id=[insert] "name=nas"
+```
+
 
 At this point it is recommended to back up the root key stored in `~/.dacha/zone/home/root` in your local machine.
 

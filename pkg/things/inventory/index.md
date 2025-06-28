@@ -1,5 +1,38 @@
 
 
+Database schema:
+
+- 'Part' Table
+    - Id
+    - Image
+    - Type
+    - Type specific information
+- 'Pack' Table
+    - Each pack has an Id
+    - A pack has a part id and quantity
+    - A pack may have a parent pack (a pack inside of a storage container or inside of a finished product)
+    - All 'QR' codes contain just pack ids
+        - There there never exist two printed codes with the same pack id
+    - Packs may have other unique metadata:
+      - e.g. WWIDs
+
+
+Workflow for adding a part:
+
+- Enter what part is being added
+    - Either by searching, providing a URL 
+    - Scan label (also support Adafruit text)
+- Enter the quantity
+    - 
+
+
+
+
+
+# Rambling
+
+
+
 Organizing electronics parts is a key challenge to development velocity:
 
 Requirements:

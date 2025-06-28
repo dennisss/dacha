@@ -379,7 +379,8 @@ async fn run_inner(
     }
 
     setup_child.wait(START_CHILD_BYTE)?;
-    unsafe { sys::unshare(sys::CloneFlags::CLONE_NEWCGROUP)? };
+    unsafe { sys::unshare(sys::CloneFlags::CLONE_NEWCGROUP) }
+        .map_err(|e| format_err!("unshare(CLONE_NEWCGROUP) failed: {}", e));
     setup_child.notify(CGROUP_NAMESPACE_SETUP_BYTE)?;
 
     setup_child.wait(FINISHED_BYTE)?;
@@ -406,7 +407,7 @@ async fn run_inner(
         Some("proc"),
         MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
         Option::<&str>::None,
-    )?;
+    ).map_err(|e| format_err!("mount /proc failed: {}", e))?;
 
     println!("Data Dir: {}", config.data_dir());
 

@@ -1,0 +1,23 @@
+name: "adder_server"
+
+replicas: 1
+
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/cluster/test/cluster_adder_server",
+        "--port=service"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cluster/test:bundle"
+        }
+    ]
+}

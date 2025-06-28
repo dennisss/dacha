@@ -2,7 +2,7 @@ name: "rpi_controller"
 
 # Add to as many nodes as possible.
 # TODO: Change to a large number
-replicas: 1
+replicas: 10
 
 # TODO: Have a label to nodes so that we can tell if it has an attached fan.
 scheduling {

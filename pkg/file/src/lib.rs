@@ -338,8 +338,8 @@ mod tests {
     async fn opening_at_an_empty_path_fails() -> Result<()> {
         let res = LocalFile::open("");
         assert_eq!(
-            res.err().unwrap().downcast_ref::<FileError>().kind(),
-            Some(&FileErrorKind::NotFound)
+            res.err().unwrap().downcast_ref::<FileError>().unwrap().kind,
+            FileErrorKind::NotFound
         );
 
         // std::fs::File also should fail.

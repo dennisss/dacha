@@ -25,6 +25,7 @@ mod bridge;
 mod chrome_policy;
 mod status_command;
 mod zone_config_commands;
+mod ping_command;
 
 pub use events_command::*;
 pub use labels_command::*;
@@ -38,3 +39,4 @@ pub use login_command::*;
 pub use unlock_command::*;
 pub use status_command::*;
 pub use zone_config_commands::*;
+pub use ping_command::*;

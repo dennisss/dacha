@@ -13,8 +13,7 @@ class App extends React.Component<{}, { _a: number, _b: number, _result?: number
     }
 
     _on_submit = () => {
-        // TODO: Pull the port number from the embedded data.
-        let channel = new Channel("http://localhost:8001");
+        let channel = new Channel("/rpc");
         channel.call("Adder", "Add", { "x": this.state._a, "y": this.state._b })
             .then((res) => {
                 let z = res.responses[0].z || 0;
@@ -43,5 +42,4 @@ class App extends React.Component<{}, { _a: number, _b: number, _result?: number
 
 
 let node = document.getElementById("app-root");
-console.log("Place in", node);
 ReactDOM.render(<App />, node)

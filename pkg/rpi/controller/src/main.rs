@@ -247,6 +247,7 @@ async fn main() -> Result<()> {
     let message_factory = entity_message_factory();
 
     let client = cluster_client::ClusterMetaClient::create_from_environment().await?;
+    root_resource.register_dependency(client.clone()).await;
     
     let mut server = cluster_client::ClusterServer::new(args.port.value(), acl, client)?;
     server.codec_options_mut().json_parser.message_factory =

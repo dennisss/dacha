@@ -5,6 +5,7 @@ This package contains an imager program for writing Raspberry Pi filesystem imag
 The imager assumes that the image being written has 2 partitions (first being the boot partition and second being a BTRFS root partition).
 
 TODO: Need to add support for re-imaging a system that already has data:
-- Need to preserve the host name, machine-id
+- Need to preserve the host name, machine-id, ip address, custom services
 - Need to preserve some data in directories like `/opt/dacha/`
-- Need to preserve the SSH host keys
+- Need to preserve the SSH host keys (both the server private key and user public key)
+- Custom network interface rules

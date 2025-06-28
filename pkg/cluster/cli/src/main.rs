@@ -88,6 +88,9 @@ enum Command {
 
     #[arg(name = "unlock")]
     Unlock(UnlockCommand),
+
+    #[arg(name = "ping")]
+    Ping(PingCommand),
 }
 
 #[executor_main]
@@ -109,5 +112,6 @@ async fn main() -> Result<()> {
         Command::Events(cmd) => run_events(cmd).await,
         Command::Labels(cmd) => run_labels(cmd).await,
         Command::Unlock(cmd) => run_unlock(cmd).await,
+        Command::Ping(cmd) => run_ping(cmd).await,
     }
 }

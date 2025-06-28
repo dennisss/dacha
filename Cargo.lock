@@ -675,6 +675,7 @@ dependencies = [
  "executor_multitask",
  "failure",
  "file",
+ "grpc_proto",
  "http",
  "libc",
  "macros",
@@ -820,6 +821,36 @@ dependencies = [
  "protobuf_compiler",
  "protobuf_compiler_proto",
  "rpc",
+]
+
+[[package]]
+name = "cluster_test"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "base_radix",
+ "cluster_client",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "db_txn_client",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "macros",
+ "net",
+ "protobuf",
+ "protobuf_builtins",
+ "regexp_macros",
+ "rpc",
+ "rpc_test",
+ "rpc_util",
+ "sys",
+ "web",
 ]
 
 [[package]]

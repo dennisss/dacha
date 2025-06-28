@@ -2,11 +2,11 @@
 // them into sub-processes.
 
 use std::os::unix::prelude::{FromRawFd, RawFd};
+use std::ffi::CString;
 
 use common::errors::*;
-use failure::ResultExt;
-use nix::fcntl::OFlag;
-use nix::sys::stat::Mode;
+use sys::OpenFileDescriptor;
+use executor::RemapErrno;
 
 pub const STDIN: RawFd = 0;
 pub const STDOUT: RawFd = 1;
@@ -79,8 +79,14 @@ impl FileReference {
             FileReferenceHandle::None => panic!("Opening empty FileReference"),
             FileReferenceHandle::Existing(fd) => *fd,
             FileReferenceHandle::Path(path) => {
-                nix::fcntl::open(path.as_str(), OFlag::O_CLOEXEC, Mode::S_IRUSR)
-                    .with_context(|e| format!("Failed to open {}: {}", path.as_str(), e))?
+                let cpath = CString::new(path.as_str())?;
+                unsafe { sys::open(cpath.as_ptr(), sys::O_CLOEXEC, 0) }
+                .remap_errno::<file::FileError, _>(|| {
+                    format!(
+                        "Failed to open {}",
+                        path.as_str()
+                    )
+                })?
             }
         })
     }
@@ -92,8 +98,14 @@ impl FileReference {
     }
 
     pub fn pipe() -> Result<(Self, Self)> {
-        nix::unistd::pipe2(OFlag::O_CLOEXEC)
-            .map(|(a, b)| (Self::existing(a), Self::existing(b)))
+        sys::pipe2(sys::O_CLOEXEC)
+            .map(|(mut a, mut b)|{
+                unsafe {
+                    a.leak();
+                    b.leak();
+                }   
+                (Self::existing(*a), Self::existing(*b))
+            })
             .map_err(|e| e.into())
     }
 }

@@ -22,7 +22,7 @@ Note: Only using a 64-bit Pi OS is supported right now.
 
 ### Features
 
-Compared to the standard Raspbian Lite image, our image is meant to be headlessly provisioned in a cluster. Once the base image is flashed, it can be setup in a cluster using the instructions [here](../container/index.md). Some of the features of our image is the following:
+Compared to the standard Raspbian Lite image, our image is meant to be headlessly provisioned in a cluster. Once the base image is flashed, it can be setup in a cluster using the instructions [here](../cluster/index.md). Some of the features of our image is the following:
 
 - BTRFS root partition (so most data is read with data integrity checks).
 - Sets up packages/configs needed for the cluster setup process to go smoothly
@@ -165,7 +165,7 @@ Once powered on, a Raspberry Pi will have a default hostname of `cluster-node`. 
 ssh -i ~/.ssh/id_cluster cluster-user@10.1.0.111
 ```
 
-If following the [cluster setup guide](../container/index.md) then you can go back to that guide now.
+If following the [cluster setup guide](../cluster/index.md) then you can go back to that guide now.
 
 ## Cross Compiling
 

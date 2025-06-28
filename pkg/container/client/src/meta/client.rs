@@ -158,6 +158,7 @@ impl ClusterMetaClient {
         &self.inner
     }
 
+    // TODO: If the ClusterMetaClient is dropped, then this needs to stop working.
     pub fn db(&self) -> &Arc<ProtobufDB> {
         &self.db
     }

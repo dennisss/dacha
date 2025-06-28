@@ -124,6 +124,9 @@ pub struct SetupNodeCommand {
     /// Not used if 'bootstrap' is false
     #[arg(default = 4000)]
     local_metastore_port: u16,
+
+    #[arg(default = false)]
+    resetup_node: bool,
 }
 
 /// TODO: Improve this so that we can continue running it if a previous run
@@ -266,12 +269,12 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             }
 
             if old_node_config.id() != node_id {
-                return Err(format_err!("Node already configured with a different id: {}", old_node_config.id()));
+                return Err(format_err!("Node already configured with a different id: {}", entity_id_to_string(old_node_config.id()).unwrap()));
             }
         } else {
             let existing_meta = query_one!(db, NodeMetadataTable, "id = ?", node_id);
-            if existing_meta.is_some() {
-                return Err(err_msg("Node already exists with this id. /etc/machine-id probably wasn't randomly initialized."));
+            if existing_meta.is_some() && !cmd.resetup_node {
+                return Err(err_msg("Node already exists with this id. /etc/machine-id probably wasn't randomly initialized. Overide this with --resetup_node if you are reinitializing from an empty disk."));
             }
         }
     }
@@ -777,6 +780,7 @@ async fn setup_remote_node_server(
 
         operator.run("sudo cp --no-preserve=all /tmp/cluster-apparmor /etc/apparmor.d/cluster-node").await?;
         operator.run("sudo apparmor_parser -r -W /etc/apparmor.d/cluster-node").await?;
+        operator.run("sudo systemctl restart apparmor").await?;
     }
 
     println!("Installing systemd service...");

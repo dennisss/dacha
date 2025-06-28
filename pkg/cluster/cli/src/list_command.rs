@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use cluster_client::ClusterMetaClient;
 use cluster_client::meta::table::*;
@@ -89,8 +90,18 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
             table.row().col("NAME").col("REPLICAS");
 
             let jobs = db.list::<JobMetadataTable>().await?;
+            
+            // let workers = db.list::<WorkerMetadataTable>().await?;
+
             for job in jobs {
-                table.row().col(job.spec().name()).col(job.spec().replicas().to_string());
+
+                let mut name = job.spec().name().to_string();
+                if job.spec().worker().ports().len() > 0 {
+                    let url = format!("https://{}", ServiceName::for_job(meta_client.zone(), &name)?.to_string());
+                    name = format!("{}{}{}", terminal::start_hyperlink(&url), name, terminal::start_hyperlink(""));
+                }
+
+                table.row().col(name).col(job.spec().replicas().to_string());
             }
 
             table.print();
@@ -98,18 +109,10 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
         ObjectKind::Worker => {
             let mut node_workers = HashMap::new();
             {
-                let request_context = rpc::ClientRequestContext::default();
                 let nodes = db.list::<NodeMetadataTable>().await?;
                 for node in nodes {
-                    let node_stubs = connect_to_node_id(meta_client.clone(), node.id()).await?;
-                    let res = node_stubs
-                        .service
-                        .ListWorkers(&request_context, &ListWorkersRequest::default())
-                        .await
-                        .result?;
-
-                    for worker in res.workers() {
-                        node_workers.insert(worker.spec().name().to_string(), worker.clone());
+                    if let Err(e) = get_workers_from_node(meta_client.clone(), node.id(), &mut node_workers).await {
+                        eprintln!("Failed to contact node {}: {}", entity_id_to_string(node.id()).unwrap(), e);
                     }
                 }
             }
@@ -197,6 +200,26 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
 
             table.print();
         }
+    }
+
+    Ok(())
+}
+
+async fn get_workers_from_node(
+    meta_client: Arc<ClusterMetaClient>,
+    node_id: u64,
+    node_workers: &mut HashMap<String, WorkerProto>
+) -> Result<()> {
+    let request_context = rpc::ClientRequestContext::default();
+    let node_stubs = connect_to_node_id(meta_client, node_id).await?;
+    let res = node_stubs
+        .service
+        .ListWorkers(&request_context, &ListWorkersRequest::default())
+        .await
+        .result?;
+
+    for worker in res.workers() {
+        node_workers.insert(worker.spec().name().to_string(), worker.as_ref().clone());
     }
 
     Ok(())

@@ -88,8 +88,9 @@ pub async fn run_events(cmd: EventsCommand) -> Result<()> {
     }
 
     for attempt in attempts {
-        println!("{}: {}", attempt.id, time_to_string(&attempt.start_time));
+        println!("{}\nStart Time: {}", attempt.id, time_to_string(&attempt.start_time));
         if let Some(end_time) = attempt.end_time {
+            println!("End Time: {}", time_to_string(&attempt.start_time));
             // TODO: This may be none if there was a start failure.
             println!("=> {:?}", attempt.exit_status.unwrap());
         }
