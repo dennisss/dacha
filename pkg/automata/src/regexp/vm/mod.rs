@@ -189,6 +189,23 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn vm_glob_pattern() -> Result<()> {
+        let re = instance::RegExp::new("^/hello/(.*/)?world$")?;
+
+        let tests = &[
+            ("/hello/a/world", true),
+            ("/hello/world", true),
+            ("/hello/aworld", false),
+        ];
+
+        for (s, valid) in tests {
+            assert_eq!(re.test(*s), *valid);
+        }
+
+        Ok(())
+    }
+
     // TODO: We don't want '.' to match the empty string (given that it will
     // match the start marker)
 

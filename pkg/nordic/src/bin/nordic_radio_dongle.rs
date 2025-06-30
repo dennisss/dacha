@@ -18,17 +18,6 @@ cargo run --bin builder -- build //pkg/nordic:nordic_radio_dongle --config=//pkg
 cargo run --bin flasher -- built/pkg/nordic/nordic_radio_dongle uf2-dfu --usb_device_id=8888:
 
 
-~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb built/pkg/nordic/nordic_radio_dongle
-target extended-remote /dev/ttyACM0
-monitor swdp_scan
-attach 1
-monitor erase_mass
-load built/pkg/nordic/nordic_bootloader
-
-
-openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program built/pkg/nordic/nordic_radio_dongle verify" -c reset -c exit
-
-
 TODO: Want a unique USB descriptor serial number per device since we will start having many of these.
 */
 
@@ -108,6 +97,8 @@ async fn main_thread_fn() {
 
     peripheral_controller.start();
 
+    /*
+    // Hardcoded settings for the HL15 fan controller board.
     // TODO: Stop hard coding this.
     {
         let pwm_pins: &'static [u32] = &[12, 26, 32 + 8, 24];
@@ -143,6 +134,7 @@ async fn main_thread_fn() {
             peripheral_controller.execute(&req).await;
         }
     }
+    */
 
     let mut radio_controller = RadioController::new(
         &RADIO_SOCKET,

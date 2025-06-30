@@ -122,6 +122,9 @@ enum Command {
     Fetch,
     // TODO: Need a command to verify that all files in cloud storage have the correct contents
     // and hash.
+
+    #[arg(name = "list")]
+    List
 }
 
 #[derive(Args)]
@@ -129,7 +132,10 @@ struct AddCommand {
     /// Glob path to use for matching files to stage.
     /// Omitting this will any changes for already tracked files.
     #[arg(positional = true)]
-    path: String,
+    path: Option<String>,
+
+    #[arg(default = false)]
+    verbose: bool,
 }
 
 async fn load_external_files_proto() -> Result<ExternalSourceFiles> {
@@ -177,9 +183,18 @@ const MAX_ADDED_FILES: usize = 200;
 
 async fn run_add_command(cmd: AddCommand) -> Result<()> {
     let base_dir = file::project_dir();
-    let pattern = base_dir.join(LocalPath::new(&cmd.path));
+    
+    let mut glob = {
+        if let Some(path) = &cmd.path {
+            // TODO: 'AND' this with the other git file filter
+            let pattern = base_dir.join(path);
+            GlobIterator::create(&pattern)?
+        } else {
+            file::FileIterator::new(&base_dir, Box::new(git::GitFileFilter::create().await?))
+        }
+    };
 
-    let mut glob = GlobIterator::create(&pattern)?;
+    // TODO: Verify that all existing files in external_files are matched by create_git_file_iterator(). (else we can't track deleting the file)
 
     let git_index = git::read_index().await?;
     let git_entries = {
@@ -230,14 +245,34 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
     // New files to add.
     let mut added_files = vec![];
 
+    // TODO: Currently this only includes hashes seen in our current iterator.
+    // Ideally also include all remaining hashes not removed from the repo.
+    let mut retained_hashes = HashSet::new();
+
     /////////////////////////////////////////////
     // Step 2: Scan matching files in the repository.
+
+    let allowlisted_extensions = [
+        "zip", "pdf", "png", "svg", "stl", "stp", "step", "csv", "gbl", "gtp", "gbp", "g2", "g3", "ipc", "dxf",
+        "gcode", "bgcode", "nc", "drl", "gbr", "gto", "gts" , "gbo", "gbs", "gm1", "gtl"
+    ]
+        .into_iter().cloned().collect::<HashSet<&'static str>>();
 
     while let Some(path) = glob.next().await? {
         let rel_path = match path.strip_prefix(&base_dir) {
             Some(v) => v,
             None => continue,
         };
+
+        // Filter to only files that need to use the external file system.
+        // (everything else should use regular git tracking)
+        {
+            let by_ext = allowlisted_extensions.contains(rel_path.extension().unwrap_or(""));
+
+            if !path_to_hash.contains_key(rel_path.as_str()) && !by_ext {
+                continue;
+            }
+        }
 
         // submodules are just tracked as a directory so we need to exclude everything
         // in the directory.
@@ -264,7 +299,6 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
             continue;
         }
 
-        println!("{}", rel_path.as_str());
 
         // TODO: Ideally we should mtimes to avoid re-calculating the hashes for
         // unchanged files.
@@ -286,18 +320,32 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
             base_radix::hex_encode(&hasher.finish())
         };
 
-        println!("=> SHA256: {}", hash);
+        let mut changed = false;
+        let mut status_string = "";
 
         if let Some(existing_hash) = path_to_hash.remove(rel_path.as_str()) {
             if existing_hash == &hash {
-                println!("=> No diff");
-                continue;
+                status_string = "No diff";
             } else {
-                println!("=> Diff");
+                changed = true;
+                status_string = "Diff";
                 removed_files.insert(rel_path.as_str().to_string());
             }
         } else {
-            println!("=> New");
+            changed = true;
+            status_string = "New";
+        }
+
+        if cmd.verbose || changed {
+            println!("{}", rel_path.as_str());
+            println!("=> SHA256: {}", hash);
+            println!("=> {}", status_string);
+        }
+
+        retained_hashes.insert(hash.clone());
+
+        if !changed {
+            continue;
         }
 
         let mut new_entry = ExternalSourceFile::default();
@@ -311,9 +359,9 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
         }
     }
 
-    for path in path_to_hash.keys() {
+    for (path, hash) in path_to_hash {
         println!("{}", path);
-        println!("=> REMOVE");
+        println!("=> REMOVE{}", if retained_hashes.contains(hash) { " (MOVED)" } else { "" });
         removed_files.insert(path.to_string());
     }
 
@@ -388,6 +436,18 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
     Ok(())
 }
 
+async fn run_list() -> Result<()> { 
+
+    let mut iter = file::FileIterator::new(&file::project_dir(), Box::new(git::GitFileFilter::create().await?));
+    while let Some(path) = iter.next().await? {
+        println!("{}", path.as_str());
+    }
+
+
+    Ok(())
+
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
@@ -397,6 +457,7 @@ async fn main() -> Result<()> {
             run_add_command(cmd).await?;
         }
         Command::Fetch => todo!(),
+        Command::List => run_list().await?
     }
 
     Ok(())

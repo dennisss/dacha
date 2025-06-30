@@ -34,10 +34,10 @@ impl ServiceResourceReportTracker {
         })
     }
 
-    pub async fn update(&self, report: ServiceResourceReport) {
+    pub async fn update_dependencies(&self, dependencies: Vec<ServiceResourceReport>) {
         lock!(v <= self.shared.value.lock().await.unwrap(), {
             v.0 += 1;
-            v.1 = report;
+            v.1.dependencies = dependencies;
             v.notify_all();
         });
     }

@@ -1042,7 +1042,7 @@ async fn bootstrap_system_jobs(
         local_metastore_resource
             .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
             .await;
-        local_metastore_resource.wait_for_termination().await?;
+        local_metastore_resource.wait_for_termination(true).await?;
         drop(local_metastore_resource);
     }
 

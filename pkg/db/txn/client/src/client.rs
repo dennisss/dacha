@@ -185,7 +185,7 @@ impl TransactionalDBClient {
     pub async fn close(self) -> Result<()> {
         self.add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
             .await;
-        self.wait_for_termination().await
+        self.wait_for_termination(true).await
     }
 
     /// List of seed server addresses that can be used later to rediscover the

@@ -1790,6 +1790,7 @@ checksum = "221996f774192f0f718773def8201c4ae31f02616a54ccfc2d358bb0e5cefdec"
 name = "git"
 version = "0.1.0"
 dependencies = [
+ "automata",
  "base_error",
  "base_radix",
  "base_util",

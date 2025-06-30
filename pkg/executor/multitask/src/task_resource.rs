@@ -5,7 +5,6 @@ use common::errors::*;
 use executor::cancellation::{AlreadyCancelledToken, CancellationToken};
 
 use crate::cancellation_token_set::CancellationTokenSet;
-use crate::resource_dependencies::ServiceResourceDependencies;
 use crate::resource_report_tracker::ServiceResourceReportTracker;
 use crate::{
     ServiceResource, ServiceResourceReport, ServiceResourceState, ServiceResourceSubscriber,
@@ -68,14 +67,7 @@ impl TaskResource {
                 }
             };
 
-            let new_report = ServiceResourceReport {
-                resource_name: initial_report.resource_name.clone(),
-                self_state: state,
-                self_message: message,
-                dependencies: vec![],
-            };
-
-            shared2.report.update(new_report).await;
+            shared2.report.update_self(state, message).await;
         });
 
         Self { shared }

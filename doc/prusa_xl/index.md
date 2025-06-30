@@ -37,3 +37,17 @@ There is an optional `fan-lid.stl` that can be printed to mount an extra 30mm 5V
 - Print a `fan-lid.stl`
 - Replace camera mounting screws with 4 x M2 8mm screws
 - Add 4 x M3 12mm screws and 4 x M3 nuts for the fan
+
+
+Enclosure LED strip:
+
+- RGBW
+- Takes as input 24V and ground end for each LED channel
+- 0.18A for White
+- 0.06A per R/G/B channel
+
+Other things on helper board:
+
+- Fan for control board
+- Fan for camera (or easier to just fully turn off the camera)
+- Fan for enclosure eventually (24V fan, 4 pin)

@@ -7,10 +7,13 @@ use executor::cancellation::CancellationToken;
 use crate::resource_dependencies::ServiceResourceDependencies;
 use crate::{resource::*, CancellationTokenSet, TaskResource};
 
+/// A group of ServiceResources (represented as dependencies of the group).
+///
+/// - Cancellations of the group are immediately propagated to all direct dependencies.
+/// - Failures in any dependency triggers cancellation of all dependencies.
 pub struct ServiceResourceGroup {
     deps: Arc<ServiceResourceDependencies>,
     placeholder_resource: TaskResource,
-    // cancellation_tokens: CancellationTokenSet,
 }
 
 #[async_trait]
@@ -40,15 +43,7 @@ impl ServiceResourceGroup {
         let deps2 = deps.clone();
         let name2 = name.to_string();
         let placeholder_resource = TaskResource::spawn(&name, |token| async move {
-            token.wait_for_cancellation().await;
-            deps2
-                .update_parent_report(ServiceResourceReport {
-                    resource_name: name2,
-                    self_state: ServiceResourceState::Done,
-                    self_message: None,
-                    dependencies: vec![],
-                })
-                .await;
+            Self::watcher_task(name2, token, deps2).await;
             Ok(())
         });
 
@@ -56,6 +51,41 @@ impl ServiceResourceGroup {
             deps,
             placeholder_resource,
         }
+    }
+
+    pub(super) async fn watcher_task(
+        name: String,
+        token: Arc<dyn CancellationToken>,
+        deps: Arc<ServiceResourceDependencies>
+    ) {
+        let mut dep_subscriber = deps.new_resource_subscriber().await;
+
+        loop {
+            if token.is_cancelled().await {
+                break;
+            }
+
+            let state = dep_subscriber.value().await.overall_state();
+            if state == ServiceResourceState::PermanentFailure {
+                break;
+            }
+
+            executor::future::race(
+                token.wait_for_cancellation(),
+                dep_subscriber.wait_for_change()
+            ).await;
+        }
+
+        // NOTE: This will trigger cancellation of the dependencies in the
+        // ServiceResourceDependencies code.
+        deps
+            .update_parent_report(ServiceResourceReport {
+                resource_name: name,
+                self_state: ServiceResourceState::Done,
+                self_message: None,
+                dependencies: vec![],
+            })
+            .await;
     }
 
     pub async fn register_dependency(&self, resource: Arc<dyn ServiceResource>) {

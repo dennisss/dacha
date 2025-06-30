@@ -130,7 +130,7 @@ impl EmbeddedDBStateMachineDatabase {
 
         // Wait for the old database to finish running.
         state.db_canceller.trigger().await;
-        state.db.wait_for_termination().await?;
+        state.db.wait_for_termination(true).await?;
 
         Ok(())
     }

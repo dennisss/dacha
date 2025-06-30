@@ -37,3 +37,8 @@ _autosave*.sch
 *.kicad_pcb.lck
 *#auto_saved_files#
 
+# Subdirectory specific ignores since we don't support nested gitignores
+/pkg/haystack/bindings/node/native/target
+/pkg/haystack/bindings/node/native/index.node
+/pkg/haystack/bindings/node/native/artifacts.json
+/pkg/usvg/out

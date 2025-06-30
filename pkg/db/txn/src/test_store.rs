@@ -146,7 +146,7 @@ impl Drop for TestMetastore {
             resource
                 .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
                 .await;
-            resource.wait_for_termination().await;
+            resource.wait_for_termination(true).await;
         });
     }
 }
@@ -163,7 +163,7 @@ impl TestMetastore {
         self.resource
             .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
             .await;
-        self.resource.wait_for_termination().await
+        self.resource.wait_for_termination(true).await
     }
 
     /// Creates a new client instance that is directly connected to just thie

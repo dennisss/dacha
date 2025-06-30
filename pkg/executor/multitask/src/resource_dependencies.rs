@@ -15,7 +15,7 @@ use crate::{
 /// resource to operate.
 ///
 /// This object needs to be continously fed updates to the parent resource's
-/// report via update_parent_report (exclusing dependency reports naturally). In
+/// report via update_parent_report (excluding dependency reports naturally). In
 /// exchange the ServiceResourceDependencies fully implements the
 /// ServiceResource interface with merging and the parent and dependency reports
 /// and:
@@ -28,13 +28,15 @@ pub struct ServiceResourceDependencies {
 }
 
 struct Shared {
-    // self_resource: Arc<dyn ServiceResource>,
+    /// Cancellation token which is passed to all dependencies.
+    dep_cancellation_token: Arc<TriggerableCancellationToken>,
+
     // TODO: Child tasks can't be held in Shared since it will a cyclic reference.
     // self_resource_listener: ChildTask,
-    dep_cancellation_token: Arc<TriggerableCancellationToken>,
     state: AsyncVariable<State>,
 
-    /// NOTE: A lock on 'state' MUST be held while updating this.
+    /// NOTE: A lock on 'state' MUST be held while updating this since the
+    /// value of this is formed by aggregating all the dependencies.
     report: ServiceResourceReportTracker,
 }
 
@@ -56,18 +58,14 @@ impl ServiceResourceDependencies {
     pub async fn update_parent_report(&self, parent_report: ServiceResourceReport) {
         let state = self.shared.state.lock().await.unwrap().read_exclusive();
 
-        let mut combined_report = self.shared.report.current_value().await;
-        combined_report.resource_name = parent_report.resource_name;
-        combined_report.self_state = parent_report.self_state;
-        combined_report.self_message = parent_report.self_message;
         assert!(parent_report.dependencies.is_empty());
 
         // Cancel dependencies when the parent is done.
-        if combined_report.self_state.is_terminal() {
+        if parent_report.self_state.is_terminal() {
             self.shared.dep_cancellation_token.trigger().await;
         }
 
-        self.shared.report.update(combined_report).await;
+        self.shared.report.update_self(parent_report.self_state, parent_report.self_message).await;
     }
 
     pub async fn register_dependency(&self, resource: Arc<dyn ServiceResource>) {
@@ -87,7 +85,7 @@ impl ServiceResourceDependencies {
             {
                 let mut report = shared.report.current_value().await;
                 report.dependencies.push(resource_sub.value().await);
-                shared.report.update(report).await;
+                shared.report.update_dependencies(report.dependencies).await;
             }
 
             // Downgrade to avoid a cyclic loop when storing the ChildTask.
@@ -108,7 +106,7 @@ impl ServiceResourceDependencies {
                     {
                         let mut report = shared.report.current_value().await;
                         report.dependencies[idx] = resource_sub.value().await;
-                        shared.report.update(report).await;
+                        shared.report.update_dependencies(report.dependencies).await;
                     }
                 }
             });

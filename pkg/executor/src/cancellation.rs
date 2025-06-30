@@ -12,6 +12,8 @@ pub trait CancellationToken: 'static + Send + Sync {
     async fn wait_for_cancellation(&self);
 }
 
+/// A cancellation token which is only marked as cancelled when a user manually
+/// runs the trigger() function on it.
 #[derive(Default)]
 pub struct TriggerableCancellationToken {
     cancelled: AsyncVariable<bool>,
@@ -44,6 +46,7 @@ impl CancellationToken for TriggerableCancellationToken {
     }
 }
 
+/// A cancellation token which is already cancelled.
 #[derive(Default)]
 pub struct AlreadyCancelledToken {
     _hidden: (),

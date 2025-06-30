@@ -970,71 +970,6 @@ files: [
         sha256_sum: "e93c1b4432aedeba35c099728e403e41b8901ce05241e3d71a03a516c8942902"
     },
     {
-        path: "doc/tc2030_adapter/plot/board-B_Cu.gbl"
-        size: 29316
-        sha256_sum: "3f731993eca214a1ead8988583e4fc7299d7a49615f13fbfd3a9e4176cbab75f"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-B_Mask.gbs"
-        size: 13082
-        sha256_sum: "1fdce8428fb70a95df2ce41dc5819760a8e99efc07413ce63b3739d24acf0457"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-B_Paste.gbp"
-        size: 507
-        sha256_sum: "9ff2f13c5808bc713f6141f5c1f033dad3ec405f06b1f47eb0feb0ed309c3aff"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-B_SilkS.gbo"
-        size: 941
-        sha256_sum: "7c41ddd8a2f88762e3b80233a55e8d5c9708bf7e4801e002a2ce2ac249be7c5b"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-Edge_Cuts.gm1"
-        size: 694
-        sha256_sum: "dfac49741c33732aa01ad58fee6d38fcd62b8b175e7a004656de1514173624b3"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-F_Cu.gtl"
-        size: 3156
-        sha256_sum: "dd395f2bec471372aa52558ef19ce36adafcd8d05a31385f1b5ec8707adbfab6"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-F_Mask.gts"
-        size: 14432
-        sha256_sum: "5e7e350b0857e2fc51c31023b7e2e93f09580244ef8c468c0325d0ed179805e6"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-F_Paste.gtp"
-        size: 780
-        sha256_sum: "1cad104b10d28396a113dba4b9b91fa553b682ec39f3085efda274d21846759f"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-F_SilkS.gto"
-        size: 6686
-        sha256_sum: "94ca3955a4804c2e41013d7d3b4a84d1fbd53f79c9f2b20f709ed20f8e9bee4f"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-NPTH-drl_map.gbr"
-        size: 2327
-        sha256_sum: "a05eb55a1f697377b1c2f28eb125f32e3b4c3bae6a995f8fabf7b4a30ffc3568"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-NPTH.drl"
-        size: 307
-        sha256_sum: "c0ab78a9befb8639cc1c4779ef4f6a22ed988e523de5e6eb1edbff84b66932e4"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-PTH-drl_map.gbr"
-        size: 27698
-        sha256_sum: "2eb1b919afcfdbf842a02c4aecf8d54811715b5fb2857c39f5c4991badd68231"
-    },
-    {
-        path: "doc/tc2030_adapter/plot/board-PTH.drl"
-        size: 645
-        sha256_sum: "af0b6712fa114cb45cafa1414187d96f665d06a80c0b317c93e1662bc284b1ac"
-    },
-    {
         path: "doc/uplift_desk/board/flatcam/Project_20220205_143158.FlatPrj"
         size: 2385940
         sha256_sum: "f41ed933d5d0416a15e23853caf89a5654af0ab519a3bf04b9ffa0f7d148c0ae"
@@ -1495,6 +1430,86 @@ files: [
         sha256_sum: "23328a708aa85cde9e1ae9ca0c7c8af431ff071b09ef728eb3218add84e87adf"
     },
     {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-B_Cu.gbl"
+        size: 29316
+        sha256_sum: "3f731993eca214a1ead8988583e4fc7299d7a49615f13fbfd3a9e4176cbab75f"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-B_Mask.gbs"
+        size: 13082
+        sha256_sum: "1fdce8428fb70a95df2ce41dc5819760a8e99efc07413ce63b3739d24acf0457"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-B_Paste.gbp"
+        size: 507
+        sha256_sum: "9ff2f13c5808bc713f6141f5c1f033dad3ec405f06b1f47eb0feb0ed309c3aff"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-B_SilkS.gbo"
+        size: 941
+        sha256_sum: "7c41ddd8a2f88762e3b80233a55e8d5c9708bf7e4801e002a2ce2ac249be7c5b"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-Edge_Cuts.gm1"
+        size: 694
+        sha256_sum: "dfac49741c33732aa01ad58fee6d38fcd62b8b175e7a004656de1514173624b3"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-F_Cu.gtl"
+        size: 3156
+        sha256_sum: "dd395f2bec471372aa52558ef19ce36adafcd8d05a31385f1b5ec8707adbfab6"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-F_Mask.gts"
+        size: 14432
+        sha256_sum: "5e7e350b0857e2fc51c31023b7e2e93f09580244ef8c468c0325d0ed179805e6"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-F_Paste.gtp"
+        size: 780
+        sha256_sum: "1cad104b10d28396a113dba4b9b91fa553b682ec39f3085efda274d21846759f"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-F_SilkS.gto"
+        size: 6686
+        sha256_sum: "94ca3955a4804c2e41013d7d3b4a84d1fbd53f79c9f2b20f709ed20f8e9bee4f"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-NPTH-drl_map.gbr"
+        size: 2327
+        sha256_sum: "a05eb55a1f697377b1c2f28eb125f32e3b4c3bae6a995f8fabf7b4a30ffc3568"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-NPTH.drl"
+        size: 307
+        sha256_sum: "c0ab78a9befb8639cc1c4779ef4f6a22ed988e523de5e6eb1edbff84b66932e4"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-PTH-drl_map.gbr"
+        size: 27698
+        sha256_sum: "2eb1b919afcfdbf842a02c4aecf8d54811715b5fb2857c39f5c4991badd68231"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-PTH.drl"
+        size: 645
+        sha256_sum: "af0b6712fa114cb45cafa1414187d96f665d06a80c0b317c93e1662bc284b1ac"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/parts/case-bottom.stl"
+        size: 61484
+        sha256_sum: "ae9934cdc39adfde2df12ac7639de1c741f7083b8ca98adb23dec2c177e66a44"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/parts/case-button.stl"
+        size: 57684
+        sha256_sum: "15fbd30546a3593ea88d901ea536b9fb46f6d09debcbeecad356575a685916a4"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/parts/case-top.stl"
+        size: 388884
+        sha256_sum: "3eccbfd0bafd3a49dfa220b8f5239b41151e81d0c6d3d37212f199ac1b3945bb"
+    },
+    {
         path: "pkg/peripherals/devices/ptouch/captures/settings/brother_final_settings.png"
         size: 10816
         sha256_sum: "6f0315c5f4d446efaf9a3c86dfb45a0adf5bade2cf7da99d47677ee3251dd093"
@@ -1508,6 +1523,41 @@ files: [
         path: "pkg/peripherals/devices/ptouch/captures/settings/brother_read_settings_then_change.pcapng"
         size: 6404
         sha256_sum: "283018c98a4e3acf6d27ae073bef06368c30e6f559a052c0d521c3a9e42b62be"
+    },
+    {
+        path: "pkg/peripherals/doc/black_magic/unified-connector.svg"
+        size: 82702
+        sha256_sum: "7b0fffde6766f3b73513c4c6b0afd8646cde48a3cd6075111236cfa77adfdd48"
+    },
+    {
+        path: "pkg/peripherals/doc/boards/adafruit_itsybitsy_nrf52840/adafruit_products_schem.png"
+        size: 30198
+        sha256_sum: "6526d142efbed90c84e947d4ea604950c9aa4b4f63549e2e77e71a536aa845b6"
+    },
+    {
+        path: "pkg/peripherals/doc/boards/nrf52840_dongle/nrf52840-usb-dongle---hardware-files-2_1_1.zip"
+        size: 5845205
+        sha256_sum: "c9c204abe1e224d00008960e9ad5666a9e2fd19834beca40d78dc5f41ea8e930"
+    },
+    {
+        path: "pkg/peripherals/doc/tag_connect/TC2030-CTX_1.pdf"
+        size: 951689
+        sha256_sum: "9f0570d0aa8a0747fe6227588046f7986505f9f998f5285ccb98fdfab5c7d281"
+    },
+    {
+        path: "pkg/peripherals/doc/tag_connect/TC2030-IDC-NL-Datasheet-Rev-B.pdf"
+        size: 76383
+        sha256_sum: "46073f8d1d7dcfcbe29f054f3173fba1af17975a44059baed49cd59775c0bceb"
+    },
+    {
+        path: "pkg/peripherals/doc/tag_connect/TC2050-IDC-NL_Datasheet_8.pdf"
+        size: 1134816
+        sha256_sum: "4a5223d6f87539ccc30047480273b5380c7a7d78ea2332b7e79df5ac151231c6"
+    },
+    {
+        path: "pkg/peripherals/doc/tag_connect/TC2050-IDC_Datasheet_7.pdf"
+        size: 1251913
+        sha256_sum: "0da516dc7fd5df3f7708445731b74c0b478a9cd4b3232168ae252cb86ad06b3e"
     },
     {
         path: "pkg/things/fan_controller/parts/fan-controller-hl15-case.stl"

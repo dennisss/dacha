@@ -5,8 +5,12 @@ use common::errors::*;
 use executor::cancellation::CancellationToken;
 
 use crate::resource_dependencies::ServiceResourceDependencies;
-use crate::{resource::*, TaskResource};
+use crate::{resource::*, TaskResource, ServiceResourceGroup};
 
+/// Top level resource that represents an entire program.
+///
+/// - There should just exist a single instance of this per program run (normally created in the main() function).
+/// - All other resources needed by the program should be added as children of this resource.
 pub struct RootResource {
     deps: Arc<ServiceResourceDependencies>,
 }
@@ -25,15 +29,7 @@ impl RootResource {
         // when those happen.
         let cancellation_token = executor::signals::new_shutdown_token();
         executor::spawn(async move {
-            cancellation_token.wait_for_cancellation().await;
-            deps2
-                .update_parent_report(ServiceResourceReport {
-                    resource_name: "Root".to_string(),
-                    self_state: ServiceResourceState::Done,
-                    self_message: None,
-                    dependencies: vec![],
-                })
-                .await;
+            ServiceResourceGroup::watcher_task("Root".to_string(), cancellation_token, deps2).await;
         });
 
         Self { deps }
@@ -69,7 +65,7 @@ impl RootResource {
     /// Waits until we have reached a terminal state for the resources.
     pub async fn wait(&self) -> Result<()> {
         let mut subscriber = self.deps.new_resource_subscriber().await;
-        wait_for_termination(subscriber).await
+        wait_for_termination(subscriber, false).await
     }
 }
 

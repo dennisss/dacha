@@ -23,8 +23,13 @@ pub fn parse_root_expression(input: &str) -> Result<RegExpNodePtr> {
 }
 
 parser!(alternation<&str, RegExpNodePtr> => {
-    // TODO: Simplify if length == 1
-    map(delimited(expr, tag("|")), |alts| Box::new(RegExpNode::Alt(alts)))
+    map(delimited(expr, tag("|")), |mut alts| {
+        if alts.len() == 1 {
+            return alts.pop().unwrap();
+        }
+        
+        Box::new(RegExpNode::Alt(alts))
+    })
 });
 
 parser!(expr<&str, RegExpNodePtr> => {

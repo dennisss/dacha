@@ -106,6 +106,12 @@ pub fn get_chip_config(chip_name: &str, building_bootloader: bool) -> Result<Cor
                     words: vec![0xFFFFFF5A], // HwDisabled
                 });
 
+                config.registers.push(NonVolatileRegister {
+                    name: "NFCPINS".into(),
+                    address: 0x1000120C,
+                    words: vec![0], // Disabled. Act as GPIO pins.
+                });
+
                 // TODO: Double check what is best here.
                 config.registers.push(NonVolatileRegister {
                     name: "REGOUT0".into(),

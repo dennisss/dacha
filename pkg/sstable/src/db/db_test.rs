@@ -77,7 +77,7 @@ impl TestDB {
         self.db
             .add_cancellation_token(Arc::new(AlreadyCancelledToken::default()))
             .await;
-        self.db.wait_for_termination().await?;
+        self.db.wait_for_termination(true).await?;
         drop(self.db);
 
         let db = EmbeddedDB::open(self.dir.path(), options).await?;

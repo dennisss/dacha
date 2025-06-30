@@ -32,18 +32,23 @@ pub trait ServiceResource: 'static + Send + Sync {
     async fn on_service_initialized(&self);
     */
 
-    async fn wait_for_termination(&self) -> Result<()> {
+    async fn wait_for_termination(&self, wait_for_all_terminated: bool) -> Result<()> {
         let mut subscriber = self.new_resource_subscriber().await;
-        wait_for_termination(subscriber).await
+        wait_for_termination(subscriber, wait_for_all_terminated).await
     }
 }
 
 pub(crate) async fn wait_for_termination(
-    mut subscriber: Box<dyn ServiceResourceSubscriber>,
+    mut subscriber: Box<dyn ServiceResourceSubscriber>, wait_for_all_terminated: bool
 ) -> Result<()> {
     loop {
         let report = subscriber.value().await;
-        let (state, message) = report.overall_state_and_message();
+        let (state, message, all_terminal) = report.overall_state_and_message();
+
+        if wait_for_all_terminated && !all_terminal {
+            subscriber.wait_for_change().await;
+            continue;
+        }
 
         // println!("===============");
         // println!("{:?}", report);
@@ -56,7 +61,7 @@ pub(crate) async fn wait_for_termination(
                 return Err(format_err!(
                     "Resource {} failed: {}",
                     report.resource_name,
-                    message.unwrap_or("")
+                    message.unwrap_or(String::new())
                 ));
             }
             ServiceResourceState::Done => {
@@ -103,18 +108,24 @@ impl ServiceResourceReport {
         self.overall_state_and_message().0
     }
 
-    pub fn overall_state_and_message(&self) -> (ServiceResourceState, Option<&str>) {
+    pub fn overall_state_and_message(&self) -> (ServiceResourceState, Option<String>, bool) {
         let mut state = self.self_state;
-        let mut message = self.self_message.as_ref().map(|s| s.as_str());
+        let mut message = self.self_message.as_ref().map(|s| s.to_string());
+        let mut all_terminal = state.is_terminal();
         for dep in &self.dependencies {
-            let (s, m) = dep.overall_state_and_message();
+            let (s, m, dep_all_terminal) = dep.overall_state_and_message();
+            all_terminal &= dep_all_terminal;
             state = state.merge(s);
             if s == state {
-                message = m;
+                message = Some(format!(
+                    "[{}] {}",
+                    dep.resource_name,
+                    m.unwrap_or("".to_string())
+                ));
             }
         }
 
-        (state, message)
+        (state, message, all_terminal)
     }
 
     fn to_string(&self, out: &mut LineBuilder) {
@@ -163,7 +174,7 @@ pub enum ServiceResourceState {
     PermanentFailure,
 
     /// All background tasks for this resource have finished successfully
-    /// (either due to shutdown or ).
+    /// (either due to running to completion or cancellation).
     Done,
 }
 
@@ -195,6 +206,7 @@ impl ServiceResourceState {
         Self::Ready
     }
 
+    /// Returns true if this state is not going to change in the future.
     pub fn is_terminal(&self) -> bool {
         match self {
             ServiceResourceState::Loading

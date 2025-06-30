@@ -682,7 +682,14 @@ mod tests {
             ("file//second", Some("file//")),
             ("file/./second", Some("file/./")),
             ("/file/./second", Some("/file/./")),
+            ("/file/second/", Some("/file")),
+            ("/file/second//", Some("/file")),
+            ("/file/second/./", Some("/file")),
         ];
+
+        println!("MY PARENT: {:?}", std::path::Path::new("/file/second/").parent());
+        println!("MY PARENT: {:?}", std::path::Path::new("/file/second//").parent());
+        println!("MY PARENT: {:?}", std::path::Path::new("/file/second/.././").parent());
 
         for (original_path, expected_parent) in test_cases {
             assert_eq!(

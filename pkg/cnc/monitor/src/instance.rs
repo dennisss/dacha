@@ -700,7 +700,7 @@ impl MonitorImpl {
         // NOTE: If there was no error, then we assume there was a successful disconnect
         // requested by a user.
         let error = controller
-            .wait_for_termination()
+            .wait_for_termination(true)
             .await
             .map_err(|e| e.to_string())
             .err();
@@ -843,7 +843,7 @@ impl MonitorImpl {
     ) {
         // Wait for it to terminate.
 
-        let res = controller.wait_for_termination().await;
+        let res = controller.wait_for_termination(true).await;
         drop(controller);
 
         let shared = match shared.upgrade() {
@@ -1413,6 +1413,9 @@ impl MonitorImpl {
             RunMachineCommandRequestCommandCase::Jog(cmd) => {
                 let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
 
+                // TODO: Block job while a program is playing. We would also need need to change
+                // back to whatever the old positioning mode is.
+
                 // Relative positioning
                 serial_controller
                     .send_command("G91\n", DEFAULT_COMMAND_TIMEOUT)
@@ -1493,6 +1496,11 @@ impl MonitorImpl {
 
             Result::<_, Error>::Ok(serial)
         })
+    }
+
+    /// NOT CANCEL SAFE
+    async fn load_program_impl() {
+        //
     }
 
     async fn play_impl(&self, machine_id: u64) -> Result<()> {
