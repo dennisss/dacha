@@ -44,7 +44,7 @@ Useful FICR stuff:
 
 use common::segmented_buffer::SegmentedBuffer;
 use executor::sync::AsyncMutex;
-use nordic_proto::nordic::{
+use peripherals_proto::peripherals::{
     PeripheralRequest, PeripheralRequestCommandCase, PeripheralResponse,
     PeripheralResponse_ErrorCode,
 };
@@ -360,7 +360,7 @@ impl PeripheralsController {
 
                 for i in 0..state.pwms.len() {
                     if state.pwms[i].has_connected_pins() {
-                        if pwm_config != state.pwms[i].config() {
+                        if pwm_config != state.pwms[i].config() || !state.pwms[i].has_available_channel() {
                             continue;
                         }
                     } else {
@@ -657,7 +657,7 @@ impl PeripheralsController {
         // TODO: We can just directly serialize to the output buffer if we take out a
         // view?
         let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
-        res.serialize_to(&mut raw_proto).unwrap();
+        res.serialize_to(&protobuf::SerializeOptions::default(), &mut raw_proto).unwrap();
         state.response_buffer.write(&raw_proto);
     }
 }

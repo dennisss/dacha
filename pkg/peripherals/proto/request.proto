@@ -1,6 +1,10 @@
+// This file contains the core PeripheralRequest/PeripheralResponse types that
+// will be exchanged with MCUs so need to work in memory constrained
+// environments.
+
 syntax = "proto3";
 
-package nordic;
+package peripherals;
 
 message PeripheralRequest {
     uint32 peripheral_index = 1;
@@ -172,9 +176,13 @@ message ConfigureGPIO {
         FALLING_EDGE = 2;
     }
     InterruptPolarity interrupt = 5;
+
+    // TODO: Add a default value for outputs
 }
 
 message SetGPIOLevel {
+    // TODO: Also support HIGH-Z
+
     bool high = 1;
 }
 

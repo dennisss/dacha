@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package peripherals;
+
+import "pkg/peripherals/proto/request.proto";
+
+service Peripherals {
+    rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
+
+    rpc Execute (PeripheralRequest) returns (ExecuteResponse);
+
+    rpc RunMacro (RunMacroRequest) returns (ExecuteResponse);
+}
+
+message RunMacroRequest {
+    string name = 1;
+}
+
+message GetConfigRequest {
+
+}
+
+message GetConfigResponse {
+    BoardConfig config = 1;
+
+    PeripheralsState state = 2;
+}
+
+message ExecuteResponse {
+    PeripheralResponse response = 1;
+    
+    PeripheralsState state = 2;
+
+}
+
+// Configuration for a board which exposes controllable hardware peripherals/pins.
+message BoardConfig {
+    string name = 1;
+
+    string base_config = 2;
+
+    // TODO: Information on USB device/vendor ids.
+
+    // TODO: Information on how to build binaries for this board.
+
+    // TODO: Have some information for 
+    message Pin {
+        // Stable human readable name for the pin.
+        string name = 1;
+        
+        // Other names for this pin. When merging a config with a base config,
+        // this will be used to match up pins to base config pins.
+        repeated string alias = 2;
+
+        // Index to use when communicating with the MCU.
+        // When merging with a base config, these will be copied from the
+        // matching pin in the base config.
+        optional uint32 index = 3;
+    }
+    repeated Pin pins = 3;
+
+
+    message GPIOPeripheral {
+        string pin_name = 1;
+        ConfigureGPIO config = 2;
+    }
+
+    message PWMPeripheral {
+        string pin_name = 1;
+        ConfigurePWMRequest config = 2;
+    }
+
+    message Peripheral {
+        // Stable human readable name for the pin.
+        string name = 1;
+
+        // Index to use when communicating with the MCU
+        optional uint32 index = 2;
+
+        oneof config {
+            GPIOPeripheral gpio = 3;
+            PWMPeripheral pwm = 4;
+        }
+    }
+    repeated Peripheral peripherals = 4;
+
+
+    message MacroCommand {
+        string peripheral_name = 1;
+        PeripheralRequest request = 2;
+    }
+
+    message Macro {
+        string name = 1;
+        repeated MacroCommand commands = 2;
+    }
+
+    repeated Macro macros = 5;
+
+    // TODO: Want some diagram info on how to group the pins.
+}
+
+
+message PeripheralsState {
+    repeated PeripheralState states = 1;
+}
+
+message PeripheralState {
+    uint32 index = 1;
+
+    oneof state {
+        SetGPIOLevel gpio = 2;
+        SetPWMRequest pwm = 3;
+    }
+}
+

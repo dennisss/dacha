@@ -1,0 +1,47 @@
+name: "overhead_light_controller"
+
+replicas: 1
+
+scheduling {
+    labels {
+        label {
+            key: "overhead_light_controller"
+            present: true
+        }
+    }
+}
+
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/peripherals/service/peripherals_service",
+        "--port=service",
+        "--config_name=overhead_light_controller"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/peripherals/service:bundle"
+        }
+    ]
+
+    additional_groups: ["plugdev"]
+    devices: [
+        {
+            source {
+                usb {
+                    vendor: 0x8888
+                    product: 0x0004
+                }
+                limit: 1
+            }
+            exclusive: true
+        }
+    ]
+}

@@ -1,0 +1,139 @@
+# proto-file: pkg/peripherals/proto/service.proto
+# proto-message: BoardConfig
+
+name: "nrf52840_itsybitsy"
+base_config: "nrf52840"
+
+pins {
+    name: "D5"
+    alias: "P0.27"
+}
+pins {
+    name: "D11"
+    alias: "P0.26"
+}
+pins {
+    name: "A0"
+    alias: "P0.04"
+}
+pins {
+    name: "D10"
+    alias: "P0.05"
+}
+pins {
+    name: "LED1"
+    alias: "P0.06"
+}
+pins {
+    name: "D9"
+    alias: "P0.07"
+}
+pins {
+    name: "DOT_DATA"
+    alias: "P0.08"
+}
+pins {
+    name: "D7"
+    alias: "P1.08"
+}
+pins {
+    name: "DOT_CLK"
+    alias: "P1.09"
+}
+pins {
+    name: "D12"
+    alias: "P0.11"
+}
+pins {
+    name: "D13"
+    alias: "P0.12"
+}
+pins {
+    name: "SCL"
+    alias: "P0.14"
+}
+pins {
+    name: "SCK"
+    alias: "P0.13"
+}
+pins {
+    name: "SDA"
+    alias: "P0.16"
+}
+pins {
+    name: "MOSI"
+    alias: "P0.15"
+}
+pins {
+    name: "QSPI_DATA3"
+    alias: "P0.17"
+}
+pins {
+    name: "QSPI_SCK"
+    alias: "P0.19"
+}
+pins {
+    name: "QSPI_DATA0"
+    alias: "P0.21"
+}
+pins {
+    name: "MISO"
+    alias: "P0.20"
+}
+pins {
+    name: "QSPI_CS"
+    alias: "P0.23"
+}
+pins {
+    name: "QSPI_DATA1"
+    alias: "P0.22"
+}
+pins {
+    name: "QSPI_DATA2"
+    alias: "P1.00"
+}
+pins {
+    name: "TX_D1"
+    alias: "P0.24"
+}
+pins {
+    name: "RX_D0"
+    alias: "P0.25"
+}
+pins {
+    name: "D2"
+    alias: "P1.02"
+}
+pins {
+    name: "A1"
+    alias: "P0.30"
+}
+pins {
+    name: "A2"
+    alias: "P0.28"
+}
+pins {
+    name: "A3"
+    alias: "P0.31"
+}
+pins {
+    name: "A4"
+    alias: "P0.02"
+}
+pins {
+    name: "SWITCH"
+    alias: "P0.29"
+}
+pins {
+    name: "A5"
+    alias: "P0.03"
+}
+
+# High is on. Low is off.
+peripherals {
+    name: "LED1"
+    gpio {
+        pin_name: "LED1"
+        config {}
+    }
+}

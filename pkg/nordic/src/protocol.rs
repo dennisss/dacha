@@ -39,7 +39,8 @@ use common::list::Appendable;
 use executor::channel::Channel;
 use executor::futures::*;
 use logging::Logger;
-use nordic_proto::nordic::{NetworkConfig, PeripheralRequest};
+use nordic_proto::nordic::NetworkConfig;
+use peripherals_proto::peripherals::PeripheralRequest;
 use nordic_wire::packet::PacketBuffer;
 use nordic_wire::request_type::ProtocolRequestType;
 use protobuf::{Message, StaticMessage};
@@ -257,7 +258,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
 
                 let network_config = self.radio_socket.lock_network_config().await;
                 if let Some(network_config) = network_config.get() {
-                    if let Err(_) = network_config.serialize_to(&mut raw_proto) {
+                    if let Err(_) = network_config.serialize_to(&protobuf::SerializeOptions::default(), &mut raw_proto) {
                         // TODO: Make sure this returns an error over USB?
                         log!("USB SER FAIL");
                         res.stale();

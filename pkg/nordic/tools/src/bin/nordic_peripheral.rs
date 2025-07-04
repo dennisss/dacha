@@ -14,122 +14,7 @@ use protobuf::{Message, StaticMessage};
 use usb::descriptor_iter::DescriptorIter;
 use usb::descriptors::SetupPacket;
 use usb::DescriptorSet;
-
-struct PeripheralDevice {
-    device: usb::Device,
-    last_sequence: u32,
-}
-
-impl PeripheralDevice {
-    pub async fn create() -> Result<Self> {
-        let ctx = usb::Context::create()?;
-
-        let mut device = ctx.open_device(0x8888, 0x0004).await?;
-
-        println!("Opened");
-
-        device.reset()?;
-
-        Ok(Self {
-            device,
-            last_sequence: 0,
-        })
-    }
-
-    pub async fn send_request(
-        &mut self,
-        request: &PeripheralRequest,
-    ) -> Result<PeripheralResponse> {
-        // TODO: Reset the sequence after a while.
-
-        let mut request = request.clone();
-        self.last_sequence += 1;
-        request.set_request_sequence(self.last_sequence);
-
-        let proto = request.serialize()?;
-        // println!("Send: {}", packet.len());
-
-        let mut packet = vec![];
-        packet.push(proto.len() as u8);
-        packet.extend_from_slice(&proto);
-        if packet.len() < 64 {
-            packet.resize(64, 0);
-        }
-
-        // if packet.len() < 9 {
-        //     packet.resize(9, 0);
-        // }
-
-        // let packet2 = packet.clone();
-        // packet.extend_from_slice(&packet2);
-
-        // println!("{:?}", packet);
-        // {
-        //     let request2 = PeripheralRequest::parse(&packet)?;
-        //     println!("REQ: {:?}", request2);
-        // }
-
-        let start = Instant::now();
-
-        // println!("TX>");
-
-        // TODO: Support retrying this (must consider the idempotence of actions).
-        self.device
-            .write_control(
-                SetupPacket {
-                    bmRequestType: 0b01000000,
-                    bRequest: ProtocolRequestType::PeripheralRequest.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: packet.len() as u16,
-                },
-                &packet,
-            )
-            .await?;
-
-        let mut res_buffer = [0u8; 256];
-
-        // TODO: Need to ignore empty responses.
-
-        // println!("RX>");
-
-        let mut nread = 0;
-
-        loop {
-            nread = self
-                .device
-                .read_control(
-                    SetupPacket {
-                        bmRequestType: 0b11000000,
-                        bRequest: ProtocolRequestType::PeripheralResponse.to_value(),
-                        wValue: 0,
-                        wIndex: 0,
-                        wLength: res_buffer.len() as u16,
-                    },
-                    &mut res_buffer,
-                )
-                .await?;
-
-            if nread != 0 {
-                break;
-            }
-
-            executor::sleep(Duration::from_millis(10)).await?;
-        }
-
-        //
-
-        let end = Instant::now();
-
-        let response = PeripheralResponse::parse(&res_buffer[0..nread])?;
-
-        // TODO: Verify it has the same sequence.
-
-        // println!("Response: {} | {:?} | {:?}", nread, end - start, response);
-
-        Ok(response)
-    }
-}
+use peripherals_proto::peripherals::*;
 
 /*
 - Top row: Fan 1, Fan 3, Fan 5, Fan 6, Fan 7
@@ -167,8 +52,12 @@ First application:
 #[executor_main]
 async fn main() -> Result<()> {
     // TODO: Verify that unconfiguring the PWM actually sets the thing back to 0
+    
+    let mut selector = usb::DeviceSelector::default();
+    selector.vendor_id = Some(0x8888);
+    selector.product_id = Some(0x0004);
 
-    let mut dev = PeripheralDevice::create().await?;
+    let mut dev = nordic_tools::usb_radio::USBRadio::find(&selector).await?;
 
     let pwm_pins: Vec<u32> = vec![12, 26, 32 + 8, 24];
 

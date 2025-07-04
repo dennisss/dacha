@@ -54,6 +54,7 @@ use nordic::gpio::*;
 use nordic::params::AppParamsStorage;
 use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio::Radio;
+use nordic::controller::PeripheralsController;
 use nordic::radio_activity_led::setup_radio_activity_leds;
 use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
 use nordic::rtc::RTC;
@@ -63,7 +64,7 @@ use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
 use nordic_wire::packet::PacketBuffer;
 use nordic_wire::usb_descriptors::*;
-use peripherals::storage::BlockStorage;
+// use peripherals::storage::BlockStorage;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
 static PARAMS_STORAGE: Singleton<AppParamsStorage> = Singleton::uninit();

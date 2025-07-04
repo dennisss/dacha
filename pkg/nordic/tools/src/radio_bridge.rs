@@ -33,7 +33,7 @@ struct RadioBridgeInner {
 struct Shared {
     state: AsyncMutex<State>,
 
-    meta_client: ClusterMetaClient,
+    meta_client: Arc<ClusterMetaClient>,
 
     /// Events an event to the radio thread whenever a new config/queue change
     /// occurs.

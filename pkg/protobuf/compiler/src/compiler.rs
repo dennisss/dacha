@@ -319,6 +319,7 @@ impl Compiler {
         Ok((c.outer, c.file_id))
     }
 
+    // TODO: Stop using this and use the helpers on the MssageDescritor / FieldDescriptor / etc.
     fn resolve(&self, name_str: &str, scope: &str) -> Option<ResolvedType> {
         let typ = match self.file.pool().find_relative_type(scope, name_str) {
             Some(v) => v,
@@ -332,6 +333,36 @@ impl Compiler {
             TypeDescriptor::Extend(_) => todo!(),
         };
 
+        let typename = self.compile_typename(absolute_name, file_index);
+
+        Some(ResolvedType {
+            typename,
+            descriptor: typ,
+        })
+    }
+
+    fn message_typename(&self, message: &MessageDescriptor) -> String {
+        self.compile_typename(message.name(), message.file_index())
+    }
+
+    fn enum_typename(&self, e: &EnumDescriptor) -> String {
+        self.compile_typename(e.name(), e.file_index())
+    }
+
+    // Assuming this is a message/enum field, this will get the typename of it.
+    fn field_typename(&self, field: &FieldDescriptor) -> String {
+        let typ = field.find_type().unwrap();
+        let (absolute_name, file_index) = match &typ {
+            TypeDescriptor::Message(d) => (d.name(), d.file_index()),
+            TypeDescriptor::Enum(d) => (d.name(), d.file_index()),
+            TypeDescriptor::Service(d) => todo!(),
+            TypeDescriptor::Extend(_) => todo!(),
+        };
+
+        self.compile_typename(absolute_name, file_index)
+    }
+
+    fn compile_typename(&self, absolute_name: &str, file_index: u32) -> String {
         let (package_name, package_path) = {
             if file_index == self.file.index() {
                 // No need to specify a package path if in the same file
@@ -362,7 +393,7 @@ impl Compiler {
             })
             .expect("Type not in its package");
 
-        let typename = format!(
+        format!(
             "{}{}",
             package_path,
             relative_name
@@ -370,12 +401,7 @@ impl Compiler {
                 .map(|s| escape_rust_identifier(s))
                 .collect::<Vec<_>>()
                 .join("_")
-        );
-
-        Some(ResolvedType {
-            typename,
-            descriptor: typ,
-        })
+        )
     }
 
     fn compile_enum(&self, e: &EnumDescriptor) -> Result<String> {
@@ -400,7 +426,7 @@ impl Compiler {
 
         // Because we can't put an enum inside of a struct in Rust, we instead
         // create a top level enum.
-        let fullname = self.resolve(e.name(), "").expect("..").typename;
+        let fullname = self.enum_typename(e);
 
         let mut seen_numbers = HashMap::new();
         let mut duplicates = vec![];
@@ -890,18 +916,21 @@ impl Compiler {
     }
 
     fn oneof_typename(&self, oneof: &OneOfDescriptor) -> String {
-        let message_name = self.resolve(oneof.message().name(), "").expect("...");
+        let message_name = self.message_typename(oneof.message());
 
-        message_name.typename
+        message_name
             + escape_rust_identifier(&common::snake_to_camel_case(&oneof.proto().name()))
             + "Case"
     }
 
-    fn compile_oneof(&mut self, oneof: &OneOfDescriptor) -> Result<CompiledOneOf> {
+    fn compile_oneof(&mut self, oneof: &OneOfDescriptor, requires_alloc: bool) -> Result<CompiledOneOf> {
         let mut lines = LineBuilder::new();
 
         let typename = self.oneof_typename(oneof);
 
+        if requires_alloc {
+            lines.add(r#"#[cfg(feature = "alloc")]"#);
+        }
         lines.add("#[derive(Clone, PartialEq)]");
         lines.add(r#"#[cfg_attr(feature = "alloc", derive(Debug))]"#);
         lines.add(format!("pub enum {} {{", typename));
@@ -923,6 +952,9 @@ impl Compiler {
         lines.add("}");
         lines.nl();
 
+        if requires_alloc {
+            lines.add(r#"#[cfg(feature = "alloc")]"#);
+        }
         lines.add(format!("impl Default for {} {{", typename));
         lines.add("\tfn default() -> Self {");
         lines.add(format!("\t\t{}::NOT_SET", typename));
@@ -930,6 +962,9 @@ impl Compiler {
         lines.add("}");
         lines.nl();
 
+        if requires_alloc {
+            lines.add(r#"#[cfg(feature = "alloc")]"#);
+        }
         lines.add(format!(
             "impl common::const_default::ConstDefault for {} {{",
             typename
@@ -1312,6 +1347,53 @@ impl Compiler {
         ))
     }
 
+    fn message_requires_alloc(&self, msg: &MessageDescriptor) -> Result<bool> {
+        self.message_requires_alloc_inner(msg, &HashSet::new())
+    }
+
+    // TODO: Make this an 'HashSet<&str>'?
+    fn message_requires_alloc_inner(&self, msg: &MessageDescriptor, message_path: &HashSet<String>) -> Result<bool> {
+        if message_path.contains(msg.name()) {
+            return Ok(true);
+        }
+
+        let mut message_path = message_path.clone();
+        message_path.insert(msg.name().to_string());
+
+        for field in msg.fields() {
+            let is_repeated = field.proto().label() == FieldDescriptorProto_Label::LABEL_REPEATED;
+            if is_repeated && *field.proto().options().max_count()? == 0 {
+                return Ok(true);
+            }
+
+            match field.proto().typ() {
+                FieldDescriptorProto_Type::TYPE_STRING | FieldDescriptorProto_Type::TYPE_BYTES => {
+                    if *field.proto().options().max_length()? == 0 {
+                        return Ok(true);
+                    }
+                }
+                FieldDescriptorProto_Type::TYPE_MESSAGE => {
+                    let typ = match field.find_type() {
+                        Some(v) => v,
+                        None => return Ok(false),
+                    };
+
+                    match typ {
+                        TypeDescriptor::Message(t) => {
+                            if self.message_requires_alloc_inner(&t, &message_path)? {
+                                return Ok(true);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(false)
+    }
+
     fn compile_message(&mut self, msg: &MessageDescriptor) -> Result<String> {
         /*
         Supporting oneof:
@@ -1362,10 +1444,13 @@ impl Compiler {
             }
         }
 
+        let requires_alloc = self.message_requires_alloc(msg)?;
+
         // TODO: Validate reserved field numbers/names.
 
         // TOOD: Debug with the enum code
-        let mut fullname = self.resolve(msg.name(), "").expect("..").typename;
+        // TODO: Resolving needs to more consistently propagate scope names.
+        let mut fullname = self.message_typename(msg);
 
         let mut lines = LineBuilder::new();
 
@@ -1382,6 +1467,9 @@ impl Compiler {
             lines.add(self.compile_extension(&e)?);
         }
 
+        if requires_alloc {
+            lines.add(r#"#[cfg(feature = "alloc")]"#);
+        }
         lines.add("#[derive(Clone, Default, PartialEq, ConstDefault)]");
         lines.add(format!("pub struct {} {{", fullname));
         lines.indented(|lines| -> Result<()> {
@@ -1411,7 +1499,7 @@ impl Compiler {
             }
 
             for oneof in msg.oneofs() {
-                let compiled = self.compile_oneof(&oneof)?;
+                let compiled = self.compile_oneof(&oneof, requires_alloc)?;
                 self.outer.push_str(&compiled.source);
                 lines.add(format!(
                     "{}: {},",
@@ -1448,6 +1536,7 @@ impl Compiler {
                 }}
             }}
 
+            {optional_alloc}
             impl StaticDefault for {name} {{
                 fn static_default() -> &'static Self {{
                     static VALUE: {name} = {name}::DEFAULT;
@@ -1465,7 +1554,8 @@ impl Compiler {
             }}
         ",
             name = fullname,
-            pkg = self.options.runtime_package
+            pkg = self.options.runtime_package,
+            optional_alloc = if requires_alloc { r#"#[cfg(feature = "alloc")]"# } else { "" }
         ));
 
         // TODO: Use text format for
@@ -1555,6 +1645,9 @@ impl Compiler {
             ));
         }
 
+        if requires_alloc {
+            lines.add(r#"#[cfg(feature = "alloc")]"#);
+        }
         lines.add(format!("impl {} {{", fullname));
 
         {
@@ -1611,6 +1704,9 @@ impl Compiler {
         lines.add("}");
         lines.nl();
 
+        if requires_alloc {
+            lines.add(r#"#[cfg(feature = "alloc")]"#);
+        }
         lines.add(format!(
             r#"
             impl {runtime_pkg}::StaticMessage for {name} {{
@@ -1630,6 +1726,9 @@ impl Compiler {
             type_url = msg.type_url(),
         ));
 
+        if requires_alloc {
+            lines.add(r#"#[cfg(feature = "alloc")]"#);
+        }
         lines.add(format!(
             r#"impl {pkg}::Message for {name} {{
                 
@@ -2354,6 +2453,7 @@ impl Compiler {
 
         lines.add(format!(
             r#"
+            #[cfg(feature = "std")]
             #[derive(Clone)]
             pub struct {service_name}Stub {{
                 channel: Arc<dyn {rpc_package}::Channel>
@@ -2363,6 +2463,7 @@ impl Compiler {
             rpc_package = self.options.rpc_package
         ));
 
+        lines.add(r#"#[cfg(feature = "std")]"#);
         lines.add(format!("impl {}Stub {{", service.proto().name()));
         lines.indented(|lines| {
             lines.add(format!("
@@ -2372,11 +2473,16 @@ impl Compiler {
             ", rpc_package = self.options.rpc_package));
 
             for method in service.methods() {
-                let req_type = self
-                    .resolve(method.proto().input_type(), service.name())
-                    .expect(&format!("Failed to find {}", method.proto().input_type()));
-                let res_type = self.resolve(method.proto().output_type(), service.name())
-                    .expect(&format!("Failed to find {}", method.proto().output_type()));
+                let req_type =
+                    self.message_typename(
+                        &method.input_type()
+                        .expect(&format!("Failed to find {}", method.proto().input_type()))
+                    );
+                let res_type =
+                    self.message_typename(
+                        &method.output_type()
+                        .expect(&format!("Failed to find {}", method.proto().output_type()))
+                    );
 
                 if method.proto().client_streaming() && method.proto().server_streaming() {
                     // Bi-directional streaming
@@ -2389,8 +2495,8 @@ impl Compiler {
                         rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = method.proto().name(),
-                        req_type = req_type.typename,
-                        res_type = res_type.typename
+                        req_type = req_type,
+                        res_type = res_type
                     ));
                 } else if method.proto().client_streaming() {
                     // Client streaming
@@ -2403,8 +2509,8 @@ impl Compiler {
                         rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = method.proto().name(),
-                        req_type = req_type.typename,
-                        res_type = res_type.typename
+                        req_type = req_type,
+                        res_type = res_type
                     ));
                 } else if method.proto().server_streaming() {
                     // Server streaming
@@ -2417,8 +2523,8 @@ impl Compiler {
                         rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = method.proto().name(),
-                        req_type = req_type.typename,
-                        res_type = res_type.typename
+                        req_type = req_type,
+                        res_type = res_type
                     ));
                 } else {
                     // Completely unary
@@ -2431,8 +2537,8 @@ impl Compiler {
                         rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = method.proto().name(),
-                        req_type = req_type.typename,
-                        res_type = res_type.typename
+                        req_type = req_type,
+                        res_type = res_type
                     ));
                 }
 
@@ -2442,6 +2548,7 @@ impl Compiler {
         lines.add("}");
         lines.nl();
 
+        lines.add(r#"#[cfg(feature = "std")]"#);
         lines.add("#[async_trait]");
         lines.add(format!(
             "pub trait {}Service: Send + Sync + 'static {{",
@@ -2449,12 +2556,16 @@ impl Compiler {
         ));
 
         for method in service.methods() {
-            let req_type = self
-                .resolve(method.proto().input_type(), service.name())
-                .expect(&format!("Failed to find {}", method.proto().input_type()));
-            let res_type = self
-                .resolve(method.proto().output_type(), service.name())
-                .expect(&format!("Failed to find {}", method.proto().output_type()));
+            let req_type =
+                self.message_typename(
+                    &method.input_type()
+                    .expect(&format!("Failed to find {}", method.proto().input_type()))
+                );
+            let res_type =
+                self.message_typename(
+                    &method.output_type()
+                    .expect(&format!("Failed to find {}", method.proto().output_type()))
+                );
 
             // TODO: Must resolve the typename.
             // TODO: I don't need to make the response '&mut' if I am giving a stream.
@@ -2463,9 +2574,9 @@ impl Compiler {
                                        response: &mut {rpc_package}::Server{res_stream}Response<{res_type}>) -> Result<()>;",
                 rpc_package = self.options.rpc_package,
                 rpc_name = method.proto().name(),
-                req_type = req_type.typename,
+                req_type = req_type,
                 req_stream = if method.proto().client_streaming() { "Stream" } else { "" },
-                res_type = res_type.typename,
+                res_type = res_type,
                 res_stream = if method.proto().server_streaming() { "Stream" } else { "" },
             ));
         }
@@ -2475,6 +2586,7 @@ impl Compiler {
         lines.add("}");
         lines.nl();
 
+        lines.add(r#"#[cfg(feature = "std")]"#);
         lines.add("#[async_trait]");
         lines.add(format!(
             "impl<T: {name}Service> {name}Service for ::std::sync::Arc<T> {{",
@@ -2483,12 +2595,16 @@ impl Compiler {
 
         // TODO: deduplicate this with above.
         for method in service.methods() {
-            let req_type = self
-                .resolve(method.proto().input_type(), service.name())
-                .expect(&format!("Failed to find {}", method.proto().input_type()));
-            let res_type = self
-                .resolve(method.proto().output_type(), service.name())
-                .expect(&format!("Failed to find {}", method.proto().output_type()));
+            let req_type =
+                self.message_typename(
+                    &method.input_type()
+                    .expect(&format!("Failed to find {}", method.proto().input_type()))
+                );
+            let res_type =
+                self.message_typename(
+                    &method.output_type()
+                    .expect(&format!("Failed to find {}", method.proto().output_type()))
+                );
 
             // TODO: Must resolve the typename.
             // TODO: I don't need to make the response '&mut' if I am giving a stream.
@@ -2500,9 +2616,9 @@ impl Compiler {
                                        }}",
                 rpc_package = self.options.rpc_package,
                 rpc_name = method.proto().name(),
-                req_type = req_type.typename,
+                req_type = req_type,
                 req_stream = if method.proto().client_streaming() { "Stream" } else { "" },
-                res_type = res_type.typename,
+                res_type = res_type,
                 res_stream = if method.proto().server_streaming() { "Stream" } else { "" },
             ));
         }
@@ -2512,11 +2628,13 @@ impl Compiler {
 
         // TODO: Anything that is already clone-able should not have to be wrapped.
         lines.add(format!(
-            "
+            r#"
+            #[cfg(feature = "std")]
             pub trait {service_name}IntoService {{
                 fn into_service(self) -> Arc<dyn {rpc_package}::Service>;
             }}
 
+            #[cfg(feature = "std")]
             impl<T: {service_name}Service> {service_name}IntoService for T {{
                 fn into_service(self) -> Arc<dyn {rpc_package}::Service> {{
                     Arc::new({service_name}ServiceCaller {{
@@ -2525,11 +2643,12 @@ impl Compiler {
                 }}
             }}
 
+            #[cfg(feature = "std")]
             pub struct {service_name}ServiceCaller<T> {{
                 inner: T
             }}
 
-        ",
+        "#,
             rpc_package = self.options.rpc_package,
             service_name = service.proto().name()
         ));
@@ -2540,6 +2659,7 @@ impl Compiler {
         // ));
         // lines.nl();
 
+        lines.add("#[cfg(feature = \"std\")]");
         lines.add("#[async_trait]");
         lines
             .add(format!(
@@ -2582,26 +2702,30 @@ impl Compiler {
                 lines.add("match method_name {");
 
                 for method in service.methods() {
-                    let req_type = self
-                        .resolve(method.proto().input_type(), service.name())
-                        .expect(&format!("Failed to find {}", method.proto().input_type()));
-                    let res_type = self
-                        .resolve(method.proto().output_type(), service.name())
-                        .expect(&format!("Failed to find {}", method.proto().output_type()));
+                    let req_type =
+                        self.message_typename(
+                            &method.input_type()
+                            .expect(&format!("Failed to find {}", method.proto().input_type()))
+                        );
+                    let res_type =
+                        self.message_typename(
+                            &method.output_type()
+                            .expect(&format!("Failed to find {}", method.proto().output_type()))
+                        );
 
                     let request_obj = {
                         if method.proto().client_streaming() {
-                            format!("request.into::<{}>()", req_type.typename)
+                            format!("request.into::<{}>()", req_type)
                         } else {
-                            format!("request.into_unary::<{}>().await?", req_type.typename)
+                            format!("request.into_unary::<{}>().await?", req_type)
                         }
                     };
 
                     let response_obj = {
                         if method.proto().server_streaming() {
-                            format!("response.into::<{}>()", res_type.typename)
+                            format!("response.into::<{}>()", res_type)
                         } else {
-                            format!("response.new_unary::<{}>()", res_type.typename)
+                            format!("response.new_unary::<{}>()", res_type)
                         }
                     };
 
@@ -2652,9 +2776,7 @@ impl Compiler {
         // TODO: Verify that we are extending a message (probably have this logic in the
         // descriptor pool).
         let extendee_typename = self
-            .resolve(extension.proto().extendee(), extension.name())
-            .ok_or_else(|| err_msg("Failed to find extendee"))?
-            .typename;
+            .message_typename(&extension.extendee().ok_or_else(|| err_msg("Failed to find extendee"))?);
 
         let field_name = escape_rust_identifier(extension.proto().name());
 

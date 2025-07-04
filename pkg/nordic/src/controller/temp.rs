@@ -1,7 +1,7 @@
 // This is the singleton thread that is spawned when a 'measure_mcu_temperature'
 // request is received.
 
-use nordic_proto::nordic::PeripheralResponse;
+use peripherals_proto::peripherals::PeripheralResponse;
 
 use crate::controller::peripherals_controller::PeripheralsController;
 use crate::temp::Temp;

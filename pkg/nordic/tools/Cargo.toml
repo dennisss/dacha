@@ -19,6 +19,7 @@ rpc_util = { path = "../../rpc/util" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
+peripherals_proto = { path = "../../peripherals/proto" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../protobuf/compiler" }

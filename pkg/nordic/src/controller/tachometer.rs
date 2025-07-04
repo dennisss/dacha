@@ -9,7 +9,7 @@ Doing a fan tachometer reading:
     - Then wait again for the second pulse.
 */
 
-use nordic_proto::nordic::{
+use peripherals_proto::peripherals::{
     PeripheralRequest, PeripheralRequestCommandCase, PeripheralResponse,
     PeripheralResponse_ErrorCode,
 };

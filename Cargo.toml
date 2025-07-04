@@ -115,6 +115,8 @@ members = [
 	"pkg/peripherals/tools",	
 	"pkg/peripherals/genfiles",
 	"pkg/peripherals/avr",
+	"pkg/peripherals/proto",
+	"pkg/peripherals/service",
 	"pkg/web",
 	# "pkg/flasher/swd_prog",
 	# "pkg/api/hue",

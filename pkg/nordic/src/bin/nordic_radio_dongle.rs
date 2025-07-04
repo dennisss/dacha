@@ -63,7 +63,7 @@ use nordic::rtc::RTC;
 use nordic::temp::Temp;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
-use nordic_proto::nordic::PeripheralRequest;
+use peripherals_proto::peripherals::PeripheralRequest;
 use nordic_wire::usb_descriptors::*;
 use protobuf::Message;
 

@@ -1,7 +1,7 @@
 // This is the singleton thread that is continously running and waits for resets
 // and peripheral that has timed out due to lack of activity.
 
-use nordic_proto::nordic::PeripheralResponse;
+use peripherals_proto::peripherals::PeripheralResponse;
 
 use crate::controller::peripherals_controller::PeripheralsController;
 use crate::controller::PeripheralEntry;

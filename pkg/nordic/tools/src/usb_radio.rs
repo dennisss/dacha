@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::time::Instant;
 
 use common::errors::*;
 use nordic_proto::nordic::*;
@@ -6,10 +7,13 @@ use nordic_wire::packet::PacketBuffer;
 use nordic_wire::request_type::ProtocolRequestType;
 use protobuf::{Message, StaticMessage};
 use usb::{descriptors::SetupPacket, registry::OUR_VENDOR_ID};
+use peripherals_proto::peripherals::*;
+
 
 // TODO: Every single USB transfer should have some timeout.
 pub struct USBRadio {
     device: usb::Device,
+    last_sequence: u32,
 }
 
 impl USBRadio {
@@ -42,7 +46,7 @@ impl USBRadio {
     }
 
     pub fn new(device: usb::Device) -> Self {
-        Self { device }
+        Self { device, last_sequence: 0 }
     }
 
     pub async fn set_network_config(&mut self, config: &NetworkConfig) -> Result<()> {
@@ -185,5 +189,81 @@ impl USBRadio {
         }
 
         Ok(out)
+    }
+
+    pub async fn send_request(
+        &mut self,
+        request: &PeripheralRequest,
+    ) -> Result<PeripheralResponse> {
+        // TODO: Reset the sequence after a while.
+
+        let mut request = request.clone();
+        self.last_sequence += 1;
+        request.set_request_sequence(self.last_sequence);
+
+        let proto = request.serialize()?;
+
+        let mut packet = vec![];
+        packet.push(proto.len() as u8);
+        packet.extend_from_slice(&proto);
+
+        // TODO: For whatever reason, if the packet is some specific sizes (e.g. 9),
+        // then the nordic controller just stalls.
+        if packet.len() < 64 {
+            packet.resize(64, 0);
+        }
+
+        // TODO: Support retrying this (must consider the idempotence of actions).
+        self.device
+            .write_control(
+                SetupPacket {
+                    bmRequestType: 0b01000000,
+                    bRequest: ProtocolRequestType::PeripheralRequest.to_value(),
+                    wValue: 0,
+                    wIndex: 0,
+                    wLength: packet.len() as u16,
+                },
+                &packet,
+            )
+            .await?;
+
+        let mut res_buffer = [0u8; 256];
+
+        let mut nread = 0;
+
+        loop {
+            nread = self
+                .device
+                .read_control(
+                    SetupPacket {
+                        bmRequestType: 0b11000000,
+                        bRequest: ProtocolRequestType::PeripheralResponse.to_value(),
+                        wValue: 0,
+                        wIndex: 0,
+                        wLength: res_buffer.len() as u16,
+                    },
+                    &mut res_buffer,
+                )
+                .await?;
+
+            if nread != 0 {
+                break;
+            }
+
+            executor::sleep(Duration::from_millis(10)).await?;
+        }
+
+        let response = PeripheralResponse::parse(&res_buffer[0..nread])?;
+
+        if response.request_sequence() != request.request_sequence() {
+            return Err(err_msg("Received response with wrong request sequence"));
+        }
+
+        if response.error_code() != PeripheralResponse_ErrorCode::NO_ERROR {
+            // TODO: Use an inline formatter for the request.
+            return Err(format_err!("Request '{:?}' failed with code: {:?}", request, response.error_code()));
+        }
+
+        Ok(response)
     }
 }

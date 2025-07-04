@@ -76,7 +76,7 @@ impl EmbeddedDBStateMachineDatabase {
     ) {
         loop {
             sub.wait_for_change().await;
-            report.update(sub.value().await).await;
+            report.update_all(sub.value().await).await;
         }
     }
 
@@ -120,7 +120,7 @@ impl EmbeddedDBStateMachineDatabase {
         // Set up a new subscriber for the new database.
         let mut sub = guard.db.new_resource_subscriber().await;
         let initial_report = sub.value().await;
-        self.report.update(initial_report).await;
+        self.report.update_all(initial_report).await;
         guard.watcher = Some(ChildTask::spawn(Self::subscriber_thread(
             sub,
             self.report.clone(),

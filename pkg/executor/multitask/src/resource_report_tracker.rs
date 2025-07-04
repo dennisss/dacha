@@ -64,6 +64,16 @@ impl ServiceResourceReportTracker {
         });
     }
 
+    /// WARNING: Only use this if propagating the state from another tracker.
+    /// We want all initial error reports to go through update_self.
+    pub async fn update_all(&self, report: ServiceResourceReport) {
+        lock!(v <= self.shared.value.lock().await.unwrap(), {
+            v.0 += 1;
+            v.1 = report;
+            v.notify_all();
+        });
+    }
+
     pub fn subscribe(&self) -> Box<dyn ServiceResourceSubscriber> {
         Box::new(Subscriber {
             last_version: 0,

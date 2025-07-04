@@ -1,3 +1,5 @@
+#![no_std]
+
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
@@ -6,4 +8,5 @@ extern crate std;
 #[macro_use]
 extern crate alloc;
 
+#[cfg(feature = "std")]
 pub mod token_bucket;

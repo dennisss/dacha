@@ -2740,6 +2740,7 @@ dependencies = [
  "nordic_proto",
  "nordic_wire",
  "peripherals",
+ "peripherals_proto",
  "protobuf",
  "uf2",
  "usb",
@@ -2770,6 +2771,7 @@ dependencies = [
  "nordic_proto",
  "nordic_tools_proto",
  "nordic_wire",
+ "peripherals_proto",
  "protobuf",
  "protobuf_builtins",
  "protobuf_compiler",
@@ -3031,10 +3033,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "peripherals_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
+]
+
+[[package]]
 name = "peripherals_raw"
 version = "0.0.0"
 dependencies = [
  "common",
+]
+
+[[package]]
+name = "peripherals_service"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "cluster_client",
+ "common",
+ "container_proto",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "graphics",
+ "http",
+ "image",
+ "json",
+ "macros",
+ "nordic_tools",
+ "parsing",
+ "peripherals_proto",
+ "protobuf",
+ "rpc",
+ "rpc_util",
+ "storage",
+ "usb",
+ "web",
 ]
 
 [[package]]

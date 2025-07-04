@@ -136,7 +136,7 @@ Example from Data sheet
 const USING_DEV_KIT: bool = true;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
-static BLOCK_STORAGE: Singleton<BlockStorage<Microchip24XX256>> = Singleton::uninit();
+// static BLOCK_STORAGE: Singleton<BlockStorage<Microchip24XX256>> = Singleton::uninit();
 
 /*
 Given a LinearMotion in step units, execute it.
@@ -300,7 +300,7 @@ async fn blinker_thread_fn() {
         let mut sdi_pin = pins.P0_08;
         let mut en_pin = gpio.pin(pins.P0_09);
 
-        let mut diag1 = gpio_int.setup_interrupt(pins.P0_27, GPIOInterruptPolarity::RisingEdge);
+        // let mut diag1 = gpio_int.setup_interrupt(pins.P0_27, GPIOInterruptPolarity::RisingEdge);
 
         dir_pin
             .set_direction(PinDirection::Output)
@@ -441,6 +441,7 @@ async fn blinker_thread_fn() {
         let mut value = false;
         let mut count = 0;
 
+        /*
         loop {
             let e = gpio_int.pending_events();
             if e.contains(diag1) {
@@ -466,6 +467,7 @@ async fn blinker_thread_fn() {
                 log!(a, " : ", v & 0x3FF);
             }
         }
+        */
     }
 
     /*

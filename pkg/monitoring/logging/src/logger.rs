@@ -44,7 +44,7 @@ impl Logger {
         state.next_index += 1;
 
         let mut buffer = FixedVec::<u8, MAX_LOG_ENTRY_SIZE>::new();
-        entry.serialize_to(&mut buffer).unwrap();
+        entry.serialize_to(&protobuf::SerializeOptions::default(), &mut buffer).unwrap();
 
         // let is_first = state.entries.is_empty();
 

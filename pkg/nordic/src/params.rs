@@ -57,7 +57,7 @@ impl AppParamsStorage {
 
     pub async fn write_proto<M: Message>(&self, param_id: u32, proto: &M) -> Result<()> {
         let mut data = common::fixed::vec::FixedVec::<u8, 256>::new();
-        proto.serialize_to(&mut data)?;
+        proto.serialize_to(&protobuf::SerializeOptions::default(), &mut data)?;
 
         lock!(blobs <= self.params.lock().await?, {
             blobs.write(param_id, &data)

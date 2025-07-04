@@ -291,6 +291,18 @@ impl PWM {
         false
     }
 
+    pub fn has_available_channel(&self) -> bool {
+        for i in 0..self.periph.psel.out.len() {
+            if self.periph.psel.out[i].read().connect().is_connected() {
+                continue;
+            }
+
+            return true;
+        }
+
+        false
+    }
+
     pub fn disconnect(&mut self, channel: usize) {
         disconnect_pin(&mut self.periph.psel.out[channel]);
     }

@@ -57,7 +57,7 @@ impl NetworkConfigStorage {
 
     pub async fn write(&mut self, config: &NetworkConfig) -> Result<()> {
         let mut data = common::fixed::vec::FixedVec::<u8, 256>::new();
-        config.serialize_to(&mut data)?;
+        config.serialize_to(&protobuf::SerializeOptions::default(), &mut data)?;
         self.block_handle.write(&data).await?;
         Ok(())
     }

@@ -1588,6 +1588,12 @@ impl ExtendDescriptor {
     pub fn proto(&self) -> &pb::FieldDescriptorProto {
         &self.inner.proto
     }
+
+    pub fn extendee(&self) -> Option<MessageDescriptor> {
+        self.pool
+            .find_relative_type(self.name(), self.proto().extendee())
+            .and_then(|t| t.to_message())
+    }
 }
 
 impl ExtensionTag for ExtendDescriptor {

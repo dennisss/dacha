@@ -102,6 +102,13 @@ TODO
 
 TODO
 
+```
+cargo run --bin flasher -- \
+    target/attiny85/debug/avr.elf attiny \
+    --reset_pin=18 --spi_device=/dev/spidev0.0
+```
+
+
 #### nRF52840 Dev Kit
 
 TODO
@@ -129,8 +136,7 @@ We mainly recommend using SWD just for flashing the bootloader and then just usi
 Once everything is connected, here are example commands to flash the bootloader for an nRF board (modify the variables appropriately for the target chip type):
 
 ```
-CHIP=nrf52840
-cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:$CHIP_bootloader
+cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 cargo run --bin flasher -- built/pkg/nordic/nordic_bootloader blackmagic-swd
 ```
 

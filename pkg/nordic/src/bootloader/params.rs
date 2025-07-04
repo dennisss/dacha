@@ -38,7 +38,7 @@ pub fn read_bootloader_params() -> BootloaderParams {
 pub fn write_bootloader_params(params: &BootloaderParams, nvmc: &mut NVMC) {
     let mut data = FixedVec::<u8, 256>::new();
     data.resize(8, 0); // Reserve space for the length and checksum.
-    params.serialize_to(&mut data).unwrap();
+    params.serialize_to(&protobuf::SerializeOptions::default(), &mut data).unwrap();
 
     let checksum = {
         let mut hasher = CRC32CHasher::new();

@@ -33,6 +33,7 @@ use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio_socket::RadioSocket;
 use nordic::rtc::RTC;
 use nordic::uarte::UARTE;
+use nordic::controller::PeripheralsController;
 use nordic::usb::controller::USBDeviceController;
 use nordic_wire::usb_descriptors::*;
 use peripherals::raw::{PinDirection, PinLevel};

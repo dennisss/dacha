@@ -1,0 +1,126 @@
+# proto-file: pkg/peripherals/proto/service.proto
+# proto-message: BoardConfig
+
+name: "overhead_light_controller"
+base_config: "nrf52840_itsybitsy"
+
+peripherals {
+    name: "SIDE_RIGHT"
+    pwm {
+        pin_name: "D7"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+peripherals {
+    name: "SIDE_LEFT"
+    pwm {
+        pin_name: "D9"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+peripherals {
+    name: "TOP_FRONT_MID"
+    pwm {
+        pin_name: "D10"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+peripherals {
+    name: "TOP_FRONT"
+    pwm {
+        pin_name: "D11"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+peripherals {
+    name: "TOP_BACK_MID"
+    pwm {
+        pin_name: "D12"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+peripherals {
+    name: "TOP_BACK"
+    pwm {
+        pin_name: "D13"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+
+
+macros {
+    name: "All Off"
+    commands: [
+        {
+            peripheral_name: "SIDE_RIGHT"
+            request { set_pwm { value: 0 } }
+        },
+        {
+            peripheral_name: "SIDE_LEFT"
+            request { set_pwm { value: 0 } }
+        },
+        {
+            peripheral_name: "TOP_FRONT_MID"
+            request { set_pwm { value: 0 } }
+        },
+        {
+            peripheral_name: "TOP_FRONT"
+            request { set_pwm { value: 0 } }
+        },
+        {
+            peripheral_name: "TOP_BACK_MID"
+            request { set_pwm { value: 0 } }
+        },
+        {
+            peripheral_name: "TOP_BACK"
+            request { set_pwm { value: 0 } }
+        }
+    ]
+}
+macros {
+    name: "Scene 1"
+    commands: [
+        {
+            peripheral_name: "SIDE_RIGHT"
+            request { set_pwm { value: 16383 } }
+        },
+        {
+            peripheral_name: "SIDE_LEFT"
+            request { set_pwm { value: 16383 } }
+        },
+        {
+            peripheral_name: "TOP_FRONT_MID"
+            request { set_pwm { value: 6553 } }
+        },
+        {
+            peripheral_name: "TOP_FRONT"
+            request { set_pwm { value: 16383 } }
+        },
+        {
+            peripheral_name: "TOP_BACK_MID"
+            request { set_pwm { value: 6553 } }
+        },
+        {
+            peripheral_name: "TOP_BACK"
+            request { set_pwm { value: 16383 } }
+        }
+    ]
+}
