@@ -24,6 +24,7 @@ impl http::ServerHandler for Service {
         req: http::Request,
         ctx: http::ServerRequestContext<'a>,
     ) -> http::Response {
+        /*
         println!("GOT: {:?}", req);
 
         if let Some(tls) = &ctx.connection_context.tls {
@@ -37,9 +38,10 @@ impl http::ServerHandler for Service {
                 println!("No certificate");
             }
         }
+        */
 
         let mut data = vec![];
-        data.extend_from_slice(b"hello");
+        data.extend_from_slice(b"Hello World!");
         // req.body.read_to_end(&mut data).await;
 
         // println!("READ: {:?}", data);
@@ -53,27 +55,38 @@ impl http::ServerHandler for Service {
     }
 }
 
+#[derive(Args)]
+struct Args {
+    port: u16,
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+
+
+
     /*
     cd doc/pi_rack/board-latest/bom
 
     python3 -m http.server 8000
     */
 
+    /*
     let handler = http::static_file_handler::StaticFileHandler::new(
         file::project_dir().join("doc/pi_rack/images/"),
     );
+    */
     // let handler = http::HttpFn(handle_request);
 
-    // let handler = Service {};
+    let handler = Service {};
 
     /*
     secp256 is still very slow :(
     */
 
     let mut options = http::ServerOptions::default();
-    options.port = Some(8000);
+    options.port = Some(args.port);
 
     /*
     let certificate_file = file::read(project_path!("testdata/certificates/server.crt"))

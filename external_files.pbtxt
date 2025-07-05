@@ -1125,6 +1125,21 @@ files: [
         sha256_sum: "7f45cb0fd2608da9fc7bc2b431678f1d6d3dfa5eaeba2c7eba92779b356c1947"
     },
     {
+        path: "pkg/cluster/machines/jbod/parts/backplane-m3-18mm-heatset-standoff.stl"
+        size: 115284
+        sha256_sum: "c558066a4556f1f9efb7c4d0edcae402e46bded48129d9a52433d86df1c22a73"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/fan-spacer-120mm-3mm.stl"
+        size: 310584
+        sha256_sum: "c9397e9450f9b425024281c42ecc14ec41fa8336f41995253e31555cfdf22989"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/fan-washer-m4-3mm.stl"
+        size: 57684
+        sha256_sum: "2ce74fa08894ad9314b6346addee48c36069d904919114f98581f5d02ab8b031"
+    },
+    {
         path: "pkg/cnc/boards/cnc_controller/board/plot/board-B_Cu.gbl"
         size: 28414
         sha256_sum: "e9f94b91172921bbc576901cb2891bdad2624bebcc3796373b6058cb1de868f1"

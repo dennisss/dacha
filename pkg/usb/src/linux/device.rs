@@ -169,6 +169,7 @@ impl Device {
                         .insert(e.bEndpointAddress, e.clone())
                         .is_some()
                     {
+                        // TODO: THis is allowed if using alternative settings. 
                         return Err(err_msg("Device advertising duplicate endpoint addresses"));
                     }
                 }
@@ -288,6 +289,8 @@ impl Device {
         }
 
         let driver_name = std::str::from_utf8(&driver.driver[0..null_index])?;
+        println!("Driver name: {}", driver_name);
+
         Ok(driver_name != "usbfs")
     }
 

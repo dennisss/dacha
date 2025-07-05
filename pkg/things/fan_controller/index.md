@@ -1,5 +1,7 @@
 
 
+TODO: Pull into standard specs.
+
 HL15 Fan Controller:
 
 - nRF52 ItsyBitsy

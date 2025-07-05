@@ -31,8 +31,13 @@ impl<T> PathRouter<T> {
             return Err(err_msg("Route must not end in '/'"));
         }
 
-        if let Some(_) = self.route(path) {
-            return Err(err_msg("Duplicate or overlapping route"));
+        let dir_path = format!("{}/", path);
+        for (key, route) in &self.routes {
+            if *key == path ||
+                (is_directory && key.starts_with(&dir_path)) ||
+                (route.is_directory && path.starts_with(&format!("{}/", key))) {
+                return Err(err_msg("Duplicate or overlapping route"));
+            }
         }
 
         self.routes.insert(
@@ -133,5 +138,12 @@ mod tests {
 
         assert_eq!(router.route("/"), Some(("/", &1)));
         assert_eq!(router.route("/hello"), Some(("/hello", &2)));
+    }
+
+    #[test]
+    fn overlapping_dir() {
+        let mut router = PathRouter::<usize>::default();
+        router.add_route("/dir/a", false, 1).unwrap();
+        assert!(router.add_route("/dir", true, 2).is_err());
     }
 }

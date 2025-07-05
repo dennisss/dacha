@@ -4,6 +4,7 @@ package cluster;
 
 service Proxy {
     // Creates a connection to some server accessible by this RPC server.
+    // Single ended closure of the socket is indicated by one of the streams ending. 
     rpc Socket (stream ProxySocketRequest) returns (stream ProxySocketResponse);
 }
 
