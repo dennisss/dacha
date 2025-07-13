@@ -9,3 +9,6 @@ RestartSec=30
 ExecStart={HOME}/.dacha/services/cluster_bridge
 Environment="HOME={HOME}"
 TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

@@ -58,7 +58,7 @@ pub async fn setup_bridge(force_binary_update: bool) -> Result<()> {
 
         let caps = String::from_utf8(op.run(&format!("getcap {}", bin_path.as_str())).await?)?;
         if !caps.contains("cap_net_bind_service=eip") {
-            println!("Setting binary capabilites..");
+            println!("Setting binary capabilities..");
             op.run(&format!("sudo setcap CAP_NET_BIND_SERVICE=+eip {}", bin_path.as_str())).await?;
             println!("=> Done");
             bin_updated = true;

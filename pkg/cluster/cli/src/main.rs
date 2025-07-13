@@ -71,6 +71,9 @@ enum Command {
     #[arg(name = "start_job")]
     StartJob(StartJobCommand),
 
+    #[arg(name = "stop_job")]
+    StopJob(StopJobCommand),
+
     /// Start a single worker directly on a node. This is mainly for cluster
     /// bootstrapping.
     #[arg(name = "start_worker")]
@@ -91,6 +94,18 @@ enum Command {
 
     #[arg(name = "ping")]
     Ping(PingCommand),
+
+    #[arg(name="list_objects")]
+    ListObjects(ListObjectsCommand),
+
+    #[arg(name="set_object")]
+    SetObject(SetObjectCommand),
+
+    #[arg(name="get_object")]
+    GetObject(GetObjectCommand),
+
+    #[arg(name="delete_object")]
+    DeleteObject(DeleteObjectCommand),
 }
 
 #[executor_main]
@@ -109,9 +124,14 @@ async fn main() -> Result<()> {
         Command::StartWorker(cmd) => run_start_worker(cmd).await,
         Command::Log(cmd) => run_log(cmd).await,
         Command::StartJob(cmd) => run_start_job(cmd).await,
+        Command::StopJob(cmd) => run_stop_job(cmd).await,
         Command::Events(cmd) => run_events(cmd).await,
         Command::Labels(cmd) => run_labels(cmd).await,
         Command::Unlock(cmd) => run_unlock(cmd).await,
         Command::Ping(cmd) => run_ping(cmd).await,
+        Command::ListObjects(cmd) => run_list_object(cmd).await,
+        Command::GetObject(cmd) => run_get_object(cmd).await,
+        Command::SetObject(cmd) => run_set_object(cmd).await,
+        Command::DeleteObject(cmd) => run_delete_object(cmd).await,
     }
 }

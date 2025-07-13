@@ -88,7 +88,7 @@ impl App {
             cluster_client::ClusterMetaClient::create_from_environment().await?;
 
         let config = meta_client
-            .get_object::<Config>(&args.config_object)
+            .get_object_proto::<Config>(&args.config_object)
             .await?
             .ok_or_else(|| err_msg("No config found in cluster"))?;
 

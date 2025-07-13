@@ -6,6 +6,7 @@ extern crate base_error;
 extern crate std;
 
 pub mod list;
+pub mod duration;
 
 use alloc::string::String;
 use alloc::vec::Vec;

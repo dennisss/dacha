@@ -8,7 +8,7 @@ use container_proto::cluster::GroupMembership;
 use container_proto::cluster::KeyPrefixACLProto;
 use db_table::{
     db::{ProtobufDB, ProtobufDBTransaction},
-    raw_query,
+    raw_query, primary_key_prefix,
     table::ProtobufTableTag,
 };
 
@@ -18,8 +18,7 @@ pub async fn authorize_node(node_id: u64, zone: &str, db: &ProtobufDB) -> Result
     let entity = Principal::Entity(ServiceName::for_node(zone, node_id)?).to_string();
 
     {
-        let q = raw_query!(NodeMetadataTable, "id = ?", node_id);
-        let key = ProtobufDBTransaction::primary_key_prefix::<NodeMetadataTable>(&q)?;
+        let key = primary_key_prefix!(NodeMetadataTable, "id = ?", node_id);
 
         // TODO: Skip adding this if the node is already authorized.
         let mut proto = KeyPrefixACLProto::default();
@@ -32,8 +31,7 @@ pub async fn authorize_node(node_id: u64, zone: &str, db: &ProtobufDB) -> Result
     }
 
     {
-        let q = raw_query!(NodeRevisionTable, "node_id = ?", node_id);
-        let key = ProtobufDBTransaction::primary_key_prefix::<NodeRevisionTable>(&q)?;
+        let key = primary_key_prefix!(NodeRevisionTable, "node_id = ?", node_id);
 
         // TODO: Skip adding this if the node is already authorized.
         let mut proto = KeyPrefixACLProto::default();
@@ -71,7 +69,7 @@ pub async fn upgrade_acls(zone: &str, db: &ProtobufDB, write: bool) -> Result<()
     // Ignore entries from 'authorize_node'
     ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<NodeMetadataTable>());
     ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<NodeRevisionTable>());
-    // Ignore entries from 
+    // Ignore entries granted by the manager to each node for its copy of workers/blobs. 
     ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<WorkerStateMetadataTable>());
     ignored_prefixes.push(ProtobufDBTransaction::table_key_prefix::<BundleBlobReplicaTable>());
 
@@ -82,6 +80,7 @@ pub async fn upgrade_acls(zone: &str, db: &ProtobufDB, write: bool) -> Result<()
         existing_map.insert(v.prefix(), v);
     }
 
+    // TODO: Need to also sync group ACLs
     let mut intended = get_table_acls(zone)?;
 
     let mut txn = db.new_transaction().await?;
@@ -207,6 +206,25 @@ fn make_table_acl<Tag: ProtobufTableTag>(readers: &[&str], writers: &[&str]) -> 
     proto
 }
 
+fn make_object_acl(object_prefix: &str, readers: &[&str], writers: &[&str]) -> Result<KeyPrefixACLProto> {
+    let mut proto = KeyPrefixACLProto::default();
+
+    let key = primary_key_prefix!(
+        ObjectMetadataTable,
+        "name = ?",
+        object_prefix
+    );
+
+    proto.set_prefix(key);
+    for r in readers {
+        proto.add_readers(r.to_string());
+    }
+    for w in writers {
+        proto.add_writers(w.to_string());
+    }
+    Ok(proto)
+}
+
 fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
     let cluster_clients = Principal::Group {
         zone: zone.to_string(),
@@ -237,12 +255,11 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
     // change the permissions for changing the permissions of the
     // WorkerStateMetadataTable table.
     let manager_writes_worker_acls = {
-        let q = raw_query!(
+        let key = primary_key_prefix!(
             KeyPrefixACLTable,
             "prefix = ?",
             ProtobufDBTransaction::table_key_prefix::<WorkerStateMetadataTable>()
         );
-        let key = ProtobufDBTransaction::primary_key_prefix::<KeyPrefixACLTable>(&q)?;
 
         let mut proto = KeyPrefixACLProto::default();
         proto.set_prefix(key);
@@ -254,18 +271,25 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
     //
     // (individual nodes are allowed to update whether or not they have a blob)
     let manager_writes_blob_replica_acls = {
-        let q = raw_query!(
+        let key = primary_key_prefix!(
             KeyPrefixACLTable,
             "prefix = ?",
             ProtobufDBTransaction::table_key_prefix::<BundleBlobReplicaTable>()
         );
-        let key = ProtobufDBTransaction::primary_key_prefix::<KeyPrefixACLTable>(&q)?;
 
         let mut proto = KeyPrefixACLProto::default();
         proto.set_prefix(key);
         proto.add_writers(manager_job.clone());
         proto
     };
+
+    let frontend_job = 
+        Principal::Entity(ServiceName::for_job(zone, "ingress.frontend")?).to_string();
+
+    let acme_prod_job =
+        Principal::Entity(ServiceName::for_job(zone, "ingress.letsencrypt_prod_refresher")?).to_string();
+    let acme_staging_job =
+        Principal::Entity(ServiceName::for_job(zone, "ingress.letsencrypt_staging_refresher")?).to_string();
 
     Ok(vec![
         // Readers: Services need to read groups to check their own ACLs.
@@ -302,6 +326,11 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         // Not secret information so just granting cluster wide access for simplicity.
         make_table_acl::<BundleBlobMetadataTable>(&[&cluster_readers], &[&manager_job]),
         make_table_acl::<BundleBlobReplicaTable>(&[&cluster_readers], &[&manager_job]),
-        manager_writes_blob_replica_acls
+        manager_writes_blob_replica_acls,
+        make_table_acl::<ObjectMetadataTable>(&[&cluster_owners], &[&cluster_owners]),
+        make_object_acl("google_service_account", &[&acme_prod_job, &acme_staging_job], &[])?,
+        make_object_acl("letsencrypt_prod/", &[&acme_prod_job], &[&acme_prod_job])?,
+        make_object_acl("letsencrypt_prod/out/", &[&frontend_job], &[])?,
+        make_object_acl("letsencrypt_staging/", &[&acme_staging_job], &[&acme_staging_job])?,
     ])
 }

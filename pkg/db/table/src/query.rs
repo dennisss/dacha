@@ -16,7 +16,7 @@ use crate::reflection::field_by_path;
 /// Some important edge cases:
 /// - { any_of: [] } means that nothing will be matched
 /// - { any_of: [ { fields: {} } ] } means that everything will be matched.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Query {
     pub(crate) any_of: Vec<QueryAllOf>,
 }
@@ -67,7 +67,7 @@ impl Query {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct QueryAllOf {
     // TODO: Make this deterministic.
     pub(crate) fields: HashMap<Vec<FieldNumber>, Vec<QueryComparison>, FastHasherBuilder>,
@@ -114,13 +114,13 @@ impl QueryAllOf {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct QueryComparison {
     pub op: QueryOp,
     pub rhs: QueryValue,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum QueryOp {
     Eq,
     LessThan,
@@ -129,7 +129,7 @@ pub enum QueryOp {
     GreaterThanOrEqual,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum QueryValue {
     I32(i32),
     I64(i64),

@@ -14,7 +14,7 @@ use common::failure::ResultExt;
 use common::io::{Readable, Writeable};
 use container::{
     AllocateBundleBlobsRequest, AllocateBundleBlobsResponse, BundleBlobMetadata, JobSpec,
-    ListWorkersRequest, ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
+    ListWorkersRequest, ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest, StopJobRequest,
     WorkerStateMetadata_ReportedState,
 };
 use container::{
@@ -47,6 +47,12 @@ use crate::utils::*;
 pub struct StartJobCommand {
     #[arg(positional)]
     job_spec_path: String,
+}
+
+#[derive(Args)]
+pub struct StopJobCommand {
+    #[arg(positional)]
+    name: String,
 }
 
 #[derive(Args)]
@@ -189,6 +195,17 @@ pub(crate) async fn start_job_impl(
     req.set_spec(job_spec);
     manager.StartJob(request_context, &req).await.result?;
 
+    Ok(())
+}
+
+pub async fn run_stop_job(cmd: StopJobCommand) -> Result<()> {
+    let meta_client = ClusterMetaClient::create_from_environment().await?;
+    let manager_stub = connect_to_manager(meta_client.clone()).await?;
+    let request_context = rpc::ClientRequestContext::default();
+
+    let mut req = StopJobRequest::default();
+    req.set_name(cmd.name);
+    manager_stub.StopJob(&request_context, &req).await.result?;
     Ok(())
 }
 

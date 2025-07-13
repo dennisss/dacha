@@ -87,6 +87,8 @@ struct Shared {
     db: Arc<ProtobufDB>,
 
     state: SyncMutex<State>,
+
+    blob_uploaded_callback: Box<dyn Fn() + Send + Sync>
 }
 
 struct State {
@@ -113,7 +115,11 @@ struct BlobEntry {
 impl BundleBlobStore {
     /// NOTE: It is unsafe to create mutliple BlobStore instances with the same
     /// 'db' or 'dir' as they will overwrite each other's data.
-    pub async fn create(dir: LocalPathBuf, db: Arc<ProtobufDB>) -> Result<Self> {
+    pub async fn create(
+        dir: LocalPathBuf,
+        db: Arc<ProtobufDB>,
+        blob_uploaded_callback: Box<dyn Fn() + Send + Sync>
+    ) -> Result<Self> {
         let blobs = db
             .list::<LocalBundleBlobSpecTable>()
             .await?
@@ -140,6 +146,7 @@ impl BundleBlobStore {
                 dir,
                 db,
                 state: SyncMutex::new(State { blobs }),
+                blob_uploaded_callback,
             }),
         })
     }
@@ -298,6 +305,8 @@ impl BundleBlobStore {
         }
 
         writer.finish().await?;
+
+        (self.shared.blob_uploaded_callback)();
 
         Ok(())
     }

@@ -59,6 +59,14 @@ macro_rules! query_one {
     }};
 }
 
+#[macro_export]
+macro_rules! primary_key_prefix {
+    ($t:ty, $e:expr $(, $v:expr)* ) => {{
+        let q = raw_query!($t, $e $(, $v)*);
+        $crate::db::ProtobufDBTransaction::primary_key_prefix::<$t>(&q)?
+    }};
+}
+
 pub struct QueryBuilder {
     raw: RawQuery,
     values: Vec<QueryValue>,

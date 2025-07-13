@@ -223,6 +223,8 @@ fn main_inner() -> Result<()> {
     }
     println!("CGroup Dir: {}", config.cgroup_dir());
 
+    println!("Node Capabilities: {:?}", sys::capget(unsafe { sys::getpid() })?);
+
     let node_context = NodeContext {
         system_groups: all_groups.iter().map(|g| (g.name.clone(), g.id)).collect(),
         sub_uids: uidmap

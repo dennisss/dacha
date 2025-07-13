@@ -76,6 +76,7 @@ members = [
 	"pkg/cluster/proxy",
 	"pkg/cluster/proxy/proto",
 	"pkg/cluster/test",
+	"pkg/cluster/acme",
 	"pkg/container",
 	"pkg/container/proto",
 	"pkg/container/client",

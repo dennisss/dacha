@@ -53,13 +53,13 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         {
             path: "/data"
             is_directory: true
-            principals: []
+            principals: ["group:cluster-owners"]
         },
 
         {
             path: "/api"
             is_directory: true
-            principals: []
+            principals: ["group:cluster-owners"]
         },
 
         {
@@ -273,7 +273,8 @@ async fn main() -> Result<()> {
     let start_time = Instant::now();
 
     let client = ClusterMetaClient::create_from_environment().await?;
-
+    service.register_dependency(client.clone()).await;
+    
     let mut acl = container_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
@@ -311,6 +312,8 @@ async fn main() -> Result<()> {
     server.add_request_handler("/api", true, ApiHttpHandler {
         instance: monitor,
     });
+
+    service.register_dependency(server.start()?).await;
 
     // TODO: Actually wait for resource readiness and make this a standard metric
     // that we report.

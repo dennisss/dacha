@@ -23,10 +23,10 @@ async fn main() -> Result<()> {
         let mut config = Config::default();
         protobuf::text::parse_text_proto(&new_config, &mut config)?;
 
-        meta_client.set_object(&args.config_object, &config).await?;
+        meta_client.set_object_proto(&args.config_object, &config).await?;
     } else {
         let config = meta_client
-            .get_object::<Config>(&args.config_object)
+            .get_object_proto::<Config>(&args.config_object)
             .await?
             .ok_or_else(|| err_msg("No config set"))?;
         println!("{:?}", config);

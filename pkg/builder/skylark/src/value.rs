@@ -58,7 +58,7 @@ pub trait Value: 'static + AsAny {
         other: &dyn Value,
         frame: &mut ValueCallFrame,
     ) -> Result<ObjectStrong<dyn Value>> {
-        Err(err_msg("Value has no length"))
+        Err(err_msg("Value can not be added"))
     }
 }
 

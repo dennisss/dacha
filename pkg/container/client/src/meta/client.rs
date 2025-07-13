@@ -205,7 +205,7 @@ impl ClusterMetaClient {
         }
     }
 
-    pub async fn get_object<M: protobuf::Message + Default>(
+    pub async fn get_object_proto<M: protobuf::Message + Default>(
         &self,
         name: &str,
     ) -> Result<Option<M>> {
@@ -223,7 +223,7 @@ impl ClusterMetaClient {
         }
     }
 
-    pub async fn set_object<M: protobuf::Message>(&self, name: &str, value: &M) -> Result<()> {
+    pub async fn set_object_proto<M: protobuf::Message>(&self, name: &str, value: &M) -> Result<()> {
         let mut obj = ObjectMetadata::default();
         obj.set_name(name);
         obj.value_mut().pack_from(value)?;

@@ -88,6 +88,9 @@ message WorkerSpec {
         // Set by the Cluster Manager when assigning the worker to a node.
         uint32 number = 4; // [(google.api.field_behavior) = OUTPUT_ONLY];
 
+        // Explicitly request that the port is bound to this on the node.
+        uint32 node_port = 5;
+
         reserved 3;
     }
     repeated Port ports = 6;
@@ -121,6 +124,9 @@ message WorkerSpec {
     Probe readiness_probe = 13;
 
     Resources resources = 14;
+
+    // Linux capabilities to propagate to the worker.
+    repeated string capabilities = 15;
 
     // TODO: Add labels?
 }

@@ -59,6 +59,36 @@ container_template {
             source: "pts/ptmx"
             type: "symlink"
         },
+        # Needed by getaddrinfo
+        {
+            destination: "/etc/hosts",
+            source: "/etc/hosts",
+            options: ["bind"]
+        },
+        # Needed by getaddrinfo
+        {
+            destination: "/etc/nsswitch.conf",
+            source: "/etc/nsswitch.conf",
+            options: ["bind"]
+        },
+        # Needed by getaddrinfo
+        {
+            destination: "/etc/host.conf",
+            source: "/etc/host.conf",
+            options: ["bind"]
+        },
+        # Needed by getaddrinfo
+        {
+            destination: "/etc/resolv.conf",
+            source: "/etc/resolv.conf",
+            options: ["bind"]
+        },
+        # Needed by getaddrinfo
+        {
+            destination: "/etc/gai.conf",
+            source: "/etc/gai.conf",
+            options: ["bind"]
+        },
         {
             destination: "/usr/bin"
             source: "/usr/bin"

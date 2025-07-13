@@ -105,6 +105,7 @@ pub use bindings::{
 
 pub use bindings::{
     CLONE_FILES, CLONE_FS, CLONE_IO, CLONE_SETTLS, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM,
+    PR_CAP_AMBIENT_CLEAR_ALL
 };
 
 // pub use bindings::{ARCH_GET_FS, ARCH_SET_FS};

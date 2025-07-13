@@ -480,6 +480,7 @@ impl Server {
         connection_id: ServerConnectionId,
         stream: TcpStream,
     ) {
+        let raw_peer_addr = stream.peer_addr().clone();
         match Self::handle_stream_impl(&shared, connection_id, stream).await {
             Ok(v) => {}
             // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 response.
@@ -503,7 +504,7 @@ impl Server {
                 }
 
                 if !ignore {
-                    println!("[http::Server] Connection thread failed: {}", e)
+                    println!("[http::Server] [Peer: {:?}] Connection thread failed: {}", raw_peer_addr, e)
                 }
             }
         };

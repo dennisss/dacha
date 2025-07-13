@@ -1049,14 +1049,14 @@ impl DirectClientRunner {
         let value = match entry {
             Ok(Ok(entry)) => Some(entry),
             Err(_) => {
-                // eprintln!("[http::Client] Timed out while connecting");
+                eprintln!("[http::Client] Timed out while connecting");
                 None
             }
             Ok(Err(e)) => {
-                // eprintln!(
-                //     "[http::Client] Failure while connecting to {:?}: {}",
-                //     shared.endpoint.address, e
-                // );
+                eprintln!(
+                    "[http::Client] Failure while connecting to {:?}: {}",
+                    shared.endpoint.address, e
+                );
                 None
             }
         };

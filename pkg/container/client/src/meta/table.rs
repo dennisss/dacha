@@ -343,6 +343,10 @@ impl ProtobufTableTag for ObjectMetadataTable {
         table_id!(22)
     }
 
+    fn single_index_table() -> bool {
+        true
+    }
+
     fn table_name() -> &'static str {
         "ObjectMetadata"
     }
@@ -350,6 +354,7 @@ impl ProtobufTableTag for ObjectMetadataTable {
     fn indexed_keys() -> &'static [ProtobufTableKey] {
         &[sparse_struct!(ProtobufTableKey {
             index_id: PRIMARY_KEY_ID,
+            single_column_family: true,
             fields: &[ProtobufKeyField {
                 path: &[ObjectMetadata::NAME_FIELD_NUM_RAW],
                 direction: Direction::Ascending,

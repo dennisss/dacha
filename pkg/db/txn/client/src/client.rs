@@ -21,6 +21,7 @@ use raft_client::server::channel_factory::ChannelFactory;
 use raft_client::{RouteChannelFactory, RouteStore};
 
 use crate::constants::*;
+use crate::remove_overlaps::*;
 
 /// Maximum number of times transactions should be retried if they fail due to conflicting writes.
 pub const MAX_TRANSACTION_RETRIES: usize = 5;
@@ -245,22 +246,14 @@ impl TransactionalDBClient {
         let mut request = ReadRequest::default();
 
         let (start_key, end_key) = single_key_range(key);
-        request.keys_mut().set_start_key(start_key.as_ref());
-        request.keys_mut().set_end_key(end_key.as_ref());
-
-        if let Some(transaction_state_permit) = transaction_state {
-            lock!(transaction_state <= transaction_state_permit, {
-                request.set_read_index(transaction_state.read_index);
-
-                // TODO: Ensure the ranges are all non-overlapping.
-                transaction_state.reads.push(request.keys().clone());
-            });
+        let mut results = self.get_range_impl(&start_key, &end_key, Some(2), transaction_state).await?;
+        if results.len() > 1 {
+            return Err(err_msg("Received multiple values"));
         }
 
-        let mut response = stub.Read(&request_context, &request).await;
-        let value = if let Some(res) = response.recv().await {
-            if !res.entry().deleted() {
-                Some(res.entry().value().into())
+        let value = if let Some(entry) = results.pop() {
+            if !entry.deleted() {
+                Some(entry.value().into())
             } else {
                 None
             }
@@ -268,22 +261,15 @@ impl TransactionalDBClient {
             None
         };
 
-        if response.recv().await.is_some() {
-            return Err(err_msg("Received multiple values"));
-        }
-
-        response.finish().await?;
-
         Ok(value)
     }
 
-    /// Lists all files in a directory (along with their contents.)
-    ///
     /// CANCEL-SAFE
     async fn get_range_impl(
         &self,
         start_key: &[u8],
         end_key: &[u8],
+        limit: Option<usize>,
         transaction_state_permit: Option<AsyncMutexPermit<'_, MetastoreTransactionState>>,
     ) -> Result<Vec<KeyValueEntryProto>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
@@ -291,11 +277,10 @@ impl TransactionalDBClient {
         request_context.buffer_full_response = true;
 
         let mut request = ReadRequest::default();
-
         request.keys_mut().set_start_key(start_key);
         request.keys_mut().set_end_key(end_key);
 
-        // TODO: Deduplicate this code.
+        // TODO: If we have already read this range in the transaction, cache and re-use the old result.
         if let Some(transaction_state_permit) = transaction_state_permit {
             lock!(transaction_state <= transaction_state_permit, {
                 request.set_read_index(transaction_state.read_index);
@@ -304,13 +289,24 @@ impl TransactionalDBClient {
         }
 
         let mut out = vec![];
+        let mut hit_limit = false;
 
         let mut response = stub.Read(&request_context, &request).await;
+         
         while let Some(res) = response.recv().await {
             out.push(res.entry().clone());
+
+            if let Some(limit) = limit {
+                if out.len() >= limit {
+                    hit_limit = true;
+                    break;
+                }
+            }
         }
 
-        response.finish().await?;
+        if !hit_limit {
+            response.finish().await?;
+        }
 
         Ok(out)
     }
@@ -431,7 +427,7 @@ impl TransactionalDBClient {
     }
 
     pub async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
-        let items = self.get_range_impl(start_key, end_key, None).await?;
+        let items = self.get_range_impl(start_key, end_key, None, None).await?;
 
         Ok(items.into_iter().map(|v| {
             db_kv::KeyValueEntry {
@@ -642,7 +638,7 @@ impl<'a> MetastoreTransaction<'a> {
         // NOTE: These will always be returned by the server in sorted order.
         // TODO: Support caching this.
         let snapshot_values = client
-            .get_range_impl(start_key, end_key, Some(state.upgrade()))
+            .get_range_impl(start_key, end_key, None, Some(state.upgrade()))
             .await?;
 
         // Merge preferring the new written_values
@@ -713,6 +709,8 @@ impl<'a> MetastoreTransaction<'a> {
         let (client, state_permit) = self.get_top_level().await;
 
         lock_async!(state <= state_permit, {
+            // TODO: Check not attempting to commit twice.
+            
             if state.writes.is_empty() {
                 return Ok(());
             }
@@ -720,7 +718,8 @@ impl<'a> MetastoreTransaction<'a> {
             let mut request = ExecuteRequest::default();
             request.transaction_mut().set_read_index(state.read_index);
 
-            for read in &state.reads {
+            // TODO: Ideally remove perform overlap deduping while constructing 'state.reads'
+            for read in remove_overlaps(&mut state.reads) {
                 request.transaction_mut().add_reads(read.clone());
             }
 

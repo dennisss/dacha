@@ -254,6 +254,7 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
 
     // Verifying that we aren't re-using an existing node id (unless it was used for this same machine).
     // TODO: Acquire a metastore lock for setting up new nodes to avoid concurrent setups with conflicting ids.
+    let mut already_setup = false;
     {
         let config_path = node_dir.join("config.pb");
         if operator.file_exists(&config_path).await? {
@@ -271,6 +272,8 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             if old_node_config.id() != node_id {
                 return Err(format_err!("Node already configured with a different id: {}", entity_id_to_string(old_node_config.id()).unwrap()));
             }
+
+            already_setup = true;
         } else {
             let existing_meta = query_one!(db, NodeMetadataTable, "id = ?", node_id);
             if existing_meta.is_some() && !cmd.resetup_node {
@@ -279,7 +282,12 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
         }
     }
 
-    authorize_node(node_id, &cmd.zone, &db).await?;
+    // NOTE: We want as few dependencies on the metastore as possible since if
+    // we are trying to upgrade/repair the node with the metastore on it, we need
+    // to be able to rebuilt it without dependencies.
+    if !already_setup {
+        authorize_node(node_id, &cmd.zone, &db).await?;
+    }
 
     println!("Setting up node runtime:");
     let node_config = {

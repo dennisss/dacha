@@ -3,7 +3,7 @@ extern crate macros;
 
 use std::sync::Arc;
 
-use base_errors::*;
+use base_error::*;
 use google_auth::*;
 
 #[executor_main]

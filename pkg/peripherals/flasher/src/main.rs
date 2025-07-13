@@ -162,14 +162,22 @@ async fn main() -> Result<()> {
             // APPROTECT is on, we fully erase the chip and then re-connect to rescan the
             // memory map.
 
+            println!("Scan...");
+
             let _ = target.send_rcmd(b"swdp_scan").await?;
             target.attach(1).await?;
+
+            println!("Erase...");
 
             target.send_rcmd(b"erase_mass").await?;
             target.detach().await?;
 
+            println!("Re-scan...");
+
             let _ = target.send_rcmd(b"swdp_scan").await?;
             target.attach(1).await?;
+
+            println!("Write...");
 
             // NOTE: We just issued a mass erase so we don't need to call
             // target.flash_erase().
@@ -180,9 +188,14 @@ async fn main() -> Result<()> {
 
             for (offset, data) in &segments {
                 target.flash_write(*offset as usize, *data).await?;
+                println!("...");
             }
 
+            println!("Finalizing...");
+
             target.flash_done().await?;
+
+            println!("Done!");
 
             target.kill(1).await?;
         }

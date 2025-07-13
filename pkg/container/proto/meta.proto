@@ -111,6 +111,10 @@ message JobMetadata {
 
     // Last time there was an update to this proto.
     google.protobuf.Timestamp last_updated = 3;
+
+    // If true, then we are in the process of draining all workers in this job.
+    // Once all workers have been fully drained, this JobMetadata row will be deleted.
+    bool stopping = 4;
 }
 
 // Defines the intent for a single instance of a Worker which we want to run on some specific node.
@@ -225,4 +229,5 @@ message BundleBlobReplica {
 message ObjectMetadata {
     string name = 1;
     google.protobuf.Any value = 2;
+    bytes data = 3;
 }

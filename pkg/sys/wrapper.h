@@ -14,6 +14,8 @@
 #include <linux/tcp.h>
 #include <linux/termios.h>
 #include <linux/utsname.h>
+#include <linux/prctl.h>
+#include <linux/capability.h>
 #include <netinet/ip.h>
 #include <pthread.h>
 #include <scsi/sg.h>

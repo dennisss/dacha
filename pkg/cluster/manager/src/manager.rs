@@ -7,13 +7,15 @@ use cluster_client::acl::principal::Principal;
 use cluster_client::meta::*;
 use cluster_client::service::address::ServiceName;
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use crypto::random::{SharedRng, SharedRngExt};
 use db_txn_client::run_transaction;
 use db_table::db::{ProtobufDB, ProtobufDBTransaction};
-use db_table::{query, query_one, raw_query};
+use db_table::{query, query_one, raw_query, primary_key_prefix};
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
 use container_proto::cluster::*;
+use builder_proto::builder::Platform;
 
 /*
 When a manager test starts up, it will
@@ -114,6 +116,8 @@ impl Manager {
         // contention).
         loop {
             self.run_once().await?;
+
+            // TODO: Reconcile a job immediately if some drained workers get marked as done.
             executor::sleep(JOB_RECONCILE_RETRY_INTERVAL).await;
         }
 
@@ -282,6 +286,8 @@ impl Manager {
 
         let mut job_meta = existing_job.unwrap_or_else(|| JobMetadata::default());
 
+        job_meta.set_stopping(false);
+
         if job_meta.spec().worker() != request.spec().worker() {
             job_meta.set_worker_revision(txn.read_index().await);
         }
@@ -292,10 +298,50 @@ impl Manager {
             job_meta.set_last_updated(SystemTime::now());
         }
 
-
         txn.put::<JobMetadataTable>(&job_meta).await?;
 
         Ok(())
+    }
+
+    async fn stop_job_impl(&self, request: &StopJobRequest) -> Result<()> {
+        let changed = run_transaction!(self.db, txn, {
+            self.stop_job_transaction(request, &mut txn).await?
+        });
+
+        if changed {
+            self.reconcile_job(request.name()).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn stop_job_transaction(
+        &self,
+        request: &StopJobRequest,
+        txn: &mut ProtobufDBTransaction<'_>,
+    ) -> Result<bool> {
+        let mut job_meta = query_one!(
+            txn,
+            JobMetadataTable,
+            "spec.name = ?",
+            request.name()
+        ).ok_or_else(|| {
+            Error::from(rpc::Status::not_found("No such job found"))
+        })?;
+
+        if job_meta.stopping() {
+            return Ok(false);
+        }
+
+        job_meta.set_stopping(true);
+
+        if self.log_timestamps {
+            job_meta.set_last_updated(SystemTime::now());
+        }
+
+        txn.put::<JobMetadataTable>(&job_meta).await?;
+
+        Ok(true)
     }
 
     async fn reconcile_job(&self, job_name: &str) -> Result<()> {
@@ -385,6 +431,15 @@ impl Manager {
             Self::filter_by_node_labels(&node.0, &node.1, job.spec().scheduling().labels())
         });
 
+        if let Some(supported_platforms) = Self::get_supported_platforms(job.spec().worker()) {
+            remaining_nodes.retain(|i| {
+                let node = &nodes[*i];
+                supported_platforms.contains(&Self::platform_string(node.0.platform()))
+            });
+        }
+
+        // TODO: Also limit the max number of workers per node.
+
         let mut remaining_uncordoned_nodes = remaining_nodes.clone();
         remaining_uncordoned_nodes.retain(|i| {
             !nodes[*i].1.cordoned()
@@ -414,8 +469,13 @@ impl Manager {
         // TODO: Any workers in a DONE state (or a RestartPolicy preventing from than
         // one )
 
+        let mut target_replicas = job.spec().replicas() as usize;
+        if job.stopping() {
+            target_replicas = 0;
+        }
+
         // TODO: Implement each replica as a separate transaction.
-        for i in 0..(job.spec().replicas() as usize) {
+        for i in 0..target_replicas {
             // Attempt to select an existing worker that we want to re-use.
             let existing_worker = {
                 let mut picked_worker = None;
@@ -532,13 +592,11 @@ impl Manager {
             if existing_worker.is_none() {
                 // TODO: Make a utility for doing this.
 
-                let q = raw_query!(
+                let key = primary_key_prefix!(
                     WorkerStateMetadataTable,
                     "worker_name = ?",
                     new_worker.spec().name()
                 );
-                let key =
-                    ProtobufDBTransaction::primary_key_prefix::<WorkerStateMetadataTable>(&q)?;
 
                 let mut proto = KeyPrefixACLProto::default();
                 proto.set_prefix(key);
@@ -607,6 +665,8 @@ impl Manager {
             if self.log_timestamps {
                 existing_worker.set_last_updated(SystemTime::now());
             }
+            
+            touched_node_ids.insert(existing_worker.assigned_node());
 
             txn.put::<WorkerMetadataTable>(&existing_worker).await?;
 
@@ -638,6 +698,10 @@ impl Manager {
         txn.commit().await?;
 
         self.cleanup_drained(&drained_workers).await?;
+
+        if job.stopping() {
+            self.cleanup_stopping_job(job_name).await?;
+        }
 
         Ok(())
     }
@@ -679,6 +743,43 @@ impl Manager {
         true
     }
 
+    fn platform_string(platform: &Platform) -> Vec<u8> {
+        let mut out = vec![];
+        platform.serialize_to(&protobuf::SerializeOptions::default(), &mut out).unwrap();
+        out
+    }
+
+    // Will return None if all platforms are supported.
+    fn get_supported_platforms(job_worker_spec: &WorkerSpec) -> Option<HashSet<Vec<u8>>> {
+        let mut num_bundles = 0;
+        let mut seen_platforms: HashMap<Vec<u8>, usize> = HashMap::new();
+
+        for volume in job_worker_spec.volumes() {
+            if !volume.has_bundle() {
+                continue;
+            }
+
+            num_bundles += 1;
+
+            for variant in volume.bundle().variants() {
+                *seen_platforms.entry(Self::platform_string(&variant.platform())).or_default() += 1;
+            }
+        }
+
+        if num_bundles == 0 {
+            return None;
+        }
+
+        let mut out = HashSet::new();
+        for (key, value) in seen_platforms {
+            if value == num_bundles {
+                out.insert(key);
+            }
+        }
+
+        Some(out)
+    }
+
     /// Given a set of workers that are drained, this will remove the metadata
     /// once the WorkerStateMetadata is marked as DONE (indicating that this
     /// worker will never be started again by the node).
@@ -712,6 +813,7 @@ impl Manager {
             {
                 txn.remove::<WorkerMetadataTable>(worker).await?;
                 txn.remove::<WorkerStateMetadataTable>(&state_meta).await?;
+                // TODO: Also clean up the ACL records?
             }
         }
 
@@ -720,14 +822,43 @@ impl Manager {
         Ok(())
     }
 
+    // TODO: Consider batching this with the other transaction in cleanup_drained.
+    async fn cleanup_stopping_job(&self, job_name: &str) -> Result<()> {
+        let mut txn = self.db.new_transaction().await?;
+
+        let job = match query_one!(&txn, JobMetadataTable, "spec.name = ?", job_name) {
+            Some(v) => v,
+            None => return Ok(())
+        };
+
+        if !job.stopping() {
+            return Ok(());
+        }
+
+        // TODO: Optimize to just fetch the count.
+        let existing_workers = query!(
+            &txn,
+            WorkerMetadataTable,
+            "STARTS_WITH(spec.name, ?)",
+            format!("{}.", job_name)
+        );
+
+        // Can only delete the job once all workers have been fully drained.
+        if existing_workers.len() > 0 {
+            return Ok(());
+        }
+
+        txn.remove::<JobMetadataTable>(&job).await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
     // TODO: We' should avoid allocating the same ports very frequetly. we will also
     // need to validate that clients don't accidentally contact the wrong server by
     // checking the dns name requested (probably doable at the TLS level)
 
     /// Creates a worker
-    ///
-    /// TODO: This must mutate the allocated ports set so that we don't end up
-    /// obtaining the same port for multiple separate ports.
     async fn create_allocated_worker_spec(
         &self,
         job_name: &str,
@@ -752,17 +883,58 @@ impl Manager {
 
         spec.set_name(worker_name.as_str());
 
-        // Newly allocated ports. Used to ensure we don't double allocate ports not yet
-        // accounted for in the NodeMetadata.
-        let mut new_ports = HashSet::new();
+        // Expected new value fo the node's allocated port set after applying changes
+        // in the created worker spec.
+        let mut node_allocated_ports = HashSet::<u32, FastHasherBuilder>::default();
+        for port in node_scheduling.allocated_ports().iter() {
+            node_allocated_ports.insert(*port);
+        }
 
+        // Assign any ports that can be re-used from the past run.
         for port in spec.ports_mut() {
-            // If updating an existing worker, attempt to re-use existing port assignments.
-            if let Some(old_spec) = old_spec.clone() {
-                if let Some(old_port) = old_spec.ports().iter().find(|v| v.name() == port.name()) {
-                    port.set_number(old_port.number());
-                    continue;
+            port.clear_number();
+
+            let old_spec = match old_spec.clone() {
+                Some(v) => v,
+                None => continue
+            };
+
+            let old_port = match old_spec.ports().iter().find(|v| v.name() == port.name()) {
+                Some(v) => v,
+                None => continue
+            };
+
+            let can_reuse = {
+                if port.node_port() != 0 {
+                    port.node_port() == old_port.number()
+                } else {
+                    old_port.number() >= node.allocatable_port_range().start() &&
+                    old_port.number() < node.allocatable_port_range().end()
                 }
+            };
+
+            if can_reuse {
+                port.set_number(old_port.number());
+            } else {
+                node_allocated_ports.remove(&old_port.number());
+            }
+        }
+
+        // Newly assign newly referenced ports.
+        for port in spec.ports_mut() {
+            if port.number() != 0 {
+                continue;
+            }
+
+            if port.node_port() != 0 {
+                if !node_allocated_ports.insert(port.node_port()) {
+                    // TODO: Using a node_port should imply schedulign on distinct nodes.
+                    return Err(format_err!("Node port {} already allocated on the node.", port.node_port()));
+                }
+
+                let p = port.node_port();
+                port.set_number(p);
+                continue;
             }
 
             // Otherwise, allocate a new port on the node.
@@ -771,19 +943,18 @@ impl Manager {
             for port_num in
                 node.allocatable_port_range().start()..node.allocatable_port_range().end()
             {
-                if node_scheduling.allocated_ports().contains(&port_num)
-                    || new_ports.contains(&port_num)
-                {
+                if node_allocated_ports.contains(&port_num) {
                     continue;
                 }
 
                 port.set_number(port_num);
-                new_ports.insert(port_num);
+                node_allocated_ports.insert(port_num);
                 found_port_num = true;
                 break;
             }
 
             if port.number() == 0 {
+                // TODO: Raise this to the user in some schedulability report.
                 return Err(err_msg("Failed to allocate a new port number"));
             }
         }
@@ -904,13 +1075,11 @@ impl Manager {
         {
             // TODO: Make a utility for doing this.
 
-            let q = raw_query!(
+            let key = primary_key_prefix!(
                 BundleBlobReplicaTable,
                 "blob_id = ? AND node_id = ?",
                 replica.blob_id(), replica.node_id()
             );
-            let key =
-                ProtobufDBTransaction::primary_key_prefix::<BundleBlobReplicaTable>(&q)?;
 
             let mut proto = KeyPrefixACLProto::default();
             proto.set_prefix(key);
@@ -939,6 +1108,14 @@ impl ManagerService for Manager {
         response: &mut rpc::ServerResponse<StartJobResponse>,
     ) -> Result<()> {
         self.start_job_impl(&request.value).await
+    }
+
+    async fn StopJob(
+        &self,
+        request: rpc::ServerRequest<StopJobRequest>,
+        response: &mut rpc::ServerResponse<StopJobResponse>,
+    ) -> Result<()> {
+        self.stop_job_impl(&request.value).await
     }
 
     async fn AllocateBundleBlobs(
@@ -1571,5 +1748,8 @@ mod tests {
     - Test AllocateBlob
     - Test scheduling.distinct_nodes
     - Disallow providing 'spec.worker.name'
+    - node_port
+    - draining workers
+    - stopping a job
     */
 }

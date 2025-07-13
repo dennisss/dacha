@@ -36,7 +36,7 @@ impl<T> PathRouter<T> {
             if *key == path ||
                 (is_directory && key.starts_with(&dir_path)) ||
                 (route.is_directory && path.starts_with(&format!("{}/", key))) {
-                return Err(err_msg("Duplicate or overlapping route"));
+                return Err(format_err!("Duplicate or overlapping route. {} and {}", path, *key));
             }
         }
 

@@ -21,17 +21,20 @@ impl ACMEChallengeSolver for GoogleDNSSolver {
         DNS_01
     }
 
-    async fn solve_challenge(&self, dns_name: &str, key_authorization: &str) -> Result<()> {
+    async fn solve_challenge(&self, dns_name: &str, key_authorizations: &[String]) -> Result<()> {
         let record_name = format!("_acme-challenge.{}.", dns_name);
 
-        let data = {
+        let mut datas = vec![];
+
+        for key_authorization in key_authorizations {
             let mut hasher = SHA256Hasher::default();
             hasher.update(key_authorization.as_bytes());
-            base_radix::base64url_encode(&hasher.finish())
-        };
+            datas.push(base_radix::base64url_encode(&hasher.finish()));
+        }
+
 
         self.client
-            .set_txt_record(&record_name, 300, &[data])
+            .set_txt_record(&record_name, 300, &datas)
             .await?;
 
         // Wait for DNS propagation delay.

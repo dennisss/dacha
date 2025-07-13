@@ -606,6 +606,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_acme"
+version = "0.1.0"
+dependencies = [
+ "acme",
+ "base_error",
+ "base_radix",
+ "base_units",
+ "cluster_client",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "executor",
+ "executor_multitask",
+ "google_auth",
+ "google_dns",
+ "http",
+ "http_util",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "rpc_util",
+ "sys",
+]
+
+[[package]]
 name = "cluster_bridge"
 version = "0.1.0"
 dependencies = [
@@ -729,6 +757,7 @@ dependencies = [
  "automata",
  "base_error",
  "base_radix",
+ "builder_proto",
  "cluster_client",
  "common",
  "compression",

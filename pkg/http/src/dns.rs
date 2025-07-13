@@ -96,7 +96,7 @@ pub fn lookup_hostname(name: &str) -> Result<Vec<AddrInfo>> {
 
     // TODO: Use gai_strerror to print the error?
     if ret != 0 {
-        return Err(format_err!("Got error {}", ret));
+        return Err(format_err!("getaddrinfo failed with error {}", ret));
     }
 
     let mut out = vec![];

@@ -1,0 +1,29 @@
+name: "ingress.letsencrypt_staging_refresher"
+replicas: 1
+worker {
+    # TODO: Deduplicate all the places we set the cwd with some standard template.
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/cluster/acme/cluster_acme",
+        "--port=service",
+        "--acme_server=letsencrypt-staging",
+        "--google_service_account_object=google_service_account",
+        "--dns_name=test.dacha.dev",
+        "--output_object_prefix=letsencrypt_staging",
+
+        # Letsencrypt issues 90d certificates with a recommended refresh time of 60d.
+        "--min_remaining_duration=30d"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cluster/acme:bundle"
+        }
+    ]
+}

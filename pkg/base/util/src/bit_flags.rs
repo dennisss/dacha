@@ -67,7 +67,14 @@ macro_rules! define_bit_flags {
                 out
             }
 
-
+            pub fn from_single_value_string(s: &str) -> Option<Self> {
+                Some(match s {
+                    $(
+                        stringify!($name) => Self::$name,
+                    )*
+                    _ => return None
+                })
+            }
         }
 
         impl ::core::convert::From<$t> for $struct {
@@ -87,6 +94,14 @@ macro_rules! define_bit_flags {
         impl ::core::ops::BitOrAssign for $struct {
             fn bitor_assign(&mut self, rhs: Self) {
                 *self = *self | rhs;
+            }
+        }
+
+        impl ::core::ops::BitAnd for $struct {
+            type Output = Self;
+
+            fn bitand(self, rhs: Self) -> Self::Output {
+                Self::from_raw(self.value & rhs.value)
             }
         }
 

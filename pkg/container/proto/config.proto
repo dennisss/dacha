@@ -41,6 +41,12 @@ message ContainerProcess {
         repeated uint32 additional_gids = 3; 
     }
     User user = 4;
+
+    message Capabilities {
+        repeated string all = 1;
+    }
+
+    Capabilities capabilities = 6;
 }
 
 message ContainerMount {

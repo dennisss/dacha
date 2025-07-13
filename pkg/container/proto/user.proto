@@ -77,7 +77,7 @@ message Session {
     
     string user_name = 2;
     
-    // 16 byte secret value that can be used by a client to authenticate with this 
+    // 16 byte secret value that can be used by a client to authenticate with this session.
     bytes auth_key = 3;
 
     bool deleted = 4;

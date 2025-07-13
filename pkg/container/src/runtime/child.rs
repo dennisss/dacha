@@ -329,37 +329,60 @@ fn exec_child_process(
     let _ = nix::unistd::setfsuid(child_uid);
     let _ = nix::unistd::setfsgid(child_gid);
 
-    // Drop all capabilities
-    let data = [
-        sys::cap_user_data {
-            effective: 0,
-            permitted: 0,
-            inheritable: 0,
-        },
-        sys::cap_user_data {
-            effective: 0,
-            permitted: 0,
-            inheritable: 0,
-        },
-    ];
+    // TODO: Allowlist which are allowed since some like CAP_SETUID may be used to escape the container.
+    let mut desired_caps = sys::CapabilitiesSet::empty();
+    for cap in process.capabilities().all() {
+        desired_caps |= sys::CapabilitiesSet::from_single_value_string(cap.as_str())
+            .ok_or_else(|| format_err!("Unknown capability named: {}", cap))?;
+    }
+
+    let my_pid = unsafe { sys::getpid() };
+
+    let mut caps = sys::capget(my_pid)?;
+
+    if caps.effective & desired_caps != desired_caps {
+        return Err(format_err!(
+            "All capabilities not in the current effective set: {:?}", caps.effective));
+    }
+
+    if caps.permitted & desired_caps != desired_caps {
+        return Err(format_err!(
+            "All capabilities not in the current permitted set: {:?}", caps.permitted));
+    }
+
+    if caps.inheritable & desired_caps != desired_caps {
+        return Err(format_err!(
+            "All capabilities not in the current inheritable set: {:?}", caps.inheritable));
+    }
+
+    caps = sys::CapabilitiesData {
+        effective: desired_caps,
+        permitted: desired_caps,
+        inheritable: desired_caps
+    };
 
     // NOTE: This will only work if we are using a user namespace (otherwise we
-    // won't have the capabilites needed to change our own capabilities).
-    unsafe { sys::capset(sys::getpid(), &data) }
-        .map_err(|e| format_err!("Failed to drop capabilities with error: {:?}", e))?;
+    // won't have the capabilities needed to change our own capabilities).
+    sys::capset(my_pid, &caps)
+        .map_err(|e| format_err!("Failed to set capabilities with error: {:?}", e))?;
 
+    // NOTE: Ambient capabilities are automatically removed if removed from
+    // 'permitted' or 'inheritable' sets.
+    /*
     let r = unsafe {
-        libc::prctl(
-            libc::PR_CAP_AMBIENT,
-            libc::PR_CAP_AMBIENT_CLEAR_ALL,
+        sys::prctl(
+            sys::PR_CAP_AMBIENT,
+            sys::PR_CAP_AMBIENT_CLEAR_ALL as u64,
             0,
             0,
             0,
         )
-    };
+    }?;
+    // TODO: Move the error u with map_err
     if r != 0 {
         return Err(err_msg("Failed to clear ambient capabilities"));
     }
+    */
 
     // TODO: REmove all bounding with PR_CAPBSET_DROP
 

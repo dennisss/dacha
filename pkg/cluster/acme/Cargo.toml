@@ -1,35 +1,31 @@
 [package]
-name = "cluster_manager"
+name = "cluster_acme"
 version = "0.1.0"
 edition = "2018"
 
 [dependencies]
 common = { path = "../../common" }
-builder_proto = { path = "../../builder/proto" }
 base_radix = { path = "../../base/radix" }
+base_units = { path = "../../base/units" }
 base_error = { path = "../../base/error" }
-db_table = { path = "../../db/table" }
-db_txn_client = { path = "../../db/txn/client" }
 crypto = { path = "../../crypto" }
-automata = { path = "../../automata" }
-regexp_macros = { path = "../../automata/regexp_macros" }
-protobuf = { path = "../../protobuf" }
 http = { path = "../../http" }
+parsing = { path = "../../parsing" }
+http_util = { path = "../../http/util" }
 macros = { path = "../../macros" }
+rpc_util = { path = "../../rpc/util" }
+google_auth = { path = "../../api/google/auth" }
+google_dns = { path = "../../api/google/dns" }
 compression = { path = "../../compression" }
 cluster_client = { path = "../../container/client" }
-rpc = { path = "../../rpc" }
-rpc_util = { path = "../../rpc/util" }
 net = { path = "../../net" }
-protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
-file = { path = "../../file" }
 sys = { path = "../../sys" }
+acme = { path = "../../api/acme" }
+db_table = { path = "../../db/table" }
+protobuf = { path = "../../protobuf" }
 container_proto = { path = "../../container/proto" }
-
-[dev-dependencies]
-db_txn = { path = "../../db/txn" }
 
 [features]
 default = ["std"]

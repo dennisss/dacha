@@ -161,7 +161,7 @@ pub struct ChallengeObject {
 
 impl ACMEClient {
     /// NOTE: The account private key is only used for authentication with the
-    /// ACME server and MUST be different than the key used for signing CSRs.
+    /// ACME server and MUST be different than the key used for signing CSRs. 
     pub async fn create(
         directory_url: &str,
         solvers: Vec<Arc<dyn ACMEChallengeSolver>>,
@@ -214,7 +214,7 @@ impl ACMEClient {
             idents.insert(Identifier {
                 typ: "dns".to_string(),
                 value: csr
-                    .common_name()?
+                    .subject_as_common_name()?
                     .ok_or_else(|| err_msg("CSR missing a common name"))?
                     .to_string(),
             });
@@ -384,7 +384,9 @@ impl ACMEClient {
         let public_key_thumbnail =
             generate_jwk_thumbprint(&self.account_private_key.public_key()?)?;
 
-        let mut solver_tasks = TaskResultBundle::new();
+        // Map of (dns_name, challenge_typ) to list of key authorizations that need to be solved.
+        let mut solver_inputs = HashMap::<(String, String), Vec<String>>::new();
+
         let mut challenge_urls = vec![];
 
         for auth in &order.authorizations {
@@ -406,7 +408,7 @@ impl ACMEClient {
                 ));
             }
 
-            let dns_name = obj.identifier.value.clone();
+            let dns_name = obj.identifier.value.as_str().clone();
 
             {
                 let full_value = if obj.wildcard == Some(true) {
@@ -453,12 +455,8 @@ impl ACMEClient {
 
                 for solver in &self.solvers {
                     if solver.challenge_type() == challenge.typ {
-                        let dns_name = dns_name.clone();
-                        let solver = solver.clone();
-                        solver_tasks.add("Solver", async move {
-                            solver.solve_challenge(&dns_name, &key_authorization).await
-                        });
-
+                        solver_inputs.entry((dns_name.to_string(), challenge.typ.clone())).or_default()
+                            .push(key_authorization);
                         challenge_urls.push(challenge.url.clone());
 
                         found = true;
@@ -476,6 +474,24 @@ impl ACMEClient {
             }
 
             println!("{:#?}", obj);
+        }
+
+        let mut solver_tasks = TaskResultBundle::new();
+
+        for ((dns_name, challenge_type), key_authorizations) in solver_inputs {
+            // NOTE: This loop should always find a solver.
+            for solver in &self.solvers {
+                if solver.challenge_type() != &challenge_type {
+                    continue;
+                }
+
+                let solver = solver.clone();
+                solver_tasks.add("Solver", async move {
+                    solver.solve_challenge(&dns_name, &key_authorizations).await
+                });
+
+                break;
+            }
         }
 
         solver_tasks.join().await?;

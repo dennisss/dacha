@@ -27,7 +27,10 @@ message NodeConfig {
     uint32 graceful_shutdown_timeout_secs = 4;
 
     // Range of network ports which may be used by workers running on this node.
-    // TODO: Have the node runtime validate that we only receive workers with ports in this range. 
+    // TODO: Have the node runtime validate that we only receive workers with ports in this range.
+    //
+    // NOTE: This is mainly for ports that are auto-assigned. node_ports don't need to be in this
+    // range.
     PortRange allocatable_port_range = 6;
 
     // Name of the cluster zone this node is a part of.

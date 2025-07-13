@@ -27,7 +27,9 @@ async fn find_or_create_private_key(path: &LocalPath) -> Result<crypto::x509::Pr
 #[executor_main]
 async fn main() -> Result<()> {
     let data =
-        file::read_to_string("/home/dennis/.credentials/dacha-main-748d2acba112.json").await?;
+        file::read_to_string("/home/dennis/.credentials/da-cha-home-cluster.json").await?;
+
+    // TODO: Immedately try querying DNS to verify we have access.
 
     let sa: Arc<GoogleServiceAccount> =
         Arc::new(google_auth::GoogleServiceAccount::parse_json(&data)?);
@@ -41,8 +43,8 @@ async fn main() -> Result<()> {
     let csr_private_key = find_or_create_private_key(&project_path!("acme_csr.key")).await?;
 
     let mut csr = crypto::x509::CertificateRequestBuilder::default()
-        .set_common_name("dacha.page")?
-        .set_subject_alt_names(&["dacha.page"])?
+        .set_common_name("dacha.dev")?
+        .set_subject_alt_names(&["dacha.dev", "*.dacha.dev"])?
         .build(&csr_private_key)
         .await?;
 

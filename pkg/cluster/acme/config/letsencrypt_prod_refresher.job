@@ -1,0 +1,28 @@
+name: "ingress.letsencrypt_prod_refresher"
+replicas: 1
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/cluster/acme/cluster_acme",
+        "--port=service",
+        "--acme_server=letsencrypt-prod",
+        "--google_service_account_object=google_service_account",
+        "--dns_name=dacha.dev",
+        "--output_object_prefix=letsencrypt_prod",
+
+        # Letsencrypt issues 90d certificates with a recommended refresh time of 60d.
+        "--min_remaining_duration=30d"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cluster/acme:bundle"
+        }
+    ]
+}

@@ -170,7 +170,7 @@ struct State {
     /// state information back from the machine.
     connected: bool,
 
-    capabilites: HashMap<String, bool, FastHasherBuilder>,
+    capabilities: HashMap<String, bool, FastHasherBuilder>,
 
     axes: HashMap<String, AxisData, FastHasherBuilder>,
 
@@ -569,7 +569,7 @@ impl SerialController {
     }
 
     async fn state_polling_marlin(shared: &Shared) -> Result<()> {
-        // Poll capabilites.
+        // Poll capabilities.
         Self::send_command_inner(
             &shared,
             "M115\n",
@@ -581,17 +581,17 @@ impl SerialController {
         let mut autoreport_support = lock!(state <= shared.state.lock().await?, {
             AutoReportSupport {
                 position: state
-                    .capabilites
+                    .capabilities
                     .get("AUTOREPORT_POSITION")
                     .cloned()
                     .unwrap_or(false),
                 temps: state
-                    .capabilites
+                    .capabilities
                     .get("AUTOREPORT_TEMP")
                     .cloned()
                     .unwrap_or(false),
                 fans: state
-                    .capabilites
+                    .capabilities
                     .get("AUTOREPORT_FANS")
                     .cloned()
                     .unwrap_or(false),
@@ -1797,7 +1797,7 @@ impl SerialController {
             let config = shared.config.read().await?;
 
             let mut got_state_change = false;
-            new_state_data.capabilites.clear();
+            new_state_data.capabilities.clear();
             new_state_data.axes.clear();
 
             let mut command_responses = vec![];
@@ -1833,7 +1833,7 @@ impl SerialController {
                             // TODO: Do something!
                         }
                         ResponseEvent::Capability { name, present } => {
-                            new_state_data.capabilites.insert(name, present);
+                            new_state_data.capabilities.insert(name, present);
                             line_has_state_update = true;
                         }
                         ResponseEvent::IsStateUpdate => {
@@ -1971,7 +1971,7 @@ impl SerialController {
 
                 lock!(state <= shared.state.lock().await?, {
                     state.axes.extend(new_state_data.axes.drain());
-                    state.capabilites.extend(new_state_data.capabilites.drain());
+                    state.capabilities.extend(new_state_data.capabilities.drain());
 
                     state
                         .firmware_state

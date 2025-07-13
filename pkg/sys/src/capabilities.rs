@@ -8,16 +8,35 @@
 
 use crate::{bindings, c_int, pid_t, Errno};
 
-pub const LINUX_CAPABILITY_VERSION_3: u32 = 0x20080522;
+const LINUX_CAPABILITY_VERSION_3: u32 = 0x20080522;
+
+#[derive(Clone, Debug)]
+pub struct CapabilitiesData {
+    pub effective: CapabilitiesSet,
+    pub permitted: CapabilitiesSet,
+    pub inheritable: CapabilitiesSet,
+}
+
+define_bit_flags!(CapabilitiesSet u64 {
+    CAP_CHOWN = (1 << bindings::CAP_CHOWN),
+    CAP_SETGID = (1 << bindings::CAP_SETGID),
+    CAP_SETUID = (1 << bindings::CAP_SETUID),
+    CAP_SETPCAP = (1 << bindings::CAP_SETPCAP),
+    CAP_NET_ADMIN = (1 << bindings::CAP_NET_ADMIN),
+    CAP_NET_BIND_SERVICE = (1 << bindings::CAP_NET_BIND_SERVICE),
+    CAP_SYS_TIME = (1 << bindings::CAP_SYS_TIME)
+});
+
 
 #[repr(C)]
-pub struct cap_user_header {
+struct cap_user_header {
     pub version: u32,
     pub pid: pid_t,
 }
 
 #[repr(C)]
-pub struct cap_user_data {
+#[derive(Default, Clone, Copy)]
+struct cap_user_data {
     pub effective: u32,
     pub permitted: u32,
     pub inheritable: u32,
@@ -45,19 +64,46 @@ pub const SECBITS_LOCKED_DOWN: u32 = SECBIT_NOROOT
     | SECBIT_NO_CAP_AMBIENT_RAISE
     | SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED;
 
-/// NOTE: This is always 2 elements in V3 of the capabilities API. On 64-bit
-/// devices, both are used to support 64-bit capability sets.
-pub unsafe fn capset(pid: pid_t, data: &[cap_user_data; 2]) -> Result<(), Errno> {
+pub fn capget(pid: pid_t) -> Result<CapabilitiesData, Errno> {
     let hdr = cap_user_header {
         version: LINUX_CAPABILITY_VERSION_3,
         pid,
     };
 
-    raw::capset(&hdr, data.as_ptr())
+    let mut data = [cap_user_data::default(); 2];
+    unsafe { raw::capget(&hdr, data.as_mut_ptr()) }?;
+
+    Ok(CapabilitiesData {
+        effective: ((data[0].effective as u64) | ((data[1].effective as u64) << 32)).into(),
+        permitted: ((data[0].permitted as u64) | ((data[1].permitted as u64) << 32)).into(),
+        inheritable: ((data[0].inheritable as u64) | ((data[1].inheritable as u64) << 32)).into(),
+    })
+}
+
+/// NOTE: This is always 2 elements in V3 of the capabilities API. On 64-bit
+/// devices, both are used to support 64-bit capability sets.
+pub fn capset(pid: pid_t, data: &CapabilitiesData) -> Result<(), Errno> {
+    let hdr = cap_user_header {
+        version: LINUX_CAPABILITY_VERSION_3,
+        pid,
+    };
+
+    let mut raw_data = [cap_user_data::default(); 2];
+    raw_data[0].effective = data.effective.to_raw() as u32;
+    raw_data[1].effective = (data.effective.to_raw() >> 32) as u32;
+
+    raw_data[0].permitted = data.permitted.to_raw() as u32;
+    raw_data[1].permitted = (data.permitted.to_raw() >> 32) as u32;
+
+    raw_data[0].inheritable = data.inheritable.to_raw() as u32;
+    raw_data[1].inheritable = (data.inheritable.to_raw() >> 32) as u32;
+
+    unsafe { raw::capset(&hdr, raw_data.as_ptr()) }
 }
 
 mod raw {
     use super::*;
 
+    syscall!(capget, bindings::SYS_capget, hdrp: *const cap_user_header, datap: *mut cap_user_data => Result<()>);
     syscall!(capset, bindings::SYS_capset, hdrp: *const cap_user_header, datap: *const cap_user_data => Result<()>);
 }

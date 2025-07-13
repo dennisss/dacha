@@ -68,7 +68,7 @@ impl RadioBridge {
         // lock for failures and ensure that future writes check if changes since last
         // index.
         let state_data = match meta_client
-            .get_object::<RadioBridgeStateData>(state_object_name)
+            .get_object_proto::<RadioBridgeStateData>(state_object_name)
             .await?
         {
             Some(v) => v,
@@ -84,7 +84,7 @@ impl RadioBridge {
                     .extend_from_slice(&local_address);
 
                 meta_client
-                    .set_object(state_object_name, &state_data)
+                    .set_object_proto(state_object_name, &state_data)
                     .await?;
 
                 state_data
@@ -198,7 +198,7 @@ impl RadioBridgeInner {
 
             self.shared
                 .meta_client
-                .set_object(&state.state_object_name, &next_data)
+                .set_object_proto(&state.state_object_name, &next_data)
                 .await?;
             state.state_data = next_data;
         }
@@ -268,7 +268,7 @@ impl RadioBridgeService for RadioBridgeInner {
 
         self.shared
             .meta_client
-            .set_object(&state.state_object_name, &next_data)
+            .set_object_proto(&state.state_object_name, &next_data)
             .await?;
 
         // Populate the response
@@ -332,7 +332,7 @@ impl RadioBridgeService for RadioBridgeInner {
 
         self.shared
             .meta_client
-            .set_object(&state.state_object_name, &state.state_data)
+            .set_object_proto(&state.state_object_name, &state.state_data)
             .await?;
 
         lock!(state <= state.upgrade(), {

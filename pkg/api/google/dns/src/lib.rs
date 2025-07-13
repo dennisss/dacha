@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use base_errors::*;
+use base_error::*;
 use google_auth::GoogleRestClient;
 use google_discovery_generated::dns_v1;
 
@@ -34,8 +34,6 @@ impl Client {
         let zone_name = {
             let mut zone_name = None;
 
-            let target_zone_dns_name = self.parent_dns_name(dns_name)?;
-
             let res = self
                 .raw
                 .managed_zones_list(
@@ -45,14 +43,14 @@ impl Client {
                 .await?;
 
             for zone in &res.managedZones {
-                if target_zone_dns_name == &zone.dnsName {
+                if dns_name == &zone.dnsName || dns_name.ends_with(&format!(".{}", zone.dnsName)) {
                     zone_name = Some(zone.name.clone());
                     break;
                 }
             }
 
             zone_name.ok_or_else(|| {
-                format_err!("No zone in project for dns name: {}", target_zone_dns_name)
+                format_err!("No zone in project for dns name: {}", dns_name)
             })?
         };
 
@@ -156,18 +154,5 @@ impl Client {
         }
 
         Ok(out)
-    }
-
-    fn parent_dns_name<'a>(&self, name: &'a str) -> Result<&'a str> {
-        if !name.ends_with(".") {
-            return Err(err_msg("Malformed DNS name"));
-        }
-
-        let (_, rest) = name.split_once(".").unwrap();
-        if rest.is_empty() {
-            return Err(err_msg("DNS name has no parent"));
-        }
-
-        Ok(rest)
     }
 }

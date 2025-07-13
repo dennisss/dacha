@@ -22,7 +22,7 @@ use common::errors::*;
 use crypto::random::RngExt;
 use db_table::db::ProtobufDB;
 use db_table::db::ProtobufDBTransaction;
-use db_table::{query, query_one, raw_query};
+use db_table::{query, query_one, raw_query, primary_key_prefix};
 use db_table::key_utils::single_key_range;
 use executor::child_task::ChildTask;
 use executor::lock;
@@ -290,9 +290,23 @@ impl Node {
 
         let usb_context = usb::Context::create()?;
 
+        let blob_change_channel = channel::bounded(1);
+
+        // During the initial upload of a blob, the user will directly write it to a node.
+        // We need to immediately have it get marked as uploaded in the metastore before the workers are started since remote nodes may not be able to find any replicas if this step isn't quick enough.
+        let blob_uploaded_callback = {
+            let blob_change_sender = blob_change_channel.0.clone();
+
+            Box::new(move || {
+                // TODO: Ideally block a short amount of time to allow the reconcile_blob task to finish.
+                let _ = blob_change_sender.try_send(());
+            })
+        };
+
         let blobs = BundleBlobStore::create(
             LocalPath::new(config.data_dir()).join(NODE_BLOB_PATH),
             db.clone(),
+            blob_uploaded_callback
         )
         .await?;
 
@@ -327,7 +341,7 @@ impl Node {
                 meta_client,
                 last_event_timestamp: AsyncMutex::new(last_event_timestamp),
                 state_change_channel: channel::bounded(1),
-                blob_change_channel: channel::bounded(1),
+                blob_change_channel,
             }),
         };
 
@@ -507,8 +521,7 @@ impl NodeInner {
     ///
     /// CANCEL SAFE
     async fn run_watcher_loop(self) -> Result<()> {
-        let q = raw_query!(NodeRevisionTable, "node_id = ?", self.shared.id);
-        let key = ProtobufDBTransaction::primary_key_prefix::<NodeRevisionTable>(&q)?;
+        let key = primary_key_prefix!(NodeRevisionTable, "node_id = ?", self.shared.id);
         let (start_key, end_key) = single_key_range(&key);
 
         let mut watcher = self.shared.meta_client.inner().watch(&start_key, &end_key).await?;
@@ -711,7 +724,7 @@ impl NodeInner {
                         },
                     )
                 } else {
-                    (0, WorkerStateMetadata_ReportedState::DONE)
+                    (worker.revision(), WorkerStateMetadata_ReportedState::DONE)
                 };
 
             // If the current worker state is different than the last reported one, update
@@ -1259,6 +1272,11 @@ impl NodeInner {
 
         container_config.process_mut().set_cwd(worker.spec.cwd());
 
+        // TODO: Need ACLs on this and other sensitive fields.
+        for cap in worker.spec.capabilities() {
+            container_config.process_mut().capabilities_mut().add_all(cap.clone());   
+        }
+
         for port in worker.spec.ports() {
             if port.number() == 0 {
                 return Err(rpc::Status::invalid_argument(format!(
@@ -1685,11 +1703,10 @@ impl NodeInner {
             .choose(&uploaded_replicas)
             .node_id();
 
-        let client = create_rpc_channel(
-            &ServiceName::for_node(meta_client.zone(), remote_node_id)?.to_string(),
-            meta_client.clone(),
-        )
-        .await?;
+        let addr = ServiceName::for_node(meta_client.zone(), remote_node_id)?.to_string();
+        println!("Fetching blob {} from {}", blob_id, addr);
+
+        let client = create_rpc_channel(&addr, meta_client.clone()).await?;
 
         let stub = BundleBlobStoreStub::new(client);
 
