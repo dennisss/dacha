@@ -6,6 +6,7 @@ use common::io::Readable;
 use file::{LocalFile, LocalPath, LocalPathBuf};
 
 use crate::body::*;
+use crate::header::*;
 use crate::headers::range::parse_range_header;
 use crate::request::Request;
 use crate::response::{Response, ResponseBuilder};
@@ -136,7 +137,7 @@ impl ServerHandler for StaticFileHandler {
 
         let mut response = ResponseBuilder::new()
             .status(status_code::OK)
-            .header("Accept-Ranges", "bytes");
+            .header(ACCEPT_RANGES, "bytes");
 
         if self.options.trust_file_extension {
             // TODO: Lowercase the file extension.
@@ -145,12 +146,12 @@ impl ServerHandler for StaticFileHandler {
             // we want to specify this, else, we want to allow downloading while preserving
             // the encoding.
             if file_path.as_str().ends_with(".zz") {
-                response = response.header("Content-Encoding", "deflate");
+                response = response.header(CONTENT_ENCODING, "deflate");
             }
 
             if let Some(ext) = file_path.extension() {
                 if let Some(typ) = self.extension_types.get(ext) {
-                    response = response.header("Content-Type", *typ);
+                    response = response.header(CONTENT_TYPE, *typ);
                 }
             }
         }
@@ -171,7 +172,7 @@ impl ServerHandler for StaticFileHandler {
 
         if let Some((s, e)) = range_header.clone() {
             response = response.status(status_code::PARTIAL_CONTENT).header(
-                "Content-Range",
+                CONTENT_RANGE,
                 format!("bytes {}-{}/{}", s, e, metadata.len()),
             );
             range = (s, e + 1);

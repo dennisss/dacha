@@ -751,6 +751,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_frontend"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "base_units",
+ "cluster_client",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "http_util",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "rpc_util",
+ "sys",
+]
+
+[[package]]
 name = "cluster_manager"
 version = "0.1.0"
 dependencies = [

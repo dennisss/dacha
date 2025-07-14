@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::any::Any;
 
 use common::bytes::Bytes;
 use common::errors::*;
@@ -26,6 +27,10 @@ pub struct ServerRequestContext {
     ///
     /// This is ALWAYS present if the connection is HTTP based.
     pub connection: Option<http::ServerConnectionContext>,
+
+    /// Data propagated from http::ServerRequestContext.
+    pub handler_data: Option<Arc<dyn Any + Send + Sync>>,
+
     /* metadata */
 
     /* connection information */

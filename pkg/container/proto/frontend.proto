@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package cluster;
+
+message FrontendConfig {
+    repeated FrontendBackendConfig backends = 1;
+}
+
+message FrontendBackendConfig {
+    // DNS sub domain to route to this backend.
+    // e.g. if the frontend serves `*.google.com`, requests to host `sub_domain.google.com` will be send to this backend.
+    string sub_domain = 1;
+
+    // Cluster address to forward requests to.
+    string backend_address = 2;
+
+    // Set of principals allowed to send requests to this route.
+    //
+    // If the user is unauthenticated and unauthenticated users aren't allowed,
+    // then they will be sent to the login page.
+    repeated string allowed_principals = 3;
+}

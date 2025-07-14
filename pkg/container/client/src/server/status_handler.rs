@@ -16,7 +16,7 @@ use crate::server::acl::*;
 use crate::server::router::PathRouter;
 use crate::service::address::ServiceName;
 
-use super::ClusterServerHandlerData;
+use super::{ClusterServerConnectionData, ClusterServerRequestData};
 
 pub(super) struct StatusHandler {
     zone: String,
@@ -37,7 +37,13 @@ impl StatusHandler {
         context: http::ServerRequestContext<'a>,
     ) -> http::Response {
         let cluster_context =
-            match ClusterServerHandlerData::from_http_context(context.connection_context) {
+            match ClusterServerConnectionData::from_http_context(context.connection_context) {
+                Ok(v) => v,
+                Err(_) => return internal_server_error(),
+            };
+
+        let req_context =
+            match ClusterServerRequestData::from_http_context(&context) {
                 Ok(v) => v,
                 Err(_) => return internal_server_error(),
             };
@@ -66,6 +72,11 @@ impl StatusHandler {
             .unwrap_or_else(|_| "N/A".to_string());
 
         let peer_name = match &cluster_context.peer {
+            Some(v) => v.to_string(),
+            None => "unauthenticated".to_string()
+        };
+
+        let effective_name = match &req_context.effective_entity {
             Some(v) => v.to_string(),
             None => "unauthenticated".to_string()
         };
@@ -130,6 +141,10 @@ impl StatusHandler {
                                     <td>{peer_name}</td>
                                 </tr>
                                 <tr>
+                                    <td>Effective Identity</td>
+                                    <td>{effective_name}</td>
+                                </tr>
+                                <tr>
                                     <td>HTTP Routes</td>
                                     <td>{routes}</td>
                                 </tr>
@@ -143,6 +158,7 @@ impl StatusHandler {
             worker_name = worker_name,
             node_id = node_id,
             peer_name = peer_name,
+            effective_name = effective_name,
             routes = routes,
         );
 

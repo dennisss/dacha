@@ -1,7 +1,7 @@
 use base_error::*;
 use http::status_code::MOVED_PERMANENTLY;
 use http::server::ServerResource;
-use http::header::CONTENT_TYPE;
+use http::header::{CONTENT_TYPE, LOCATION};
 use parsing::ascii::AsciiString;
 use net::ip::IPAddress;
 
@@ -39,7 +39,7 @@ impl http::ServerHandler for Service {
 
         http::ResponseBuilder::new()
             .status(MOVED_PERMANENTLY)
-            .header("Location", uri_str)
+            .header(LOCATION, uri_str)
             .body(http::EmptyBody())
             .build()
             .unwrap()

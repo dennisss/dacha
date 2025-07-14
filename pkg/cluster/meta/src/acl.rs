@@ -4,7 +4,7 @@ use base_error::*;
 use cluster_client::acl::checker::check_entity_allowed;
 use cluster_client::acl::principal::{Principal, PrincipalSet};
 use cluster_client::meta::KeyPrefixACLTable;
-use cluster_client::ClusterServerHandlerData;
+use cluster_client::ClusterServerConnectionData;
 use common::format::format_bytes;
 use common::hash::FastHasherBuilder;
 use container_proto::cluster::KeyPrefixACLProto;
@@ -188,7 +188,7 @@ impl KeyPrefixACLProcessor {
         writing: bool,
         context: &rpc::ServerRequestContext,
     ) -> Result<()> {
-        let conn = ClusterServerHandlerData::from_rpc_context(context)?;
+        let conn = ClusterServerConnectionData::from_rpc_context(context)?;
 
         let db = ProtobufDB::new(Arc::new(View::new(snapshot.clone())));
 

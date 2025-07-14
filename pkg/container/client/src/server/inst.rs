@@ -51,6 +51,16 @@ const DEFAULT_SERVICE_ACL_PROTO: &'static str = r#"
             principals: ["group:cluster-owners"]
         }
     ]
+
+    trusted_proxies: [
+        "pattern:frontend.ingress.job.*.cluster.internal"
+    ]
+    
+    # TODO: Eventually make global users or restrict cross zone delegation.
+    delegatable_principals: [
+        "unauthenticated",
+        "pattern:*.user.*.cluster.internal"
+    ]
 "#;
 
 async fn not_found_handle_request(mut req: http::Request) -> http::Response {

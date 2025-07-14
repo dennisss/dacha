@@ -39,6 +39,10 @@ pub const COOKIE: &'static str = "Cookie";
 
 pub const SET_COOKIE: &'static str = "Set-Cookie";
 
+pub const ACCEPT_RANGES: &'static str = "Accept-Ranges";
+
+pub const LOCATION: &'static str = "Location";
+
 /// List of headers which are relevant to maintaining the connection at the HTTP
 /// transport layer.
 ///
@@ -62,6 +66,8 @@ const CONTENT_LEVEL_HEADERS: &'static [&'static str] = &[
     ETAG,
     CONTENT_TYPE,
     CACHE_CONTROL,
+    RANGE,
+    ACCEPT_RANGES
 ];
 
 #[derive(Debug, Clone)]

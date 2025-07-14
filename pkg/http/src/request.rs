@@ -170,6 +170,11 @@ impl RequestBuilder {
         self
     }
 
+    pub fn header2(mut self, header: Header) -> Self {
+        self.headers.push(header);
+        self
+    }
+
     pub fn body(mut self, body: Box<dyn Body>) -> Self {
         self.body = Some(body);
         self

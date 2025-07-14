@@ -81,6 +81,11 @@ pub struct ServerConnectionContext {
 #[derive(Clone, Debug)]
 pub struct ServerRequestContext<'a> {
     pub connection_context: &'a ServerConnectionContext,
+
+    /// Optional data added by a `ServerHandler::handle_request` call before
+    /// calling into a nested handle_request call.
+    pub handler_data: Option<Arc<dyn Any + Send + Sync>>,
+
     /* TODO: For HTTP2 connections, support issuing server pushes. */
 }
 

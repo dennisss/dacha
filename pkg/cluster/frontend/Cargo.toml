@@ -1,0 +1,31 @@
+[package]
+name = "cluster_frontend"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+base_radix = { path = "../../base/radix" }
+base_units = { path = "../../base/units" }
+base_error = { path = "../../base/error" }
+crypto = { path = "../../crypto" }
+http = { path = "../../http" }
+parsing = { path = "../../parsing" }
+http_util = { path = "../../http/util" }
+macros = { path = "../../macros" }
+rpc_util = { path = "../../rpc/util" }
+compression = { path = "../../compression" }
+cluster_client = { path = "../../container/client" }
+net = { path = "../../net" }
+file = { path = "../../file" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+sys = { path = "../../sys" }
+db_table = { path = "../../db/table" }
+protobuf = { path = "../../protobuf" }
+container_proto = { path = "../../container/proto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

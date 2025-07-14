@@ -7,7 +7,7 @@ use db_table::{query, query_one};
 use net::ip::SocketAddr;
 use cluster_client::meta::{NodeMetadataTable, WorkerMetadataTable};
 use cluster_client::service::address::*;
-use cluster_client::ClusterServerHandlerData;
+use cluster_client::ClusterServerConnectionData;
 use cluster_client::acl::checker::check_entity_allowed;
 use cluster_client::acl::principal::{Principal, PrincipalSet};
 
@@ -59,7 +59,7 @@ impl ServiceResolverImpl {
         service_address: &ServiceAddress,
         context: &rpc::ServerRequestContext
     ) -> Result<bool> {
-        let conn = ClusterServerHandlerData::from_rpc_context(context)?;
+        let conn = ClusterServerConnectionData::from_rpc_context(context)?;
 
         let mut allowed_principals = PrincipalSet::default();
 

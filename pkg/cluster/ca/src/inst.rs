@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use base_error::*;
 use cluster_client::credentials::{cert_duration_for_entity};
-use cluster_client::ClusterServerHandlerData;
+use cluster_client::{ClusterServerConnectionData, ClusterServerRequestData};
 use cluster_client::meta::{PrivateKeyMetadataTable, WorkerMetadataTable, UserTable};
 use cluster_client::{
     meta::{client::ClusterMetaClient, CertificateMetadataTable},
@@ -85,7 +85,7 @@ impl CertificateAuthorityImpl {
         request: &SignCertificateRequest,
         context: &rpc::ServerRequestContext,
     ) -> Result<SignCertificateResponse> {
-        let conn = ClusterServerHandlerData::from_rpc_context(context)?;
+        let conn = ClusterServerConnectionData::from_rpc_context(context)?;
         let client_name = conn.peer.as_ref().ok_or_else(|| err_msg("No client identity"))?;
 
         if client_name.zone() != self.client.zone() {
@@ -304,14 +304,14 @@ impl CertificateAuthorityImpl {
             return Err(rpc::Status::resource_exhausted("Exceeded per-client signing rate limit.").into());
         }
 
-        let conn = ClusterServerHandlerData::from_rpc_context(context)?;
+        let conn = ClusterServerRequestData::from_rpc_context(context)?;
 
         // We want to verify that the user has logged in via Login to ensure that any additional
         // checks like 2FA have also been cleared. 
         {
             // TODO: Replace this with performing an ACL check against the user's principal (this will also allow the root to change passwords)
 
-            let client_name = conn.peer.as_ref().ok_or_else(|| rpc::Status::failed_precondition("No client identity"))?;
+            let client_name = conn.effective_entity.as_ref().ok_or_else(|| rpc::Status::failed_precondition("No client identity"))?;
 
             if client_name.zone() != self.client.zone() {
                 return Err(rpc::Status::failed_precondition(
@@ -320,7 +320,6 @@ impl CertificateAuthorityImpl {
                 .into());
             }
     
-            // // Currently only nodes are able to request certificates.
             let user_name = match client_name.entity() {
                 ServiceEntity::User { name } => name,
                 _ => {

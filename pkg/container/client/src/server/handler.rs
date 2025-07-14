@@ -16,7 +16,7 @@ use crate::server::acl::*;
 use crate::server::router::PathRouter;
 use crate::service::address::ServiceName;
 
-use super::ClusterServerHandlerData;
+use super::{ClusterServerConnectionData, ClusterServerRequestData};
 
 pub(super) struct HttpHandler {
     pub(super) acl: ServiceACL,
@@ -25,6 +25,9 @@ pub(super) struct HttpHandler {
 
 impl HttpHandler {
     async fn handle_connection_impl(&self, context: &mut http::ServerConnectionContext) -> bool {
+        // NOTE: This code can't have any individual user checks since we don't
+        // know the true identity until we get any delegation headers per-request.
+        
         // TODO: Passthrough connection handling to the individual handlers?
 
         let peer = match get_http_server_peer_identity(context) {
@@ -40,7 +43,7 @@ impl HttpHandler {
             return false;
         }
 
-        context.handler_data = Some(Arc::new(ClusterServerHandlerData { peer }));
+        context.handler_data = Some(Arc::new(ClusterServerConnectionData { peer }));
 
         true
     }
@@ -48,13 +51,24 @@ impl HttpHandler {
     async fn handle_request_impl<'a>(
         &self,
         mut request: http::Request,
-        context: http::ServerRequestContext<'a>,
+        mut context: http::ServerRequestContext<'a>,
     ) -> http::Response {
         let cluster_context =
-            match ClusterServerHandlerData::from_http_context(context.connection_context) {
+            match ClusterServerConnectionData::from_http_context(context.connection_context) {
                 Ok(v) => v,
                 Err(_) => return internal_server_error(),
             };
+
+        let effective_entity = match self.acl.resolve_effective_entity(cluster_context.peer.as_ref(), &request).await {
+            Ok(EffectiveEntity::Resolved(v)) => v,
+            Ok(EffectiveEntity::Denied) => {
+                return forbidden();
+            }
+            Err(e) => {
+                eprintln!("Effective Entity Resolution Failed: {}", e);
+                return internal_server_error();
+            }
+        };
 
         // TODO: Add some warnings in the documentation that the raw HTTP server will
         // have the URis non-normalized.
@@ -70,7 +84,7 @@ impl HttpHandler {
 
         let allowed = match self
             .acl
-            .is_allowed(cluster_context.peer.as_ref(), &request)
+            .is_allowed(effective_entity.as_ref(), &request)
             .await
         {
             Ok(v) => v,
@@ -93,6 +107,8 @@ impl HttpHandler {
             Some((_, v)) => v,
             None => return not_found(),
         };
+
+        context.handler_data = Some(Arc::new(ClusterServerRequestData { effective_entity }));
 
         handler.handle_request(request, context).await
     }

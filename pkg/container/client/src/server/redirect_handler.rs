@@ -17,8 +17,6 @@ use crate::server::acl::*;
 use crate::server::router::PathRouter;
 use crate::service::address::ServiceName;
 
-use super::ClusterServerHandlerData;
-
 pub(super) struct RedirectHandler {
     permanent: bool,
     new_path: String, 

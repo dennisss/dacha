@@ -120,6 +120,16 @@ impl Principal {
         Err(format_err!("Invalid principal string: {}", value))
     }
 
+    pub fn to_entity(&self) -> Result<Option<ServiceName>> {
+        match self {
+            Principal::Unauthenticated => Ok(None),
+            Principal::Entity(name) => Ok(Some(name.clone())),
+            _ => {
+                Err(err_msg("Principal is a set of entities"))
+            }
+        }
+    }
+
     pub fn to_string(&self) -> String {
         // TODO: Must validate the zone and group name allows for reparsing.
 

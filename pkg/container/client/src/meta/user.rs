@@ -34,7 +34,6 @@ impl ProtobufTableTag for UserTable {
     }
 }
 
-/*
 pub struct SessionTable {}
 
 impl ProtobufTableTag for SessionTable {
@@ -60,21 +59,15 @@ impl ProtobufTableTag for SessionTable {
             }),
             sparse_struct!(ProtobufTableKey {
                 index_id: 1,
-                index_name: Some("ByAuthKey"),
+                index_name: Some("ByAuthKeyHash"),
                 fields: &[
                     ProtobufKeyField {
-                        path: &[Session::AUTH_KEY_FIELD_NUM_RAW],
+                        path: &[Session::AUTH_KEY_HASH_FIELD_NUM_RAW],
                         direction: Direction::Ascending,
-                        fixed_size: true,
+                        fixed_size: false,
                     },
-                    // ProtobufKeyField {
-                    //     number: Session::ID_FIELD_NUM,
-                    //     direction: Direction::Ascending,
-                    //     fixed_size: true,
-                    // },
                 ],
             }),
         ]
     }
 }
-*/

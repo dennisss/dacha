@@ -349,6 +349,7 @@ impl ConnectionShared {
 
         let context = ServerRequestContext {
             connection_context: &server_options.connection_context,
+            handler_data: None,
             // TODO: Add the stream id
         };
 

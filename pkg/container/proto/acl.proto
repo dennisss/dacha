@@ -50,4 +50,11 @@ message ServiceACLProto {
         repeated string principals = 4;
     }
     repeated Rule rules = 2;
+
+    // List of principals allowed to delegate credentials for another user.
+    repeated string trusted_proxies = 3;
+
+    // List of principals which a trusted proxy is allowed to forward to us.
+    // e.g. may just include the set of all users.
+    repeated string delegatable_principals = 4;
 }

@@ -76,13 +76,18 @@ message Session {
     fixed64 id = 1;
     
     string user_name = 2;
-    
-    // 16 byte secret value that can be used by a client to authenticate with this session.
-    bytes auth_key = 3;
 
+    // First 16 bytes of the SHA256 of the random 16 byte secret value given by the client.
+    // Note that we don't directly store the auth key in the database to harden against timing
+    // leaks while querying the database.
+    bytes auth_key_hash = 3;
+
+    // If true, this session is logged out so can't be used any more.
     bool deleted = 4;
 
     SessionMetadata metadata = 5;
+
+    bytes client_id = 6;
 }
 
 message SessionMetadata {

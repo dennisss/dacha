@@ -12,6 +12,24 @@ pub async fn create_rpc_channel(
     address: &str,
     meta_client: Arc<ClusterMetaClient>,
 ) -> Result<Arc<dyn rpc::Channel>> {
+    let http_options = create_http_client_options(address, meta_client.clone())?;
+    let mut options: rpc::Http2ChannelOptions = http_options.try_into_result()?;
+    options.base_path = "/rpc".into();
+
+    Ok(Arc::new(rpc::Http2Channel::create(options).await?))
+}
+
+pub async fn create_http_client(
+    address: &str,
+    meta_client: Arc<ClusterMetaClient>,
+) -> Result<http::Client> {
+    http::Client::create(create_http_client_options(address, meta_client)?).await
+}
+
+fn create_http_client_options(
+    address: &str,
+    meta_client: Arc<ClusterMetaClient>,
+) -> Result<http::ClientOptions> {
     let resolver: Arc<dyn Resolver> = {
         if address.starts_with("localhost:") {
             let authority = address.parse::<http::uri::Authority>()?;
@@ -28,10 +46,7 @@ pub async fn create_rpc_channel(
         }
     };
 
-    let mut options: rpc::Http2ChannelOptions =
-        http::ClientOptions::from_resolver(resolver).try_into_result()?;
-    options.base_path = "/rpc".into();
-    options.http.backend_balancer.backend.tls = meta_client.creds().map(|c| c.client);
-
-    Ok(Arc::new(rpc::Http2Channel::create(options).await?))
+    let mut options = http::ClientOptions::from_resolver(resolver).set_force_http2(true);
+    options.backend_balancer.backend.tls = meta_client.creds().map(|c| c.client);
+    Ok(options)
 }

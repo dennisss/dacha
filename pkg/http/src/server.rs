@@ -825,6 +825,7 @@ impl Server {
 
             let req_context = ServerRequestContext {
                 connection_context: &connection_context,
+                handler_data: None,
             };
 
             let mut res = shared.handler.handle_request(req, req_context).await;
