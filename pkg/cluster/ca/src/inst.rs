@@ -16,9 +16,10 @@ use crypto::x509::Certificate;
 use crypto::bcrypt::*;
 use db_table::{query, query_one};
 use file::LocalPath;
+use cluster_client::throttler::HashedTokenBucketThrottler;
 
-use crate::throttler::HashedTokenBucketThrottler;
 use crate::utils::{insert_certificate_into_registry, sign_leaf_certificate};
+use crate::user::*;
 
 // TODO: Need a background thread to re-new the certificate with a new CSR when
 // it becomes stale.
@@ -43,7 +44,7 @@ impl CertificateAuthorityImpl {
         let throttler = HashedTokenBucketThrottler::create(
             128,
             10,
-            Duration::from_secs(1)
+            Duration::from_secs(10)
         ).await;
 
         Ok(Self { client, creds, throttler })
@@ -261,12 +262,11 @@ impl CertificateAuthorityImpl {
             return Err(rpc::Status::resource_exhausted("Exceeded per-client signing rate limit.").into());
         }
 
-        let user = query_one!(self.client.db(), UserTable, "name = ?", request.user_name())
-            .ok_or_else(|| rpc::Status::not_found("No such user"))?;
-
-        if !bcrypt_verify(user.password_digest(), request.user_password()) {
-            return Err(rpc::Status::permission_denied("Incorrect password").into());
-        }
+        let user = get_user_with_password(
+            request.user_name(),
+            request.user_password(),
+            &self.client.db().new_transaction().await?
+        ).await?;
 
         let csr = crypto::x509::CertificateRequest::from_der(request.csr().into())
             .map_err(|_| rpc::Status::invalid_argument("Failed to parse CSR DER"))?;
@@ -275,7 +275,8 @@ impl CertificateAuthorityImpl {
             return Err(rpc::Status::invalid_argument("Invalid CSR signature").into());
         }
 
-        let cert_name = ServiceName::for_user(self.client.zone(), user.name())?;
+        let cert_name = ServiceName::for_user(self.client.zone(), user.name())
+            .map_err(|_| rpc::Status::invalid_argument("Invalid user name"))?;
 
         // TODO: Limit max number of unexpired certificates for the user.
 
@@ -304,56 +305,18 @@ impl CertificateAuthorityImpl {
             return Err(rpc::Status::resource_exhausted("Exceeded per-client signing rate limit.").into());
         }
 
-        let conn = ClusterServerRequestData::from_rpc_context(context)?;
+        // NOTE: We intentionally are looking at the peer user and not the
+        // effective user since we only want this path without 'current password'
+        // validations to be useable by users who have a full certificate. 
+        let conn = ClusterServerConnectionData::from_rpc_context(context)?;
 
-        // We want to verify that the user has logged in via Login to ensure that any additional
-        // checks like 2FA have also been cleared. 
-        {
-            // TODO: Replace this with performing an ACL check against the user's principal (this will also allow the root to change passwords)
-
-            let client_name = conn.effective_entity.as_ref().ok_or_else(|| rpc::Status::failed_precondition("No client identity"))?;
-
-            if client_name.zone() != self.client.zone() {
-                return Err(rpc::Status::failed_precondition(
-                    "Must be signed in from the same zone",
-                )
-                .into());
-            }
-    
-            let user_name = match client_name.entity() {
-                ServiceEntity::User { name } => name,
-                _ => {
-                    return Err(rpc::Status::failed_precondition(
-                        "Client must be a user when changing passwords",
-                    )
-                    .into());
-                }
-            };
-
-            if user_name != request.user_name() {
-                return Err(rpc::Status::failed_precondition("Mismatch in user identity.").into());
-            }
-        }
-
-        let mut txn = self.client.db().new_transaction().await?;
-
-        let mut user = query_one!(txn, UserTable, "name = ?", request.user_name())
-            .ok_or_else(|| rpc::Status::not_found("No such user"))?;
-
-        if !request.current_password().is_empty() {
-            if !bcrypt_verify(user.password_digest(), request.current_password()) {
-                return Err(rpc::Status::permission_denied("Incorrect current password").into());
-            }
-        }
-
-        let new_digest = bcrypt_encode(request.new_password())
-            .map_err(|_| rpc::Status::invalid_argument("Invalid new password"))?;
-
-        user.set_password_digest(new_digest);
-
-        txn.put::<UserTable>(&user).await?;
-
-        txn.commit().await?;
+        // Current password check not required since we verify that the peer directly has a valid certificate.
+        change_user_password(
+            request,
+            false,
+            conn.peer.as_ref(),
+            &self.client
+        ).await?;
 
         Ok(ChangePasswordResponse::default())
     }

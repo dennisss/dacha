@@ -46,19 +46,9 @@ Design:
   - Each board 
 
 
-
-
-  
-
 Some flashing requirements:
 - Want to be able to easily find the build id of a flashed firmware (ideally without interacting with it).
 
-
-`cargo build --package nordic --target thumbv7em-none-eabihf --release --no-default-features`
-
-`da build //pkg/nordic:nordic --config=//pkg/nordic:nrf52840`
-
-`openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program built/pkg/nordic/nordic verify" -c reset -c exit`
 
 ## Flashing
 

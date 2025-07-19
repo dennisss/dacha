@@ -1,0 +1,24 @@
+name: "ingress.frontend"
+replicas: 1
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/cluster/frontend/cluster_frontend",
+        "--port=service",
+        "--public_credentials_object_prefix=letsencrypt_prod/out",
+        "--config=pkg/cluster/config/frontend_config.txtpb"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+        # node_port: 443
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cluster/frontend:bundle"
+        }
+    ]
+}

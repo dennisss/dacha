@@ -3,7 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use net::ip::IPAddress;
+use net::ip::{IPAddress, SocketAddr};
 
 use crate::request::Request;
 use crate::response::Response;
@@ -15,6 +15,15 @@ pub type ServerConnectionId = u64;
 /// re-write requests but don't care about life-cycle.
 #[async_trait]
 pub trait ServerHandler: 'static + Send + Sync {
+
+    /// Called when a new TCP stream has been opened but before
+    /// any processing (e.g. TCP handshaking has started).
+    ///
+    /// Returns whether or not we should continue running the connection.
+    fn handle_connecting(&self, _context: &mut ServerConnectionContext) -> bool {
+        true
+    }
+
     /// Called whenever a new connection is started but before any requests are
     /// issued (aka after TCP/TLS but before HTTP negotation).
     ///
@@ -42,6 +51,10 @@ pub trait ServerHandler: 'static + Send + Sync {
 
 #[async_trait]
 impl<T: ServerHandler> ServerHandler for Arc<T> {
+    fn handle_connecting(&self, context: &mut ServerConnectionContext) -> bool {
+        self.as_ref().handle_connecting(context)
+    }
+
     async fn handle_connection(&self, context: &mut ServerConnectionContext) -> bool {
         self.as_ref().handle_connection(context).await
     }
@@ -64,9 +77,7 @@ pub struct ServerConnectionContext {
     /// Unique id for this connection.
     pub id: ServerConnectionId,
 
-    pub peer_addr: IPAddress,
-
-    pub peer_port: u16,
+    pub peer: SocketAddr,
 
     /// If set, the connection was made over TLS with the given metadata
     /// produced during the handshake.

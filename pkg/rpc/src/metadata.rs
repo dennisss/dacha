@@ -9,6 +9,7 @@ use parsing::ascii::{AsciiString, ToAsciiString};
 // Comma separation pattern used for splitting received metadata values.
 regexp!(COMMA_SEPARATOR => "(?: \t)*,(?: \t)");
 
+/// NOTE: The keys of metadata are always compared in a case insensitive way.
 #[derive(Debug, Default, Clone)]
 pub struct Metadata {
     // Raw values for the metadata as encoded in the headers.
@@ -54,7 +55,10 @@ impl Metadata {
                 continue;
             }
 
-            let name = header.name.clone();
+            // In HTTP2, this should be a no-op, but since we also support
+            // HTTP1, we explicitly normalize the headers.
+            let name = header.name.to_ascii_lowercase();
+            
             let value = AsciiString::from(header.value.to_bytes())?;
 
             // NOTE: HTTP2 gurantees that all header names are lowercase so we don't have to
@@ -92,19 +96,21 @@ impl Metadata {
 
     fn get_values<'a>(&'a self, name: &AsciiString) -> &'a [AsciiString] {
         self.raw_data
-            .get(name)
+            .get(&name.to_ascii_lowercase())
             .map(|v| &v[..])
             .unwrap_or_else(|| &[])
     }
 
     fn get_values_mut(&mut self, name: AsciiString) -> &mut Vec<AsciiString> {
-        self.raw_data.entry(name).or_insert_with(|| vec![])
+        self.raw_data.entry(name.to_ascii_lowercase()).or_insert_with(|| vec![])
     }
 
     pub fn add_text<T: ToAsciiString>(&mut self, name: &str, value: T) -> Result<()> {
         if name.ends_with("-bin") {
             return Err(err_msg("Text metadata must not end with -bin"));
         }
+
+        // TODO: The value can't contain commas
 
         let name = AsciiString::from(name)?;
         self.get_values_mut(name).push(value.to_ascii_string()?);

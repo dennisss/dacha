@@ -12,14 +12,8 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use base_error::*;
 use executor_multitask::RootResource;
-use file::LocalPathBuf;
-use http::{
-    static_file_handler::{StaticFileBody, StaticFileHandler},
-    ServerHandler,
-};
 use labeler::service::LabelerImpl;
 use labeler_proto::labeler::LabelerIntoService;
-use parsing::ascii::AsciiString;
 use rpc_util::NamedPortArg;
 use cluster_client::{ClusterServer, ClusterMetaClient};
 

@@ -1,0 +1,23 @@
+name: "ingress.public_dns_refresher"
+replicas: 1
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/cluster/public_dns/cluster_public_dns",
+        "--port=service",
+        "--google_service_account_object=google_service_account",
+        "--dns_name=dacha.dev"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cluster/public_dns:bundle"
+        }
+    ]
+}

@@ -1,5 +1,6 @@
 use core::ops::Deref;
 use std::ffi::{CStr, CString};
+use std::os::fd::FromRawFd;
 
 use base_error::*;
 
@@ -36,6 +37,15 @@ impl Drop for OpenFileDescriptor {
                 // If this fails, then there are incorrect file life times.
                 close(self.fd).unwrap();
             }
+        }
+    }
+}
+
+impl From<OpenFileDescriptor> for std::fs::File {
+    fn from(mut v: OpenFileDescriptor) -> Self {
+        unsafe {
+            v.leak();
+            std::fs::File::from_raw_fd(v.fd)
         }
     }
 }

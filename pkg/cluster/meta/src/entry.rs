@@ -20,7 +20,7 @@ use crate::resolver::ServiceResolverImpl;
 
 const SERVICE_ACL_PROTO: &'static str = r#"
 
-    allow_unauthenticated: true
+    allow_unauthenticated_connections: true
 
     rules: [
         # Risky RPCs. Can only be used between metastore instances.

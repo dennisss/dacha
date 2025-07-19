@@ -18,5 +18,12 @@ message FrontendBackendConfig {
     //
     // If the user is unauthenticated and unauthenticated users aren't allowed,
     // then they will be sent to the login page.
+    //
+    // Note that if the backend is a standard cluster service, then when the
+    // request reaches the backend, an additional round of ACL checks will be
+    // performed based on the ServiceACL. So the list on this proto should
+    // generally be made up only of simple 'fast to check' sets like
+    // 'authenticated' and 'unauthenticated' to perform the first round of abuse
+    // control.
     repeated string allowed_principals = 3;
 }

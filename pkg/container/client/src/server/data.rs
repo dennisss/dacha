@@ -37,6 +37,8 @@ impl ClusterServerConnectionData {
 pub struct ClusterServerRequestData {
     /// Identity to be used for ACL checks. Defaults to the peer user of the request.
     pub effective_entity: Option<ServiceName>,
+
+    pub peer_is_trusted_proxy: bool,
 }
 
 impl ClusterServerRequestData {

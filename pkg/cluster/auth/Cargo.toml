@@ -1,0 +1,35 @@
+[package]
+name = "cluster_auth"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+base_radix = { path = "../../base/radix" }
+base_error = { path = "../../base/error" }
+base_algorithms = { path = "../../base/algorithms" }
+db_table = { path = "../../db/table" }
+crypto = { path = "../../crypto" }
+automata = { path = "../../automata" }
+regexp_macros = { path = "../../automata/regexp_macros" }
+protobuf = { path = "../../protobuf" }
+http = { path = "../../http" }
+macros = { path = "../../macros" }
+compression = { path = "../../compression" }
+cluster_client = { path = "../../container/client" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
+net = { path = "../../net" }
+protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+file = { path = "../../file" }
+sys = { path = "../../sys" }
+web = { path = "../../web" }
+container_proto = { path = "../../container/proto" }
+cluster_ca = { path = "../ca" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

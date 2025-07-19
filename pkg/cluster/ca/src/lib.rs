@@ -5,7 +5,7 @@ extern crate macros;
 
 mod inst;
 mod utils;
-mod throttler;
+pub mod user;
 
 pub use inst::CertificateAuthorityImpl;
 pub use utils::*;

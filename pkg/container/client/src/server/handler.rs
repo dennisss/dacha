@@ -38,7 +38,7 @@ impl HttpHandler {
             }
         };
 
-        if !self.acl.allow_unauthenticated() && peer.is_none() {
+        if !self.acl.allow_unauthenticated_connections() && peer.is_none() {
             eprintln!("[ServiceACL Reject] Unauthenticated Connection");
             return false;
         }
@@ -59,8 +59,10 @@ impl HttpHandler {
                 Err(_) => return internal_server_error(),
             };
 
-        let effective_entity = match self.acl.resolve_effective_entity(cluster_context.peer.as_ref(), &request).await {
-            Ok(EffectiveEntity::Resolved(v)) => v,
+        let (effective_entity, peer_is_trusted_proxy) = match self.acl.resolve_effective_entity(
+            cluster_context.peer.as_ref(), &request
+        ).await {
+            Ok(EffectiveEntity::Resolved(v, e)) => (v, e),
             Ok(EffectiveEntity::Denied) => {
                 return forbidden();
             }
@@ -108,7 +110,10 @@ impl HttpHandler {
             None => return not_found(),
         };
 
-        context.handler_data = Some(Arc::new(ClusterServerRequestData { effective_entity }));
+        context.handler_data = Some(Arc::new(ClusterServerRequestData {
+            effective_entity,
+            peer_is_trusted_proxy,
+        }));
 
         handler.handle_request(request, context).await
     }

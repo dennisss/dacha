@@ -4,13 +4,6 @@ use std::{
 };
 
 use common::errors::*;
-use nix::sys::{
-    socket::{
-        recvmsg, sendmsg, socketpair, AddressFamily, ControlMessage, ControlMessageOwned, MsgFlags,
-        SockFlag, SockType,
-    },
-    uio::IoVec,
-};
 
 /// Double ended UNIX socket used to communicate between a parent and child
 /// process during setup of the child process.
@@ -19,19 +12,21 @@ pub struct SetupSocket {}
 // TODO: Update this code to not use 'nix'
 impl SetupSocket {
     pub fn create() -> Result<(SetupSocketParent, SetupSocketChild)> {
-        let (socket_a, socket_b) = socketpair(
-            AddressFamily::Unix,
-            SockType::Stream,
-            None,
-            SockFlag::SOCK_CLOEXEC,
-        )?;
+        let (mut socket_a, mut socket_b) = unsafe {
+            sys::socketpair(
+                sys::AddressFamily::AF_UNIX,
+                sys::SocketType::SOCK_STREAM,
+                sys::SocketFlags::SOCK_CLOEXEC,
+                sys::SocketProtocol::NONE,
+            )?
+        };
 
         Ok((
             SetupSocketParent {
-                socket: unsafe { std::fs::File::from_raw_fd(socket_a) },
+                socket: socket_a.into(),
             },
             SetupSocketChild {
-                socket: unsafe { std::fs::File::from_raw_fd(socket_b) },
+                socket: socket_b.into(),
             },
         ))
     }
@@ -70,26 +65,28 @@ impl SetupSocketParent {
     pub fn recv_fd(&mut self, event_id: u8) -> Result<std::fs::File> {
         let mut buf = [0u8; 1];
 
-        let mut cmsg_buffer = nix::cmsg_space!(RawFd);
+        let data = [sys::IoSliceMut::new(&mut buf[..])];
 
-        // TODO: Make this non-blocking.
-        let msg = recvmsg(
-            self.socket.as_raw_fd(),
-            &[IoVec::from_mut_slice(&mut buf)],
-            Some(&mut cmsg_buffer),
-            MsgFlags::MSG_CMSG_CLOEXEC,
-        ).map_err(|e| format_err!("SetupSocketParent::recv_fd({}) failed: {}", event_id, e))?;
-        if msg.bytes == 0 {
+        let mut messages =
+            sys::ControlMessageBuffer::new(&[sys::ControlMessage::ScmRights(vec![0, 0, 0, 0, 0])]);
+        
+        let mut msg = sys::MessageHeaderMut::new(&data[..], None, Some(&mut messages));
+
+        // TODO: build the msg internally and return decoupled parts so that msg doesn't need to hold ownership over all the buffers.
+        let n = sys::recvmsg(self.socket.as_raw_fd(), &mut msg, sys::bindings::MSG_CMSG_CLOEXEC as u32 as i32)
+            .map_err(|e| format_err!("SetupSocketParent::recv_fd({}) failed: {}", event_id, e))?;
+        if n == 0 {
             return Err(err_msg("Child hung up before receiving fd."));
         }
 
-        if buf[0] != event_id {
-            return Err(err_msg("Received event while waiting for fd"));
+        if msg.data()[0].as_ref()[0] != event_id {
+            return Err(err_msg("Received wrong event while waiting for fd"));
         }
 
-        let mut msg_iter = msg.cmsgs();
+        let mut msg_iter = msg.control_messages().unwrap();
+
         let file = match msg_iter.next() {
-            Some(ControlMessageOwned::ScmRights(fds)) => {
+            Some(sys::ControlMessage::ScmRights(fds)) => {
                 assert_eq!(fds.len(), 1);
                 unsafe { std::fs::File::from_raw_fd(fds[0]) }
             }
@@ -98,7 +95,7 @@ impl SetupSocketParent {
             }
         };
 
-        assert_eq!(msg_iter.next(), None);
+        assert!(msg_iter.next().is_none());
 
         Ok(file)
     }
@@ -133,16 +130,49 @@ impl SetupSocketChild {
     pub fn send_fd(&mut self, event_id: u8, file: std::fs::File) -> Result<()> {
         let data = [event_id; 1];
 
-        let fds = [file.as_raw_fd()];
-        let control_msg = ControlMessage::ScmRights(&fds);
-        let _ = sendmsg(
-            self.socket.as_raw_fd(),
-            &[IoVec::from_slice(&data)],
-            &[control_msg],
-            MsgFlags::empty(),
-            None,
-        )?;
+        let data_slices = [sys::IoSlice::new(&data[..])];
+
+        let messages =
+            sys::ControlMessageBuffer::new(&[sys::ControlMessage::ScmRights(vec![file.as_raw_fd()])]);
+
+        let msg = sys::MessageHeader::new(&data_slices[..], None, Some(&messages));
+
+        let _ = sys::sendmsg(self.socket.as_raw_fd(), &msg, 0)?;
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn works() -> Result<()> {
+
+        let (mut parent, mut child) = SetupSocket::create()?;
+
+        let (pipe_reader, mut pipe_writer) = sys::pipe2(sys::O_CLOEXEC)?;
+
+        let mut pipe_writer = std::fs::File::from(pipe_writer);
+
+        parent.notify(1)?;
+        child.wait(1)?;
+
+        child.notify(2)?;
+        parent.wait(2)?;
+
+        child.send_fd(3, pipe_reader.into())?;
+
+        let mut new_pipe_reader = parent.recv_fd(3)?;
+
+        pipe_writer.write_all(b"HELLO")?;
+
+        let mut out = [0u8; 20];
+        let n = new_pipe_reader.read(&mut out[..])?;
+        assert_eq!(&out[..n], b"HELLO");
+
+        Ok(())
+    }
+
 }

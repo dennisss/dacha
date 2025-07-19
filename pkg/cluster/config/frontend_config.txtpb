@@ -1,0 +1,16 @@
+
+backends {
+    sub_domain: "auth"
+    backend_address: "auth.ingress.job.local.cluster.internal"
+    allowed_principals: ["unauthenticated"]
+}
+backends {
+    sub_domain: "labeler"
+    backend_address: "labeler.job.local.cluster.internal"
+    allowed_principals: ["authenticated"] # More ACLs handled on the backend.
+}
+backends {
+    sub_domain: "overhead"
+    backend_address: "overhead_light_controller.job.local.cluster.internal"
+    allowed_principals: ["authenticated"]
+}

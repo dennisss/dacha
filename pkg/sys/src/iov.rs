@@ -45,6 +45,15 @@ impl<'a> IoSliceMut<'a> {
             lifetime: PhantomData,
         }
     }
+
+    pub fn as_ref(&self) -> &'a [u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                core::mem::transmute(self.raw.iov_base),
+                self.raw.iov_len
+            )
+        }
+    }
 }
 
 define_bit_flags!(RWFlags c_int {

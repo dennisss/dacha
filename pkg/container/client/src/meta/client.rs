@@ -150,6 +150,36 @@ impl ClusterMetaClient {
         ))
     }
 
+    // TODO: Only compile in test only mode
+    pub async fn create_testing() -> Result<Arc<Self>> {
+        let resources = ServiceResourceGroup::new("TestClusterMetaClient");
+
+        let temp_dir = file::temp::TempDir::create()?;
+
+        let client = Arc::new(db_txn::TransactionalDB::create_local(temp_dir.path()).await?);
+        resources.register_dependency(client.clone()).await;
+
+        let db = Arc::new(ProtobufDB::new(client.clone()));
+
+        resources.spawn_interruptable("TempDirHolder", async move {
+            loop {
+                executor::sleep(std::time::Duration::from_secs(30)).await;
+            }
+
+            drop(temp_dir);
+
+        }).await;
+
+        Ok(Arc::new(Self {
+            zone: "testing".into(),
+            inner: client,
+            db: db,
+            // TODO: MAke some fake credentials.
+            creds: None,
+            resources,
+        }))
+    }
+
     pub fn zone(&self) -> &str {
         &self.zone
     }

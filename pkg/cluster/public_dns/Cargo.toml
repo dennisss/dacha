@@ -1,0 +1,34 @@
+[package]
+name = "cluster_public_dns"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+base_radix = { path = "../../base/radix" }
+base_units = { path = "../../base/units" }
+base_error = { path = "../../base/error" }
+crypto = { path = "../../crypto" }
+http = { path = "../../http" }
+parsing = { path = "../../parsing" }
+http_util = { path = "../../http/util" }
+macros = { path = "../../macros" }
+rpc_util = { path = "../../rpc/util" }
+google_auth = { path = "../../api/google/auth" }
+google_dns = { path = "../../api/google/dns" }
+compression = { path = "../../compression" }
+cluster_client = { path = "../../container/client" }
+net = { path = "../../net" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+sys = { path = "../../sys" }
+acme = { path = "../../api/acme" }
+db_table = { path = "../../db/table" }
+public_ip = { path = "../../api/public_ip" }
+protobuf = { path = "../../protobuf" }
+container_proto = { path = "../../container/proto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

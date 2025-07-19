@@ -15,6 +15,7 @@ pub type StatusResult<T> = std::result::Result<T, Status>;
 
 // TODO: How do we ensure that we don't propagate internal Status protos that
 // are generated (e.g. from calling other RPCs)
+// ^ Yes
 #[derive(Debug, Fail, Clone)]
 pub struct Status {
     code: StatusCode,
@@ -23,6 +24,8 @@ pub struct Status {
     message: String,
 
     details: Vec<protobuf_builtins::google::protobuf::Any>,
+
+    local: bool,
 }
 
 macro_rules! status_ctor {
@@ -32,6 +35,7 @@ macro_rules! status_ctor {
                 code: StatusCode::$code,
                 message: message.into(),
                 details: vec![],
+                local: true
             }
         }
     };
@@ -59,12 +63,25 @@ impl Status {
         &self.message
     }
 
+    /// If true, then this status is considered to be locally generated so may be returned to direct clients.
+    ///
+    /// By default, this will be false for any Status received by a client from an RPC.
+    pub fn local(&self) -> bool {
+        self.local
+    }
+
+    pub fn into_local(mut self) -> Self {
+        self.local = true;
+        self
+    }
+
     /// Determines if a set of headers containing gRPC status headers (possibly
     /// malformed ones).
     pub fn has_headers(headers: &Headers) -> bool {
         headers.has(GRPC_STATUS)
     }
 
+    /// Parses the status from HTTP headers received from a remote server.
     pub fn from_headers(headers: &Headers) -> Result<Self> {
         let code_header = headers.find_one(GRPC_STATUS)?;
         let code = std::str::from_utf8(code_header.value.as_bytes())?.parse::<usize>()?;
@@ -103,14 +120,18 @@ impl Status {
             code: StatusCode::from_value(code)?,
             message,
             details,
+            local: false
         })
     }
 
+    /// Parses the status from a received protobuf.
+    /// (we assume that the protobuf was externally generated and not local).
     pub fn from_proto(proto: &protobuf_builtins::google::rpc::Status) -> Result<Self> {
         Ok(Self {
             code: StatusCode::from_value(proto.code() as usize)?,
             message: proto.message().to_string(),
             details: proto.details().iter().map(|v| v.as_ref().clone()).collect(),
+            local: false
         })
     }
 
@@ -119,6 +140,7 @@ impl Status {
             code: StatusCode::Ok,
             message: String::new(),
             details: vec![],
+            local: true,
         }
     }
 
@@ -233,6 +255,7 @@ impl std::convert::From<http::v2::ProtocolErrorV2> for Status {
             message: format!("[{:?}] {}", e.code, e.message),
             // TODO: Store the original error.
             details: vec![],
+            local: false,
         }
     }
 }

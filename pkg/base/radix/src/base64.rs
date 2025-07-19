@@ -54,8 +54,9 @@ pub fn base64url_encode(data: &[u8]) -> String {
 
 pub fn base64_encode_with(data: &[u8], options: &Base64Options) -> String {
     let mut out = String::new();
-    out.reserve_exact(base64_encoded_len(data.len()));
+    out.reserve_exact(base64_encoded_len(data.len(), options.padding.is_some()));
 
+    // Every 3 full bytes is encoded into 4 encoded characters.
     for chunk in data.chunks(3) {
         let mut group24 = 0;
         group24 |= (chunk[0] as u32) << 16;
@@ -88,13 +89,18 @@ pub fn base64_encode_with(data: &[u8], options: &Base64Options) -> String {
     out
 }
 
-pub fn base64_encoded_len(data_len: usize) -> usize {
+pub fn base64_encoded_len(data_len: usize, padded: bool) -> usize {
     // TODO: Simplify as ceil_div(data_len * 4, 3)
     let v = data_len * 4;
 
     let mut out = v / 3;
     if v % 3 != 0 {
         out += 1;
+    }
+
+    if padded {
+        // ceil_div(out, 4) * 4
+        out = ((out + 4 - 1) / 4) * 4;
     }
 
     out
@@ -160,16 +166,20 @@ pub fn base64_decode_with(
             group24 |= (group6 as u32) << shift;
         }
 
-        for i in 0..(3 - paddings) {
+        let out_len = ((chunk.len() - paddings) * 3) / 4;
+        for i in 0..out_len {
             out.push((group24 >> (24 - 8 * (i + 1)) & 0xFF) as u8);
         }
 
-        // Extra bits should be zero.
-        if group24 >> 24 != 0 {
-            return Err(DecodeRadixError {
-                input_position: 4 * chunk_i,
-                kind: DecodeRadixErrorKind::BadPadding,
-            });
+        // Remaining groups of 8 bits should all be zero
+        for i in out_len..3 {
+            let data = (group24 >> (24 - 8 * (i + 1)) & 0xFF) as u8;
+            if data != 0 {
+                return Err(DecodeRadixError {
+                    input_position: 4 * chunk_i,
+                    kind: DecodeRadixErrorKind::BadPadding,
+                });
+            }
         }
 
         had_padding |= paddings > 0;
@@ -202,4 +212,59 @@ mod tests {
             assert_eq!(&decoded, &expected_decoded);
         }
     }
+
+    #[test]
+    fn base64_all_padding() {
+        assert_eq!(&base64_decode("====").unwrap()[..], &[]);
+    }
+
+    #[test]
+    fn base64_various_lengths() {
+
+        let mut inputs = vec![];
+        for i in 0..256 {
+            inputs.push(i as u8);
+        }
+
+        // TODO: Try a bunch of random inputs.
+        
+        for i in 0..inputs.len() {
+            let encoded = base64_encode(&inputs[0..i]);
+            assert_eq!(encoded.len(), base64_encoded_len(i, true));            
+
+            let decoded = base64_decode(&encoded).unwrap();
+            assert_eq!(decoded, &inputs[0..i]);
+        }
+    }
+
+    #[test]
+    fn base64url_various_lengths() {
+
+        let mut inputs = vec![];
+        for i in 0..256 {
+            inputs.push(i as u8);
+        }
+
+        // TODO: Try a bunch of random inputs.
+        
+        for i in 0..inputs.len() {
+            let encoded = base64url_encode(&inputs[0..i]);
+            assert_eq!(encoded.len(), base64_encoded_len(i, false));
+
+            let decoded = base64url_decode(&encoded).unwrap();
+            assert_eq!(decoded, &inputs[0..i]);
+        }
+    }
+
+    #[test]
+    fn base64_invalid_inputs() {
+
+        assert!(base64url_decode("_").is_err());
+
+        // TODO: Make this also fail?
+        // assert!(base64url_decode("A").is_err());
+
+    }
+
+
 }

@@ -634,6 +634,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_auth"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_algorithms",
+ "base_error",
+ "base_radix",
+ "cluster_ca",
+ "cluster_client",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "macros",
+ "net",
+ "protobuf",
+ "protobuf_builtins",
+ "regexp_macros",
+ "rpc",
+ "rpc_util",
+ "sys",
+ "web",
+]
+
+[[package]]
 name = "cluster_bridge"
 version = "0.1.0"
 dependencies = [
@@ -724,12 +754,14 @@ name = "cluster_client"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_algorithms",
  "base_radix",
  "builder_proto",
  "common",
  "container_proto",
  "crypto",
  "db_table",
+ "db_txn",
  "db_txn_client",
  "db_txn_proto",
  "executor",
@@ -757,6 +789,7 @@ dependencies = [
  "base_error",
  "base_radix",
  "base_units",
+ "cluster_auth",
  "cluster_client",
  "common",
  "compression",
@@ -876,6 +909,35 @@ dependencies = [
  "protobuf_compiler",
  "protobuf_compiler_proto",
  "rpc",
+]
+
+[[package]]
+name = "cluster_public_dns"
+version = "0.1.0"
+dependencies = [
+ "acme",
+ "base_error",
+ "base_radix",
+ "base_units",
+ "cluster_client",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "executor",
+ "executor_multitask",
+ "google_auth",
+ "google_dns",
+ "http",
+ "http_util",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "public_ip",
+ "rpc_util",
+ "sys",
 ]
 
 [[package]]
@@ -3385,6 +3447,20 @@ dependencies = [
  "image",
  "macros",
  "usb",
+]
+
+[[package]]
+name = "public_ip"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "executor",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "reflection",
 ]
 
 [[package]]

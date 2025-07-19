@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use base_error::*;
 use google_auth::GoogleRestClient;
 use google_discovery_generated::dns_v1;
+use net::ip::IPAddress;
 
 pub struct Client {
     raw: dns_v1::DnsClient,
@@ -27,8 +28,54 @@ impl Client {
         dns_name: &str,
         ttl: i32,
         data: &[T],
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let data = self.encode_txt_rrdata(data)?;
+
+        let mut record = dns_v1::ResourceRecordSet::default();
+        record.name = dns_name.to_string();
+        record.typ = "TXT".to_string();
+        record.ttl = ttl;
+        record.rrdatas = data.clone();
+
+        self.update_record(record).await
+    }
+
+    pub async fn set_address_records(
+        &self,
+        dns_name: &str,
+        ttl: i32,
+        ips: &[IPAddress],
+    ) -> Result<bool> {
+        let mut changed = false;
+
+        let mut a_record = dns_v1::ResourceRecordSet::default();
+        a_record.name = dns_name.to_string();
+        a_record.typ = "A".to_string();
+        a_record.ttl = ttl;
+
+        let mut aaaa_record = dns_v1::ResourceRecordSet::default();
+        aaaa_record.name = dns_name.to_string();
+        aaaa_record.typ = "AAAA".to_string();
+        aaaa_record.ttl = ttl;
+
+        for ip in ips {
+            if ip.is_v4() {
+                a_record.rrdatas.push(ip.to_string());
+            } else {
+                aaaa_record.rrdatas.push(ip.to_string());
+            }
+        }
+
+        Ok(
+            self.update_record(a_record).await? || 
+            self.update_record(aaaa_record).await?
+        )
+    }
+
+    async fn update_record(&self, rrset: dns_v1::ResourceRecordSet) -> Result<bool> {
+        if !rrset.name.ends_with(".") {
+            return Err(format_err!("DNS name should end with a dot: {}", rrset.name));
+        }
 
         // Find the zone containing the record.
         let zone_name = {
@@ -43,22 +90,22 @@ impl Client {
                 .await?;
 
             for zone in &res.managedZones {
-                if dns_name == &zone.dnsName || dns_name.ends_with(&format!(".{}", zone.dnsName)) {
+                if rrset.name == zone.dnsName || rrset.name.ends_with(&format!(".{}", zone.dnsName)) {
                     zone_name = Some(zone.name.clone());
                     break;
                 }
             }
 
             zone_name.ok_or_else(|| {
-                format_err!("No zone in project for dns name: {}", dns_name)
+                format_err!("No zone in project for dns name: {}", rrset.name)
             })?
         };
 
         // Check if it already exists.
         let existing_rrset = {
             let mut params = dns_v1::ResourceRecordSetsListParameters::default();
-            params.name = dns_name.to_string();
-            params.typ = "TXT".to_string();
+            params.name = rrset.name.clone();
+            params.typ = rrset.typ.clone();
 
             let mut res = self
                 .raw
@@ -77,9 +124,14 @@ impl Client {
             }
         };
 
-        if let Some(rrset) = &existing_rrset {
-            if rrset.ttl == ttl && rrset.rrdatas == data {
-                return Ok(());
+        if let Some(existing_rrset) = &existing_rrset {
+            // TODO: Check all fields.
+            if existing_rrset.ttl == rrset.ttl && existing_rrset.rrdatas == rrset.rrdatas {
+                return Ok(false);
+            }
+        } else {
+            if rrset.rrdatas.is_empty() {
+                return Ok(false);
             }
         }
 
@@ -90,12 +142,9 @@ impl Client {
                 change.deletions.push(rrset);
             }
 
-            let mut addition = dns_v1::ResourceRecordSet::default();
-            addition.name = dns_name.to_string();
-            addition.typ = "TXT".to_string();
-            addition.ttl = 300;
-            addition.rrdatas = data.clone();
-            change.additions.push(addition);
+            if !rrset.rrdatas.is_empty() {
+                change.additions.push(rrset);
+            }
 
             let res = self
                 .raw
@@ -118,13 +167,15 @@ impl Client {
                 _ => return Err(err_msg("Unsupported change status")),
             }
 
+            /*
             if change.additions[0].rrdatas != data {
                 // In this case, we can't properly diff if a change is done.
                 eprintln!(
                     "Inconsistent serialization between client and cloud DNS: {:?} vs {:?}",
-                    change.additions[0].rrdatas, data
+                    change.additions[0].rrdatas, rrset.rrdatas
                 );
             }
+            */
 
             executor::sleep(Duration::from_secs(5)).await?;
 
@@ -139,7 +190,7 @@ impl Client {
                 .await?;
         }
 
-        Ok(())
+        Ok(true)
     }
 
     // The Cloud DNS API canonically returns each element of

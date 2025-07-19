@@ -1,0 +1,1 @@
+This is a library for getting the public IP address of the network on which a program is running.

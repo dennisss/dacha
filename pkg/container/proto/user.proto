@@ -13,13 +13,8 @@ message User {
     string password_digest = 3;
 }
 
+// This service is mainly focused on serving certificate based authentication
 service UserAuthentication {
-    // // Looks like information about the currently logged in user/session based on the client's
-    // // provided authentication keys.
-    // //
-    // // If the client isn't currently logged in, then an empty message (with Ok status) is returned.
-    // rpc SessionInfo (SessionInfoRequest) returns (SessionInfoResponse);
-
     rpc CreateUser (CreateUserRequest) returns (CreateUserResponse);
 
     // Login by exchanging a user name, password, and CSR for a client TLS certificate.
@@ -63,6 +58,33 @@ message ChangePasswordRequest {
 message ChangePasswordResponse {}
 
 
+service UserSessionAuthentication {
+    // Looks like information about the currently logged in user/session based on the client's
+    // provided authentication keys.
+    //
+    // If the client isn't currently logged in, then an empty message (with Ok status) is returned.
+    rpc SessionInfo (SessionInfoRequest) returns (SessionInfoResponse);
+
+    // Credentials are returned via a 'Set-Cookie' header in the response.
+    rpc Login (SessionLoginRequest) returns (SessionLoginResponse);
+
+    rpc ChangePassword (ChangePasswordRequest) returns (ChangePasswordResponse);
+
+    // The result of this is communicated via a 'Set-Cookie' header in the response which deletes the auth key.
+    rpc Logout (LogoutRequest) returns (LogoutResponse);
+}
+
+message SessionLoginRequest {
+    string user_name = 1;
+
+    string user_password = 2;
+}
+
+message SessionLoginResponse {
+
+}
+
+
 message SessionInfoRequest {
 
 }
@@ -70,6 +92,14 @@ message SessionInfoRequest {
 message SessionInfoResponse {
     User user = 1;
     Session session = 2;
+}
+
+message LogoutRequest {
+
+}
+
+message LogoutResponse {
+
 }
 
 message Session {
@@ -87,7 +117,9 @@ message Session {
 
     SessionMetadata metadata = 5;
 
-    bytes client_id = 6;
+    fixed64 client_id = 6;
+
+    google.protobuf.Timestamp created_at = 7;
 }
 
 message SessionMetadata {

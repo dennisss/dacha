@@ -30,7 +30,7 @@ const CGROUP_NAMESPACE_SETUP_BYTE: u8 = 0x89;
 const FINISHED_BYTE: u8 = 0x90;
 
 const SERVICE_ACL_PROTO: &'static str = r#"
-    allow_unauthenticated: false
+    allow_unauthenticated_connections: false
 
     rules: [
         {
@@ -310,6 +310,7 @@ fn spawn_root_process(
     let init_process = MainProcess::start(
         MainProcessOptions {
             use_setsid: true,
+            // NOTE: CLONE_NEWUSER will drop all capabilities in the initial namespace so inside of the subprocess we can't do things that require stuff like CAP_NET_BIND_SERVICE or CAP_SYS_TIME
             clone_flags: sys::CloneFlags::CLONE_NEWUSER
                 | sys::CloneFlags::CLONE_NEWPID
                 | sys::CloneFlags::CLONE_NEWNS,

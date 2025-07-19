@@ -6,6 +6,7 @@ edition = "2018"
 [dependencies]
 common = { path = "../../common" }
 base_radix = { path = "../../base/radix" }
+base_algorithms = { path = "../../base/algorithms" }
 crypto = { path = "../../crypto" }
 protobuf = { path = "../../protobuf" }
 db_table = { path = "../../db/table" }
@@ -29,6 +30,9 @@ container_proto = { path = "../proto" }
 builder_proto = { path = "../../builder/proto" }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }
+
+# TODO: Make this test only.
+db_txn = { path = "../../db/txn" }
 
 [features]
 default = ["std"]

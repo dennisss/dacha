@@ -15,7 +15,7 @@ mod options;
 mod priority;
 mod settings;
 
-pub use crate::proto::v2::ErrorCode;
+pub use crate::proto::v2::{ErrorCode, SettingId};
 pub(crate) use connection::Connection;
 pub(crate) use connection::ConnectionInitialState;
 pub(crate) use options::{ConnectionOptions, ServerConnectionOptions};

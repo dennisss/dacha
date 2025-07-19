@@ -26,7 +26,7 @@ pub struct ServiceACL {
 }
 
 pub enum EffectiveEntity {
-    Resolved(Option<ServiceName>),
+    Resolved(Option<ServiceName>, bool),
     
     /// The peer tried to delegate a role but we don't allow them to.
     Denied,
@@ -83,8 +83,8 @@ impl ServiceACL {
         })
     }
 
-    pub fn allow_unauthenticated(&self) -> bool {
-        self.proto.allow_unauthenticated()
+    pub fn allow_unauthenticated_connections(&self) -> bool {
+        self.proto.allow_unauthenticated_connections()
     }
 
     pub async fn resolve_effective_entity(
@@ -94,7 +94,7 @@ impl ServiceACL {
     ) -> Result<EffectiveEntity> {
         let header = match request.head.headers.get_one(FORWARDED_ENTITY_HEADER) {
             Ok(Some(v)) => v,
-            Ok(None) => return Ok(EffectiveEntity::Resolved(peer_entity.cloned())),
+            Ok(None) => return Ok(EffectiveEntity::Resolved(peer_entity.cloned(), false)),
             Err(e) => {
                 // Multiple delegation headers.
                 return Ok(EffectiveEntity::Denied);
@@ -135,7 +135,7 @@ impl ServiceACL {
             return Ok(EffectiveEntity::Denied);
         }
 
-        Ok(EffectiveEntity::Resolved(entity))
+        Ok(EffectiveEntity::Resolved(entity, true))
     }
 
     fn parse_forwarded_entity(header: &http::Header) -> Result<Option<ServiceName>> {

@@ -26,6 +26,15 @@ impl AsciiString {
         Ok(Self { data, hidden: () })
     }
 
+    pub fn to_ascii_lowercase(&self) -> Self {
+        // if self.as_str().is_ascii_lowercase() {
+        //     return self.clone();
+        // }
+
+        let data = Bytes::from(self.as_str().to_ascii_lowercase());
+        Self { data, hidden: () }
+    }
+
     // TODO: Rename from_bytes_unchecked
     pub unsafe fn from_ascii_unchecked(data: Bytes) -> AsciiString {
         Self { data, hidden: () }

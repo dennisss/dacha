@@ -108,12 +108,14 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
         }
         ObjectKind::Worker => {
             let mut node_workers = HashMap::new();
+            let mut node_map = HashMap::new();
             {
                 let nodes = db.list::<NodeMetadataTable>().await?;
                 for node in nodes {
                     if let Err(e) = get_workers_from_node(meta_client.clone(), node.id(), &mut node_workers).await {
                         eprintln!("Failed to contact node {}: {}", entity_id_to_string(node.id()).unwrap(), e);
                     }
+                    node_map.insert(node.id(), node);
                 }
             }
 
@@ -128,7 +130,7 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
 
             let mut table = TerminalTableBuilder::new();
 
-            table.row().col("NAME").col("NODE ID").col("STATE").col("NODE STATE");
+            table.row().col("NAME").col("NODE ID").col("STATE").col("NODE STATE").col("NODE_IP:PORT");
 
             for worker in workers {
                 let worker_state = worker_states
@@ -159,11 +161,26 @@ pub async fn run_list(cmd: ListCommand) -> Result<()> {
                     name = format!("{}{}{}", terminal::start_hyperlink(&url), name, terminal::start_hyperlink(""));
                 }
 
+                let mut addrs = vec![];
+                for port in worker.spec().ports() {
+                    let node =  node_map.get(&worker.assigned_node()).unwrap();
+                    let authority = node.address().parse::<http::uri::Authority>()?;
+                    let ip = match &authority.host {
+                        http::uri::Host::IP(ip) => ip.clone(),
+                        _ => {
+                            return Err(err_msg("NodeMetadata doesn't contain an ip address"));
+                        }
+                    };
+
+                    addrs.push(format!("{}:{}", ip.to_string(), port.number()));
+                }
+
                 table.row()
                 .col(name)
                 .col(entity_id_to_string(worker.assigned_node()).unwrap())
                 .col(format!("{:?}", state))
-                .col(node_state);
+                .col(node_state)
+                .col(addrs.join(", "));
             }
 
             table.print();

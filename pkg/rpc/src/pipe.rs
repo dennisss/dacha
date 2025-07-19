@@ -7,7 +7,8 @@ use crate::channel::Channel;
 use crate::server_types::{ServerStreamRequest, ServerStreamResponse};
 use crate::{ClientStreamingRequest, ClientStreamingResponse};
 
-pub async fn pipe<'a>(
+// TODO: Can be made public once error statuses are upgraded to 'local' statuses.
+async fn pipe<'a>(
     client_request: ClientStreamingRequest<()>,
     client_response: ClientStreamingResponse<()>,
     server_request: ServerStreamRequest<()>,

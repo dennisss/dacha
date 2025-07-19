@@ -29,7 +29,13 @@ message GroupMembership {
 // - Certain services may need to do additional ACL checks based on the contents of the request.
 message ServiceACLProto {
     // If true, allow a client without a valid TLS client certificate to connect.
-    bool allow_unauthenticated = 1;
+    //
+    // Note that this just applies to the initial connection. Via proxying,
+    // unauthenticated users may still make requests depending on the setting
+    // in the path based rules.
+    bool allow_unauthenticated_connections = 1;
+
+    bool allow_unauthenticated_web_assets = 5;
 
     // Rules granting access to specific URLs on the server to users.
     //

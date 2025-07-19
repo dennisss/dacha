@@ -65,24 +65,17 @@ pub fn bcrypt_verify(mut encoded: &str, password: &str) -> bool {
         return false;
     }
 
-    let mut salt = match base64_decode_with(&encoded[0..22], &BASE64_OPTIONS) {
+    let salt = match base64_decode_with(&encoded[0..22], &BASE64_OPTIONS) {
         Ok(v) => v,
         Err(_) => return false,
     };
+    assert_eq!(salt.len(), 16);
 
-    if salt[16] != 0 {
-        return false;
-    }
-    salt.truncate(16);
-
-    let mut hash = match base64_decode_with(&encoded[22..], &BASE64_OPTIONS) {
+    let hash = match base64_decode_with(&encoded[22..], &BASE64_OPTIONS) {
         Ok(v) => v,
         Err(_) => return false,
     };
-    if hash[23] != 0 {
-        return false;
-    }
-    hash.truncate(23);
+    assert_eq!(hash.len(), 23);
 
     // assert_eq!(base64_encode_with(&salt, &BASE64_OPTIONS), &encoded[0..22]);
     // assert_eq!(base64_encode_with(&hash, &BASE64_OPTIONS), &encoded[22..]);

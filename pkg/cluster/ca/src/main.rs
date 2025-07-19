@@ -17,7 +17,7 @@ struct Args {
 
 const SERVICE_ACL_PROTO: &'static str = r#"
     # Allowed to enable user login requests.
-    allow_unauthenticated: true
+    allow_unauthenticated_connections: true
 
     rules: [
         # Does its own ACL checks internally.

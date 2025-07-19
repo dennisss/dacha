@@ -9,7 +9,7 @@ use crate::endian::{FromNetworkOrder, ToNetworkOrder};
 
 // TODO: Verify that we aren't able to parse octal ip addresses
 // (basically no component should start with a leading 0)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum IPAddress {
     V4([u8; 4]),
     V6([u8; 16]),
@@ -74,6 +74,12 @@ impl std::str::FromStr for IPAddress {
 impl ToString for IPAddress {
     fn to_string(&self) -> String {
         crate::ip_syntax::serialize_ip(self)
+    }
+}
+
+impl Debug for IPAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.to_string())
     }
 }
 

@@ -77,6 +77,7 @@ pub async fn upgrade_acls(zone: &str, db: &ProtobufDB, write: bool) -> Result<()
 
     let mut existing_map = HashMap::new();
     for v in &existing {
+        // TODO: 
         existing_map.insert(v.prefix(), v);
     }
 
@@ -107,6 +108,7 @@ pub async fn upgrade_acls(zone: &str, db: &ProtobufDB, write: bool) -> Result<()
         {
             let mut ignored = false;
             for p in &ignored_prefixes {
+                // TODO: Require at least one more byte beyond the prefix.
                 if old_entry.prefix().starts_with(&p[..]) {
                     ignored = true;
                     break;
@@ -285,6 +287,10 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
 
     let frontend_job = 
         Principal::Entity(ServiceName::for_job(zone, "ingress.frontend")?).to_string();
+    let auth_job = 
+        Principal::Entity(ServiceName::for_job(zone, "ingress.auth")?).to_string();
+    let dns_refresher_job = 
+        Principal::Entity(ServiceName::for_job(zone, "ingress.public_dns_refresher")?).to_string();
 
     let acme_prod_job =
         Principal::Entity(ServiceName::for_job(zone, "ingress.letsencrypt_prod_refresher")?).to_string();
@@ -322,13 +328,14 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         // Secrets
         make_table_acl::<PrivateKeyMetadataTable>(&[&ca_job, &cluster_owners], &[&ca_job]),
         // Due to containing password hashes, this is secret.
-        make_table_acl::<UserTable>(&[&ca_job], &[&ca_job]),
+        make_table_acl::<UserTable>(&[&ca_job, &auth_job], &[&ca_job, &auth_job]),
+        make_table_acl::<SessionTable>(&[&auth_job, &frontend_job], &[&auth_job]),
         // Not secret information so just granting cluster wide access for simplicity.
         make_table_acl::<BundleBlobMetadataTable>(&[&cluster_readers], &[&manager_job]),
         make_table_acl::<BundleBlobReplicaTable>(&[&cluster_readers], &[&manager_job]),
         manager_writes_blob_replica_acls,
         make_table_acl::<ObjectMetadataTable>(&[&cluster_owners], &[&cluster_owners]),
-        make_object_acl("google_service_account", &[&acme_prod_job, &acme_staging_job], &[])?,
+        make_object_acl("google_service_account", &[&acme_prod_job, &acme_staging_job, &dns_refresher_job], &[])?,
         make_object_acl("letsencrypt_prod/", &[&acme_prod_job], &[&acme_prod_job])?,
         make_object_acl("letsencrypt_prod/out/", &[&frontend_job], &[])?,
         make_object_acl("letsencrypt_staging/", &[&acme_staging_job], &[&acme_staging_job])?,

@@ -192,7 +192,8 @@ If your user is logged into the cluster, it should be running a DNS and local TC
 
 At this point, you should have a useable cluster.
 
-- Repeat the above steps (excluding bootstrapping) for any other machines that you want to manage in the cluster. 
+- Repeat the above steps (excluding bootstrapping) for any other machines that you want to manage in the cluster.
+- If you want to expose your cluster to the internet (and be accesible outside your local network), follow this [ingress guide](./doc/ingress.md).
 - If you are following the [main user guide](../../doc/user_guide.md) you can head back.
 - Continue reading this page if you want to learn more about how to setup your own workloads.
 

@@ -55,6 +55,8 @@ fn process_header_fields<F: FnMut(hpack::HeaderField) -> StreamResult<()>>(
 
     let mut regular_headers = vec![];
 
+    let mut concatenated_cookies = vec![];
+
     for header in headers {
         if header.name.to_ascii_lowercase() != header.name {
             return Err(StreamError::malformed_message(
@@ -75,11 +77,33 @@ fn process_header_fields<F: FnMut(hpack::HeaderField) -> StreamResult<()>>(
         } else {
             done_pseudo_headers = true;
 
+             if header.name == b"cookie" {
+                // Cookie headers are allowed to be split on "; " boundaries across
+                // multiple headers to improve compression.
+                // https://www.rfc-editor.org/rfc/rfc7540#section-8.1.2.5
+                //
+                // TODO: Also implement this on the request encoding side.
+
+                if !concatenated_cookies.is_empty() {
+                    concatenated_cookies.extend_from_slice(b"; ");
+                }
+
+                concatenated_cookies.extend_from_slice(&header.value[..]);
+                continue;
+            }
+
             regular_headers.push(Header {
                 name: to_ascii_string(header.name)?,
                 value: OpaqueString::from(header.value),
             });
         }
+    }
+
+    if !concatenated_cookies.is_empty() {
+        regular_headers.push(Header {
+            name: AsciiString::new("cookie"),
+            value: concatenated_cookies.into()
+        });
     }
 
     Ok(Headers {

@@ -97,6 +97,15 @@ impl<'a> MessageHeaderMut<'a> {
         }
     }
 
+    pub fn data(&self) -> &'a [IoSliceMut<'a>] {
+        unsafe {
+            core::slice::from_raw_parts(
+                core::mem::transmute(self.inner.msg_iov),
+                self.inner.msg_iovlen
+            )
+        }
+    }
+
     pub fn control_messages<'b>(&'b self) -> Option<impl Iterator<Item = ControlMessage> + 'b> {
         let buf = match &self.control_messages {
             Some(v) => v,

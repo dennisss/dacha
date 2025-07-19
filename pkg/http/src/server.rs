@@ -420,10 +420,22 @@ impl Server {
                         let connection_id = connection_pool.last_id + 1;
                         connection_pool.last_id = connection_id;
 
+                        let mut connection_context = ServerConnectionContext {
+                            id: connection_id,
+                            peer: s.peer_addr().clone(),
+                            tls: None,
+                            handler_data: None,
+                        };
+
+                        if !shared.handler.handle_connecting(&mut connection_context) {
+                            drop(s);
+                            return;
+                        }
+
                         // TODO: Switch to a ChildTask if we verify that handle_stream is cancel
                         // safe.
                         let task_handle =
-                            executor::spawn(Self::handle_stream(shared.clone(), connection_id, s));
+                            executor::spawn(Self::handle_stream(shared.clone(), connection_id, connection_context, s));
 
                         connection_pool.connections.insert(
                             connection_id,
@@ -478,10 +490,11 @@ impl Server {
     async fn handle_stream(
         shared: Arc<ServerShared>,
         connection_id: ServerConnectionId,
+        connection_context: ServerConnectionContext,
         stream: TcpStream,
     ) {
         let raw_peer_addr = stream.peer_addr().clone();
-        match Self::handle_stream_impl(&shared, connection_id, stream).await {
+        match Self::handle_stream_impl(&shared, connection_id, connection_context, stream).await {
             Ok(v) => {}
             // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 response.
             // (but only if generated locally )
@@ -529,18 +542,9 @@ impl Server {
     async fn handle_stream_impl(
         shared: &Arc<ServerShared>,
         connection_id: ServerConnectionId,
+        mut connection_context: ServerConnectionContext,
         stream: TcpStream,
     ) -> Result<()> {
-        let raw_peer_addr = stream.peer_addr();
-
-        let mut connection_context = ServerConnectionContext {
-            id: connection_id,
-            peer_addr: raw_peer_addr.ip().clone(),
-            peer_port: raw_peer_addr.port(),
-            tls: None,
-            handler_data: None,
-        };
-
         let (mut read_stream, mut write_stream) = stream.split();
 
         read_stream = Box::new(common::buffered_reader::BufferedReader::new(read_stream));

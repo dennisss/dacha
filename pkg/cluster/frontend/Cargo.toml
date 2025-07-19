@@ -16,6 +16,7 @@ macros = { path = "../../macros" }
 rpc_util = { path = "../../rpc/util" }
 compression = { path = "../../compression" }
 cluster_client = { path = "../../container/client" }
+cluster_auth = { path = "../auth" }
 net = { path = "../../net" }
 file = { path = "../../file" }
 executor = { path = "../../executor" }

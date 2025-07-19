@@ -267,6 +267,7 @@ impl Http2RequestHandler {
         let request_context = ServerRequestContext {
             metadata: Metadata::from_headers(&request.head.headers)?,
             connection: Some(context.connection_context.clone()),
+            handler_data: context.handler_data,
         };
 
         let rpc_path = match request.head.uri.path.as_ref().strip_prefix(&self.base_path) {
@@ -620,7 +621,13 @@ impl ResponseBody {
 
                 eprintln!("[rpc::Server] RPC Error: {}: {}", method_path, error);
                 let status = match error.downcast_ref::<Status>() {
-                    Some(s) => s.clone(),
+                    Some(s) => {
+                        if s.local() {
+                            s.clone()
+                        } else {
+                            Status::internal("Internal error occured")
+                        }
+                    },
                     None => Status::internal("Internal error occured"),
                 };
 

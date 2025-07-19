@@ -28,12 +28,12 @@ const DEFAULT_SERVICE_ACL_PROTO: &'static str = r#"
         {
             path: "/favicon.ico"
             is_directory: false
-            principals: ["authenticated"]
+            principals: ["{ASSETS_PRINCIPAL}"]
         },
         {
             path: "/assets"
             is_directory: true
-            principals: ["authenticated"]
+            principals: ["{ASSETS_PRINCIPAL}"]
         },
         {
             path: "/rpc/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo"
@@ -69,6 +69,8 @@ async fn not_found_handle_request(mut req: http::Request) -> http::Response {
 
 // TODO: By default, if not running in the cluster (e.g. on a local developer's machine, disallow remote connections or enforce that only that user can access everything)
 
+// TODO: Need a max deadline on connections and requests which would allow graceful re-connection to re-check credentials.
+
 /// NOTE: This struct only exists during construction of the server.
 pub struct ClusterServer {
     port: u16,
@@ -83,7 +85,15 @@ pub struct ClusterServer {
 impl ClusterServer {
     pub fn new(port: u16, acl: ServiceACLProto, client: Arc<ClusterMetaClient>) -> Result<Self> {
         let mut full_acl = ServiceACLProto::default();
-        protobuf::text::parse_text_proto(DEFAULT_SERVICE_ACL_PROTO, &mut full_acl)?;
+        
+        let acl_base = DEFAULT_SERVICE_ACL_PROTO
+            .replace("{ASSETS_PRINCIPAL}", if acl.allow_unauthenticated_web_assets() {
+                "unauthenticated"
+            } else {
+                "authenticated"
+            });
+
+        protobuf::text::parse_text_proto(&acl_base, &mut full_acl)?;
         full_acl.merge_from(&acl)?;
 
         let mut rpc_handler = rpc::Http2RequestHandler::new();
