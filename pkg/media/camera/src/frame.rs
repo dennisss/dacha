@@ -76,6 +76,7 @@ pub enum PixelFormat {
     YUV420Planar,
     H264,
     JPEG,
+    MJPG,
 }
 
 impl PixelFormat {
@@ -85,6 +86,7 @@ impl PixelFormat {
             "YU12" => Self::YUV420Planar,
             "H264" => Self::H264,
             "JPEG" => Self::JPEG,
+            "MJPG" => Self::MJPG,
             _ => return None,
         })
     }

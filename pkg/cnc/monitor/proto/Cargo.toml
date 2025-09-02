@@ -11,6 +11,7 @@ common = { path = "../../../common" }
 protobuf = { path = "../../../protobuf" }
 rpc = { path = "../../../rpc" }
 macros = { path = "../../../macros" }
+media_camera_proto = { path = "../../../media/camera/proto" }
 protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
 
 [build-dependencies]

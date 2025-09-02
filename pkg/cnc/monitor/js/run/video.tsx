@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Card, CardBody } from "../card";
 import { timestamp_proto_to_millis } from "pkg/web/lib/formatting";
 import { FragmentedVideoSourceOptions, MediaFragment, MediaSegmentData, VideoSourceKind, VideoSourceOptions } from "pkg/web/lib/video/types";

@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use graphics::{canvas::Path, transforms::transform2f};
 use math::matrix::{Matrix3f, Vector2f};
 
-use crate::syntax::Polarity;
+use crate::syntax::{Polarity, Attribute};
 
 /// Single primitive to be drawn to represent a Gerber file. These and the
 /// nested paths should be drawn in the order they are generated.
@@ -15,6 +17,9 @@ pub struct GraphicsObject {
     pub paths: Vec<GraphicsPath>,
 
     pub line: Option<(Vector2f, Vector2f)>,
+
+    /// Attributes pulled from either the drawn aperture or attached to the object.
+    pub attributes: HashMap<String, Attribute>,
 }
 
 impl GraphicsObject {

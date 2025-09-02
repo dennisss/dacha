@@ -1160,7 +1160,13 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 let x = Rational::from(boundary_vertex.x());
                 let y = Rational::from(boundary_vertex.y());
                 for (i, segment) in segments.iter().enumerate() {
-                    // NOTE: This should filter out all horizontal lines.
+                    // Filtering speed performance optimization.
+                    if segment.start.y() < y || segment.end.y() > y {
+                        continue;
+                    }
+
+                    // NOTE: This should filter out all segments that don't intersect with the
+                    // scan line at 'y' and all horizontal lines.
                     let x_i = match segment.evaluate_at_y(y) {
                         Some(v) => v,
                         None => continue,
@@ -1342,7 +1348,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     &self.faces[self.half_edges[edge.twin].incident_face],
                 )
             {
-                edges_to_remove.push(*edge_id)
+                edges_to_remove.push(*edge_id);
             }
         }
 
@@ -1853,7 +1859,65 @@ impl<'a, F> ComponentReference<'a, F> {
 
         out
     }
+
+    pub fn start_id(&self) -> EdgeId {
+        self.start_id
+    }
+
+    pub fn start_edge(&self) -> HalfEdgeReference<'a, F> {
+        HalfEdgeReference {
+            inst: self.inst,
+            id: self.start_id
+        }
+    }
 }
+
+pub struct HalfEdgeReference<'a, F> {
+    inst: &'a HalfEdgeStruct<F>,
+    id: EdgeId,
+}
+
+impl<'a, F> HalfEdgeReference<'a, F> {
+
+    pub fn id(&self) -> EdgeId {
+        self.id
+    } 
+
+    pub fn incident_face(&self) -> FaceReference<'a, F> {
+        let this = &self.inst.half_edges[self.id];
+
+        FaceReference {
+            inst: self.inst,
+            id: this.incident_face,
+            face: &self.inst.faces[this.incident_face]
+        }
+    }
+
+    pub fn origin(&self) -> Vector2f {
+        let this = &self.inst.half_edges[self.id];
+        dequantize2(this.origin.clone(), self.inst.scale)
+    }
+
+    pub fn next(&self) -> HalfEdgeReference<'a, F> {
+        let this = &self.inst.half_edges[self.id];
+
+        HalfEdgeReference {
+            inst: self.inst,
+            id: this.next,
+        }
+    }
+
+    pub fn twin(&self) -> HalfEdgeReference<'a, F> {
+        let this = &self.inst.half_edges[self.id];
+
+        HalfEdgeReference {
+            inst: self.inst,
+            id: this.twin,
+        }
+    }
+}
+
+
 
 // pub struct Faces
 

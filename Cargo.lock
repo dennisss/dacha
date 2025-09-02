@@ -1055,6 +1055,7 @@ version = "0.0.0"
 dependencies = [
  "common",
  "macros",
+ "media_camera_proto",
  "protobuf",
  "protobuf_builtins",
  "protobuf_compiler",
@@ -2250,6 +2251,7 @@ dependencies = [
 name = "http_util"
 version = "0.1.0"
 dependencies = [
+ "base_util",
  "common",
  "executor",
  "file",
@@ -2333,6 +2335,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61124eeebbd69b8190558df225adf7e4caafce0d743919e5d6b19652314ec5ec"
 dependencies = [
  "cfg-if 1.0.0",
+]
+
+[[package]]
+name = "inventory"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "cluster_client",
+ "common",
+ "container_proto",
+ "crypto",
+ "db_table",
+ "executor",
+ "executor_multitask",
+ "file",
+ "graphics",
+ "http",
+ "image",
+ "inventory_proto",
+ "json",
+ "labeler_proto",
+ "macros",
+ "mcmaster",
+ "parsing",
+ "protobuf",
+ "rpc",
+ "rpc_util",
+ "usb",
+ "web",
+]
+
+[[package]]
+name = "inventory_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "labeler_proto",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
 ]
 
 [[package]]
@@ -2617,6 +2663,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 
 [[package]]
+name = "mcmaster"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "reflection",
+]
+
+[[package]]
 name = "meatpack"
 version = "0.1.0"
 dependencies = [
@@ -2666,6 +2727,37 @@ dependencies = [
  "protobuf_builtins",
  "protobuf_compiler",
  "rpc",
+]
+
+[[package]]
+name = "media_camera_service"
+version = "0.0.0"
+dependencies = [
+ "cluster_client",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "executor",
+ "executor_graph",
+ "executor_multitask",
+ "file",
+ "http",
+ "http_util",
+ "json",
+ "libcamera",
+ "macros",
+ "math",
+ "media_camera",
+ "media_camera_proto",
+ "parsing",
+ "protobuf",
+ "rpc",
+ "rpc_util",
+ "usb",
+ "v4l2",
+ "video",
+ "web",
 ]
 
 [[package]]

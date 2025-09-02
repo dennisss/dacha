@@ -1,5 +1,5 @@
 import { ExponentialBackoff, ExponentialBackoffOptions } from "pkg/net/src/backoff";
-import { PageContext } from "./page";
+import { PageContext } from "pkg/web/lib/page";
 import { Notification } from "pkg/web/lib/notifications";
 import { shallow_copy } from "pkg/web/lib/utils";
 import { RequestOptions } from "pkg/web/lib/rpc";

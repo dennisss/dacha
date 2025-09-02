@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "./page";
+import { PageContext } from "pkg/web/lib/page";
 import { watch_entities } from "./rpc_utils";
 import { compare_values } from "pkg/web/lib/utils";
 

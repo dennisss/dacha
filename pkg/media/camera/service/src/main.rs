@@ -70,7 +70,31 @@ use media_camera::camera_manager::{CameraEntry, CameraManager};
 use media_camera_proto::media::camera::*;
 use parsing::ascii::AsciiString;
 use rpc_util::NamedPortArg;
-use web::WebServerHandler;
+use web::WebPageHandler;
+use executor_multitask::RootResource;
+use cluster_client::{ClusterMetaClient, ClusterServer};
+use http_util::extract_path_params;
+
+const SERVICE_ACL_PROTO: &'static str = r#"
+    rules: [
+        {
+            path: "/"
+            is_directory: false
+            principals: ["authenticated"]
+        },
+        {
+            path: "/camera"
+            is_directory: true
+            principals: ["group:cluster-owners"]
+        },
+        {
+            path: "/rpc/media.camera.CameraInterface"
+            is_directory: true
+            principals: ["group:cluster-owners"]
+        }
+    ]
+"#;
+
 
 #[derive(Args)]
 struct Args {
@@ -80,8 +104,6 @@ struct Args {
 
 struct HttpHandler {
     camera_manager: CameraManager,
-    inner: WebServerHandler,
-    rpc_handler: rpc::Http2RequestHandler,
 }
 
 impl HttpHandler {
@@ -89,20 +111,26 @@ impl HttpHandler {
         &self,
         mut request: http::Request,
         context: http::ServerRequestContext<'a>,
-    ) -> http::Response {
-        if let Some(path) = request.head.uri.path.as_str().strip_prefix("/rpc/") {
-            request.head.uri.path = AsciiString::new(&format!("/{}", path));
-            return self.rpc_handler.handle_request(request, context).await;
-        }
+    ) -> Result<http::Response> {
 
-        if request.head.uri.path.as_str() == "/camera" {
-            return media_camera::camera_stream::respond_with_any_camera_stream(
-                &self.camera_manager,
-            )
-            .await;
-        }
+        let path = request.head.uri.path.as_str();
 
-        self.inner.handle_request(request, context).await
+        let mut params = match extract_path_params(path, "/camera/:camera_id") {
+            Some(v) => v,
+            None => return Ok(http_util::not_found())
+        };
+
+        let camera_id = http_util::decode_uri_component(&params.remove("camera_id").unwrap());
+
+        let mut entries = self.camera_manager.list().await?;
+
+        let entry = match entries.remove(&camera_id) {
+            Some(v) => v,
+            None => return Ok(http_util::not_found())
+        };
+
+        let camera = self.camera_manager.open(entry).await?;
+        media_camera::camera_stream::respond_with_camera_stream(camera).await
     }
 }
 
@@ -113,7 +141,13 @@ impl http::ServerHandler for HttpHandler {
         request: http::Request,
         context: http::ServerRequestContext<'a>,
     ) -> http::Response {
-        self.handle_request_impl(request, context).await
+        match self.handle_request_impl(request, context).await {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{}", e);
+                http_util::internal_server_error()
+            }
+        }
     }
 }
 
@@ -152,6 +186,7 @@ impl ServiceImpl {
 
         let mut out = GetPropertiesResponse::default();
         out.set_properties(camera.properties().await?);
+        out.set_format(camera.format_proto().await?);
 
         Ok(out)
     }
@@ -193,6 +228,9 @@ async fn main() -> Result<()> {
 
     let root_resource = executor_multitask::RootResource::new();
 
+    let client = ClusterMetaClient::create_from_environment().await?;
+    root_resource.register_dependency(client.clone()).await;
+
     let usb_context = usb::Context::create()?;
     let libcamera_manager = libcamera::CameraManager::create()?;
 
@@ -202,37 +240,28 @@ async fn main() -> Result<()> {
         camera_manager: camera_manager.clone(),
     };
 
-    let mut rpc_handler = rpc::Http2RequestHandler::new();
-    rpc_handler.add_service(service_impl.into_service())?;
 
-    root_resource
-        .register_dependency({
-            let vars = json::Value::Object(map!(
-                "rpc_port" => &json::Value::Number(1000.0)
-            ));
+    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
-            let web_handler = web::WebServerHandler::new(web::WebServerOptions {
-                pages: vec![web::WebPageOptions {
-                    title: "Media Camera".into(),
-                    path: "/".into(),
-                    script_path: "built/pkg/media/camera/app.js".into(),
-                    vars: Some(vars),
-                }],
-            });
+    let mut server = ClusterServer::new(args.port.value(), acl, client.clone())?;
+    server.add_service(service_impl.into_service())?;
 
-            let handler = HttpHandler {
-                camera_manager,
-                inner: web_handler,
-                rpc_handler,
-            };
+    let web_handler = Arc::new(WebPageHandler::create(web::WebPageOptions {
+        title: "Media Camera".into(),
+        script_path: "built/pkg/media/camera/app.js".into(),
+        vars: None,
+    }).await?);
+    server.add_request_handler("/", false, web_handler.clone())?;
 
-            let mut options = http::ServerOptions::default();
-            options.port = Some(args.port.value());
+    let camera_handler = Arc::new(HttpHandler {
+        camera_manager,
+    });
+    server.add_request_handler("/camera", true, camera_handler.clone())?;
 
-            let web_server = http::Server::new(handler, options);
-            Arc::new(web_server.start())
-        })
-        .await;
+    root_resource.register_dependency(server.start()?).await;
+
+    println!("Ready!");
 
     root_resource.wait().await
 }

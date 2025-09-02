@@ -1,14 +1,20 @@
 use std::collections::HashSet;
 
 use base_error::*;
-use cam_proto::cnc::CutOutProcessorConfig;
+use cam_proto::cnc::{CutOutProcessorConfig, ArcMotionBuilderConfig};
 use common::line_builder::LineBuilder;
 use gerber::GraphicsObject;
-use math::{geometry::half_edge::HalfEdgeStruct, matrix::Vector2f};
+use math::{geometry::half_edge::HalfEdgeStruct};
+
+use crate::edge::*;
+use crate::arc::*;
 
 pub struct CutOutProcessorOptions {
     pub config: CutOutProcessorConfig,
     pub max_error: f32,
+    
+    // TODO: Avoid passing this into here and the isolation processor. Instead make the filtering transparent on the writer given in the 'out' argument
+    pub arc_config: ArcMotionBuilderConfig,
 }
 
 /// Performs cutout all the way through a PCB.
@@ -25,146 +31,20 @@ impl CutOutProcessor {
         Self { options }
     }
 
-    pub fn process(&self, objects: &[gerber::GraphicsObject], out: &mut LineBuilder) -> Result<()> {
-        // Getting the ordered list of points forming the closed outer boundary of the
-        // PCB.
-        let (edge_path, edge_objects) = {
-            let mut lines = vec![];
+    /// NOTE: This will cut everything mentioned in edge_metadata and nothing else.
+    pub fn process(
+        &self,
+        objects: &[gerber::GraphicsObject],
+        edge_metadata: &EdgeCutMetadata,
+        out: &mut LineBuilder
+    ) -> Result<()> {
+        let mut cut_paths = vec![];
 
-            for (obj_i, obj) in objects.iter().enumerate() {
-                let line = match obj.line.clone() {
-                    Some(v) => v,
-                    None => continue,
-                };
-
-                lines.push((line, obj_i));
-            }
-
-            if lines.len() < 3 {
-                return Err(err_msg("Not enough lines to form a closed polygon"));
-            }
-
-            let mut edge_polygon = None;
-
-            while !lines.is_empty() {
-                let mut polygon = vec![];
-                let mut polygon_objs = HashSet::new();
-                let mut closed = false;
-
-                let ((s, e), object_i) = lines.pop().unwrap();
-                polygon.push(s);
-                polygon.push(e);
-                polygon_objs.insert(object_i);
-
-                loop {
-                    let first_point = &polygon[0];
-                    let last_point = polygon.last().unwrap();
-
-                    let mut found_match = false;
-                    for i in 0..lines.len() {
-                        let ((mut s, mut e), object_i) = lines[i].clone();
-                        if (last_point - &s).norm() < 0.01 {
-                            // Fall through
-                        } else if (last_point - &e).norm() < 0.01 {
-                            core::mem::swap(&mut s, &mut e);
-                        } else {
-                            continue;
-                        }
-
-                        found_match = true;
-
-                        if (first_point - &e).norm() < 0.01 {
-                            closed = true;
-                        } else {
-                            polygon.push(e);
-                        }
-
-                        polygon_objs.insert(object_i);
-
-                        lines.swap_remove(i);
-
-                        break;
-                    }
-
-                    if closed || !found_match {
-                        break;
-                    }
-                }
-
-                // TODO: Warn about all the edges that we aren't converting into gcode.
-                if !closed {
-                    continue;
-                }
-
-                // TODO: Pick the biggest one if there are multiple.
-                if edge_polygon.is_some() {
-                    return Err(err_msg("Multiple closed paths found in edge cuts"));
-                }
-
-                edge_polygon = Some((polygon, polygon_objs));
-            }
-
-            let polygon = edge_polygon
-                .ok_or_else(|| err_msg("Unable to find a closed polygon for the board edge"))?;
-
-            if polygon.0.len() < 3 {
-                return Err(err_msg(
-                    "Didn't find at least 3 distinct polygon points on the board edge.",
-                ));
-            }
-
-            polygon
-        };
-
-        // Generate the offset polygon (this also verifies that the above polygon is
-        // well formed and doesn't have self intersections).
-        let cut_path = {
-            // println!("PATH: {:?}", edge_path);
-
-            let mut half_edges = HalfEdgeStruct::<bool>::new();
-            half_edges.add_face(true, edge_path.iter().cloned());
-            half_edges.repair();
-            half_edges.merge_faces();
-
-            // Expect there to be one unbounded face and one inner face.
-            if half_edges.faces().count() != 2 {
-                return Err(format_err!(
-                    "Expected outline to be just one boundary. Got: {}",
-                    half_edges.faces().count()
-                ));
-            }
-
-            half_edges = math::geometry::offsetting::offset_faces(
-                &half_edges,
-                self.options.config.margin() + (self.options.config.tool_diameter() / 2.0),
-                self.options.max_error,
-            );
-
-            half_edges.merge_faces();
-
-            let faces = math::geometry::half_edge::FaceDebug::get_all(&half_edges);
-            // println!("{:?}", faces);
-            if faces.len() != 2 {
-                return Err(err_msg("More than 1 face after offsetting boundary"));
-            }
-
-            let edge_face = faces
-                .iter()
-                .find(|f| f.outer_component.is_some())
-                .ok_or_else(|| err_msg("Can't find the offset face"))?;
-
-            edge_face.outer_component.as_ref().unwrap().clone()
-        };
-
-        if cut_path.len() < 3 {
-            return Err(err_msg("Path too short"));
-        }
-
-        let other_cut_paths = {
+        {
             let mut half_edges = HalfEdgeStruct::<bool>::new();
 
             for (obj_i, obj) in objects.iter().enumerate() {
-                if edge_objects.contains(&obj_i) {
+                if !edge_metadata.inner_edge_objects.contains(&obj_i) {
                     continue;
                 }
 
@@ -191,21 +71,68 @@ impl CutOutProcessor {
 
             half_edges.merge_faces();
 
-            let mut paths = vec![];
             for face in half_edges.faces() {
                 let boundary = match face.outer_component() {
                     Some(v) => v.points(),
                     None => continue,
                 };
 
-                paths.push(boundary);
+                cut_paths.push(boundary);
             }
-
-            paths
         };
 
-        out.nl();
-        out.add("; Cutout");
+        // NOTE: Must always be the outer edge code last.
+        if !edge_metadata.outer_edge_objects.is_empty() {
+            // Generate the offset polygon (this also verifies that the above polygon is
+            // well formed and doesn't have self intersections).
+            let cut_path = {
+                // println!("PATH: {:?}", edge_path);
+
+                let mut half_edges = HalfEdgeStruct::<bool>::new();
+                half_edges.add_face(true, edge_metadata.outer_edge_path.iter().cloned());
+                half_edges.repair();
+                half_edges.merge_faces();
+
+                // Expect there to be one unbounded face and one inner face.
+                if half_edges.faces().count() != 2 {
+                    return Err(format_err!(
+                        "Expected outline to be just one boundary. Got: {}",
+                        half_edges.faces().count()
+                    ));
+                }
+
+                half_edges = math::geometry::offsetting::offset_faces(
+                    &half_edges,
+                    self.options.config.margin() + (self.options.config.tool_diameter() / 2.0),
+                    self.options.max_error,
+                );
+
+                half_edges.merge_faces();
+
+                let faces = math::geometry::half_edge::FaceDebug::get_all(&half_edges);
+                // println!("{:?}", faces);
+                if faces.len() != 2 {
+                    return Err(err_msg("More than 1 face after offsetting boundary"));
+                }
+
+                let edge_face = faces
+                    .iter()
+                    .find(|f| f.outer_component.is_some())
+                    .ok_or_else(|| err_msg("Can't find the offset face"))?;
+
+                edge_face.outer_component.as_ref().unwrap().clone()
+            };
+
+            if cut_path.len() < 3 {
+                return Err(err_msg("Path too short"));
+            }
+
+            cut_paths.push(cut_path);
+        }
+
+        if cut_paths.is_empty() {
+            return Ok(());
+        }
 
         // TODO: Consider moving all of these to after the tool change.
         out.add(format!(
@@ -228,12 +155,15 @@ impl CutOutProcessor {
             ));
         }
 
-        // TODO: We need to do path order optimization for other_cut_paths.
+        // TODO: We need to do path order optimization for cut_paths.
         // - For now it is fairly simple since we only do one offset path
 
-        for path in other_cut_paths.iter().chain(std::iter::once(&cut_path)) {
+
+        let mut arc_metrics = ArcMetrics::new();
+
+        for path in cut_paths.iter() {
             // Move above the first point.
-            out.add(format!("G00 X{:.4} Y{:.4}", path[0].x(), path[0].y()));
+            out.add(format!("G0 X{:.4} Y{:.4}", path[0].x(), path[0].y()));
 
             // Run cut passes.
             // NOTE: Each iteration of this loop starts with the machine located at the x/y
@@ -252,15 +182,15 @@ impl CutOutProcessor {
                     self.options.config.feedrate_z()
                 ));
 
+                let mut motion_builder = ArcMotionBuilder::new(
+                    self.options.arc_config.clone(), path[0].clone(), self.options.config.feedrate_xy(), &mut arc_metrics);
+
                 for i in 0..path.len() {
                     let pt = &path[(i + 1) % path.len()];
-                    out.add(format!(
-                        "G01 X{:.4} Y{:.4} F{}",
-                        pt.x(),
-                        pt.y(),
-                        self.options.config.feedrate_xy()
-                    ));
+                    motion_builder.move_to(pt.clone(), out);
                 }
+
+                motion_builder.finish(out);
             }
 
             // Go up.
@@ -270,6 +200,8 @@ impl CutOutProcessor {
                 self.options.config.feedrate_z()
             ));
         }
+
+        // arc_metrics.print();
 
         // Turn off spindle.
         out.add("M05");

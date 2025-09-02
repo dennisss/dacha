@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Card, CardBody } from "../card";
 import { PropertiesTable } from "../properties_table";
 import { format_timecode_secs, timestamp_proto_to_millis } from "pkg/web/lib/formatting";

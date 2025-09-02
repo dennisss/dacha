@@ -12,3 +12,4 @@ pub mod flash;
 pub mod lepton;
 pub mod sgp30;
 pub mod trust_m;
+pub mod as5601;

@@ -1413,6 +1413,9 @@ impl SerialController {
 
                 executor::sleep(Duration::from_millis(100)).await?;
             }
+
+            // Wait for firmware to stabilize. Sometimes we see the firmware in the wrong state (e.g. relative instead of absolute positioning mode after a tool change).
+            executor::sleep(Duration::from_millis(100)).await?;
         }
 
         self.wait_for_idle().await

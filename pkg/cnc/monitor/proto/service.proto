@@ -9,6 +9,7 @@ import "pkg/cnc/monitor/proto/file.proto";
 import "pkg/cnc/monitor/proto/media.proto";
 import "pkg/cnc/monitor/proto/metric.proto";
 import "pkg/cnc/monitor/proto/run.proto";
+import "pkg/media/camera/proto/service.proto";
 
 service Monitor {
     // This will always return one response message immediately and may follow up with more if
@@ -28,6 +29,8 @@ service Monitor {
 
     // NOTE: This doesn't wait for re-processing to finish. Only for it to start.
     rpc ReprocessFile (ReprocessFileRequest) returns (ReprocessFileResponse);
+
+    rpc GetCameraProperties (GetCameraPropertiesRequest) returns (GetCameraPropertiesResponse);
 
     rpc GetCameraPlayback (GetCameraPlaybackRequest) returns (GetCameraPlaybackResponse);
 
@@ -305,4 +308,14 @@ message ReprocessFileRequest {
 
 message ReprocessFileResponse {
 
+}
+
+message GetCameraPropertiesRequest {
+    fixed64 machine_id = 1;
+
+    fixed64 camera_id = 2;
+}
+
+message GetCameraPropertiesResponse {
+    media.camera.CameraFormat format = 1;
 }

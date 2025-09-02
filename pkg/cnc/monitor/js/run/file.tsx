@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Card, CardBody } from "../card";
 import { PropertiesTable } from "../properties_table";
 import { Button } from "pkg/web/lib/button";

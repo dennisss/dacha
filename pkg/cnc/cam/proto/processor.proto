@@ -14,8 +14,83 @@ message PCBProcessorConfig {
 
     IsolationRoutingProcessorConfig paste_stencil = 5;
 
+    // Changes all drill holes in the PCB to have this size.
     float forced_hole_diameter = 6;
+
+    AlignmentHolesConfig alignment_holes = 7;
+
+    DoubleSidedConfig double_sided = 8;
+
+    ArcMotionBuilderConfig arc_builder = 9;
+
+    LaserStencilProcessorConfig laser_stencil = 10;
 }
+
+message AlignmentHolesConfig {
+    // Size of the alignment hole to drill.
+    float hole_size = 1;
+
+    float long_edge_offset = 2;
+
+    float short_edge_offset = 3;
+
+    float short_edge_asymetric_offset = 4;
+}
+
+message DoubleSidedConfig {
+    float front_through_cut_depth = 1;
+
+    float back_through_cut_depth = 2;
+    
+    float front_partial_cut_depth = 3;
+    
+    float back_partial_cut_depth = 4;
+
+    // float front_through_drill_depth = 5;
+}
+
+message ArcMotionBuilderConfig {
+    // Minimum number of points in a plane needed to form an arc.
+    // This is also the number of points over which the arc approximation will be computed.
+    uint32 min_points = 1;
+
+    // Maximum distance from any of the original gcode line segments to the formed arc curve.
+    // (for each line segment, this would be the measured at the furthest point in the line segment from any point on the arc).
+    //
+    // This should be >= max_point_deviation
+    float max_deviation = 2;
+
+    // Maximum distance from any of the original gcode line endpoints to the formed arc curve.
+    //
+    // When the input points are interpolated from some original curve geometry, this should be > the max error
+    // allowed during linearization in that just.
+    float max_point_deviation = 3;
+
+    // Maximum radius of the formed arc.
+    float max_radius = 4;
+
+    // 0-1 percentage change in the absolute value length of the new arc compared to the original set of line segments.
+    //
+    // While in theory max_deviation should be sufficient, the path length calculation is simpler and more robust.
+    float max_path_length_deviation_percent = 5;
+
+    // Maximum ratio between the 'longest_segment:shortest_segment' in the input line segments used to approximate
+    // a curve.
+    //
+    // Set to >= 1
+    float max_segment_variance = 6;
+}
+
+message SideAlignmentData {
+    message PointMapping {
+        repeated float point = 1;
+        repeated float front_measurement = 2;
+        repeated float back_measurement = 3;
+    }    
+
+    repeated PointMapping mappings = 1;
+}
+
 
 message IsolationRoutingProcessorConfig {
     uint32 tool_index = 1;
@@ -37,6 +112,9 @@ message IsolationRoutingProcessorConfig {
 
     // Desired cut depth. If not provided, this is derived from the cut_with for cut cutter tools.
     float cut_depth = 6;
+
+    // Extra depth in Z distance we should plunge down (added to cut_depth). We assume that we are still staying at most at cut_depth but that some spring force is allowing us to compress the bit more.
+    float cut_compression = 18;
 
     // Number of parallel isolation passes to take around the copper contours.
     //
@@ -112,4 +190,8 @@ message CutOutProcessorConfig {
     float clearance_z = 10;
 
     float rapid_feedrate = 11;
+}
+
+message LaserStencilProcessorConfig {
+    float laser_diameter = 1;
 }

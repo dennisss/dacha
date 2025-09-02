@@ -1,11 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom";
-import { Router, RouterComponent, PathParams } from "pkg/web/lib/router";
+import { PathParams } from "pkg/web/lib/router";
 import { FilesPage } from "pkg/cnc/monitor/js/files";
 import { MachinePage } from "./machine";
 import { MachinesPage } from "./machines";
-import { ModalContainerComponent } from "pkg/web/lib/modal";
-import { PageComponent, PageContext } from "./page";
+import { PageContext, PagedApp } from "pkg/web/lib/page";
 import { ProgramRunPage } from "./run";
 
 // TODO: Set a background-color: #fcfcfc on the body.
@@ -38,38 +37,5 @@ const ROUTES = [
     },
 ]
 
-
-class App extends React.Component<{}, {}> {
-
-    _router: Router;
-
-    constructor(props: {}) {
-        super(props);
-
-        let routes = ROUTES.map((route) => {
-            let inner_render = route.render;
-            route.render = (path, params) => {
-                return <PageComponent key={path} render={(context) => inner_render(path, params, context)} />
-            }
-
-            return route;
-        })
-
-        this._router = new Router(routes);
-    }
-
-    render() {
-        return (
-            <div className="app-outer">
-                <RouterComponent router={this._router} />
-                <ModalContainerComponent />
-            </div>
-        );
-    }
-};
-
-
-
-
 let node = document.getElementById("app-root");
-ReactDOM.render(<App />, node)
+ReactDOM.render(<PagedApp routes={ROUTES} />, node)

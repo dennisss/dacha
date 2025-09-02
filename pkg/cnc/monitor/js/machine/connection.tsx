@@ -1,6 +1,6 @@
 import React from "react";
 import { PropertiesTable } from "../properties_table";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { run_machine_command } from "../rpc_utils";
 import { Button } from "pkg/web/lib/button";
 import { CardError } from "../card_error";

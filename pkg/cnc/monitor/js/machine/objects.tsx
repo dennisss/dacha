@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { MachineUiState } from "./state";
 import { Card, CardBody } from "../card";
 import { Button } from "pkg/web/lib/button";

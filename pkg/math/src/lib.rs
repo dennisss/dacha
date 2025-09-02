@@ -42,6 +42,7 @@ pub mod intrinsics;
 pub mod matrix;
 pub mod number;
 pub mod rational;
+pub mod complex;
 
 // TODO: Verify this uses hardware instructions on ARM.
 pub use integer::Integer;

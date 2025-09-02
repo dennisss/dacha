@@ -104,6 +104,18 @@ impl CameraSubscriber {
 
         Ok(entry.props.clone())
     }
+
+    pub async fn format_proto(&self) -> Result<CameraFormat> {
+        let mut proto = CameraFormat::default();
+
+        proto.set_live_format(match self.format().await?.pixel_format {
+            PixelFormat::MJPG => CameraFormat_LiveStreamFormat::MJPEG,
+            PixelFormat::H264 => CameraFormat_LiveStreamFormat::MP4,
+            _ => CameraFormat_LiveStreamFormat::UNKNOWN
+        });
+
+        Ok(proto)
+    }
 }
 
 /// Manages a set of connected cameras in order to enable multiplexed access to
@@ -353,38 +365,43 @@ impl CameraManager {
             - Note that in V4L2, the sizes will all be either discrete or there will be one stepwise range.
             */
 
-            if capture_op.supported_formats().contains(&PixelFormat::H264) {
+            if capture_op.supported_formats().contains(&PixelFormat::H264) ||
+                capture_op.supported_formats().contains(&PixelFormat::MJPG) {
                 // TODO: Configure the pixel format and image size.
 
                 chosen_node_name = Some((group_id.clone(), capture_op.format()));
 
-                eprintln!("Selecting camera V4L2 device: {}", device.path.as_str());
+                eprintln!("Selecting camera V4L2 device: {}; Format: {:?}", device.path.as_str(), capture_op.format().pixel_format);
             }
 
             graph.add_node(&group_id, Arc::new(capture_op), &[]);
         }
 
-        let (node_name, format) =
-            chosen_node_name.ok_or_else(|| err_msg("No output found that provides H264 data"))?;
+        let (mut node_name, format) =
+            chosen_node_name.ok_or_else(|| err_msg("No output found that provides H264/MJPG data"))?;
 
-        graph.add_node(
-            "output:buffer",
-            Arc::new(H264BufferOp::new()),
-            &[OutputKey {
-                node_name,
-                output_index: 0,
-            }],
-        );
+        if format.pixel_format == PixelFormat::H264 {
+            let output_name = "output:buffer".to_string();
+            graph.add_node(
+                &output_name,
+                Arc::new(H264BufferOp::new()),
+                &[OutputKey {
+                    node_name,
+                    output_index: 0,
+                }],
+            );
+
+            node_name = output_name;
+        }
 
         let (output_op, subscribers) = ImageFrameBufferOp::new();
 
-        let output_name = "output:h264".to_string();
-
+        let output_name = "output:mux".to_string();
         graph.add_node(
             &output_name,
             Arc::new(output_op),
             &[OutputKey {
-                node_name: "output:buffer".to_string(),
+                node_name: node_name,
                 output_index: 0,
             }],
         );

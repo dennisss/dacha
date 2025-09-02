@@ -99,7 +99,7 @@ pub type pid_t = c_int;
 pub const SEEK_SET: c_uint = 0;
 
 pub use bindings::{
-    pollfd, O_APPEND, O_CLOEXEC, O_CREAT, O_EXCL, O_NONBLOCK, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC,
+    pollfd, O_APPEND, O_CLOEXEC, O_NOCTTY, O_CREAT, O_EXCL, O_NONBLOCK, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC,
     O_WRONLY, O_DIRECTORY, __O_DIRECT as O_DIRECT
 };
 

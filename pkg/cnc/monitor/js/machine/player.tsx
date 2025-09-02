@@ -1,6 +1,6 @@
 import React from "react";
 import { PropertiesTable, Property } from "../properties_table";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { run_machine_command } from "../rpc_utils";
 import { TimeUnit, format_duration_proto, format_duration_secs, timestamp_proto_to_millis } from "pkg/web/lib/formatting";
 import { Button } from "pkg/web/lib/button";

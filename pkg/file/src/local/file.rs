@@ -151,7 +151,7 @@ impl LocalFile {
             .normalized()
         };
 
-        let mut flags = sys::O_RDONLY | sys::O_CLOEXEC;
+        let mut flags = sys::O_RDONLY | sys::O_CLOEXEC | sys::O_NOCTTY;
         if options.create || options.create_new {
             flags |= sys::O_CREAT;
         }

@@ -36,7 +36,7 @@ use std::time::Duration;
 pub use instance::MonitorImpl;
 
 pub fn round_number(v: f32) -> f32 {
-    format!("{:.4}", v).parse().unwrap()
+    format!("{:.3}", v).parse().unwrap()
 }
 
 pub fn round_number_ref(v: &mut f32) {

@@ -14,15 +14,16 @@ import React from "react";
 import { Channel } from "pkg/web/lib/rpc";
 import { Figure } from "pkg/web/lib/figure";
 import { round_digits } from "pkg/web/lib/formatting";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Button } from "pkg/web/lib/button";
 import { shallow_copy } from "pkg/web/lib/utils";
 import { EditInput } from "pkg/web/lib/input";
 import { PropertiesTable } from "../properties_table";
 import { run_machine_command } from "../rpc_utils";
 import { Router } from "pkg/web/lib/router";
+import { MachineUiState } from "./state";
 
-export class SettingsComponent extends React.Component<{ machine: any, context: PageContext }> {
+export class SettingsComponent extends React.Component<{ machine: any, ui_state: MachineUiState, context: PageContext }> {
 
     _run_command = (command, done) => {
         run_machine_command(this.props.context, this.props.machine, command, done);
@@ -54,8 +55,31 @@ export class SettingsComponent extends React.Component<{ machine: any, context: 
             }
         ];
 
+
+        let ui_state = this.props.ui_state;
+        let ui_props = [
+            {
+                name: 'Left Collapsed',
+                value: (
+                    <input type="checkbox" checked={ui_state.left_collapsed} onChange={(e) => {
+                        ui_state.left_collapsed = e.target.checked;
+                        ui_state._notify_all();
+                    }} />
+                )
+            }
+        ];
+
         return (
             <div>
+                <div className="card" style={{ marginBottom: 10 }}>
+                    <div className="card-header">
+                        UI
+                    </div>
+                    <div className="card-body">
+                        <PropertiesTable properties={ui_props} style={{ verticalAlign: 'baseline' }} />
+                    </div>
+                </div>
+
                 <div className="card" style={{ marginBottom: 10 }}>
                     <div className="card-header">
                         Base Config

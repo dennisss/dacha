@@ -208,6 +208,18 @@ fn make_table_acl<Tag: ProtobufTableTag>(readers: &[&str], writers: &[&str]) -> 
     proto
 }
 
+fn make_anonymous_table_acl(table_id: u32, readers: &[&str], writers: &[&str]) -> KeyPrefixACLProto {
+    let mut proto = KeyPrefixACLProto::default();
+    proto.set_prefix(ProtobufDBTransaction::anonymous_table_key_prefix(table_id));
+    for r in readers {
+        proto.add_readers(r.to_string());
+    }
+    for w in writers {
+        proto.add_writers(w.to_string());
+    }
+    proto
+}
+
 fn make_object_acl(object_prefix: &str, readers: &[&str], writers: &[&str]) -> Result<KeyPrefixACLProto> {
     let mut proto = KeyPrefixACLProto::default();
 
@@ -339,5 +351,9 @@ fn get_table_acls(zone: &str) -> Result<Vec<KeyPrefixACLProto>> {
         make_object_acl("letsencrypt_prod/", &[&acme_prod_job], &[&acme_prod_job])?,
         make_object_acl("letsencrypt_prod/out/", &[&frontend_job], &[])?,
         make_object_acl("letsencrypt_staging/", &[&acme_staging_job], &[&acme_staging_job])?,
+
+        make_anonymous_table_acl(INVENTORY_PART_TABLE_ID, &[&cluster_owners], &[&cluster_owners]),
+        make_anonymous_table_acl(INVENTORY_PACK_TABLE_ID, &[&cluster_owners], &[&cluster_owners]),
+
     ])
 }

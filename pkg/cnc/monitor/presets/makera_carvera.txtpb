@@ -191,11 +191,15 @@ tools {
         },
         {
             index: 6
-            name: "1/8in Test Rod"
+            name: "0.9mm Drill Bit"
             milling {
-                # Just to use if doing an XYZ manual probe
-                diameter: 3.175
+                diameter: 0.9
             }
+            # name: "1/8in Test Rod"
+            # milling {
+            #    # Just to use if doing an XYZ manual probe
+            #    diameter: 3.175
+            #}
         }
     ]
 }

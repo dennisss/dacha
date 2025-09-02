@@ -1,10 +1,11 @@
 // NOTE: All times are in floating point seconds units.
 
-export type VideoSourceOptions = LiveVideoSourceOptions | FragmentedVideoSourceOptions;
+export type VideoSourceOptions = LiveVideoSourceOptions | FragmentedVideoSourceOptions | MJPEGVideoSourceOptions;
 
 export enum VideoSourceKind {
     Live,
-    Fragmented
+    Fragmented,
+    MJPEG
 }
 
 // This source plays back a live stream via a single HTTP endpoint which when queried gives us an
@@ -19,6 +20,11 @@ export enum VideoSourceKind {
 // 3. paused
 export interface LiveVideoSourceOptions {
     kind: VideoSourceKind.Live;
+    url: string;
+}
+
+export interface MJPEGVideoSourceOptions {
+    kind: VideoSourceKind.MJPEG;
     url: string;
 }
 

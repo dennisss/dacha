@@ -1,4 +1,4 @@
-use typenum::U1;
+use typenum::{U1, U2};
 
 use crate::matrix::base::VectorNew;
 use crate::matrix::dimension::Dimension;
@@ -44,6 +44,8 @@ where
         BoundingBox { min, max }
     }
 }
+
+pub type BoundingBox2 = BoundingBox<U2>;
 
 /// Axis aligned bounding box.
 #[derive(Debug)]

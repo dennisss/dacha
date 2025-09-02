@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package inventory;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+// A distinct type of thing.
+// This doesn't define how many of it we have (we may have zero of them).
+message Part {
+    fixed64 id = 1;
+
+    string name = 2;
+
+    enum Type {
+        UNKNOWN = 0;
+        SCREW = 1;
+
+    }
+
+    PartSource source = 3;
+
+    ScrewSpec screw = 4;
+
+    google.protobuf.Timestamp creation_time = 5;
+
+    google.protobuf.Timestamp updated_time = 6;
+}
+
+// Links a part to the manufacturer/seller from which the part was obtained. 
+message PartSource {
+    string mcmaster_part_number = 1;
+
+    uint64 purchased_quantity = 2;
+}
+
+enum LengthUnit {
+    UNKNOWN = 0;
+}
+
+message ScrewSpec {
+
+    enum Driver {
+        UNKNOWN = 0;
+    }
+
+    enum Head {
+        UNKNOWN = 0;
+    }
+
+    string thread_diameter = 1;
+    
+    string thread_pitch = 2;
+
+    // Length (including head only if countersunk).
+    string length = 3;
+
+    Driver driver = 4;
+
+    Head head = 5;
+}
+
+message MaterialSpec {
+
+}
+
+
+// A physical group of one or more distinct parts.
+message Pack {
+    fixed64 id = 1;
+
+    fixed64 part_id = 2;
+
+    uint64 quantity = 3;
+
+    // This is optional and if not provided, the name is copied from the part.
+    string name = 4;
+
+    // If true, this pack has been physically labeled.
+    bool labeled = 5;
+
+    // TODO: Location information (parent pack id).
+
+    google.protobuf.Timestamp creation_time = 6;
+
+    google.protobuf.Timestamp updated_time = 7;
+}

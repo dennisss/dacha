@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+base_util = { path = "../../base/util" }
 common = { path = "../../common" }
 executor = { path = "../../executor" }
 file = { path = "../../file" }

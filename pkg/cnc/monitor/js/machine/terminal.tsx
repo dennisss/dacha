@@ -1,6 +1,6 @@
 import React from "react";
 import { Channel } from "pkg/web/lib/rpc";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Button } from "pkg/web/lib/button";
 import { LabeledCheckbox } from "pkg/web/lib/checkbox";
 

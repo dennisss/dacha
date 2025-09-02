@@ -1,6 +1,7 @@
 use base_error::*;
-use cam_proto::cnc::IsolationRoutingProcessorConfig;
+use cam_proto::cnc::{IsolationRoutingProcessorConfig, ArcMotionBuilderConfig};
 use common::line_builder::LineBuilder;
+use common::loops::*;
 use gerber::GraphicsObject;
 use math::{
     geometry::{bounding_box::BoundingBoxBuilder, half_edge::HalfEdgeStruct},
@@ -9,29 +10,65 @@ use math::{
 
 use crate::tsp::greedy_edge_route;
 use crate::vbit::*;
+use crate::edge::EdgeCutMetadata;
+use crate::arc::*;
 
 pub struct IsolationRoutingProcessorOptions {
     pub config: IsolationRoutingProcessorConfig,
     pub max_error: f32,
+    pub mark_edge: bool,
+    pub arc_config: ArcMotionBuilderConfig,
 }
 
 pub struct IsolationRoutingProcessor {
     options: IsolationRoutingProcessorOptions,
 }
 
+#[derive(Clone)]
 struct CutPath {
     points: Vec<Vector2f>,
     closed: bool,
 }
+
+#[derive(Clone, Copy, PartialEq, Default, Debug)]
+pub(crate) struct FaceLabel {
+    /// True if present on the copper gerber layer.
+    pub dark: bool,
+
+    /// True if the face is inside of the outer most edge cut of the board.
+    pub inbounds: bool,
+}
+
+impl FaceLabel {
+    pub fn dark() -> Self {
+        Self { dark: true, inbounds: false }
+    }
+
+    pub fn inbounds() -> Self {
+        Self { dark: false, inbounds: true }
+    }
+}
+
+impl math::geometry::half_edge::FaceLabel for FaceLabel {
+    fn union(&self, other: &Self) -> Self {
+        Self {
+            dark: self.dark || other.dark,
+            inbounds: self.inbounds || other.inbounds
+        }
+    }
+}
+
 
 impl IsolationRoutingProcessor {
     pub fn new(options: IsolationRoutingProcessorOptions) -> Self {
         Self { options }
     }
 
-    pub fn process(&self, objects: &[GraphicsObject], out: &mut LineBuilder) -> Result<()> {
+    pub fn process(&self, objects: &[GraphicsObject], edge_metadata: &EdgeCutMetadata, out: &mut LineBuilder) -> Result<()> {
         // TODO: Need to verify that traces are actually isolated after running
         // isolation routing.
+
+        // TODO: Any holes in the board don't need explicit isolation.
 
         let mut cut_depth = self.options.config.cut_depth();
         let mut cut_width = self.options.config.cut_width();
@@ -82,7 +119,7 @@ impl IsolationRoutingProcessor {
         }
 
         let object_edges = {
-            let mut half_edges = HalfEdgeStruct::<bool>::new();
+            let mut half_edges = HalfEdgeStruct::<FaceLabel>::new();
 
             for obj in objects {
                 for path in &obj.paths {
@@ -98,7 +135,7 @@ impl IsolationRoutingProcessor {
                     for i in 0..(path_starts.len() - 1) {
                         let start_i = path_starts[i];
                         let end_i = path_starts[i + 1];
-                        half_edges.add_face(true, vertices[start_i..end_i].iter().cloned());
+                        half_edges.add_face(FaceLabel::dark(), vertices[start_i..end_i].iter().cloned());
                     }
                 }
             }
@@ -111,6 +148,14 @@ impl IsolationRoutingProcessor {
         // Generate all contiguous cut paths.
         let mut cut_paths = vec![];
 
+        // TODO: Verify this is sufficient to ensure isolation along the edge since our cutout also won't be perfect so there is some risk that distinct regions touching the edge may still end up oerlapping.  
+        if self.options.mark_edge {
+            cut_paths.push(CutPath {
+                points: edge_metadata.outer_edge_path.clone(),
+                closed: true,
+            });            
+        }
+
         let num_passes = {
             if self.options.config.num_passes() > 0 {
                 self.options.config.num_passes()
@@ -119,6 +164,9 @@ impl IsolationRoutingProcessor {
             }
         };
 
+        let mut arc_metrics = ArcMetrics::new();
+
+        // TODO: All of the isolation passes can usually be parallelized
         for i in 0..num_passes {
             let mut offset = (cut_width / 2.0) - self.options.config.erosion();
             if i > 0 {
@@ -137,22 +185,84 @@ impl IsolationRoutingProcessor {
                 self.options.max_error,
             );
 
+            pass_edges.add_face(FaceLabel::inbounds(), edge_metadata.outer_edge_path.iter().cloned());
+
             pass_edges.merge_faces();
 
-            // TODO: Clip based on the edge cuts. This may split face boundaries into
-            // individual un-closed paths.
+            let mut candidate_paths = vec![];
 
-            let mut have_valid_face = false;
             for face in pass_edges.faces() {
-                let boundary = match face.outer_component() {
-                    Some(v) => v.points(),
-                    None => continue,
+                if !face.label().inbounds || !face.label().dark {
+                    continue;
+                }
+
+                let outer_component = match face.outer_component() {
+                    Some(v) => v,
+                    None => continue
                 };
 
+                // The code below is similar to calling outer_component.points() expect we need to exclude any
+                // edges that touch the edge of the board.
+
+                let mut all_closed = true;
+                let mut current_path = vec![];
+
+                let mut current_edge = outer_component.start_edge();
+
+                // TODO: Instead just use the overall number of edges as a bound.
+                let n = outer_component.points().len() + 1;
+
+                bounded_loop(n, || {
+                    let next_edge = current_edge.next();
+                    let next_is_start = next_edge.id() == outer_component.start_id();
+
+                    if current_edge.twin().incident_face().label().inbounds {
+
+                        if current_path.is_empty() {
+                            current_path.push(current_edge.origin());
+                        }
+
+                        if !next_is_start || !all_closed {
+                            current_path.push(next_edge.origin());
+                        }
+
+                    } else {
+                        all_closed = false;
+                        
+                        if !current_path.is_empty() {
+                            candidate_paths.push(CutPath {
+                                points: current_path.clone(),
+                                closed: all_closed,
+                            });
+                            current_path.clear();
+                        }
+                    }
+
+                    current_edge = next_edge;
+
+                    if next_is_start {
+                        if !current_path.is_empty() {
+                            candidate_paths.push(CutPath {
+                                points: current_path.clone(),
+                                closed: all_closed,
+                            });
+                            current_path.clear();
+                        }
+                        
+                        Ok(Loop::Break)
+                    } else {
+                        Ok(Loop::Continue)
+                    }
+                }).unwrap();
+            }
+
+            let mut have_valid_face = false;
+
+            for path in candidate_paths {
                 // Skipping very small boundaries.
                 {
                     let mut bbox = BoundingBoxBuilder::new();
-                    for p in &boundary {
+                    for p in &path.points {
                         bbox.update(p);
                     }
 
@@ -166,15 +276,13 @@ impl IsolationRoutingProcessor {
                     }
                 }
 
+
                 have_valid_face = true;
 
                 let n = self.options.config.multiples().max(1);
 
                 for i in 0..n {
-                    cut_paths.push(CutPath {
-                        points: boundary.clone(),
-                        closed: true,
-                    });
+                    cut_paths.push(path.clone());
                 }
             }
 
@@ -187,6 +295,8 @@ impl IsolationRoutingProcessor {
             // already guarantee this?)
         }
 
+        // TODO: Some paths won't be clsoed anymore so factor that in too.
+
         // TODO: Also factor in the cost of going plunging and ascending if the paths
         // aren't adjacent.
         let route = greedy_edge_route(cut_paths.len(), |i, j| {
@@ -194,9 +304,6 @@ impl IsolationRoutingProcessor {
         });
 
         println!("Num cut paths: {}", cut_paths.len());
-
-        out.nl();
-        out.add("; Isolation Routing");
 
         // Go to
         out.add(format!(
@@ -224,7 +331,7 @@ impl IsolationRoutingProcessor {
 
             if connecting_to_last_path {
                 out.add(format!(
-                    "G01 X{:.4} Y{:.4} F{}",
+                    "G1 X{:.3} Y{:.3} F{}",
                     path.points[0].x(),
                     path.points[0].y(),
                     self.options.config.feedrate_xy()
@@ -232,7 +339,7 @@ impl IsolationRoutingProcessor {
             } else {
                 // Move above start point
                 out.add(format!(
-                    "G00 X{:.4} Y{:.4} F{}",
+                    "G0 X{:.3} Y{:.3} F{}",
                     path.points[0].x(),
                     path.points[0].y(),
                     self.options.config.rapid_feedrate()
@@ -241,29 +348,31 @@ impl IsolationRoutingProcessor {
                 // Plunge
                 out.add(format!(
                     "G01 Z{} F{}",
-                    -cut_depth,
+                    -(cut_depth + self.options.config.cut_compression()),
                     self.options.config.feedrate_z()
                 ));
             }
 
-            // Cut the path. Note that this also closes the path back to the start point.
-            for i in 0..path.points.len() {
-                let j = (i + 1) % path.points.len();
+            let mut motion_builder = ArcMotionBuilder::new(
+                self.options.arc_config.clone(), path.points[0].clone(), self.options.config.feedrate_xy(), &mut arc_metrics);
 
-                out.add(format!(
-                    "G01 X{:.4} Y{:.4} F{}",
-                    path.points[j].x(),
-                    path.points[j].y(),
-                    self.options.config.feedrate_xy()
-                ));
+            // Cut the path. Note that this also closes the path back to the start point.
+            // TODO: Will need to implement non-closed paths.
+            let end_i = if path.closed { path.points.len() } else { path.points.len() - 1 };
+            for i in 0..end_i {
+                let j = (i + 1) % path.points.len();
+                motion_builder.move_to(path.points[j].clone(), out);
             }
+
+            motion_builder.finish(out);
 
             connecting_to_last_path = false;
             if route_i + 1 < route.len() {
+                let last_point = &path.points[end_i % path.points.len()];
+
                 let next_path = &cut_paths[route[route_i + 1]];
 
-                // NOTE: Assuming the current path is closed here.
-                let distance = (&next_path.points[0] - &path.points[0]).norm();
+                let distance = (&next_path.points[0] - last_point).norm();
 
                 if distance <= 1.005 * cut_width {
                     connecting_to_last_path = true;
@@ -290,6 +399,8 @@ impl IsolationRoutingProcessor {
         ));
 
         out.nl();
+
+        // arc_metrics.print();
 
         Ok(())
     }

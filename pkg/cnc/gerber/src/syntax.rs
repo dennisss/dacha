@@ -65,6 +65,8 @@ pub enum Command {
     EndOfProgram,
     SetAttribute(Attribute),
     DeleteAttribute(Option<String>),
+    BeginRegion,
+    EndRegion,
 }
 
 impl Command {
@@ -76,6 +78,8 @@ impl Command {
         map(tag("G02*"), |_| Self::SetPlotState(PlotState::ClockwiseCircular)),
         map(tag("G03*"), |_| Self::SetPlotState(PlotState::CounterClockwiseCircular)),
         map(tag("G75*"), |_| Self::EnableArcs),
+        map(tag("G36*"), |_| Self::BeginRegion),
+        map(tag("G37*"), |_| Self::EndRegion),
         map(ApertureDefinition::parse, |v| Self::ApertureDefinition(v)),
         map(ApertureMacro::parse, |v| Self::ApertureMacro(v)),
         map(parse_dnn, |v| Self::SetCurrentAperture(v)),
@@ -89,7 +93,6 @@ impl Command {
         map(tag("M02*"), |_| Self::EndOfProgram),
         map(Attribute::parse, |v| Self::SetAttribute(v)),
         map(parse_td, |v| Self::DeleteAttribute(v))
-        //
     ));
 }
 
@@ -849,11 +852,6 @@ parser!(parse_ls<&[u8], Scaling> => seq!(c => {
 /*
 TODO:
 
-region_statement = G36 {contour}+ G37;
-contour = D02 {D01|G01|G02|G03}*;
-G36 = 'G36*';
-G37 = 'G37*';
-
 AB_statement = AB_open block AB_close;
 AB_open = '%AB' aperture_identifier '*%';
 AB_close = '%AB' '*%';
@@ -866,7 +864,7 @@ SR_close = '%SR' '*%';
 
 */
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttributeType {
     File,
     Aperture,

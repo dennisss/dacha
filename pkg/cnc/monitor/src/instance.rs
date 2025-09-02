@@ -18,6 +18,7 @@ use executor::{channel, lock, lock_async};
 use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup, TaskResource};
 use file::{LocalPath, LocalPathBuf};
 use media_camera::camera_manager::CameraManager;
+use media_camera::camera_manager::CameraSubscriber;
 use protobuf::Message;
 
 use crate::camera_controller::CameraController;
@@ -1655,6 +1656,11 @@ impl MonitorImpl {
     /// TODO: If the camera attached to the machine at this id changes while
     /// this is running, we should cancel the request.
     pub async fn get_camera_feed(&self, machine_id: u64, camera_id: u64) -> Result<http::Response> {
+        let subscriber = self.get_camera_subscriber(machine_id, camera_id).await?;
+        media_camera::camera_stream::respond_with_camera_stream(subscriber).await
+    }
+
+    async fn get_camera_subscriber(&self, machine_id: u64, camera_id: u64) -> Result<CameraSubscriber> {
         let device_entry = lock!(state <= self.shared.state.lock().await?, {
             let machine = state
                 .machines
@@ -1674,11 +1680,9 @@ impl MonitorImpl {
             Ok::<_, Error>(device.clone())
         })?;
 
-        let subscriber = device_entry
+        device_entry
             .open_as_camera(&self.shared.camera_manager)
-            .await?;
-
-        media_camera::camera_stream::respond_with_camera_stream(subscriber).await
+            .await
     }
 
     pub async fn get_camera_playback_impl(
@@ -1718,6 +1722,18 @@ impl MonitorImpl {
 
             out.add_fragments(fragment);
         }
+
+        Ok(out)
+    }
+
+    pub async fn get_camera_properties_impl(
+        &self,
+        request: &GetCameraPropertiesRequest,
+    ) -> Result<GetCameraPropertiesResponse> {
+        let subscriber = self.get_camera_subscriber(request.machine_id(), request.camera_id()).await?;
+
+        let mut out = GetCameraPropertiesResponse::default();
+        out.set_format(subscriber.format_proto().await?);
 
         Ok(out)
     }
@@ -1904,6 +1920,15 @@ impl MonitorService for MonitorImpl {
         response: &mut rpc::ServerResponse<GetCameraPlaybackResponse>,
     ) -> Result<()> {
         response.value = self.get_camera_playback_impl(&request.value).await?;
+        Ok(())
+    }
+
+    async fn GetCameraProperties(
+        &self,
+        request: rpc::ServerRequest<GetCameraPropertiesRequest>,
+        response: &mut rpc::ServerResponse<GetCameraPropertiesResponse>,
+    ) -> Result<()> {
+        response.value = self.get_camera_properties_impl(&request.value).await?;
         Ok(())
     }
 

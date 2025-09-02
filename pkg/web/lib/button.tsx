@@ -40,6 +40,9 @@ export class Button extends React.Component<ButtonProps, ButtonState> {
             return;
         }
 
+        // Allow buttons inside of buttons to work.
+        e.stopPropagation();
+
         this.setState({
             _waiting: true
         });

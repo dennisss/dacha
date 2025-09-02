@@ -4,6 +4,7 @@ import { VideoControls } from "./controls";
 import { VideoSourceKind, VideoSource, VideoSourceOptions, VideoState } from "./types";
 import { FragmentedVideoSource } from "./fragmented";
 import { LiveVideoSource } from "./live";
+import { MJPEGVideoSource } from "./mjpeg";
 
 /*
 
@@ -34,6 +35,8 @@ export interface VideoPlayerProps {
     style?: any;
 
     onStateChange?: (state: VideoState) => void;
+
+    children?: any;
 }
 
 export class VideoPlayer extends React.Component<VideoPlayerProps, { _state: VideoState, _active: boolean }> {
@@ -50,7 +53,7 @@ export class VideoPlayer extends React.Component<VideoPlayerProps, { _state: Vid
 
     _container: React.RefObject<HTMLDivElement> = React.createRef();
 
-    _video_el: React.RefObject<HTMLVideoElement>;
+    _container_el: React.RefObject<HTMLDivElement>;
     _video_source: VideoSource | null = null;
 
 
@@ -61,14 +64,14 @@ export class VideoPlayer extends React.Component<VideoPlayerProps, { _state: Vid
 
     constructor(props: VideoPlayerProps) {
         super(props);
-        this._video_el = React.createRef();
+        this._container_el = React.createRef();
 
         document.addEventListener('visibilitychange', this._page_visibility_changes);
     }
 
     componentDidMount(): void {
-        let video = this._video_el.current;
-        if (!video) {
+        let video_container = this._container_el.current;
+        if (!video_container) {
             throw new Error('Missing video element');
         }
 
@@ -77,8 +80,16 @@ export class VideoPlayer extends React.Component<VideoPlayerProps, { _state: Vid
         let source = this.props.source;
 
         if (source.kind == VideoSourceKind.Live) {
+            let video = document.createElement('video');
+            video_container.appendChild(video);
+
             this._video_source = new LiveVideoSource(source, video, abort_signal, this._on_source_state_change);
+        } else if (source.kind == VideoSourceKind.MJPEG) {
+            this._video_source = new MJPEGVideoSource(source, video_container, abort_signal, this._on_source_state_change);
         } else if (source.kind == VideoSourceKind.Fragmented) {
+            let video = document.createElement('video');
+            video_container.appendChild(video);
+
             this._video_source = new FragmentedVideoSource(source, video, abort_signal, this._on_source_state_change);
         }
 
@@ -194,7 +205,8 @@ export class VideoPlayer extends React.Component<VideoPlayerProps, { _state: Vid
                 onMouseMove={this._on_mouse_move}
                 onMouseLeave={this._on_mouse_leave}
             >
-                <video style={{ opacity: (show_loading ? 0.5 : undefined) }} ref={this._video_el} onClick={this._on_play_toggle}></video>
+                <div className="video-container" style={{ opacity: (show_loading ? 0.5 : undefined) }} ref={this._container_el} onClick={this._on_play_toggle}></div>
+                {this.props.children}
                 {show_loading ? (
                     <div style={{ color: '#fff', position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%) scale(1.5)' }}>
                         <SpinnerInline />

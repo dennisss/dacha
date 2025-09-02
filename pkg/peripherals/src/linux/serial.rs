@@ -29,12 +29,38 @@ iow!(tiocsserial, b'T', 0x1F, serial_struct);
 // #define TIOCSSERIAL     0x541F
 // serial_struct
 
+pub struct SerialOptions {
+    pub baud_rate: usize,
+    pub num_stop_bits: usize,
+    pub num_parity_bits: usize,
+    pub num_data_bits: usize,
+    pub odd_parity: bool,
+}
+
+impl Default for SerialOptions {
+    fn default() -> Self {
+        Self {
+            baud_rate: 115200,
+            num_stop_bits: 1,
+            num_parity_bits: 0,
+            num_data_bits: 8,
+            odd_parity: false
+        }
+    }
+}
+
 pub struct SerialPort {
     file: FileHandle,
 }
 
 impl SerialPort {
     pub fn open<P: AsRef<LocalPath>>(path: P, baud_rate: usize) -> Result<Self> {
+        let mut options = SerialOptions::default();
+        options.baud_rate = baud_rate;
+        Self::open_with(path, options)
+    }
+
+    pub fn open_with<P: AsRef<LocalPath>>(path: P, options: SerialOptions) -> Result<Self> {
         let path = path.as_ref();
 
         if !path.as_str().starts_with("/dev/tty") {
@@ -44,7 +70,7 @@ impl SerialPort {
         // TODO: This seems to trigger a reset of Arduino based devices?
         let file = file::LocalFile::open_with_options(
             path,
-            file::LocalFileOpenOptions::new().read(true).write(true),
+            file::LocalFileOpenOptions::new().read(true).write(true)
         )?;
 
         // Setting up 8N1 UART (no flow control) at the requested baud rate.
@@ -55,13 +81,42 @@ impl SerialPort {
             t.c_iflag = 0;
             t.c_oflag = 0;
             t.c_lflag = 0;
-            t.c_cflag = sys::bindings::CREAD
-                | sys::bindings::BOTHER
-                | (sys::bindings::BOTHER << sys::bindings::IBSHIFT)
-                | sys::bindings::CS8;
 
-            t.c_ispeed = baud_rate as u32;
-            t.c_ospeed = baud_rate as u32;
+            t.c_cflag = sys::bindings::CREAD // Enable the receiver
+                | sys::bindings::CLOCAL // This prevents future re-opens of the port to block.
+                | sys::bindings::BOTHER
+                | (sys::bindings::BOTHER << sys::bindings::IBSHIFT);
+
+            t.c_ispeed = options.baud_rate as u32;
+            t.c_ospeed = options.baud_rate as u32;
+
+            t.c_cflag |= match options.num_data_bits {
+                5 => sys::bindings::CS5,
+                6 => sys::bindings::CS6,
+                7 => sys::bindings::CS7,
+                8 => sys::bindings::CS8,
+                _ => return Err(format_err!("Unsupported number of data bits: {}", options.num_data_bits))
+            };
+
+            match options.num_stop_bits {
+                1 => {},
+                2 => {
+                    t.c_cflag |= sys::bindings::CSTOPB;
+                }
+                _ => return Err(err_msg("Unsupported number of stop bits"))
+            };
+
+            match options.num_parity_bits {
+                0 => {}
+                1 => {
+                    t.c_cflag |= sys::bindings::PARENB;
+                }
+                _ => return Err(err_msg("Unsupported number of parity bits"))
+            }
+
+            if options.odd_parity {
+                t.c_cflag |= sys::bindings::PARODD;
+            }
 
             unsafe { tcsetsf2(file.as_raw_fd(), &t) }?;
         }

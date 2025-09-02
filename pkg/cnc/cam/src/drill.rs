@@ -22,8 +22,9 @@ impl DrillProcessor {
     }
 
     pub fn process(&self, drill_holes: &[gerber::DrillHole], out: &mut LineBuilder) -> Result<()> {
-        out.nl();
-        out.add("; Drilling");
+        if drill_holes.is_empty() {
+            return Ok(());
+        }
 
         out.add(format!(
             "G00 Z{} F{}",
@@ -51,7 +52,7 @@ impl DrillProcessor {
 
             // Move above the hole.
             out.add(format!(
-                "G00 X{:.4} Y{:.4} F{}",
+                "G00 X{:.3} Y{:.3} F{}",
                 hole.x,
                 hole.y,
                 self.options.config.rapid_feedrate()

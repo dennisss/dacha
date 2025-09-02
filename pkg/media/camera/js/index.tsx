@@ -4,6 +4,7 @@ import ReactDOM from "react-dom";
 import { Channel } from "pkg/web/lib/rpc";
 import { VideoPlayer } from "pkg/web/lib/video";
 import { VideoSourceKind } from "pkg/web/lib/video/types";
+import { VideoCrosshair } from "pkg/web/lib/video/crosshair";
 
 
 class App extends React.Component<{}, {}> {
@@ -12,7 +13,9 @@ class App extends React.Component<{}, {}> {
     state = {
         _cameras: [],
         _current_camera: '',
-        _properties: []
+        _properties: [],
+        _crosshair_size: 0,
+        _format: null
     }
 
     constructor(props: {}) {
@@ -41,7 +44,7 @@ class App extends React.Component<{}, {}> {
 
         console.log(res.responses);
 
-        this.setState({ _current_camera: camera_id, _properties: res.responses[0].properties.properties });
+        this.setState({ _current_camera: camera_id, _properties: res.responses[0].properties.properties, _format: res.responses[0].format });
     }
 
     _render_property(prop) {
@@ -152,9 +155,29 @@ class App extends React.Component<{}, {}> {
         )
     }
 
+    _render_video_player() {
+        if (!this.state._current_camera) {
+            return null;
+        }
+
+        let format = this.state._format.live_format;
+
+        let kind = VideoSourceKind.Live;
+        if (format == 'MJPEG') {
+            kind = VideoSourceKind.MJPEG;
+        }
+
+        return (
+            <VideoPlayer source={{
+                kind: VideoSourceKind.MJPEG,
+                url: `/camera/` + encodeURIComponent(this.state._current_camera)
+            }}>
+                <VideoCrosshair size={this.state._crosshair_size} />
+            </VideoPlayer>
+        );
+    }
 
     render() {
-
         return (
             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex' }}>
                 <div style={{ width: 500, padding: 10, overflowY: 'scroll' }}>
@@ -174,15 +197,14 @@ class App extends React.Component<{}, {}> {
                 </div>
 
                 <div style={{ flexShrink: 10000, padding: 10 }}>
-                    {this.state._current_camera ? (
-                        // TODO: Send the id to the server side.
-                        <VideoPlayer source={{
-                            kind: VideoSourceKind.Live,
-                            url: `/camera`
+                    {this._render_video_player()}
+
+                    <div>
+                        Crosshair Size
+                        <input type="number" className="form-control" min={0} max={1000} value={this.state._crosshair_size} onChange={(e) => {
+                            this.setState({ _crosshair_size: e.target.value * 1 });
                         }} />
-
-                    ) : null}
-
+                    </div>
                 </div>
             </div>
         );

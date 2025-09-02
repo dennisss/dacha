@@ -177,6 +177,7 @@ members = [
 	"pkg/media/downloader",
 	"pkg/media/camera",
 	"pkg/media/camera/proto",
+	"pkg/media/camera/service",
 	"pkg/media/screen",
 	# "pkg/app/study",
 	"pkg/api/google/discovery",
@@ -189,6 +190,7 @@ members = [
 	"pkg/api/google/gemini",
 	"pkg/api/acme",
 	"pkg/api/public_ip",
+	"pkg/api/mcmaster",
 	"third_party/protobuf_builtins",
 	"third_party/googleapis",
 	"third_party/chromium/cdm",
@@ -199,7 +201,9 @@ members = [
 	"pkg/dev/git",
 	"pkg/dev/terminal",
 	"pkg/things/labeler",
-	"pkg/things/labeler/proto"
+	"pkg/things/labeler/proto",
+	"pkg/things/inventory",
+	"pkg/things/inventory/proto",
 ]
 
 [profile.dev]

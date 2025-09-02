@@ -13,7 +13,7 @@ pub struct DrillFile {
     pub holes: Vec<DrillHole>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DrillHole {
     pub x: f32,
     pub y: f32,

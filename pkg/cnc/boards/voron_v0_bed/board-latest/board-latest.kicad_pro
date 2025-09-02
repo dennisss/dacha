@@ -172,12 +172,23 @@
         }
       ],
       "track_widths": [
-        0.0
+        0.0,
+        0.4,
+        0.8,
+        1.2
       ],
       "via_dimensions": [
         {
           "diameter": 0.0,
           "drill": 0.0
+        },
+        {
+          "diameter": 1.6,
+          "drill": 0.9
+        },
+        {
+          "diameter": 2.0,
+          "drill": 0.9
         }
       ],
       "zones_allow_external_fillets": false
@@ -423,8 +434,8 @@
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 0.4,
-        "via_diameter": 0.8,
-        "via_drill": 0.4,
+        "via_diameter": 1.6,
+        "via_drill": 0.9,
         "wire_width": 6
       }
     ],

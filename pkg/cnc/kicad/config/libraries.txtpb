@@ -66,5 +66,8 @@ libraries: [
     },
     {
         path: "third_party/digikey/AGQ20012"
+    },
+    {
+        path: "third_party/digikey/AS5601-ASOM"
     }
 ]

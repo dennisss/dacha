@@ -1,11 +1,15 @@
 use std::{collections::HashMap, f32::consts::PI};
 
 use base_error::*;
-use graphics::{canvas::PathBuilder, raster::stroke::stroke_poly};
+use graphics::raster::stroke::stroke_poly;
+use graphics::canvas::{Path, PathBuilder};
 use math::{
     geometry::line::Line2,
     matrix::{vec2f, Vector2f},
 };
+
+use math::geometry::ellipse::Ellipse;
+use math::geometry::curve::Curve2;
 
 use crate::{expression::ExpressionEvaluator, graphics::*, syntax::*};
 
@@ -19,6 +23,7 @@ use crate::{expression::ExpressionEvaluator, graphics::*, syntax::*};
 /// - 'OX'
 ///     - MUST be called with 'x_size >= y_ssize'
 /// - 'L' macro: Params are width, start_x, start_y, end_x, end_y
+/// - 'LL' macro: Params are width, start_x, start_y, end_x, end_y
 const PREAMBLE: &'static str = "
 %AMC*
 0 Main*
@@ -63,6 +68,10 @@ const PREAMBLE: &'static str = "
 0 End circle*
 1,1,$1,$4,$5,0*
 %
+
+%AMLL*
+20,1,$1,$2,$3,$4,$5,0*
+%
 ";
 
 pub struct CommandsProcessorOptions {
@@ -74,7 +83,13 @@ pub struct CommandsProcessor {
     options: CommandsProcessorOptions,
     graphics_state: GraphicsState,
     aperture_templates: HashMap<String, ApertureMacro>,
-    aperture_definition: HashMap<String, ApertureDefinition>,
+    aperture_definition: HashMap<String, ApertureDefinitionWithAttributes>,
+    attributes: HashMap<String, Attribute>
+}
+
+struct ApertureDefinitionWithAttributes {
+    def: ApertureDefinition,
+    attrs: HashMap<String, Attribute>,
 }
 
 #[derive(Default)]
@@ -89,7 +104,41 @@ struct GraphicsState {
     mirroring: Mirroring,
     rotation: Rotation,
     scaling: Scaling,
+
+    // If non-empty, we are processing a command after a BeginRegion and before an EndRegion.
+    region_state: Option<RegionState>, 
 }
+
+#[derive(Default)]
+struct RegionState {
+    // Note that each contour in a region will be emitted as a separate path.
+    past_contours: Vec<Path>,
+    current_contour: Option<CurrentContour>,
+}
+
+struct CurrentContour {
+    start_point: Vector2f,
+    last_point: Vector2f,
+    path_builder: PathBuilder,
+}
+
+impl RegionState {
+    fn finish_current_contour(&mut self) -> Result<()> {
+        let mut c = match self.current_contour.take() {
+            Some(v) => v,
+            None => return Ok(())
+        };
+
+        if c.start_point != c.last_point {
+            return Err(err_msg("Contour is not closed"));
+        }
+
+        self.past_contours.push(c.path_builder.build());
+
+        Ok(())
+    }
+}
+
 
 impl CommandsProcessor {
     pub fn create(options: CommandsProcessorOptions) -> Result<Self> {
@@ -98,6 +147,7 @@ impl CommandsProcessor {
             graphics_state: GraphicsState::default(),
             aperture_definition: HashMap::default(),
             aperture_templates: HashMap::default(),
+            attributes: HashMap::default(),
         };
 
         let preamble = File::parse(PREAMBLE.as_bytes())?;
@@ -111,6 +161,19 @@ impl CommandsProcessor {
     }
 
     pub fn process(&mut self, command: &Command, out: &mut Vec<GraphicsObject>) -> Result<()> {
+
+        // Allowlist the commands allowed inside of a region statement.
+        if self.graphics_state.region_state.is_some() {
+            let allowed = match command {
+                Command::Move(_) | Command::SetPlotState(_) | Command::Plot(_) | Command::EndRegion => true,
+                _ => false
+            };
+
+            if !allowed {
+                return Err(format_err!("Command not allowed inside of a filled region: {:?}", command));
+            }
+        }
+
         match command {
             Command::FormatSpecifier(v) => {
                 if self.graphics_state.coordinate_scale.is_some() {
@@ -164,12 +227,40 @@ impl CommandsProcessor {
             }
 
             Command::ApertureDefinition(v) => {
+                let mut attrs = self.attributes.clone();
+                attrs.retain(|_, attr| attr.typ == AttributeType::Aperture);
+
                 // TODO: Check no duplicates.
-                self.aperture_definition.insert(v.id.clone(), v.clone());
+                self.aperture_definition.insert(v.id.clone(), ApertureDefinitionWithAttributes {
+                    def: v.clone(),
+                    attrs,
+                });
             }
 
             Command::SetCurrentAperture(v) => {
                 self.graphics_state.current_aperture = Some(v.clone());
+            }
+
+            Command::BeginRegion => {
+                self.graphics_state.region_state = Some(RegionState::default());
+            }
+            Command::EndRegion => {
+                let mut region = self.graphics_state.region_state.take()
+                    .ok_or_else(|| err_msg("EndRegion command not allowed before a BeginRegion command"))?;
+                region.finish_current_contour()?;
+                
+                let fill = self.graphics_state.polarity.into();
+
+                out.push(GraphicsObject {
+                    paths: region.past_contours.into_iter().map(|path| {
+                        GraphicsPath {
+                            path,
+                            fill,
+                        }
+                    }).collect(),
+                    line: None,
+                    attributes: HashMap::new(),
+                });
             }
 
             Command::Move(v) => {
@@ -185,9 +276,28 @@ impl CommandsProcessor {
                 if let Some(y) = v.y {
                     self.graphics_state.current_point_y = Some((y as f64) * scale);
                 }
+
+                if let Some(region) = &mut self.graphics_state.region_state {
+                    let x = self.graphics_state.current_point_x.ok_or_else(|| err_msg("Missing x pos in region"))?;
+                    let y = self.graphics_state.current_point_y.ok_or_else(|| err_msg("Missing y pos in region"))?;
+
+                    region.finish_current_contour()?;
+                    let p = vec2f(x as f32, y as f32);
+
+                    let mut path_builder = PathBuilder::new();
+                    path_builder.move_to(p.clone());
+
+                    region.current_contour = Some(CurrentContour {
+                        start_point: p.clone(),
+                        last_point: p.clone(),
+                        path_builder
+                    });
+                }
             }
 
             Command::Plot(cmd) => {
+                // TODO: Region support.
+
                 let start_x = self
                     .graphics_state
                     .current_point_x
@@ -212,47 +322,167 @@ impl CommandsProcessor {
                     None => start_y,
                 };
 
-                let current_aperture = self.get_current_aperture()?;
+                let circle_diameter = {
+                    let current_aperture = self.get_current_aperture()?;
 
-                let circle = match &current_aperture.shape {
-                    ApertureShape::Circle(c) => c,
-                    _ => return Err(err_msg("Only circle apertures supported in plot")),
+                    let circle = match &current_aperture.def.shape {
+                        ApertureShape::Circle(c) => c,
+                        _ => return Err(err_msg("Only circle apertures supported in plot")),
+                    };
+
+                    if circle.hole_diameter.is_some() {
+                        return Err(err_msg("Can not plot a circle with a hole"));
+                    }
+
+                    circle.diameter
                 };
-
-                if circle.hole_diameter.is_some() {
-                    return Err(err_msg("Can not plot a circle with a hole"));
-                }
-
-                if self.graphics_state.plot_state != Some(PlotState::Linear) {
-                    return Err(err_msg("Only lines are supported"));
-                }
 
                 if self.graphics_state.unit != Some(Mode::Millimeter) {
                     return Err(err_msg("Units must be set to millimeters before drawing"));
                 }
 
-                // TODO: Implement arc support.
+                let mut current_contour = match &mut self.graphics_state.region_state {
+                    Some(region) => {
+                        Some(region.current_contour.as_mut().ok_or_else(|| err_msg("Move command required before first plot in a region"))?)
+                    }
+                    None => None
+                };
 
-                // NOTE: We don't need any pre-processing for translating this macro.
-                let mut paths = vec![];
-                self.draw_aperture(
-                    &ApertureDefinition {
-                        id: "".to_string(),
-                        shape: ApertureShape::TemplateCall(TemplateCall {
-                            name: "L".to_string(),
-                            params: vec![circle.diameter, start_x, start_y, end_x, end_y],
-                        }),
-                    },
-                    &mut paths,
-                )?;
+                let plot_state = self.graphics_state.plot_state.ok_or_else(|| err_msg("No plot state set yet"))?;
 
-                out.push(GraphicsObject {
-                    paths,
-                    line: Some((
-                        vec2f(start_x as f32, start_y as f32),
-                        vec2f(end_x as f32, end_y as f32),
-                    )),
-                });
+                if plot_state == PlotState::Linear {
+
+                    if let Some(current_contour) = self.get_current_contour()? {
+                        let p = vec2f(end_x as f32, end_y as f32);
+                        current_contour.path_builder.line_to(p.clone());
+                        current_contour.last_point = p;
+                    } else {
+                        // NOTE: We don't need any pre-processing for translating this macro.
+                        let mut paths = vec![];
+                        self.draw_aperture(
+                            &ApertureDefinition {
+                                id: "".to_string(),
+                                shape: ApertureShape::TemplateCall(TemplateCall {
+                                    name: "L".to_string(),
+                                    params: vec![circle_diameter, start_x, start_y, end_x, end_y],
+                                }),
+                            },
+                            &mut paths,
+                        )?;
+
+                        out.push(GraphicsObject {
+                            paths,
+                            line: Some((
+                                vec2f(start_x as f32, start_y as f32),
+                                vec2f(end_x as f32, end_y as f32),
+                            )),
+                            attributes: HashMap::new(),
+                        });
+                    }
+
+
+                } else {
+                    let (i, j) = cmd.ij.clone()
+                        .ok_or_else(|| err_msg("Expected arc plotting to specify an I and J offset"))?;
+
+                    let center_x = start_x + (i as f64) * scale;
+                    let center_y = start_y + (j as f64) * scale;
+
+                    // TODO: Do everything in f64
+                    let center = vec2f(center_x as f32, center_y as f32);
+                    let start_vec = vec2f(start_x as f32, start_y as f32) - &center;
+                    let end_vec = vec2f(end_x as f32, end_y as f32) - &center;
+
+                    let radius = start_vec.norm();
+                    let radius2 = end_vec.norm();
+                    if (radius - radius2).abs() >= 0.001 {
+                        return Err(err_msg("Expected arc to be of constant radius"));
+                    }
+
+                    let start_angle = start_vec.y().atan2(start_vec.x());
+                    let end_angle = end_vec.y().atan2(end_vec.x());
+
+                    // TODO: Ignore very small angles.
+                    let mut delta_angle = end_angle - start_angle;
+
+                    {
+                        if delta_angle >= 2.0 * PI {
+                            delta_angle -= 2.0 * PI;
+                        }
+                        if delta_angle <= -2.0 * PI {
+                            delta_angle += 2.0 * PI;
+                        }
+
+                        // If true, then the delta angle should be positive.
+                        let increasing_angle = match plot_state {
+                            PlotState::Linear => todo!(),
+                            PlotState::ClockwiseCircular => false,
+                            PlotState::CounterClockwiseCircular => true,
+                        };
+
+                        if increasing_angle != (delta_angle > 0.0) {
+                            if delta_angle >= 0.0 {
+                                delta_angle -= 2.0 * PI;
+                            } else {
+                                delta_angle += 2.0 * PI;
+                            }
+                        }
+                    }
+
+                    let ellipse = Ellipse {
+                        center: center.clone(),
+                        x_axis: vec2f(radius, 0.0),
+                        y_axis: vec2f(0.0, radius),
+                        start_angle,
+                        delta_angle,
+                    };
+
+                    let mut points = vec![];
+                    ellipse.linearize(self.options.min_feature_size, &mut points);
+
+                    for point_i in 0..(points.len() - 1) {
+                        if let Some(current_contour) = self.get_current_contour()? {
+                            current_contour.path_builder.line_to(points[point_i + 1].clone());
+                            current_contour.last_point = points[point_i + 1].clone();
+                            continue;
+                        }
+
+                        let mut paths = vec![];
+
+                        if point_i == 0 {
+                            // TODO: Add start circle.
+                        }
+
+                        if point_i == points.len() - 1 {
+                            // TODO: Add end circle
+                        }
+
+                        // Drawing the main line.
+                        self.draw_aperture(
+                            &ApertureDefinition {
+                                id: "".to_string(),
+                                shape: ApertureShape::TemplateCall(TemplateCall {
+                                    name: "LL".to_string(),
+                                    params: vec![
+                                        circle_diameter,
+                                        points[point_i].x() as f64, points[point_i].y() as f64,
+                                        points[point_i + 1].x() as f64, points[point_i + 1].y() as f64
+                                    ],
+                                }),
+                            },
+                            &mut paths,
+                        )?;
+
+                        out.push(GraphicsObject {
+                            paths,
+                            line: Some((
+                                points[point_i].clone(),
+                                points[point_i + 1].clone()
+                            )),
+                            attributes: HashMap::new(),
+                        });
+                    }
+                }
 
                 self.graphics_state.current_point_x = Some(end_x);
                 self.graphics_state.current_point_y = Some(end_y);
@@ -284,7 +514,7 @@ impl CommandsProcessor {
 
                 // TODO: Need to transform all the generated objects (position and polarity).
                 let mut paths = vec![];
-                self.draw_aperture(current_aperture, &mut paths)?;
+                self.draw_aperture(&current_aperture.def, &mut paths)?;
 
                 let offset = Vector2f::from_slice(&[x as f32, y as f32]);
                 for path in &mut paths {
@@ -296,17 +526,27 @@ impl CommandsProcessor {
                     };
                 }
 
-                out.push(GraphicsObject { paths, line: None });
+                out.push(GraphicsObject { paths, line: None, attributes: HashMap::new(), });
 
                 self.graphics_state.current_point_x = Some(x);
                 self.graphics_state.current_point_y = Some(y);
             }
 
             Command::Comment(_)
-            | Command::EnableArcs
-            | Command::SetAttribute(_)
-            | Command::DeleteAttribute(_)
-            | Command::DeleteAttribute(_) => {}
+            | Command::EnableArcs => {}
+            Command::SetAttribute(attr) => {
+                self.attributes.insert(attr.name.clone(), attr.clone());
+            }
+            | Command::DeleteAttribute(name) => {
+                if let Some(name) = name {
+                    self.attributes.remove(name);
+                } else {
+                    self.attributes.retain(|_, attr| {
+                        attr.typ == AttributeType::File
+                    });
+                }
+
+            }
 
             Command::EndOfProgram => {
                 // TODO: Verify we hit the end.
@@ -317,7 +557,17 @@ impl CommandsProcessor {
         Ok(())
     }
 
-    fn get_current_aperture(&self) -> Result<&ApertureDefinition> {
+    /// Assuming we are able to perform a plot command, gets the current contour if any.
+    fn get_current_contour(&mut self) -> Result<Option<&mut CurrentContour>> {
+        Ok(match &mut self.graphics_state.region_state {
+            Some(region) => {
+                Some(region.current_contour.as_mut().ok_or_else(|| err_msg("Move command required before first plot in a region"))?)
+            }
+            None => None
+        })
+    }
+
+    fn get_current_aperture(&self) -> Result<&ApertureDefinitionWithAttributes> {
         let current_aperture_name = self
             .graphics_state
             .current_aperture

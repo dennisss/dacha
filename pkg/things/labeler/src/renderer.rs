@@ -257,7 +257,7 @@ impl<'a> TextBlock<'a> {
     ) -> Result<Self> {
         let lines = text.value().lines().collect::<Vec<&str>>();
 
-        let font_size = {
+        let mut font_size = {
             if text.font_size_mm() > 0.0 {
                 tape.mm_to_dots(text.font_size_mm())
             } else {
@@ -275,6 +275,12 @@ impl<'a> TextBlock<'a> {
         for line in &lines[..] {
             let measurements = font_renderer.measure_text(*line, font_size, None)?;
             length = core::cmp::max(measurements.width.ceil() as usize, length);
+        }
+
+        // Decrease font size if it exceeds the max length.
+        if length > max_length {
+            font_size *= (max_length as f32) / (length as f32);
+            length = max_length; 
         }
 
         let line_interval = (tape.print_area as f32) / (lines.len() as f32);

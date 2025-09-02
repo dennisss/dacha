@@ -1,7 +1,7 @@
 import React from "react";
 import { Figure } from "pkg/web/lib/figure";
 import { EntityKind, FigureOptions, Point, Range } from "pkg/web/lib/figure/types";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { run_machine_command } from "../rpc_utils";
 import { Card, CardBody } from "../card";
 import { FigureLegend, FigureLegendEntry } from "pkg/web/lib/figure/legend";
@@ -356,7 +356,7 @@ export class PositionBox extends React.Component<PositionBoxProps> {
 
         let x_range = null;
         let y_range = null;
-        machine.config.axes.map((axis) => {
+        (machine.config.axes || []).map((axis) => {
             if (axis.id == 'X') {
                 x_range = clean_range(axis.range);
             }
@@ -372,15 +372,19 @@ export class PositionBox extends React.Component<PositionBoxProps> {
             right: 10
         };
 
-        options.x_axis = {
-            range: x_range,
-            ticks: []
-        };
+        if (x_range !== null) {
+            options.x_axis = {
+                range: x_range,
+                ticks: []
+            };
+        }
 
-        options.y_axis = {
-            range: y_range,
-            ticks: []
-        };
+        if (y_range !== null) {
+            options.y_axis = {
+                range: y_range,
+                ticks: []
+            };
+        }
 
         let work_x = clean_range(machine.config.work_area.x_range);
         let work_y = clean_range(machine.config.work_area.y_range);

@@ -3,7 +3,7 @@
 /*
 cargo build --target aarch64-unknown-linux-gnu --release --bin i2c
 
-scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/i2c cluster-user@10.1.1.1:~
+scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/i2c cluster-user@10.1.1.3:~
 
 ssh -i ~/.ssh/id_cluster cluster-user@10.1.0.112
 
@@ -19,11 +19,14 @@ let bus = peripherals::i2c::I2CDevice::open(&args.bus)?;
 #[macro_use]
 extern crate macros;
 
+use std::time::Duration;
+
 use common::errors::*;
 use peripherals::i2c::I2CHostController;
 use peripherals_devices::ds3231::*;
 use peripherals_devices::sgp30::SGP30;
 use peripherals_devices::trust_m::TrustM;
+use peripherals_devices::as5601::AS5601;
 
 #[derive(Args)]
 struct Args {
@@ -51,6 +54,9 @@ enum Command {
 
     #[arg(name = "ds3231")]
     DS3231,
+
+    #[arg(name = "as5601")]
+    AS5601
 }
 
 async fn run_scan(mut bus: I2CHostController) -> Result<()> {
@@ -130,6 +136,25 @@ async fn run_ds3231(bus: I2CHostController) -> Result<()> {
     Ok(())
 }
 
+async fn run_as5601(bus: I2CHostController) -> Result<()> {
+    let mut dev = AS5601::open(&bus).await?;
+
+    loop {
+        let status = dev.read_status().await?;
+        let raw_angle = dev.read_raw_angle().await?;
+
+        let degs = ((raw_angle as f64) / (((1 << 12) - 1) as f64)) * 360.0;
+
+        println!("Raw Angle: {} deg; Status: {:?}", degs as usize, status);
+
+        executor::sleep(Duration::from_secs(1)).await?;
+    }
+
+
+    Ok(())
+}
+
+
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
@@ -141,6 +166,7 @@ async fn main() -> Result<()> {
         Command::TrustM => run_trust_m(bus).await?,
         Command::SGP30 => run_sgp30(bus).await?,
         Command::DS3231 => run_ds3231(bus).await?,
+        Command::AS5601 => run_as5601(bus).await?
     }
 
     Ok(())

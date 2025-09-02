@@ -30,7 +30,7 @@ use http::{
     static_file_handler::{StaticFileBody, StaticFileHandler},
     ServerHandler,
 };
-use http_util::{bad_request, not_found, internal_server_error};
+use http_util::{bad_request, not_found, internal_server_error, extract_path_params};
 use parsing::ascii::AsciiString;
 use rpc_util::NamedPortArg;
 use cluster_client::ClusterMetaClient;
@@ -69,37 +69,6 @@ const SERVICE_ACL_PROTO: &'static str = r#"
         }
     ]
 "#;
-
-fn extract_path_params(path: &str, pattern: &str) -> Option<HashMap<String, String>> {
-    // TODO: Ensure that the path is first normalized
-
-    let path_parts = path.split('/');
-    let pattern_parts = pattern.split('/');
-
-    let iter = ZipAllIterator::new(path_parts, pattern_parts);
-
-    let mut params = HashMap::default();
-
-    for (path_part, pattern_part) in iter {
-        let path_part = match path_part {
-            Some(v) => v,
-            None => return None,
-        };
-
-        let pattern_part = match pattern_part {
-            Some(v) => v,
-            None => return None,
-        };
-
-        if let Some(param_name) = pattern_part.strip_prefix(':') {
-            params.insert(param_name.to_string(), path_part.to_string());
-        } else if path_part != pattern_part {
-            return None;
-        }
-    }
-
-    Some(params)
-}
 
 #[derive(Args)]
 struct Args {

@@ -31,7 +31,22 @@ message GetPropertiesRequest {
 
 message GetPropertiesResponse {
     Properties properties = 1;
+
+    CameraFormat format = 2;
 }
+
+message CameraFormat {
+    enum LiveStreamFormat {
+        UNKNOWN = 0;
+        MP4 = 1;
+        MJPEG = 2;
+    }
+
+    // Format that will be used if an HTTP stream is requested with the live data from the camera. 
+    LiveStreamFormat live_format = 1;
+}
+
+
 
 message SetPropertiesRequest {
     string camera_id = 1;

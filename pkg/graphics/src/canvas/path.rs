@@ -191,6 +191,7 @@ impl Path {
                             &ellipse.evaluate_at_angle(ellipse.start_angle + ellipse.delta_angle),
                         );
 
+                        // TODO: I need to improve this to support non-axis aligned ellipses.
                         for angle in [0.0, PI / 2.0, PI, 3.0 * PI / 2.0, 2.0 * PI] {
                             if ellipse.contains_angle(angle) {
                                 bbox.update(&ellipse.evaluate_at_angle(angle));

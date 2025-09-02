@@ -1,6 +1,6 @@
 import React from "react";
 import { round_digits } from "pkg/web/lib/formatting";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Button } from "pkg/web/lib/button";
 import { EditInput } from "pkg/web/lib/input";
 import { run_machine_command } from "../rpc_utils";
@@ -38,6 +38,8 @@ TODO: Need some status info to tell if auto leveling data is active.
 
 TODO: Need to in some way block running the program if we haven't configured everything correct 
 (e.g. with no origin set, the program will go out of bounds)
+
+TODO: Currently the origin usually ends up being part of the bounding box of the program since we start moving from there (so we end up uselessly probign around the origin even if the program is translated far away)
 
 */
 
@@ -95,6 +97,39 @@ export function resolve_leveling_state(machine: any, state: CarveraLevelingState
         }
 
         origin = { x: x_pos, y: y_pos };
+    } else if (state.origin_base == 'cs1') {
+
+        let work_coordinates = null;
+        machine.state.coordinate_systems.map((c) => {
+            if (c.gcode != 'G54') {
+                return;
+            }
+
+            work_coordinates = c;
+        });
+
+        if (work_coordinates == null) {
+            return null;
+        }
+
+        // TODO: Deduplicate this code with the PositionBox code.
+        let x_pos = null;
+        let y_pos = null;
+        (work_coordinates.offset || []).map((axis) => {
+            if (axis.id == "X") {
+                x_pos = (axis.value || [null])[0];
+            }
+            if (axis.id == "Y") {
+                y_pos = (axis.value || [null])[0];
+            }
+        });
+
+        if (x_pos === null || y_pos === null) {
+            return null;
+        }
+
+        origin = { x: x_pos, y: y_pos };
+
     } else {
         return null;
     }
@@ -187,6 +222,15 @@ export class CarveraBox extends React.Component<{ machine: any, context: PageCon
                 if (!res.status.ok()) {
                     throw res.status.toString();
                 }
+
+                // After the coordinate system position has changed, lock the UI in one place so that it
+                // doesn't move while probing is happening.
+                if (i == 1) {
+                    this._change({
+                        origin_offset: { x: 0, y: 0 },
+                        origin_base: 'cs1',
+                    })
+                }
             }
 
         } catch (e) {
@@ -239,6 +283,7 @@ export class CarveraBox extends React.Component<{ machine: any, context: PageCon
                     <select className="form-control" value={state.origin_base} onChange={(e) => this._change({ origin_base: e.target.value })}>
                         <option value="current_pos">Current Position</option>
                         <option value="anchor1">Anchor 1</option>
+                        <option value="cs1">Coordinate System 1 Origin</option>
                     </select>
                 )
             },

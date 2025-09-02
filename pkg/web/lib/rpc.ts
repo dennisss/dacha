@@ -1,5 +1,25 @@
 import { encode_utf8, decode_utf8, encode_be_u32, decode_be_u32, decode_header_block } from "pkg/web/lib/encoding";
 
+const STATUS_CODES = {
+    0: 'OK',
+    1: 'CANCELLED',
+    2: 'UNKNOWN',
+    3: 'INVALID_ARGUMENT',
+    4: 'DEADLINE_EXCEEDED',
+    5: 'NOT_FOUND',
+    6: 'ALREADY_EXISTS',
+    7: 'PERMISSION_DENIED',
+    8: 'RESOURCE_EXHAUSTED',
+    9: 'FAILED_PRECONDITION',
+    10: 'ABORTED',
+    11: 'OUT_OF_RANGE',
+    12: 'UNIMPLEMENTED',
+    13: 'INTERNAL',
+    14: 'UNAVAILABLE',
+    15: 'DATA_LOSS',
+    16: 'UNAUTHENTICATED'
+};
+
 export class Status {
     code: number;
     message?: string;
@@ -14,7 +34,8 @@ export class Status {
     }
 
     toString(): string {
-        return "[" + this.code.toString() + "]" + (this.message ? ": " + this.message : "");
+        let code_name = STATUS_CODES[this.code] || this.code.toString();
+        return "[" + code_name + "]" + (this.message ? ": " + this.message : "");
     }
 }
 
@@ -177,7 +198,7 @@ export class Channel {
                 "Content-Type": "application/grpc-web+json"
             },
             body: request_buf,
-            credentials: "omit",
+            credentials: "include",
             signal: AbortSignal.any(abort_signals)
             // NOTE: Disabling caching on the client side will also break caching of pre-flight requests.
             // cache: "no-cache",

@@ -144,7 +144,27 @@ impl V4L2CaptureOp {
                 .current_value_mut()
                 .set_string_value(v4l2::PixelFormat(format.pixelformat()).to_string());
 
-            let allowed_frame_sizes = self.device.list_frame_sizes(format.pixelformat()).await?;
+            let mut allowed_frame_sizes = self.device.list_frame_sizes(format.pixelformat()).await?;
+            allowed_frame_sizes.sort_by(|a, b| {
+                let a = match a {
+                    v4l2::FrameSizeRange::Discrete { width, height } => width * height,
+                    _ => 0
+                };
+                let b = match b {
+                    v4l2::FrameSizeRange::Discrete { width, height } => width * height,
+                    _ => 0
+                };
+
+                a.cmp(&b)
+            });
+
+            // Default to the largest size (assuming we only support discrete sizes).
+            if let v4l2::FrameSizeRange::Discrete { width, height } = allowed_frame_sizes.last().unwrap() {
+                format.set_width(*width);
+                format.set_height(*height)
+            }
+
+            // println!("Allowed frame sizes: {:?}", allowed_frame_sizes);
 
             // TODO: Make frame size a property.
 

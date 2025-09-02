@@ -102,10 +102,17 @@
     cursor: none;
 }
 
-.video-player video {
+.video-player .video-container,
+.video-player .video-container video,
+.video-player .video-container img {
     display: block;
     width: 100%;
     height: 100%;
+}
+
+.video-player .video-container img {
+    /* Don't stretch image based videos in full screen. */
+    object-fit: contain;
 }
 
 .video-player.active video {

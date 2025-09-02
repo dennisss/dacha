@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { DeviceSelectorInput } from "../device_selector";
 import { run_machine_command } from "../rpc_utils";
 import { PropertiesTable } from "../properties_table";
@@ -9,9 +9,11 @@ import { CardError } from "../card_error";
 import { Card } from "../card";
 import { VideoPlayer } from "pkg/web/lib/video";
 import { VideoSourceKind } from "pkg/web/lib/video/types";
+import { CameraLivePlayer } from "./live";
+import { MachineUiState } from "./state";
 
 
-export class CamerasBox extends React.Component<{ machine: any, context: PageContext }> {
+export class CamerasBox extends React.Component<{ machine: any, context: PageContext, ui_state: MachineUiState }> {
 
     state = {
         _active_page: null
@@ -26,7 +28,7 @@ export class CamerasBox extends React.Component<{ machine: any, context: PageCon
         return (
             <div>
                 {cameras.length == 0 ? (
-                    <CameraBox context={this.props.context} machine={machine} camera={null} camera_state={null} />
+                    <CameraBox context={this.props.context} ui_state={this.props.ui_state} machine={machine} camera={null} camera_state={null} />
                 ) : null}
                 {cameras.map((camera) => {
                     let camera_state = null;
@@ -38,7 +40,7 @@ export class CamerasBox extends React.Component<{ machine: any, context: PageCon
                     }
 
                     return (
-                        <CameraBox key={camera.id} context={this.props.context}
+                        <CameraBox key={camera.id} context={this.props.context} ui_state={this.props.ui_state}
                             machine={machine} camera={camera} camera_state={camera_state} />
                     );
                 })}
@@ -56,7 +58,9 @@ interface CameraBoxProps {
 
     // This two may be null if we are creating a new camera.
     camera: any
-    camera_state: any
+    camera_state: any,
+
+    ui_state: MachineUiState
 }
 
 interface CameraBoxState {
@@ -88,7 +92,7 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
     }
 
     componentDidUpdate() {
-        if (!this.state._editing) {
+        if (!this.state._editing && this.props.camera) {
             if (JSON.stringify(this.state._config) != JSON.stringify(this.props.camera)) {
                 this.setState({
                     _config: deep_copy(this.props.camera)
@@ -116,10 +120,14 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
 
     _click_revert = (done) => {
         this.setState({
-            _editing: false,
-            _config: deep_copy(this.props.camera),
+            _editing: this.props.camera ? false : true,
+            _config: deep_copy(this.props.camera || {
+                record_while_playing: true,
+                record_while_paused: false
+            }),
             _selected_device: null,
         });
+
         done();
     }
 
@@ -141,7 +149,12 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
 
         let page = this.state._active_page == null ? (camera_state ? 'LIVE' : 'SETTINGS') : this.state._active_page;
 
-        let live_page_allowed = camera_state && camera_state.status != 'MISSING';
+        let ui_state = this.props.ui_state;
+        let enlarged = ui_state.camera_ui_state().enlarged_camera_id == camera.id;
+
+        let live_allowed = camera_state && camera_state.status != 'MISSING';;
+
+        let live_page_allowed = live_allowed && !enlarged;
 
         if (page == 'LIVE' && !live_page_allowed) {
             page = 'SETTINGS';
@@ -186,6 +199,30 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
                 name: 'Id',
                 value: camera.id
             });
+
+            settings_properties.push({
+                name: 'Live Crosshair',
+                value: (
+                    <div>
+                        <input type="checkbox" checked={ui_state.camera_ui_state().crosshair_enabled} onChange={(e) => {
+                            let s = deep_copy(ui_state.camera_ui_state());
+                            s.crosshair_enabled = e.target.checked;
+                            ui_state.set_camera_ui_state(s);
+                        }} />
+
+                        <input type="number" className="form-control" style={{ width: 100, marginLeft: 12, display: 'inline-block' }} min={0} max={1000} value={(ui_state.camera_ui_state().crosshair_size || 0) + ''} onChange={(e) => {
+                            let s = deep_copy(ui_state.camera_ui_state());
+                            s.crosshair_size = e.target.value * 1;
+                            s.crosshair_enabled = true;
+                            ui_state.set_camera_ui_state(s);
+
+                            // Prefer focus/unfocus of the input sine the state takes a few frames to update.
+                            this.forceUpdate();
+                        }} />
+                    </div>
+
+                )
+            })
         }
 
         return (
@@ -201,6 +238,17 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
                                 <span className={"badge rounded-pill bg-" + (camera_state.status == 'RECORDING' ? 'danger' : 'secondary')}>
                                     {camera_state.status}
                                 </span>
+
+                                {live_allowed ? (
+                                    <Button preset="default" style={{ margin: "-6px -12px -6px 0" }} onClick={(done) => {
+                                        let c = deep_copy(ui_state.camera_ui_state());
+                                        c.enlarged_camera_id = enlarged ? null : camera.id;
+                                        ui_state.set_camera_ui_state(c);
+                                        done();
+                                    }}>
+                                        <span className="material-symbols-fill">{enlarged ? 'close_fullscreen' : 'open_in_full'}</span>
+                                    </Button>
+                                ) : null}
                             </div>
 
                         ) : null}
@@ -210,12 +258,7 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
             >
 
                 {page == 'LIVE' ? (
-                    <div>
-                        <VideoPlayer source={{
-                            kind: VideoSourceKind.Live,
-                            url: `/api/machines/${machine.id}/cameras/${camera.id}/stream`
-                        }} />
-                    </div>
+                    <CameraLivePlayer camera={camera} machine={machine} context={this.props.context} ui_state={this.props.ui_state} />
                 ) : null}
 
                 {page == 'SETTINGS' ? (

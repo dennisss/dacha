@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { watch_entities } from "../rpc_utils";
 import { ControlsComponent } from "./controls";
 import { TerminalComponent } from "./terminal";
@@ -15,17 +15,14 @@ import { MetricsBox } from "./metrics";
 import { CarveraBox } from "./carvera";
 import { MachineUiState } from "./state";
 import { ObjectsBox } from "./objects";
+import { CameraLiveBox } from "./live";
 
 interface MachinePageProps {
     id: string
     context: PageContext
 }
 
-interface MachinePageState {
-    _machine: any
-}
-
-export class MachinePage extends React.Component<MachinePageProps, MachinePageState> {
+export class MachinePage extends React.Component<MachinePageProps> {
 
     state = {
         _machine: null,
@@ -55,11 +52,25 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
             return <div></div>;
         }
 
+        // TODO: Have a better place for this.
+        document.body.parentNode.className = "noscrollbar";
+
+        let ui_state = this._ui_state;
+
+        let left_panel = (
+            <>
+                <CamerasBox machine={machine} context={this.props.context} ui_state={ui_state} />
+                <ConnectionBox machine={machine} context={this.props.context} />
+                <PlayerBox machine={machine} context={this.props.context} ui_state={ui_state} />
+                <ObjectsBox machine={machine} context={this.props.context} ui_state={ui_state} />
+                <CarveraBox machine={machine} context={this.props.context} ui_state={ui_state} />
+            </>
+        )
 
         let tabs = [
             {
                 name: 'Controls',
-                view: <ControlsComponent machine={machine} context={this.props.context} ui_state={this._ui_state} />
+                view: <ControlsComponent machine={machine} context={this.props.context} ui_state={ui_state} />
             },
             {
                 name: 'Terminal',
@@ -71,9 +82,16 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
             },
             {
                 name: 'Settings',
-                view: <SettingsComponent machine={machine} context={this.props.context} />
+                view: <SettingsComponent machine={machine} context={this.props.context} ui_state={ui_state} />
             },
         ];
+
+        if (ui_state.left_collapsed) {
+            tabs.push({
+                name: "State",
+                view: left_panel,
+            })
+        }
 
         let active_tab = tabs[this.state._right_tab];
 
@@ -89,15 +107,14 @@ export class MachinePage extends React.Component<MachinePageProps, MachinePageSt
 
                 <div className="container-fluid">
                     <div className="row" style={{ padding: '10px 0' }}>
-                        <div className="col col-md-3">
-                            <CamerasBox machine={machine} context={this.props.context} />
-                            <ConnectionBox machine={machine} context={this.props.context} />
-                            <PlayerBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
-                            <ObjectsBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
-                            <CarveraBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
-                        </div>
-                        <div className="col col-md-6">
-                            <PositionBox machine={machine} context={this.props.context} ui_state={this._ui_state} />
+                        {ui_state.left_collapsed ? null : (
+                            <div className="col col-md-3">
+                                {left_panel}
+                            </div>
+                        )}
+                        <div className={"col col-md-" + (ui_state.left_collapsed ? '9' : '6')}>
+                            <CameraLiveBox machine={machine} context={this.props.context} ui_state={ui_state} />
+                            <PositionBox machine={machine} context={this.props.context} ui_state={ui_state} />
                             <MetricsBox machine={machine} context={this.props.context} />
                         </div>
                         <div className="col col-md-3">

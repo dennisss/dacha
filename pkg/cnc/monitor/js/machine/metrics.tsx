@@ -1,6 +1,6 @@
 import React from "react";
 import { Channel } from "pkg/web/lib/rpc";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Button } from "pkg/web/lib/button";
 import { LabeledCheckbox } from "pkg/web/lib/checkbox";
 import { Card, CardBody } from "../card";
@@ -227,7 +227,7 @@ export class MetricsBox extends React.Component<MetricsBoxProps, MetricsBoxState
 
         let resources = [];
 
-        machine.config.axes.map((axis) => {
+        (machine.config.axes || []).map((axis) => {
             if (!axis.collect || axis.type != 'HEATER' || axis.hide) {
                 return;
             }

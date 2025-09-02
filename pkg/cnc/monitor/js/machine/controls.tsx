@@ -1,6 +1,6 @@
 import React from "react";
 import { round_digits } from "pkg/web/lib/formatting";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { Button } from "pkg/web/lib/button";
 import { EditInput } from "pkg/web/lib/input";
 import { run_machine_command } from "../rpc_utils";
@@ -129,7 +129,7 @@ class JogControlsBox extends React.Component<{ machine: any, context: PageContex
                                 </tr>
                             </thead>
                             <tbody>
-                                {machine.config.axes.map((axis) => {
+                                {(machine.config.axes || []).map((axis) => {
                                     if (axis.type != 'POSITION') {
                                         return null;
                                     }
@@ -541,7 +541,7 @@ class TemperaturesBox extends React.Component<{ machine: any, context: PageConte
         })
 
         let rows = [];
-        machine.config.axes.map((axis) => {
+        (machine.config.axes || []).map((axis) => {
             if (axis.type != 'HEATER' || axis.hide) {
                 return;
             }
@@ -601,7 +601,7 @@ class SensorsBox extends React.Component<{ machine: any, context: PageContext }>
         })
 
         let rows = [];
-        machine.config.axes.map((axis) => {
+        (machine.config.axes || []).map((axis) => {
             if (axis.type != 'GENERIC_SENSOR' || axis.hide) {
                 return;
             }
@@ -675,7 +675,7 @@ class SwitchesBox extends React.Component<{ machine: any, context: PageContext }
         })
 
         let rows = [];
-        machine.config.axes.map((axis) => {
+        (machine.config.axes || []).map((axis) => {
             if (axis.type != 'SWITCH' || axis.hide) {
                 return;
             }

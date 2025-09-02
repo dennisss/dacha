@@ -1,5 +1,5 @@
 import React from "react";
-import { PageContext } from "../page";
+import { PageContext } from "pkg/web/lib/page";
 import { watch_entities } from "../rpc_utils";
 import { Title } from "pkg/web/lib/title";
 import { Navbar } from "../navbar";

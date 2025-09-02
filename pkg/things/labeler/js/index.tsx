@@ -2,9 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom";
 import { Channel } from "pkg/web/lib/rpc";
 import { deep_copy } from "pkg/web/lib/utils";
-import { SpinnerInline } from "pkg/web/lib/spinner";
 import { Button } from "pkg/web/lib/button";
-import { round_digits } from "pkg/web/lib/formatting";
+import { PageImageWrapperComponent } from "./page";
 
 interface AppState {
     devices: any[] | null;
@@ -187,19 +186,13 @@ class App extends React.Component<{}, AppState> {
     }
 
     _render_single_page(page, i, device) {
-
-        let border_size = 1;
-        let horizontal_margin = device.tape.margin || 0 - 2 * border_size;
-        let vertical_margin = (device.tape.width - device.tape.print_area) / 2 - 2 * border_size;
-
         let option_style = { display: 'inline-block', paddingRight: 10, verticalAlign: 'bottom' };
 
-        let [preview_image_el, preview_image] = this._render_preview_image(page, i, device);
-
-        const MM_PER_INCH = 25.4;
-
-        function dots_to_mm(v) {
-            return round_digits((v || 0) * (MM_PER_INCH / device.tape.dpi), 1);
+        let dirty = true;
+        let preview_image = null;
+        if (this.state.preview_data && (this.state.preview_data.page_images || []).length > i) {
+            dirty = this.state.preview_data.revision != this.state.page_input.revision;
+            preview_image = this.state.preview_data.page_images[i];
         }
 
         function positive_number(v) {
@@ -218,24 +211,8 @@ class App extends React.Component<{}, AppState> {
         return (
             <div key={i} style={{ paddingBottom: 10 }}>
                 <div className="card">
-                    <div style={{ backgroundColor: '#eee', borderBottom: '1px solid #ccc', padding: 10, textAlign: 'center' }}>
-                        <div className="noscrollbar" style={{ width: '100%', overflowX: 'scroll' }}>
-                            {/* This div represents the outer extent of the label paper  */}
-                            <div className="label-outer" style={{ backgroundColor: '#fff', paddingLeft: horizontal_margin, paddingRight: horizontal_margin, margin: '0 auto', display: 'inline-block', paddingBottom: vertical_margin, paddingTop: vertical_margin, boxShadow: '0px 10px 15px -3px rgba(0,0,0,0.1)' }}>
-
-                                {/* This div represents the printable area of the label (+ a thin border) */}
-                                <div style={{ border: border_size + 'px dashed #ccc' }}>
-                                    {preview_image_el}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ fontSize: '0.8em' }}>
-                            {preview_image ? (
-                                `Width: ${dots_to_mm(device.tape.width)}mm; Length: ${dots_to_mm(preview_image.width + 2 * device.tape.margin)}mm`
-                            ) : '-'}
-                        </div>
-
+                    <div style={{ borderBottom: '1px solid #ccc' }}>
+                        <PageImageWrapperComponent device={device} dirty={dirty} data={preview_image} />
                     </div>
 
                     <div className="card-body">
@@ -335,43 +312,6 @@ class App extends React.Component<{}, AppState> {
 
             </div>
         );
-    }
-
-    _render_preview_image(page, i, device) {
-        let up_to_date = false;
-        let inner_el = null;
-        let image = null;
-
-        if (this.state.preview_data && (this.state.preview_data.page_images || []).length > i) {
-            up_to_date = this.state.preview_data.revision == this.state.page_input.revision;
-
-            image = this.state.preview_data.page_images[i];
-
-            // Convert URL safe to regular base64.
-            let data = image.data.replaceAll('_', '/').replaceAll('-', '+');
-
-            inner_el = (
-                <div style={{ height: device.tape.print_area, width: image.width, backgroundImage: `url(data:image/png;base64,${data})`, fontSize: 0, backgroundSize: 'cover', opacity: (up_to_date ? 1 : 0.5) }}></div>
-            );
-        }
-
-        let el = (
-            <div style={{ height: device.tape.print_area, minWidth: 40, position: 'relative' }}>
-                {inner_el}
-                {!up_to_date ? (
-                    <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%) scale(1.5)' }}>
-                        <SpinnerInline />
-                    </div>
-                ) : null}
-
-            </div>
-
-        );
-
-        return [
-            el,
-            image
-        ];
     }
 
     render() {

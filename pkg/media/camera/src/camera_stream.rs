@@ -8,78 +8,78 @@ use executor::sync::AsyncVariable;
 use video::mp4::MP4BuilderOptions;
 use http_util::internal_server_error;
 
+use crate::frame::PixelFormat;
 use crate::camera_manager::{CameraManager, CameraSubscriber};
 
-pub async fn respond_with_any_camera_stream(camera_manager: &CameraManager) -> http::Response {
-    match respond_with_any_camera_stream_impl(camera_manager).await {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("{}", e);
-            internal_server_error()
+// TODO: Somewhere we should verify that we are indeed getting frames at 30fps
+// and we aren't stalled.
+pub async fn respond_with_camera_stream(
+    mut subscriber: CameraSubscriber,
+) -> Result<http::Response> {
+
+    let format = subscriber.format().await?;
+
+    match format.pixel_format {
+        PixelFormat::MJPG => {
+            let boundary = "mjpeg-frame-separator".to_string();;
+
+            let typ = format!("multipart/x-mixed-replace;boundary=--{}", boundary);
+            let body = MJPGCameraStreamBody {
+                subscriber,
+                data: vec![],
+                boundary
+            };
+
+            Ok(http::ResponseBuilder::new()
+                .status(http::status_code::OK)
+                .header("Content-Type", typ)
+                .body(Box::new(body))
+                .build()?)
+        }
+        PixelFormat::H264 => {
+            let first_frame = subscriber.recv().await?;
+
+            let mut options = MP4BuilderOptions::default();
+            options.fragment = Some(1);
+            // Since we may not be the only observers of this camera, we may need to wait
+            // for the next iframe.
+            options.skip_to_key_frame = true;
+
+            let mut mp4_builder = video::mp4::MP4Builder::new(
+                first_frame.format.width,
+                first_frame.format.height,
+                first_frame.format.frame_rate,
+                options,
+            )?;
+
+            for data in &first_frame.init_data {
+                mp4_builder.append(&data, None, false)?;
+            }
+
+            let mime_type = mp4_builder.mime_type()?;
+
+            let body = MP4CameraStreamBody {
+                subscriber,
+                last_sequence_number: first_frame.sequence,
+                mp4_builder,
+                data: vec![],
+            };
+
+            // TODO: Base the content type on the H264 parameters
+            Ok(http::ResponseBuilder::new()
+                .status(http::status_code::OK)
+                .header("Content-Type", mime_type)
+                .body(Box::new(body))
+                .build()?)
+        }
+        _ => {
+            return Err(format_err!("Don't know how to stream back format: {:?}", format.pixel_format));
         }
     }
 }
 
-async fn respond_with_any_camera_stream_impl(
-    camera_manager: &CameraManager,
-) -> Result<http::Response> {
-    let devices = camera_manager.list().await?;
-
-    let (_, camera_entry) = devices
-        .into_iter()
-        .collect::<Vec<_>>()
-        .pop()
-        .ok_or_else(|| err_msg("No camera found"))?;
-
-    // TODO: Somewhere we should verify that we are indeed getting frames at 30fps
-    // and we aren't stalled.
-
-    let subscriber = camera_manager.open(camera_entry).await?;
-
-    respond_with_camera_stream(subscriber).await
-}
-
-pub async fn respond_with_camera_stream(
-    mut subscriber: CameraSubscriber,
-) -> Result<http::Response> {
-    let first_frame = subscriber.recv().await?;
-
-    let mut options = MP4BuilderOptions::default();
-    options.fragment = Some(1);
-    // Since we may not be the only observers of this camera, we may need to wait
-    // for the next iframe.
-    options.skip_to_key_frame = true;
-
-    let mut mp4_builder = video::mp4::MP4Builder::new(
-        first_frame.format.width,
-        first_frame.format.height,
-        first_frame.format.frame_rate,
-        options,
-    )?;
-
-    for data in &first_frame.init_data {
-        mp4_builder.append(&data, None, false)?;
-    }
-
-    let mime_type = mp4_builder.mime_type()?;
-
-    let body = CameraStreamBody {
-        subscriber,
-        last_sequence_number: first_frame.sequence,
-        mp4_builder,
-        data: vec![],
-    };
-
-    // TODO: Base the content type on the H264 parameters
-    Ok(http::ResponseBuilder::new()
-        .status(http::status_code::OK)
-        .header("Content-Type", mime_type)
-        .body(Box::new(body))
-        .build()?)
-}
-
 /// http::Body which continously sends back an MP4 from a camera.  
-struct CameraStreamBody {
+struct MP4CameraStreamBody {
     /// Subscriber used to get raw H264 packets from the camera.
     subscriber: CameraSubscriber,
 
@@ -93,7 +93,7 @@ struct CameraStreamBody {
 }
 
 #[async_trait]
-impl Readable for CameraStreamBody {
+impl Readable for MP4CameraStreamBody {
     async fn read(&mut self, out: &mut [u8]) -> Result<usize> {
         loop {
             // TODO: If we are able to write >0 bytes, make all operations try_recv and stop
@@ -127,7 +127,7 @@ impl Readable for CameraStreamBody {
 }
 
 #[async_trait]
-impl http::Body for CameraStreamBody {
+impl http::Body for MP4CameraStreamBody {
     fn len(&self) -> Option<usize> {
         None
     }
@@ -136,3 +136,47 @@ impl http::Body for CameraStreamBody {
         Ok(None)
     }
 }
+
+/// http::Body which streams back MJPEG frames.
+///
+/// See https://en.wikipedia.org/wiki/Motion_JPEG
+struct MJPGCameraStreamBody {
+    subscriber: CameraSubscriber,
+
+    /// Pendign data which we haven't yet 
+    data: Vec<u8>,
+    
+    boundary: String,
+}
+
+#[async_trait]
+impl Readable for MJPGCameraStreamBody {
+    async fn read(&mut self, out: &mut [u8]) -> Result<usize> {
+
+        loop {
+            if !self.data.is_empty() {
+                let n = core::cmp::min(out.len(), self.data.len());
+                out[0..n].copy_from_slice(&self.data[0..n]);
+                self.data = self.data.split_off(n);
+                return Ok(n);
+            }
+
+            let frame = self.subscriber.recv().await?;
+
+            self.data.extend_from_slice(format!("\r\n--{}\r\nContent-Type: image/jpeg\r\n\r\n", self.boundary).as_bytes());
+            self.data.extend_from_slice(&frame.data.data().unwrap());
+        }
+    }
+}
+
+#[async_trait]
+impl http::Body for MJPGCameraStreamBody {
+    fn len(&self) -> Option<usize> {
+        None
+    }
+
+    async fn trailers(&mut self) -> Result<Option<http::Headers>> {
+        Ok(None)
+    }
+}
+

@@ -125,7 +125,7 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                 impl ::common::args::ArgsType for #name {
                     fn parse_raw_args(raw_args: &mut ::common::args::RawArgs) -> ::common::errors::Result<#name> {
                         let command_name = raw_args.next_positional_arg()
-                            .ok_or_else(|| ::common::errors::err_msg("Expected another positional argument"))?;
+                            .ok_or_else(|| ::common::errors::format_err!("Expected another positional argument for {}", stringify!(#name)))?;
                         match command_name.as_str() {
                             #(#commands)*
                             _ => {

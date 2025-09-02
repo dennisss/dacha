@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package inventory;
+
+import "pkg/things/inventory/proto/part.proto";
+import "pkg/things/labeler/proto/service.proto";
+
+service Inventory {
+    rpc QueryEntities (QueryEntitiesRequest) returns (QueryEntitiesResponse);
+
+    rpc UpdateEntities (UpdateEntitiesRequest) returns (UpdateEntitiesResponse);
+
+    rpc PrintLabels (PrintLabelsRequest) returns (PrintLabelsResponse);
+}
+
+enum EntityType {
+    UNKNOWN_ENTITY = 0;
+    PART = 1;
+    PACK = 2;
+}
+
+message QueryEntitiesRequest {
+    EntityType entity_type = 1;
+
+    // If we want a specific 
+    optional fixed64 entity_id = 2;
+}
+
+message QueryEntitiesResponse {
+    repeated Part parts = 1;
+
+    repeated Pack packs = 2;
+}
+
+message UpdateEntitiesRequest {
+    repeated Part update_parts = 1;
+
+    repeated string delete_parts = 2;
+
+    repeated Pack update_packs = 3;
+
+    repeated string delete_packs = 4;
+}
+
+message UpdateEntitiesResponse {
+    repeated Part parts = 1;
+
+    repeated Pack packs = 2;
+}
+
+message PrintLabelsRequest {
+    repeated fixed64 pack_ids = 1;
+
+    bool dry_run = 2;
+}
+
+message PrintLabelsResponse {
+    repeated labeler.PrintLabelResponse labels = 1;
+}

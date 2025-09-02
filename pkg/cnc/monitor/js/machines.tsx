@@ -1,6 +1,6 @@
 import React from "react";
 import { Router } from "pkg/web/lib/router";
-import { PageContext } from "./page";
+import { PageContext } from "pkg/web/lib/page";
 import { watch_entities } from "./rpc_utils";
 import { PropertiesTable } from "./properties_table";
 import { get_player_properties } from "./machine/player";

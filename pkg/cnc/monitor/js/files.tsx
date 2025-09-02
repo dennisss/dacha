@@ -4,7 +4,7 @@ import { Button } from "pkg/web/lib/button";
 import { format_bytes_size, format_duration_proto, timestamp_proto_to_millis } from "pkg/web/lib/formatting";
 import { pick_machine } from "./machine_picker";
 import { watch_entities } from "./rpc_utils";
-import { PageContext } from "./page";
+import { PageContext } from "pkg/web/lib/page";
 import { Router } from "pkg/web/lib/router";
 import { Title } from "pkg/web/lib/title";
 import { Navbar } from "./navbar";

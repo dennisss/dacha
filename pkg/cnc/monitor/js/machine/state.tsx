@@ -11,7 +11,9 @@ export class MachineUiState {
 
     _carvera_state: CarveraLevelingState | null = null;
     _program_preview: ProgramPreviewContainer | null = null;
+    _camera_ui_state: CameraUiState = {};
 
+    left_collapsed: boolean = false;
 
     constructor() {
         this._position_legend = new FigureLegendState(this);
@@ -46,6 +48,15 @@ export class MachineUiState {
 
     set_program_preview(data: ProgramPreviewContainer | null) {
         this._program_preview = data;
+        this._notify_all();
+    }
+
+    camera_ui_state(): CameraUiState {
+        return this._camera_ui_state;
+    }
+
+    set_camera_ui_state(data: CameraUiState) {
+        this._camera_ui_state = data;
         this._notify_all();
     }
 
@@ -112,6 +123,12 @@ export interface ProgramPreviewContainer {
 
 export interface ProgramPreviewData {
     layer_images: BinaryImageData[];
+}
+
+export interface CameraUiState {
+    enlarged_camera_id?: any;
+    crosshair_size?: number | null;
+    crosshair_enabled?: boolean;
 }
 
 
