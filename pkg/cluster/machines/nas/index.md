@@ -451,6 +451,19 @@ TODO
 
 TODO: Setup proper user:group permissions on all the datasets.
 
+### SSH FS
+
+On my local machine run:
+
+```
+sudo apt install sshfs
+sudo mkdir /mnt/nas
+sudo chown dennis:dennis /mnt/nas
+sshfs -o default_permissions nas:/zfs /mnt/nas
+```
+
+See also https://www.digitalocean.com/community/tutorials/how-to-use-sshfs-to-mount-remote-file-systems-over-ssh
+
 
 ## Power Measurements
 

@@ -20,6 +20,8 @@ base_radix = { path = "../../base/radix" }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }
 reflection = { path = "../../reflection" }
+glfw = "0.51.0"
+
 
 [features]
 default = ["std", "alloc"]

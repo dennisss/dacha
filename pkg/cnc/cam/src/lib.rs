@@ -8,5 +8,6 @@ mod arc;
 mod edge;
 mod histogram;
 mod stencil;
+mod faces;
 
 pub use pcb::*;

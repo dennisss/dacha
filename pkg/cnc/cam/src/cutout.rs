@@ -6,6 +6,7 @@ use common::line_builder::LineBuilder;
 use gerber::GraphicsObject;
 use math::{geometry::half_edge::HalfEdgeStruct};
 
+use crate::faces::*;
 use crate::edge::*;
 use crate::arc::*;
 
@@ -41,27 +42,13 @@ impl CutOutProcessor {
         let mut cut_paths = vec![];
 
         {
-            let mut half_edges = HalfEdgeStruct::<bool>::new();
-
-            for (obj_i, obj) in objects.iter().enumerate() {
+            let mut half_edges = objects_to_faces(objects.iter().enumerate().filter_map(|(obj_i, obj)| {
                 if !edge_metadata.inner_edge_objects.contains(&obj_i) {
-                    continue;
+                    return None;
                 }
 
-                for path in &obj.paths {
-                    // TODO: Handle the fill mode.
-
-                    let (vertices, path_starts) = path.path.linearize(0.05);
-                    for i in 0..(path_starts.len() - 1) {
-                        let start_i = path_starts[i];
-                        let end_i = path_starts[i + 1];
-                        half_edges.add_face(true, vertices[start_i..end_i].iter().cloned());
-                    }
-                }
-            }
-
-            half_edges.repair();
-            half_edges.merge_faces();
+                Some(obj)
+            }), self.options.max_error);
 
             half_edges = math::geometry::offsetting::offset_faces(
                 &half_edges,

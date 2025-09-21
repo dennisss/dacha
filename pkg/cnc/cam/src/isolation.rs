@@ -12,6 +12,7 @@ use crate::tsp::greedy_edge_route;
 use crate::vbit::*;
 use crate::edge::EdgeCutMetadata;
 use crate::arc::*;
+use crate::faces::*;
 
 pub struct IsolationRoutingProcessorOptions {
     pub config: IsolationRoutingProcessorConfig,
@@ -29,35 +30,6 @@ struct CutPath {
     points: Vec<Vector2f>,
     closed: bool,
 }
-
-#[derive(Clone, Copy, PartialEq, Default, Debug)]
-pub(crate) struct FaceLabel {
-    /// True if present on the copper gerber layer.
-    pub dark: bool,
-
-    /// True if the face is inside of the outer most edge cut of the board.
-    pub inbounds: bool,
-}
-
-impl FaceLabel {
-    pub fn dark() -> Self {
-        Self { dark: true, inbounds: false }
-    }
-
-    pub fn inbounds() -> Self {
-        Self { dark: false, inbounds: true }
-    }
-}
-
-impl math::geometry::half_edge::FaceLabel for FaceLabel {
-    fn union(&self, other: &Self) -> Self {
-        Self {
-            dark: self.dark || other.dark,
-            inbounds: self.inbounds || other.inbounds
-        }
-    }
-}
-
 
 impl IsolationRoutingProcessor {
     pub fn new(options: IsolationRoutingProcessorOptions) -> Self {
@@ -118,32 +90,7 @@ impl IsolationRoutingProcessor {
             return Err(err_msg("Cut depth is too small to clear layer."));
         }
 
-        let object_edges = {
-            let mut half_edges = HalfEdgeStruct::<FaceLabel>::new();
-
-            for obj in objects {
-                for path in &obj.paths {
-                    if let gerber::FillMode::Dark = path.fill {
-                        //
-                    } else {
-                        // TODO:
-                        println!("Non dark");
-                        continue;
-                    }
-
-                    let (vertices, path_starts) = path.path.linearize(self.options.max_error);
-                    for i in 0..(path_starts.len() - 1) {
-                        let start_i = path_starts[i];
-                        let end_i = path_starts[i + 1];
-                        half_edges.add_face(FaceLabel::dark(), vertices[start_i..end_i].iter().cloned());
-                    }
-                }
-            }
-
-            half_edges.repair();
-            half_edges.merge_faces();
-            half_edges
-        };
+        let object_edges = objects_to_faces(objects.iter(), self.options.max_error);
 
         // Generate all contiguous cut paths.
         let mut cut_paths = vec![];
@@ -153,7 +100,7 @@ impl IsolationRoutingProcessor {
             cut_paths.push(CutPath {
                 points: edge_metadata.outer_edge_path.clone(),
                 closed: true,
-            });            
+            });
         }
 
         let num_passes = {
@@ -196,64 +143,62 @@ impl IsolationRoutingProcessor {
                     continue;
                 }
 
-                let outer_component = match face.outer_component() {
-                    Some(v) => v,
-                    None => continue
-                };
+                for component in face.outer_component().into_iter().chain(face.inner_components()) {
 
-                // The code below is similar to calling outer_component.points() expect we need to exclude any
-                // edges that touch the edge of the board.
+                    // The code below is similar to calling component.points() expect we need to exclude any
+                    // edges that touch the edge of the board.
 
-                let mut all_closed = true;
-                let mut current_path = vec![];
+                    let mut all_closed = true;
+                    let mut current_path = vec![];
 
-                let mut current_edge = outer_component.start_edge();
+                    let mut current_edge = component.start_edge();
 
-                // TODO: Instead just use the overall number of edges as a bound.
-                let n = outer_component.points().len() + 1;
+                    // TODO: Instead just use the overall number of edges as a bound.
+                    let n = component.points().len() + 1;
 
-                bounded_loop(n, || {
-                    let next_edge = current_edge.next();
-                    let next_is_start = next_edge.id() == outer_component.start_id();
+                    bounded_loop(n, || {
+                        let next_edge = current_edge.next();
+                        let next_is_start = next_edge.id() == component.start_id();
 
-                    if current_edge.twin().incident_face().label().inbounds {
+                        if current_edge.twin().incident_face().label().inbounds {
 
-                        if current_path.is_empty() {
-                            current_path.push(current_edge.origin());
+                            if current_path.is_empty() {
+                                current_path.push(current_edge.origin());
+                            }
+
+                            if !next_is_start || !all_closed {
+                                current_path.push(next_edge.origin());
+                            }
+
+                        } else {
+                            all_closed = false;
+                            
+                            if !current_path.is_empty() {
+                                candidate_paths.push(CutPath {
+                                    points: current_path.clone(),
+                                    closed: all_closed,
+                                });
+                                current_path.clear();
+                            }
                         }
 
-                        if !next_is_start || !all_closed {
-                            current_path.push(next_edge.origin());
-                        }
+                        current_edge = next_edge;
 
-                    } else {
-                        all_closed = false;
-                        
-                        if !current_path.is_empty() {
-                            candidate_paths.push(CutPath {
-                                points: current_path.clone(),
-                                closed: all_closed,
-                            });
-                            current_path.clear();
+                        if next_is_start {
+                            if !current_path.is_empty() {
+                                candidate_paths.push(CutPath {
+                                    points: current_path.clone(),
+                                    closed: all_closed,
+                                });
+                                current_path.clear();
+                            }
+                            
+                            Ok(Loop::Break)
+                        } else {
+                            Ok(Loop::Continue)
                         }
-                    }
-
-                    current_edge = next_edge;
-
-                    if next_is_start {
-                        if !current_path.is_empty() {
-                            candidate_paths.push(CutPath {
-                                points: current_path.clone(),
-                                closed: all_closed,
-                            });
-                            current_path.clear();
-                        }
-                        
-                        Ok(Loop::Break)
-                    } else {
-                        Ok(Loop::Continue)
-                    }
-                }).unwrap();
+                    }).unwrap();
+                }
             }
 
             let mut have_valid_face = false;

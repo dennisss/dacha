@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
 
     let start_time = Instant::now();
 
-    let mut configs = peripherals_service::config::load_board_configs().await?;
+    let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
     let config = configs.remove(&args.config_name)
         .ok_or_else(|| err_msg("No config with the given name"))?;
 

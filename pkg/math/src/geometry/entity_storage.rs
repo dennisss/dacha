@@ -5,6 +5,7 @@ use core::marker::PhantomData;
 use core::ops::{Add, Deref, DerefMut, Index, IndexMut};
 use std::collections::HashMap;
 
+use common::algorithms::DisjointSets;
 use common::hash::FastHasherBuilder;
 
 #[derive(Debug, Clone)]
@@ -101,3 +102,26 @@ impl<T> Add<usize> for Id<T> {
         Self(self.0 + rhs, PhantomData)
     }
 }
+
+pub struct EntityDisjointSets<T> {
+    inner: DisjointSets,
+    typ: PhantomData<T>
+}
+
+impl<T> EntityDisjointSets<T> {
+    pub fn new<V>(storage: &EntityStorage<T, V>) -> Self {
+        Self {
+            inner: DisjointSets::new(storage.next_id.0),
+            typ: PhantomData
+        }
+    }
+
+    pub fn union_sets(&mut self, id1: Id<T>, id2: Id<T>) {
+        self.inner.union_sets(id1.0, id2.0);
+    }
+
+    pub fn find_set_min(&mut self, id: Id<T>) -> Id<T> {
+        Id(self.inner.find_set_min(id.0), PhantomData)
+    }
+}
+

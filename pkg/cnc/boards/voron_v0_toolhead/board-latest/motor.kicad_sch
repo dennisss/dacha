@@ -1035,6 +1035,10 @@
     (effects (font (size 1.27 1.27)) (justify left bottom))
     (uuid 851852f4-a17e-4f21-969c-53cab4e90b0e)
   )
+  (text "TODO: Remove solder mask for heatsink." (at 44.45 69.85 0)
+    (effects (font (size 1.27 1.27)) (justify left bottom))
+    (uuid bba1fad3-dd2f-42fd-b455-55570ae134e1)
+  )
 
   (label "UART" (at 151.13 57.15 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right bottom))

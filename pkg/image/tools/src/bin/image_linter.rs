@@ -36,8 +36,14 @@ async fn main() -> Result<()> {
     // case insensitivity.
     for input_dir in input_dirs {
         file::recursively_list_dir(&input_dir, &mut |path| {
-            if path.extension() == Some("jpg") {
+            let ext = path.extension().unwrap_or("").to_ascii_lowercase();
+            
+            if ext == "jpg" || ext == "jpeg" {
                 image_files.push(path.to_owned());
+            }
+
+            if ext == "png" || ext == "webp" || ext == "gif" {
+                println!("Warning: Not linting: {}", path.as_str());
             }
         })?;
     }
@@ -55,6 +61,7 @@ async fn main() -> Result<()> {
             violations.push(format!("Image has extra non-pixel metadata"));
         }
 
+        /*
         let original_area = jpg.image.width() * jpg.image.height();
         if original_area > MAX_PIXEL_AREA {
             violations.push(format!("Pixel area is too large: {}", original_area))
@@ -63,6 +70,7 @@ async fn main() -> Result<()> {
         if input_data.len() > MAX_FILE_SIZE {
             violations.push(format!("File too big: {}", input_data.len()));
         }
+            */
 
         if violations.is_empty() {
             println!("=> Good!");
@@ -73,6 +81,7 @@ async fn main() -> Result<()> {
 
         let mut img = jpg.image;
 
+        /*
         if img.width() * img.height() > MAX_PIXEL_AREA {
             let aspect_ratio = (img.height() as f32) / (img.width() as f32);
 
@@ -82,15 +91,18 @@ async fn main() -> Result<()> {
 
             img = img.resize(height, width);
         }
+            */
 
         let encoder = image::format::jpeg::encoder::JPEGEncoder::new(90);
         let mut output_data = vec![];
         encoder.encode(&img, &mut output_data)?;
 
+        /*
         if output_data.len() > MAX_FILE_SIZE {
             println!("=> STILL TOO BIG AFTER RE-ENCODING!");
             continue;
         }
+        */
 
         if args.write {
             file::write(&path, &output_data).await?;

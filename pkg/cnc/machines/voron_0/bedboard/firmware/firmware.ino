@@ -3,7 +3,7 @@
 
 /*
 
-Chip is "tinyAVR 1-Series" Attiny412
+Chip is "tinyAVR 1-Series" Attiny412-SS
 
 https://github.com/SpenceKonde/megaTinyCore/blob/master/megaavr/libraries/megaTinyCore/examples/readTempVcc/readTempVcc.ino
 https://github.com/SpenceKonde/megaTinyCore/blob/master/megaavr/extras/Ref_Analog.md

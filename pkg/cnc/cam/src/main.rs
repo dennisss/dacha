@@ -1,33 +1,6 @@
-#[macro_use]
-extern crate macros;
-#[macro_use]
-extern crate file;
 
-use std::time::Instant;
-
-use base_error::*;
-use cam::process_pcb;
-use kicad::export::KicadPCBExport;
-use file::{temp::TempDir, LocalPathBuf};
-use gerber::{
-    excellon,
-    graphics::{FillMode, GraphicsObject},
-    processor::{CommandsProcessor, CommandsProcessorOptions},
-};
-use graphics::{
-    canvas::{Paint, Path, PathBuilder},
-    opengl::{canvas::OpenGLCanvas, canvas_render_loop::CanvasFrameHandler},
-    raster::canvas_render_loop::WindowOptions,
-};
-use math::geometry::{
-    bounding_box::BoundingBoxBuilder,
-    half_edge::{FaceDebug, HalfEdgeStruct},
-};
 
 /*
-Endoscope mount uses 2 x M2 16mm screws
-- Keywords to search for are 'Windows' or 'Linux' or 'UVC' or presence of a male USB type A connector (the 3 in 1 endoscopes)
-
 
 Dual layer workflow:
 - Given full workpiece size
@@ -47,6 +20,9 @@ Dual layer workflow:
 - Do edge cuts.
 
 
+TODO: In the monitor tool, need to move the image preview when the carvera preview is set (but before setting the )
+
+TODO: Disallow doing leveling if we don't have a connection to the wireless probe.
 
 
 TODO: Need to investigate what the solder mask removal quality is so bad.
@@ -62,6 +38,104 @@ TODO: Make this a golden test case:
         --board_path=pkg/things/fan_controller/boards/board-hl15-latest/board-hl15-latest.kicad_pcb \
         --forced_hole_diameter=0.9 \
         --output_path=fan_controller.gcode
+
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/duet3d_alt_magnet/board/board.kicad_pcb \
+        --output_path=duet_magnet_stencil.gcode \
+        --mode=stencil-front
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/voron_v0_umbilical/board-latest/board-latest.kicad_pcb \
+        --mode=single-back \
+        --output_path=umbilical.gcode
+
+
+pkg/cnc/boards/voron_v0_umbilical/board-latest/board-latest.kicad_pcb
+
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/voron_v0_bed/board-latest/board-latest.kicad_pcb \
+        double-front \
+        --output_path=bedboard.gcode
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/voron_v0_bed/board-latest/board-latest.kicad_pcb \
+        laser-stencil-front \
+        --output_path=bedboard_stencil.svg
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/voron_v0_bed/board-latest/board-latest.kicad_pcb \
+        double-back \
+        --alignment_data=alignment_data.txtpb \
+        --output_path=bedboard_back.gcode
+
+    ======================
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/smart_servo/board/board.kicad_pcb \
+        double-front \
+        --output_path=servo.gcode
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/smart_servo/board/board.kicad_pcb \
+        double-back \
+        --alignment_data=servo_alignment_data.txtpb \
+        --output_path=servo_back.gcode
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/smart_servo/board/board.kicad_pcb \
+        laser-stencil-back \
+        --output_path=servo_stencil_back.svg
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/smart_servo/board/board.kicad_pcb \
+        laser-stencil-front \
+        --output_path=servo_stencil_front.svg
+
+    ===================
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cnc/boards/attiny_blink/board/board.kicad_pcb \
+        single-front \
+        --output_path=blink.gcode
+
+    ==================
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cluster/machines/jbod/boards/backplane-tester/backplane-tester.kicad_pcb \
+        double-front \
+        --output_path=backplane-tester.gcode
+
+    cargo run --bin pcb_cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
+        --board_path=pkg/cluster/machines/jbod/boards/backplane-tester/backplane-tester.kicad_pcb \
+        double-back \
+        --alignment_data=backplane_tester_alignment.txtpb \
+        --output_path=backplane-tester_back.gcode
+
+    cargo run --bin cam --release -- \
+        --board_path=pkg/cluster/machines/jbod/boards/backplane-tester/backplane-tester.kicad_pcb \
+        laser-stencil-back \
+        --output_path=backplane-tester_back_stencil.svg
+
+    
+        
+
+
+
+
+    ============
+
+    cargo run --bin kicad_export -- --board_path=pkg/cnc/boards/voron_v0_bed/board-latest/board-latest.kicad_pcb --output_dir=/tmp/bedboard
+
+
+TODO: Verify that we never probe the back side over one of the through holes.
+
+98
+108
+
+TODO: For Carvera, explicitly change back to absolute positioning after a toolchange sine it seems to often lose this state.
 
 
 TODO: For Carvera leveling, if in 'preview' mode, then the view box will move while probing
@@ -93,135 +167,27 @@ TODO: Still seeing the random flakiness in serial
 
 TODO: Wireless probing auto-suggest # of points based on x/y distance
 
+
+For stencil need to export an SVG that is inward offset
+- https://www.youtube.com/watch?v=mw0mskVCvis
+
+
+TODO: When doing a toolchange, reset back to the original feed rate instead of using the last user set one.
+
+TODO: Need validation that nets as well connected if we ignore the fact that most through holes aren't connected.
+
+TODO:  Ideally have a feature in the UI to re-run certain subsets of the gcode (e.g. just redoing a single pad in the solder mask but would need to click on a UI to figure out which one we want to do.)
+
+TODO: Alignment holes don't need to be drilled on the back side.
+
+TODO: Need an option for disabling auto focus
+
+TODO: Need better 
+
+TODO: Always do the isolation pass for the boundary first
+
+TODO: 
+
 */
 
-#[derive(Args)]
-struct Args {
-    board_path: LocalPathBuf,
-    output_path: LocalPathBuf,
-
-    #[arg(default = 0.0)]
-    forced_hole_diameter: f32,
-}
-
-#[executor_main]
-async fn main() -> Result<()> {
-    let args = common::args::parse_args::<Args>()?;
-
-    let mut config = cam_proto::cnc::PCBProcessorConfig::default();
-    protobuf::text::parse_text_proto(
-        "
-        isolation {
-            tool_index: 2
-            tool_diameter: 0.2
-            tool_v_angle: 30
-            min_cut_depth: 0.05 # TODO
-            # cut_width: 0.23 # For ~0.05mm cut depth.
-            cut_depth: 0.05
-            num_passes: 4
-            overlap_percentage: 0.1
-            spindle_speed: 12000
-            travel_z: 1
-            clearance_z: 10
-            feedrate_xy: 500
-            feedrate_z: 200
-            rapid_feedrate: 1000
-        }
-
-        # TODO: Will this well cover the center patch of pads.
-        # TODO: Need min time at start and end point of each path?
-        mask_removal {
-            tool_index: 5
-            tool_diameter: 0.3
-            spindle_speed: 6000
-            # Standard is 0.2 which is not enough force for well cured mask.
-            cut_depth: 0.3
-            overlap_percentage: 0.3
-            travel_z: 1
-            clearance_z: 10
-            feedrate_z: 200
-            feedrate_xy: 400
-            rapid_feedrate: 1000
-            inverted: true
-            erosion: 0.05
-            multiples: 2
-        }
-
-        paste_stencil {
-            tool_index: 2
-            tool_diameter: 0.2
-            tool_v_angle: 30
-            spindle_speed: 12000
-            feedrate_z: 200
-            feedrate_xy: 100
-            rapid_feedrate: 1000
-            cut_depth: 0.3
-            travel_z: 1
-            clearance_z: 10
-            num_passes: 1
-            inverted: true
-        }
-
-        drill {
-            tool_index: 3
-            # tool_diameter: 0.8
-            spindle_speed: 12000
-            rapid_feedrate: 1000
-            feedrate_z: 200
-            travel_z: 1
-            clearance_z: 10
-            drill_z: -1.62
-        }
-    
-        cutout {
-            tool_index: 3
-            tool_diameter: 0.8
-            margin: 0.02
-            feedrate_xy: 400
-            feedrate_z: 300
-            travel_z: 1
-            clearance_z: 10
-            cut_depth_z: 1.65
-            depth_per_pass_z: 0.2
-            spindle_speed: 12000
-            rapid_feedrate: 1000
-        }
-        ",
-        &mut config,
-    )?;
-
-    config.set_forced_hole_diameter(args.forced_hole_diameter);
-
-    // TODO: Verify all feedrates are non-zero. Verify all travel/clearance z
-    // heights are non-zero
-
-    let tmp_dir = TempDir::create()?;
-    let export = KicadPCBExport::generate(&args.board_path, tmp_dir.path())?;
-
-    let options = cam::PCBProcessorOptions {
-        config,
-        edge_cuts_path: Some(export.edge_cuts),
-        back_copper_path: Some(export.back_copper),
-        back_mask_path: Some(export.back_mask),
-        back_paste_path: Some(export.back_paste),
-        drill_path: Some(export.drill_file),
-        min_feature_size: 0.02,
-    };
-
-    // TODO: Need to verify that we well handle when contours get very small (e.g.
-    // attempting to offline a circle/obround with close to its diameter may
-    // collapse to a point or a line).
-
-    // TODO: Warn when there is a solder mask hole for every pad labeled in the
-    // copper layer.
-
-    let start = Instant::now();
-    let program = process_pcb(&options).await?;
-    let end = Instant::now();
-
-    println!("Processing Time: {:?}", end - start);
-
-    file::write(&args.output_path, &program).await?;
-
-    Ok(())
-}
+fn main() {}

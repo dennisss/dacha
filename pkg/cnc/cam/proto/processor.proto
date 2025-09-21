@@ -24,6 +24,8 @@ message PCBProcessorConfig {
     ArcMotionBuilderConfig arc_builder = 9;
 
     LaserStencilProcessorConfig laser_stencil = 10;
+
+    float min_feature_size = 11;
 }
 
 message AlignmentHolesConfig {

@@ -139,6 +139,7 @@ members = [
 	"pkg/cnc/cam/proto",
 	"pkg/cnc/kicad",
 	"pkg/cnc/kicad/proto",
+	"pkg/cnc/controller",
 	"pkg/testing",
 	"pkg/perf",
 	"pkg/perf_util",

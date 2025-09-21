@@ -1,0 +1,26 @@
+[package]
+name = "cnc_controller"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+doctest = false
+
+[dependencies]
+macros = { path = "../../macros" }
+protobuf = { path = "../../protobuf", default-features = false }
+math = { path = "../../math", default-features = false }
+common = { path = "../../common", default-features = false }
+peripherals = { path = "../../peripherals" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+executor = { path = "../../executor" }
+usb = { path = "../../usb" }
+nordic_tools = { path = "../../nordic/tools" }
+peripherals_service = { path = "../../peripherals/service" }
+peripherals_proto = { path = "../../peripherals/proto" }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "math/alloc", "protobuf/alloc"]
+std = ["common/std", "math/std", "protobuf/std"]

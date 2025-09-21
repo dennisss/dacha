@@ -84,7 +84,7 @@ pub fn compile_board_config(configs: &[&BoardConfig]) -> Result<BoardConfig> {
 
             } else {
                 if !pin.has_index() {
-                    return Err(err_msg("Pin missing index"));
+                    return Err(format_err!("Pin '{}' missing index", pin.name()));
                 }
 
                 if !pin_numbers.insert(pin.index()) {
@@ -235,61 +235,86 @@ pub fn nrf52840_config() -> BoardConfig {
     config
 }
 
-pub async fn load_board_configs() -> Result<HashMap<String, BoardConfig>> {
-    let mut raw_configs = vec![];
-    raw_configs.push(nrf52840_config());
+pub struct BoardConfigRegistry {
+    configs: HashMap<String, BoardConfig>,
+}
 
-    let dir = project_path!("pkg/peripherals/config/boards");
-    for entry in file::read_dir(&dir)? {
-        // TODO: Switch to a glob
-        if !entry.name().ends_with(".txtpb") {
-            continue;
-        }
+impl BoardConfigRegistry {
+    pub async fn defaults() -> Result<Self> {
+        let mut raw_configs = vec![];
+        raw_configs.push(nrf52840_config());
 
-        let data: String = file::read_to_string(&dir.join(entry.name())).await?;
-
-        let mut preset = BoardConfig::default();
-        protobuf::text::parse_text_proto(&data, &mut preset)
-            .map_err(|e| format_err!("While trying to load: {}; {}", entry.name(), e))?;
-
-        raw_configs.push(preset);
-    }
-
-    let mut raw_config_map = HashMap::new();
-    for config in &raw_configs {
-        if raw_config_map.insert(config.name(), config).is_some() {
-            return Err(err_msg("Duplicate config"));
-        }
-    }
-
-    let mut out = HashMap::new();
-
-    for config in &raw_configs {
-        let mut config_chain = vec![ config ];
-
-        let mut visited = HashSet::new();
-        visited.insert(config.name());
-
-        let mut base_config = config.base_config();
-
-        while !base_config.is_empty() {
-            if !visited.insert(base_config) {
-                return Err(err_msg("Cycle in resolving config"));
+        let dir = project_path!("pkg/peripherals/config/boards");
+        for entry in file::read_dir(&dir)? {
+            // TODO: Switch to a glob
+            if !entry.name().ends_with(".txtpb") {
+                continue;
             }
 
-            let config = *raw_config_map.get(base_config)
-                .ok_or_else(|| err_msg("base_config not found"))?;
-            config_chain.push(config);
+            let data: String = file::read_to_string(&dir.join(entry.name())).await?;
 
-            base_config = config.base_config();
+            let mut preset = BoardConfig::default();
+            protobuf::text::parse_text_proto(&data, &mut preset)
+                .map_err(|e| format_err!("While trying to load: {}; {}", entry.name(), e))?;
+
+            raw_configs.push(preset);
         }
 
-        config_chain.reverse();
+        let mut raw_config_map = HashMap::new();
+        for config in &raw_configs {
+            if raw_config_map.insert(config.name(), config).is_some() {
+                return Err(err_msg("Duplicate config"));
+            }
+        }
 
-        out.insert(config.name().to_string(), compile_board_config(&config_chain)?);
+        let mut out = HashMap::new();
+
+        for config in &raw_configs {
+            let mut config_chain = vec![ config ];
+
+            let mut visited = HashSet::new();
+            visited.insert(config.name());
+
+            let mut base_config = config.base_config();
+
+            while !base_config.is_empty() {
+                if !visited.insert(base_config) {
+                    return Err(err_msg("Cycle in resolving config"));
+                }
+
+                let config = *raw_config_map.get(base_config)
+                    .ok_or_else(|| err_msg("base_config not found"))?;
+                config_chain.push(config);
+
+                base_config = config.base_config();
+            }
+
+            config_chain.reverse();
+
+            out.insert(config.name().to_string(), compile_board_config(&config_chain)?);
+        }
+
+        Ok(Self {
+            configs: out
+        })
     }
 
-    Ok(out)
+    pub fn remove(&mut self, name: &str) -> Option<BoardConfig> {
+        self.configs.remove(name)
+    }
+
+    pub fn compile(&self, config: &BoardConfig) -> Result<BoardConfig> {
+        let mut config_chain = vec![];
+        if !config.base_config().is_empty() {
+            config_chain.push(self.configs.get(config.base_config())
+                .ok_or_else(|| err_msg("base_config not found"))?);
+        }
+
+        config_chain.push(config);
+
+        compile_board_config(&config_chain)
+    }
+
 }
 
 

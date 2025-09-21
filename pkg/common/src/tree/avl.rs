@@ -35,6 +35,10 @@ impl<T, A: TreeAttribute, C: Comparator<T, T>> AVLTree<T, A, C> {
         }
     }
 
+    pub fn comparator(&self) -> &C {
+        &self.comparator
+    }
+
     /// Changes the comparator used for future tree operations.
     ///
     /// The new comparator should perform an equivalent ordering of all elements

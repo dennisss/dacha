@@ -593,6 +593,10 @@
     (uuid fe3a5efb-8623-41a8-bbc1-6b4709b0d39a)
   )
 
+  (text "600mA output limit" (at 85.09 102.87 0)
+    (effects (font (size 1.27 1.27)) (justify left bottom))
+    (uuid a3a7a905-af6f-43d9-9d51-40c776d99c7f)
+  )
   (text "TODO: Smaller inductor footprint." (at 71.12 25.4 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
     (uuid fee8aa1f-e896-43bd-b6e1-7212409d2795)

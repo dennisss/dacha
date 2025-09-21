@@ -346,6 +346,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         let twin = self.half_edges.unique_id();
         let face_id = self.faces.unique_id();
 
+        // TODO: Also add outselves as an inner component of the unbounded face for the twin edges.
         self.faces.insert(
             face_id,
             Face {
@@ -1032,6 +1033,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             // current boundary is actually inside of (based on the location of its leftmost
             // vertex).
             let parent_boundary_index = {
+                // TODO: THis can crash when doing some face merging.
                 let candidate_parent_index = edge_to_boundary_index[&left_edge_id];
                 assert_ne!(candidate_parent_index, i);
 
@@ -1337,6 +1339,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
     fn merge_faces_impl<M: Fn(&Face<F>, &Face<F>) -> bool>(&mut self, can_merge: M) -> bool {
         let mut edges_to_remove = vec![];
 
+        let mut face_sets = EntityDisjointSets::new(&self.faces);
+
         for (edge_id, edge) in self.half_edges.iter() {
             if *edge_id > edge.twin {
                 continue;
@@ -1348,6 +1352,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     &self.faces[self.half_edges[edge.twin].incident_face],
                 )
             {
+                face_sets.union_sets(edge.incident_face, self.half_edges[edge.twin].incident_face);
                 edges_to_remove.push(*edge_id);
             }
         }
@@ -1365,6 +1370,13 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             if twin.next != edge_id {
                 self.half_edges[twin.next].prev = edge.prev;
                 self.half_edges[edge.prev].next = twin.next;
+            }
+        }
+
+        // Note that the incident_faces are used for re-labeling in the repair_faces process so must be corrected just in case we removed a face that is used on a enter/exit edge while scanning
+        if some_removed {
+            for edge in self.half_edges.values_mut() {
+                edge.incident_face = face_sets.find_set_min(edge.incident_face);
             }
         }
 
@@ -1969,6 +1981,8 @@ impl<F: FaceLabel> FaceDebug<F> {
             assert_eq!(data.half_edges[edge.next].prev, *edge_id);
             assert_eq!(data.half_edges[edge.prev].next, *edge_id);
             assert_eq!(data.half_edges[edge.twin].twin, *edge_id);
+
+            // If this fails, then after traversing all components, this edge was not found to be part of any face.
             assert!(seen_ids.contains(edge_id), "Missing {:?}", edge_id);
 
             // Edges along a boundary should all be pointing in the same direction.
@@ -2933,6 +2947,86 @@ mod tests {
                 }),
             ]),
         );
+    }
+
+    #[test]
+    fn side_by_side_squares() {
+        // Testing face merging.
+        // This test only works because we do incident_face correction in merge_faces_impl()
+
+        let mut data = HalfEdgeStruct::new();
+
+        add_face(
+            &mut data,
+            label("A"),
+            &[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
+        );
+
+        add_face(
+            &mut data,
+            label("A"),
+            &[(1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (1.0, 1.0)],
+        );
+
+        add_face(
+            &mut data,
+            label("B"),
+            &[(3.0, 0.0), (4.0, 0.0), (4.0, 1.0), (3.0, 1.0)],
+        );
+
+        data.repair();
+        data.merge_faces();
+        
+        let boundaries = FaceDebug::get_all(&data);
+
+        assert_that(
+            &boundaries,
+            unordered_elements_are(&[
+                eq(FaceDebug {
+                    label: labels(&[]),
+                    outer_component: None,
+                    inner_components: vec![
+                        vec![
+                            vec2f(3.0, 0.0),
+                            vec2f(3.0, 1.0),
+                            vec2f(4.0, 1.0),
+                            vec2f(4.0, 0.0),
+                        ],
+                        vec![
+                            vec2f(0.0, 0.0),
+                            vec2f(0.0, 1.0),
+                            vec2f(1.0, 1.0),
+                            vec2f(2.0, 1.0),
+                            vec2f(2.0, 0.0),
+                            vec2f(1.0, 0.0),
+                        ],
+                    ],
+                }),
+                eq(FaceDebug {
+                    label: labels(&["B"]),
+                    outer_component: Some(vec![
+                        vec2f(3.0, 0.0),
+                        vec2f(4.0, 0.0),
+                        vec2f(4.0, 1.0),
+                        vec2f(3.0, 1.0),
+                    ]),
+                    inner_components: vec![],
+                }),
+                eq(FaceDebug {
+                    label: labels(&["A"]),
+                    outer_component: Some(vec![
+                        vec2f(0.0, 0.0),
+                        vec2f(1.0, 0.0),
+                        vec2f(2.0, 0.0),
+                        vec2f(2.0, 1.0),
+                        vec2f(1.0, 1.0),
+                        vec2f(0.0, 1.0),
+                    ]),
+                    inner_components: vec![],
+                }),
+            ]),
+        );
+
     }
 
     #[test]

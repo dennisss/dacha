@@ -5,7 +5,7 @@ use math::geometry::half_edge::HalfEdgeStruct;
 use math::geometry::bounding_box::BoundingBox2;
 use cam_proto::cnc::*;
 
-use crate::isolation::FaceLabel;
+use crate::faces::*;
 
 const SVG_HEADER: &'static str = r#"
 <?xml version="1.0" standalone="no"?>
@@ -42,33 +42,7 @@ impl LaserStencilProcessor {
     }
 
     pub fn process(&self, objects: &[GraphicsObject], bbox: &BoundingBox2) -> Result<String> {
-        // TODO: Dedup this between the processors.
-        let object_edges = {
-            let mut half_edges = HalfEdgeStruct::<FaceLabel>::new();
-
-            for obj in objects {
-                for path in &obj.paths {
-                    if let gerber::FillMode::Dark = path.fill {
-                        //
-                    } else {
-                        // TODO:
-                        println!("Non dark");
-                        continue;
-                    }
-
-                    let (vertices, path_starts) = path.path.linearize(self.options.max_error);
-                    for i in 0..(path_starts.len() - 1) {
-                        let start_i = path_starts[i];
-                        let end_i = path_starts[i + 1];
-                        half_edges.add_face(FaceLabel::dark(), vertices[start_i..end_i].iter().cloned());
-                    }
-                }
-            }
-
-            half_edges.repair();
-            half_edges.merge_faces();
-            half_edges
-        };
+        let object_edges = objects_to_faces(objects.iter(), self.options.max_error);
 
         let mut num_pads = 0;
         for face in object_edges.faces() {

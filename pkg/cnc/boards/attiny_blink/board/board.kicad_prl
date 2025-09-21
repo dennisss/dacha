@@ -1,6 +1,6 @@
 {
   "board": {
-    "active_layer": 49,
+    "active_layer": 44,
     "active_layer_preset": "All Layers",
     "auto_track_width": true,
     "hidden_netclasses": [],
@@ -19,7 +19,7 @@
       "footprints": true,
       "graphics": true,
       "keepouts": true,
-      "lockedItems": true,
+      "lockedItems": false,
       "otherItems": true,
       "pads": true,
       "text": true,
@@ -68,7 +68,7 @@
     "zone_display_mode": 0
   },
   "meta": {
-    "filename": "board-latest.kicad_prl",
+    "filename": "board.kicad_prl",
     "version": 3
   },
   "project": {

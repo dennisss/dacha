@@ -34,9 +34,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 1.7,
-          "height": 3.0,
-          "width": 3.0
+          "drill": 0.9,
+          "height": 1.7,
+          "width": 1.7
         },
         "silk_line_width": 0.15,
         "silk_text_italic": false,
@@ -172,20 +172,12 @@
         }
       ],
       "track_widths": [
-        0.0,
-        0.4,
-        0.8,
-        1.2,
-        1.6
+        0.0
       ],
       "via_dimensions": [
         {
           "diameter": 0.0,
           "drill": 0.0
-        },
-        {
-          "diameter": 2.0,
-          "drill": 0.9
         }
       ],
       "zones_allow_external_fillets": false
@@ -413,7 +405,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "backplane-tester.kicad_pro",
+    "filename": "board.kicad_pro",
     "version": 1
   },
   "net_settings": {
@@ -490,7 +482,7 @@
   },
   "sheets": [
     [
-      "01b26da5-a7b6-4d6e-978a-e207e7b7469c",
+      "1a1d4a47-9b22-46fe-9dec-34cd1b06d6f5",
       ""
     ]
   ],

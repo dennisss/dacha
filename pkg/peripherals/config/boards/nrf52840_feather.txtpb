@@ -1,0 +1,106 @@
+# proto-file: pkg/peripherals/proto/service.proto
+# proto-message: BoardConfig
+
+name: "nrf52840_feather"
+base_config: "nrf52840"
+
+pins {
+    name: "A0"
+    alias: "P0.04"
+}
+pins {
+    name: "A1"
+    alias: "P0.05"
+}
+pins {
+    name: "A2"
+    alias: "P0.30"
+}
+pins {
+    name: "A3"
+    alias: "P0.28"
+}
+pins {
+    name: "A4"
+    alias: "P0.02"
+}
+pins {
+    name: "A5"
+    alias: "P0.03"
+}
+pins {
+    name: "SCK"
+    alias: "P0.14"
+}
+pins {
+    name: "MOSI"
+    alias: "P0.13"
+}
+pins {
+    name: "MISO"
+    alias: "P0.15"
+}
+pins {
+    name: "RX"
+    alias: "P0.24"
+}
+pins {
+    name: "TX"
+    alias: "P0.25"
+}
+pins {
+    name: "D2"
+    alias: "P0.10"
+}
+pins {
+    name: "D13"
+    alias: "P1.09"
+}
+pins {
+    name: "D12"
+    alias: "P0.08"
+}
+pins {
+    name: "D11"
+    alias: "P0.06"
+}
+pins {
+    name: "D10"
+    alias: "P0.27"
+}
+pins {
+    name: "D9"
+    alias: "P0.26"
+}
+pins {
+    name: "D6"
+    alias: "P0.07"
+}
+pins {
+    name: "D5"
+    alias: "P1.08"
+}
+pins {
+    name: "SCL"
+    alias: "P0.11"
+}
+pins {
+    name: "SDA"
+    alias: "P0.12"
+}
+pins {
+    name: "SWITCH"
+    alias: "P1.02"
+}
+pins {
+    name: "RED_LED"
+    alias: "P1.15"
+}
+pins {
+    name: "NEOPIXEL"
+    alias: "P0.16"
+}
+pins {
+    name: "NFC"
+    alias: "P0.29"
+}

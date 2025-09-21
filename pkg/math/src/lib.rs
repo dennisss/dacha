@@ -42,6 +42,7 @@ pub mod intrinsics;
 pub mod matrix;
 pub mod number;
 pub mod rational;
+#[cfg(feature = "std")]
 pub mod complex;
 
 // TODO: Verify this uses hardware instructions on ARM.

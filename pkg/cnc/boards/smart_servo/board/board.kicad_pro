@@ -34,9 +34,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 1.7,
-          "height": 3.0,
-          "width": 3.0
+          "drill": 0.9,
+          "height": 2.0,
+          "width": 2.0
         },
         "silk_line_width": 0.15,
         "silk_text_italic": false,
@@ -173,10 +173,8 @@
       ],
       "track_widths": [
         0.0,
-        0.4,
         0.8,
-        1.2,
-        1.6
+        1.2
       ],
       "via_dimensions": [
         {
@@ -184,8 +182,16 @@
           "drill": 0.0
         },
         {
+          "diameter": 1.8,
+          "drill": 0.9
+        },
+        {
           "diameter": 2.0,
           "drill": 0.9
+        },
+        {
+          "diameter": 6.0,
+          "drill": 3.2
         }
       ],
       "zones_allow_external_fillets": false
@@ -413,7 +419,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "backplane-tester.kicad_pro",
+    "filename": "board.kicad_pro",
     "version": 1
   },
   "net_settings": {
@@ -421,9 +427,9 @@
       {
         "bus_width": 12,
         "clearance": 0.3,
-        "diff_pair_gap": 0.25,
+        "diff_pair_gap": 0.3,
         "diff_pair_via_gap": 0.25,
-        "diff_pair_width": 0.2,
+        "diff_pair_width": 0.4,
         "line_style": 0,
         "microvia_diameter": 0.3,
         "microvia_drill": 0.1,
@@ -431,8 +437,8 @@
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 0.4,
-        "via_diameter": 0.8,
-        "via_drill": 0.4,
+        "via_diameter": 1.8,
+        "via_drill": 0.9,
         "wire_width": 6
       }
     ],
@@ -478,6 +484,14 @@
       "version": 1
     },
     "net_format_name": "",
+    "ngspice": {
+      "fix_include_paths": true,
+      "meta": {
+        "version": 0
+      },
+      "model_mode": 0,
+      "workbook_filename": ""
+    },
     "page_layout_descr_file": "",
     "plot_directory": "",
     "spice_current_sheet_as_root": false,
@@ -490,7 +504,7 @@
   },
   "sheets": [
     [
-      "01b26da5-a7b6-4d6e-978a-e207e7b7469c",
+      "8ea2533c-725e-4612-8b50-868152ddc8cc",
       ""
     ]
   ],

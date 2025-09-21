@@ -1,0 +1,109 @@
+min_feature_size: 0.025
+
+isolation {
+    tool_index: 2
+    tool_diameter: 0.2
+    tool_v_angle: 30
+    min_cut_depth: 0.1 # TODO
+    # cut_width: 0.23 # For ~0.05mm cut depth.
+    cut_depth: 0.1
+    num_passes: 4
+    overlap_percentage: 0.2
+    spindle_speed: 12000
+    travel_z: 1
+    clearance_z: 10
+    feedrate_xy: 500
+    feedrate_z: 200
+    rapid_feedrate: 1000
+}
+
+# TODO: Will this well cover the center patch of pads.
+# TODO: Need min time at start and end point of each path?
+# TODO: Issue is that the PCB is too low for the vacuum to consistently engage
+mask_removal {
+    tool_index: 5
+    tool_diameter: 0.3
+    spindle_speed: 6000
+    cut_depth: 0.1
+    cut_compression: 0.1
+    overlap_percentage: 0.5
+    travel_z: 1
+    clearance_z: 10
+    feedrate_z: 200
+    feedrate_xy: 400
+    rapid_feedrate: 1000
+    inverted: true
+    erosion: 0.05
+    multiples: 1
+}
+
+paste_stencil {
+    tool_index: 2
+    tool_diameter: 0.2
+    tool_v_angle: 30
+    spindle_speed: 12000
+    feedrate_z: 200
+    feedrate_xy: 100
+    rapid_feedrate: 1000
+    cut_depth: 0.3
+    travel_z: 1
+    clearance_z: 10
+    num_passes: 1
+    inverted: true
+}
+
+drill {
+    tool_index: 6
+    tool_diameter: 0.9
+    spindle_speed: 12000
+    rapid_feedrate: 1000
+    feedrate_z: 200
+    travel_z: 1
+    clearance_z: 10
+    drill_z: -1.65
+}
+
+# TODO: Cutting out of holes seems to still be not very precise.
+cutout {
+    tool_index: 3
+    tool_diameter: 0.8
+    margin: 0.02
+    feedrate_xy: 400
+    feedrate_z: 300
+    travel_z: 1
+    clearance_z: 10
+    cut_depth_z: 1.65
+    depth_per_pass_z: 0.2
+    spindle_speed: 12000
+    rapid_feedrate: 1000
+}
+
+double_sided {
+    # 1.65 will usually not fully penetrate the bottom copper surface (and may just deform it).
+    front_through_cut_depth: 1.8
+    back_through_cut_depth: 0.4
+    front_partial_cut_depth: 0.6
+    back_partial_cut_depth: 1.4
+}
+
+arc_builder {
+    min_points: 6
+    max_deviation: 0.04
+    max_point_deviation: 0.015
+    max_path_length_deviation_percent: 0.01
+    
+    # For now disable arcs since we don't support visualizing them yet.
+    max_radius: 0
+    # max_radius: 100
+}
+
+laser_stencil {
+    laser_diameter: 0.4
+}
+
+alignment_holes {
+    hole_size: 0.9
+    long_edge_offset: 4
+    short_edge_offset: 4
+    short_edge_asymetric_offset: 8
+}

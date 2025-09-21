@@ -4,9 +4,18 @@ This package contains shared utilities for working with KiCad (managing componen
 
 ## Developing
 
-All PCBs in this repository currently use KiCad v7 format files and only reference symbols/footprints either in the builtin KiCad libraries or those in this repository. To avoid simplify component library management, all symbol/footprint libraries need to be defined (via the below command) globally rather than per kicad project.
+All PCBs in this repository currently use KiCad 7 format files and only reference symbols/footprints either in the builtin KiCad libraries or those in this repository. To avoid simplify component library management, all symbol/footprint libraries need to be defined (via the below command) globally rather than per kicad project.
 
-If you haven't already, ensure that you have KiCad v7 installed and run the following command to setup your user level symbol/footprint libraries to reference those in this repository:
+If you haven't already, ensure that you have KiCad 7 installed. If you don't have it installed, install with:
+
+```
+sudo add-apt-repository ppa:kicad/kicad-7.0-releases
+sudo apt update
+
+sudo apt install kicad
+```
+
+Then run the following command to setup your user level symbol/footprint libraries to reference those in this repository:
 
 ```
 cargo run --bin kicad_library_setup

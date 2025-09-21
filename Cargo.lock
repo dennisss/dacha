@@ -1002,6 +1002,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "cnc_controller"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
+ "executor",
+ "file",
+ "macros",
+ "math",
+ "math_compute",
+ "nordic_tools",
+ "peripherals",
+ "peripherals_proto",
+ "peripherals_service",
+ "protobuf",
+ "usb",
+]
+
+[[package]]
 name = "cnc_monitor"
 version = "0.1.0"
 dependencies = [
@@ -1889,6 +1908,7 @@ dependencies = [
  "common",
  "executor",
  "file",
+ "glfw",
  "graphics",
  "image",
  "macros",
