@@ -1,4 +1,8 @@
 
+Very useful reference for setting up OpenCL with Intel GPU (standard Ubuntu tooling doesn't repos)
+
+- https://dgpu-docs.intel.com/driver/client/overview.html#ubuntu-22.04
+
 Install Ubuntu 22.04.3
 
 - 1 GB EFI partition

@@ -11,7 +11,7 @@ To setup all dependencies for this project, do the following:
 - In this repository run the following to fetch submodules:
     - `git submodule update --init`
 - Install needed Debian packages:
-    - `sudo apt install ldd clang pkg-config uidmap libnss3-tools libasound2-dev libglfw3-dev xorg-dev`
+    - `sudo apt install clang pkg-config uidmap libnss3-tools libasound2-dev libglfw3-dev xorg-dev`
 - Install Rustup per https://www.rust-lang.org/tools/install
 - In this repository, run `rustup show` to install the ensure that the repository specific Rust version is installed.
     - This should install from the `rust-toolchain.toml` directory in the root of the repository.
@@ -55,7 +55,7 @@ You're free to use any Linux based machine(s) to set up the cluster, but here ar
 
 ### Setup
 
-Follow the [cluster setup user guide](../pkg/container/index.md) to build a managed cluster out of all the machines.
+Follow the [cluster setup user guide](../pkg/cluster/index.md) to build a managed cluster out of all the machines.
 
 ## Individual Applications
 

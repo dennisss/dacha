@@ -1,7 +1,30 @@
-use crate::binary::*;
-use crate::take_exact;
 use common::errors::*;
 use reflection::*;
+
+use crate::binary::*;
+use crate::take_exact;
+
+// NOTE: The raw ones are unsafe since they are not portable due to lack of endian consistency
+// and they don't validate that the struct is made of just primitive fields that can be trivially
+// serialized without following memory pointers.
+pub unsafe fn parse_cstruct_raw<T>(input: &[u8], out: &mut T) -> Option<usize> {
+    let size = core::mem::size_of::<T>();
+    if input.len() < size {
+        return None;
+    }
+
+    let out_slice =
+        unsafe { core::slice::from_raw_parts_mut(core::mem::transmute::<_, *mut u8>(out), size) };
+    out_slice.copy_from_slice(&input[0..size]);
+
+    Some(size)
+}
+
+pub unsafe fn serialize_cstruct_raw<'a, T>(input: &'a T) -> &'a [u8] {
+    let size = core::mem::size_of::<T>();
+    unsafe { core::slice::from_raw_parts(core::mem::transmute::<_, *const u8>(input), size) }
+}
+
 
 // TODO: Verify that if we ever deserialize using serde that we check for
 // trailing blocks.

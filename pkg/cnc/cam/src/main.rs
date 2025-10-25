@@ -77,7 +77,8 @@ pkg/cnc/boards/voron_v0_umbilical/board-latest/board-latest.kicad_pcb
         double-front \
         --output_path=servo.gcode
 
-    cargo run --bin cam --release -- \
+    cargo run --bin pcb_cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
         --board_path=pkg/cnc/boards/smart_servo/board/board.kicad_pcb \
         double-back \
         --alignment_data=servo_alignment_data.txtpb \

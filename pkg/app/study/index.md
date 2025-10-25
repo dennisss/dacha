@@ -11,10 +11,16 @@ Flash Card Learning App
     - Raw flash cards
         - Set Id
         - Order: monotonic order for listing the cards.
+            - Eventually also include stuff like 
         - Id
         - Text Dimension A
         - Text Dimension B
         - Text Dimension C 
+            - A single dimension may have multiple synonyms and needs to have a matching algorithm.
+        - For WaniKani things
+            - Meaning (rich text)
+            - Context sentences
+            - 
     - Active cards:
         - Id
         - Enabled time: When
@@ -71,4 +77,13 @@ Gradually decaying the decay
     - Only update if > 30 minutes have passed
     - Weight be how wrong the prediction is.
     - next_attempt_score - (post_decay_confidence - original_confidence)
+
+Offline mode / syncronization:
+
+- Allow fetching all user data locally
+- General idea is that syncing back up later mainly requires sending a list of attempts
+    - Server will re-do calculations
+    - Basically fast rewind the state and fast forward
+- 
+
 

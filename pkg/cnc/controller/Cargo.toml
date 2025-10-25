@@ -10,8 +10,10 @@ doctest = false
 macros = { path = "../../macros" }
 protobuf = { path = "../../protobuf", default-features = false }
 math = { path = "../../math", default-features = false }
+math_compute = { path = "../../math/compute" }
 common = { path = "../../common", default-features = false }
 peripherals = { path = "../../peripherals" }
+parsing = { path = "../../parsing" }
 file = { path = "../../file" }
 crypto = { path = "../../crypto" }
 executor = { path = "../../executor" }

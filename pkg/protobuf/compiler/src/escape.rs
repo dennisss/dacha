@@ -42,5 +42,13 @@ pub fn escape_rust_identifier(ident: &str) -> &str {
         return "ValueProto";
     }
 
+    if ident == "enum" {
+        return "enum_field";
+    }
+
+    if ident == "default" {
+        return "default_field";
+    }
+
     ident
 }
