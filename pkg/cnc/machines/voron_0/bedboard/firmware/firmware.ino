@@ -217,8 +217,11 @@ void handle_request() {
 
   analogReference(VDD);
 
-  uint16_t sheet_temp = analogRead(PIN_SHEET_TEMP);
-  uint16_t bed_temp = analogRead(PIN_BED_TEMP);
+  // Longest allowed sample duration.
+  // // analogSampleDuration(31);
+
+  uint16_t sheet_temp = analogReadEnh(PIN_SHEET_TEMP, 13);
+  uint16_t bed_temp = analogReadEnh(PIN_BED_TEMP, 13);
 
   noInterrupts();
   uint32_t pulses = tach_pulse_count;

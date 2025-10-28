@@ -1,3 +1,5 @@
+#![feature(inherent_associated_types)]
+
 #[macro_use]
 extern crate macros;
 #[macro_use]
@@ -67,4 +69,13 @@ pub fn parse(input: &str) -> Result<Document> {
             return Err(e);
         }
     }
+}
+
+pub fn traverse_all_elements<F: FnMut(&Element) -> Result<()>>(el: &Element, f: &mut F) -> Result<()> {
+    f(el)?;
+    for el in el.children() {
+        traverse_all_elements(el, f)?;
+    }
+
+    Ok(())
 }

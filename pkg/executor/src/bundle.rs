@@ -129,18 +129,10 @@ impl TaskResultBundle {
     /// first task which failed will be returned. If more than one task failed,
     /// later failures will be silently ignored.
     pub async fn join(&mut self) -> Result<()> {
-        if self.num_done == self.tasks.len() {
-            return Err(err_msg("All tasks are already complete"));
-        }
-
-        loop {
+        while self.num_done < self.tasks.len() {
             let (task_i, result) = self.receiver.recv().await?;
             self.num_done += 1;
             result.with_context(|e| format!("Task {} failed: {}", self.tasks[task_i].0, e))?;
-
-            if self.num_done == self.tasks.len() {
-                break;
-            }
         }
 
         Ok(())

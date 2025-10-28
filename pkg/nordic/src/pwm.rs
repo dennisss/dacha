@@ -20,15 +20,16 @@ use crate::{
 const MAX_COUNTERTOP: u32 = (1 << 15) - 1;
 const MIN_COUNTERTOP: u32 = 3;
 
-const PRESCALAR_FREQUENCIES: &'static [(u32, PRESCALER_FIELD)] = &[
-    (16_000_000, PRESCALER_FIELD::DIV_1),
-    (8_000_000, PRESCALER_FIELD::DIV_2),
-    (4_000_000, PRESCALER_FIELD::DIV_4),
-    (2_000_000, PRESCALER_FIELD::DIV_8),
-    (1_000_000, PRESCALER_FIELD::DIV_16),
-    (500_000, PRESCALER_FIELD::DIV_32),
-    (250_000, PRESCALER_FIELD::DIV_64),
-    (125_000, PRESCALER_FIELD::DIV_128),
+const PRESCALAR_FREQUENCIES: &'static [(u32, PRESCALER_FIELD, bool)] = &[
+    (16_000_000, PRESCALER_FIELD::DIV_1, false),
+    (8_000_000, PRESCALER_FIELD::DIV_2, false),
+    (4_000_000, PRESCALER_FIELD::DIV_4, false),
+    (2_000_000, PRESCALER_FIELD::DIV_8, false),
+    (1_000_000, PRESCALER_FIELD::DIV_16, false),
+    (500_000, PRESCALER_FIELD::DIV_32, false),
+    (250_000, PRESCALER_FIELD::DIV_64, false),
+    (125_000, PRESCALER_FIELD::DIV_128, false),
+    (62_500, PRESCALER_FIELD::DIV_128, true),
 ];
 
 // TODO: Codegen this.
@@ -115,6 +116,7 @@ pub struct PWM {
 pub struct PWMConfig {
     prescaler: PRESCALER_FIELD,
     countertop: u32,
+    up_and_down: bool,
 }
 
 impl PWMConfig {
@@ -125,8 +127,9 @@ impl PWMConfig {
 
         let mut best_countertop = 0;
         let mut best_prescalar = PRESCALER_FIELD::DIV_1;
+        let mut best_up_and_down = false;
 
-        for (prescalar_freq, prescaler_field) in PRESCALAR_FREQUENCIES.iter().cloned() {
+        for (prescalar_freq, prescaler_field, up_and_down) in PRESCALAR_FREQUENCIES.iter().cloned() {
             // TODO: Round this?
             let countertop = prescalar_freq / frequency;
 
@@ -137,6 +140,7 @@ impl PWMConfig {
 
             best_countertop = countertop;
             best_prescalar = prescaler_field;
+            best_up_and_down = up_and_down;
             break;
         }
 
@@ -147,6 +151,7 @@ impl PWMConfig {
         Some(Self {
             prescaler: best_prescalar,
             countertop: best_countertop,
+            up_and_down: best_up_and_down
         })
     }
 }
@@ -163,6 +168,7 @@ impl PWM {
         PWMConfig {
             prescaler: self.periph.prescaler.read(),
             countertop: self.periph.countertop.read(),
+            up_and_down: self.periph.mode.read().updown().is_upanddown()
         }
     }
 
@@ -175,7 +181,7 @@ impl PWM {
         // Count up.
         self.periph
             .mode
-            .write_with(|v| v.set_updown_with(|v| v.set_up()));
+            .write_with(|v| v.set_updown_with(|v| if config.up_and_down { v.set_upanddown() } else {v.set_up() }));
 
         // The actual value here doesn't matter since the short will make this infinite.
         self.periph.r#loop.write(LOOP_VALUE::from_raw(1024));

@@ -47,7 +47,7 @@ impl GeminiClient {
         request.generation_config_mut().set_top_p(0.95);
         request.generation_config_mut().set_top_k(40);
         request.generation_config_mut().set_temperature(1.0);
-    
+
         let supported_categories = [
             HarmCategory::HARM_CATEGORY_HATE_SPEECH,
             HarmCategory::HARM_CATEGORY_SEXUALLY_EXPLICIT,
@@ -63,7 +63,7 @@ impl GeminiClient {
             setting.set_threshold(SafetySetting_HarmBlockThreshold::OFF);
         }
     
-        request.set_model("models/gemini-2.0-flash");
+        request.set_model("models/gemini-2.5-flash");
     
         let chunk = request.new_contents();
         chunk.set_role("user");
@@ -72,13 +72,13 @@ impl GeminiClient {
             let part = chunk.new_parts();
             part.inline_data_mut().set_mime_type("image/jpeg");
             part.inline_data_mut().set_data(image);
-        }
-    
+            }
+
         {
             let part = chunk.new_parts();
             part.set_text(prompt);
         }
-    
+
         let response = self.stub
             .GenerateContent(&rpc::ClientRequestContext::default(), &request)
             .await

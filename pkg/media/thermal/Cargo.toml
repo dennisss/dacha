@@ -1,0 +1,29 @@
+[package]
+name = "media_thermal"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+base_units = { path = "../../base/units" }
+common = { path = "../../common" }
+compression = { path = "../../compression" }
+math = { path = "../../math" }
+macros = { path = "../../macros" }
+parsing = { path = "../../parsing" }
+protobuf = { path = "../../protobuf" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+executor_graph = { path = "../../executor/graph" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+web = { path = "../../web" }
+rpc = { path = "../../rpc" }
+http = { path = "../../http" }
+image = { path = "../../image" }
+graphics = { path = "../../graphics" }
+rpc_util = { path = "../../rpc/util" }
+v4l2 = { path = "../../../third_party/v4l2" }
+usb = { path = "../../usb" }
+sstable = { path = "../../sstable" }
+media_proto = { path = "../proto" }

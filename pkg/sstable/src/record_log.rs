@@ -247,6 +247,11 @@ impl RecordReader {
         self.recovery_mode = mode;
     }
 
+    /// Absolute offset of the reader in the file representing how many bytes have been fully parsed
+    pub fn offset(&self) -> u64 {
+        self.file_offset + (self.block_offset as u64)
+    }
+
     /// Reads the next complete record from the file.
     ///
     /// Will return None once we are out of data to read. This will also filter

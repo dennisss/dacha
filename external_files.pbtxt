@@ -1125,6 +1125,16 @@ files: [
         sha256_sum: "ce3a7375cbf76ee229f3705b58b05334d4619f2d78542e5f28cb68f9f06ad5e5"
     },
     {
+        path: "doc/yen_holder/en-holder-disc.stl"
+        size: 57684
+        sha256_sum: "eff6aa67fb434c29f7453b7c8a1a7c9b9d101ee460e7b19522755bcf8f229bec"
+    },
+    {
+        path: "doc/yen_holder/en-holder.stl"
+        size: 451284
+        sha256_sum: "e0f5aff5716470ae5fa1b6e34e67ab2d152719233436368560ee664ac7a07a25"
+    },
+    {
         path: "doc/zip-clip.stl"
         size: 32484
         sha256_sum: "97a395a50961b63158aacc049f72be35e36a9f756aa15c93b4eb2ca5650b869d"
@@ -1613,6 +1623,26 @@ files: [
         path: "pkg/fan_controller/board-v0.1/plot/board.drl"
         size: 1539
         sha256_sum: "23328a708aa85cde9e1ae9ca0c7c8af431ff071b09ef728eb3218add84e87adf"
+    },
+    {
+        path: "pkg/media/thermal/doc/thermal_master_p2/tripod_mount/images/image-1.jpg"
+        size: 491127
+        sha256_sum: "3a12ac84de02e8820dc73e005f880ecd029bcc5f1688f3ee40d5c35e75b72ee5"
+    },
+    {
+        path: "pkg/media/thermal/doc/thermal_master_p2/tripod_mount/images/image-2.jpg"
+        size: 241739
+        sha256_sum: "d3d3a86cf480700600e49ead2619c88a359d9c6d9b9d3c49e4f744f0a1becf91"
+    },
+    {
+        path: "pkg/media/thermal/doc/thermal_master_p2/tripod_mount/tripod-mount-body.stl"
+        size: 297384
+        sha256_sum: "bd48e7b3e816c25e0d06ec1a129da8e76c2f3a7949523ce58eeb88aabe0225e5"
+    },
+    {
+        path: "pkg/media/thermal/doc/thermal_master_p2/tripod_mount/tripod-mount-lid.stl"
+        size: 191084
+        sha256_sum: "1cc29b1e66cabfae5d4455997f750184e64c04beb2f6db313c85848f63ee71a2"
     },
     {
         path: "pkg/peripherals/boards/tc2030_adapter/board/plot/board-B_Cu.gbl"

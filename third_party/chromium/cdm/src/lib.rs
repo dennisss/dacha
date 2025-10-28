@@ -38,7 +38,8 @@ pub use bindings::Status;
 pub use bindings::{SessionType, SubsampleEntry};
 use executor::channel;
 use executor::child_task::ChildTask;
-use executor::sync::Mutex;
+use executor::sync::AsyncMutex;
+use executor::lock;
 pub use session_event::*;
 
 use crate::host::*;
@@ -89,7 +90,7 @@ pub struct ContentDecryptionModule {
 }
 
 struct Shared {
-    inner: Mutex<cxx::UniquePtr<ffi::ContentDecryptionModule>>,
+    inner: AsyncMutex<cxx::UniquePtr<ffi::ContentDecryptionModule>>,
 }
 
 // This is mainly safe as we always maintain an exclusive lock on the module
@@ -139,7 +140,7 @@ impl ContentDecryptionModule {
         }
 
         let shared = Arc::new(Shared {
-            inner: Mutex::new(inst),
+            inner: AsyncMutex::new(inst),
         });
 
         let (session_event_sender, session_event_receiver) = channel::unbounded();
@@ -174,19 +175,21 @@ impl ContentDecryptionModule {
                     session_event_sender.send(e).await;
                 }
                 HostEvent::TimerExpired { context } => {
-                    let mut inst = shared.inner.lock().await;
-                    inst.pin_mut().TimerExpired(context);
+                    lock!(inst <= shared.inner.lock().await.unwrap(), {
+                        inst.pin_mut().TimerExpired(context);
+                    });
                 }
                 HostEvent::QueryOutputProtection => {
-                    let mut inst = shared.inner.lock().await;
-                    unsafe {
-                        let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
-                        inst_pin.OnQueryOutputProtectionStatus(
-                            bindings::QueryResult::kQuerySucceeded,
-                            bindings::OutputLinkTypes::kLinkTypeHDMI.0,
-                            bindings::OutputProtectionMethods::kProtectionNone.0,
-                        );
-                    }
+                    lock!(inst <= shared.inner.lock().await.unwrap(), {
+                        unsafe {
+                            let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
+                            inst_pin.OnQueryOutputProtectionStatus(
+                                bindings::QueryResult::kQuerySucceeded,
+                                bindings::OutputLinkTypes::kLinkTypeHDMI.0,
+                                bindings::OutputProtectionMethods::kProtectionNone.0,
+                            );
+                        }
+                    });
                 }
             }
         }
@@ -203,43 +206,46 @@ impl ContentDecryptionModule {
         init_data_type: InitDataType,
         init_data: &[u8],
     ) -> Result<String> {
-        let mut inst = self.shared.inner.lock().await;
+        let promise = lock!(inst <= self.shared.inner.lock().await?, {
 
-        let promise = self.host_state.lock().unwrap().new_promise();
+            let promise = self.host_state.lock().unwrap().new_promise();
 
-        unsafe {
-            let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
+            unsafe {
+                let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
 
-            inst_pin.CreateSessionAndGenerateRequest(
-                promise.id(),
-                session_type,
-                init_data_type,
-                init_data.as_ptr(),
-                init_data.len() as u32,
-            );
-        }
+                inst_pin.CreateSessionAndGenerateRequest(
+                    promise.id(),
+                    session_type,
+                    init_data_type,
+                    init_data.as_ptr(),
+                    init_data.len() as u32,
+                );
+            }
 
-        drop(inst);
+            promise
+        });
 
         promise.wait_new_session().await
     }
 
     pub async fn update_session(&self, session_id: &str, response: &[u8]) -> Result<()> {
-        let mut inst = self.shared.inner.lock().await;
+        let promise = lock!(inst <= self.shared.inner.lock().await?, {
+            let promise = self.host_state.lock().unwrap().new_promise();
 
-        let promise = self.host_state.lock().unwrap().new_promise();
+            unsafe {
+                let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
 
-        unsafe {
-            let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
+                inst_pin.UpdateSession(
+                    promise.id(),
+                    core::mem::transmute::<_, *const i8>(session_id.as_bytes().as_ptr()),
+                    session_id.as_bytes().len() as u32,
+                    response.as_ptr(),
+                    response.len() as u32,
+                );
+            }
 
-            inst_pin.UpdateSession(
-                promise.id(),
-                core::mem::transmute::<_, *const i8>(session_id.as_bytes().as_ptr()),
-                session_id.as_bytes().len() as u32,
-                response.as_ptr(),
-                response.len() as u32,
-            );
-        }
+            promise
+        });
 
         promise.wait_empty().await
     }
@@ -253,32 +259,33 @@ impl ContentDecryptionModule {
         subsamples: &[SubsampleEntry],
         decrypted_block: &mut DecryptedBlock,
     ) -> Result<()> {
-        let mut inst = self.shared.inner.lock().await;
+        let status = lock!(inst <= self.shared.inner.lock().await?, {
 
-        let mut input_buffer = Box::new(bindings::InputBuffer_2::default());
+            let mut input_buffer = Box::new(bindings::InputBuffer_2::default());
 
-        input_buffer.data = data.as_ptr();
-        input_buffer.data_size = data.len() as u32;
+            input_buffer.data = data.as_ptr();
+            input_buffer.data_size = data.len() as u32;
 
-        input_buffer.encryption_scheme = bindings::EncryptionScheme::kCenc;
+            input_buffer.encryption_scheme = bindings::EncryptionScheme::kCenc;
 
-        input_buffer.key_id = key_id.as_ptr();
-        input_buffer.key_id_size = key_id.len() as u32;
-        input_buffer.iv = iv.as_ptr();
-        input_buffer.iv_size = iv.len() as u32;
+            input_buffer.key_id = key_id.as_ptr();
+            input_buffer.key_id_size = key_id.len() as u32;
+            input_buffer.iv = iv.as_ptr();
+            input_buffer.iv_size = iv.len() as u32;
 
-        input_buffer.subsamples = subsamples.as_ptr();
-        input_buffer.num_subsamples = subsamples.len() as u32;
+            input_buffer.subsamples = subsamples.as_ptr();
+            input_buffer.num_subsamples = subsamples.len() as u32;
 
-        input_buffer.pattern = bindings::Pattern::default();
+            input_buffer.pattern = bindings::Pattern::default();
 
-        input_buffer.timestamp = 1;
+            input_buffer.timestamp = 1;
 
-        let status = unsafe {
-            let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
+            unsafe {
+                let inst_pin = Pin::new_unchecked(&mut *inst.pin_mut().Get());
 
-            inst_pin.Decrypt(&input_buffer, decrypted_block.inner.pin_mut().Cast())
-        };
+                inst_pin.Decrypt(&input_buffer, decrypted_block.inner.pin_mut().Cast())
+            }
+        });
 
         if status != Status::kSuccess {
             return Err(format_err!("Decryption failed with status: {:?}", status));

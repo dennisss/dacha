@@ -228,6 +228,8 @@ impl ClusterMetaClient {
         let db = self.db();
         let obj = query_one!(&db, ObjectMetadataTable, "name = ?", name);
 
+        // TODO: Need to verify we are using the value() format.
+
         if let Some(obj) = obj {
             Ok(Some(obj.value().clone()))
         } else {

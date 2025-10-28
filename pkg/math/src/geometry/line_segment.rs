@@ -222,6 +222,20 @@ impl<T: ScalarElementType + ErrorEpsilon> LineSegment2<T> {
                 existing_segments
             };
 
+            /*
+            let existing_segments = {
+                let mut existing_segments = vec![];
+
+                for segment in sweep_status.iter() {
+                    if new_comparator.compare(segment, &event_point).is_eq() {
+                        existing_segments.push(segment.clone());   
+                    }
+                }
+
+                existing_segments
+            };
+            */
+
             // Remove all segments that we touched (will be re-inserted in the
             // next step).
             // NOTE: We use the last sweep point in the comparator to ensure search
@@ -239,14 +253,6 @@ impl<T: ScalarElementType + ErrorEpsilon> LineSegment2<T> {
                 let mut iter = sweep_status.iter();
                 let mut last_value = None;
                 while let Some(v) = iter.next() {
-                    if *v == 677 || *v == 300 {
-                        println!(
-                            "X{}: {:?}",
-                            *v,
-                            sweep_line_x(&segments[*v], &event_point, max_error)
-                        );
-                    }
-
                     if let Some(last_value) = last_value.take() {
                         if new_comparator.compare(last_value, v) != Ordering::Less {
                             println!("{} , {}", *last_value, *v);
@@ -507,12 +513,16 @@ mod intersections {
     ) -> T {
         let x = {
             if segment.end.y() == segment.start.y() {
-                point.x()
+                let min_x = segment.start.x().min(segment.end.x());
+                let max_x = segment.start.x().max(segment.end.x());
+                point.x().min(max_x).max(min_x)
             } else {
                 let mut t = (point.y() - segment.start.y()) / (segment.end.y() - segment.start.y());
 
                 // 't' can end up being very large for near intersecting lines, so clamp to
                 // avoid overflowing arithmetic.
+                //
+                // TODO: Eventually use '.clamp_between_0_to_1()'
                 t = t.min(T::one()).max(T::zero());
 
                 // TODO: If I just use the point for comparing values, I don't think I actually
@@ -523,10 +533,7 @@ mod intersections {
             }
         };
 
-        // TODO: This clamping is only necessary for the above 'point.x()' case.
-        let min_x = segment.start.x().min(segment.end.x());
-        let max_x = segment.start.x().max(segment.end.x());
-        x.min(max_x).max(min_x)
+        x
     }
 
     pub fn find_intersection_event<T: ScalarElementType + ErrorEpsilon>(

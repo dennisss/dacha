@@ -57,10 +57,11 @@ impl Writeable for Stdout {
 pub async fn read_user_confirmation() -> Result<bool> {
     let mut stdin = Stdin::get();
 
-    let mut buf = [0u8; 1];
+    // Note that we will also consume any newline characters added.
+    let mut buf = [0u8; 10];
     let n = stdin.read(&mut buf[..]).await?;
 
-    Ok(if n == 1 && buf[0].to_ascii_lowercase() == b'y' {
+    Ok(if n > 0 && buf[0].to_ascii_lowercase() == b'y' {
         true
     } else {
         false

@@ -1,6 +1,8 @@
 
 - 256 x 192
     - Top frame: Grayscale 8-bit data
+        "- a 256x192 yuyv422 stream that contains a grayscale 8 bits normalized video that is directly exploitable (the 8 bits luminance channel is the temperature data and both chrominance channels are fixed values to give a colorless/grayscale result)"
+        "- a 256x384 yuyv422 stream that contains an exact copy of the previous stream in the upper half of the image and a greenish picture in the bottom half. This greenish picture is actually the raw non-normalized sensor values that are actually encoded in gray16le format (just 16 bits per pixel, in one grayscale channel, little-endian)."
     - Bottom: gray16le 't = x / 64 - 273.15'
     - YUYV
 

@@ -27,6 +27,7 @@ mod status_command;
 mod zone_config_commands;
 mod ping_command;
 mod object_commands;
+mod refresh_node_command;
 
 pub use events_command::*;
 pub use labels_command::*;
@@ -42,3 +43,4 @@ pub use status_command::*;
 pub use zone_config_commands::*;
 pub use ping_command::*;
 pub use object_commands::*;
+pub use refresh_node_command::*;

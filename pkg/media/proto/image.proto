@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package media;
+
+message ImageFrameProto {
+    bytes data = 1;
+
+    // Timestamp in microseconds relative to some point in time.
+    uint64 timestamp = 2;
+
+    // If true, 'data' was compressed with single frame deflate compression.
+    bool deflated = 3;
+
+}

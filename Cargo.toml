@@ -176,6 +176,7 @@ members = [
 	"third_party/v4l2",
 	"pkg/media/video",
 	"pkg/media/downloader",
+	"pkg/media/thermal",
 	"pkg/media/camera",
 	"pkg/media/camera/proto",
 	"pkg/media/camera/service",

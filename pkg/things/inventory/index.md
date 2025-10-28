@@ -27,6 +27,15 @@ Workflow for adding a part:
 
 
 
+Testing:
+
+```
+cargo run --bin builder -- build //pkg/things/inventory:app
+
+cargo run --bin inventory -- --port=8000
+
+```
+
 
 
 # Rambling

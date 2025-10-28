@@ -37,6 +37,9 @@ enum Command {
     #[arg(name = "setup_node")]
     SetupNode(SetupNodeCommand),
 
+    #[arg(name = "refresh_node")]
+    RefreshNode(RefreshNodeCommand),
+
     #[arg(name = "save_zone_config")]
     SaveZoneConfig(SaveZoneConfigCommand),
 
@@ -113,6 +116,7 @@ async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     match args.command {
         Command::SetupNode(cmd) => run_setup_node(cmd).await,
+        Command::RefreshNode(cmd) => run_refresh_node(cmd).await,
         Command::SaveZoneConfig(cmd) => run_save_zone_config(cmd).await,
         Command::LoadZoneConfig(cmd) => run_load_zone_config(cmd).await,
         Command::SetDefaultZone(cmd) => run_set_default_zone(cmd).await,

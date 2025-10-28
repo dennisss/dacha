@@ -605,10 +605,12 @@ impl NodeInner {
 
         let db = self.shared.meta_client.db();
 
-        let mut txn = db.new_transaction().await?;
-        let mut changed = false;
+        let intended_replicas = {
+            let mut txn = db.new_transaction().await?;
 
-        let intended_replicas = query!(txn, BundleBlobReplicaTable, "node_id = ?", self.shared.id);
+            // This requires a lot of reads in here due to fanout so hard to put in the same transaction as the other stuff.
+            query!(txn, BundleBlobReplicaTable, "node_id = ?", self.shared.id)
+        };
 
         let have_blobs = self.shared.blobs.list()?;
         let mut have_blob_ids = HashSet::new();
@@ -619,14 +621,12 @@ impl NodeInner {
         for mut replica in intended_replicas {
             let uploaded = have_blob_ids.contains(replica.blob_id());
             if uploaded != replica.uploaded() {
+                // NOTE: This may end up re-creating the row if it was recently deleted.
+                let mut txn = db.new_transaction().await?;
                 replica.set_uploaded(uploaded);
                 txn.put::<BundleBlobReplicaTable>(&replica).await?;
-                changed = true;
+                txn.commit().await?;
             }
-        }
-
-        if changed {
-            txn.commit().await?;
         }
 
         Ok(())

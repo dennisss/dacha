@@ -137,6 +137,8 @@ impl CompactionReceiver {
 pub struct EmbeddedDB {
     /// Open handle to the LOCK file on which we have a lock acquired while it
     /// is open.
+    ///
+    /// TODO: Move into shared.
     lock_file: LocalFile,
 
     identity: Option<String>,
@@ -149,6 +151,7 @@ struct EmbeddedDBShared {
     options: Arc<EmbeddedDBOptions>,
     dir: Arc<FilePaths>,
     state: AsyncRwLock<EmbeddedDBState>,
+    // write_state: AsyncMutex<WriteState>,
     flushed_channel: (channel::Sender<()>, channel::Receiver<()>),
 
     /// Next value for the compaction_waterline requested by the user. This will
@@ -1249,6 +1252,7 @@ impl EmbeddedDB {
         executor::spawn(async move {
             // NOTE: We currently MUST acquire a write log to ensure that there aren't any
             // concurrent writes to the immutable memtable.
+            // TODO: Refactor so that this is not needed.
             let mut state = shared.state.write().await?.enter();
 
             if batch.sequence() != 0 {
@@ -1261,7 +1265,9 @@ impl EmbeddedDB {
 
             state.log_last_sequence = batch.sequence();
 
-            // TODO: Reads should still be allowed while this is occuring.
+            // TODO: If the log writes fail, then we probably need to mark the whole
+            // resource as failing. TODO: Reads should still be allowed while
+            // this is occuring.
             if let Some(log) = &mut state.log {
                 log.append(&batch.as_bytes()).await?;
                 // TODO: Need to batch writes from multiple users here.

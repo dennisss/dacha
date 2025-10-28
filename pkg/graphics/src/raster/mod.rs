@@ -157,6 +157,7 @@ pub fn fill_polygon(
             x_intercepts_idx += 1;
         }
 
+        // TODO: Sometimes I get this error.
         if current_winding != 0 {
             return Err(err_msg("Scan line ends inside of the polygon"));
         }

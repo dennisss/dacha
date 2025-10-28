@@ -272,6 +272,8 @@ impl ConnectionWriter {
 
                         // NOTE: It is illegal to send a Closing event unless you mark the
                         // shutting_down state as non-No.
+                        //
+                        // TODO: This sometimes fails.
                         assert!(connection_state.shutting_down.is_some());
 
                         let id = connection_state.upper_received_stream_id;

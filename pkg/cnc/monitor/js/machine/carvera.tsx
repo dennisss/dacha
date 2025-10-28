@@ -12,6 +12,14 @@ import { MachineUiState } from "./state";
 import { clean_point } from "pkg/web/lib/figure/utils";
 
 /*
+
+TODO: If there are any manual interactions with the machine during a pause period, we need to make sure to reset things this relative/absolute position back to their original values before re-summing.
+
+TODO: Work Position seems to be wrong in the UI (probably due to the tool offset)
+
+
+TODO: Gcode before carvera tool change needs to have a F1000 feedrate to avoid the tool change being slow.
+
 Macros:
 - To Anchor 1
 - Set X0 Y0

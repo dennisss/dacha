@@ -509,6 +509,7 @@ impl<'a> ProtobufDBTransaction<'a> {
 
         let mut old_value = None;
         if Tag::indexed_keys().len() > 1 {
+            // TODO: Make sure this doesn't trigger a new read if it already overlaps with a range read.
             old_value = self.get::<Tag>(value).await?;
         }
 
@@ -718,6 +719,10 @@ impl<'a> ProtobufDBTransaction<'a> {
         KeyBuilder::table_prefix(Tag::table_id())
     }
 
+    pub fn anonymous_table_key_prefix(table_id: u32) -> Vec<u8> {
+        KeyBuilder::table_prefix(table_id)
+    }
+
     pub fn primary_key_prefix<Tag: ProtobufTableTag>(query: &Query) -> Result<Vec<u8>> {
         if query.any_of.len() != 1 {
             return Err(err_msg(
@@ -735,6 +740,8 @@ impl<'a> ProtobufDBTransaction<'a> {
         if key.cost != 1 {
             return Err(err_msg("Query can not be fully matched by the primary key"));
         }
+
+        // TODO: Need to verify that end_key is immediately after start_key.
 
         Ok(key.start_key)
     }

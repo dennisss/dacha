@@ -1013,6 +1013,7 @@ dependencies = [
  "math",
  "math_compute",
  "nordic_tools",
+ "parsing",
  "peripherals",
  "peripherals_proto",
  "peripherals_service",
@@ -2789,6 +2790,7 @@ dependencies = [
  "chromium_cdm",
  "common",
  "compression",
+ "crypto",
  "executor",
  "file",
  "http",
@@ -2801,6 +2803,18 @@ dependencies = [
  "uuid",
  "video",
  "xml",
+]
+
+[[package]]
+name = "media_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
 ]
 
 [[package]]
@@ -2825,6 +2839,35 @@ dependencies = [
  "rpc_util",
  "web",
  "x11",
+]
+
+[[package]]
+name = "media_thermal"
+version = "0.0.0"
+dependencies = [
+ "base_error",
+ "base_units",
+ "common",
+ "compression",
+ "crypto",
+ "executor",
+ "executor_graph",
+ "executor_multitask",
+ "file",
+ "graphics",
+ "http",
+ "image",
+ "macros",
+ "math",
+ "media_proto",
+ "parsing",
+ "protobuf",
+ "rpc",
+ "rpc_util",
+ "sstable",
+ "usb",
+ "v4l2",
+ "web",
 ]
 
 [[package]]

@@ -264,11 +264,18 @@ parser!(parse_element<&str, Element> => alt!(
     parse_empty_elem_tag,
     seq!(c => {
         let mut el = c.next(parse_stag)?;
+
+        // TODO: Generalize this more.
+        if el.name == "input" {
+            // "<input>" without a closing tag is expected
+            return Ok(el);
+        } 
+        
         el.content = c.next(parse_content)?;
         let etag = c.next(parse_etag)?;
         if etag != el.name {
-            panic!("MISTMATCH");
-            return Err(err_msg("Mismatching start/end tag name"));
+            eprintln!("MISMATCH: {} vs {}", etag, el.name);
+            return Err(format_err!("Mismatching start/end tag name: {} vs {}", etag, el.name));
         }
 
         Ok(el)
@@ -683,6 +690,13 @@ mod tests {
                 apples
                 <br />            
             </div>"#;
+        let (output, _) = complete(parse_document)(input).unwrap();
+        println!("{:#?}", output);
+    }
+
+    #[test]
+    fn unterminated_tag_test() {
+        let input = "<div><input>world</div>";
         let (output, _) = complete(parse_document)(input).unwrap();
         println!("{:#?}", output);
     }

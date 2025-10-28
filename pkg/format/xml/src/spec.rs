@@ -25,6 +25,24 @@ impl Element {
             }
         })
     }
+
+    pub fn inner_text(&self) -> String {
+        let mut out = String::new();
+        
+        for n in &self.content {
+            match n {
+                Node::Element(e) => {
+                    out.push_str(&e.inner_text());
+                }
+                Node::Text(s) => {
+                    out.push_str(&s);
+                }
+                Node::Comment(_) => {}
+            }
+        }
+
+        out
+    }
 }
 
 #[derive(Debug, PartialEq)]
