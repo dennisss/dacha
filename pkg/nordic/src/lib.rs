@@ -36,7 +36,6 @@ pub mod eeprom;
 pub mod entry;
 mod events;
 pub mod examples;
-// pub mod fast_timer;
 pub mod gpio;
 pub mod pins;
 pub mod protocol;
@@ -59,5 +58,10 @@ pub mod tmc2130;
 pub mod twim;
 pub mod uarte;
 pub mod usb;
+pub mod timer;
+pub mod gpiote;
+pub mod ppi;
+pub mod adc;
+pub mod neopixel;
 
 pub use fpu::*;

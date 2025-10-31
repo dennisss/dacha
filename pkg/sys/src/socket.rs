@@ -58,7 +58,9 @@ define_transparent_enum!(SocketProtocol c_int {
     NONE = 0,
     IP = (bindings::IPPROTO_IP as c_int),
     UDP = (bindings::IPPROTO_UDP as c_int),
-    TCP = (bindings::IPPROTO_TCP as c_int)
+    TCP = (bindings::IPPROTO_TCP as c_int),
+    NETLINK_ROUTE = (bindings::NETLINK_ROUTE as c_int),
+    NETLINK_KOBJECT_UEVENT = (bindings::NETLINK_KOBJECT_UEVENT as c_int)
 });
 
 #[derive(Clone)]
@@ -72,6 +74,7 @@ union SocketAddressInner {
     sockaddr: bindings::sockaddr,
     sockaddr_in: bindings::sockaddr_in,
     sockaddr_in6: bindings::sockaddr_in6,
+    sockaddr_nl: bindings::sockaddr_nl,
 }
 
 impl Default for SocketAddressInner {
@@ -153,6 +156,14 @@ impl SocketAddr {
         None
     }
 
+    pub fn netlink(pid: u32, groups: u32) -> Self {
+        let mut inst = Self::empty();
+        inst.inner.sockaddr_nl.nl_family = bindings::AF_NETLINK as u16;
+        inst.inner.sockaddr_nl.nl_pid = pid;
+        inst.inner.sockaddr_nl.nl_groups = groups;
+        inst
+    }
+
     pub fn family(&self) -> AddressFamily {
         AddressFamily::from_raw(unsafe { self.inner.sockaddr.sa_family as c_int })
     }
@@ -164,6 +175,7 @@ impl SocketAddr {
         Some(match self.family() {
             AddressFamily::AF_INET => core::mem::size_of::<bindings::sockaddr_in>(),
             AddressFamily::AF_INET6 => core::mem::size_of::<bindings::sockaddr_in6>(),
+            AddressFamily::AF_NETLINK => core::mem::size_of::<bindings::sockaddr_nl>(),
             _ => return None,
         })
     }

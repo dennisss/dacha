@@ -16,6 +16,7 @@
 #include <linux/utsname.h>
 #include <linux/prctl.h>
 #include <linux/capability.h>
+#include <linux/netlink.h>
 #include <netinet/ip.h>
 #include <pthread.h>
 #include <scsi/sg.h>

@@ -195,8 +195,6 @@ struct ImmutableTable {
     last_sequence: u64,
 }
 
-}
-
 impl_resource_passthrough!(EmbeddedDB, compaction_thread);
 
 impl EmbeddedDB {

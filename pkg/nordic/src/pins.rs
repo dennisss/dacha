@@ -1,4 +1,5 @@
 use peripherals::raw::PinSelectRegister;
+use common::register::RegisterRead;
 
 macro_rules! define_pins {
     ($($name:ident = $port:ident $num:expr),*) => {
@@ -106,13 +107,25 @@ pub fn connect_pin<P: PeripheralPin>(pin: P, pin_select: &mut PinSelectRegister)
     });
 }
 
+pub fn connect_optional_pin<P: PeripheralPin>(pin: Option<P>, pin_select: &mut PinSelectRegister) {
+    if let Some(p) = pin {
+        connect_pin(p, pin_select);
+    } else {
+        disconnect_pin(pin_select);
+    }
+}
+
 pub fn disconnect_pin(pin_select: &mut PinSelectRegister) {
     pin_select.write_with(|v| v.set_connect_with(|v| v.set_disconnected()));
 }
 
+pub fn is_pin_connected(pin_select: &PinSelectRegister) -> bool {
+    pin_select.read().connect().is_connected()
+}
+
 pub struct PeripheralPinHandle {
-    port: Port,
-    pin: u8,
+    pub port: Port,
+    pub pin: u8,
 }
 
 impl PeripheralPin for PeripheralPinHandle {
@@ -122,4 +135,14 @@ impl PeripheralPin for PeripheralPinHandle {
     fn pin(&self) -> u8 {
         self.pin
     }
+}
+
+pub struct DisconnectedPin {
+    hidden: ()
+}
+
+// This pin can never be constructed so these should never be used.
+impl PeripheralPin for DisconnectedPin {
+    fn port(&self) -> Port { panic!() }
+    fn pin(&self) -> u8 { panic!() }
 }

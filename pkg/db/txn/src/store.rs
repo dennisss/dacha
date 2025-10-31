@@ -474,7 +474,7 @@ impl TransactionalDB {
 
         let local_address = http::uri::Authority {
             user: None,
-            host: http::uri::Host::IP(net::local_ip()?),
+            host: http::uri::Host::IP(net::local_ip().await?),
             port: Some(options.service_port),
         }
         .to_string()?;

@@ -21,6 +21,24 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
             let name = config.pin_name().to_string();
             callback(&name, config.config_mut().pin_mut())?;
         }
+        BoardConfig_PeripheralConfigCase::Neopixel(config) => {
+            let name = config.pin_name().to_string();
+            callback(&name, config.config_mut().pin_mut())?;
+        }
+        BoardConfig_PeripheralConfigCase::Uart(config) => {
+            let name = config.tx_pin_name().to_string();
+            callback(&name, config.config_mut().tx_pin_mut())?;
+
+            let name = config.rx_pin_name().to_string();
+            callback(&name, config.config_mut().rx_pin_mut())?;
+        }
+        BoardConfig_PeripheralConfigCase::Stepper(config) => {
+            let name = config.step_pin_name().to_string();
+            callback(&name, config.config_mut().step_pin_mut())?;
+
+            let name = config.dir_pin_name().to_string();
+            callback(&name, config.config_mut().dir_pin_mut())?;
+        }
         BoardConfig_PeripheralConfigCase::NOT_SET => {
             return Err(err_msg("Unconfigured peripheral"));
         }
@@ -170,6 +188,15 @@ pub fn build_configuration_requests(config: &BoardConfig) -> Result<(Vec<Periphe
             BoardConfig_PeripheralConfigCase::Pwm(config) => {
                 req.set_configure_pwm(config.config().clone());
                 s.pwm_mut().set_value(config.config().default_value());
+            }
+            BoardConfig_PeripheralConfigCase::Uart(config) => {
+                req.set_configure_uart(config.config().clone());
+            }
+            BoardConfig_PeripheralConfigCase::Neopixel(config) => {
+                req.set_configure_neopixel(config.config().clone());
+            }
+            BoardConfig_PeripheralConfigCase::Stepper(config) => {
+                req.set_configure_stepper(config.config().clone());
             }
             BoardConfig_PeripheralConfigCase::NOT_SET => {
                 return Err(err_msg("Unconfigured peripheral"));

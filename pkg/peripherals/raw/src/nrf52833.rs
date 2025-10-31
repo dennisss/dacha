@@ -568,6 +568,133 @@ impl CONNECT_FIELD {
     }
 }
 
+enum_def_with_unknown!(#[allow(non_camel_case_types)] AnalogPinSelect u32 =>
+                // Not connected
+                NC = 0,
+// AIN0
+                AnalogInput0 = 1,
+// AIN1
+                AnalogInput1 = 2,
+// AIN2
+                AnalogInput2 = 3,
+// AIN3
+                AnalogInput3 = 4,
+// AIN4
+                AnalogInput4 = 5,
+// AIN5
+                AnalogInput5 = 6,
+// AIN6
+                AnalogInput6 = 7,
+// AIN7
+                AnalogInput7 = 8,
+// VDD
+                VDD = 9,
+// VDDH/5
+                VDDHDIV5 = 13
+
+            );
+
+impl AnalogPinSelect {
+    pub fn is_nc(&self) -> bool {
+        *self == Self::NC
+    }
+
+    pub fn set_nc(&mut self) -> &mut Self {
+        *self = Self::NC;
+        self
+    }
+
+    pub fn is_analoginput0(&self) -> bool {
+        *self == Self::AnalogInput0
+    }
+
+    pub fn set_analoginput0(&mut self) -> &mut Self {
+        *self = Self::AnalogInput0;
+        self
+    }
+
+    pub fn is_analoginput1(&self) -> bool {
+        *self == Self::AnalogInput1
+    }
+
+    pub fn set_analoginput1(&mut self) -> &mut Self {
+        *self = Self::AnalogInput1;
+        self
+    }
+
+    pub fn is_analoginput2(&self) -> bool {
+        *self == Self::AnalogInput2
+    }
+
+    pub fn set_analoginput2(&mut self) -> &mut Self {
+        *self = Self::AnalogInput2;
+        self
+    }
+
+    pub fn is_analoginput3(&self) -> bool {
+        *self == Self::AnalogInput3
+    }
+
+    pub fn set_analoginput3(&mut self) -> &mut Self {
+        *self = Self::AnalogInput3;
+        self
+    }
+
+    pub fn is_analoginput4(&self) -> bool {
+        *self == Self::AnalogInput4
+    }
+
+    pub fn set_analoginput4(&mut self) -> &mut Self {
+        *self = Self::AnalogInput4;
+        self
+    }
+
+    pub fn is_analoginput5(&self) -> bool {
+        *self == Self::AnalogInput5
+    }
+
+    pub fn set_analoginput5(&mut self) -> &mut Self {
+        *self = Self::AnalogInput5;
+        self
+    }
+
+    pub fn is_analoginput6(&self) -> bool {
+        *self == Self::AnalogInput6
+    }
+
+    pub fn set_analoginput6(&mut self) -> &mut Self {
+        *self = Self::AnalogInput6;
+        self
+    }
+
+    pub fn is_analoginput7(&self) -> bool {
+        *self == Self::AnalogInput7
+    }
+
+    pub fn set_analoginput7(&mut self) -> &mut Self {
+        *self = Self::AnalogInput7;
+        self
+    }
+
+    pub fn is_vdd(&self) -> bool {
+        *self == Self::VDD
+    }
+
+    pub fn set_vdd(&mut self) -> &mut Self {
+        *self = Self::VDD;
+        self
+    }
+
+    pub fn is_vddhdiv5(&self) -> bool {
+        *self == Self::VDDHDIV5
+    }
+
+    pub fn set_vddhdiv5(&mut self) -> &mut Self {
+        *self = Self::VDDHDIV5;
+        self
+    }
+}
+
 pub mod ficr {
     #[allow(unused_imports)]
     use super::*;
@@ -52737,195 +52864,68 @@ pub mod saadc {
 
             impl PSELP {
                 pub fn write_nc(&mut self) {
-                    self.write(PSELP_FIELD::NC)
+                    self.write(AnalogPinSelect::NC)
                 }
 
                 pub fn write_analoginput0(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput0)
+                    self.write(AnalogPinSelect::AnalogInput0)
                 }
 
                 pub fn write_analoginput1(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput1)
+                    self.write(AnalogPinSelect::AnalogInput1)
                 }
 
                 pub fn write_analoginput2(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput2)
+                    self.write(AnalogPinSelect::AnalogInput2)
                 }
 
                 pub fn write_analoginput3(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput3)
+                    self.write(AnalogPinSelect::AnalogInput3)
                 }
 
                 pub fn write_analoginput4(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput4)
+                    self.write(AnalogPinSelect::AnalogInput4)
                 }
 
                 pub fn write_analoginput5(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput5)
+                    self.write(AnalogPinSelect::AnalogInput5)
                 }
 
                 pub fn write_analoginput6(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput6)
+                    self.write(AnalogPinSelect::AnalogInput6)
                 }
 
                 pub fn write_analoginput7(&mut self) {
-                    self.write(PSELP_FIELD::AnalogInput7)
+                    self.write(AnalogPinSelect::AnalogInput7)
                 }
 
                 pub fn write_vdd(&mut self) {
-                    self.write(PSELP_FIELD::VDD)
+                    self.write(AnalogPinSelect::VDD)
                 }
 
                 pub fn write_vddhdiv5(&mut self) {
-                    self.write(PSELP_FIELD::VDDHDIV5)
+                    self.write(AnalogPinSelect::VDDHDIV5)
                 }
             }
 
             impl RegisterRead for PSELP {
-                type Value = PSELP_FIELD;
+                type Value = AnalogPinSelect;
 
                 #[inline(always)]
                 fn read(&self) -> Self::Value {
                     let raw = self.raw.read();
-                    PSELP_FIELD::from_value((raw & 0x0000001f) >> 0)
+                    AnalogPinSelect::from_value((raw & 0x0000001f) >> 0)
                 }
             }
 
             impl RegisterWrite for PSELP {
-                type Value = PSELP_FIELD;
+                type Value = AnalogPinSelect;
 
                 #[inline(always)]
                 fn write(&mut self, value: Self::Value) {
                     let old_raw = 0;
                     let raw = value.to_value();
                     self.raw.write(raw);
-                }
-            }
-
-            enum_def_with_unknown!(#[allow(non_camel_case_types)] PSELP_FIELD u32 =>
-                            // Not connected
-                            NC = 0,
-            // AIN0
-                            AnalogInput0 = 1,
-            // AIN1
-                            AnalogInput1 = 2,
-            // AIN2
-                            AnalogInput2 = 3,
-            // AIN3
-                            AnalogInput3 = 4,
-            // AIN4
-                            AnalogInput4 = 5,
-            // AIN5
-                            AnalogInput5 = 6,
-            // AIN6
-                            AnalogInput6 = 7,
-            // AIN7
-                            AnalogInput7 = 8,
-            // VDD
-                            VDD = 9,
-            // VDDH/5
-                            VDDHDIV5 = 13
-
-                        );
-
-            impl PSELP_FIELD {
-                pub fn is_nc(&self) -> bool {
-                    *self == Self::NC
-                }
-
-                pub fn set_nc(&mut self) -> &mut Self {
-                    *self = Self::NC;
-                    self
-                }
-
-                pub fn is_analoginput0(&self) -> bool {
-                    *self == Self::AnalogInput0
-                }
-
-                pub fn set_analoginput0(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput0;
-                    self
-                }
-
-                pub fn is_analoginput1(&self) -> bool {
-                    *self == Self::AnalogInput1
-                }
-
-                pub fn set_analoginput1(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput1;
-                    self
-                }
-
-                pub fn is_analoginput2(&self) -> bool {
-                    *self == Self::AnalogInput2
-                }
-
-                pub fn set_analoginput2(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput2;
-                    self
-                }
-
-                pub fn is_analoginput3(&self) -> bool {
-                    *self == Self::AnalogInput3
-                }
-
-                pub fn set_analoginput3(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput3;
-                    self
-                }
-
-                pub fn is_analoginput4(&self) -> bool {
-                    *self == Self::AnalogInput4
-                }
-
-                pub fn set_analoginput4(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput4;
-                    self
-                }
-
-                pub fn is_analoginput5(&self) -> bool {
-                    *self == Self::AnalogInput5
-                }
-
-                pub fn set_analoginput5(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput5;
-                    self
-                }
-
-                pub fn is_analoginput6(&self) -> bool {
-                    *self == Self::AnalogInput6
-                }
-
-                pub fn set_analoginput6(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput6;
-                    self
-                }
-
-                pub fn is_analoginput7(&self) -> bool {
-                    *self == Self::AnalogInput7
-                }
-
-                pub fn set_analoginput7(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput7;
-                    self
-                }
-
-                pub fn is_vdd(&self) -> bool {
-                    *self == Self::VDD
-                }
-
-                pub fn set_vdd(&mut self) -> &mut Self {
-                    *self = Self::VDD;
-                    self
-                }
-
-                pub fn is_vddhdiv5(&self) -> bool {
-                    *self == Self::VDDHDIV5
-                }
-
-                pub fn set_vddhdiv5(&mut self) -> &mut Self {
-                    *self = Self::VDDHDIV5;
-                    self
                 }
             }
         }
@@ -52942,195 +52942,68 @@ pub mod saadc {
 
             impl PSELN {
                 pub fn write_nc(&mut self) {
-                    self.write(PSELN_FIELD::NC)
+                    self.write(AnalogPinSelect::NC)
                 }
 
                 pub fn write_analoginput0(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput0)
+                    self.write(AnalogPinSelect::AnalogInput0)
                 }
 
                 pub fn write_analoginput1(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput1)
+                    self.write(AnalogPinSelect::AnalogInput1)
                 }
 
                 pub fn write_analoginput2(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput2)
+                    self.write(AnalogPinSelect::AnalogInput2)
                 }
 
                 pub fn write_analoginput3(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput3)
+                    self.write(AnalogPinSelect::AnalogInput3)
                 }
 
                 pub fn write_analoginput4(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput4)
+                    self.write(AnalogPinSelect::AnalogInput4)
                 }
 
                 pub fn write_analoginput5(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput5)
+                    self.write(AnalogPinSelect::AnalogInput5)
                 }
 
                 pub fn write_analoginput6(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput6)
+                    self.write(AnalogPinSelect::AnalogInput6)
                 }
 
                 pub fn write_analoginput7(&mut self) {
-                    self.write(PSELN_FIELD::AnalogInput7)
+                    self.write(AnalogPinSelect::AnalogInput7)
                 }
 
                 pub fn write_vdd(&mut self) {
-                    self.write(PSELN_FIELD::VDD)
+                    self.write(AnalogPinSelect::VDD)
                 }
 
                 pub fn write_vddhdiv5(&mut self) {
-                    self.write(PSELN_FIELD::VDDHDIV5)
+                    self.write(AnalogPinSelect::VDDHDIV5)
                 }
             }
 
             impl RegisterRead for PSELN {
-                type Value = PSELN_FIELD;
+                type Value = AnalogPinSelect;
 
                 #[inline(always)]
                 fn read(&self) -> Self::Value {
                     let raw = self.raw.read();
-                    PSELN_FIELD::from_value((raw & 0x0000001f) >> 0)
+                    AnalogPinSelect::from_value((raw & 0x0000001f) >> 0)
                 }
             }
 
             impl RegisterWrite for PSELN {
-                type Value = PSELN_FIELD;
+                type Value = AnalogPinSelect;
 
                 #[inline(always)]
                 fn write(&mut self, value: Self::Value) {
                     let old_raw = 0;
                     let raw = value.to_value();
                     self.raw.write(raw);
-                }
-            }
-
-            enum_def_with_unknown!(#[allow(non_camel_case_types)] PSELN_FIELD u32 =>
-                            // Not connected
-                            NC = 0,
-            // AIN0
-                            AnalogInput0 = 1,
-            // AIN1
-                            AnalogInput1 = 2,
-            // AIN2
-                            AnalogInput2 = 3,
-            // AIN3
-                            AnalogInput3 = 4,
-            // AIN4
-                            AnalogInput4 = 5,
-            // AIN5
-                            AnalogInput5 = 6,
-            // AIN6
-                            AnalogInput6 = 7,
-            // AIN7
-                            AnalogInput7 = 8,
-            // VDD
-                            VDD = 9,
-            // VDDH/5
-                            VDDHDIV5 = 13
-
-                        );
-
-            impl PSELN_FIELD {
-                pub fn is_nc(&self) -> bool {
-                    *self == Self::NC
-                }
-
-                pub fn set_nc(&mut self) -> &mut Self {
-                    *self = Self::NC;
-                    self
-                }
-
-                pub fn is_analoginput0(&self) -> bool {
-                    *self == Self::AnalogInput0
-                }
-
-                pub fn set_analoginput0(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput0;
-                    self
-                }
-
-                pub fn is_analoginput1(&self) -> bool {
-                    *self == Self::AnalogInput1
-                }
-
-                pub fn set_analoginput1(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput1;
-                    self
-                }
-
-                pub fn is_analoginput2(&self) -> bool {
-                    *self == Self::AnalogInput2
-                }
-
-                pub fn set_analoginput2(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput2;
-                    self
-                }
-
-                pub fn is_analoginput3(&self) -> bool {
-                    *self == Self::AnalogInput3
-                }
-
-                pub fn set_analoginput3(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput3;
-                    self
-                }
-
-                pub fn is_analoginput4(&self) -> bool {
-                    *self == Self::AnalogInput4
-                }
-
-                pub fn set_analoginput4(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput4;
-                    self
-                }
-
-                pub fn is_analoginput5(&self) -> bool {
-                    *self == Self::AnalogInput5
-                }
-
-                pub fn set_analoginput5(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput5;
-                    self
-                }
-
-                pub fn is_analoginput6(&self) -> bool {
-                    *self == Self::AnalogInput6
-                }
-
-                pub fn set_analoginput6(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput6;
-                    self
-                }
-
-                pub fn is_analoginput7(&self) -> bool {
-                    *self == Self::AnalogInput7
-                }
-
-                pub fn set_analoginput7(&mut self) -> &mut Self {
-                    *self = Self::AnalogInput7;
-                    self
-                }
-
-                pub fn is_vdd(&self) -> bool {
-                    *self == Self::VDD
-                }
-
-                pub fn set_vdd(&mut self) -> &mut Self {
-                    *self = Self::VDD;
-                    self
-                }
-
-                pub fn is_vddhdiv5(&self) -> bool {
-                    *self == Self::VDDHDIV5
-                }
-
-                pub fn set_vddhdiv5(&mut self) -> &mut Self {
-                    *self = Self::VDDHDIV5;
-                    self
                 }
             }
         }

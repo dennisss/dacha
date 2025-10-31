@@ -59,16 +59,193 @@ async fn main() -> Result<()> {
 
     let mut dev = nordic_tools::usb_radio::USBRadio::find(&selector).await?;
 
-    let pwm_pins: Vec<u32> = vec![12, 26, 32 + 8, 24];
 
-    let tachometer_pins: Vec<u32> = vec![11, 4, 7, 28, 14, 16, 25, 20];
 
+    // Unconfiugre
     {
         let mut req = PeripheralRequest::default();
         req.set_peripheral_index(0 as u32);
         req.unconfigure_all_mut();
         dev.send_request(&req).await?;
     }
+
+    // {
+    //     let mut req = PeripheralRequest::default();
+    //     req.set_peripheral_index(0 as u32);
+    //     req.configure_stepper_mut().set_step_pin((15 + 32) as u32);
+    //     req.configure_stepper_mut().set_dir_pin(31 as u32);
+    //     dev.send_request(&req).await?;
+    // }
+
+    // Neopixel data
+    {
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(1 as u32);
+        req.configure_neopixel_mut().set_pin(16 as u32);
+        dev.send_request(&req).await?;
+    }
+
+    // Neopixel power
+    {
+        // neopixel power
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(2 as u32);
+        req.configure_gpio_mut().set_is_input(false);
+        req.configure_gpio_mut().set_pin((32 + 14) as u32);
+        dev.send_request(&req).await?;
+    }
+
+        /*
+
+pins {
+    name: "D10"
+    alias: "P0.27"
+}
+pins {
+    name: "D9"
+    alias: "P0.26"
+}
+    */
+    // {
+    //     let mut req = PeripheralRequest::default();
+    //     req.set_peripheral_index(3 as u32);
+    //     req.configure_uart_mut().set_tx_pin(26u32);
+    //     req.configure_uart_mut().set_rx_pin(27u32);
+    //     req.configure_uart_mut().set_baud_rate(115200u32);
+    //     dev.send_request(&req).await?;
+    // }
+
+    // Finalize config
+    {
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(0 as u32);
+        req.finalize_config_mut();
+        dev.send_request(&req).await?;
+    }
+
+    {
+        // 1.14
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(2 as u32);
+        req.set_gpio_level_mut().set_high(true);
+        dev.send_request(&req).await?;
+    }
+
+    println!("xxx");
+
+    // executor::sleep(Duration::from_secs(10)).await?;
+
+    for i in 0..255 {
+        println!("{}", i);
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(1 as u32);
+
+        // G R B
+        req.neopixel_transfer_mut().data_mut().extend_from_slice(&[
+            0, 0, i, 0,
+        ]);
+        dev.send_request(&req).await?;
+
+        executor::sleep(Duration::from_secs(1)).await;
+
+    }
+    {
+
+    }
+
+    /*
+    loop {
+
+
+        {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(3 as u32);
+            req.uart_transmit_mut().data_mut().extend_from_slice(b"hello");
+            req.uart_transmit_mut().rx_after_tx_mut().set_num_bytes(2u32);
+            let res = dev.send_request(&req).await?;
+
+            println!("UART: {:?}", res);
+        }
+        
+    }
+    */
+
+
+
+
+
+    /*
+pins {
+    name: "RED_LED"
+    alias: "P1.15"
+}
+pins {
+    name: "NEOPIXEL"
+    alias: "P0.16"
+}
+    */
+
+
+    let mut last_value = 0;
+    loop {
+        let time = {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(0 as u32);
+            req.set_get_clock_time(true);
+            let res = dev.send_request(&req).await?;
+            println!("{:?}", res);
+            last_value = res.uint_val();
+            res.uint_val()
+        };
+
+
+        /*
+
+        let start_time = time + 16_000_000;
+
+        {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(0 as u32);
+            
+            let m = req.enqueue_stepper_motion_mut();
+            m.set_next_time(start_time);
+            m.set_num_steps(16u32);
+            m.set_next_velocity(4_000_000u32);
+
+            let res = dev.send_request(&req).await?;
+            println!("enqueue: {:?}", res);
+        }
+
+        executor::sleep(Duration::from_secs(6)).await;
+
+        {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(0 as u32);
+            req.set_get_stepper_motor_status(true);
+            let res = dev.send_request(&req).await?;
+            println!("status: {:?}", res);
+        }
+        */
+
+        executor::sleep(Duration::from_secs(2)).await;
+
+    }
+
+    
+    /*
+    name: "LED1"
+    alias: "P0.06"
+
+    31
+    */
+
+
+    let pwm_pins: Vec<u32> = vec![12, 26, 32 + 8, 24];
+
+    let tachometer_pins: Vec<u32> = vec![11, 4, 7, 28, 14, 16, 25, 20];
+
 
     for (i, pin) in pwm_pins.iter().cloned().enumerate() {
         let mut req = PeripheralRequest::default();
@@ -92,12 +269,7 @@ async fn main() -> Result<()> {
         dev.send_request(&req).await?;
     }
 
-    {
-        let mut req = PeripheralRequest::default();
-        req.set_peripheral_index(0 as u32);
-        req.finalize_config_mut();
-        dev.send_request(&req).await?;
-    }
+
 
     println!("===");
 

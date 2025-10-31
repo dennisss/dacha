@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
     return Ok(());
     */
 
-    let ip = net::netlink::local_ip()?;
+    let ip = net::netlink::local_ip().await?;
     println!("My local ip: {:?}", ip.to_string());
 
 

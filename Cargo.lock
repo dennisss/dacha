@@ -2927,7 +2927,6 @@ dependencies = [
  "executor_multitask",
  "libc",
  "macros",
- "nix 0.21.0",
  "parsing",
  "parsing_compiler",
  "regexp_macros",

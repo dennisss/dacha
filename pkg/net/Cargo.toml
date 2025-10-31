@@ -16,7 +16,6 @@ executor_multitask = { path = "../executor/multitask" }
 macros = { path = "../macros" }
 base_radix = { path = "../base/radix" }
 libc = "0.2"
-nix = "0.21.0"
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing/compiler" }

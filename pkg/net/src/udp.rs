@@ -87,7 +87,8 @@ impl UdpSocket {
     }
 
     pub async fn send_to(&self, data: &[u8], addr: &SocketAddr) -> Result<usize> {
-        self.inner.send_to(data, addr).await
+        let sockaddr = Into::<sys::SocketAddr>::into(addr.clone());
+        self.inner.send_to(data, &sockaddr).await
     }
 
     pub async fn recv(&self, output: &mut [u8]) -> Result<usize> {
@@ -95,7 +96,8 @@ impl UdpSocket {
     }
 
     pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
-        self.inner.recv_from(output).await
+        let (n, addr) = self.inner.recv_from(output).await?;
+        Ok((n, addr.into()))
     }
 
     /// NOTE: Both addresses must be IPv4
@@ -148,11 +150,9 @@ impl MessageSocket {
         Self { fd }
     }
 
-    pub async fn send_to(&self, data: &[u8], addr: &SocketAddr) -> Result<usize> {
+    pub async fn send_to(&self, data: &[u8], addr: &sys::SocketAddr) -> Result<usize> {
         let data_slices = [IoSlice::new(data)];
-        let sockaddr = Into::<sys::SocketAddr>::into(addr.clone());
-
-        let header = MessageHeader::new(&data_slices, Some(&sockaddr), None);
+        let header = MessageHeader::new(&data_slices, Some(addr), None);
 
         let op = ExecutorOperation::submit(IoUringOp::SendMessage {
             fd: *self.fd,
@@ -172,7 +172,7 @@ impl MessageSocket {
         self.recv_from(output).await.map(|(n, _)| n)
     }
 
-    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
+    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, sys::SocketAddr)> {
         let data_slices = [IoSliceMut::new(output)];
 
         let mut addr_buf = MessageHeaderSocketAddrBuffer::new();
@@ -195,7 +195,7 @@ impl MessageSocket {
             .addr()
             .ok_or_else(|| err_msg("Received no valid address for received packet"))?;
 
-        Ok((n, addr.into()))
+        Ok((n, addr))
     }
 }
 

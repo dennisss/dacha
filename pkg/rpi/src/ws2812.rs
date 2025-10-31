@@ -11,7 +11,7 @@ use crate::pcm::*;
 pub const WS2812_RESET_TIME: Duration = Duration::from_micros(100);
 
 /// Target of 0.4us per cycle.
-const TARGET_RATE: usize = 2500000;
+const TARGET_RATE: usize = 2_500_000;
 const TARGET_PERIOD: Duration = Duration::from_nanos(400);
 
 /// Controller for WS2812 protocol LED chains.

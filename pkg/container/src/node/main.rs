@@ -209,14 +209,6 @@ fn main_inner() -> Result<()> {
     println!("Container UID range: {}", container_uids);
     println!("Container GID range: {}", container_uids);
 
-    let local_address = http::uri::Authority {
-        user: None,
-        host: http::uri::Host::IP(net::local_ip()?),
-        port: Some(config.service_port() as u16),
-    }
-    .to_string()?;
-    println!("Starting node on address: {}", local_address);
-
     let current_cgroup_dir = format!("/sys/fs/cgroup{}", sys::current_cgroup_name()?);
     if config.cgroup_dir().is_empty() {
         config.set_cgroup_dir(&current_cgroup_dir);
@@ -237,7 +229,7 @@ fn main_inner() -> Result<()> {
             .collect(),
         container_uids,
         container_gids,
-        local_address,
+        local_address: String::new(), // Filled in later
     };
 
     let (root_process, mut setup_parent) = spawn_root_process(&node_context, &config)?;
@@ -433,6 +425,15 @@ async fn run_inner(
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     let service = RootResource::new();
+
+    let mut context = context.clone();
+    context.local_address = http::uri::Authority {
+        user: None,
+        host: http::uri::Host::IP(net::local_ip().await?),
+        port: Some(config.service_port() as u16),
+    }
+    .to_string()?;
+    println!("Starting node on address: {}", context.local_address);
 
     let node: Arc<Node> = Arc::new(Node::create(&context, &config).await?);
     service.register_dependency(node.clone()).await;

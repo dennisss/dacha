@@ -1,12 +1,51 @@
 use core::arch::asm;
-use core::ops::{DerefMut, Drop};
+use core::ops::{Deref, DerefMut, Drop};
 use core::pin::Pin;
 
 use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::uarte0::UARTE0;
+use peripherals::raw::uarte1::UARTE1;
+use peripherals::raw::uarte0::UARTE0_REGISTERS;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};
 
-use crate::pins::{connect_pin, PeripheralPin};
+use crate::pins::{connect_pin, disconnect_pin, is_pin_connected, PeripheralPin};
+
+// TODO: Codegen this.
+// TODO: Also need to hold the interrupt.
+pub struct UARTEx {
+    base_address: u32,
+}
+
+impl Deref for UARTEx {
+    type Target = UARTE0_REGISTERS;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+impl DerefMut for UARTEx {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+macro_rules! uartex_from {
+    ($t:ident) => {
+        impl From<$t> for UARTEx {
+            fn from(mut value: $t) -> Self {
+                UARTEx {
+                    base_address: unsafe {
+                        core::mem::transmute::<&mut UARTE0_REGISTERS, u32>(value.deref_mut())
+                    },
+                }
+            }
+        }
+    };
+}
+
+uartex_from!(UARTE0);
+uartex_from!(UARTE1);
 
 /// Internal implementation details:
 /// - After new() is called, the peripheral is in the 'idle' state where:
@@ -82,6 +121,11 @@ impl UARTE {
         (self.reader, self.writer)
     }
 
+    pub fn into_inner(self) -> UARTE0 {
+        drop(self);
+        unsafe { UARTE0::new() }
+    }
+
     pub async fn write(&mut self, data: &[u8]) {
         self.writer.write(data).await
     }
@@ -93,6 +137,15 @@ impl UARTE {
 
 pub struct UARTEWriter {
     periph: UARTE0,
+}
+
+impl Drop for UARTEWriter {
+    fn drop(&mut self) {
+        disconnect_pin(&mut self.periph.psel.txd);
+        if !is_pin_connected(&self.periph.psel.rxd) {
+            self.periph.enable.write_disabled();
+        }
+    }
 }
 
 impl UARTEWriter {
@@ -204,6 +257,15 @@ impl<'a> UARTEWrite<'a> {
 
 pub struct UARTEReader {
     periph: UARTE0,
+}
+
+impl Drop for UARTEReader {
+    fn drop(&mut self) {
+        disconnect_pin(&mut self.periph.psel.rxd);
+        if !is_pin_connected(&self.periph.psel.txd) {
+            self.periph.enable.write_disabled();
+        }
+    }
 }
 
 impl UARTEReader {

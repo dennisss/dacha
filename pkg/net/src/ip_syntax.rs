@@ -303,7 +303,7 @@ mod tests {
         for (input, output) in test_cases {
             assert_eq!(
                 parse_ipv4_address(input.as_bytes()).unwrap(),
-                (output.to_vec(), &[])
+                (output.to_vec(), &[][..])
             );
         }
     }
@@ -348,7 +348,7 @@ mod tests {
         for (input, output) in test_cases {
             assert_eq!(
                 parse_ipv6_address(input.as_bytes()).unwrap(),
-                (output.to_vec(), &[])
+                (output.to_vec(), &[][..])
             );
         }
     }

@@ -7,15 +7,10 @@ use std::sync::atomic::AtomicUsize;
 
 use base_util::null_terminated::read_null_terminated_string;
 use common::errors::*;
-use nix::sys::socket::recvmsg;
-use nix::sys::socket::sendmsg;
-use nix::sys::socket::MsgFlags;
-use nix::sys::socket::{
-    AddressFamily, InetAddr, NetlinkAddr, SockAddr, SockFlag, SockProtocol, SockType,
-};
-use nix::sys::uio::IoVec;
+use sys::{socket, AddressFamily};
 
 use crate::ip::IPAddress;
+use crate::udp::MessageSocket;
 
 /*
 
@@ -29,63 +24,49 @@ NETLINK_ROUTE
 */
 
 struct NetlinkSocket {
-    fd: i32,
+    inner: MessageSocket,
     // last_sequence: AtomicUsize
-}
-
-impl Drop for NetlinkSocket {
-    fn drop(&mut self) {
-        let _ = unsafe { sys::close(self.fd) };
-    }
 }
 
 impl NetlinkSocket {
     pub fn create() -> Result<Self> {
-        // Wrap the fd as soon as possible to ensure that it is closed on errors via the
-        // drop implementation.
-        let inst = {
-            let fd = nix::sys::socket::socket(
-                AddressFamily::Netlink,
-                SockType::Datagram,
-                SockFlag::SOCK_CLOEXEC,
-                SockProtocol::NetlinkRoute,
-            )?;
-
-            Self { fd }
+        let fd = unsafe {
+            socket(
+                AddressFamily::AF_NETLINK,
+                sys::SocketType::SOCK_DGRAM,
+                sys::SocketFlags::SOCK_CLOEXEC,
+                sys::SocketProtocol::NETLINK_ROUTE,
+            )?
         };
 
         // Bind to pid=0 (which will casue the kernel to auto-assign us a unique pid
         // identifying this socket).
-        nix::sys::socket::bind(inst.fd, &SockAddr::Netlink(NetlinkAddr::new(0, 0)))?;
+        unsafe { sys::bind(&fd, &sys::SocketAddr::netlink(0, 0))? };
 
-        Ok(inst)
+        Ok(Self { inner: MessageSocket::new(fd) })
     }
 
     // TODO: consider making more of these functions require '&mut self'. We can
     // probably allow concurrent sends, but receives will be de-multiplexes based on
     // sequence number.
 
-    pub fn send_to_kernel(&self, message: &mut [u8]) -> Result<()> {
+    /// Sends a message using the 'nlmsghdr' format.
+    pub async fn send_to_kernel(&self, message: &mut [u8]) -> Result<()> {
         let message_len = message.len();
         let (message_header, _) = parse_cstruct_mut::<nlmsghdr>(message)?;
         message_header.nlmsg_len = message_len as u32;
 
-        let kernel_addr = SockAddr::new_netlink(0, 0);
+        let kernel_addr = sys::SocketAddr::netlink(0, 0);
 
         // TODO: Check the return value.
-        sendmsg(
-            self.fd,
-            &[IoVec::from_slice(message)],
-            &[],
-            MsgFlags::empty(),
-            Some(&kernel_addr),
-        )?;
+        self.inner.send_to(message, &kernel_addr).await?;
 
         Ok(())
     }
 
     // TODO: Verify that the response sequence matches the request sequence.
 
+    /// Receives messages which use the 'nlmsghdr' format.
     pub fn recv_messages(&self) -> NetlinkMessageReceiver {
         NetlinkMessageReceiver {
             socket: self,
@@ -97,7 +78,7 @@ impl NetlinkSocket {
     }
 }
 
-struct NetlinkMessageReceiver<'a> {
+pub struct NetlinkMessageReceiver<'a> {
     socket: &'a NetlinkSocket,
 
     buffer: [u8; 8192],
@@ -110,20 +91,15 @@ struct NetlinkMessageReceiver<'a> {
 }
 
 impl<'a> NetlinkMessageReceiver<'a> {
-    pub fn next<'b>(&'b mut self) -> Result<Option<(&'b nlmsghdr, &'b [u8])>> {
+    pub async fn next<'b>(&'b mut self) -> Result<Option<(&'b nlmsghdr, &'b [u8])>> {
         if self.buffer_offset == self.buffer_length {
             if self.received_all_parts {
                 return Ok(None);
             }
 
-            let received = recvmsg(
-                self.socket.fd,
-                &[IoVec::from_mut_slice(&mut self.buffer)],
-                None,
-                MsgFlags::empty(),
-            )?;
+            let n = self.socket.inner.recv(&mut self.buffer).await?;
             self.buffer_offset = 0;
-            self.buffer_length = received.bytes;
+            self.buffer_length = n;
         }
 
         let input = &self.buffer[self.buffer_offset..self.buffer_length];
@@ -200,7 +176,7 @@ pub enum InterfaceAddrFamily {
     INET6,
 }
 
-pub fn read_interfaces() -> Result<Vec<Interface>> {
+pub async fn read_interfaces() -> Result<Vec<Interface>> {
     let sock = NetlinkSocket::create()?;
 
     // TODO: Automate the sequence stuff.
@@ -237,7 +213,7 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
         &mut link_request,
     );
     serialize_cstruct(&ifinfomsg::default(), &mut link_request);
-    sock.send_to_kernel(&mut link_request)?;
+    sock.send_to_kernel(&mut link_request).await?;
 
     // println!("My PID is {}", unsafe { sys::getpid() });
     // println!("Header length: {}", std::mem::size_of::<nlmsghdr>());
@@ -246,7 +222,7 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
 
     let mut message_receiver = sock.recv_messages();
 
-    while let Some((message_header, mut message_payload)) = message_receiver.next()? {
+    while let Some((message_header, mut message_payload)) = message_receiver.next().await? {
         // println!("{:?}", message_header);
 
         let info: &ifinfomsg = parse_next!(message_payload, parse_cstruct);
@@ -295,11 +271,11 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
         &mut addr_request,
     );
     serialize_cstruct(&ifaddrmsg::default(), &mut addr_request);
-    sock.send_to_kernel(&mut addr_request)?;
+    sock.send_to_kernel(&mut addr_request).await?;
 
     let mut message_receiver = sock.recv_messages();
 
-    while let Some((message_header, mut message_payload)) = message_receiver.next()? {
+    while let Some((message_header, mut message_payload)) = message_receiver.next().await? {
         // println!("{:?}", message_header);
 
         let info: &ifaddrmsg = parse_next!(message_payload, parse_cstruct);
@@ -382,7 +358,7 @@ enum_def_with_unknown!(RouteTable u8 =>
 );
 
 
-pub fn read_routes() -> Result<Vec<Route>> {
+pub async fn read_routes() -> Result<Vec<Route>> {
     let sock = NetlinkSocket::create()?;
 
     let mut link_request = vec![];
@@ -397,13 +373,13 @@ pub fn read_routes() -> Result<Vec<Route>> {
         &mut link_request,
     );
     serialize_cstruct(&ifinfomsg::default(), &mut link_request);
-    sock.send_to_kernel(&mut link_request)?;
+    sock.send_to_kernel(&mut link_request).await?;
 
     let mut message_receiver = sock.recv_messages();
 
     let mut out = vec![];
 
-    while let Some((message_header, mut message_payload)) = message_receiver.next()? {
+    while let Some((message_header, mut message_payload)) = message_receiver.next().await? {
         let info: &rtmsg = parse_next!(message_payload, parse_cstruct);
 
         let family = match info.rtm_family as i32 {
@@ -494,8 +470,8 @@ pub fn read_routes() -> Result<Vec<Route>> {
 ///
 /// If both a V4 and V6 address are available, we will prefer the V4 address (as
 /// it is likely shorter and more user friendly).
-pub fn local_ip() -> Result<IPAddress> {
-    let mut routes = read_routes()?.into_iter()
+pub async fn local_ip() -> Result<IPAddress> {
+    let mut routes = read_routes().await?.into_iter()
         .filter(|route| {
             route.scope == RouteScope::Universe &&
             route.typ == RouteType::Unicast &&
@@ -511,7 +487,7 @@ pub fn local_ip() -> Result<IPAddress> {
 
     let iface_index = routes[0].output_interface_index.unwrap();
 
-    let ifaces = read_interfaces()?;
+    let ifaces = read_interfaces().await?;
 
     let mut found_ip = None;
     for iface in ifaces {
@@ -545,6 +521,7 @@ pub fn local_ip() -> Result<IPAddress> {
     found_ip.ok_or_else(|| err_msg("No suitable local ips found"))
 }
 
+// TODO: Dedup me
 fn parse_cstruct<T>(input: &[u8]) -> Result<(&T, &[u8])> {
     let size = std::mem::size_of::<T>();
     let (data, rest) = parse_payload(input, size)?;
@@ -552,6 +529,7 @@ fn parse_cstruct<T>(input: &[u8]) -> Result<(&T, &[u8])> {
     Ok((unsafe { std::mem::transmute(data.as_ptr()) }, rest))
 }
 
+// TODO: Dedup me
 fn parse_cstruct_mut<T>(input: &mut [u8]) -> Result<(&mut T, &[u8])> {
     let size = std::mem::size_of::<T>();
     let (data, rest) = parse_payload_mut(input, size)?;
@@ -580,7 +558,7 @@ fn parse_cstruct_with_payload<T: StructLength>(input: &[u8]) -> Result<((&T, &[u
 fn parse_payload(input: &[u8], length: usize) -> Result<(&[u8], &[u8])> {
     let length_aligned = length + common::block_size_remainder(4, length as u64) as usize;
     if input.len() < length_aligned {
-        return Err(err_msg("Not enough bytes"));
+        return Err(format_err!("Not enough bytes. Length: {}", length));
     }
 
     Ok((&input[0..length], &input[length_aligned..]))
@@ -589,7 +567,7 @@ fn parse_payload(input: &[u8], length: usize) -> Result<(&[u8], &[u8])> {
 fn parse_payload_mut(input: &mut [u8], length: usize) -> Result<(&mut [u8], &[u8])> {
     let length_aligned = length + common::block_size_remainder(4, length as u64) as usize;
     if input.len() < length_aligned {
-        return Err(err_msg("Not enough bytes"));
+        return Err(format_err!("Not enough bytes. Length: {}", length));
     }
 
     let (a, b) = input.split_at_mut(length);
@@ -597,6 +575,7 @@ fn parse_payload_mut(input: &mut [u8], length: usize) -> Result<(&mut [u8], &[u8
     Ok((a, &b[(length_aligned - length)..]))
 }
 
+// TODO: Dedup me
 fn serialize_cstruct<T>(value: &T, out: &mut Vec<u8>) {
     let data: &[u8] =
         unsafe { std::slice::from_raw_parts(std::mem::transmute(value), std::mem::size_of::<T>()) };

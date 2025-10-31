@@ -72,6 +72,12 @@ impl<T, const LEN: usize> FixedVec<T, LEN> {
         }
     }
 
+    pub fn extend_from_slice(&mut self, other: &[T]) where T: Clone {
+        for value in other {
+            self.push(value.clone());
+        }
+    }
+
     pub fn truncate(&mut self, new_size: usize) {
         assert!(new_size <= self.length);
         while self.length > new_size {

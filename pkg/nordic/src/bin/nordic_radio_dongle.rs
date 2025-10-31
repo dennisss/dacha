@@ -90,8 +90,16 @@ async fn main_thread_fn() {
             peripherals.pwm1,
             peripherals.pwm2,
             peripherals.pwm3,
+            peripherals.spim0,
+            peripherals.spim1,
+            peripherals.spim2,
+            peripherals.spim3,
             peripherals.gpiote,
             peripherals.temp,
+            peripherals.uarte0,
+            peripherals.timer0,
+            peripherals.ppi,
+            peripherals.saadc,
         ))
         .await;
 

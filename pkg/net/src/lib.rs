@@ -13,15 +13,8 @@ extern crate std;
 extern crate common;
 #[macro_use]
 extern crate parsing;
-extern crate automata;
 #[macro_use]
 extern crate regexp_macros;
-extern crate base_radix;
-extern crate crypto;
-extern crate executor;
-extern crate libc;
-extern crate nix;
-extern crate sys;
 #[macro_use]
 extern crate macros;
 
@@ -35,6 +28,7 @@ pub mod netlink;
 pub mod tcp;
 pub mod udp;
 mod utils;
+pub mod udev;
 
 pub use ip_syntax::parse_port;
 pub use netlink::local_ip;
@@ -52,10 +46,12 @@ mod tests {
         errors::*,
         io::{IoError, IoErrorKind, Readable, Writeable},
     };
+    use executor::sync::AsyncMutex;
+    use executor::lock_async;
 
-    #[test]
-    fn get_local_ip_test() {
-        local_ip().unwrap();
+    #[testcase]
+    async fn get_local_ip_test() {
+        local_ip().await.unwrap();
     }
 
     #[testcase]
@@ -204,12 +200,17 @@ mod tests {
     // operations.
     #[testcase]
     async fn cancel_tcp_operations() -> Result<()> {
-        let mut server_listener = Arc::new(Mutex::new(
+        let mut server_listener = Arc::new(AsyncMutex::new(
             tcp::TcpListener::bind("127.0.0.1:0".parse::<ip::SocketAddr>()?).await?,
         ));
 
         let mut listener1 = server_listener.clone();
-        let waiter = executor::spawn(async move { listener1.lock().await.accept().await });
+        let waiter = executor::spawn(async move {
+            let mut l = listener1.lock().await.unwrap().enter();
+            unsafe { l.unpoison() };
+
+            l.accept().await
+        });
 
         // Wait for the accept to start.
         executor::sleep(Duration::from_millis(10)).await;
@@ -217,9 +218,11 @@ mod tests {
         assert!(waiter.cancel().await.is_none());
 
         // Can still accept connections.
-        let mut listener2 = server_listener.lock().await;
+        let mut listener2 = server_listener.lock().await?.enter();
         let mut client_stream = tcp::TcpStream::connect(listener2.local_addr()?).await?;
         let mut server_stream = listener2.accept().await?;
+        
+        listener2.exit();
 
         let mut buf1 = vec![0u8; 4];
         let mut buf2 = vec![0u8; 4];

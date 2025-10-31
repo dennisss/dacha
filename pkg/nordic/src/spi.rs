@@ -1,30 +1,77 @@
 use core::mem::transmute;
+use core::ops::{Deref, DerefMut};
 
 use common::register::{RegisterRead, RegisterWrite};
 use executor::interrupts::wait_for_irq;
-use peripherals::raw::spim0::SPIM0;
+use peripherals::raw::spim0::{SPIM0, SPIM0_REGISTERS};
+use peripherals::raw::spim1::SPIM1;
+use peripherals::raw::spim2::SPIM2;
+use peripherals::raw::spim3::SPIM3;
 use peripherals::raw::PinLevel;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};
 
 use crate::gpio::GPIOPin;
-use crate::pins::{connect_pin, PeripheralPin};
+use crate::pins::{connect_pin, connect_optional_pin, PeripheralPin};
+
+// TODO: Codegen this.
+pub struct SPIMx {
+    base_address: u32,
+    interrupt: Interrupt,
+}
+
+impl Deref for SPIMx {
+    type Target = SPIM0_REGISTERS;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+impl DerefMut for SPIMx {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+macro_rules! spimx_from {
+    ($t:ident, $i:ident) => {
+        impl From<$t> for SPIMx {
+            fn from(mut value: $t) -> Self {
+                SPIMx {
+                    base_address: unsafe {
+                        core::mem::transmute::<&mut SPIM0_REGISTERS, u32>(value.deref_mut())
+                    },
+                    interrupt: Interrupt::$i
+                }
+            }
+        }
+    };
+}
+
+spimx_from!(SPIM0, SPI0_SPIM0_SPIS0_TWI0_TWIM0_TWIS0);
+spimx_from!(SPIM1, SPI1_SPIM1_SPIS1_TWI1_TWIM1_TWIS1);
+spimx_from!(SPIM2, SPI2_SPIM2_SPIS2);
+spimx_from!(SPIM3, SPIM3);
 
 // Depends on HFCLK for precise clock timing.
 pub struct SPIHost {
-    periph: SPIM0,
-    cs: GPIOPin,
+    periph: SPIMx,
+    cs: Option<GPIOPin>,
 }
 
 impl SPIHost {
     // NOTE: Chip select is not supported in most of the SPIM peripherals so instead
     // we implement it in software.
+    //
+    // TODO: All callers are expected to configure the GPIO pins in the GPIO peripheral as described in
+    // https://docs.nordicsemi.com/bundle/ps_nrf52840/page/spim.html#ariaid-title4
     pub fn new<MOSI: PeripheralPin, MISO: PeripheralPin, SCK: PeripheralPin>(
-        mut periph: SPIM0,
+        mut periph: SPIMx,
         frequency: usize,
-        mosi: MOSI,
-        miso: MISO,
-        sck: SCK,
-        mut cs: GPIOPin,
+        mosi: Option<MOSI>,
+        miso: Option<MISO>,
+        sck: Option<SCK>,
+        mut cs: Option<GPIOPin>,
         mode: SPIMode,
     ) -> Self {
         match frequency {
@@ -42,13 +89,15 @@ impl SPIHost {
 
         periph.intenset.write_with(|v| v.set_stopped().set_end());
 
-        connect_pin(mosi, &mut periph.psel.mosi);
-        connect_pin(miso, &mut periph.psel.miso);
-        connect_pin(sck, &mut periph.psel.sck);
-        // connect_pin(cs, &mut periph.psel.csn);
+        connect_optional_pin(mosi, &mut periph.psel.mosi);
+        connect_optional_pin(miso, &mut periph.psel.miso);
+        connect_optional_pin(sck, &mut periph.psel.sck);
+        // connect_optional_pin(cs, &mut periph.psel.csn);
         // periph.csnpol.write_activelow();
 
-        cs.set_direction(PinDirection::Output).write(PinLevel::High);
+        if let Some(cs) = &mut cs {
+            cs.set_direction(PinDirection::Output).write(PinLevel::High);
+        }
 
         let mut config = peripherals::raw::spim0::config::CONFIG_VALUE::new();
         config.set_order_with(|v| v.set_msbfirst());
@@ -84,7 +133,10 @@ impl SPIHost {
     // TODO: Use SHORTS to implement write_then_read.
 
     pub async fn transfer(&mut self, write_data: &[u8], read_data: &mut [u8]) {
-        self.cs.write(PinLevel::Low);
+        if let Some(cs) = &mut self.cs {
+            cs.write(PinLevel::Low);
+        }
+
         let mut transfer = SPIHostTransfer {
             periph: &mut self.periph,
             cs: &mut self.cs,
@@ -109,13 +161,27 @@ impl SPIHost {
         transfer.running = true;
 
         while transfer.periph.events_end.read().is_notgenerated() {
-            wait_for_irq(Interrupt::SPI0_SPIM0_SPIS0_TWI0_TWIM0_TWIS0).await;
+            wait_for_irq(transfer.periph.interrupt).await;
         }
 
         transfer.periph.events_end.write_notgenerated();
         transfer.running = false;
     }
+
+    pub fn into_inner(mut self) -> SPIMx {
+        self.periph.enable.write_disabled();
+        self.periph
+    }
 }
+
+// TODO: Add this back
+/*
+impl Drop for SPIHost {
+    fn drop(&mut self) {
+        self.periph.enable.write_disabled();
+    }
+}
+*/
 
 pub enum SPIMode {
     Mode0,
@@ -125,14 +191,17 @@ pub enum SPIMode {
 }
 
 struct SPIHostTransfer<'a> {
-    periph: &'a mut SPIM0,
-    cs: &'a mut GPIOPin,
+    // TODO: Instead want a reference to the full instance.
+    periph: &'a mut SPIMx,
+    cs: &'a mut Option<GPIOPin>,
     running: bool,
 }
 
 impl<'a> Drop for SPIHostTransfer<'a> {
     fn drop(&mut self) {
-        self.cs.write(PinLevel::High);
+        if let Some(cs) = self.cs {
+            cs.write(PinLevel::High);
+        }
 
         self.cancel_blocking();
 

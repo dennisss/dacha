@@ -374,6 +374,14 @@ impl<T> ReflectStatic for FixedString<T> {
     }
 }
 
+impl<const LEN: usize> ReflectStatic for FixedVec<u8, LEN> {
+    type Type = [u8];
+
+    fn reflect_static_default() -> &'static Self::Type {
+        &[]
+    }
+}
+
 // Used for 'bytes' types with the fixed_length option specified.
 impl<const LEN: usize> Reflect for FixedVec<u8, LEN> {
     fn reflect(&self) -> Reflection {

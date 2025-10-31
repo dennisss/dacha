@@ -26,8 +26,6 @@ utils::ceil_devs
 */
 
 use common::register::{RegisterRead, RegisterWrite};
-use executor::interrupts::wait_for_irq;
-use peripherals::raw::gpiote::GPIOTE;
 use peripherals::raw::p0::dirclr::DIRCLR_WRITE_VALUE;
 use peripherals::raw::p0::dirset::DIRSET_WRITE_VALUE;
 use peripherals::raw::p0::outclr::OUTCLR_WRITE_VALUE;
@@ -35,7 +33,6 @@ use peripherals::raw::p0::outset::OUTSET_WRITE_VALUE;
 use peripherals::raw::p0::pin_cnf::{DIR_FIELD, INPUT_FIELD, PULL_FIELD};
 use peripherals::raw::p0::{P0, P0_REGISTERS};
 use peripherals::raw::p1::P1;
-use peripherals::raw::Interrupt;
 
 pub use peripherals::raw::{PinDirection, PinLevel};
 
@@ -61,10 +58,7 @@ impl GPIO {
 
         GPIOPin {
             port: unsafe { core::mem::transmute(port) },
-            port_index: match p.port() {
-                Port::P0 => 0,
-                Port::P1 => 1,
-            },
+            port_index: p.port() as u32,
             pin_index: p.pin() as usize,
             pin_mask: 1u32 << p.pin(),
             // handle: p.into(),
@@ -79,6 +73,20 @@ pub struct GPIOPin {
     pin_mask: u32,
     // /// NOTE: This is only used if we want to get the raw pin reference back.
     // handle: PeripheralPinHandle,
+}
+
+// TODO: Think more about whether or not having this is a good idea.
+impl PeripheralPin for GPIOPin {
+    fn port(&self) -> Port {
+        match self.port_index {
+            0 => Port::P0,
+            1 => Port::P1,
+            _ => panic!()
+        }
+    }
+    fn pin(&self) -> u8 {
+        self.pin_index as u8
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -151,149 +159,5 @@ impl GPIOPin {
         } else {
             PinLevel::Low
         }
-    }
-}
-
-pub struct GPIOInterrupts {
-    periph: GPIOTE,
-    num_used_channels: usize,
-}
-
-// impl Drop for GPIOInterrupts {
-//     fn drop(&mut self) {}
-// }
-
-impl GPIOInterrupts {
-    pub fn new(periph: GPIOTE) -> Self {
-        // TODO: Do initial cleanup of everything in the peripheral (so that it can be
-        // re-used)
-
-        Self {
-            periph,
-            num_used_channels: 0,
-        }
-    }
-
-    // TODO: Move somewhere like the drop.
-    pub fn reset(&mut self) {
-        // Disable all pins
-        for i in 0..self.periph.config.len() {
-            self.periph.config[i].write_with(|v| v.set_mode_with(|v| v.set_disabled()));
-        }
-
-        // Disable all interrupts.
-        self.periph.intenclr.write_with(|v| {
-            v.set_in0()
-                .set_in1()
-                .set_in2()
-                .set_in3()
-                .set_in4()
-                .set_in5()
-                .set_in6()
-                .set_in7()
-        });
-
-        // Clear all events.
-        self.pending_events();
-
-        // TODO: Clear the NVIC interrupt.
-    }
-
-    pub fn into_inner(self) -> GPIOTE {
-        self.periph
-    }
-
-    pub fn setup_interrupt(
-        &mut self,
-        pin: GPIOPin,
-        polarity: GPIOInterruptPolarity,
-    ) -> GPIOInterrupt {
-        let channel = self.num_used_channels;
-        self.num_used_channels += 1;
-
-        self.periph.intenset.write_with(|v| match channel {
-            0 => v.set_in0(),
-            1 => v.set_in1(),
-            2 => v.set_in2(),
-            3 => v.set_in3(),
-            4 => v.set_in4(),
-            5 => v.set_in5(),
-            6 => v.set_in6(),
-            7 => v.set_in7(),
-            _ => panic!(),
-        });
-
-        self.periph.config[channel].write_with(|v| {
-            v.set_port(pin.port_index as u32)
-                .set_psel(pin.pin_index as u32)
-                .set_polarity_with(|v| match polarity {
-                    GPIOInterruptPolarity::RisingEdge => v.set_lotohi(),
-                    GPIOInterruptPolarity::FallingEdge => v.set_hitolo(),
-                    GPIOInterruptPolarity::Toggle => v.set_toggle(),
-                })
-                .set_mode_with(|v| v.set_event())
-        });
-
-        GPIOInterrupt {
-            pin,
-            // inst: self,
-            mask: GPIOInterruptMask {
-                value: 1 << channel,
-            },
-        }
-    }
-
-    pub fn pending_events(&mut self) -> GPIOInterruptMask {
-        let mut value = 0;
-        for i in 0..self.num_used_channels {
-            if self.periph.events_in[i].read().is_generated() {
-                self.periph.events_in[i].write_notgenerated();
-                value |= 1 << i;
-            }
-        }
-
-        crate::events::flush_events_clear();
-
-        GPIOInterruptMask { value }
-    }
-
-    pub async fn wait_for_interrupts(&mut self) -> GPIOInterruptMask {
-        wait_for_irq(Interrupt::GPIOTE).await;
-        self.pending_events()
-    }
-}
-
-// TODO: Disable the interrupt on drop.
-pub struct GPIOInterrupt {
-    // inst: &'a GPIOInterrupts,
-    mask: GPIOInterruptMask,
-    pin: GPIOPin,
-}
-
-impl GPIOInterrupt {
-    pub fn take_pin(self) -> GPIOPin {
-        self.pin
-    }
-
-    pub fn mask(&self) -> GPIOInterruptMask {
-        self.mask
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum GPIOInterruptPolarity {
-    RisingEdge,
-    FallingEdge,
-    Toggle,
-}
-
-#[derive(Clone, Copy)]
-pub struct GPIOInterruptMask {
-    value: u8,
-}
-
-impl GPIOInterruptMask {
-    pub fn contains(&self, other: GPIOInterruptMask) -> bool {
-        self.value & other.value == other.value
     }
 }

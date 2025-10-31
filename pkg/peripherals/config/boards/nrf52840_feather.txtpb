@@ -92,9 +92,21 @@ pins {
     name: "SWITCH"
     alias: "P1.02"
 }
+
 pins {
+    # High is on.
     name: "RED_LED"
     alias: "P1.15"
+}
+pins {
+    # High is on.
+    name: "BLUE_LED"
+    alias: "P1.10"
+}
+pins {
+    # Wired up directly to Vdd of the neopixel.
+    name: "NEOPIXEL_POWER"
+    alias: "P1.14"
 }
 pins {
     name: "NEOPIXEL"

@@ -42,6 +42,7 @@ Useful FICR stuff:
 
 */
 
+use common::fixed::vec::FixedVec;
 use common::segmented_buffer::SegmentedBuffer;
 use executor::sync::AsyncMutex;
 use peripherals_proto::peripherals::{
@@ -49,22 +50,39 @@ use peripherals_proto::peripherals::{
     PeripheralResponse_ErrorCode,
 };
 use peripherals::raw::gpiote::GPIOTE;
+use peripherals::raw::saadc::SAADC;
 use peripherals::raw::pwm0::PWM0;
 use peripherals::raw::pwm1::PWM1;
 use peripherals::raw::pwm2::PWM2;
 use peripherals::raw::pwm3::PWM3;
+use peripherals::raw::spim0::SPIM0;
+use peripherals::raw::spim1::SPIM1;
+use peripherals::raw::spim2::SPIM2;
+use peripherals::raw::spim3::SPIM3;
 use peripherals::raw::temp::TEMP;
+use peripherals::raw::timer0::TIMER0;
+use peripherals::raw::uarte0::UARTE0;
+use peripherals::raw::ppi::PPI;
 use protobuf::{Message, StaticMessage};
 
 use crate::gpio::*;
+use crate::gpiote::GPIOTEChannels;
 use crate::pins::{PeripheralPin, Port};
 use crate::pwm::{PWMConfig, PWM};
 use crate::rtc::{RTCInstant, RTC};
 use crate::temp::Temp;
+use crate::uarte::UARTE;
+use crate::timer::Timer;
+use crate::ppi::PPIChannels;
+use crate::spi::*;
+use crate::neopixel::*;
 
+use super::neopixel::NeopixelPeripheralThread;
 use super::tachometer::TachometerPeripheralThread;
 use super::temp::TemperaturePeripheralThread;
 use super::timeout::TimeoutPeripheralThread;
+use super::uart::UartTransmitPeripheralThread;
+use super::stepper::{StepperMotorController, StepperMotion, StepperPeripheralThread};
 
 // Port 0 has 32 pins.
 // Port 1 has 16 pins.
@@ -99,9 +117,17 @@ pub(super) struct State {
 
     pub gpio: GPIO,
 
-    pub gpiote: Option<GPIOTE>,
+    pub gpiote: GPIOTEChannels,
+
+    pub ppi: PPIChannels,
 
     pub temp: Option<Temp>,
+
+    pub uarte: Option<UARTE0>,
+
+    pub spim: FixedVec<SPIMx, 4>,
+
+    pub timer: Timer,
 
     /// Stores PeripheralResponse protos that need to be read back by the host.
     pub response_buffer: SegmentedBuffer<[u8; RESPONSE_BUFFER_SIZE]>,
@@ -116,6 +142,7 @@ pub(super) enum PeripheralEntry {
 
     GPIO {
         pin: GPIOPin,
+        interrupt: Option<GPIOInterruptChannel>,
     },
     PWM {
         index: usize,
@@ -125,6 +152,18 @@ pub(super) enum PeripheralEntry {
         last_active: Option<RTCInstant>,
         timeout_millis: Option<u32>,
     },
+
+    UARTE {
+        inst: UARTE,
+    },
+
+    Stepper {
+        controller: StepperMotorController
+    },
+
+    Neopixel {
+        inst: Neopixel
+    }
 }
 
 /*
@@ -218,17 +257,33 @@ impl PeripheralsController {
         pwm1: PWM1,
         pwm2: PWM2,
         pwm3: PWM3,
+        spim0: SPIM0,
+        spim1: SPIM1,
+        spim2: SPIM2,
+        spim3: SPIM3,
         gpiote: GPIOTE,
         temp: TEMP,
+        uarte0: UARTE0,
+        timer0: TIMER0,
+        ppi: PPI,
+        saadc: SAADC
     ) -> Self {
         // TODO: Don't create this here. We should ban calling this outside of main().
         let mut peripherals = peripherals::raw::Peripherals::new();
         let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
+        let timer = Timer::new(timer0);
 
         let mut entries = [DEFAULT_ENTRY_VALUE; 16];
         for i in 0..entries.len() {
             entries[i] = PeripheralEntry::Unconfigured;
         }
+
+        // TODO: Instead init from a slice.
+        let mut spim = FixedVec::new();
+        spim.push(spim0.into());
+        spim.push(spim1.into());
+        spim.push(spim2.into());
+        spim.push(spim3.into());
 
         Self {
             clock,
@@ -241,10 +296,14 @@ impl PeripheralsController {
                     PWM::new(pwm2.into()),
                     PWM::new(pwm3.into()),
                 ],
+                uarte: Some(uarte0),
                 gpio,
-                gpiote: Some(gpiote),
+                gpiote: GPIOTEChannels::new(gpiote),
+                ppi: PPIChannels::new(ppi),
                 temp: Some(Temp::new(temp)),
                 used_pins: [0; NUM_PINS / 4],
+                spim,
+                timer,
                 response_buffer: SegmentedBuffer::new([0u8; RESPONSE_BUFFER_SIZE]),
             }),
         }
@@ -325,6 +384,11 @@ impl PeripheralsController {
                 // TODO: Mark the pin as in use.
 
                 let mut pin = state.gpio.pin(IndexedPin { index: req.pin() });
+
+                if !req.is_input() {
+                    pin.write(if req.default_value() { PinLevel::High } else { PinLevel::Low });
+                }
+
                 pin.set_direction(if req.is_input() {
                     PinDirection::Input
                 } else {
@@ -340,7 +404,25 @@ impl PeripheralsController {
 
                 // TODO: Also need to support NRF52 high drive.
 
-                state.entries[peripheral_idx] = PeripheralEntry::GPIO { pin };
+
+                let mut interrupt = None;
+                
+                let interrupt_polarity = match req.interrupt() {
+                    ConfigureGPIO_InterruptPolarity::DISABLED => None,
+                    ConfigureGPIO_InterruptPolarity::RISING_EDGE => Some(GPIOInterruptPolarity::RisingEdge),
+                    ConfigureGPIO_InterruptPolarity::FALLING_EDGE => Some(GPIOInterruptPolarity::FallingEdge)
+                };
+
+                if let Some(polarity) = interrupt_polarity {
+                    interrupt = Some(state.gpiote.new_interrupt_channel(
+                        IndexedPin { index: req.pin() },
+                        polarity
+                    ));
+
+                    // TODO: Start the background thread if not already started.
+                }
+
+                state.entries[peripheral_idx] = PeripheralEntry::GPIO { pin, interrupt };
 
                 Ok(OkResponse)
             }
@@ -407,6 +489,106 @@ impl PeripheralsController {
                 Ok(OkResponse)
             }
 
+            PeripheralRequestCommandCase::ConfigureUart(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
+
+                // TODO: Dedup this logic more.
+                if req.tx_pin() as usize >= NUM_PINS {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
+                    ));
+                }
+
+                if req.rx_pin() as usize >= NUM_PINS {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
+                    ));
+                }
+
+                if state.uarte.is_none() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                // TODO: Check the pin is unused.
+
+                // TODO: Mark the pin as in use.
+
+                let tx_pin = IndexedPin { index: req.tx_pin() };
+                let rx_pin = IndexedPin { index: req.rx_pin() };
+                let inst = state.uarte.take().unwrap();
+
+                // TODO: Validate the baud_rate is ok.
+
+                state.entries[peripheral_idx] = PeripheralEntry::UARTE {
+                    inst: UARTE::new(inst, tx_pin, rx_pin, req.baud_rate() as usize)
+                };
+
+                Ok(OkResponse)
+            }
+
+            PeripheralRequestCommandCase::ConfigureStepper(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
+
+                // TODO: Check the pin index is valid.
+
+                if req.step_pin() as usize >= NUM_PINS ||
+                   req.dir_pin() as usize >= NUM_PINS {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
+                    ));
+                }
+
+                let step_pin = state.gpio.pin(IndexedPin { index: req.step_pin() });
+                let dir_pin = state.gpio.pin(IndexedPin { index: req.dir_pin() });
+
+                let controller = StepperMotorController::new(
+                    step_pin,
+                    dir_pin,
+                    &mut state.ppi,
+                    &mut state.gpiote,
+                    &mut state.timer,
+                ).ok_or_else(|| ExecuteError::ErrorCode(
+                    PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                ))?;
+
+                
+                state.entries[peripheral_idx] = PeripheralEntry::Stepper {
+                    controller
+                };
+
+                Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::ConfigureAdc(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
+
+                todo!()
+            }
+            PeripheralRequestCommandCase::ConfigureNeopixel(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
+
+                if req.pin() as usize >= NUM_PINS {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
+                    ));
+                }
+
+                if state.spim.is_empty() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ));
+                }
+
+                let pin = state.gpio.pin(IndexedPin { index: req.pin() });
+                let spi = state.spim.pop().unwrap();
+
+                state.entries[peripheral_idx] = PeripheralEntry::Neopixel {
+                    inst: Neopixel::new(spi, self.clock.clone(), pin)
+                };
+
+                Ok(OkResponse)
+            }
             PeripheralRequestCommandCase::FinalizeConfig(_) => {
                 if state.config_finalized {
                     return Err(ExecuteError::ErrorCode(
@@ -432,8 +614,13 @@ impl PeripheralsController {
                     }
                 }
 
+                StepperPeripheralThread::stop();
+
                 for entry in state.entries.iter_mut() {
-                    match entry {
+                    let mut e = PeripheralEntry::Unconfigured;
+                    core::mem::swap(&mut e, entry);
+
+                    match e {
                         PeripheralEntry::Unconfigured => {}
                         PeripheralEntry::Borrowed => {
                             // TODO: Stuff via GPIO interrupts need to be cancelled.
@@ -443,15 +630,25 @@ impl PeripheralsController {
                             ));
                         }
                         PeripheralEntry::PWM { index, channel, .. } => {
-                            state.pwms[*index].disconnect(*channel);
+                            state.pwms[index].disconnect(channel);
                         }
-                        PeripheralEntry::GPIO { pin } => {
+                        PeripheralEntry::GPIO { mut pin } => {
                             pin.reset();
                         }
-                    }
+                        PeripheralEntry::UARTE { inst } => {
+                            // Pins get disconnected on drop
+                            state.uarte = Some(inst.into_inner());
+                        }
+                        PeripheralEntry::Stepper { controller } => {} 
 
-                    *entry = PeripheralEntry::Unconfigured;
+                        PeripheralEntry::Neopixel { inst } => {
+                            state.spim.push(inst.into_inner());
+                        }
+                    }
                 }
+
+                // TODO: Do this automatically
+                state.timer.reset();
 
                 state.config_finalized = false;
 
@@ -492,7 +689,7 @@ impl PeripheralsController {
                 self.check_fully_configured(state)?;
 
                 let pin = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::GPIO { pin } => pin,
+                    PeripheralEntry::GPIO { pin, .. } => pin,
                     _ => {
                         return Err(ExecuteError::ErrorCode(
                             PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
@@ -512,7 +709,7 @@ impl PeripheralsController {
                 self.check_fully_configured(state)?;
 
                 let pin = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::GPIO { pin } => pin,
+                    PeripheralEntry::GPIO { pin, .. } => pin,
                     _ => {
                         return Err(ExecuteError::ErrorCode(
                             PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
@@ -533,24 +730,19 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::ReadTachometer(_) => {
                 self.check_fully_configured(state)?;
 
-                if state.gpiote.is_none() {
-                    // There is already another tachometer request running.
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
-                    ));
-                }
-
                 if TachometerPeripheralThread::is_running() {
                     return Err(ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_BUSY,
                     ));
                 }
 
+                // TODO: Veriffy no existing interrupt since we will end up deleting it.
+
                 // TODO: Check that the thread isn't running.
 
                 // TODO: Place into a 'Borrowed' state.
                 match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::GPIO { pin } => {}
+                    PeripheralEntry::GPIO { .. } => {}
                     _ => {
                         return Err(ExecuteError::ErrorCode(
                             PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
@@ -558,12 +750,11 @@ impl PeripheralsController {
                     }
                 };
 
-                let gpiote = state.gpiote.take().unwrap();
                 let pin = {
                     let mut e = PeripheralEntry::Borrowed;
                     core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
                     match e {
-                        PeripheralEntry::GPIO { pin } => pin,
+                        PeripheralEntry::GPIO { pin, .. } => pin,
                         _ => panic!(),
                     }
                 };
@@ -572,7 +763,6 @@ impl PeripheralsController {
                     self,
                     peripheral_idx,
                     request.request_sequence(),
-                    gpiote,
                     pin,
                 );
 
@@ -596,6 +786,51 @@ impl PeripheralsController {
 
                 Err(ExecuteError::AsyncReply)
             }
+
+            PeripheralRequestCommandCase::UartTransmit(req) => {
+                self.check_fully_configured(state)?;
+                
+                if UartTransmitPeripheralThread::is_running() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                match &mut state.entries[peripheral_idx] {
+                    PeripheralEntry::UARTE { inst } => {}
+                    _ => {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }
+                };
+
+                let inst = {
+                    let mut e = PeripheralEntry::Borrowed;
+                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
+                    match e {
+                        PeripheralEntry::UARTE { inst } => inst,
+                        _ => panic!(),
+                    }
+                };
+
+                let mut read_request = None;
+                if req.has_rx_after_tx() {
+                    read_request = Some(req.rx_after_tx().clone());
+                }
+
+                UartTransmitPeripheralThread::start(
+                    self,
+                    peripheral_idx,
+                    request.request_sequence(),
+                    inst,
+                    req.data().into(),
+                    read_request
+                );
+
+                Err(ExecuteError::AsyncReply)
+            }
+
             PeripheralRequestCommandCase::GetStackPointer(_) => {
                 let mut buf = [0u8; 4];
                 unsafe { core::ptr::read_volatile::<u8>(buf.as_ptr()) };
@@ -612,6 +847,100 @@ impl PeripheralsController {
             }
             PeripheralRequestCommandCase::Noop(_) => Ok(OkResponse),
             PeripheralRequestCommandCase::Info(_) => todo!(),
+
+            PeripheralRequestCommandCase::EnqueueStepperMotion(req) => {
+                let motion = StepperMotion {
+                    direction: req.direction(),
+                    next_time: req.next_time(),
+                    next_velocity: req.next_velocity(),
+                    acceleration: req.acceleration(),
+                    num_steps: req.num_steps() as usize
+                };
+
+                let stepper = match &mut state.entries[peripheral_idx] {
+                    PeripheralEntry::Stepper { controller } => controller,
+                    _ => {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }
+                };
+
+                if !stepper.enqueue_motion(motion) {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ));
+                }
+
+                stepper.tick();
+
+                if !StepperPeripheralThread::is_running() {
+                    StepperPeripheralThread::start(self);
+                }
+
+                Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::GetClockTime(_) => {
+                let time = state.timer.capture()
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ))?;
+                
+                response.set_uint_val(time);
+                Ok(OkResponse)
+            }
+
+            PeripheralRequestCommandCase::GetStepperMotorStatus(_) => {
+                let stepper = match &mut state.entries[peripheral_idx] {
+                    PeripheralEntry::Stepper { controller } => controller,
+                    _ => {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }
+                };
+
+                response.set_stepper_status(stepper.status());
+
+                Ok(OkResponse)
+            }
+
+            PeripheralRequestCommandCase::SingleAdcSample(_) => {
+
+                todo!()
+            }
+            PeripheralRequestCommandCase::NeopixelTransfer(req) => {
+                self.check_fully_configured(state)?;
+
+                match &mut state.entries[peripheral_idx] {
+                    PeripheralEntry::Neopixel { .. } => {}
+                    _ => {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }
+                };
+
+                let inst = {
+                    let mut e = PeripheralEntry::Borrowed;
+                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
+                    match e {
+                        PeripheralEntry::Neopixel { inst } => inst,
+                        _ => panic!(),
+                    }
+                };
+
+                NeopixelPeripheralThread::start(
+                    self,
+                    peripheral_idx,
+                    request.request_sequence(),
+                    inst,
+                    req.data().into()
+                );
+
+                Err(ExecuteError::AsyncReply)
+            }
+
         }
     }
 

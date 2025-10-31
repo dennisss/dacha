@@ -15,6 +15,14 @@ impl<T, const LEN: usize> FixedQueue<T, LEN> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.data.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.length == 0
     }
@@ -44,8 +52,24 @@ impl<T, const LEN: usize> FixedQueue<T, LEN> {
         Some(unsafe { v.assume_init() })
     }
 
+    pub fn clear(&mut self) {
+        while let Some(v) = self.pop_front() {
+            drop(v);
+        }
+    }
+
     pub fn into_iter(self) -> IntoIter<T, LEN> {
         IntoIter { queue: self }
+    }
+
+    pub fn first_mut(&mut self) -> Option<&mut T> {
+        if self.length == 0 {
+            return None;
+        }
+
+        let idx = self.offset;
+
+        Some(unsafe { self.data[idx].assume_init_mut() })
     }
 }
 

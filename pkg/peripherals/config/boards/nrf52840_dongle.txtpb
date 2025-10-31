@@ -1,0 +1,93 @@
+# proto-file: pkg/peripherals/proto/service.proto
+# proto-message: BoardConfig
+
+name: "nrf52840_dongle"
+base_config: "nrf52840"
+
+pins {
+    name: "0.13"
+    alias: "P0.13"
+}
+pins {
+    name: "0.15"
+    alias: "P0.15"
+}
+pins {
+    name: "0.17"
+    alias: "P0.17"
+}
+pins {
+    name: "0.20"
+    alias: "P0.20"
+}
+pins {
+    name: "0.22"
+    alias: "P0.22"
+}
+pins {
+    name: "0.24"
+    alias: "P0.24"
+}
+pins {
+    name: "1.00"
+    alias: "P1.00"
+}
+pins {
+    name: "0.09"
+    alias: "P0.09"
+}
+pins {
+    name: "0.10"
+    alias: "P0.10"
+}
+pins {
+    name: "1.10"
+    alias: "P1.10"
+}
+pins {
+    name: "1.13"
+    alias: "P1.13"
+}
+pins {
+    name: "1.15"
+    alias: "P1.15"
+}
+pins {
+    name: "0.02"
+    alias: "P0.02"
+}
+pins {
+    name: "0.29"
+    alias: "P0.29"
+}
+pins {
+    name: "0.31"
+    alias: "P0.31"
+}
+
+pins {
+    # Driven to GND when pushed (must internally pull up)
+    name: "SW1"
+    alias: "P1.06"
+}
+
+pins {
+    # Drive to GND to turn on.
+    name: "LED1"
+    alias: "P0.06"
+}
+pins {
+    # Drive to GND to turn on.
+    name: "LED2_R"
+    alias: "P0.08"
+}
+pins {
+    # Drive to GND to turn on.
+    name: "LED2_G"
+    alias: "P1.09"
+}
+pins {
+    # Drive to GND to turn on.
+    name: "LED2_B"
+    alias: "P0.12"
+}
