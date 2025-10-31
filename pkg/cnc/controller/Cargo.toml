@@ -21,6 +21,7 @@ usb = { path = "../../usb" }
 nordic_tools = { path = "../../nordic/tools" }
 peripherals_service = { path = "../../peripherals/service" }
 peripherals_proto = { path = "../../peripherals/proto" }
+cnc_controller_proto = { path = "./proto" }
 
 [features]
 default = ["std", "alloc"]

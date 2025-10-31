@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package cnc;
+
+import "pkg/peripherals/proto/service.proto";
+
+
+message ControllerConfig {
+    BoardConfig main_board = 1;
+    BedClientConfig bed_client = 2;
+
+    // For now this should always have 4 numbers.
+    repeated float bed_fem_weights = 3;
+}
+
+message BedClientConfig {
+    float bed_temp_resistor = 1;
+    float sheet_temp_resistor = 2;
+    float aux_temp_resistor = 3;
+
+    float calibration_a = 4;
+    float calibration_b = 5;
+    float chip_temp_calibration = 6;
+}
