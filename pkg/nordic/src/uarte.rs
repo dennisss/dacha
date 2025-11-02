@@ -133,6 +133,10 @@ impl UARTE {
     pub async fn read_exact(&mut self, data: &mut [u8]) {
         self.reader.read_exact(data).await
     }
+
+    pub fn flush(&mut self) {
+        self.reader.flush();
+    }
 }
 
 pub struct UARTEWriter {
@@ -154,6 +158,10 @@ impl UARTEWriter {
     // }
 
     pub async fn write(&mut self, data: &[u8]) {
+        // Ensure not already triggering.
+        // NOTE: If the rest of the code is correct, this line should not be necessary.
+        self.periph.events_endtx.write_notgenerated();
+
         // NOTE: EasyDMA can only allow data in RAM.
         // TODO: Support larger flash data with segmented transfers.
         let mut buf = [0u8; 256];
@@ -292,6 +300,28 @@ impl UARTEReader {
     pub async fn read_exact(&mut self, data: &mut [u8]) {
         let mut read = self.begin_read(data);
         read.wait().await;
+    }
+
+
+    pub fn flush(&mut self) {
+        let mut buf = [0u8; 8];
+
+        self.periph
+            .rxd
+            .ptr
+            .write(unsafe { core::mem::transmute(buf.as_ptr()) });
+        self.periph.rxd.maxcnt.write(buf.len() as u32);
+
+        self.periph.tasks_flushrx.write_trigger();
+
+        // ENDRX
+
+        while self.periph.events_endrx.read().is_notgenerated() {
+            continue;
+        }
+
+        self.periph.events_endrx.write_notgenerated();
+        crate::events::flush_events_clear();
     }
 
     // TODO: We can implement a read_until which uses a shortcut to immediately

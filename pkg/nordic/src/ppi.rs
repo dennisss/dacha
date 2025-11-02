@@ -80,4 +80,11 @@ impl PPIChannel {
             .chenclr
             .write(CHENCLR_WRITE_VALUE::from_raw(1 << self.index));
     }
+
+    pub fn set_fork_task(&mut self, task: &mut TaskRegister) {
+        let mut periph = unsafe { PPI::new() };
+        periph.fork[self.index].tep.write(unsafe {
+            core::mem::transmute::<&mut TaskRegister, u32>(task)
+        });
+    }
 }

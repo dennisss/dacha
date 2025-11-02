@@ -1005,6 +1005,7 @@ dependencies = [
 name = "cnc_controller"
 version = "0.1.0"
 dependencies = [
+ "cnc_controller_proto",
  "common",
  "crypto",
  "executor",
@@ -1019,6 +1020,20 @@ dependencies = [
  "peripherals_service",
  "protobuf",
  "usb",
+]
+
+[[package]]
+name = "cnc_controller_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "media_camera_proto",
+ "peripherals_proto",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "rpc",
 ]
 
 [[package]]

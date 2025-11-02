@@ -13,7 +13,7 @@ use cnc_controller::thermistor::*;
 use common::io::Writeable;
 use math_compute::io::CSVReader;
 use common::hash::FastHasherBuilder;
-
+use cnc_controller_proto::cnc::BedClientConfig;
 
 /*
 
@@ -215,6 +215,24 @@ struct LoggingState {
 
 impl TestDriver {
 
+    fn create_bed_client() -> Result<BedClient> {
+        // use cnc_controller_proto::cnc::BedClientConfig;
+
+        let mut config = BedClientConfig::default();
+        protobuf::text::parse_text_proto(r#"
+            bed_temp_resistor: 999.3,
+            sheet_temp_resistor: 998.0,
+            aux_temp_resistor: 997.0,
+            calibration_a: 0.9963536962,
+            calibration_b: -0.0008514803899,
+            chip_temp_calibration: 0.955696203
+        "#, &mut config)?;
+
+        BedClient::create(LocalPath::new("/dev/ttyUSB0"), BedClientOptions {
+            config
+        })
+    }
+
     async fn create(log_path: Option<LocalPathBuf>) -> Result<Self> {
         if let Some(path) = &log_path {
             if file::exists(path).await? {
@@ -222,14 +240,7 @@ impl TestDriver {
             }
         }
 
-        let mut bed_client = BedClient::create(LocalPath::new("/dev/ttyUSB0"), BedClientOptions {
-            bed_temp_resistor: 999.3,
-            sheet_temp_resistor: 998.0,
-            aux_temp_resistor: 997.0,
-            calibration_a: 0.9963536962,
-            calibration_b: -0.0008514803899,
-            chip_temp_calibration: 0.955696203
-        })?;
+        let mut bed_client = Self::create_bed_client()?;
 
         let configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
 
@@ -1282,15 +1293,7 @@ use cnc_controller::color::*;
 
 
 async fn light_show() -> Result<()> {
-    // TODO: Dedup me.
-    let mut bed_client = BedClient::create(LocalPath::new("/dev/ttyUSB0"), BedClientOptions {
-        bed_temp_resistor: 999.3,
-        sheet_temp_resistor: 998.0,
-        aux_temp_resistor: 997.0,
-        calibration_a: 0.9963536962,
-        calibration_b: -0.0008514803899,
-        chip_temp_calibration: 0.955696203
-    })?;
+        let mut bed_client = TestDriver::create_bed_client()?;
 
     // WRGB
     let colors = vec![
@@ -1412,16 +1415,7 @@ async fn heater_test() -> Result<()> {
 async fn fan_test() -> Result<()> {
     // TODO: Also need to connect to the microcontroller to turn off the bed.
 
-    // TODO: Dedup me.
-    let mut bed_client = BedClient::create(LocalPath::new("/dev/ttyUSB0"), BedClientOptions {
-        bed_temp_resistor: 999.3,
-        sheet_temp_resistor: 998.0,
-        aux_temp_resistor: 997.0,
-        calibration_a: 0.9963536962,
-        calibration_b: -0.0008514803899,
-        chip_temp_calibration: 0.955696203
-    })?;
-
+        let mut bed_client = TestDriver::create_bed_client()?;
 
     loop {
         let res = bed_client.request(1, 0).await?;

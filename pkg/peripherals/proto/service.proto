@@ -70,6 +70,29 @@ message BoardConfig {
         ConfigurePWMRequest config = 2;
     }
 
+    message UARTPeripheral {
+        string tx_pin_name = 1;
+        string rx_pin_name = 2;
+        ConfigureUARTRequest config = 3;
+    }
+
+    message StepperPeripheral {
+        string step_pin_name = 1;
+        string dir_pin_name = 2;
+        ConfigureStepperMotor config = 3;
+    }
+
+    message NeopixelPeripheral {
+        string pin_name = 1;
+        ConfigureNeopixelRequest config = 2;
+    }
+
+    message ADCPeripheral {
+        string pin_name = 1;
+        string negative_pin_name = 2;
+        ConfigureADCRequest config = 3;
+    }
+
     message Peripheral {
         // Stable human readable name for the pin.
         string name = 1;
@@ -80,6 +103,10 @@ message BoardConfig {
         oneof config {
             GPIOPeripheral gpio = 3;
             PWMPeripheral pwm = 4;
+            UARTPeripheral uart = 5;
+            StepperPeripheral stepper = 6;
+            NeopixelPeripheral neopixel = 7;
+            ADCPeripheral adc = 8;
         }
     }
     repeated Peripheral peripherals = 4;

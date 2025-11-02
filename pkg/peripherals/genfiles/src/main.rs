@@ -93,6 +93,13 @@ fn main() -> Result<()> {
         new_name: "PinSelectRegister".to_string(),
     });
 
+    options.field_rewrites.push(FieldRewriteRule {
+        register_name: RegExp::new("^.*\\.PSEL[PN]$")?,
+        register_access: cmsis_svd::spec::RegisterAccess::ReadWrite,
+        field_name: RegExp::new(".*")?,
+        new_name: "AnalogPinSelect".to_string(),
+    });
+
     /*
     TODO: INTENSET|INTENCLR reading should re-use the same value struct as the corresponding INTEN
 

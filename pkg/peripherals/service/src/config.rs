@@ -39,6 +39,15 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
             let name = config.dir_pin_name().to_string();
             callback(&name, config.config_mut().dir_pin_mut())?;
         }
+        BoardConfig_PeripheralConfigCase::Adc(config) => {
+            let name = config.pin_name().to_string();
+            callback(&name, config.config_mut().pin_mut())?;
+
+            if !config.negative_pin_name().is_empty() {
+                let name = config.negative_pin_name().to_string();
+                callback(&name, config.config_mut().negative_pin_mut())?;
+            }
+        }
         BoardConfig_PeripheralConfigCase::NOT_SET => {
             return Err(err_msg("Unconfigured peripheral"));
         }
@@ -197,6 +206,9 @@ pub fn build_configuration_requests(config: &BoardConfig) -> Result<(Vec<Periphe
             }
             BoardConfig_PeripheralConfigCase::Stepper(config) => {
                 req.set_configure_stepper(config.config().clone());
+            }
+            BoardConfig_PeripheralConfigCase::Adc(config) => {
+                req.set_configure_adc(config.config().clone());
             }
             BoardConfig_PeripheralConfigCase::NOT_SET => {
                 return Err(err_msg("Unconfigured peripheral"));

@@ -17,7 +17,8 @@ use peripherals::raw::gpiote::GPIOTE;
 
 use crate::controller::peripherals_controller::PeripheralsController;
 use crate::controller::PeripheralEntry;
-use crate::gpio::{GPIOInterruptPolarity, GPIOInterrupts, GPIOPin};
+use crate::gpio::GPIOPin;
+use crate::gpiote::GPIOInterruptPolarity;
 use crate::rtc::RTC;
 
 /// Max amount of time in milliseconds we will wait before assuming the fan is
@@ -33,7 +34,6 @@ define_thread!(
     controller: &'static PeripheralsController,
     peripheral_index: usize,
     request_sequence: u32,
-    gpiote: GPIOTE,
     pin: GPIOPin
 );
 
@@ -41,12 +41,12 @@ async fn tachometer_worker_thread(
     controller: &'static PeripheralsController,
     peripheral_index: usize,
     request_sequence: u32,
-    gpiote: GPIOTE,
     pin: GPIOPin,
 ) {
-    let mut gpio_interrupts = GPIOInterrupts::new(gpiote);
-
-    let int = gpio_interrupts.setup_interrupt(pin, GPIOInterruptPolarity::FallingEdge);
+    // TODO: Handle failure of this on unwrap.
+    let mut int = lock!(state <= controller.state.lock().await.unwrap(), {
+        state.gpiote.new_interrupt_channel(pin, GPIOInterruptPolarity::FallingEdge)
+    }).unwrap();
 
     let mut clock1 = controller.clock.clone();
     let timeout = async {
@@ -57,30 +57,21 @@ async fn tachometer_worker_thread(
     let mut clock2 = controller.clock.clone();
 
     // Clear any initial events.
-    gpio_interrupts.pending_events();
+    int.pending_events();
 
     let collector = async {
-        // TODO: Don't need to check the mask since we only have one interrupt setup.
-        while !gpio_interrupts
-            .wait_for_interrupts()
-            .await
-            .contains(int.mask())
-        {
+        while !int.wait_for_interrupts().await {
             continue;
         }
         let t1 = clock2.now();
 
-        // TODO: Don't need to check the mask since we only have one interrupt setup.
-        while !gpio_interrupts
-            .wait_for_interrupts()
-            .await
-            .contains(int.mask())
-        {
+        while !int.wait_for_interrupts().await {
             continue;
         }
         let t2 = clock2.now();
 
-        gpio_interrupts.reset();
+        // TODO: Need to disable the interrupt somewhere
+        // gpio_interrupts.reset();
 
         Some(t2.micros_since(&t1))
     };
@@ -88,9 +79,9 @@ async fn tachometer_worker_thread(
     let result = race!(collector, timeout).await;
 
     lock!(state <= controller.state.lock().await.unwrap(), {
-        state.gpiote = Some(gpio_interrupts.into_inner());
         state.entries[peripheral_index] = PeripheralEntry::GPIO {
             pin: int.take_pin(),
+            interrupt: None
         };
 
         let mut res = PeripheralResponse::default();

@@ -9,6 +9,8 @@ use protobuf::{Message, StaticMessage};
 use usb::{descriptors::SetupPacket, registry::OUR_VENDOR_ID};
 use peripherals_proto::peripherals::*;
 
+const SEQUENCE_MODULUS: u32 = 128;
+
 
 // TODO: Every single USB transfer should have some timeout.
 pub struct USBRadio {
@@ -199,6 +201,10 @@ impl USBRadio {
 
         let mut request = request.clone();
         self.last_sequence += 1;
+        if self.last_sequence == SEQUENCE_MODULUS {
+            self.last_sequence = 1;
+        }
+
         request.set_request_sequence(self.last_sequence);
 
         let proto = request.serialize()?;

@@ -206,6 +206,8 @@ impl<Pin> GPIOInterruptChannel<Pin> {
     }
 
     pub async fn wait_for_interrupts(&mut self) -> bool {
+        // TODO: Enable the interrupt when entering this function and disable it when out of here.
+
         wait_for_irq(Interrupt::GPIOTE).await;
         self.pending_events()
     }

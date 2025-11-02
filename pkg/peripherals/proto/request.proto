@@ -4,16 +4,21 @@
 
 syntax = "proto3";
 
+import "pkg/protobuf/compiler/proto/extensions.proto";
+
 package peripherals;
 
 message PeripheralRequest {
     uint32 peripheral_index = 1;
 
-    // Monotonically increasing sequence number for this request.
+    // Sequence number for this request.
     // - Must be at least 1
     // - Mainly used right now to mark corresponding responses.
+    // - Generally monotonic but may eventually wrap around back to 1.
+    // - This value is only meaningful since the last USB reset.
     //
-    // TODO: Wrap this around on the host side at a small value to avoid making the proto larger.
+    // Internally a special value of 0 can be used on the MCU to indicate requests for which
+    // responses don't need to be sent back to the host.
     uint32 request_sequence = 2;
 
     // TODO: Need to be able to query information about the MCU which which chip is used.
@@ -43,7 +48,7 @@ message PeripheralRequest {
         // TODO: Replace with generic support for getting interrupts with packet/event timing info.
         ReadTachometer read_tachometer = 10;
 
-        // NOTE: This can be triggered on any 
+        // NOTE: This can be triggered on any peripheral
         bool measure_mcu_temperature = 11;
 
         // Should be called after all peripherals have been initialized to perform any
@@ -65,6 +70,39 @@ message PeripheralRequest {
 
         // Returns PeripheralInfoResponse
         bool info = 17;
+
+        ConfigureUARTRequest configure_uart = 18;
+
+        UARTTransmitRequest uart_transmit = 19;
+
+        ConfigureStepperMotor configure_stepper = 20;
+
+        StepperMotorMotion enqueue_stepper_motion = 21;
+
+        bool get_clock_time = 22;
+
+        bool get_stepper_motor_status = 23;
+
+        ConfigureADCRequest configure_adc = 24;
+
+        // Immediately start a single scalar ADC sample and return the result.
+        SampleADCRequest sample_adc = 25;
+
+        ConfigureNeopixelRequest configure_neopixel = 26;
+
+        NeopixelTransfer neopixel_transfer = 27;
+
+        // Check if the interrupt on a GPIO peripheral has fired.
+        // The response will have a non-zero uint_val if it fired.
+        bool poll_gpio_interrupt = 28;
+
+        // Note that if a step was enqueued to be started, it will 
+        // be marked as completed and it is undefined whether or not it actually
+        // happened.
+        bool clear_stepper_queue = 29;
+
+        // Data is returned in the 'data_val' 
+        uint32 read_adc_buffer = 31;
     }
 
     reserved 6;
@@ -128,6 +166,14 @@ message PeripheralResponse {
         uint32 uint_val = 3;
 
         float float_val = 4;
+
+        bytes data_val = 5 [(dacha.max_length) = 32];
+
+        uint64 wide_val = 6;
+
+        StepperMotorStatus stepper_status = 7;
+
+        ADCFormat adc_format = 8;
     }
 }
 
@@ -177,7 +223,8 @@ message ConfigureGPIO {
     }
     InterruptPolarity interrupt = 5;
 
-    // TODO: Add a default value for outputs
+    // If true, this pin defaults to high when it is an output.
+    bool default_value = 6;
 }
 
 message SetGPIOLevel {
@@ -217,5 +264,142 @@ message SetPWMRequest {
     uint32 value = 1;
 }
 
+message ConfigureUARTRequest {
+    uint32 tx_pin = 1;
+
+    uint32 rx_pin = 2;
+
+    uint32 baud_rate = 3;
+}
+
+message UARTTransmitRequest {
+    bytes data = 1 [(dacha.max_length) = 8];
+
+    // After all of this data is sent, immediately turn on the receiver and wait for this number of 
+    UARTReceiveRequest rx_after_tx = 2;
+}
+
+message UARTReceiveRequest {
+    uint32 num_bytes = 1;
+}
+
 message ReadTachometer {}
+
+
+
+message ConfigureStepperMotor {
+    uint32 step_pin = 1;
+
+    uint32 dir_pin = 2;
+}
+
+// TODO: Need to be able to stop all stepper operations immediately in an emergency stop mode.
+
+message StepperMotorMotion {
+    bool direction = 1;
+    uint32 next_time = 2;
+    uint32 next_velocity = 3;
+    uint32 acceleration = 4;
+    uint32 num_steps = 5;
+
+    // Time at which the first step begins to move.
+    // Assuming num_steps > 0, this is the time at which we first flip the 'STEP' pin. 
+    // uint64 initial_time = 1;
+
+    // NOTE: All steps in one motion are in the same direction.
+    // bool forwards = 2;
+
+    //uint32 num_steps = 3;
+
+    // 
+    //uint32 initial_time_delta = 4;
+
+    // Amount the time delta between steps changes between each step.
+    // int32 acceleration_per_step = 5;
+}
+
+message EnqueueStepperMotionRequest {
+    StepperMotorMotion motion = 1;
+}
+
+message StepperMotorStatus {
+    // Total number of completed steps.
+    uint32 total_steps = 1;
+
+    uint32 faults = 2;
+
+    uint32 empty_queue_slots = 3;
+
+    bool active = 4;
+}
+
+/*
+ADC Commands:
+- Configure
+    - If given a sampling rate, I'll also reserve a full TIMER and one PPI channel to 
+        - Timer: 
+    - If given a threshold, set that up in the limits
+        - Note that thresholds only help
+
+- SingleSample
+    - Sample once and immediately return the result inline in the response
+        - Frequencies and thresholds are ignored
+- SampleWindow
+    - Collect a full window.
+        - If a threshold is given, then the window won't be returned until we have at least one value that exceeds that.
+    - Returns once the window is ready.
+- CancelWindow
+    - Mainly relevant for threshold based windows.
+- ReadAnalogValues
+    - Reads bytes from the analog buffer at some space.
+
+*/
+
+message ConfigureADCRequest {
+    uint32 pin = 1;
+
+    optional uint32 negative_pin = 2;
+
+    bool measure_vdd = 3;
+
+    // Expected maximum voltage value expected.
+    // This is used to calibrate internal gain.
+    float max_voltage = 4;
+
+    // If true, then samples should be measured relative to Vdd if possible.
+    bool vdd_reference = 5;
+
+    // If zero, then use as high of a resolution as possible.
+    uint32 max_bits_per_sample = 6;
+
+    // When doing a window sample, this is the rate in Hz at which 
+    uint32 sample_rate = 7;
+
+    optional float trigger_above = 8;
+
+    optional float trigger_below = 9; 
+
+    // If true, sampling is immediately stopped if one of the triggers is hit.
+    bool stop_on_trigger = 10;
+}
+
+message ADCFormat {
+    uint32 bits_per_sample = 1;
+
+    float units_per_volt = 2;
+}
+
+message SampleADCRequest {
+    bool window = 1;
+}
+
+
+message ConfigureNeopixelRequest {
+    uint32 pin = 1;
+}
+
+message NeopixelTransfer {
+    bytes data = 1 [(dacha.max_length) = 16];
+}
+
 

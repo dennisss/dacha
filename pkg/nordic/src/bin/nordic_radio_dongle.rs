@@ -98,6 +98,7 @@ async fn main_thread_fn() {
             peripherals.temp,
             peripherals.uarte0,
             peripherals.timer0,
+            peripherals.timer1,
             peripherals.ppi,
             peripherals.saadc,
         ))

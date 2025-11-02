@@ -38,7 +38,7 @@ use crate::gpiote::*;
 use crate::ppi::*;
 use crate::controller::{PeripheralsController, PeripheralEntry};
 
-const MAX_ENQUEUED_MOTIONS: usize = 16;
+const MAX_ENQUEUED_MOTIONS: usize = 8;
 
 /// Minimum time from now to the next step pulse (in 16MHz clock cycles).
 const MIN_STEP_TIME: u32 = 10;
@@ -189,7 +189,6 @@ impl StepperMotorController {
     /// the next tick will attempt to clear it.
     pub fn clear_motions(&mut self) {
         self.motion_queue.clear();
-        // TODO:
     }
 
     pub fn status(&self) -> StepperMotorStatus {
@@ -224,9 +223,7 @@ impl StepperMotorController {
         // TIMING: In the case that we are done the step, this should be take at least a
         // few timer cycles so we shouldn't need extra hold time for the previous step. 
         if self.have_enqueued_step {
-            // TODO: After the step has fired, we need a minimum hold time.
-
-            if self.step_timer_channel.pending_event() {
+            if self.step_timer_channel.pending_event() || self.motion_queue.is_empty() {
                 self.have_enqueued_step = false;
                 self.step_ppi_channel.disable();
                 self.step_timer_channel.disable_interrupt();

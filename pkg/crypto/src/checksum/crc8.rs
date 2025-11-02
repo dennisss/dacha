@@ -18,6 +18,27 @@ pub fn crc8(data: &[u8]) -> u8 {
     state ^ FINAL_XOR
 }
 
+pub fn crc8_atm(data: &[u8]) -> u8 {
+    const POLYNOMIAL: u8 =  0x07; // x^8 + x^2 + x^1 + x^0
+
+    let mut state: u8 = 0;
+
+    for mut byte in data.iter().cloned() {
+        for _ in 0..8 {
+            let overflow = ((state >> 7) ^ (byte & 0x01)) != 0;
+            state <<= 1;
+            if overflow {
+                state ^= POLYNOMIAL;
+            }
+
+            byte = byte >> 1;
+        }
+    }
+
+    state
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

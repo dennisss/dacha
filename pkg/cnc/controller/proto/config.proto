@@ -6,7 +6,7 @@ import "pkg/peripherals/proto/service.proto";
 
 
 message ControllerConfig {
-    BoardConfig main_board = 1;
+    peripherals.BoardConfig main_board = 1;
     BedClientConfig bed_client = 2;
 
     // For now this should always have 4 numbers.
