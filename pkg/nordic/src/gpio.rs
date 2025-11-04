@@ -30,7 +30,7 @@ use peripherals::raw::p0::dirclr::DIRCLR_WRITE_VALUE;
 use peripherals::raw::p0::dirset::DIRSET_WRITE_VALUE;
 use peripherals::raw::p0::outclr::OUTCLR_WRITE_VALUE;
 use peripherals::raw::p0::outset::OUTSET_WRITE_VALUE;
-use peripherals::raw::p0::pin_cnf::{DIR_FIELD, INPUT_FIELD, PULL_FIELD};
+use peripherals::raw::p0::pin_cnf::{DIR_FIELD, INPUT_FIELD, PULL_FIELD, DRIVE_FIELD};
 use peripherals::raw::p0::{P0, P0_REGISTERS};
 use peripherals::raw::p1::P1;
 
@@ -135,6 +135,17 @@ impl GPIOPin {
             Resistor::None => PULL_FIELD::Disabled,
             Resistor::PullDown => PULL_FIELD::Pulldown,
             Resistor::PullUp => PULL_FIELD::Pullup,
+        });
+        self.port.pin_cnf[self.pin_index].write(pin_cnf);
+        self
+    }
+
+    pub fn set_high_drive(&mut self, on: bool) -> &mut Self {
+        let mut pin_cnf = self.port.pin_cnf[self.pin_index].read();
+        pin_cnf.set_drive(if on {
+            DRIVE_FIELD::H0H1
+        } else {
+            DRIVE_FIELD::S0S1
         });
         self.port.pin_cnf[self.pin_index].write(pin_cnf);
         self

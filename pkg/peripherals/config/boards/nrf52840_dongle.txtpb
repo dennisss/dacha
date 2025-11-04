@@ -91,3 +91,14 @@ pins {
     name: "LED2_B"
     alias: "P0.12"
 }
+
+peripherals {
+    name: "led"
+    gpio {
+        pin_name: "LED1"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}

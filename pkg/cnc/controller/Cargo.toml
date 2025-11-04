@@ -22,6 +22,8 @@ nordic_tools = { path = "../../nordic/tools" }
 peripherals_service = { path = "../../peripherals/service" }
 peripherals_proto = { path = "../../peripherals/proto" }
 cnc_controller_proto = { path = "./proto" }
+electronics = { path = "../../peripherals/electronics" }
+color = { path = "../../image/color" }
 
 [features]
 default = ["std", "alloc"]

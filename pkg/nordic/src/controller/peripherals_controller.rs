@@ -90,6 +90,9 @@ use super::uart::UartTransmitPeripheralThread;
 use super::stepper::{StepperMotorController, StepperMotion, StepperPeripheralThread};
 use super::interrupt::InterruptPeripheralThread;
 use super::adc::{ADCSamplePeripheralThread, read_adc_buffer};
+use super::spi::SPIPeripheralThread;
+
+const MAX_NUM_PERIPHERALS: usize = 32;
 
 // Port 0 has 32 pins.
 // Port 1 has 16 pins.
@@ -108,7 +111,7 @@ pub struct PeripheralsController {
 
 // TODO: Unconfigure all peripherals when this is dropped.
 pub(super) struct State {
-    pub entries: [PeripheralEntry; 16],
+    pub entries: [PeripheralEntry; MAX_NUM_PERIPHERALS],
 
     /// Has a bit set for every pin that is in use by one of the entries.
     ///
@@ -178,6 +181,10 @@ pub(super) enum PeripheralEntry {
 
     ADC {
         config: ADCChannelConfig
+    },
+
+    SPI {
+        inst: SPIHost
     }
 }
 
@@ -295,7 +302,7 @@ impl PeripheralsController {
         let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
         let timer = Timer::new(timer0);
 
-        let mut entries = [DEFAULT_ENTRY_VALUE; 16];
+        let mut entries = [DEFAULT_ENTRY_VALUE; MAX_NUM_PERIPHERALS];
         for i in 0..entries.len() {
             entries[i] = PeripheralEntry::Unconfigured;
         }
@@ -368,6 +375,14 @@ impl PeripheralsController {
         })
     }
 
+    pub async fn get_clock_time(&self) -> Option<u32> {
+        // TODO: Ensure that the timer is running?
+
+        lock!(state <= self.state.lock().await.unwrap(), {
+            state.timer.capture()
+        })
+    }
+
     /// Returns:
     /// - Ok(OkResponse) if the command is done and ready to send back a
     ///   response.
@@ -397,14 +412,7 @@ impl PeripheralsController {
             )),
             PeripheralRequestCommandCase::ConfigureGpio(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
-
-                // TODO: Check the pin index is valid.
-
-                if req.pin() as usize >= NUM_PINS {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
-                    ));
-                }
+                self.check_valid_pin(req.pin())?;
 
                 // TODO: Check the pin is unused.
 
@@ -468,6 +476,7 @@ impl PeripheralsController {
 
             PeripheralRequestCommandCase::ConfigurePwm(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
+                self.check_valid_pin(req.pin())?;
 
                 // TODO: Check all the usual stuff.
 
@@ -495,6 +504,15 @@ impl PeripheralsController {
                 let pwm_index = pwm_index.ok_or_else(|| {
                     ExecuteError::ErrorCode(PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED)
                 })?;
+
+                // Per datasheet, configure PWM pin in GPIO peripheral before handing it over.
+                {
+                    // TODO: Ensure that we don't do any reseting of GPIO settings when this is dropped.
+                    let mut pin = state.gpio.pin(IndexedPin { index: req.pin() });
+                    pin.set_direction(PinDirection::Output);
+                    pin.write(PinLevel::Low); // TODO: Check the default_value?
+                    pin.set_high_drive(req.high_drive());
+                }
 
                 let channel = match state.pwms[pwm_index].connect(IndexedPin { index: req.pin() }) {
                     Some(v) => v,
@@ -530,19 +548,8 @@ impl PeripheralsController {
 
             PeripheralRequestCommandCase::ConfigureUart(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
-
-                // TODO: Dedup this logic more.
-                if req.tx_pin() as usize >= NUM_PINS {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
-                    ));
-                }
-
-                if req.rx_pin() as usize >= NUM_PINS {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
-                    ));
-                }
+                self.check_valid_pin(req.tx_pin())?;
+                self.check_valid_pin(req.rx_pin())?;
 
                 if state.uarte.is_none() {
                     return Err(ExecuteError::ErrorCode(
@@ -570,14 +577,8 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::ConfigureStepper(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
 
-                // TODO: Check the pin index is valid.
-
-                if req.step_pin() as usize >= NUM_PINS ||
-                   req.dir_pin() as usize >= NUM_PINS {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
-                    ));
-                }
+                self.check_valid_pin(req.step_pin())?;
+                self.check_valid_pin(req.dir_pin())?;
 
                 let step_pin = state.gpio.pin(IndexedPin { index: req.step_pin() });
                 let dir_pin = state.gpio.pin(IndexedPin { index: req.dir_pin() });
@@ -601,13 +602,8 @@ impl PeripheralsController {
             }
             PeripheralRequestCommandCase::ConfigureAdc(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
-
-                if req.pin() as usize >= NUM_PINS ||
-                   req.negative_pin() as usize >= NUM_PINS {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
-                    ));
-                }
+                self.check_valid_pin(req.pin())?;
+                self.check_valid_pin(req.negative_pin())?;
 
                 // TODO: Explicitly set the pins as inputs?
                 let pin = IndexedPin { index: req.pin() };
@@ -631,12 +627,7 @@ impl PeripheralsController {
             }
             PeripheralRequestCommandCase::ConfigureNeopixel(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
-
-                if req.pin() as usize >= NUM_PINS {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
-                    ));
-                }
+                self.check_valid_pin(req.pin())?;
 
                 if state.spim.is_empty() {
                     return Err(ExecuteError::ErrorCode(
@@ -648,8 +639,39 @@ impl PeripheralsController {
                 let spi = state.spim.pop().unwrap();
 
                 state.entries[peripheral_idx] = PeripheralEntry::Neopixel {
-                    inst: Neopixel::new(spi, self.clock.clone(), pin)
+                    inst: Neopixel::new(spi, pin, req.inverted())
                 };
+
+                Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::ConfigureSpi(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
+                self.check_valid_pin(req.mosi_pin());
+                self.check_valid_pin(req.miso_pin());
+                self.check_valid_pin(req.cs_pin());
+                self.check_valid_pin(req.sclk_pin());
+
+                if state.spim.is_empty() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ));
+                }
+
+                // let pin = state.gpio.pin(IndexedPin { index: req.pin() });
+                let spi = state.spim.pop().unwrap();
+
+                // TODO: Need validation of the frequency used.
+                let inst = SPIHost::new(
+                    spi,
+                    req.frequency() as usize,
+                    Some(IndexedPin { index: req.mosi_pin() }),
+                    Some(IndexedPin { index: req.miso_pin() }),
+                    Some(IndexedPin { index: req.sclk_pin() }),
+                    Some(state.gpio.pin(IndexedPin { index: req.cs_pin() })),
+                    SPIMode::Mode0                
+                );
+
+                state.entries[peripheral_idx] = PeripheralEntry::SPI { inst };
 
                 Ok(OkResponse)
             }
@@ -716,7 +738,9 @@ impl PeripheralsController {
                         PeripheralEntry::Neopixel { inst } => {
                             state.spim.push(inst.into_inner());
                         }
-
+                        PeripheralEntry::SPI { inst } => {
+                            state.spim.push(inst.into_inner());
+                        }
                         PeripheralEntry::ADC { .. } => {}
                     }
                 }
@@ -930,7 +954,43 @@ impl PeripheralsController {
 
                 Err(ExecuteError::AsyncReply)
             }
+            PeripheralRequestCommandCase::SpiTransfer(req) => {
+                self.check_fully_configured(state)?;
 
+                if SPIPeripheralThread::is_running() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+                
+                match &mut state.entries[peripheral_idx] {
+                    PeripheralEntry::SPI { inst } => {}
+                    _ => {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }
+                };
+
+                let inst = {
+                    let mut e = PeripheralEntry::Borrowed;
+                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
+                    match e {
+                        PeripheralEntry::SPI { inst } => inst,
+                        _ => panic!(),
+                    }
+                };
+
+                SPIPeripheralThread::start(
+                    self,
+                    peripheral_idx,
+                    request.request_sequence(),
+                    inst,
+                    req.data().into()
+                );
+
+                Err(ExecuteError::AsyncReply)
+            }
             PeripheralRequestCommandCase::GetStackPointer(_) => {
                 let mut buf = [0u8; 4];
                 unsafe { core::ptr::read_volatile::<u8>(buf.as_ptr()) };
@@ -1134,6 +1194,16 @@ impl PeripheralsController {
         if !state.config_finalized {
             return Err(ExecuteError::ErrorCode(
                 PeripheralResponse_ErrorCode::CONFIG_NOT_FINALIZED,
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn check_valid_pin(&self, pin: u32) -> Result<(), ExecuteError> {
+        if pin as usize >= NUM_PINS {
+            return Err(ExecuteError::ErrorCode(
+                PeripheralResponse_ErrorCode::PIN_OUT_OF_RANGE,
             ));
         }
 

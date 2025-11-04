@@ -7,7 +7,7 @@ import "pkg/peripherals/proto/request.proto";
 service Peripherals {
     rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
 
-    rpc Execute (PeripheralRequest) returns (ExecuteResponse);
+    rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 
     rpc RunMacro (RunMacroRequest) returns (ExecuteResponse);
 }
@@ -26,12 +26,54 @@ message GetConfigResponse {
     PeripheralsState state = 2;
 }
 
+message ExecuteRequest {
+
+    PeripheralRequest raw_request = 1;
+
+    string peripheral_name = 2;
+
+    bool sample_adc = 3;
+
+
+}
+
 message ExecuteResponse {
     PeripheralResponse response = 1;
     
     PeripheralsState state = 2;
 
 }
+
+message ResistorDivider {
+    float top_resistor = 1;
+    float bottom_resistor = 2;
+
+    float max_input_voltage = 3;
+}
+
+message CurrentSenseResistor {
+    float resistor_value = 1;
+    float max_current = 2;
+}
+
+message Thermistor {
+    string model = 1;
+    float min_temp = 2;
+    float max_temp = 3;
+    float pull_up_resistance = 4;
+}
+
+message Tachometer {
+
+}
+
+message TMC2209Config {
+    string step_peripheral = 1;
+    string uart_peripheral = 2;
+    string diag_peripheral = 3;
+    string enable_peripheral = 4;
+}
+
 
 // Configuration for a board which exposes controllable hardware peripherals/pins.
 message BoardConfig {
@@ -63,6 +105,7 @@ message BoardConfig {
     message GPIOPeripheral {
         string pin_name = 1;
         ConfigureGPIO config = 2;
+        Tachometer tachometer = 3;
     }
 
     message PWMPeripheral {
@@ -89,8 +132,32 @@ message BoardConfig {
 
     message ADCPeripheral {
         string pin_name = 1;
+
         string negative_pin_name = 2;
+
+        // Raw ADC config that is used to setup the MCU.
         ConfigureADCRequest config = 3;
+
+        // If given, then interprate the voltage measured on this pin as the output 
+        // of a fixed resistor/voltage dividor with these resistance values.
+        //
+        // Any max voltage mentioned on 'config' will also be translated appropriately.
+        ResistorDivider resistor_divider = 4;
+
+        // If set, this ADC measures voltage across a current sense resistor with this resistance.
+        //
+        // Outputs should be converted to current values.
+        CurrentSenseResistor current_sense_resistor = 5;
+
+        Thermistor thermistor = 6;
+    }
+    
+    message SPIPeripheral {
+        string mosi_pin_name = 1;
+        string miso_pin_name = 2;
+        string sclk_pin_name = 3;
+        string cs_pin_name = 4;
+        ConfigureSPIRequest config = 5;
     }
 
     message Peripheral {
@@ -107,6 +174,7 @@ message BoardConfig {
             StepperPeripheral stepper = 6;
             NeopixelPeripheral neopixel = 7;
             ADCPeripheral adc = 8;
+            SPIPeripheral spi = 9;
         }
     }
     repeated Peripheral peripherals = 4;
@@ -138,6 +206,17 @@ message PeripheralState {
     oneof state {
         SetGPIOLevel gpio = 2;
         SetPWMRequest pwm = 3;
+        ADCState adc = 4;
+        TachometerState tachometer = 5;
     }
 }
 
+
+message ADCState {
+    // TODO: Need better presense checking.
+    float value = 1;
+}
+
+message TachometerState {
+    float value = 1;
+}

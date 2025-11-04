@@ -1,5 +1,3 @@
-
-
 /*
 
 PT1000
@@ -27,9 +25,10 @@ With 5V supply, my error is 0.0048828125 V
 
 So, I may get a value of 1.5 - 1.5048828125
 
-
-
 */
+
+use crate::thermistor::*;
+
 
 const PT1000_R0: f32 = 1000.0;
 const PT1000_A: f32 = 3.9083e-3;
@@ -40,33 +39,17 @@ const PT1000_C: f32 = -4.183e-12;
 /// Valid from 0C to 850C
 ///
 /// Rt = R0 * (1 + A*t + B*t^2)
+#[derive(Default)]
 pub struct PT1000 {}
 
-impl PT1000 {
-    /// Converts a temperature in celsius to a resistance in ohms.
-    pub fn temperature_to_resistance(t: f32) -> f32 {
-        PT1000_R0 * (1.0 + PT1000_A * t + PT1000_B * t * t)
+impl Thermistor for PT1000 {
+    fn temperature_to_resistance(&self, t: f32) -> Option<f32> {
+        Some(PT1000_R0 * (1.0 + PT1000_A * t + PT1000_B * t * t))
     }
 
-    pub fn resistance_to_temperature(r: f32) -> f32 {
+    fn resistance_to_temperature(&self, r: f32) -> Option<f32> {
         let (t1, t2) = math::find_quadratic_roots(PT1000_B * PT1000_R0, PT1000_A * PT1000_R0, PT1000_R0 - r);
-        t1.min(t2)
+        Some(t1.min(t2))
     }
 }
-
-
-/// Computes the output voltage of a voltage divider.
-///
-/// Should be of the form:
-/// v_in -> r_upper -> v_out -> r_lower -> 0V
-pub fn divide_voltage(v_in: f32, r_upper: f32, r_lower: f32) -> f32 {
-    (v_in * r_lower) / (r_upper + r_lower)
-}
-
-/// Given the input/output voltage and upper resistor value in a voltage divider,
-/// calculates the lower resistor value.
-pub fn undivide_voltage_lower(v_in: f32, v_out: f32, r_upper: f32) -> f32 {
-    (v_out * r_upper) / (v_in - v_out)
-}
-
 

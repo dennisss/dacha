@@ -1,0 +1,61 @@
+name: "breadboard_toolhead"
+base_config: "nrf52840_feather"
+
+peripherals {
+    # Drive low to enable the driver.
+    # Note this is pulled up by the Bigtreetech driver.
+    name: "stepper_enable"
+    gpio {
+        pin_name: "MOSI"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+peripherals {
+    name: "stepper_uart"
+    uart {
+        tx_pin_name: "D11"
+        rx_pin_name: "D5"
+        config {
+            baud_rate: 115200
+        }
+    }
+}
+
+peripherals {
+    name: "stepper_step"
+    stepper {
+        step_pin_name: "A1"
+        dir_pin_name: "A0"
+    }
+}
+
+peripherals {
+    name: "stepper_diag"
+    gpio {
+        pin_name: "A5"
+        config {
+            is_input: true
+            pull_down: true
+            interrupt: RISING_EDGE
+        }
+    }
+}
+
+peripherals {
+    name: "adc"
+    adc {
+        pin_name: "A2"
+        negative_pin_name: "A3"
+        config {
+            max_voltage: 0.59
+            sample_rate: 1024
+            trigger_above: 0.1
+            trigger_below: -0.1
+            stop_on_trigger: true
+        }
+    }
+}

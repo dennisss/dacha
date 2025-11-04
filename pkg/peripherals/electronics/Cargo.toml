@@ -1,0 +1,9 @@
+[package]
+name = "electronics"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+macros = { path = "../../macros" }
+math = { path = "../../math" }

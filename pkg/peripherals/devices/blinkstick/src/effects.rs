@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use common::errors::*;
 use math::matrix::Vector3f;
+use color::*;
 
-use crate::color::*;
 use crate::driver::*;
 
 #[async_trait]

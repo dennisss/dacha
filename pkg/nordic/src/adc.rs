@@ -5,6 +5,7 @@ use common::register::RegisterWrite;
 use peripherals::raw::saadc::SAADC;
 use peripherals::raw::saadc::ch::config::{GAIN_FIELD, REFSEL_FIELD};
 use peripherals::raw::saadc::ch::limit::LIMIT_VALUE;
+use peripherals::raw::saadc::oversample::OVERSAMPLE_FIELD;
 use peripherals::raw::EventRegister;
 use peripherals::raw::Interrupt;
 use peripherals::raw::TaskRegister;
@@ -76,6 +77,8 @@ pub struct ADCChannelConfig {
 
     /// TODO: Move this somewhere else since it is only used by WindowADC
     sample_rate: u32,
+
+    oversampling: OVERSAMPLE_FIELD,
 }
 
 impl ADCChannelConfig {
@@ -152,9 +155,14 @@ impl ADC {
         // TODO
         let (mut gain_value, mut gain_ratio) = GAINS[0];
 
+        // User forgot to specify it.
+        if config.max_voltage() == 0.0 {
+            return None;
+        }
+
         for (gain_value_i, gain_ratio_i) in GAINS.iter().cloned() {
             let max_input_voltage = ref_voltage / gain_ratio_i;
-            if max_input_voltage >= config.max_voltage() {
+            if max_input_voltage >= config.max_voltage() - 0.01 {
                 gain_value = gain_value_i;
                 gain_ratio = gain_ratio_i;
             }
@@ -200,6 +208,19 @@ impl ADC {
         limit.set_low((limit_low as u16) as u32);
         limit.set_high((limit_high as u16) as u32);
 
+        let oversampling = match config.oversampling() {
+            0 | 1 => OVERSAMPLE_FIELD::Bypass,
+            2 => OVERSAMPLE_FIELD::Over2x,
+            4 => OVERSAMPLE_FIELD::Over4x,
+            8 => OVERSAMPLE_FIELD::Over8x,
+            16 => OVERSAMPLE_FIELD::Over16x,
+            32 => OVERSAMPLE_FIELD::Over32x,
+            64 => OVERSAMPLE_FIELD::Over64x,
+            128 => OVERSAMPLE_FIELD::Over128x,
+            256 => OVERSAMPLE_FIELD::Over256x,
+            _ => return None
+        };
+
         Some(ADCChannelConfig {
             pin_select,
             negative_pin_select,
@@ -209,6 +230,7 @@ impl ADC {
             sample_rate: config.sample_rate(),
             limit,
             stop_on_limit: config.stop_on_trigger(),
+            oversampling,
         })
     }
 
@@ -253,6 +275,7 @@ impl ADC {
                 v
             })
         });
+        self.periph.oversample.write(config.oversampling);
 
         // Setup interrupts and clear initial state of events we will use
         self.periph.events_started.write_notgenerated();
@@ -396,7 +419,7 @@ pub struct WindowADC {
     rtc: RTC
 }
 
-impl_deref!(WindowADC::adc as ADC);
+// impl_deref!(WindowADC::adc as ADC);
 
 impl WindowADC {
     pub fn create(mut adc: ADC, mut timer: TIMER1, ppi: &mut PPIChannels, rtc: RTC) -> Option<Self> {
@@ -424,6 +447,25 @@ impl WindowADC {
         })
     }
 
+    pub fn create_channel_config<Pin: PeripheralPin>(
+        &mut self,
+        pin: Pin,
+        negative_pin: Option<Pin>,
+        config: &ConfigureADCRequest
+    ) -> Option<ADCChannelConfig> {
+        self.adc.create_channel_config(pin, negative_pin, config)
+    }
+
+    pub async fn single_sample(&mut self, config: &ADCChannelConfig) -> i16 {
+        if config.oversampling == OVERSAMPLE_FIELD::Bypass {
+            return self.adc.single_sample(config).await;
+        }
+
+        let mut buf = [0i16; 1];
+        self.window_sample(config, &mut buf).await;
+        buf[0]
+    }
+
     // TODO: Make this cancellable.
     pub async fn window_sample(
         &mut self,
@@ -438,7 +480,7 @@ impl WindowADC {
         self.adc.periph.tasks_sample.write_trigger();
         self.timer.tasks_start.write_trigger();
 
-        let res = self.sample_finish(config).await;
+        let res = self.adc.sample_finish(config).await;
 
         // Note that the timer still runs for a short time after the last sample
         // is stored so the safety of having these here (instead of using a PPI to immediately

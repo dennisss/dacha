@@ -43,5 +43,8 @@ enum_def_with_unknown!(ProtocolRequestType u8 =>
     PeripheralRequest = 7,
 
     // [Device -> Host]
-    PeripheralResponse = 8
+    PeripheralResponse = 8,
+
+    // [Host -> Device]
+    GetClockTime = 9
 );

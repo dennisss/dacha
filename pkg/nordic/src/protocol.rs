@@ -306,6 +306,19 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                     res.write(&buffer[0..n]).await?;
                     return Ok(());
                 }
+} else if setup.bRequest == ProtocolRequestType::GetClockTime.to_value() {
+                if (setup.wLength as usize) < 4 {
+                    res.stale();
+                    return Ok(());
+                }
+
+                if let Some(controller) = self.peripherals_controller {
+                    if let Some(t) = controller.get_clock_time().await {
+                        let buffer = t.to_le_bytes();
+                        res.write(&buffer[..]).await?;
+                        return Ok(());
+                    }
+                }
             }
         }
 

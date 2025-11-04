@@ -198,8 +198,10 @@ fn main() -> () {
     let mut peripherals = peripherals::raw::Peripherals::new();
 
     nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+
+    // TODO: Switch back to external once I get rid of boards that use P0.00/P0.01
     nordic::clock::init_low_freq_clk(
-        nordic::clock::LowFrequencyClockSource::CrystalOscillator,
+        nordic::clock::LowFrequencyClockSource::RCOscillator,
         &mut peripherals.clock,
     );
 

@@ -1,5 +1,3 @@
-// TODO: Dedup this with the blinkstick code.
-
 use std::f32::consts::PI;
 
 use math::matrix::Vector3f;

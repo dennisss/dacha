@@ -1,7 +1,6 @@
 use common::errors::*;
 use usb::hid::HIDDevice;
-
-use crate::color::*;
+use color::*;
 
 /// Setting this report changes the color of the first LED in the chain.
 /// Payload: 3 bytes : [R, G, B]

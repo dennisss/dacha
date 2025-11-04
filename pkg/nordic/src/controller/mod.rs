@@ -7,5 +7,6 @@ mod stepper;
 mod neopixel;
 mod interrupt;
 mod adc;
+mod spi;
 
 pub use peripherals_controller::*;

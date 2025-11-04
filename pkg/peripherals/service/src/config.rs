@@ -48,6 +48,19 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
                 callback(&name, config.config_mut().negative_pin_mut())?;
             }
         }
+        BoardConfig_PeripheralConfigCase::Spi(config) => {
+            let name = config.mosi_pin_name().to_string();
+            callback(&name, config.config_mut().mosi_pin_mut())?;
+
+            let name = config.miso_pin_name().to_string();
+            callback(&name, config.config_mut().miso_pin_mut())?;
+
+            let name = config.cs_pin_name().to_string();
+            callback(&name, config.config_mut().cs_pin_mut())?;
+
+            let name = config.sclk_pin_name().to_string();
+            callback(&name, config.config_mut().sclk_pin_mut())?;
+        }
         BoardConfig_PeripheralConfigCase::NOT_SET => {
             return Err(err_msg("Unconfigured peripheral"));
         }
@@ -150,6 +163,41 @@ pub fn compile_board_config(configs: &[&BoardConfig]) -> Result<BoardConfig> {
                 Ok(())
             })?;
 
+            if periph.adc().has_resistor_divider() {
+                let divider = periph.adc().resistor_divider();
+                let max_output_voltage = electronics::divide_voltage(
+                    divider.max_input_voltage(),
+                    divider.top_resistor(),
+                    divider.bottom_resistor()
+                );
+
+                periph.adc_mut().config_mut().set_max_voltage(max_output_voltage);
+            }
+
+            if periph.adc().has_current_sense_resistor() {
+                let c = periph.adc().current_sense_resistor();
+                let max_voltage = c.max_current() * c.resistor_value();
+
+                periph.adc_mut().config_mut().set_max_voltage(max_voltage);
+            }
+
+            if periph.adc().has_thermistor() {
+                let c = periph.adc().thermistor();
+                let therm = electronics::thermistor_by_name(c.model())
+                    .ok_or_else(|| format_err!("Unknown thermistor model: {}", c.model()))?;
+
+                let r0 = therm.temperature_to_resistance(c.min_temp())
+                    .ok_or_else(|| format_err!("Temp {} can't be used", c.min_temp()))?;
+                let r1 = therm.temperature_to_resistance(c.max_temp())
+                    .ok_or_else(|| format_err!("Temp {} can't be used", c.max_temp()))?;
+
+                let v0 = electronics::divide_voltage(3.3, c.pull_up_resistance(), r0);
+                let v1 = electronics::divide_voltage(3.3, c.pull_up_resistance(), r1);
+
+                periph.adc_mut().config_mut().set_max_voltage(v0.max(v1));
+            }
+
+
             periph.set_index(periph_i as u32);
             out.add_peripherals(periph);
         }
@@ -192,7 +240,13 @@ pub fn build_configuration_requests(config: &BoardConfig) -> Result<(Vec<Periphe
         match periph.config_case() {
             BoardConfig_PeripheralConfigCase::Gpio(config) => {
                 req.set_configure_gpio(config.config().clone());
-                s.gpio_mut();
+
+                if config.has_tachometer() {
+                    s.tachometer_mut();
+
+                } else {
+                    s.gpio_mut().set_high(config.config().default_value());
+                }
             }
             BoardConfig_PeripheralConfigCase::Pwm(config) => {
                 req.set_configure_pwm(config.config().clone());
@@ -209,6 +263,10 @@ pub fn build_configuration_requests(config: &BoardConfig) -> Result<(Vec<Periphe
             }
             BoardConfig_PeripheralConfigCase::Adc(config) => {
                 req.set_configure_adc(config.config().clone());
+                s.adc_mut();
+            }
+            BoardConfig_PeripheralConfigCase::Spi(config) => {
+                req.set_configure_spi(config.config().clone());
             }
             BoardConfig_PeripheralConfigCase::NOT_SET => {
                 return Err(err_msg("Unconfigured peripheral"));
@@ -249,6 +307,12 @@ pub fn apply_state_change(request: &PeripheralRequest, state: &mut PeripheralsSt
                 }
                 _ => {}
             }
+        }
+        PeripheralStateStateCase::Adc(_) => {
+
+        }
+        PeripheralStateStateCase::Tachometer(_) => {
+
         }
     }
 

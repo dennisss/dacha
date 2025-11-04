@@ -889,6 +889,11 @@
     (effects (font (size 1.27 1.27)) (justify left bottom))
     (uuid 5edda30d-a8fa-465a-9021-e8700283b748)
   )
+  (text "TODO: Don't use P0.00/P0.01 since they are XTAL pins."
+    (at 69.85 95.25 0)
+    (effects (font (size 1.27 1.27)) (justify left bottom))
+    (uuid 66c605fc-e555-4582-a2e1-3a465d1f7a0e)
+  )
   (text "TODO: Verify footprint pin mapping and size.\nTODO: Need to ensure bottom of TMC (pin 29) is wired to ground."
     (at 127.635 38.1 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))

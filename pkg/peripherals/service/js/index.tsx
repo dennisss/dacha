@@ -26,7 +26,7 @@ class App extends React.Component<{}, AppState> {
     }
 
     _execute(req) {
-        this._channel.call('peripherals.Peripherals', 'Execute', req).then((res) => {
+        this._channel.call('peripherals.Peripherals', 'Execute', { raw_request: req }).then((res) => {
             // TODO: Dump to a text box.
             console.log(res.responses[0]);
             let state = res.responses[0].state || {};
@@ -47,7 +47,7 @@ class App extends React.Component<{}, AppState> {
 
         if (periph.gpio) {
             let high = state.gpio.high || false;
-            control = <input type="checkbox" checked={high}
+            control = <input type="checkbox" checked={high} disabled={periph.gpio.is_input || false}
                 onChange={(e) => this._execute({ peripheral_index: (periph.index || 0), set_gpio_level: { high: !high } })} />
         }
         if (periph.pwm) {
@@ -64,6 +64,12 @@ class App extends React.Component<{}, AppState> {
                 />
             );
 
+        }
+
+        if (periph.adc) {
+            control = (
+                <div>{state.adc.value || 0}</div>
+            );
         }
 
         return (

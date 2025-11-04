@@ -56,3 +56,26 @@ Disassembly of section .text:
 ```
 
 
+
+
+AT Tiny 412
+
+- AVRxt instruction set
+- TODO: Need to configure the clock speed.
+
+- UPDI
+  - Start bit is active low
+  - 1 start bit
+  - 2 stop bits
+  - 'PARITY_EVEN'
+
+- 1 Kbps minimum (probably start with 115200)
+- SYNC - 0x55
+  - Read SIB which is 128 bits
+
+- AtTiny512 Signautre
+
+Doing one wire mode
+- https://ww1.microchip.com/downloads/en/AppNotes/USART-in-One-Wire-Mode_AppNote_DS00002658B.pdf
+
+

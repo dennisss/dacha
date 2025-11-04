@@ -12,6 +12,7 @@ math = { path = "../../../math" }
 executor = { path = "../../../executor" }
 file = { path = "../../../file" }
 macros = { path = "../../../macros" }
+color = { path = "../../../image/color" }
 
 [features]
 default = ["std"]

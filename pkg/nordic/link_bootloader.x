@@ -6,6 +6,7 @@ MEMORY
     RAM : ORIGIN = 0x20000000, LENGTH = 256K
     PSELRESET : ORIGIN = 0x10001200, LENGTH = 8
     APPROTECT : ORIGIN = 0x10001208, LENGTH = 4
+    NFCPINS : ORIGIN = 0x1000120c, LENGTH = 4
     REGOUT0 : ORIGIN = 0x10001304, LENGTH = 4
 }
 
@@ -17,6 +18,7 @@ PHDRS
     data PT_LOAD;
     pselreset PT_LOAD;
     approtect PT_LOAD;
+    nfcpins PT_LOAD;
     regout0 PT_LOAD;
 }
 
@@ -78,6 +80,11 @@ SECTIONS
     {
         LONG(4294967130)
     } > APPROTECT :approtect
+
+    .nfcpins :
+    {
+        LONG(0)
+    } > NFCPINS :nfcpins
 
     .regout0 :
     {

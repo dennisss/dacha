@@ -103,6 +103,10 @@ message PeripheralRequest {
 
         // Data is returned in the 'data_val' 
         uint32 read_adc_buffer = 31;
+
+        ConfigureSPIRequest configure_spi = 32;
+
+        SPITransferRequest spi_transfer = 33;
     }
 
     reserved 6;
@@ -256,6 +260,8 @@ message ConfigurePWMRequest {
     uint32 timeout_millis = 4;
 
     uint32 default_value = 5;
+
+    bool high_drive = 6;
 }
 
 message SetPWMRequest {
@@ -281,6 +287,23 @@ message UARTTransmitRequest {
 
 message UARTReceiveRequest {
     uint32 num_bytes = 1;
+}
+
+
+message ConfigureSPIRequest {
+    uint32 mosi_pin = 1;
+
+    uint32 miso_pin = 2;
+
+    uint32 sclk_pin = 3;
+
+    uint32 cs_pin = 4;
+
+    uint32 frequency = 5;
+}
+
+message SPITransferRequest {
+    bytes data = 1 [(dacha.max_length) = 8];
 }
 
 message ReadTachometer {}
@@ -381,6 +404,9 @@ message ConfigureADCRequest {
 
     // If true, sampling is immediately stopped if one of the triggers is hit.
     bool stop_on_trigger = 10;
+
+    // Number of samples to average together to form each reading.
+    uint32 oversampling = 11;
 }
 
 message ADCFormat {
@@ -396,6 +422,7 @@ message SampleADCRequest {
 
 message ConfigureNeopixelRequest {
     uint32 pin = 1;
+    bool inverted = 2;
 }
 
 message NeopixelTransfer {

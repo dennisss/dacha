@@ -26,3 +26,4 @@ parsing = { path = "../../parsing" }
 rpc = { path = "../../rpc" }
 storage = { path = "../../storage" }
 rpc_util = { path = "../../rpc/util" }
+electronics = { path = "../electronics" }

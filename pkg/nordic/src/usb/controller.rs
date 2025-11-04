@@ -917,7 +917,12 @@ pub struct USBDeviceNormalResponse<'a> {
 }
 
 impl<'a> USBDeviceNormalResponse<'a> {
-    /// Sends
+    /// Writes one Bulk/Interrupt DATA packet into the USBD peripheral to be sent
+    /// back to the host the next time we get an 'IN' token from the host.
+    ///
+    /// Note that this only blocks until the USBD peripheral is done DMA copying the
+    /// given data. The data can't be safely replaced until we get an EPDATA event
+    /// for the endpoint and direction.
     pub async fn write(&mut self, data: &[u8]) -> Result<(), USBError> {
         // TODO: Re-use a global buffer
         let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);

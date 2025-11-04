@@ -21,11 +21,13 @@ impl_resource_passthrough!(PeripheralsImpl, task_resource);
 
 struct Shared {
     state: AsyncMutex<State>,
+
+    // TODO: REmove
     config: BoardConfig,
 }
 
 struct State {
-    usb_device: USBRadio,
+    usb_device: PeripheralsDevice,
 
     // TODO: This may change due to MCU side timeouts so we need to periodically poll
     // for unknown changes (ideally we'd keep track of the state revision on the MCU side).
@@ -34,18 +36,8 @@ struct State {
 
 impl PeripheralsImpl {
     pub async fn create(config: BoardConfig) -> Result<Self> {
-        let mut selector = usb::DeviceSelector::default();
-        selector.vendor_id = Some(0x8888);
-        selector.product_id = Some(0x0004);
-        let mut usb_device = nordic_tools::usb_radio::USBRadio::find(&selector).await?;
-
-        let (reqs, peripherals_state) = build_configuration_requests(&config)?;
-
-        // TODO: Need to support batch sending of requests. 
-        for req in reqs {
-            usb_device.send_request(&req).await?;
-        }
-
+        let (usb_device, peripherals_state) = PeripheralsDevice::create(&config).await?;
+        
         let shared = Arc::new(Shared {
             state: AsyncMutex::new(State {
                 usb_device,
@@ -86,14 +78,14 @@ impl PeripheralsImpl {
         }
     }
 
-    async fn execute_impl(&self, request: &PeripheralRequest) -> Result<ExecuteResponse> {
+    async fn execute_impl(&self, request: &ExecuteRequest) -> Result<ExecuteResponse> {
         let mut res = ExecuteResponse::default();
 
         // TODO: Make Cancel safe.
         lock_async!(state <= self.shared.state.lock().await?, {
             // TODO: It would be problematic if only one of these failed.
-            res.set_response(state.usb_device.send_request(request).await?);
-            apply_state_change(request, &mut state.peripherals_state)?;
+            res.set_response(state.usb_device.send_request(request.raw_request()).await?);
+            apply_state_change(request.raw_request(), &mut state.peripherals_state)?;
             
             res.set_state(state.peripherals_state.clone());
 
@@ -146,7 +138,7 @@ impl PeripheralsService for PeripheralsImpl {
 
     async fn Execute(
         &self,
-        request: rpc::ServerRequest<PeripheralRequest>,
+        request: rpc::ServerRequest<ExecuteRequest>,
         response: &mut rpc::ServerResponse<ExecuteResponse>,
     ) -> Result<()> {
         response.value = self.execute_impl(&request.value).await?;

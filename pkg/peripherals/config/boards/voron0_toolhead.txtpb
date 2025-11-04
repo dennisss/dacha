@@ -1,0 +1,422 @@
+# proto-file: pkg/peripherals/proto/service.proto
+# proto-message: BoardConfig
+
+name: "voron0_toolhead"
+base_config: "nrf52840"
+
+###############################################################################
+
+pins {
+  name: "FAN_L_PWM"
+  alias: "P0.01"
+}
+pins {
+  name: "FAN_R_PWM"
+  alias: "P0.19"
+}
+pins {
+  name: "FAN_MID_PWM"
+  alias: "P1.00"
+}
+
+# TODO: Want to support templating stuff like this.
+peripherals {
+    name: "fan_l_pwm"
+    pwm {
+        pin_name: "FAN_L_PWM"
+        config {
+            default_value: 0
+            frequency: 10
+        }
+    }
+}
+peripherals {
+    name: "fan_r_pwm"
+    pwm {
+        pin_name: "FAN_R_PWM"
+        config {
+            default_value: 0
+            frequency: 10
+        }
+    }
+}
+peripherals {
+    name: "fan_mid_pwm"
+    pwm {
+        pin_name: "FAN_MID_PWM"
+        config {
+            default_value: 0
+            frequency: 10
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "FAN_L_TACH"
+  alias: "P1.10"
+}
+pins {
+  name: "FAN_R_TACH"
+  alias: "P0.22"
+}
+pins {
+  name: "FAN_MID_TACH"
+  alias: "P0.25"
+}
+peripherals {
+    name: "fan_l_tach"
+    gpio {
+        pin_name: "FAN_L_TACH"
+        config {
+            is_input: true
+            pull_up: true
+        }
+        tachometer {}
+    }
+}
+peripherals {
+    name: "fan_r_tach"
+    gpio {
+        pin_name: "FAN_R_TACH"
+        config {
+            is_input: true
+            pull_up: true
+        }
+        tachometer {}
+    }
+}
+peripherals {
+    name: "fan_mid_tach"
+    gpio {
+        pin_name: "FAN_MID_TACH"
+        config {
+            is_input: true
+            pull_up: true
+        }
+        tachometer {}
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "HEATER_PWM"
+  alias: "P0.23"
+}
+peripherals {
+    name: "heater_pwm"
+    pwm {
+        pin_name: "HEATER_PWM"
+        config {
+            default_value: 0
+            frequency: 10
+            high_drive: true
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "HEATER_CSENSE"
+  alias: "P0.02"
+}
+
+peripherals {
+    name: "heater_csense"
+    adc {
+        pin_name: "HEATER_CSENSE"
+        # The heater switches on/off at 10Hz so instantaneous measurements will
+        # be wrong so we need to average over a window.
+        # So it takes 100ms to collect all this data.
+        config {
+            oversampling: 256
+            sample_rate: 2560
+        }
+        current_sense_resistor {
+            resistor_value: 0.006
+            max_current: 5
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "PROBE+"
+  alias: "P0.03"
+}
+pins {
+  name: "PROBE-"
+  alias: "P0.28"
+}
+
+peripherals {
+    name: "probe"
+    adc {
+        pin_name: "PROBE+"
+        negative_pin_name: "PROBE-"
+        config {
+            max_voltage: 0.6
+            sample_rate: 1024
+            trigger_above: 0.2
+            trigger_below: -0.2
+            stop_on_trigger: true
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "24V_SENSE"
+  alias: "P0.04"
+}
+pins {
+  name: "5V_SENSE"
+  alias: "P0.31"
+}
+peripherals {
+    name: "24v_sense"
+    adc {
+        pin_name: "24V_SENSE"
+        config {
+            sample_rate: 1024 # TODO: Remove
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 1000
+            max_input_voltage: 30
+        }
+    }
+}
+peripherals {
+    name: "5v_sense"
+    adc {
+        pin_name: "5V_SENSE"
+        config {
+            sample_rate: 1024 # TODO: Remove
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 10000
+            max_input_voltage: 8
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "FILAMENT_SENSE"
+  alias: "P0.05"
+}
+peripherals {
+    name: "filament_sense"
+    adc {
+        pin_name: "FILAMENT_SENSE"
+        config {
+            max_voltage: 3.3
+            vdd_reference: true
+            sample_rate: 1024 # TODO: Remove
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "TMC_UART_TX"
+  alias: "P0.14"
+}
+pins {
+  name: "TMC_UART_RX"
+  alias: "P0.20"
+}
+peripherals {
+    name: "stepper_uart"
+    uart {
+        tx_pin_name: "TMC_UART_TX"
+        rx_pin_name: "TMC_UART_RX"
+        config {
+            baud_rate: 115200
+        }
+    }
+}
+
+pins {
+  name: "TMC_STEP"
+  alias: "P0.17"
+}
+pins {
+  name: "TMC_DIR"
+  alias: "P0.21"
+}
+peripherals {
+    name: "stepper_step"
+    stepper {
+        step_pin_name: "TMC_STEP"
+        dir_pin_name: "TMC_DIR"
+    }
+}
+
+pins {
+  name: "TMC_DIAG"
+  alias: "P1.03"
+}
+
+peripherals {
+    name: "stepper_diag"
+    gpio {
+        pin_name: "TMC_DIAG"
+        config {
+            is_input: true
+            pull_down: true
+            interrupt: RISING_EDGE
+        }
+    }
+}
+
+pins {
+  name: "TMC_ENABLE"
+  alias: "P1.11"
+}
+
+peripherals {
+    # Drive low to enable the driver.
+    # Note this is pulled up by the Bigtreetech driver.
+    name: "stepper_enable"
+    gpio {
+        pin_name: "TMC_ENABLE"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "THERMISTOR_SENSE"
+  alias: "P0.29"
+}
+
+peripherals {
+    name: "thermistor_sense"
+    adc {
+        pin_name: "THERMISTOR_SENSE"
+        config {
+            vdd_reference: true
+            sample_rate: 1024 # TODO: Remove
+        }
+        thermistor {
+            model: "104NT-4-R025H42G"
+            min_temp: 0 # TODO: This isn't used for anything right now.
+            max_temp: 290
+            pull_up_resistance: 4680 # 4.7K nominal
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "LED_SERIAL"
+  alias: "P0.10"
+}
+
+peripherals {
+    name: "leds"
+    neopixel {
+        pin_name: "LED_SERIAL"
+        config {
+            inverted: true
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "USER_BUTTON"
+  alias: "P1.06"
+}
+
+peripherals {
+    name: "user_button"
+    gpio {
+        pin_name: "USER_BUTTON"
+        config {
+            is_input: true
+            pull_up: true
+            interrupt: FALLING_EDGE
+        }
+    }
+}
+
+###############################################################################
+
+pins {
+  name: "ENCODER_SPI_MISO"
+  alias: "P0.06"
+}
+pins {
+  name: "ENCODER_SPI_SCLK"
+  alias: "P0.08"
+}
+pins {
+  name: "ENCODER_SPI_MOSI"
+  alias: "P0.26"
+}
+pins {
+  name: "ENCODER_SPI_CS"
+  alias: "P0.27"
+}
+
+peripherals {
+    name: "encoder_spi"
+    spi {
+        miso_pin_name: "ENCODER_SPI_MISO"
+        mosi_pin_name: "ENCODER_SPI_MOSI"
+        sclk_pin_name: "ENCODER_SPI_SCLK"
+        cs_pin_name: "ENCODER_SPI_CS"
+        config {
+            frequency: 1000000
+        }
+    }
+}
+
+##### TODO
+
+
+pins {
+  name: "ACCEL_SPI_MOSI"
+  alias: "P0.07"
+}
+pins {
+  name: "ACCEL_SPI_MISO"
+  alias: "P0.12"
+}
+pins {
+  name: "ACCEL_INT1"
+  alias: "P0.16"
+}
+pins {
+  name: "ACCEL_SPI_CS"
+  alias: "P1.08"
+}
+pins {
+  name: "ACCEL_SPI_SCLK"
+  alias: "P1.09"
+}
+
+
+
+
+
+
+
+

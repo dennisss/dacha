@@ -6,8 +6,7 @@ use peripherals::serial::SerialPort;
 use file::LocalPath;
 use parsing::cstruct::*;
 use cnc_controller_proto::cnc::BedClientConfig;
-
-use crate::thermistor::*;
+use electronics::*;
 
 const BAUD_RATE: usize = 115_200;
 const ADDRESS: u8 = 0xAB;
@@ -133,8 +132,8 @@ impl BedClient {
         Ok(Response {
             chip_temperature: (response_packet.chip_temperature as f32) * self.options.config.chip_temp_calibration() - 273.15,
 
-            sheet_temperature: PT1000::resistance_to_temperature(sheet_res),
-            bed_temperature: PT1000::resistance_to_temperature(bed_res),
+            sheet_temperature: PT1000::default().resistance_to_temperature(sheet_res).unwrap(),
+            bed_temperature: PT1000::default().resistance_to_temperature(bed_res).unwrap(),
 
             fan_speed: response_packet.fan_speed as usize
         })

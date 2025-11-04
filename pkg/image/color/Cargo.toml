@@ -1,0 +1,12 @@
+[package]
+name = "color"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+math = { path = "../../math" }
+macros = { path = "../../macros" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }

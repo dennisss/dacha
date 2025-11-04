@@ -27,8 +27,10 @@ At 4Mhz SPI
 TODO: Want to support inverted stuff:
 
 SK6812MINI-E : 24-bit
+- GRB
 
 IN-PI33QBTPRPGPBPW : 32-bit
+- GRBW
 
 */
 
@@ -42,11 +44,14 @@ use crate::rtc::*;
 
 pub struct Neopixel {
     spi: SPIHost,
-    rtc: RTC,
+    inverted: bool,
 }
 
 impl Neopixel {
-    pub fn new(periph: SPIMx, rtc: RTC, mut pin: GPIOPin) -> Self {
+    pub fn new(periph: SPIMx, mut pin: GPIOPin, inverted: bool) -> Self {
+        // Note that for inverted mode, there is no 'simple' way to keep this
+        // pin high when the SPI peripheral is inactive so we rely on creating
+        // a reset period during the SPI transfer for inverted mode in 'write'.
         pin
         .reset()
         .set_direction(PinDirection::Output)
@@ -62,7 +67,7 @@ impl Neopixel {
             SPIMode::Mode0,
         );
 
-        Self { spi, rtc }
+        Self { spi, inverted }
     }
 
     pub fn into_inner(self) -> SPIMx {
@@ -70,22 +75,32 @@ impl Neopixel {
     }
 
     pub async fn write(&mut self, data: &[u8]) {
-        self.rtc.wait_micros(100).await;
-
+        // TODO: Error out if we overflow this buffer.
         let mut expanded = FixedVec::<u8, 256>::new();
+
+        let reset_byte = if self.inverted { 0xff } else { 0x00 };
+
+        // 'RESET' : 40 bytes takes 80us to transfer
+        // TODO: Might as well cache these in a global buffer (in which we only change the real data per run).
+        for _ in 0..40 {
+            expanded.push(reset_byte);
+        }
+
         for byte in data {
-            let expanded_byte = Self::expand_byte(*byte);
+            let mut expanded_byte = Self::expand_byte(*byte, self.inverted);
             expanded.extend_from_slice(&expanded_byte);
         }
 
+        // 'RESET'
+        for _ in 0..40 {
+            expanded.push(reset_byte);
+        }
 
         self.spi.transfer(&expanded, &mut []).await;
-
-        self.rtc.wait_micros(100).await;
     }
 
     // NOTE: The data will be transfered MSB first.
-    fn expand_byte(v: u8) -> [u8; 8] {
+    fn expand_byte(v: u8, inverted: bool) -> [u8; 8] {
         let mut buf = [0u8; 8];
 
         for i in 0..8 {
@@ -97,6 +112,10 @@ impl Neopixel {
                     0b10000000
                 }
             };
+
+            if inverted {
+                buf[i] = !buf[i];
+            }
         }
 
         buf
