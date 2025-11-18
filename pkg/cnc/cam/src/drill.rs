@@ -1,5 +1,5 @@
 use base_error::*;
-use cam_proto::cnc::DrillProcessorConfig;
+use cam_proto::cnc::{DrillProcessorConfig, DrillTool};
 use common::line_builder::LineBuilder;
 use math::matrix::vec2f;
 
@@ -22,6 +22,41 @@ impl DrillProcessor {
     }
 
     pub fn process(&self, drill_holes: &[gerber::DrillHole], out: &mut LineBuilder) -> Result<()> {
+
+        let mut holes = drill_holes.to_vec();
+
+        for tool in self.options.config.tools() {
+            let mut current_holes = vec![];
+            
+            let mut i = 0;
+            while i < holes.len() {
+                let h = &holes[i];
+
+                if (h.diameter - tool.tool_diameter()).abs() <= 0.01 {
+                    current_holes.push(holes.swap_remove(i));
+                    continue;
+                }
+
+                i += 1;
+            }
+
+            self.process_single_tool(tool, &current_holes, out)?;
+        }
+
+        if !holes.is_empty() {
+            return Err(format_err!("Couldn't drill all holes: {:?}", holes));
+        }
+
+        Ok(())
+    }
+
+    fn process_single_tool(
+        &self,
+        tool: &DrillTool,
+        drill_holes: &[gerber::DrillHole],
+        out: &mut LineBuilder
+    ) -> Result<()> {
+
         if drill_holes.is_empty() {
             return Ok(());
         }
@@ -33,7 +68,7 @@ impl DrillProcessor {
         ));
 
         // Change tools.
-        out.add(format!("T{} M6", self.options.config.tool_index()));
+        out.add(format!("T{} M6", tool.tool_index()));
 
         // Turn on spindle.
         out.add(format!("M03 S{}", self.options.config.spindle_speed()));

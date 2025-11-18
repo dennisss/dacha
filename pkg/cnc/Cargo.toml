@@ -11,9 +11,7 @@ macros = { path = "../macros" }
 protobuf = { path = "../protobuf", default-features = false }
 math = { path = "../math", default-features = false }
 common = { path = "../common", default-features = false }
-
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf/compiler" }
+cnc_controller_proto = { path = "./controller/proto" }
 
 [features]
 default = ["std", "alloc"]

@@ -2,29 +2,75 @@ use alloc::{collections::VecDeque, vec::Vec};
 
 use math::matrix::cwise_binary_ops::*;
 use math::matrix::Vector3f;
+use cnc_controller_proto::cnc::LinearMotionPlannerConfig;
 
-use crate::kinematics::*;
+use crate::displacement::*;
 use crate::linear_motion::*;
 use crate::linear_motion_constraints::*;
 
+
 pub struct LinearMotionPlanner {
+    config: LinearMotionPlannerConfig,
     start_position: Vector3f,
     start_velocity: Vector3f,
-    queue: VecDeque<LinearMotionConstraints>,
+    queue: VecDeque<LinearMotionQueueEntry>,
 }
 
-/*
-Higher performance ticking:
-- USe a
+struct LinearMotionQueueEntry {
+    constraints: LinearMotionConstraints,
+ 
+    /// Maximum velocity magnitude at which we can start this motion such the
+    /// velocity can be safely reduced using this motion's acceleration to
+    /// max(this.max_cornering_speed, next_motion.max_start_speed).
+    ///
+    /// This also can't be higher than this.max_speed.
+    ///
+    /// NOTE: If there is no motion following this one, then the above max(...)
+    /// expression is tentatively 0. As such, this number can change as new
+    /// motions are added.
+    max_start_speed: f32,
 
-*/
+    /// Maximum velocity at which we can exit this motion based on the sharpness
+    /// of the transition to the next motion.
+    ///
+    /// All values are >= 0.
+    ///
+    /// This is at most max_velocity when the next motion is in the same
+    /// direction as the current motion and can reach zero if the next motion is
+    /// in the opposite direction.
+    ///
+    /// This is initially 0 to imply that the final motion should bring us to a
+    /// stop and set to a higher value when the next motion is appended to the
+    /// plan.
+    ///
+    /// TODO: Remove since not used in this code.
+    max_cornering_speed: f32,
+
+    /// If true, max_start_velocity will no longer change if additional motions
+    /// are added to this
+    ///
+    /// TODO: Get rid of this.
+    fully_constrained: bool,
+}
 
 impl LinearMotionPlanner {
-    pub fn new(start_position: Vector3f) -> Self {
+    pub fn new(start_position: Vector3f, config: LinearMotionPlannerConfig) -> Self {
         Self {
             start_position,
             start_velocity: Vector3f::zero(),
             queue: VecDeque::new(),
+            config,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+
+    pub fn last_position(&self) -> &Vector3f {
+        match self.queue.back() {
+            Some(v) => &v.constraints.end_position,
+            None => &self.start_position
         }
     }
 
@@ -41,13 +87,15 @@ impl LinearMotionPlanner {
     // TODO: max_acceleration should be the magnitude of per-axis
     // max_acceleration components in the direction of the motion.
     //
+    // TODO: Need to combine motions in basically the same direction.
+    //
     // TODO: If there are extremely long linear motions, split them into pieces so
     // that te planner can emit partial results quickly (similarly combine many
     // short movements in the same direction).
     pub fn move_to(&mut self, end_position: Vector3f, max_speed: f32, max_acceleration: f32) {
         let start_position = {
             if let Some(last_motion) = self.queue.back() {
-                last_motion.end_position.clone()
+                last_motion.constraints.end_position.clone()
             } else {
                 self.start_position.clone()
             }
@@ -55,41 +103,46 @@ impl LinearMotionPlanner {
 
         // TODO: Verify no discontinuity of positions.
 
+        // TODO: When switching from a Z move to an X-Y move, should we require Z to reach zero
+        // speed before switching?
+
         // If we had a previous motion, compute the max cornering speed.
         if let Some(last_motion) = self.queue.back_mut() {
             // See https://onehossshay.wordpress.com/2011/09/24/improving_grbl_cornering_algorithm/
 
-            const MAX_DEVIATION: f32 = 0.01;
+            let cornering_accel = max_acceleration.min(last_motion.constraints.max_acceleration);
 
             // Motion directions relative to the corner between last and current motion.
             let entry_direction =
-                (&last_motion.end_position - &last_motion.start_position).normalized();
+                (&last_motion.constraints.end_position - &last_motion.constraints.start_position).normalized();
             let exit_direction = (&end_position - &start_position).normalized();
 
             // TODO: Support separately computing Z cornering speed.
             let mut max_cornering_speed = Self::compute_max_cornering_speed(
                 entry_direction,
                 exit_direction,
-                MAX_DEVIATION,
-                max_acceleration,
+                self.config.max_junction_deviation(),
+                cornering_accel,
             );
 
             last_motion.max_cornering_speed = max_cornering_speed
-                .min(last_motion.max_speed)
+                .min(last_motion.constraints.max_speed)
                 .min(max_speed);
 
             println!("Corner: {}", last_motion.max_cornering_speed);
         }
 
         // Append to queue.
-        self.queue.push_back(LinearMotionConstraints {
-            start_position,
-            end_position,
+        self.queue.push_back(LinearMotionQueueEntry {
+            constraints: LinearMotionConstraints {
+                start_position,
+                end_position,
+                max_end_speed: 0.0,
+                max_speed,
+                max_acceleration,
+            },
             max_start_speed: 0.0,
-            max_end_speed: 0.0,
-            max_speed,
             max_cornering_speed: 0.0,
-            max_acceleration,
             fully_constrained: false,
         });
 
@@ -105,6 +158,7 @@ impl LinearMotionPlanner {
     ) -> f32 {
         let cornering_angle = entry_direction.dot(&exit_direction).acos();
 
+        // Note: Divide by zero here will make the corner_radius 'inf'
         let corner_radius =
             max_deviation * ((cornering_angle / 2.0).sin() / (1.0 - (cornering_angle / 2.0).sin()));
 
@@ -117,92 +171,208 @@ impl LinearMotionPlanner {
         // The final motion must end at rest.
         let mut next_max_start_speed: f32 = 0.0;
 
+        // TODO: Always update the last one but stop if there are no other changes.
         for i in (0..self.queue.len()).rev() {
             let motion = &mut self.queue[i];
 
-            motion.max_end_speed = next_max_start_speed.max(motion.max_cornering_speed);
+            motion.constraints.max_end_speed = next_max_start_speed.max(motion.max_cornering_speed);
 
             // Amount of space in which we can accelerate/decelerate.
-            let distance = (&motion.end_position - &motion.start_position).norm();
+            let distance = (&motion.constraints.end_position - &motion.constraints.start_position).norm();
 
             // Assuming we accelerated at the max allowed rate, how long would it take to
             // speed up/down from/to the end velocity while not overshooting the distance of
             // the linear motion.
             let ramp_down_time =
-                time_to_travel(distance, motion.max_end_speed, motion.max_acceleration);
+                time_to_travel(distance, motion.constraints.max_end_speed, motion.constraints.max_acceleration);
 
-            motion.max_start_speed = (motion.max_end_speed
-                + ramp_down_time * motion.max_acceleration)
-                .min(motion.max_speed);
+            motion.max_start_speed = (motion.constraints.max_end_speed
+                + ramp_down_time * motion.constraints.max_acceleration)
+                .min(motion.constraints.max_speed);
             next_max_start_speed = motion.max_start_speed;
         }
     }
 
+    /// Calculates the next 'n' linear motions according to the planned steps so far.
+    ///
+    /// We will stop once we either give back 'max_duration' total of motions or
+    /// 'max_count' total motions.
+    pub fn next(
+        &mut self,
+        max_duration: f32,
+        max_count: usize,
+        out: &mut Vec<LinearMotion>
+    ) {
+        if max_count == 0 || max_duration <= 0.0001 {
+            return;
+        }
+
+        let mut dur = 0.0;
+        let mut n = 0;
+
+        while n < max_count && dur < max_duration {
+            let mut entry = match self.queue.pop_front() {
+                Some(v) => v,
+                None => return
+            };
+
+            // TODO: FixedVec<3>
+            let mut motions = vec![];
+            let next_velocity = entry.constraints.calculate_motions(self.start_velocity.clone(), &mut motions);
+
+            for motion in motions {
+
+                if dur + motion.duration >= max_duration + 0.0001 || n == max_count {
+                 
+                    let mut t = (max_duration - dur).min(motion.duration);
+                    if n == max_count {
+                        t = 0.0;
+                    }
+
+                    let (partial_motion, _) = motion.split_at(t);
+
+                    // TODO: Robustify this.
+                    if partial_motion.duration >= 0.0001 {
+                        self.start_position = partial_motion.end_position.clone();
+                        self.start_velocity = partial_motion.end_velocity.clone();
+                        out.push(partial_motion);
+                    }
+
+                    entry.constraints.start_position = self.start_position.clone();
+
+                    // TODO: If it is not pushed, we should do a minor correction next time to 
+                    // correctly align the next motion's start_position.
+                    if !entry.constraints.is_empty() {
+                        self.queue.push_front(entry);
+                    }
+
+                    return;
+                }
+
+                dur += motion.duration;
+                n += 1;
+                self.start_position = motion.end_position.clone();
+                self.start_velocity = motion.end_velocity.clone();
+                out.push(motion);
+            }
+        }
+    }
+
+    /*
     pub fn next(&mut self, out: &mut Vec<LinearMotion>) {
         // TODO: Check if it is fully constrained yet.
 
         if let Some(motion) = self.queue.pop_front() {
-            self.start_velocity = motion.calculate_motions(self.start_velocity.clone(), out);
+            self.start_velocity = motion.constraints.calculate_motions(self.start_velocity.clone(), out);
         }
     }
+    */
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
+    fn default_config() -> LinearMotionPlannerConfig {
+        let mut config = LinearMotionPlannerConfig::default();
+        config.set_max_junction_deviation(0.01);
+        config
+    }
+
+    // motion_controller.move_to(vec3f(3600.0, 0.0, 0.0), 100.0).await?;
+
     #[test]
-    fn single_axis_path() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero());
-        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
+    fn split_motion_path() {
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
+        planner.move_to(Vector3f::from_slice(&[3600.0, 0.0, 0.0]), 100.0, 1000.0);
 
         let mut out = vec![];
-        planner.next(&mut out);
+        planner.next(1000.0, 100, &mut out);
+        println!("{:#?}", out);
+
+        // let mut out = vec![];
+        // planner.next(1.0, 100, &mut out);
+        // println!("{:#?}", out);
+    }
+
+    #[test]
+    fn single_axis_path() {
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
+        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
+
+
+        // let mut out = vec![];
+        // planner.next(&mut out);
+        // println!("{:#?}", out);
+    }
+
+    #[test]
+    fn straight_line() {
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
+        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
+        // Changing the speed so that these lines can't be merged.
+        planner.move_to(Vector3f::from_slice(&[200.0, 0.0, 0.0]), 200.0, 1000.0);
+
+        let mut out = vec![];
+        planner.next(1000.0, 1000, &mut out);
         println!("{:#?}", out);
     }
 
     #[test]
-    fn single_axis_not_enough_time_to_speed_up() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero());
-        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1.0);
+    fn reverse_line() {
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
+        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
+        planner.move_to(Vector3f::from_slice(&[0.0, 0.0, 0.0]), 100.0, 1000.0);
 
         let mut out = vec![];
-        planner.next(&mut out);
+        planner.next(1000.0, 1000, &mut out);
         println!("{:#?}", out);
+    }
+
+
+
+    #[test]
+    fn single_axis_not_enough_time_to_speed_up() {
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
+        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1.0);
+
+        // let mut out = vec![];
+        // planner.next(&mut out);
+        // println!("{:#?}", out);
     }
 
     #[test]
     fn square_path() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero());
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
         planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
         planner.move_to(Vector3f::from_slice(&[100.0, 100.0, 0.0]), 100.0, 1000.0);
         planner.move_to(Vector3f::from_slice(&[0.0, 100.0, 0.0]), 100.0, 1000.0);
         planner.move_to(Vector3f::from_slice(&[0.0, 0.0, 0.0]), 100.0, 1000.0);
 
-        let mut out = vec![];
-        planner.next(&mut out);
-        planner.next(&mut out);
-        planner.next(&mut out);
-        planner.next(&mut out);
-        println!("{:#?}", out);
+        // let mut out = vec![];
+        // planner.next(&mut out);
+        // planner.next(&mut out);
+        // planner.next(&mut out);
+        // planner.next(&mut out);
+        // println!("{:#?}", out);
     }
 
     #[test]
     fn works() {
         // 20 revolutions
 
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero());
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
         planner.move_to(Vector3f::from_slice(&[64000.0, 0.0, 0.0]), 3200.0, 500.0);
 
-        let mut out = vec![];
-        planner.next(&mut out);
-        println!("{:#?}", out);
+        // let mut out = vec![];
+        // planner.next(&mut out);
+        // println!("{:#?}", out);
     }
 
     /*
     #[test]
     fn works() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero());
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
 
         planner.append(
             Vector3f::from_slice(&[0.0, 0.0, 0.0]),

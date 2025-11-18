@@ -188,7 +188,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                         break;
                     }
 
-                    if i + len >= n {
+                    if i + len > n {
                         break;
                     }
 
@@ -204,10 +204,11 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                     };
 
                     if let Some(controller) = &self.peripherals_controller {
-                        let _ = controller.execute(&proto).await;
-                        return Ok(());
-                    }
+                        controller.execute(&proto).await;
+                                            }
                 }
+
+                return Ok(());
             }
         }
 

@@ -25,6 +25,18 @@ use crate::ppi::*;
 /*
 TODO: Need to calibrate ADC with CALIBRATEOFFSET
 
+Improvements to this:
+- Calibration can be run before any channels are configured
+    https://devzone.nordicsemi.com/f/nordic-q-a/30042/saadc-offset-calibration-for-each-input#:~:text=8%20years%20ago-,Hi%2C,regular%20intervals%20or%20temperature%20changes.
+
+- It is poorly defined if CALIBRATEOFFSET data lasts across boots so it is safer to keep the ADC peripheral always enabled to avoid losing the data
+
+- I can unconfigure a channel by deseling the PSEL pins but it may take another TAKSS_START or TASKS_SAMPLE 
+    - So generally not super safe to be ever making an ADC pin into something else.
+
+
+FICR CALREF??
+FICR_TRIM_GLOBAL_SAADC_LINCALCOEFF_MaxIndex
 */
 
 const VDD_VOLTAGE: f32 = 3.3;
@@ -78,6 +90,8 @@ pub struct ADCChannelConfig {
     /// TODO: Move this somewhere else since it is only used by WindowADC
     sample_rate: u32,
 
+    window_size: u32,
+
     oversampling: OVERSAMPLE_FIELD,
 }
 
@@ -96,12 +110,45 @@ pub struct ADCSampleStatus {
     pub limit_high_exceeded: bool
 }
 
+impl Drop for ADC {
+    fn drop(&mut self) {
+        self.periph.enable.write_disabled();
+    }
+}
+
 impl ADC {
     pub fn new(mut periph: SAADC) -> Self {
         // TODO: Flatten this register field since it is the only one in the register. 
         periph.resolution.write_with(|v| v.set_val_with(|v| v.set_12bit()));
 
+        periph.enable.write_enabled();
+
         Self { periph }
+    }
+
+    pub async fn calibrate_offset(&mut self) {
+        // TODO: Should I configure to sampling time to make the calibration more accurate?
+
+        self.periph.events_calibratedone.write_notgenerated();
+        flush_events_clear();
+
+        self.periph.tasks_calibrateoffset.write_trigger();
+
+        {
+            self.periph.inten.write_with(|v| {
+                v.set_calibratedone(InterruptState::Enabled)
+            });
+
+            while self.periph.events_calibratedone.read().is_notgenerated() {
+                wait_for_irq(Interrupt::SAADC).await;
+            }
+
+            self.periph.events_calibratedone.write_notgenerated();
+            flush_events_clear();
+        }
+
+        // Disable all interrupts.
+        self.periph.inten.write_with(|v| v);
     }
 
     pub fn create_channel_config<Pin: PeripheralPin>(
@@ -180,8 +227,10 @@ impl ADC {
         };
 
         let sample_rate = config.sample_rate();
-        if sample_rate < 10 || sample_rate > 5000 {
-            return None;
+        if config.window_size() != 0 || config.oversampling() != 0 {
+            if sample_rate < 10 || sample_rate > 5000 {
+                return None;
+            }
         }
 
         let mut limit_low = -32768i16;
@@ -227,7 +276,8 @@ impl ADC {
             gain_value,
             ref_select,
             units_per_volt,
-            sample_rate: config.sample_rate(),
+            sample_rate,
+            window_size: config.window_size(),
             limit,
             stop_on_limit: config.stop_on_trigger(),
             oversampling,
@@ -286,9 +336,6 @@ impl ADC {
         self.periph.events_ch[0].limith.write_notgenerated();
         self.periph.events_ch[0].limitl.write_notgenerated();
         // flush_events_clear();
-
-        // Enable the ADC. I think this is when the pins get acquired.
-        self.periph.enable.write_enabled();
 
         // Setup buffer.
         self.periph.result.ptr
@@ -374,7 +421,7 @@ impl ADC {
         self.periph.inten.write_with(|v| v);
 
         // Disable ADC
-        self.periph.enable.write_disabled();
+        // self.periph.enable.write_disabled();
 
         // TODO: Disconnect pins.
 
@@ -456,6 +503,10 @@ impl WindowADC {
         self.adc.create_channel_config(pin, negative_pin, config)
     }
 
+    pub async fn calibrate_offset(&mut self) {
+        self.adc.calibrate_offset().await
+    }
+
     pub async fn single_sample(&mut self, config: &ADCChannelConfig) -> i16 {
         if config.oversampling == OVERSAMPLE_FIELD::Bypass {
             return self.adc.single_sample(config).await;
@@ -471,10 +522,11 @@ impl WindowADC {
         &mut self,
         config: &ADCChannelConfig,
         out: &mut [i16]
-    ) -> ADCSampleStatus {        
+    ) -> ADCSampleStatus {
         self.timer.cc[0].write(16_000_000 / config.sample_rate);
         
-        self.adc.sample_setup(config, out).await;
+        // TODO: Need to be bounds checking this.
+        self.adc.sample_setup(config, &mut out[0..(config.window_size as usize)]).await;
 
         // Start first sample. All other samples will be timer triggered.
         self.adc.periph.tasks_sample.write_trigger();

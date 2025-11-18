@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animated Video</title>
+    <style>
+        body {
+            margin: 0;
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+            background: #2a2a2a;
+        }
+
+        canvas {
+            background: #f0f0f0;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="frame-canvas" width="960" height="540"></canvas>
+
+    <script type="module">
+        import { main } from "./toolhead_animation.js";
+        main();
+    </script>
+</body>
+
+</html>

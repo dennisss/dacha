@@ -87,6 +87,7 @@ pub struct CommandsProcessor {
     attributes: HashMap<String, Attribute>
 }
 
+#[derive(Debug)]
 struct ApertureDefinitionWithAttributes {
     def: ApertureDefinition,
     attrs: HashMap<String, Attribute>,
@@ -327,7 +328,7 @@ impl CommandsProcessor {
 
                     let circle = match &current_aperture.def.shape {
                         ApertureShape::Circle(c) => c,
-                        _ => return Err(err_msg("Only circle apertures supported in plot")),
+                        _ => return Err(format_err!("Only circle apertures supported in plot. Current aperture: {:?}", current_aperture)),
                     };
 
                     if circle.hole_diameter.is_some() {

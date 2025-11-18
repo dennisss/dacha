@@ -56,6 +56,17 @@ pub fn scale2f(v: &Vector2f) -> Matrix3f {
 
 pub use math::geometry::transforms::transform2f;
 
+pub fn rotate2f(angle: f32) -> Matrix3f {
+    let cos = angle.cos();
+    let sin = angle.sin();
+    
+    Matrix3f::from_slice(&[
+        cos, -sin, 0.0,
+        sin, cos, 0.0,
+        0.0, 0.0, 1.0
+    ])
+}
+
 /*
 inline mat4 rotate(GLfloat t, vec3 u){
     return mat4(

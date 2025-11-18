@@ -18,11 +18,17 @@ class App extends React.Component<{}, AppState> {
     constructor(props: {}) {
         super(props);
 
-        this._channel.call('peripherals.Peripherals', 'GetConfig', {}).then((res) => {
-            let config = res.responses[0].config || {};
-            let state = res.responses[0].state || {};
-            this.setState({ config, state });
-        });
+        // TODO: Also run immediately the first time.
+        // TODO: Switch this to a streaming interface.
+
+        setInterval(() => {
+            this._channel.call('peripherals.Peripherals', 'GetConfig', {}).then((res) => {
+                let config = res.responses[0].config || {};
+                let state = res.responses[0].state || {};
+                this.setState({ config, state });
+            });
+
+        }, 2000);
     }
 
     _execute(req) {
@@ -45,9 +51,9 @@ class App extends React.Component<{}, AppState> {
 
         let control = null;
 
-        if (periph.gpio) {
+        if (state.gpio) {
             let high = state.gpio.high || false;
-            control = <input type="checkbox" checked={high} disabled={periph.gpio.is_input || false}
+            control = <input type="checkbox" checked={high} disabled={periph.gpio.config.is_input || false}
                 onChange={(e) => this._execute({ peripheral_index: (periph.index || 0), set_gpio_level: { high: !high } })} />
         }
         if (periph.pwm) {

@@ -6,11 +6,24 @@ import "pkg/peripherals/proto/service.proto";
 
 
 message ControllerConfig {
-    peripherals.BoardConfig main_board = 1;
-    BedClientConfig bed_client = 2;
+    string name = 1;
+
+    message DeviceEntry {
+        string name = 1;
+
+        peripherals.BoardConfig peripheral_config = 2;
+
+        BedClientConfig bed_client = 3;
+
+        peripherals.TMC2209Config tmc2209 = 4;
+    }
+
+    repeated DeviceEntry devices = 2;
+
+    MotionControllerConfig motion_controller = 3;
 
     // For now this should always have 4 numbers.
-    repeated float bed_fem_weights = 3;
+    repeated float bed_fem_weights = 4;
 }
 
 message BedClientConfig {
@@ -21,4 +34,60 @@ message BedClientConfig {
     float calibration_a = 4;
     float calibration_b = 5;
     float chip_temp_calibration = 6;
+}
+
+
+message MotionControllerConfig {
+    message Motor {
+        string device_name = 1;
+        bool inverted = 2;
+        float steps_per_mm = 3;
+    }
+
+    repeated Motor motors = 1;
+
+    repeated AxisGeometry geometry = 2;
+
+
+    // List of motors
+
+    // Geometry info
+
+    float max_acceleration_xy = 3;
+    float max_acceleration_z = 4;
+    float maz_acceleration_e = 5;
+
+    LinearMotionPlannerConfig planner = 6;
+}
+
+message AxisGeometry {
+    message Direct {
+        string motor_name = 1;
+        uint32 motor_index = 2;
+
+        uint32 axis_index = 3;
+    }
+
+    message CoreXY {
+        uint32 x_axis_index = 1;
+
+        uint32 y_axis_index = 2;
+        
+        string a_motor_name = 3;
+        uint32 a_motor_index = 4;
+
+        string b_motor_name = 5;
+        uint32 b_motor_index = 6;
+    }
+
+    oneof geometry {
+        Direct direct = 1;
+        CoreXY core_xy = 2;
+    }
+}
+
+
+message LinearMotionPlannerConfig {
+    float max_junction_deviation = 1;    
+
 }

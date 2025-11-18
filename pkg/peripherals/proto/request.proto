@@ -107,6 +107,8 @@ message PeripheralRequest {
         ConfigureSPIRequest configure_spi = 32;
 
         SPITransferRequest spi_transfer = 33;
+
+        bool calibrate_adc = 34;
     }
 
     reserved 6;
@@ -386,7 +388,7 @@ message ConfigureADCRequest {
     bool measure_vdd = 3;
 
     // Expected maximum voltage value expected.
-    // This is used to calibrate internal gain.
+    // This is used to configure internal gain.
     float max_voltage = 4;
 
     // If true, then samples should be measured relative to Vdd if possible.
@@ -407,6 +409,9 @@ message ConfigureADCRequest {
 
     // Number of samples to average together to form each reading.
     uint32 oversampling = 11;
+
+    // Number of results to be collected in each window sampling.
+    uint32 window_size = 12;
 }
 
 message ADCFormat {

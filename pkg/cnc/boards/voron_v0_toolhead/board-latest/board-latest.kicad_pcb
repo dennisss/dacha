@@ -281,7 +281,7 @@
     (property "ki_keywords" "switch normally-open pushbutton push-button")
     (path "/97c8e725-57a6-4f2f-8bee-8e486e3f1ab0/60800555-273f-42fd-b09e-9d9283d9e64b")
     (attr smd)
-    (fp_text reference "SW2" (at 0 -4.5 40.4) (layer "F.SilkS")
+    (fp_text reference "SW2" (at -0.000001 -4.5 40.4) (layer "F.SilkS") hide
         (effects (font (size 1 1) (thickness 0.15)))
       (tstamp fb8ab8fe-6eab-41f4-ab0f-affd963f0b63)
     )
@@ -5320,7 +5320,7 @@
   (gr_text "V0 Tool R?" (at 142.575 109.85 270) (layer "F.SilkS") (tstamp 44af95bf-cc68-4333-92ab-d44cac0e7e89)
     (effects (font (size 1 1) (thickness 0.15)) (justify left bottom))
   )
-  (gr_text "TODO: Smaller fill clearance / reduce 24V -> TMC resistance" (at 116.459 79.375) (layer "F.Fab") (tstamp b3fe1629-bf49-4148-8b82-82a27d4d83b2)
+  (gr_text "TODO: Smaller fill clearance / reduce 24V -> TMC resistance" (at 115.6 67.52) (layer "F.Fab") (tstamp b3fe1629-bf49-4148-8b82-82a27d4d83b2)
     (effects (font (size 1 1) (thickness 0.15)) (justify left bottom))
   )
 

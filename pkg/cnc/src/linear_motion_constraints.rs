@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use math::matrix::cwise_binary_ops::*;
 use math::matrix::Vector3f;
 
-use crate::kinematics::*;
+use crate::displacement::*;
 use crate::linear_motion::LinearMotion;
 
 /// A non-fully defined LinearMotion(s).
@@ -13,22 +13,19 @@ use crate::linear_motion::LinearMotion;
 ///
 /// This data structure is gradually refined by the LinearMotionPlanner. When we
 /// are ready to convert it to motions, Self::calculate_motions will do that.
+#[derive(Debug)]
 pub struct LinearMotionConstraints {
+    /// Position at which the motion will be started.
+    ///
+    /// TODO: Consider removing this since it will be redundant with the previous motion
+    /// in the queue and is more data to maintain.
     pub start_position: Vector3f,
 
+    /// Target end position after the motion is complete.
     pub end_position: Vector3f,
 
-    /// Maximum velocity magnitude at which we can start this motion such the
-    /// velocity can be safely reduced using this motion's acceleration to
-    /// max(this.max_cornering_speed, next_motion.max_start_speed).
-    ///
-    /// This also can't be higher than this.max_speed.
-    ///
-    /// NOTE: If there is no motion following this one, then the above max(...)
-    /// expression is tentatively 0. As such, this number can change as new
-    /// motions are added.
-    pub max_start_speed: f32,
-
+    /// Maximum speed at which we can end the motion.
+    /// (we will try to optimize for finishing each motion at as fast a speed as possible).
     pub max_end_speed: f32,
 
     /// Overall max speed that can be hit during this motion.
@@ -37,32 +34,21 @@ pub struct LinearMotionConstraints {
     /// NOTE: This is a constant set by the GCode command's feedrate setting.
     pub max_speed: f32,
 
-    /// Maximum velocity at which we can exit this motion based on the sharpness
-    /// of the transition to the next motion.
-    ///
-    /// All values are >= 0.
-    ///
-    /// This is at most max_velocity when the next motion is in the same
-    /// direction as the current motion and can reach zero if the next motion is
-    /// in the opposite direction.
-    ///
-    /// This is initially 0 to imply that the final motion should bring us to a
-    /// stop and set to a higher value when the next motion is appended to the
-    /// plan.
-    pub max_cornering_speed: f32,
-
-    /// Max acceleration at which we can change each axis's velocity.
+    /// Max acceleration at which we can move along the vector from 'start_position'
+    /// to 'end_position'.
     pub max_acceleration: f32,
-
-    /// If true, max_start_velocity will no longer change if additional motions
-    /// are added to this
-    pub fully_constrained: bool,
 }
 
 impl LinearMotionConstraints {
+
+    pub fn is_empty(&self) -> bool {
+        let distance_vector = &self.end_position - &self.start_position;
+        distance_vector.norm() <= 1e-6
+    }
+
     /// Given the motion constraints and the current start_velocity, generates a
     /// set of LinearMotions that go from start_position to end_position while
-    /// satisfying all other constraints in all little time as possible.
+    /// satisfying all other constraints in as little time as possible.
     ///
     /// This will generate up to 3 motions:
     /// 1. A ramp up at constant positive acceleration to get to some peak
@@ -100,10 +86,7 @@ impl LinearMotionConstraints {
         // If we are traveling in a different direction initially, assume we can
         // instantly stop (no ramp downs in velocity as added at the start of the
         // motion).
-        let mut start_speed = start_velocity.dot(&direction);
-        if start_speed < 0.0 {
-            start_speed = 0.0;
-        }
+        let mut start_speed = start_velocity.dot(&direction).max(0.0);
 
         let end_speed = {
             if self.max_end_speed <= start_speed {
@@ -120,41 +103,40 @@ impl LinearMotionConstraints {
         };
 
         // Compute the maximum velocity we can reach if we simply used a
-        // constant velocity of +max_acceleration and then ramped down with a
+        // constant acceleration of +max_acceleration and then ramped down with a
         // constant acceleration of -max_acceleration to the end_speed.
+        //
+        // (this assumes there is no speed limit so no need to cruise)
         //
         // If start_speed == end_speed, then velocity would be a symetric triangle.
         let peak_speed = {
             // Extra time that we need to spend on ramping down vs. ramping up if end_speed
             // < start_speed.
             let k = (start_speed - end_speed) / self.max_acceleration;
-
-            // Solving quadratic equation formulated using 'x' as the amount of time spent
-            // ramping up to the peak speed and 'x + k' being the amount of time ramping
-            // down.
-
-            // 0 = X**2*acceleration + (2*start_speed - K*acceleration) * X +
-            // -K**2*acceleration/2 - distance
+            
+            // Solving for the amount of time needed for ramp up 'x'. Ramp down will
+            // take 'x + k' time.
+            // 
+            // See trapezoid.py for how this is calculated.
             let a = self.max_acceleration;
-            let b = 2.0 * start_speed - k * self.max_acceleration;
-            let c = -1.0 * k * k * self.max_acceleration / 2.0 - distance;
-
+            let b = 2.0 * start_speed;
+            let c = -self.max_acceleration * (k * k) / 2.0 - distance + k * start_speed;
             let (t1, t2) = math::find_quadratic_roots(a, b, c);
-            // TODO: Check this.
+
+            // Note that I'm pretty sure that only one of these can be >= 0.0
             let rampup_time = {
                 if t2 >= 0.0 && t1 >= 0.0 {
                     t2.min(t1)
-                } else if t2 >= 0.0 {
-                    t2
                 } else {
-                    t1
+                    t2.max(t1)
                 }
             };
 
-            let absolute_peak_speed = rampup_time * self.max_acceleration + start_speed;
-
-            absolute_peak_speed.min(self.max_speed)
+            rampup_time * self.max_acceleration + start_speed
         };
+
+        // Clamp
+        let peak_speed = peak_speed.min(self.max_speed);
 
         let ramp_up_time = (peak_speed - start_speed) / self.max_acceleration;
         let ramp_down_time = (peak_speed - end_speed) / self.max_acceleration;
@@ -165,7 +147,7 @@ impl LinearMotionConstraints {
             displacement_traveled(peak_speed, -self.max_acceleration, ramp_down_time);
 
         let cruise_distance = distance - ramp_up_distance - ramp_down_distance;
-        assert!(cruise_distance >= 0.0);
+        assert!(cruise_distance >= -0.001, "{:?}, start_velocity: {:?}", self, start_velocity);
 
         let cruise_time = cruise_distance / peak_speed;
 
@@ -173,7 +155,8 @@ impl LinearMotionConstraints {
         // This is start_velocity but with orthogonal components removed.
         let mut current_velocity = (&direction).cwise_mul(start_speed);
 
-        if ramp_up_distance >= 0.01 {
+        // TODO: Better to threshold this on time since it is harder to handle having many small curves
+        if ramp_up_distance.abs() >= 0.01 {
             let start_position = current_position.clone();
             let end_position = &start_position + (&direction).cwise_mul(ramp_up_distance);
             current_position = end_position.clone();
@@ -194,7 +177,7 @@ impl LinearMotionConstraints {
             });
         }
 
-        if cruise_distance >= 0.01 {
+        if cruise_distance.abs() >= 0.01 {
             let start_position = current_position.clone();
             let end_position = &start_position + (&direction).cwise_mul(cruise_distance);
             current_position = end_position.clone();
@@ -209,7 +192,7 @@ impl LinearMotionConstraints {
             });
         }
 
-        if ramp_down_distance >= 0.01 {
+        if ramp_down_distance.abs() >= 0.01 {
             let start_position = current_position.clone();
             let end_position = &start_position + (&direction).cwise_mul(ramp_down_distance);
             current_position = end_position.clone();
@@ -235,3 +218,359 @@ impl LinearMotionConstraints {
         current_velocity
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use math::matrix::vec3f;
+
+
+    /*
+    LinearMotionConstraints { start_position: vec3f(3196.8223, 0., 0.), end_position: vec3f(3200., 0., 0.), max_end_speed: 0.0, max_speed: 200.0, max_acceleration: 1000.0 }, start_velocity: vec3f(79.7231, 0., 0.)
+
+    */
+
+    #[test]
+    fn real_example() {
+        let start_velocity = vec3f(16.762085, 0.0, 0.0);
+
+        let c = LinearMotionConstraints { start_position: vec3f(3199.8596, 0.0, 0.0), end_position: vec3f(3200.0, 0.0, 0.0), max_end_speed: 0.0, max_speed: 200.0, max_acceleration: 1000.0 };
+
+
+        let mut out = vec![];
+        let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+    }
+
+    #[test]
+    fn start_and_stop_at_rest() {
+
+        // All three curves can be added.
+        {
+            let start_velocity = vec3f(0.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(1000.0, 0.0, 0.0),
+                max_end_speed: 0.0,
+                max_speed: 100.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(0., 0., 0.),
+                    end_position: vec3f(50., 0., 0.),
+                    end_velocity: vec3f(100., 0., 0.),
+                    acceleration: vec3f(100., 0., 0.),
+                    duration: 1.0,
+                },
+                LinearMotion {
+                    start_position: vec3f(50., 0., 0.),
+                    start_velocity: vec3f(100., 0., 0.),
+                    end_position: vec3f(950., 0., 0.),
+                    end_velocity: vec3f(100., 0., 0.),
+                    acceleration: vec3f(0., 0., 0.),
+                    duration: 9.0,
+                },
+                LinearMotion {
+                    start_position: vec3f(950., 0., 0.),
+                    start_velocity: vec3f(100., 0., 0.),
+                    end_position: vec3f(1000., 0., 0.),
+                    end_velocity: vec3f(0., 0., 0.),
+                    acceleration: vec3f(-100., 0., 0.),
+                    duration: 1.0,
+                },
+            ][..]);
+        }
+
+        // Just enough time for two curves
+        {
+            let start_velocity = vec3f(0.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(100.0, 0.0, 0.0),
+                max_end_speed: 0.0,
+                max_speed: 100.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(0., 0., 0.),
+                    end_position: vec3f(50., 0., 0.),
+                    end_velocity: vec3f(100., 0., 0.),
+                    acceleration: vec3f(100., 0., 0.),
+                    duration: 1.0,
+                },
+                LinearMotion {
+                    start_position: vec3f(50., 0., 0.),
+                    start_velocity: vec3f(100., 0., 0.),
+                    end_position: vec3f(100., 0., 0.),
+                    end_velocity: vec3f(0., 0., 0.),
+                    acceleration: vec3f(-100., 0., 0.),
+                    duration: 1.0,
+                },
+            ][..]);
+        }
+
+        // We have just enough space to get to top speed but shouldn't because we need to immediately start
+        // slowing down.
+        {
+            let start_velocity = vec3f(0.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(50.0, 0.0, 0.0),
+                max_end_speed: 0.0,
+                max_speed: 100.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(0., 0., 0.),
+                    end_position: vec3f(25., 0., 0.),
+                    end_velocity: vec3f(70.710677, 0., 0.),
+                    acceleration: vec3f(100., 0., 0.),
+                    duration: 0.70710677,
+                },
+                LinearMotion {
+                    start_position: vec3f(25., 0., 0.),
+                    start_velocity: vec3f(70.710677, 0., 0.),
+                    end_position: vec3f(50., 0., 0.),
+                    end_velocity: vec3f(0., 0., 0.),
+                    acceleration: vec3f(-100., 0., 0.),
+                    duration: 0.70710677,
+                },
+            ]);
+        }
+
+        // Similar to last case but we have a little more space.
+        {
+            let start_velocity = vec3f(0.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(80.0, 0.0, 0.0),
+                max_end_speed: 0.0,
+                max_speed: 100.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(0., 0., 0.),
+                    end_position: vec3f(40., 0., 0.),
+                    end_velocity: vec3f(89.44272, 0., 0.),
+                    acceleration: vec3f(100., 0., 0.),
+                    duration: 0.8944272,
+                },
+                LinearMotion {
+                    start_position: vec3f(40., 0., 0.),
+                    start_velocity: vec3f(89.44272, 0., 0.),
+                    end_position: vec3f(80., 0., 0.),
+                    end_velocity: vec3f(0., 0., 0.),
+                    acceleration: vec3f(-100., 0., 0.),
+                    duration: 0.8944272,
+                },
+            ][..]);
+
+            // println!("{:#?}", out);
+        }
+
+    }
+
+    #[test]
+    fn start_moving() {
+        // Just cruising at start speed.
+        {
+            let start_velocity = vec3f(100.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(200.0, 0.0, 0.0),
+                max_end_speed: 100.0,
+                max_speed: 100.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(100.0, 0.0, 0.0));
+
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(100., 0., 0.),
+                    end_position: vec3f(200., 0., 0.),
+                    end_velocity: vec3f(100., 0., 0.),
+                    acceleration: vec3f(0., 0., 0.),
+                    duration: 2.0,
+                },
+            ][..]);
+
+            // println!("{:#?}", out);
+        }
+
+        // Speed up then cruise
+        {
+            let start_velocity = vec3f(100.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(1000.0, 0.0, 0.0),
+                max_end_speed: 200.0,
+                max_speed: 200.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(200.0, 0.0, 0.0));
+
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(100., 0., 0.),
+                    end_position: vec3f(150., 0., 0.),
+                    end_velocity: vec3f(200., 0., 0.),
+                    acceleration: vec3f(100., 0., 0.),
+                    duration: 1.0,
+                },
+                LinearMotion {
+                    start_position: vec3f(150., 0., 0.),
+                    start_velocity: vec3f(200., 0., 0.),
+                    end_position: vec3f(1000., 0., 0.),
+                    end_velocity: vec3f(200., 0., 0.),
+                    acceleration: vec3f(0., 0., 0.),
+                    duration: 4.25,
+                },
+            ][..]);
+
+            // println!("{:#?}", out);
+        }
+    }
+
+    #[test]
+    fn immediate_stop() {
+
+
+        // Need to immediately slow down.
+        {
+            let start_velocity = vec3f(100.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(50.0, 0.0, 0.0),
+                max_end_speed: 0.0,
+                max_speed: 200.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(100., 0., 0.),
+                    end_position: vec3f(50., 0., 0.),
+                    end_velocity: vec3f(0., 0., 0.),
+                    acceleration: vec3f(-100., 0., 0.),
+                    duration: 1.0,
+                },
+            ][..]);
+
+            // println!("{:#?}", out);
+        }
+    }
+
+    #[test]
+    fn stop_soon() {
+
+        {
+            let start_velocity = vec3f(100.0, 0.0, 0.0);
+
+            let c = LinearMotionConstraints {
+                start_position: vec3f(0.0, 0.0, 0.0),
+                end_position: vec3f(60.0, 0.0, 0.0),
+                max_end_speed: 0.0,
+                max_speed: 200.0,
+                max_acceleration: 100.0,
+            };
+
+            let mut out = vec![];
+            let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+
+            // TODO: This needs a better comparator.
+            /*
+            assert_eq!(&out[..], &[
+                LinearMotion {
+                    start_position: vec3f(0., 0., 0.),
+                    start_velocity: vec3f(100., 0., 0.),
+                    end_position: vec3f(5., 0., 0.),
+                    end_velocity: vec3f(104.8809, 0., 0.),
+                    acceleration: vec3f(100., 0., 0.),
+                    duration: 0.048808824,
+                },
+                LinearMotion {
+                    start_position: vec3f(5., 0., 0.),
+                    start_velocity: vec3f(104.8809, 0., 0.),
+                    end_position: vec3f(60., 0., 0.),
+                    end_velocity: vec3f(0., 0., 0.),
+                    acceleration: vec3f(-100., 0., 0.),
+                    duration: 1.0488088,
+                },
+            ][..]);
+            */
+
+            println!("{:#?}", out);
+        }
+
+        // TODO: Test with just a ramp up stage.
+
+        // TODO: Test with starting at one non-zero speed and ending at another non-zero speed.
+
+
+    }
+
+
+
+
+
+}
+

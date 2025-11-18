@@ -1,21 +1,12 @@
 
 
 
-```
-$ nc 10.1.0.133 5024
-Welcome to the SCPI instrument 'Siglent SDM3055'
->>*IDN?
+Command references:
+
+- SDM3055 (my multimeter)
+    - https://siglentna.com/wp-content/uploads/dlm_uploads/2017/10/SDM-Series-Digital-Multimeter_ProgrammingGuide_EN02A.pdf
+- SPD3303X-E (my PSU)
+    - https://siglentna.com/wp-content/uploads/dlm_uploads/2022/11/SPD3303X_QuickStart_E02A.pdf
 
 
-
-http://10.1.0.133/
-SDM3055
-
-GPIB address
-
-https://siglentna.com/wp-content/uploads/dlm_uploads/2017/10/SDM-Series-Digital-Multimeter_ProgrammingGuide_EN02A.pdf
-
-port 5025 TCP 
-
-"IDN?\n"
-```
+https://siglentna.com/application-note/programming-example-sds-oscilloscope-screen-capture-python/

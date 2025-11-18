@@ -72,6 +72,13 @@ message TMC2209Config {
     string uart_peripheral = 2;
     string diag_peripheral = 3;
     string enable_peripheral = 4;
+
+    string device_name = 5;
+}
+
+message ADCCalibration {
+    float offset = 1;
+    float scale = 2;
 }
 
 
@@ -150,6 +157,9 @@ message BoardConfig {
         CurrentSenseResistor current_sense_resistor = 5;
 
         Thermistor thermistor = 6;
+
+        // NOTE: This is applied on the raw voltage level before other operations.
+        ADCCalibration calibration = 7;
     }
     
     message SPIPeripheral {

@@ -1,0 +1,58 @@
+/*
+node -r esm pkg/cnc/controller/vis/node.js
+*/
+
+const { createCanvas, loadImage, registerFont } = require('canvas')
+const { encode_frames } = require('./video_encoder');
+const { configure } = require('./toolhead_animation');
+
+
+
+registerFont('third_party/noto_sans/font_normal.ttf', { family: 'Noto Sans' });
+registerFont('third_party/noto_color_emoji/NotoColorEmoji-Regular.ttf', { family: 'Noto Color Emoji' });
+
+
+const canvas = createCanvas(3840, 2160)
+const ctx = canvas.getContext('2d');
+
+let inner_canvas = { width: 960, height: 540 };
+ctx.scale(4, 4);
+
+
+const FRAME_RATE = 30;
+
+class Frames {
+    constructor(timeline) {
+        this._i = 0;
+        this._timeline = timeline;
+    }
+
+    width() {
+        return canvas.width;
+    }
+
+    height() {
+        return canvas.height;
+    }
+
+    length() {
+        return Math.round(this._timeline.duration() * FRAME_RATE);
+    }
+
+    rate() {
+        return FRAME_RATE;
+    }
+
+    next() {
+        let time = this._i / FRAME_RATE;
+        this._i += 1;
+        this._timeline.draw(inner_canvas, ctx, time);
+        return canvas.toBuffer('raw'); // BRGA pixel buffer
+    }
+}
+
+let frames = new Frames(configure(inner_canvas));
+
+(async () => {
+    await encode_frames(frames, 'dump/pz.mp4');
+})()

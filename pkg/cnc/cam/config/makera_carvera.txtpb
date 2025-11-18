@@ -25,7 +25,7 @@ mask_removal {
     tool_diameter: 0.3
     spindle_speed: 6000
     cut_depth: 0.1
-    cut_compression: 0.1
+    cut_compression: 0.15
     overlap_percentage: 0.5
     travel_z: 1
     clearance_z: 10
@@ -53,14 +53,22 @@ paste_stencil {
 }
 
 drill {
-    tool_index: 6
-    tool_diameter: 0.9
     spindle_speed: 12000
     rapid_feedrate: 1000
     feedrate_z: 200
     travel_z: 1
     clearance_z: 10
     drill_z: -1.65
+    tools: [
+        {
+            tool_index: 6
+            tool_diameter: 0.9
+        },
+        {
+            tool_index: 1
+            tool_diameter: 0.8
+        }
+    ]
 }
 
 # TODO: Cutting out of holes seems to still be not very precise.

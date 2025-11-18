@@ -166,6 +166,17 @@ message DrillProcessorConfig {
     float tool_diameter = 7;
 
     float clearance_z = 8;
+
+    repeated DrillTool tools = 9;
+
+    reserved 6, 7;
+}
+
+message DrillTool {
+    // NOTE: This will be used for all holes.
+    uint32 tool_index = 1;
+
+    float tool_diameter = 2;
 }
 
 message CutOutProcessorConfig {

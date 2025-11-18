@@ -89,7 +89,7 @@ use super::timeout::TimeoutPeripheralThread;
 use super::uart::UartTransmitPeripheralThread;
 use super::stepper::{StepperMotorController, StepperMotion, StepperPeripheralThread};
 use super::interrupt::InterruptPeripheralThread;
-use super::adc::{ADCSamplePeripheralThread, read_adc_buffer};
+use super::adc::{ADCSamplePeripheralThread, ADCCalibratePeripheralThread, read_adc_buffer};
 use super::spi::SPIPeripheralThread;
 
 const MAX_NUM_PERIPHERALS: usize = 32;
@@ -1127,6 +1127,26 @@ impl PeripheralsController {
 
                 Err(ExecuteError::AsyncReply)
             }
+            PeripheralRequestCommandCase::CalibrateAdc(_) => {
+                self.check_fully_configured(state)?;
+
+                if state.adc.is_none() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                let adc = state.adc.take().unwrap();
+
+                ADCCalibratePeripheralThread::start(
+                    self,
+                    request.request_sequence(),
+                    adc
+                );
+
+                Err(ExecuteError::AsyncReply)
+            }
+
             PeripheralRequestCommandCase::ReadAdcBuffer(offset) => {
                 read_adc_buffer(*offset as usize, response);
                 Ok(OkResponse)

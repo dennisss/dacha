@@ -134,10 +134,15 @@ peripherals {
         config {
             oversampling: 256
             sample_rate: 2560
+            window_size: 1
+        }
+        calibration {
+            offset: 0.00054
+            scale: 0.7486
         }
         current_sense_resistor {
             resistor_value: 0.006
-            max_current: 5
+            max_current: 4
         }
     }
 }

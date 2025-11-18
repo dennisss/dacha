@@ -14,6 +14,30 @@ type AdcBufferType = [i16; 1024];
 static mut ADC_BUFFER: AdcBufferType = [0i16; 1024];
 static mut ADC_BUFFER_LEN: usize = 0;
 
+
+define_thread!(
+    ADCCalibratePeripheralThread,
+    adc_calibrate_worker_thread,
+    controller: &'static PeripheralsController,
+    request_sequence: u32,
+    inst: WindowADC
+);
+
+async fn adc_calibrate_worker_thread(
+    controller: &'static PeripheralsController,
+    request_sequence: u32,
+    mut inst: WindowADC
+) {
+    inst.calibrate_offset().await;
+
+    lock!(state <= controller.state.lock().await.unwrap(), {
+        state.adc = Some(inst);
+        let mut res = PeripheralResponse::default();
+        res.set_request_sequence(request_sequence);
+        controller.write_response(&mut state, &res);
+    });
+}
+
 define_thread!(
     ADCSamplePeripheralThread,
     adc_sample_worker_thread,

@@ -13,10 +13,10 @@ extern crate math;
 extern crate macros;
 extern crate protobuf;
 
-pub mod kinematics;
+pub mod displacement;
 pub mod linear_motion;
 #[cfg(feature = "alloc")]
 pub mod linear_motion_constraints;
 #[cfg(feature = "alloc")]
 pub mod linear_motion_planner;
-pub mod proto;
+pub mod kinematics;

@@ -140,6 +140,58 @@ impl PeripheralsDevice {
         Ok(())
     }
 
+    pub async fn gpio_read(
+        &self,
+        periph_name: &str
+    ) -> Result<bool> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.get_gpio_level_mut();
+        let res = self.usb_device.send_request(&req).await?;
+        Ok(res.uint_val() != 0)
+    }
+
+    pub async fn pwm_write(
+        &self,
+        periph_name: &str,
+        v: f32
+    ) -> Result<()> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.set_pwm_mut().set_value(((((1 << 16) - 1) as f32) * v) as u32);
+        self.usb_device.send_request(&req).await?;
+        Ok(())
+    }
+
+    pub async fn calibrate_adc(&self) -> Result<()> {
+        let mut req = PeripheralRequest::default();
+        req.set_calibrate_adc(true);
+        self.usb_device.send_request(&req).await?;
+        Ok(())
+    }
+
+    
+    /*
+    /// Returns RPM
+    pub async fn read_tachometer(
+        &self,
+        periph_name: &str
+    ) -> Result<f32> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.get_gpio_level_mut();
+        let res = self.usb_device.send_request(&req).await?;
+        Ok(res.uint_val() != 0)
+    }
+    */
+
+
     pub async fn analog_read(
         &self,
         periph_name: &str, 
@@ -225,6 +277,11 @@ impl PeripheralsDevice {
         config_res: &PeripheralResponse
     ) -> Result<f32> {
         let mut v = (raw as f32) / config_res.adc_format().units_per_volt();
+
+        if periph.adc().has_calibration() {
+            v += periph.adc().calibration().offset();
+            v *= periph.adc().calibration().scale();
+        }
 
         if periph.adc().has_resistor_divider() {
             let c = periph.adc().resistor_divider();

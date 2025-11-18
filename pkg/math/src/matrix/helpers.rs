@@ -1,10 +1,16 @@
-use crate::matrix::base::{Vector2f, Vector2};
+use crate::matrix::base::{Vector2f, Vector2, Vector3f};
 use crate::matrix::element::ElementType;
 
 #[inline]
 pub fn vec2f(x: f32, y: f32) -> Vector2f {
     Vector2f::from_slice(&[x, y])
 }
+
+#[inline]
+pub fn vec3f(x: f32, y: f32, z: f32) -> Vector3f {
+    Vector3f::from_slice(&[x, y, z])
+}
+
 
 #[inline]
 pub fn vec2<T: ElementType>(x: T, y: T) -> Vector2<T> {

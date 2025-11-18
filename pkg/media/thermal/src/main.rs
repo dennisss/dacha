@@ -38,6 +38,9 @@ enum Mode {
 
 #[derive(Args)]
 struct RecordCommand {
+    /// NOTE: This is only used in the viewer UI.
+    min_temp: f32,
+    max_temp: f32,
     output_path: LocalPathBuf
 }
 
@@ -50,6 +53,9 @@ struct CompressVideoCommand {
 
 #[derive(Args)]
 struct EncodeMP4Command {
+    min_temp: f32,
+    max_temp: f32,
+
     input_path: LocalPathBuf,
     output_path: LocalPathBuf
 }
@@ -193,7 +199,7 @@ async fn record(cmd: RecordCommand) -> Result<()> {
                 let x = i % 256;
 
                 // Scale to the 20 to 110C range.
-                let tt = (t - 20.0) * (1.0 / (110.0 - 20.0));
+                let tt = (t - cmd.min_temp) * (1.0 / (cmd.max_temp - cmd.min_temp));
                 let c = inferno_color(tt);
 
                 // let m = (t.max(0.0).min(255.0) * 2.0) as u8;
@@ -369,7 +375,7 @@ async fn encode_mp4(cmd: EncodeMP4Command) -> Result<()> {
                 let x = i % 256;
 
                 // Scale to the 20 to 110C range.
-                let tt = (t - 20.0) * (1.0 / (110.0 - 20.0));
+                let tt = (t - cmd.min_temp) * (1.0 / (cmd.max_temp - cmd.min_temp));
                 let c = inferno_color(tt);
 
                 // let m = (t.max(0.0).min(255.0) * 2.0) as u8;
