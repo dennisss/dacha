@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use common::errors::*;
-use nordic_tools::usb_radio::USBRadio;
+use nordic_tools::usb_radio::{USBRadio, ClockTimeResponse};
 use peripherals_proto::peripherals::*;
 
 use crate::config::*;
@@ -57,11 +57,15 @@ impl PeripheralsDevice {
             .ok_or_else(|| format_err!("No peripheral configured with name: {}", periph_name))
     }
 
-    pub async fn send_request(&mut self, req: &PeripheralRequest) -> Result<PeripheralResponse> {
+    pub async fn send_request(&self, req: &PeripheralRequest) -> Result<PeripheralResponse> {
         self.usb_device.send_request(&req).await
     }
 
-    pub async fn get_clock_time(&self) -> Result<u32> {
+    pub async fn send_request_batch(&self, req: &[PeripheralRequest]) -> Result<Vec<PeripheralResponse>> {
+        self.usb_device.send_request_batch(req).await
+    }
+
+    pub async fn get_clock_time(&self) -> Result<ClockTimeResponse> {
         self.usb_device.get_clock_time().await
         /*
         let mut req = PeripheralRequest::default();
@@ -306,7 +310,8 @@ impl PeripheralsDevice {
                 .ok_or_else(|| err_msg("Unknown thermistor model"))?;
 
             v = therm.resistance_to_temperature(r)
-                .ok_or_else(|| err_msg("Out of range resistance measurements"))?;
+                .unwrap_or(1000.0);
+                // .ok_or_else(|| err_msg("Out of range resistance measurements"))?;
         }
 
         Ok(v)
@@ -325,18 +330,44 @@ impl PeripheralsDevice {
         Ok(())
     }
 
-    pub async fn get_stepper_motor_status(&self, periph_name: &str) -> Result<StepperMotorStatus> {
+    pub fn make_enqueue_stepper_motion(
+        &self,
+        periph_name: &str,
+        motion: StepperMotorMotion
+    ) -> Result<PeripheralRequest> {
         let periph_index = self.periph_config(periph_name)?.index();
-
         let mut req = PeripheralRequest::default();
         req.set_peripheral_index(periph_index);
-        req.set_get_stepper_motor_status(true);
+        req.set_enqueue_stepper_motion(motion);
+        Ok(req)
+    }
+
+    pub async fn get_stepper_motor_status(&self, periph_name: &str) -> Result<StepperMotorStatus> {
+        let req = self.get_stepper_motor_status_request(periph_name)?;
         let res = self.usb_device.send_request(&req).await?;
         if !res.has_stepper_status() {
             return Err(err_msg("No stepper_status returned"));
         }
 
         Ok(res.stepper_status().clone())
+    }
+
+    pub fn get_stepper_motor_status_request(&self, periph_name: &str) -> Result<PeripheralRequest> {
+        let periph_index = self.periph_config(periph_name)?.index();
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.set_get_stepper_motor_status(true);
+        Ok(req)
+    }
+
+    pub async fn clear_stepper_queue(&self, periph_name: &str) -> Result<()> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.set_clear_stepper_queue(true);
+        let res = self.usb_device.send_request(&req).await?;
+        Ok(())
     }
 
 }

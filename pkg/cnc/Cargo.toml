@@ -11,9 +11,9 @@ macros = { path = "../macros" }
 protobuf = { path = "../protobuf", default-features = false }
 math = { path = "../math", default-features = false }
 common = { path = "../common", default-features = false }
-cnc_controller_proto = { path = "./controller/proto" }
+cnc_motion_proto = { path = "./motion/proto", default-features = false }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "math/alloc", "protobuf/alloc"]
-std = ["common/std", "math/std", "protobuf/std"]
+alloc = ["common/alloc", "math/alloc", "protobuf/alloc", "cnc_motion_proto/alloc"]
+std = ["common/std", "math/std", "protobuf/std", "cnc_motion_proto/std"]

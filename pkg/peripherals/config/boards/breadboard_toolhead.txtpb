@@ -45,17 +45,17 @@ peripherals {
     }
 }
 
-peripherals {
-    name: "adc"
-    adc {
-        pin_name: "A2"
-        negative_pin_name: "A3"
-        config {
-            max_voltage: 0.59
-            sample_rate: 1024
-            trigger_above: 0.1
-            trigger_below: -0.1
-            stop_on_trigger: true
-        }
-    }
-}
+# peripherals {
+#    name: "adc"
+#    adc {
+#        pin_name: "A2"
+#        negative_pin_name: "A3"
+#        config {
+#           max_voltage: 0.59
+#           sample_rate: 1024
+#           trigger_above: 0.1
+#           trigger_below: -0.1
+#           stop_on_trigger: true
+#       }
+#   }
+#}

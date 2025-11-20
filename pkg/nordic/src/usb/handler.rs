@@ -18,6 +18,10 @@ pub enum USBError {
 }
 
 pub trait USBDeviceHandler {
+    type HandleResetFuture<'a>: Future<Output = ()> + 'a
+    where
+        Self: 'a;
+
     type HandleControlRequestFuture<'a>: Future<Output = Result<(), USBError>> + 'a
     where
         Self: 'a;
@@ -33,6 +37,11 @@ pub trait USBDeviceHandler {
     type HandleNormalResponseAcknowledgedFuture<'a>: Future<Output = Result<(), USBError>> + 'a
     where
         Self: 'a;
+
+    // TODO: Implement this.
+    fn handle_reset<'a>(
+        &'a mut self,
+    ) -> Self::HandleResetFuture<'a>;
 
     fn handle_control_request<'a>(
         &'a mut self,

@@ -7,18 +7,19 @@ edition = "2018"
 path = "lib.rs"
 
 [dependencies]
-common = { path = "../../../common" }
-protobuf = { path = "../../../protobuf" }
-rpc = { path = "../../../rpc" }
+common = { path = "../../../common", default-features = false }
+protobuf = { path = "../../../protobuf", default-features = false }
+rpc = { path = "../../../rpc", optional = true }
 macros = { path = "../../../macros" }
-media_camera_proto = { path = "../../../media/camera/proto" }
-protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
-peripherals_proto = { path = "../../../peripherals/proto" }
+media_camera_proto = { path = "../../../media/camera/proto", default-features = false }
+protobuf_builtins = { path = "../../../../third_party/protobuf_builtins", default-features = false }
+peripherals_proto = { path = "../../../peripherals/proto", default-features = false }
+cnc_motion_proto = { path = "../../../cnc/motion/proto", default-features = false }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../../protobuf/compiler" }
 
 [features]
 default = ["std"]
-std = ["alloc", "common/std", "protobuf/std"]
-alloc = ["common/alloc", "protobuf/alloc"]
+std = ["alloc", "common/std", "protobuf/std", "rpc", "media_camera_proto/std", "protobuf_builtins/std", "peripherals_proto/std", "cnc_motion_proto/std"]
+alloc = ["common/alloc", "protobuf/alloc", "media_camera_proto/alloc", "protobuf_builtins/alloc", "peripherals_proto/alloc", "cnc_motion_proto/alloc"]

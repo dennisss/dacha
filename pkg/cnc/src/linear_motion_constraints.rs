@@ -138,6 +138,7 @@ impl LinearMotionConstraints {
         // Clamp
         let peak_speed = peak_speed.min(self.max_speed);
 
+        // TODO: Immediately clamp these to zero here and add extra to the cruise if needed.
         let ramp_up_time = (peak_speed - start_speed) / self.max_acceleration;
         let ramp_down_time = (peak_speed - end_speed) / self.max_acceleration;
 
@@ -226,22 +227,15 @@ mod tests {
 
     use math::matrix::vec3f;
 
-
-    /*
-    LinearMotionConstraints { start_position: vec3f(3196.8223, 0., 0.), end_position: vec3f(3200., 0., 0.), max_end_speed: 0.0, max_speed: 200.0, max_acceleration: 1000.0 }, start_velocity: vec3f(79.7231, 0., 0.)
-
-    */
-
     #[test]
     fn real_example() {
         let start_velocity = vec3f(16.762085, 0.0, 0.0);
 
         let c = LinearMotionConstraints { start_position: vec3f(3199.8596, 0.0, 0.0), end_position: vec3f(3200.0, 0.0, 0.0), max_end_speed: 0.0, max_speed: 200.0, max_acceleration: 1000.0 };
 
-
+        // Mainly verifying it doesn't crash.
         let mut out = vec![];
         let end_velocity = c.calculate_motions(start_velocity, &mut out);
-
     }
 
     #[test]

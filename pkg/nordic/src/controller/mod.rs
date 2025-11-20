@@ -8,5 +8,6 @@ mod neopixel;
 mod interrupt;
 mod adc;
 mod spi;
+mod allocator;
 
 pub use peripherals_controller::*;

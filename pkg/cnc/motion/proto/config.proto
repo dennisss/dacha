@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package cnc;
+
+message LinearMotionPlannerConfig {
+    float max_junction_deviation = 1;
+}

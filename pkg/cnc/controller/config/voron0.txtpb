@@ -1,0 +1,97 @@
+name: "voron0"
+
+devices: [
+    {
+        name: "main"
+        peripheral_config {
+            base_config: "voron0_main"
+        }
+    },
+    {
+        name: "stepper1"
+        tmc2209 {
+            device_name: "main"
+            step_peripheral: "stepper1_step"
+            uart_peripheral: "stepper_uart"
+            enable_peripheral: "stepper1_enable"
+            addr: 1
+        }
+    },
+    {
+        name: "stepper2"
+        tmc2209 {
+            device_name: "main"
+            step_peripheral: "stepper2_step"
+            uart_peripheral: "stepper_uart"
+            enable_peripheral: "stepper2_enable"
+            addr: 0
+        }
+    },
+    {
+        name: "stepper3"
+        tmc2209 {
+            device_name: "main"
+            step_peripheral: "stepper3_step"
+            uart_peripheral: "stepper_uart"
+            enable_peripheral: "stepper3_enable"
+            addr: 2
+        }
+    }
+]
+
+motion_controller {
+    motors: [
+        {
+            device_name: "stepper1"
+            steps_per_mm: 80
+        },
+        {
+            device_name: "stepper2"
+            steps_per_mm: 80
+        },
+        {
+            device_name: "stepper3"
+            steps_per_mm: 400
+            inverted: true
+        }
+    ]
+
+    endstops {
+        device_name: "main"
+        peripheral_name: "stepper1_diag"
+        motors: ["stepper1", "stepper2"]
+    }
+
+    endstops {
+        device_name: "main"
+        peripheral_name: "stepper2_diag"
+        motors: ["stepper1", "stepper2"]
+    }
+
+    #endstops {
+    #    device_name: "main"
+    #    peripheral_name: "stepper3_diag"
+    #    motors: ["stepper3"]
+    #}
+
+    geometry: [
+        {
+            core_xy {
+                x_axis_index: 0
+                y_axis_index: 1
+
+                a_motor_name: "stepper2"
+                b_motor_name: "stepper1"
+            }
+        },
+        {
+            direct {
+                motor_name: "stepper3"
+                axis_index: 2
+            }
+        }
+    ]
+
+    max_acceleration_xy: 200
+    max_acceleration_z: 20
+}

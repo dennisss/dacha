@@ -8,10 +8,8 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-extern crate math;
 #[macro_use]
 extern crate macros;
-extern crate protobuf;
 
 pub mod displacement;
 pub mod linear_motion;
@@ -20,3 +18,8 @@ pub mod linear_motion_constraints;
 #[cfg(feature = "alloc")]
 pub mod linear_motion_planner;
 pub mod kinematics;
+pub mod quadratic_stepper_motion;
+#[cfg(feature = "alloc")]
+mod quadratic_interpolation;
+#[cfg(feature = "alloc")]
+pub mod stepping;

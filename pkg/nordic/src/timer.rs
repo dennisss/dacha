@@ -32,7 +32,7 @@ impl Timer {
     }
 
     pub fn new_channel(&mut self) -> Option<TimerChannel> {
-        if self.used_channels + 1 >= self.total_channels {
+        if self.used_channels + 1 > self.total_channels {
             return None;
         }
 
@@ -44,7 +44,7 @@ impl Timer {
     }
 
     pub fn capture(&mut self) -> Option<u32> {
-        if self.used_channels + 1 >= self.total_channels {
+        if self.used_channels + 1 > self.total_channels {
             return None;
         }
 

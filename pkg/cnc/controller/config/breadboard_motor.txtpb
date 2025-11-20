@@ -1,0 +1,46 @@
+name: "breadboard_motor"
+
+devices: [
+    {
+        name: "mcu"
+        peripheral_config {
+            base_config: "breadboard_toolhead"
+        }
+    },
+    {
+        name: "stepper"
+        tmc2209 {
+            device_name: "mcu"
+            step_peripheral: "stepper_step"
+            uart_peripheral: "stepper_uart"
+            # diag_peripheral: "stepper_diag"
+            enable_peripheral: "stepper_enable"
+        }
+    }
+]
+
+motion_controller {
+    motors: [
+        {
+            device_name: "stepper"
+            steps_per_mm: 80
+        }
+    ]
+
+    endstops {
+        device_name: "mcu"
+        peripheral_name: "stepper_diag"
+        motors: ["stepper"]
+    }
+
+    geometry: [
+        {
+            direct {
+                motor_name: "stepper"
+                axis_index: 0
+            }
+        }
+    ]
+
+    max_acceleration_xy: 200
+}

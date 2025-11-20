@@ -69,6 +69,8 @@ pub struct ProtocolUSBHandler<D> {
 
 // TODO: Have a macro to auto-generate this.
 impl<D: ProtocolUSBDescriptorSet> USBDeviceHandler for ProtocolUSBHandler<D> {
+type HandleResetFuture<'a> = impl Future<Output = ()> + 'a;
+
     type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
     type HandleControlResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
@@ -77,6 +79,10 @@ impl<D: ProtocolUSBDescriptorSet> USBDeviceHandler for ProtocolUSBHandler<D> {
 
     type HandleNormalResponseAcknowledgedFuture<'a> =
         impl Future<Output = Result<(), USBError>> + 'a;
+
+fn handle_reset<'a>(
+        &'a mut self,
+    ) -> Self::HandleResetFuture<'a> { async move { () } }
 
     fn handle_control_request<'a>(
         &'a mut self,
@@ -153,8 +159,8 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
 
                 return Ok(());
             } else if setup.bRequest == ProtocolRequestType::SetNetworkConfig.to_value() {
-                // TODO: Just re-use the same buffer as used for the packet?
-                let mut raw_proto = [0u8; 256];
+                // TODO: Decouple the buffer from being 'packet' typed and length.
+                let mut raw_proto = self.packet_buf.raw_mut();
                 let n = req.read(&mut raw_proto).await?;
 
                 log!("USB SET CFG");
@@ -175,9 +181,9 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
 
                 return Ok(());
             } else if setup.bRequest == ProtocolRequestType::PeripheralRequest.to_value() {
-                // TODO: Just re-use the same buffer as used for the packet?
-                let mut raw_proto = [0u8; 256];
-                let n = req.read(&mut raw_proto).await?;
+                // TODO: Decouple the buffer from being 'packet' typed and length.
+                let mut raw_proto = self.packet_buf.raw_mut();
+                let n = req.read(raw_proto).await?;
 
                 let mut i = 0;
                 while i < n {
@@ -255,6 +261,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
             } else if setup.bRequest == ProtocolRequestType::GetNetworkConfig.to_value() {
                 log!("USB GETCFG");
 
+// TODO: Re-use the packet buffer.
                 let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
 
                 let network_config = self.radio_socket.lock_network_config().await;
@@ -273,7 +280,9 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
 
                 return Ok(());
             } else if setup.bRequest == ProtocolRequestType::ReadLog.to_value() {
-                let mut buffer = [0u8; 256];
+                // TODO: Decouple the buffer from being 'packet' typed and length.
+                let mut buffer = self.packet_buf.raw_mut();
+
                 if (setup.wLength as usize) < buffer.len() {
                     res.stale();
                     return Ok(());
@@ -293,7 +302,9 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 res.write(&buffer[0..n]).await?;
                 return Ok(());
             } else if setup.bRequest == ProtocolRequestType::PeripheralResponse.to_value() {
-                let mut buffer = [0u8; 256];
+                // TODO: Decouple the buffer from being 'packet' typed and length.
+                let mut buffer = self.packet_buf.raw_mut();
+                
                 if (setup.wLength as usize) < buffer.len() {
                     res.stale();
                     return Ok(());
@@ -301,9 +312,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
 
                 // TODO: Don't consume unless the host ACKs the data?
                 if let Some(controller) = self.peripherals_controller {
-                    // TODO: Add the length prefix to the buffer so that we can handle empty protos.
-                    let n = controller.read_response(&mut buffer).await.unwrap_or(0);
-
+                                        let n = controller.read_response(buffer).await;
                     res.write(&buffer[0..n]).await?;
                     return Ok(());
                 }

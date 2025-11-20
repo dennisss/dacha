@@ -23,7 +23,7 @@ pub struct DevicesController {
     time: Arc<TimeSyncer>,
 }
 
-// TODO: Need to do propagation of ServiceResources.
+// TODO: Need to do propagation of ServiceResources (especially for each device's background thread).
 
 struct State {
     entries: HashMap<String, DeviceEntry, FastHasherBuilder>
@@ -84,7 +84,7 @@ impl DevicesController {
         Ok(inst)
     }
 
-    async fn get_peripherals_device(&self, name: &str) -> Result<Arc<PeripheralsDevice>> {
+    pub async fn get_peripherals_device(&self, name: &str) -> Result<Arc<PeripheralsDevice>> {
         let state = self.state.read().await?;
         match state.entries.get(name) {
             Some(DeviceEntry::PeripheralsDevice(d)) => Ok(d.clone()),
@@ -102,8 +102,7 @@ impl DevicesController {
         }
     }
 
-    pub async fn to_device_time(&self, device_name: &str, time: Instant) -> Result<u32> {
-        self.time.to_device_time(device_name, time).await
+    pub fn time(&self) -> &TimeSyncer {
+        &self.time
     }
-
 }

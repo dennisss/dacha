@@ -4,6 +4,7 @@ use common::errors::*;
 use common::array_ref;
 use peripherals_service::device::PeripheralsDevice;
 use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorStatus, TMC2209Config};
+use peripherals_proto::peripherals::PeripheralRequest;
 
 use crate::tmc2209::registers::*;
 use crate::tmc2209::utils::Register;
@@ -68,10 +69,13 @@ impl TMC2209Device {
 
         // This is basically the maximum value of TSTEP at which StallGuard will work.
         // (basically disable stallguard at low speeds)
-        inst.write_register(&TCOOLTHRS::from_raw(200)).await?;
+        inst.write_register(&TCOOLTHRS::from_raw(/* (1 << 20) - 1 */ 600)).await?;
 
-        // SG_RESULT <= 2*100 will trigger DIAG to fire
-        inst.write_register(&SGTHRS::from_raw(100)).await?;
+        // SG_RESULT <= 2*10 will trigger DIAG to fire
+        inst.write_register(&SGTHRS::from_raw(50)).await?;
+
+        // Disable CoolStep
+        inst.write_register(&COOLCONF::from_raw(0)).await?;
 
 
         // TODO: Should I explicitly disable COOLCONG
@@ -134,6 +138,15 @@ impl TMC2209Device {
 
         Ok(inst)
     }
+    
+    // TODO: Hide this.
+    pub fn device(&self) -> &PeripheralsDevice {
+        &self.device
+    }
+
+    pub fn device_name(&self) -> &str {
+        self.config.device_name()
+    }
 
     pub async fn read_register<Reg: Register>(&self) -> Result<Reg> {
         let mut raw = self.read_register_raw(Reg::addr()).await?;
@@ -141,11 +154,13 @@ impl TMC2209Device {
     }
 
     async fn read_register_raw(&self, register_addr: u8) -> Result<u32> {
+        // println!("READ: {} on {}", register_addr, self.config.addr());
+
         let mut out = [0u8; 8];
 
         let n = self.device.uart_transfer(
             self.config.uart_peripheral(),
-            &create_tmc2209_read_request(0, register_addr),
+            &create_tmc2209_read_request(self.config.addr() as u8, register_addr),
             &mut out[..]
         ).await?;
 
@@ -161,9 +176,11 @@ impl TMC2209Device {
     }
 
     async fn write_register_raw(&mut self, register_addr: u8, value: u32) -> Result<()> {
+        // println!("WRITE: {} on {}", register_addr, self.config.addr());
+
         self.device.uart_transfer(
             self.config.uart_peripheral(),
-            &create_tmc2209_write_request(0, register_addr, value),
+            &create_tmc2209_write_request(self.config.addr() as u8, register_addr, value),
             &mut []
         ).await?;
 
@@ -190,13 +207,33 @@ impl TMC2209Device {
         self.device.enqueue_stepper_motion(self.config.step_peripheral(), motion).await
     }
 
+    pub fn make_enqueue_stepper_motion(
+        &self,
+        motion: StepperMotorMotion
+    ) -> Result<PeripheralRequest> {
+        self.device.make_enqueue_stepper_motion(self.config.step_peripheral(), motion)
+    }
+
     pub async fn get_stepper_motor_status(&self) -> Result<StepperMotorStatus> {
         self.device.get_stepper_motor_status(self.config.step_peripheral()).await
+    }
+
+    pub fn get_stepper_motor_status_request(&self) -> Result<PeripheralRequest> {
+        self.device.get_stepper_motor_status_request(self.config.step_peripheral())
     }
 
     pub async fn sg_result(&self) -> Result<u16> {
         let r = self.read_register::<SG_RESULT>().await?;
         Ok(r.sg_result())
+    }
+
+    pub async fn tstep(&self) -> Result<u32> {
+        let r = self.read_register::<TSTEP>().await?;
+        Ok(r.tstep())
+    }
+
+    pub async fn clear_stepper_queue(&self) -> Result<()> {
+        self.device.clear_stepper_queue(self.config.step_peripheral()).await
     }
 
     /*

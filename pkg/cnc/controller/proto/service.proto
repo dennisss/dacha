@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package cnc;
+
+import "pkg/peripherals/proto/service.proto";
+import "pkg/cnc/motion/proto/config.proto";
+
+
+service Controller {
+    rpc Execute (ExecuteRequest) returns (ExecuteResponse);
+}
+
+message ExecuteRequest {
+    repeated MoveToCommand move_to = 1;
+}
+
+message ExecuteResponse {
+
+}
+
+message MoveToCommand {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+}

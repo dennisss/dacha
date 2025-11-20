@@ -74,6 +74,8 @@ message TMC2209Config {
     string enable_peripheral = 4;
 
     string device_name = 5;
+
+    uint32 addr = 6;
 }
 
 message ADCCalibration {

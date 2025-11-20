@@ -6,10 +6,13 @@ extern crate parsing;
 extern crate macros;
 
 use common::errors::*;
+use file::project_path;
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let elf = elf::ELF::read("target/debug/sys").await?;
+    let data = file::read(project_path!("built/pkg/nordic/nordic_radio_dongle")).await?;
+
+    let elf = elf::ELF::parse(&data)?;
 
     println!("Build ID: {:x?}", elf.build_id()?);
 

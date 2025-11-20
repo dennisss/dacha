@@ -1,0 +1,114 @@
+name: "voron0_main"
+base_config: "nrf52840_itsybitsy"
+
+peripherals {
+    name: "stepper_uart"
+    uart {
+        tx_pin_name: "D10"
+        rx_pin_name: "D11"
+        config {
+            baud_rate: 115200
+        }
+    }
+}
+
+######################################
+
+peripherals {
+    name: "stepper1_diag"
+    gpio {
+        pin_name: "D13"
+        config {
+            is_input: true
+            pull_down: true
+            interrupt: RISING_EDGE
+        }
+    }
+}
+peripherals {
+    name: "stepper2_diag"
+    gpio {
+        pin_name: "SCL"
+        config {
+            is_input: true
+            pull_down: true
+            interrupt: RISING_EDGE
+        }
+    }
+}
+peripherals {
+    name: "stepper3_diag"
+    gpio {
+        pin_name: "D2"
+        config {
+            is_input: true
+            pull_down: true
+            interrupt: RISING_EDGE
+        }
+    }
+}
+
+######################################
+
+# Drive low to enable the driver.
+# Note this is pulled up by the Bigtreetech driver.
+
+peripherals {
+    name: "stepper1_enable"
+    gpio {
+        pin_name: "D12"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+peripherals {
+    name: "stepper2_enable"
+    gpio {
+        pin_name: "SDA"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+peripherals {
+    name: "stepper3_enable"
+    gpio {
+        pin_name: "MISO"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+######################################
+
+peripherals {
+    name: "stepper1_step"
+    stepper {
+        step_pin_name: "D9"
+        dir_pin_name: "D7"
+    }
+}
+
+peripherals {
+    name: "stepper2_step"
+    stepper {
+        step_pin_name: "TX_D1"
+        dir_pin_name: "RX_D0"
+    }
+}
+
+peripherals {
+    name: "stepper3_step"
+    stepper {
+        step_pin_name: "MOSI"
+        dir_pin_name: "SCK"
+    }
+}
+

@@ -50,7 +50,8 @@ use common::segmented_buffer::SegmentedBuffer;
 use executor::sync::AsyncMutex;
 use peripherals_proto::peripherals::{
     PeripheralRequest, PeripheralRequestCommandCase, PeripheralResponse,
-    PeripheralResponse_ErrorCode, ConfigureGPIO_InterruptPolarity
+    PeripheralResponse_ErrorCode, ConfigureGPIO_InterruptPolarity,
+    PeripheralResponseResponseCase
 };
 use peripherals::raw::gpiote::GPIOTE;
 use peripherals::raw::saadc::SAADC;
@@ -87,7 +88,7 @@ use super::tachometer::TachometerPeripheralThread;
 use super::temp::TemperaturePeripheralThread;
 use super::timeout::TimeoutPeripheralThread;
 use super::uart::UartTransmitPeripheralThread;
-use super::stepper::{StepperMotorController, StepperMotion, StepperPeripheralThread};
+use super::stepper::{StepperMotorController, StepperPeripheralThread};
 use super::interrupt::InterruptPeripheralThread;
 use super::adc::{ADCSamplePeripheralThread, ADCCalibratePeripheralThread, read_adc_buffer};
 use super::spi::SPIPeripheralThread;
@@ -141,10 +142,17 @@ pub(super) struct State {
 
     pub adc: Option<WindowADC>,
 
+    pub batch_ack: Option<BatchAck>,
+
     /// Stores PeripheralResponse protos that need to be read back by the host.
     //
     // TODO: Clear this on USB reset.
     pub response_buffer: SegmentedBuffer<[u8; RESPONSE_BUFFER_SIZE]>,
+}
+
+struct BatchAck {
+    first_sequence: u32,
+    num_requests: u32,
 }
 
 pub(super) enum PeripheralEntry {
@@ -338,6 +346,7 @@ impl PeripheralsController {
                 spim,
                 timer,
                 adc: Some(adc),
+                batch_ack: None,
                 response_buffer: SegmentedBuffer::new([0u8; RESPONSE_BUFFER_SIZE]),
             }),
         }
@@ -369,9 +378,38 @@ impl PeripheralsController {
         });
     }
 
-    pub async fn read_response(&self, out: &mut [u8]) -> Option<usize> {
+    /// Reads response data to be sent back to the host.
+    /// Each response is prefixed by a 1 byte length field so that
+    /// multiple responses can be send back at once. This can also
+    /// be safely padded with zeros if needed. 
+    pub async fn read_response(&self, out: &mut [u8]) -> usize {
         lock!(state <= self.state.lock().await.unwrap(), {
-            state.response_buffer.read(out)
+            // Putting this here is probably fine as the host will always write
+            // all requests before getting responses 
+            if let Some(batch_ack) = state.batch_ack.take() {
+                self.write_batch_ack(&mut state, batch_ack);
+            }
+            
+            let mut n = 0;
+            
+            loop {
+                let len = match state.response_buffer.peek() {
+                    Some(v) => v,
+                    None => break
+                };
+
+                if out.len() < n + 1 + len {
+                    break;
+                }
+
+                out[n] = len as u8;
+                n += 1;
+
+                let _ = state.response_buffer.read(&mut out[n..]);
+                n += len;
+            }
+
+            n
         })
     }
 
@@ -1011,14 +1049,6 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::EnqueueStepperMotion(req) => {
                 self.check_fully_configured(state)?;
 
-                let motion = StepperMotion {
-                    direction: req.direction(),
-                    next_time: req.next_time(),
-                    next_velocity: req.next_velocity(),
-                    acceleration: req.acceleration(),
-                    num_steps: req.num_steps() as usize
-                };
-
                 let stepper = match &mut state.entries[peripheral_idx] {
                     PeripheralEntry::Stepper { controller } => controller,
                     _ => {
@@ -1028,7 +1058,7 @@ impl PeripheralsController {
                     }
                 };
 
-                if !stepper.enqueue_motion(motion) {
+                if !stepper.enqueue_motion(req) {
                     return Err(ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                     ));
@@ -1236,10 +1266,57 @@ impl PeripheralsController {
             return;
         }
 
+        let has_response = match res.response_case() {
+            PeripheralResponseResponseCase::NOT_SET => false,
+            _ => true
+        };
+
+        if res.error_code() == PeripheralResponse_ErrorCode::NO_ERROR && !has_response {
+            if let Some(last_batch_ack) = &mut state.batch_ack {
+                if last_batch_ack.first_sequence + last_batch_ack.num_requests + 1 == res.request_sequence() {
+                    last_batch_ack.num_requests += 1;
+                    return;
+                }
+
+                let batch_ack = state.batch_ack.take().unwrap();
+                self.write_batch_ack(state, batch_ack);
+            }
+
+            state.batch_ack = Some(BatchAck {
+                first_sequence: res.request_sequence(),
+                num_requests: 0
+            });
+            return;
+        }
+
+        self.write_response_raw(state, res);
+    }
+
+    fn write_batch_ack(&self, state: &mut State, batch_ack: BatchAck) {
+        let mut res = PeripheralResponse::default();
+        res.set_request_sequence(batch_ack.first_sequence);
+        res.set_ack_next_n(batch_ack.num_requests);
+        self.write_response_raw(state, &res);
+    }
+
+    fn write_response_raw(&self, state: &mut State, res: &PeripheralResponse) {
         // TODO: We can just directly serialize to the output buffer if we take out a
         // view?
         let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
         res.serialize_to(&protobuf::SerializeOptions::default(), &mut raw_proto).unwrap();
-        state.response_buffer.write(&raw_proto);
+        let overflow = state.response_buffer.write(&raw_proto);
+
+        // TODO: Think about adding this.
+        /*
+        if overflow {
+            let mut res = PeripheralResponse::default();
+            res.set_request_sequence(0xff as u32);
+            raw_proto.clear();
+            res.serialize_to(&protobuf::SerializeOptions::default(), &mut raw_proto).unwrap();
+            state.response_buffer.clear();
+            state.response_buffer.write(&raw_proto);
+
+        }
+        */
     }
 }

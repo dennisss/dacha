@@ -3,6 +3,8 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
+use std::time::Duration;
+
 use common::io::{Writeable, Readable};
 use common::errors::*;
 use net::tcp::TcpStream;
@@ -80,13 +82,64 @@ impl SCPIClient {
         Ok(res.to_string())
     }
 
+    pub async fn run_command_noreply(&mut self, cmd: &str) -> Result<()> {
+        if cmd.contains("\n") {
+            return Err(err_msg("Invalid command"));
+        }
+
+        let request = format!("{}\n", cmd);        
+        self.client.write_all(request.as_bytes()).await?;
+
+        Ok(())
+    }
+
+    pub async fn run_binary_command(
+        &mut self,
+        cmd: &str,
+        response_size: Option<usize>
+    ) -> Result<Vec<u8>> {
+        if cmd.contains("\n") {
+            return Err(err_msg("Invalid command"));
+        }
+
+        let request = format!("{}\n", cmd);        
+        self.client.write_all(request.as_bytes()).await?;
+        
+        let mut buf = vec![];
+
+        if let Some(response_size) = response_size {
+            buf.resize(response_size, 0);
+            self.client.read_exact(&mut buf).await?;
+        } else {
+            self.read_binary_data_timeout(&mut buf).await?;
+        }
+
+        Ok(buf)
+    }
+
+    async fn read_binary_data_timeout(&mut self, out: &mut Vec<u8>) -> Result<()> {
+        loop {
+            let mut chunk = vec![0u8; 4096];
+            let n = match executor::timeout(Duration::from_millis(100), self.client.read(&mut chunk)).await {
+                Ok(v) => v?,
+                Err(_) => break
+            };
+
+            if n == 0 {
+                break;
+            }
+
+            out.extend_from_slice(&chunk[..n]);   
+        }
+
+        Ok(())
+    }
+
     /// Known identity strings:
     /// Siglent Technologies,SPD3303X-E,SPD3XIDQ5R5553,1.01.01.02.07R2,V3.0
     /// Siglent Technologies,SDM3055,SDM35GBX5R0872,1.01.01.22R1
     pub async fn identity(&mut self) -> Result<SCPIIdentity> {
         let data = self.run_command("*IDN?").await?;
-
-        println!("{}", data);
 
         let parts = data.splitn(4, ",").collect::<Vec<&str>>();
         if parts.len() != 4 {

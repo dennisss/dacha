@@ -1,5 +1,5 @@
 [package]
-name = "media_camera_proto"
+name = "cnc_motion_proto"
 version = "0.0.0"
 edition = "2018"
 
@@ -9,14 +9,12 @@ path = "lib.rs"
 [dependencies]
 common = { path = "../../../common", default-features = false }
 protobuf = { path = "../../../protobuf", default-features = false }
-rpc = { path = "../../../rpc", optional = true }
 macros = { path = "../../../macros" }
-protobuf_builtins = { path = "../../../../third_party/protobuf_builtins", default-features = false }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../../protobuf/compiler" }
 
 [features]
 default = ["std"]
-std = ["alloc", "common/std", "protobuf/std", "rpc", "protobuf_builtins/std"]
-alloc = ["common/alloc", "protobuf/alloc", "protobuf_builtins/alloc"]
+std = ["alloc", "common/std", "protobuf/std"]
+alloc = ["common/alloc", "protobuf/alloc"]

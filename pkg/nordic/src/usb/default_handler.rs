@@ -15,6 +15,8 @@ pub struct USBDeviceDefaultHandler<D> {
 }
 
 impl<D: DescriptorSet + 'static> USBDeviceHandler for USBDeviceDefaultHandler<D> {
+    type HandleResetFuture<'a> = impl Future<Output = ()> + 'a;
+    
     type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
     type HandleControlResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
@@ -23,6 +25,10 @@ impl<D: DescriptorSet + 'static> USBDeviceHandler for USBDeviceDefaultHandler<D>
 
     type HandleNormalResponseAcknowledgedFuture<'a> =
         impl Future<Output = Result<(), USBError>> + 'a;
+
+    fn handle_reset<'a>(
+        &'a mut self,
+    ) -> Self::HandleResetFuture<'a> { async move { () } }
 
     fn handle_control_request<'a>(
         &'a mut self,

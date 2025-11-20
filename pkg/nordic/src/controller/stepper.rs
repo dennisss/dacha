@@ -16,7 +16,7 @@
 // is compared, then on clock sync 'i+1' the PPI will notice and trigger the GPIOTE event.
 //
 // Other important details:
-// - Up to 16 stepper motions can be enqueued at a given time
+// - Up to MAX_ENQUEUED_MOTIONS stepper motions can be enqueued at a given time
 // - This requires a background thread to be running to continously react to EVENTS_COMPARE, motion plan changes and enqueue new steps.
 
 use common::fixed::queue::FixedQueue;
@@ -28,8 +28,11 @@ use common::register::RegisterWrite;
 use peripherals::raw::EventRegister;
 use peripherals::raw::Interrupt;
 use peripherals::raw::TaskRegister;
-use peripherals_proto::peripherals::StepperMotorStatus;
+use peripherals_proto::peripherals::{StepperMotorStatus, StepperMotorMotion, StepperMotorMotion_Direction};
+use cnc::quadratic_stepper_motion::{QuadraticStepperMotion, StepCount};
 
+
+use crate::controller::allocator::Box;
 use crate::gpio::GPIOPin;
 use crate::gpio::{PinDirection, PinLevel, GPIO};
 use crate::pins::{PeripheralPin, PeripheralPinHandle};
@@ -38,16 +41,17 @@ use crate::gpiote::*;
 use crate::ppi::*;
 use crate::controller::{PeripheralsController, PeripheralEntry};
 
-const MAX_ENQUEUED_MOTIONS: usize = 8;
+const MAX_ENQUEUED_MOTIONS: usize = 1024;
 
 /// Minimum time from now to the next step pulse (in 16MHz clock cycles).
-const MIN_STEP_TIME: u32 = 10;
+/// Theoretical minimum is around 2, but its good to have a buffer if I estimated wrong.
+const MIN_STEP_TIME: u32 = 50;
 
 /// Maximum time from now to the next step pulse (in 16MHz clock cycles).
 ///
 /// Note that this is also used to guard against steps that we missed since these will
 /// appear as times that overflowed and are 'before' the current time (have very large duration)
-const MAX_STEP_TIME: u32 = 16_000_000;  // 1 second
+const MAX_STEP_TIME: u32 = 2 * 16_000_000;  // 2 seconds
 
 
 define_thread!(
@@ -77,18 +81,12 @@ async fn stepper_worker_thread(
             return;
         }
 
+        // TODO: Make this a higher priority interrupt compared to other ones.
         wait_for_irq(Interrupt::TIMER0).await;
     }
 }
 
 
-pub struct StepperMotion {
-    pub direction: bool,
-    pub next_time: u32,
-    pub next_velocity: u32,
-    pub acceleration: u32,
-    pub num_steps: usize,
-}
 
 pub struct StepperMotorController {
     step_timer_channel: TimerChannel,
@@ -99,13 +97,15 @@ pub struct StepperMotorController {
 
     dir_pin: GPIOPin,
 
-    motion_queue: FixedQueue<StepperMotion, MAX_ENQUEUED_MOTIONS>,
+    motion_queue: Box<FixedQueue<QuadraticStepperMotion, MAX_ENQUEUED_MOTIONS>>,
 
     /// If true, then the step timer channel has a 'live' valid step time enqueued.
     ///
     /// The liveness of the CC register is controlled by whether or not the PPI channel
     /// reading from it is enabled.
     have_enqueued_step: bool,
+
+    last_direction: bool,
 
     stats: Stats
 }
@@ -162,8 +162,9 @@ impl StepperMotorController {
             step_ppi_channel,
             step_gpiote_channel,
             dir_pin,
-            motion_queue: FixedQueue::new(),
+            motion_queue: Box::default(),
             have_enqueued_step: false,
+            last_direction: false,
             stats: Stats::default(),
         })
     }
@@ -172,14 +173,28 @@ impl StepperMotorController {
     /// Note that internally we assume that all motions are ordered and don't overlap.
     ///
     /// Returns whether or not there was space to fit this motion.
-    pub fn enqueue_motion(&mut self, motion: StepperMotion) -> bool {
+    pub fn enqueue_motion(&mut self, req: &StepperMotorMotion) -> bool {
         if self.motion_queue.is_full() {
             return false;
         }
 
-        if motion.num_steps == 0 {
+        if req.num_steps() == 0 {
             return true;
         }
+
+        let direction = match req.direction() {
+            StepperMotorMotion_Direction::UNCHANGED => self.last_direction,
+            StepperMotorMotion_Direction::FORWARD => true,
+            StepperMotorMotion_Direction::BACKWARD => false
+        };
+        self.last_direction = direction;
+
+        let motion = QuadraticStepperMotion {
+            next_step_time: req.next_step_time(),
+            next_step_duration: req.next_step_duration(),
+            step_duration_increment: req.step_duration_increment(),
+            num_steps: StepCount::new(req.num_steps(), direction),
+        };
 
         self.motion_queue.push_back(motion);
         true
@@ -243,7 +258,7 @@ impl StepperMotorController {
             None => return false
         };
 
-        let next_time = motion.next_time;
+        let next_time = motion.next_step_time;
 
         // Amount of time remaining between now and the next step.
         let delta_time = {
@@ -269,19 +284,17 @@ impl StepperMotorController {
         let _ = self.step_timer_channel.pending_event();
 
         // TODO:
-        self.dir_pin.write(if motion.direction {
+        self.dir_pin.write(if motion.num_steps.direction() {
             PinLevel::High
         } else {
             PinLevel::Low
         });
 
-        self.step_timer_channel.set_compare_value(motion.next_time);
+        self.step_timer_channel.set_compare_value(motion.next_step_time);
 
-        motion.next_time = motion.next_time.wrapping_add(motion.next_velocity);
-        motion.next_velocity = motion.next_velocity.wrapping_add(motion.acceleration);
-        motion.num_steps -= 1;
+        motion.next();
 
-        if motion.num_steps == 0 {
+        if motion.num_steps.count() == 0 {
             self.motion_queue.pop_front();
         }
 

@@ -24,6 +24,11 @@ peripherals_service = { path = "../../peripherals/service" }
 peripherals_proto = { path = "../../peripherals/proto" }
 cnc_controller_proto = { path = "./proto" }
 electronics = { path = "../../peripherals/electronics" }
+cluster_client = { path = "../../container/client" }
+container_proto = { path = "../../container/proto" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
+gcode = { path = "../gcode" }
 color = { path = "../../image/color" }
 scpi = { path = "../../peripherals/scpi" }
 cnc = { path = ".." }

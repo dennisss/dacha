@@ -196,6 +196,8 @@ struct DownloadingState {
 
 // TODO: Have a macro to auto-generate this.
 impl USBDeviceHandler for BootloaderUSBHandler {
+    type HandleResetFuture<'a> = impl Future<Output = ()> + 'a;
+
     type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
     type HandleControlResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
@@ -204,6 +206,10 @@ impl USBDeviceHandler for BootloaderUSBHandler {
 
     type HandleNormalResponseAcknowledgedFuture<'a> =
         impl Future<Output = Result<(), USBError>> + 'a;
+
+    fn handle_reset<'a>(
+        &'a mut self,
+    ) -> Self::HandleResetFuture<'a> { async move { () } }
 
     fn handle_control_request<'a>(
         &'a mut self,

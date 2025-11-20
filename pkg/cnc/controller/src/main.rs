@@ -13,7 +13,7 @@ use math_compute::io::CSVReader;
 use common::hash::FastHasherBuilder;
 use cnc_controller::toolhead::commands::*;
 use electronics::*;
-use cnc_controller::service::ControllerServiceCommand;
+use cnc_controller::service::*;
 
 
 /*
@@ -171,6 +171,9 @@ enum Mode {
     #[arg(name = "service")]
     Service(ControllerServiceCommand),
 
+    #[arg(name = "execute")]
+    Execute(ExecuteCommand),
+
     #[arg(name = "measure-bed")]
     MeasureBed(MeasureBedCommand),
 
@@ -283,15 +286,15 @@ use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorStatus};
 
 async fn step(n: u32, device: &PeripheralsDevice, driver: &TMC2209Device) -> Result<()> {
 
-    let time = device.get_clock_time().await?;
+    let time = device.get_clock_time().await?.remote_time;
 
     let mut start_time = time + 4_000_000;
 
     {
         let mut m = StepperMotorMotion::default();
-        m.set_next_time(start_time);
+        m.set_next_step_time(start_time);
         m.set_num_steps(n);
-        m.set_next_velocity(4_000u32);
+        m.set_next_step_duration(4_000u32);
         driver.enqueue_stepper_motion(m).await?;
     }
 
@@ -476,6 +479,7 @@ async fn main() -> Result<()> {
 
     match args.mode {
         Mode::Service(cmd) => cmd.run().await,
+        Mode::Execute(cmd) => cmd.run().await,
         Mode::MeasureBed(cmd) => {
             cmd.run().await
         }

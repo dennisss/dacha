@@ -73,6 +73,12 @@ impl<T, const LEN: usize> FixedQueue<T, LEN> {
     }
 }
 
+impl<T, const LEN: usize> Default for FixedQueue<T, LEN> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, const LEN: usize> Drop for FixedQueue<T, LEN> {
     fn drop(&mut self) {
         for i in 0..self.length {

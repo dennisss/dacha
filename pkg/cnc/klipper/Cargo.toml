@@ -1,0 +1,18 @@
+[package]
+name = "klipper"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+macros = { path = "../../macros" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+crypto = { path = "../../crypto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

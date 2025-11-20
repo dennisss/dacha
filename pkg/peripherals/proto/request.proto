@@ -9,6 +9,7 @@ import "pkg/protobuf/compiler/proto/extensions.proto";
 package peripherals;
 
 message PeripheralRequest {
+    // TODO: This can be compressed across consecutive commands.
     uint32 peripheral_index = 1;
 
     // Sequence number for this request.
@@ -180,6 +181,10 @@ message PeripheralResponse {
         StepperMotorStatus stepper_status = 7;
 
         ADCFormat adc_format = 8;
+
+        // This request and this number after it with consecutive sequences will all be acked
+        // with empty NO_ERROR responses. 
+        uint32 ack_next_n = 9;
     }
 }
 
@@ -321,30 +326,22 @@ message ConfigureStepperMotor {
 // TODO: Need to be able to stop all stepper operations immediately in an emergency stop mode.
 
 message StepperMotorMotion {
-    bool direction = 1;
-    uint32 next_time = 2;
-    uint32 next_velocity = 3;
-    uint32 acceleration = 4;
-    uint32 num_steps = 5;
+    enum Direction {
+        UNCHANGED = 0;
+        FORWARD = 1;
+        BACKWARD = 2;
+    }
 
-    // Time at which the first step begins to move.
+    // TODO: We can get rid of this and use a separate command?
+    // (or make this an optional field or enum)
+    Direction direction = 1;
+
+    // See QuadraticStepperMotion
     // Assuming num_steps > 0, this is the time at which we first flip the 'STEP' pin. 
-    // uint64 initial_time = 1;
-
-    // NOTE: All steps in one motion are in the same direction.
-    // bool forwards = 2;
-
-    //uint32 num_steps = 3;
-
-    // 
-    //uint32 initial_time_delta = 4;
-
-    // Amount the time delta between steps changes between each step.
-    // int32 acceleration_per_step = 5;
-}
-
-message EnqueueStepperMotionRequest {
-    StepperMotorMotion motion = 1;
+    uint32 next_step_time = 2;
+    uint32 next_step_duration = 3;
+    sint32 step_duration_increment = 4;
+    uint32 num_steps = 5;
 }
 
 message StepperMotorStatus {

@@ -2,13 +2,15 @@ use alloc::{collections::VecDeque, vec::Vec};
 
 use math::matrix::cwise_binary_ops::*;
 use math::matrix::Vector3f;
-use cnc_controller_proto::cnc::LinearMotionPlannerConfig;
+use cnc_motion_proto::cnc::LinearMotionPlannerConfig;
 
 use crate::displacement::*;
 use crate::linear_motion::*;
 use crate::linear_motion_constraints::*;
 
 
+/// Plans a sequence of linear motions that are chained one
+/// immediately after another in time.
 pub struct LinearMotionPlanner {
     config: LinearMotionPlannerConfig,
     start_position: Vector3f,
@@ -61,6 +63,10 @@ impl LinearMotionPlanner {
             queue: VecDeque::new(),
             config,
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.queue.clear();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -129,7 +135,7 @@ impl LinearMotionPlanner {
                 .min(last_motion.constraints.max_speed)
                 .min(max_speed);
 
-            println!("Corner: {}", last_motion.max_cornering_speed);
+            // println!("Corner: {}", last_motion.max_cornering_speed);
         }
 
         // Append to queue.
@@ -137,7 +143,7 @@ impl LinearMotionPlanner {
             constraints: LinearMotionConstraints {
                 start_position,
                 end_position,
-                max_end_speed: 0.0,
+                max_end_speed: -1.0, // Force it to update during backpropagation.
                 max_speed,
                 max_acceleration,
             },
@@ -171,11 +177,15 @@ impl LinearMotionPlanner {
         // The final motion must end at rest.
         let mut next_max_start_speed: f32 = 0.0;
 
-        // TODO: Always update the last one but stop if there are no other changes.
         for i in (0..self.queue.len()).rev() {
             let motion = &mut self.queue[i];
 
-            motion.constraints.max_end_speed = next_max_start_speed.max(motion.max_cornering_speed);
+            let new_max_end_speed = next_max_start_speed.max(motion.max_cornering_speed);
+            if (new_max_end_speed - motion.constraints.max_end_speed).abs() < 0.001 {
+                break;
+            }
+
+            motion.constraints.max_end_speed = new_max_end_speed;
 
             // Amount of space in which we can accelerate/decelerate.
             let distance = (&motion.constraints.end_position - &motion.constraints.start_position).norm();
@@ -257,16 +267,6 @@ impl LinearMotionPlanner {
             }
         }
     }
-
-    /*
-    pub fn next(&mut self, out: &mut Vec<LinearMotion>) {
-        // TODO: Check if it is fully constrained yet.
-
-        if let Some(motion) = self.queue.pop_front() {
-            self.start_velocity = motion.constraints.calculate_motions(self.start_velocity.clone(), out);
-        }
-    }
-    */
 }
 
 #[cfg(test)]

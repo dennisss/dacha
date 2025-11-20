@@ -62,7 +62,7 @@ struct DeviceEntry {
 
 struct TimeSample {
     local_time: Instant,
-    mcu_time: u32
+    mcu_time: u64
 }
 
 
@@ -114,10 +114,27 @@ impl TimeSyncer {
             }
 
             lock!(state <= shared.state.write().await?, {
-                for (name, sample) in new_samples {
+                for (name, mut sample) in new_samples {
                     let entry = state.devices.get_mut(&name).unwrap();
-                    if entry.last_sample.is_none() {
-                        eprintln!("Time synced for {}", name);
+                    
+                    match &entry.last_sample {
+                        Some(last_sample) => {
+                            let mut cycle = last_sample.mcu_time >> 32;
+
+                            let lower_mask = 0xFFFFFFFF;
+
+                            if (last_sample.mcu_time & lower_mask) > sample.mcu_time {
+                                // Assumption is that we get at least one new sample each time before the clock rolls over
+                                println!("Roll over...");
+                                cycle += 1;
+                            }
+
+                            sample.mcu_time |= cycle << 32;
+
+                        }
+                        None => {
+                            eprintln!("Time synced for {}", name);
+                        }
                     }
                     
                     entry.last_sample = Some(sample);
@@ -129,29 +146,55 @@ impl TimeSyncer {
         }
     }
 
+    // NOTE: This will return a mcu_time sample with only 32bits of informaiton.
     async fn get_time_sample(device: &PeripheralsDevice) -> Result<TimeSample> {
-        let start_time = Instant::now();
-
         let mcu_time = device.get_clock_time().await?;
 
-        let end_time = Instant::now();
+        let rtt = mcu_time.local_response_time - mcu_time.local_request_time;
 
-        let rtt = end_time - start_time;
+        let local_time = mcu_time.local_response_time + (rtt / 2);
 
-        let local_time = start_time + (rtt / 2);
-
+        // TODO: Even if the RTT is too high, we can still use it to update the high bits of the clock.
         if rtt > MAX_RTT {
             return Err(format_err!("RTT too large: {:?}", rtt));
         }
 
         Ok(TimeSample {
             local_time,
-            mcu_time
+            mcu_time: mcu_time.remote_time as u64
         })
     }
 
+    /// Blocks untill all MCUs have a synced time.
+    pub async fn wait_for_sync(&self) -> Result<()> {
+        // TODO: Also check that the time isn't too old.
+        
+        loop {
+            {
+                let state = self.shared.state.read().await?;
+
+                let mut all_good = true;
+
+                for dev in state.devices.values() {
+                    if dev.last_sample.is_none() {
+                        all_good = false;
+                        break;
+                    }
+                }
+
+                if all_good {
+                    break;
+                }
+            }
+
+            executor::sleep(Duration::from_millis(100)).await?;
+        }
+
+        Ok(())
+    }
+
     // TODO: Do not allow very far into the future estimates (or far into the past).
-    pub async fn to_device_time(&self, device_name: &str, time: Instant) -> Result<u32> {
+    pub async fn to_device_time(&self, device_name: &str, time: Instant) -> Result<DeviceTime> {
         let state = self.shared.state.read().await?;
 
         let dev = state.devices.get(device_name)
@@ -161,7 +204,7 @@ impl TimeSyncer {
             .ok_or_else(|| err_msg("Device is not time synced yet"))?;
 
         let delta: Duration;
-        let sign: i32;
+        let sign: i64;
 
         if time >= sample.local_time {
             delta = time - sample.local_time;
@@ -175,13 +218,49 @@ impl TimeSyncer {
             return Err(err_msg("Time too far in the future or device sync too stale"));
         }
 
+        // TODO: Handle times that are before the start of the MCU clock?
+
         // TODO: Use integer math?
-        let mut delta = (delta.as_secs_f64() * (MCU_CLOCK_FREQUENCY as f64)).round() as i32;
+        let mut delta = (delta.as_secs_f64() * (MCU_CLOCK_FREQUENCY as f64)).round() as i64;
         delta *= sign;
 
-        let out = sample.mcu_time.wrapping_add(delta as u32);
+        let out = (sample.mcu_time as i64) + delta;
+        assert!(out >= 0);
 
-        Ok(out)
+        Ok(DeviceTime {
+            value: out as u64
+        })
     }
 }
+
+// TODO: Prevent comparisons across different devices.
+#[derive(PartialOrd, PartialEq, Debug, Clone, Copy, Eq, Ord)]
+#[repr(transparent)]
+pub struct DeviceTime {
+    value: u64,
+}
+
+impl DeviceTime {
+    #[cfg(test)]
+    pub fn new_test_only(v: u64) -> Self {
+        Self { value: v }
+    }
+
+    pub fn lower(&self) -> u32 {
+        self.value as u32
+    }
+
+    pub fn add_ticks(self, ticks: u32) -> Self {
+        Self { value: self.value + (ticks as u64) }
+    }
+
+    pub fn add_duration(self, dur: Duration) -> Self {
+        let mut delta = (dur.as_secs_f64() * (MCU_CLOCK_FREQUENCY as f64)).round() as u64;
+
+        // let delta = (1000000000u64 * (dur.as_nanos() as u64)) / 16_000_000;
+        Self { value: self.value + delta }
+    }
+}
+
+
 

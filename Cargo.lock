@@ -994,7 +994,7 @@ dependencies = [
 name = "cnc"
 version = "0.1.0"
 dependencies = [
- "cnc_controller_proto",
+ "cnc_motion_proto",
  "common",
  "macros",
  "math",
@@ -1005,10 +1005,12 @@ dependencies = [
 name = "cnc_controller"
 version = "0.1.0"
 dependencies = [
+ "cluster_client",
  "cnc",
  "cnc_controller_proto",
  "color",
  "common",
+ "container_proto",
  "crypto",
  "electronics",
  "executor",
@@ -1023,6 +1025,8 @@ dependencies = [
  "peripherals_proto",
  "peripherals_service",
  "protobuf",
+ "rpc",
+ "rpc_util",
  "scpi",
  "usb",
 ]
@@ -1031,6 +1035,7 @@ dependencies = [
 name = "cnc_controller_proto"
 version = "0.0.0"
 dependencies = [
+ "cnc_motion_proto",
  "common",
  "macros",
  "media_camera_proto",
@@ -1100,6 +1105,16 @@ dependencies = [
  "protobuf_builtins",
  "protobuf_compiler",
  "rpc",
+]
+
+[[package]]
+name = "cnc_motion_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
 ]
 
 [[package]]
@@ -1600,6 +1615,10 @@ name = "elf_tools"
 version = "0.1.0"
 dependencies = [
  "common",
+ "elf",
+ "executor",
+ "file",
+ "macros",
  "parsing",
 ]
 
@@ -3043,6 +3062,7 @@ dependencies = [
 name = "nordic"
 version = "0.1.0"
 dependencies = [
+ "cnc",
  "common",
  "crypto",
  "executor",

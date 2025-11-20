@@ -16,9 +16,10 @@ peripherals_proto = { path = "../peripherals/proto", default-features = false }
 nordic_wire = { path = "./wire", default-features = false }
 uf2 = { path = "../peripherals/flasher/uf2", default-features = false }
 math = { path = "../math", default-features = false }
+cnc = { path = "../cnc", default-features = false }
 logging = { path = "../monitoring/logging", default-features = false }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "nordic_proto/alloc", "nordic_wire/alloc", "executor/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc",  "math/alloc", "logging/alloc", "peripherals_proto/alloc"]
-std = ["common/std", "nordic_proto/alloc", "nordic_proto/std", "nordic_wire/std", "executor/std", "crypto/std", "protobuf/std", "usb/std",  "math/std", "logging/std", "peripherals_proto/std"]
+alloc = ["common/alloc", "nordic_proto/alloc", "nordic_wire/alloc", "executor/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc",  "math/alloc", "logging/alloc", "peripherals_proto/alloc", "cnc/alloc"]
+std = ["common/std", "nordic_proto/alloc", "nordic_proto/std", "nordic_wire/std", "executor/std", "crypto/std", "protobuf/std", "usb/std",  "math/std", "logging/std", "peripherals_proto/std", "cnc/std"]
