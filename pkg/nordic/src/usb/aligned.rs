@@ -6,7 +6,7 @@ pub struct Aligned<Data, Alignment> {
 }
 
 impl<Data, Alignment> Aligned<Data, Alignment> {
-    pub fn new(data: Data) -> Self {
+    pub const fn new(data: Data) -> Self {
         Self { aligner: [], data }
     }
 }

@@ -63,5 +63,6 @@ pub mod gpiote;
 pub mod ppi;
 pub mod adc;
 pub mod neopixel;
+pub mod idle;
 
 pub use fpu::*;

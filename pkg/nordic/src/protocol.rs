@@ -329,6 +329,16 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                         return Ok(());
                     }
                 }
+} else if setup.bRequest == ProtocolRequestType::GetIdleCounter.to_value() {
+                if (setup.wLength as usize) < 4 {
+                    res.stale();
+                    return Ok(());
+                }
+
+                let num = crate::idle::idle_counter_value();
+                let buffer = num.to_le_bytes();
+                res.write(&buffer[..]).await?;
+                return Ok(());
             }
         }
 

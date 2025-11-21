@@ -18,3 +18,4 @@ pub mod config;
 pub mod devices;
 pub mod service;
 pub mod machine_controller;
+pub mod stepper_motion_generator;

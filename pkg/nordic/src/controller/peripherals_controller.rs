@@ -69,6 +69,8 @@ use peripherals::raw::timer1::TIMER1;
 use peripherals::raw::uarte0::UARTE0;
 use peripherals::raw::ppi::PPI;
 use protobuf::{Message, StaticMessage};
+use executor::interrupts::make_high_priority_irq;
+use peripherals::raw::Interrupt;
 
 use crate::gpio::*;
 use crate::gpiote::{GPIOTEChannels, GPIOInterruptChannel, GPIOInterruptPolarity};
@@ -305,6 +307,10 @@ impl PeripheralsController {
         ppi: PPI,
         saadc: SAADC
     ) -> Self {
+
+        // The stepper interrupt.
+        make_high_priority_irq(Interrupt::TIMER0);
+
         // TODO: Don't create this here. We should ban calling this outside of main().
         let mut peripherals = peripherals::raw::Peripherals::new();
         let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
@@ -855,6 +861,8 @@ impl PeripheralsController {
 
                 // TODO: Check configured as an input.
 
+// NOTE: If the response is low, then the entire response can
+                // be batch ack'ed so is cheap to return.
                 if pin.read() == PinLevel::High {
                     response.set_uint_val(1 as u32);
                 }
@@ -1097,6 +1105,12 @@ impl PeripheralsController {
                     ))?;
                 
                 response.set_uint_val(time);
+                Ok(OkResponse)
+            }
+
+            PeripheralRequestCommandCase::GetIdleCounter(_) => {
+                let v = crate::idle::idle_counter_value();
+                response.set_uint_val(v);
                 Ok(OkResponse)
             }
 

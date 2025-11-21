@@ -63,6 +63,7 @@ use nordic::rtc::RTC;
 use nordic::temp::Temp;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
+use nordic::idle::idle_loop;
 use peripherals_proto::peripherals::PeripheralRequest;
 use nordic_wire::usb_descriptors::*;
 use protobuf::Message;
@@ -211,7 +212,5 @@ fn main() -> () {
 
     // Enable interrupts.
     unsafe { asm!("cpsie i") };
-    loop {
-        unsafe { asm!("nop") };
-    }
+    idle_loop()
 }

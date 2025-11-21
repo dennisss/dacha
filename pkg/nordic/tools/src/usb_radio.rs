@@ -319,6 +319,31 @@ impl USBRadio {
         Ok(response)
     }
 
+    // TODO: Maybe move this to the background thread too.
+    pub async fn get_idle_counter(&self) -> Result<u32> {
+        let mut buf = [0u8; 4];
+
+        let n = self.shared
+            .device
+            .read_control(
+                SetupPacket {
+                    bmRequestType: 0b11000000,
+                    bRequest: ProtocolRequestType::GetIdleCounter.to_value(),
+                    wValue: 0,
+                    wIndex: 0,
+                    wLength: buf.len() as u16,
+                },
+                &mut buf,
+            )
+            .await?;
+
+        if n != buf.len() {
+            return Err(err_msg("Did not read a full u32"));
+        }
+
+        Ok(u32::from_le_bytes(buf))
+    }
+
     pub async fn set_network_config(&mut self, config: &NetworkConfig) -> Result<()> {
         let proto = config.serialize()?;
         self.shared.device

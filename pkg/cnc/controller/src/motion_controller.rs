@@ -10,13 +10,14 @@ use executor::lock;
 use executor::sync::AsyncMutex;
 use cnc::linear_motion_planner::*;
 use math::matrix::Vector3f;
+use peripherals_proto::peripherals::StepperMotorMotion_Direction;
 use peripherals_service::device::PeripheralsDevice;
 use executor_multitask::{TaskResource, impl_resource_passthrough};
 use cnc_controller_proto::cnc::*;
 
 use crate::devices::DevicesController;
 use crate::tmc2209::TMC2209Device;
-use crate::motion_utils::motion_to_step_commands;
+use crate::stepper_motion_generator::*;
 use crate::time::DeviceTime;
 
 /*
@@ -55,7 +56,7 @@ Doing Homing:
 const MAX_PLANNER_QUEUE_LENGTH: usize = 128;
 
 /// When we are currently idle, if this amount of time passes since receiving
-/// the first motion request, we transition to the active start (start enqueuing
+/// the first motion request, we transition to the 'Active' state (start enqueuing
 /// motions on the MCU).
 ///
 /// TODO: Also timeout if the planner queue is full or MIN_MOTION_START_DELAY amount of fully constrained moves are defined.
@@ -67,21 +68,35 @@ const IDLE_START_TIMEOUT: Duration = Duration::from_millis(200);
 ///
 /// This must be larger than the worst case clock drift and request RTT with
 /// the motor MCUs to avoid scheduling a motion in the past.
-const MIN_MOTION_START_DELAY: Duration = Duration::from_millis(200);
+const MIN_MOTION_START_DELAY: Duration = Duration::from_millis(400);
 
-/// Relative to the current point in time, maximum end time of the final motion
-/// enqueued 
+/// Relative to the current point in time, how many seconds of motions in the
+/// LinearMotionPlanner we will consume when in the 'Active' state.
 ///
 /// MUST BE >> MIN_MOTION_START_DELAY
-const MOTOR_ENQUEUE_TIME_WINDOW: Duration = Duration::from_millis(1000);
+const PLANNER_LOOK_AHEAD_WINDOW: Duration = Duration::from_millis(2000);
+
+/// Minimum amount of time we will grab from the planner.
+///
+/// MUST BE < PLANNER_LOOK_AHEAD_WINDOW
+///
+/// Basically if we initially consume 'PLANNER_LOOK_AHEAD_WINDOW' we won't
+/// consume more motions until 'PLANNER_MIN_TIME_STEP' more time has elapsed.
+/// This sets a limit on the minimum chunk duration used for splitting up
+/// very long motions. 
+const PLANNER_MIN_TIME_STEP: Duration = Duration::from_millis(200);
+
+/// Relative to the current point in time, how many seconds of motions
+/// will be converted to steps and enqueud to run on the motors.
+///
+/// MUST BE < PLANNER_LOOK_AHEAD_WINDOW since the step generator is fed
+/// motions from the planner. Otherwise it will plan for empty time. 
+///
+/// MUST BE >> MIN_MOTION_START_DELAY
+const STEP_GENERATION_WINDOW: Duration = Duration::from_millis(1000);
+
 
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
-
-// /// Maximum raw motions that we can have enqueued and not yet done
-// /// running on the MCU. (per-motor)
-// ///
-// /// TODO: Automatically pull this from the MCU firmware.
-// const MOTOR_ENQUEUE_MAX_COUNT: usize = 8;
 
 
 // pub struct MotionControllerOptions {
@@ -96,7 +111,7 @@ pub struct MotionController {
 impl_resource_passthrough!(MotionController, task);
 
 struct Shared {
-    config: MotionControllerConfig,
+    config: Arc<MotionControllerConfig>,
 
     devices: Arc<DevicesController>,
 
@@ -112,26 +127,31 @@ struct State {
     /// the first motion in planner was added. 
     first_motion_time: Instant,
 
-    planner: LinearMotionPlanner,
+    planner: MotionControllerLinearPlanner,
 
     motors_on: bool,
 
     active_state: Option<ActiveState>,
 
-    motor_states: Vec<MotorState>,
+    /// TODO: Instead of storing this, just always store a StepperMotionGenerator instance
+    /// and rely on that for this data.
+    motor_positions: Vec<i64>,
 
     // /// If true,
     // homing_mode: bool,
 }
 
 struct ActiveState {
-    /// Time at which the next the next motion should be enqueud on the MCU to be
-    /// immediately after the previous one.
-    next_motion_time: Instant,
 
-    next_motion_remote_time: DeviceTime,
+    start_time: Instant,
 
-    // enqueued_motions_end: VecDeque<Instant>,
+    /// Start time of the first motion in the planner.
+    planner_start_time: Instant,
+
+    /// Up to what point in time in the queue we have consumed commands.
+    queue_consumed_time: Instant,
+
+    queue: StepperMotionGenerator,
 }
 
 #[derive(Default)]
@@ -155,13 +175,10 @@ The next challenge:
 
 impl MotionController {
 
-    pub async fn create(mut config: MotionControllerConfig, devices: Arc<DevicesController>) -> Result<Self> {
-        let mut motors = vec![];;
+    pub fn adjust_config(config: &mut MotionControllerConfig) -> Result<()> {
         let mut motor_indexes = HashMap::new();
 
         for (i, proto) in config.motors().iter().enumerate() {
-            let dev = devices.get_motor(proto.device_name()).await?;
-            motors.push(dev);
             motor_indexes.insert(proto.device_name().to_string(), i);
         }
 
@@ -192,16 +209,26 @@ impl MotionController {
         }
 
         for endstop in config.endstops_mut() {
+            endstop.clear_motor_indexes();
             for i in 0..endstop.motors().len() {
                 let i = get_motor_index(&endstop.motors()[i])?;
                 endstop.add_motor_indexes(i);
             }
         }
 
+        Ok(())
+    }
 
-        let mut motor_states = vec![];
-        for i in 0..config.motors().len() {
-            motor_states.push(MotorState::default());
+    pub async fn create(mut config: MotionControllerConfig, devices: Arc<DevicesController>) -> Result<Self> {
+        Self::adjust_config(&mut config)?;
+
+        let config = Arc::new(config);
+
+        let mut motors = vec![];
+
+        for (i, proto) in config.motors().iter().enumerate() {
+            let dev = devices.get_motor(proto.device_name()).await?;
+            motors.push(dev);
         }
 
         let shared = Arc::new(Shared {
@@ -210,10 +237,10 @@ impl MotionController {
             motors,
             state: AsyncMutex::new(State {
                 first_motion_time: Instant::now(), // doesn't matter
-                planner: LinearMotionPlanner::new(Vector3f::zero(), config.planner().clone()),
+                planner: MotionControllerLinearPlanner::new(config.clone()),
                 motors_on: false,
                 active_state: None,
-                motor_states
+                motor_positions: vec![0; config.motors().len()]
             })
         });
 
@@ -261,7 +288,7 @@ impl MotionController {
         }
         let mut have_pending_motions = false;
 
-        let mut last_motion_residuals = vec![0; shared.config.motors().len()];
+        let mut last_directions = vec![StepperMotorMotion_Direction::UNCHANGED; shared.config.motors().len()];
 
         // TODO: Whenever in homing mode, it would be good to explicitly decrease all the motor currents a lot.
 
@@ -277,7 +304,6 @@ impl MotionController {
             let cycle_start = Instant::now();
 
             let mut statuses = vec![];
-            let mut empty_queue_length = 100;
             let mut some_motors_active = false;
             let mut stopping = false;
 
@@ -305,9 +331,6 @@ impl MotionController {
 
                 some_motors_active |= s.active();
 
-                // TODO: This will become trickier when the extruder gets involved.
-                empty_queue_length = empty_queue_length.min(s.empty_queue_slots() as usize);
-                
                 statuses.push(s.clone());
 
                 // println!("SG_RESULT: {:?}", dev.sg_result().await?);
@@ -368,7 +391,7 @@ impl MotionController {
             */
 
             if new_faults != last_faults {
-                eprintln!("FAULTS: Motions skipped");
+                eprintln!("FAULTS: Motions skipped : {}", new_faults);
                 last_faults = new_faults;
             }
 
@@ -388,6 +411,7 @@ impl MotionController {
                 let state: &mut State = &mut state;
 
                 if stopping {
+                    // TODO: Also clear the queue. Will need to grab the latest position though.
                     state.planner.clear();
                 }
 
@@ -397,76 +421,82 @@ impl MotionController {
                     if !state.planner.is_empty() && state.first_motion_time + IDLE_START_TIMEOUT >= now {
                         println!("-> Active");
 
+                        let start_time = now + MIN_MOTION_START_DELAY;
+                        let remote_start_time = now_mcu_time_full.add_duration(MIN_MOTION_START_DELAY);
+
+                        // TODO: Need to preserve motor positions across queue initializations.
                         state.active_state = Some(ActiveState {
-                            next_motion_time: now + MIN_MOTION_START_DELAY,
-                            next_motion_remote_time: now_mcu_time_full.add_duration(MIN_MOTION_START_DELAY),
+                            start_time,
+                            planner_start_time: start_time,
+                            queue_consumed_time: start_time,
+                            queue: StepperMotionGenerator::new(
+                                shared.config.clone(),
+                                &state.motor_positions,
+                                remote_start_time
+                            )
                         });
 
-                        // TODO: Reset residuals.
                     }
                 }
 
                 if let Some(active_state) = &mut state.active_state {
-                    if state.planner.is_empty() {
+                    // TODO: Also check that the queue of commands to send is empty?
+                    if state.planner.is_empty() && active_state.queue.is_empty() {
                         if !some_motors_active {
                             println!("=> Idle");
+
+                            state.motor_positions.copy_from_slice(active_state.queue.motor_positions());
 
                             state.active_state = None;
                             // TODO: Have a 'continue' here?
                         }
                         
                     } else if !have_pending_motions {
-                        // TODO: Need to support filling up on motions 
                         
+                        // TODO: Bring this back in some form.
+                        /*
                         if active_state.next_motion_time < now + MIN_MOTION_START_DELAY {
                             // TODO: This is only an error if we get the motions within the time window
                             // and still failed to schedule them.
                             eprintln!("Motions queueing too slow!");
-                            active_state.next_motion_time = now + MIN_MOTION_START_DELAY;
-                            active_state.next_motion_remote_time = now_mcu_time_full.add_duration(MIN_MOTION_START_DELAY);
+                            // TODO: Need to fix this to handle the queue.
+                            // active_state.next_motion_time = now + MIN_MOTION_START_DELAY;
+                            // active_state.next_motion_remote_time = now_mcu_time_full.add_duration(MIN_MOTION_START_DELAY);
 
-                            // TODO: Reset residuals?
+                        }
+                        */
+
+                        // Take from 'planner' and push into the 'queue'
+                        {
+                            let next_planner_start_time = now + PLANNER_LOOK_AHEAD_WINDOW;
+
+                            let time_step = next_planner_start_time - active_state.planner_start_time;
+
+                            if time_step > PLANNER_MIN_TIME_STEP {
+                                // TODO: Check these comments.
+                                // NOTE: We only use the end_position and time in each of these objects.
+                                let mut motions = vec![];
+                                // TODO: Need to use the duration returned by this (yes since we don't know if we fully saturated the time span)
+                                state.planner.next(time_step.as_secs_f32(), 10000, &mut motions);
+
+                                for motion in motions {
+                                    // TODO: Should warn if the motion was delayed relative to the previous one.
+                                    active_state.queue.enqueue(motion);
+                                }
+
+                                active_state.planner_start_time = next_planner_start_time;
+                            }
                         }
 
-                        // TODO: Make sure this is always at least some minimum value
-                        let time_step = (now + MOTOR_ENQUEUE_TIME_WINDOW) - active_state.next_motion_time;
+                        // Take from the 'queue' and prepare to send to the machine.
+                        {
+                            // TODO: Limit the minimum time step for this?
 
-                        // NOTE: We only use the end_position and time in each of these objects.
-                        let mut motions = vec![];
-                        // TODO: Need to use the duration returned by this.
-                        state.planner.next(time_step.as_secs_f32(), 10, &mut motions);
+                            let next_queue_consumed_time = now + STEP_GENERATION_WINDOW;
+                            let queue_max_time = next_queue_consumed_time - active_state.start_time;
 
-                        for motion in motions {
-                            // TODO: This number should probably be per motor. Else, we can't get the residuals to work well.
-                            // (unless I just delay all motors by roughly the same amount.)
-                            
-                            // TODO: 'max' this with the latest 'next_motion_time' converted to remote time.
-                            let mut start_time = active_state.next_motion_remote_time;
-
-                            let mut motor_positions = vec![];
-                            for i in 0..state.motor_states.len() {
-                                motor_positions.push(state.motor_states[i].position);
-                            }
-
-                            // TODO: Perform direction compression using 
-                            // StepperMotorMotion_Direction::UNCHANGED
-
-                            // TODO: Remove the unwrap.
-                            let step_motions = motion_to_step_commands(
-                                &motion,
-                                &mut motor_positions,
-                                &mut start_time,
-                                &mut last_motion_residuals,
-                                &shared.config
-                            ).unwrap();
-
-                            // TODO: Need a more exact time.
-                            active_state.next_motion_time += Duration::from_secs_f32(motion.duration);
-                            active_state.next_motion_remote_time = start_time;
-
-                            for i in 0..state.motor_states.len() {
-                                state.motor_states[i].position = motor_positions[i];
-                            }
+                            let step_motions = active_state.queue.to_commands(queue_max_time.as_secs_f64()).unwrap();
+                            active_state.queue_consumed_time = next_queue_consumed_time;
 
                             for (i, step_motion) in step_motions.into_iter().enumerate() {
                                 for step_motion in step_motion {
@@ -476,9 +506,6 @@ impl MotionController {
                                     have_pending_motions = true;
                                 }
                             }
-
-                            // TODO: update the motor state.
-
                         }
 
                         // TODO: Maybe propagate back the latest machine position to the planner as the new planner
@@ -486,15 +513,6 @@ impl MotionController {
 
                     }
                     
-
-
-
-                    // Pull next N seconds of motions (this also depends on how much stuff currently have)
-
-                    // Go through conversion to motor motions.
-
-                    // attempt to enqueue stuff. If not, we may need to buffer some moves for later.
-
                 }
 
 
@@ -502,8 +520,6 @@ impl MotionController {
             });
 
             // Do enqueues.
-
-            // println!("Empty {} vs {}", empty_queue_length, pending_step_motions[0].len());
 
             // TODO: Ideally prioritize enqueues based on start time (k-way merge).
             let s = Instant::now();
@@ -514,28 +530,28 @@ impl MotionController {
             have_pending_motions = false;
             let mut sent_something = 0;
             let mut requests = vec![];
-            
-            for (i, queue) in pending_step_motions.iter_mut().enumerate() {
-                let mut empty_slots = statuses[i].empty_queue_slots() as usize;
+
+            for (motor_i, queue) in pending_step_motions.iter_mut().enumerate() {
+                let mut empty_slots = statuses[motor_i].empty_queue_slots() as usize;
                 
                 loop {
                     if empty_slots == 0 {
                         break;
                     }
 
-                    let motion = match queue.pop_front() {
+                    let mut motion = match queue.pop_front() {
                         Some(v) => v,
                         None => break
                     };
 
-                    // TODO: These should be easy to sequence compress and acks should also be compressable.
-                    requests.push(shared.motors[i].make_enqueue_stepper_motion(motion)?);
+                    if motion.direction() == last_directions[motor_i] {
+                        motion.clear_direction();
+                    } else {
+                        last_directions[motor_i] = motion.direction();
+                    }
 
-                    // TODO: I don't need responses for any of these, so maybe skip waiting for the responses?
-                    // if requests.len() >= 8 {
-                    //     shared.motors[i].device().send_request_batch(&requests).await?;
-                    //     requests.clear();
-                    // }
+                    // TODO: These should be easy to sequence compress and acks should also be compressable.
+                    requests.push(shared.motors[motor_i].make_enqueue_stepper_motion(motion)?);
 
                     empty_slots -= 1;
                 }
@@ -547,7 +563,10 @@ impl MotionController {
             // Assumption here is that the stepper queue length is smaller than the max in flight requests we allow.
             // TODO: Need to cap this since we are dealing with big queues now (and prioritize by start time).
             if requests.len() > 0 {
-                shared.motors[0].device().send_request_batch(&requests).await?;
+                for reqs in requests.chunks(64) {
+                    shared.motors[0].device().send_request_batch(reqs).await?;
+                }
+
                 sent_something += requests.len();
             }
 
@@ -652,43 +671,86 @@ impl MotionController {
         // TODO: MAX_PLANNER_QUEUE_LENGTH
 
         lock!(state <= self.shared.state.lock().await?, {
-            // TODO: Go into an error/alarm state if we have any failures like this.
-            let last_pos = state.planner.last_position();
-
-            let x_move = (last_pos.x() - pos.x()).abs() >= 0.001;
-            let y_move = (last_pos.y() - pos.y()).abs() >= 0.001;
-            let z_move = (last_pos.z() - pos.z()).abs() >= 0.001;
-
-            // Mixing these doesn't work right now as the corning algorithm doesn't
-            // work well with 
-            // TODO: I will need this after leveling.
-            if (x_move || y_move) && z_move {
-                return Err(err_msg("Simulatenous X/Y and Z move not supported"));
-            }
-
-            // TODO: May want to base this on the orientation in X-Y
-            let acceleration = {
-                if z_move {
-                    self.shared.config.max_acceleration_z()
-                } else {
-                    self.shared.config.max_acceleration_xy()
-                }
-            };
-
-            // TODO: Set a limit on the max feed rate based on configured machine limits.
 
             if state.planner.is_empty() {
                 state.first_motion_time = Instant::now();
             }
 
-            state.planner.move_to(pos, feed_rate, acceleration);
+            state.planner.move_to(pos, feed_rate)?;
 
             Ok(())
         })
     }
-
-
 }
+
+use cnc::linear_motion::LinearMotion;
+
+pub struct MotionControllerLinearPlanner {
+    inner: LinearMotionPlanner,
+    config: Arc<MotionControllerConfig>,
+}
+
+impl MotionControllerLinearPlanner {
+    pub fn new(config: Arc<MotionControllerConfig>) -> Self {
+        Self {
+            inner: LinearMotionPlanner::new(Vector3f::zero(), config.planner().clone()),
+            config
+        }
+    }
+
+    pub fn next(
+        &mut self,
+        max_duration: f32,
+        max_count: usize,
+        out: &mut Vec<LinearMotion>
+    ) {
+        self.inner.next(max_duration, max_count, out);
+    }
+
+    pub fn last_position(&self) -> &Vector3f {
+        self.inner.last_position()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    pub fn move_to(&mut self, pos: Vector3f, feed_rate: f32) -> Result<()> {
+        // TODO: Go into an error/alarm state if we have any failures like this.
+        let last_pos = self.inner.last_position();
+
+        let x_move = (last_pos.x() - pos.x()).abs() >= 0.001;
+        let y_move = (last_pos.y() - pos.y()).abs() >= 0.001;
+        let z_move = (last_pos.z() - pos.z()).abs() >= 0.001;
+
+        // Mixing these doesn't work right now as the corning algorithm doesn't
+        // work well with 
+        // TODO: I will need this after leveling.
+        if (x_move || y_move) && z_move {
+            return Err(err_msg("Simulatenous X/Y and Z move not supported"));
+        }
+
+        // TODO: May want to base this on the orientation in X-Y
+        let acceleration = {
+            if z_move {
+                self.config.max_acceleration_z()
+            } else {
+                self.config.max_acceleration_xy()
+            }
+        };
+
+        // TODO: Set a limit on the max feed rate based on configured machine limits.
+
+        self.inner.move_to(pos, feed_rate, acceleration);
+
+        Ok(())
+    } 
+}
+
 
 
 

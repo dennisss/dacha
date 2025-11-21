@@ -1016,6 +1016,7 @@ dependencies = [
  "executor",
  "executor_multitask",
  "file",
+ "gcode",
  "macros",
  "math",
  "math_compute",

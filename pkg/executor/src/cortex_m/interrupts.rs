@@ -87,6 +87,27 @@ pub async fn wait_for_irq(num: Interrupt) {
     drop(ctx);
 }
 
+// TODO: Find some way to verify this is working.
+pub fn make_high_priority_irq(num: Interrupt) {
+
+    let mut nvic = unsafe { NVIC::new() };
+
+    for i in 0..(Interrupt::MAX + 1) {
+        let register_index = i / 4;
+        let register_shift = (i % 4) * 8;
+
+        let mask = !(0xff << register_shift);
+
+        // 0 is the highest priority.
+        // Note that on most architectures, the lower 4 bits are ignored.
+        let priority = if i == (num as usize) { 0 } else { 0x10 };
+
+        let v = (nvic.ipr[register_index].read() & mask) | (priority << register_shift);
+        nvic.ipr[register_index].write(v); 
+    }
+
+}
+
 pub fn trigger_pendsv() {
     let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[PENDSV_EXCEPTION_NUM] };
     if waker_list.is_empty() {

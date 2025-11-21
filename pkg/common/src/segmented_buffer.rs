@@ -36,16 +36,21 @@ impl<Array: AsRef<[u8]> + AsMut<[u8]>> SegmentedBuffer<Array> {
         self.length = 0;
     }
 
-    pub fn write(&mut self, mut segment: &[u8]) {
+    /// Returns true if we overflowed the buffer.
+    pub fn write(&mut self, mut segment: &[u8]) -> bool {
         assert!(segment.len() + 1 <= self.buf.as_ref().len());
 
+        let mut overflowed = false;
+
         let len = segment.len() as u8;
-        assert_eq!(self.append_partial(core::slice::from_ref(&len)), 1);
+        assert_eq!(self.append_partial(core::slice::from_ref(&len), &mut overflowed), 1);
 
         while segment.len() > 0 {
-            let n = self.append_partial(segment);
+            let n = self.append_partial(segment, &mut overflowed);
             segment = &segment[n..];
         }
+
+        overflowed
     }
 
     /// Appends a contiguous slice of data to the buffer. If we hit the end of
@@ -53,7 +58,7 @@ impl<Array: AsRef<[u8]> + AsMut<[u8]>> SegmentedBuffer<Array> {
     /// more data starting at the beginning of the buffer.
     ///
     /// Returns the number of bytes appended.
-    fn append_partial(&mut self, data: &[u8]) -> usize {
+    fn append_partial(&mut self, data: &[u8], overflowed: &mut bool) -> usize {
         let i = (self.start + self.length) % self.buf.as_ref().len();
         let j = core::cmp::min(i + data.len(), self.buf.as_ref().len());
         let n = j - i;
@@ -69,6 +74,8 @@ impl<Array: AsRef<[u8]> + AsMut<[u8]>> SegmentedBuffer<Array> {
             self.length -= first_segment_len;
 
             self.start = self.start % self.buf.as_ref().len();
+
+            *overflowed = true;
         }
 
         self.buf.as_mut()[i..j].copy_from_slice(&data[0..n]);
@@ -145,6 +152,47 @@ Appendable<Item = u8>
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn insert_a_lot() {
+        let mut buf = SegmentedBuffer::new([0u8; 256]);
+        assert!(buf.is_empty());
+
+        for i in 0..1000 {
+            buf.write(&[1, 2, 3]);
+            buf.write(&[4, 5, 6, 7]);
+
+            let mut out = [0u8; 20];
+            assert_eq!(buf.read(&mut out), Some(3));
+            assert_eq!(&out[0..3], &[1, 2, 3]);
+            assert_eq!(buf.read(&mut out), Some(4));
+            assert_eq!(&out[0..4], &[4, 5, 6, 7]);
+        }
+    }
+
+    #[test]
+    fn wrapping_around() {
+        let mut buf = SegmentedBuffer::new([0u8; 10]);
+
+        buf.write(&[1,2,3]);
+        buf.write(&[4,5,6]);
+        // Now using 8 bytes of storage.
+
+        let mut out = [0u8; 20];
+        assert_eq!(buf.read(&mut out), Some(3));
+        assert_eq!(&out[0..3], &[1, 2, 3]);
+
+        buf.write(&[7,9,10]);
+        buf.write(&[11]);
+        assert_eq!(buf.read(&mut out), Some(3));
+        assert_eq!(&out[0..3], &[4,5,6]);
+
+        assert_eq!(buf.read(&mut out), Some(3));
+        assert_eq!(&out[0..3], &[7,9,10]);
+
+        assert_eq!(buf.read(&mut out), Some(1));
+        assert_eq!(&out[0..1], &[11]);
+    }
 
     #[test]
     fn insert_and_delete_from_empty_buffer() {

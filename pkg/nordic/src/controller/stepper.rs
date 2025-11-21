@@ -45,7 +45,7 @@ const MAX_ENQUEUED_MOTIONS: usize = 1024;
 
 /// Minimum time from now to the next step pulse (in 16MHz clock cycles).
 /// Theoretical minimum is around 2, but its good to have a buffer if I estimated wrong.
-const MIN_STEP_TIME: u32 = 50;
+const MIN_STEP_TIME: u32 = 20;
 
 /// Maximum time from now to the next step pulse (in 16MHz clock cycles).
 ///
