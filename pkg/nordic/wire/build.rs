@@ -18,7 +18,21 @@ fn generate_protocol_usb_descriptors(
     let mut builder = DescriptorSetBuilder::new();
 
     let manufacturer_string = builder.add_string("da!");
-    let product_string = builder.add_string(product_name);
+    let product_string = {
+        if let Ok(name) = std::env::var("USB_PRODUCT_NAME") {
+            builder.add_string(&name)
+        } else {
+            builder.add_string(product_name)
+        }
+    };
+
+    let product_id = {
+        if let Ok(s) = std::env::var("USB_PRODUCT_ID") {
+            s.parse()?
+        } else {
+            product_id
+        }
+    };
 
     let mut builder = builder.with_device(DeviceDescriptor {
         bLength: 0,         // Set by builder

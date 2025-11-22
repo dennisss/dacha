@@ -577,7 +577,6 @@ async fn run_control_input_training(
 
 use std::f32::consts::PI;
 
-use math::matrix::Vector3f;
 use color::*;
 
 #[derive(Args)]

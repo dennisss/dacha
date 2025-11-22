@@ -1,10 +1,13 @@
 use alloc::vec::Vec;
 
 use math::matrix::cwise_binary_ops::*;
-use math::matrix::Vector3f;
+use math::matrix::VectorXf;
 
 use crate::displacement::*;
 use crate::linear_motion::LinearMotion;
+
+/// Smallest duration of motion that we will generate.
+const MIN_MOTION_TIME: f32 = 0.0001;
 
 /// A non-fully defined LinearMotion(s).
 ///
@@ -19,10 +22,10 @@ pub struct LinearMotionConstraints {
     ///
     /// TODO: Consider removing this since it will be redundant with the previous motion
     /// in the queue and is more data to maintain.
-    pub start_position: Vector3f,
+    pub start_position: VectorXf,
 
     /// Target end position after the motion is complete.
-    pub end_position: Vector3f,
+    pub end_position: VectorXf,
 
     /// Maximum speed at which we can end the motion.
     /// (we will try to optimize for finishing each motion at as fast a speed as possible).
@@ -72,9 +75,9 @@ impl LinearMotionConstraints {
     /// Returns the new velocity after the motions are complete.
     pub fn calculate_motions(
         &self,
-        start_velocity: Vector3f,
+        start_velocity: VectorXf,
         out: &mut Vec<LinearMotion>,
-    ) -> Vector3f {
+    ) -> VectorXf {
         let distance_vector = &self.end_position - &self.start_position;
         if distance_vector.norm() <= 1e-6 {
             return start_velocity;
@@ -88,9 +91,13 @@ impl LinearMotionConstraints {
         // motion).
         let mut start_speed = start_velocity.dot(&direction).max(0.0);
 
+        // TODO: Test for this case.
+        // If the end speed is < the max_speed, we need to ensure we prioritize slowing down.
+        let max_end_speed = self.max_end_speed.min(self.max_speed);
+
         let end_speed = {
-            if self.max_end_speed <= start_speed {
-                self.max_end_speed
+            if max_end_speed <= start_speed {
+                max_end_speed
             } else {
                 // End speed is allowed to go above initial speed.
                 // See how fast we can go if we do nothing but ramp up speed at the max
@@ -98,7 +105,7 @@ impl LinearMotionConstraints {
                 let time = time_to_travel(distance, start_speed, self.max_acceleration);
                 let largest_possible_end_speed = start_speed + time * self.max_acceleration;
 
-                largest_possible_end_speed.min(self.max_end_speed)
+                largest_possible_end_speed.min(max_end_speed)
             }
         };
 
@@ -136,11 +143,19 @@ impl LinearMotionConstraints {
         };
 
         // Clamp
-        let peak_speed = peak_speed.min(self.max_speed);
+        let mut peak_speed = peak_speed.min(self.max_speed);
 
         // TODO: Immediately clamp these to zero here and add extra to the cruise if needed.
-        let ramp_up_time = (peak_speed - start_speed) / self.max_acceleration;
-        let ramp_down_time = (peak_speed - end_speed) / self.max_acceleration;
+        let mut ramp_up_time = (peak_speed - start_speed) / self.max_acceleration;
+        let mut ramp_down_time = (peak_speed - end_speed) / self.max_acceleration;
+
+        if ramp_up_time < MIN_MOTION_TIME {
+            ramp_up_time = 0.0;
+            peak_speed = start_speed + ramp_up_time * self.max_acceleration;
+        }
+        if ramp_down_time < MIN_MOTION_TIME {
+            ramp_down_time = 0.0;
+        }
 
         let ramp_up_distance =
             displacement_traveled(start_speed, self.max_acceleration, ramp_up_time);
@@ -148,7 +163,6 @@ impl LinearMotionConstraints {
             displacement_traveled(peak_speed, -self.max_acceleration, ramp_down_time);
 
         let cruise_distance = distance - ramp_up_distance - ramp_down_distance;
-        assert!(cruise_distance >= -0.001, "{:?}, start_velocity: {:?}", self, start_velocity);
 
         let cruise_time = cruise_distance / peak_speed;
 
@@ -156,8 +170,7 @@ impl LinearMotionConstraints {
         // This is start_velocity but with orthogonal components removed.
         let mut current_velocity = (&direction).cwise_mul(start_speed);
 
-        // TODO: Better to threshold this on time since it is harder to handle having many small curves
-        if ramp_up_distance.abs() >= 0.01 {
+        if ramp_up_time != 0.0 {
             let start_position = current_position.clone();
             let end_position = &start_position + (&direction).cwise_mul(ramp_up_distance);
             current_position = end_position.clone();
@@ -178,7 +191,7 @@ impl LinearMotionConstraints {
             });
         }
 
-        if cruise_distance.abs() >= 0.01 {
+        if cruise_time >= MIN_MOTION_TIME {
             let start_position = current_position.clone();
             let end_position = &start_position + (&direction).cwise_mul(cruise_distance);
             current_position = end_position.clone();
@@ -188,12 +201,12 @@ impl LinearMotionConstraints {
                 start_velocity: current_velocity.clone(),
                 end_position,
                 end_velocity: current_velocity.clone(),
-                acceleration: Vector3f::zero(),
+                acceleration: VectorXf::zero_with_shape(self.start_position.rows(), 1),
                 duration: cruise_time,
             });
         }
 
-        if ramp_down_distance.abs() >= 0.01 {
+        if ramp_down_time != 0.0 {
             let start_position = current_position.clone();
             let end_position = &start_position + (&direction).cwise_mul(ramp_down_distance);
             current_position = end_position.clone();
@@ -213,6 +226,8 @@ impl LinearMotionConstraints {
                 duration: ramp_down_time,
             });
         }
+
+        // TODO: Verify that the final motion satisfies the max_end_velocity 
 
         // TODO: Ensure at least one motion is always added.
 

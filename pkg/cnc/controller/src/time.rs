@@ -200,6 +200,21 @@ impl TimeSyncer {
         let dev = state.devices.get(device_name)
             .ok_or_else(|| format_err!("No device named: {}", device_name))?;
 
+        self.make_device_time(dev, time)
+    }
+
+    pub async fn to_all_device_times(&self, time: Instant) -> Result<HashMap<String, DeviceTime, FastHasherBuilder>> {
+        let state = self.shared.state.read().await?;
+        let mut out = HashMap::default();
+
+        for (dev_name, dev) in &state.devices {
+            out.insert(dev_name.clone(), self.make_device_time(dev, time)?);
+        }
+
+        Ok(out)
+    }
+
+    fn make_device_time(&self, dev: &DeviceEntry, time: Instant) -> Result<DeviceTime> {
         let sample = dev.last_sample.as_ref()
             .ok_or_else(|| err_msg("Device is not time synced yet"))?;
 
@@ -231,6 +246,7 @@ impl TimeSyncer {
             value: out as u64
         })
     }
+
 }
 
 // TODO: Prevent comparisons across different devices.
@@ -241,7 +257,7 @@ pub struct DeviceTime {
 }
 
 impl DeviceTime {
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn new_test_only(v: u64) -> Self {
         Self { value: v }
     }

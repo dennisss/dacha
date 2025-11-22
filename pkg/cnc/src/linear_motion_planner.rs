@@ -1,7 +1,8 @@
 use alloc::{collections::VecDeque, vec::Vec};
 
 use math::matrix::cwise_binary_ops::*;
-use math::matrix::Vector3f;
+use math::matrix::VectorXf;
+use math::matrix::StaticDim;
 use cnc_motion_proto::cnc::LinearMotionPlannerConfig;
 
 use crate::displacement::*;
@@ -11,10 +12,10 @@ use crate::linear_motion_constraints::*;
 
 /// Plans a sequence of linear motions that are chained one
 /// immediately after another in time.
-pub struct LinearMotionPlanner {
+pub struct LinearMotionPlanner  {
     config: LinearMotionPlannerConfig,
-    start_position: Vector3f,
-    start_velocity: Vector3f,
+    start_position: VectorXf,
+    start_velocity: VectorXf,
     queue: VecDeque<LinearMotionQueueEntry>,
 }
 
@@ -56,10 +57,10 @@ struct LinearMotionQueueEntry {
 }
 
 impl LinearMotionPlanner {
-    pub fn new(start_position: Vector3f, config: LinearMotionPlannerConfig) -> Self {
+    pub fn new(start_position: VectorXf, config: LinearMotionPlannerConfig) -> Self {
         Self {
-            start_position,
-            start_velocity: Vector3f::zero(),
+            start_position: start_position.clone(),
+            start_velocity: VectorXf::zero_with_shape(start_position.rows(), 1),
             queue: VecDeque::new(),
             config,
         }
@@ -73,7 +74,7 @@ impl LinearMotionPlanner {
         self.queue.is_empty()
     }
 
-    pub fn last_position(&self) -> &Vector3f {
+    pub fn last_position(&self) -> &VectorXf {
         match self.queue.back() {
             Some(v) => &v.constraints.end_position,
             None => &self.start_position
@@ -98,7 +99,7 @@ impl LinearMotionPlanner {
     // TODO: If there are extremely long linear motions, split them into pieces so
     // that te planner can emit partial results quickly (similarly combine many
     // short movements in the same direction).
-    pub fn move_to(&mut self, end_position: Vector3f, max_speed: f32, max_acceleration: f32) {
+    pub fn move_to(&mut self, end_position: VectorXf, max_speed: f32, max_acceleration: f32) {
         let start_position = {
             if let Some(last_motion) = self.queue.back() {
                 last_motion.constraints.end_position.clone()
@@ -157,8 +158,8 @@ impl LinearMotionPlanner {
 
     // NOTE: entry_direction and exit_direction should be normalized.
     fn compute_max_cornering_speed(
-        entry_direction: Vector3f,
-        exit_direction: Vector3f,
+        entry_direction: VectorXf,
+        exit_direction: VectorXf,
         max_deviation: f32,
         max_acceleration: f32,
     ) -> f32 {

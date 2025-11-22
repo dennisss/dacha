@@ -84,6 +84,12 @@ pub fn compile_board_config(configs: &[&BoardConfig]) -> Result<BoardConfig> {
     let mut peripheral_names: HashMap<&str, usize> = HashMap::new();
 
     for config in configs {
+        // TODO: Make merging of these simple fields more scalable.
+        if config.product_id() != 0 {
+            out.set_product_id(config.product_id());
+        }
+
+
         for pin in config.pins() {
             let mut existing_pin_i = None;
 

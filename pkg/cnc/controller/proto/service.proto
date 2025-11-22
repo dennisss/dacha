@@ -22,4 +22,7 @@ message MoveToCommand {
     float x = 1;
     float y = 2;
     float z = 3;
+    float e = 4;
+
+    float feed_rate = 5;
 }

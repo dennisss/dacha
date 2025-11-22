@@ -1,15 +1,15 @@
-use math::matrix::Vector3f;
+use math::matrix::VectorXf;
 
 /// A single fully defined motion in a straight line with constant acceleration
 #[derive(Debug, PartialEq, Clone)]
 pub struct LinearMotion {
-    pub start_position: Vector3f,
-    pub start_velocity: Vector3f,
+    pub start_position: VectorXf,
+    pub start_velocity: VectorXf,
 
-    pub end_position: Vector3f,
-    pub end_velocity: Vector3f,
+    pub end_position: VectorXf,
+    pub end_velocity: VectorXf,
 
-    pub acceleration: Vector3f,
+    pub acceleration: VectorXf,
 
     pub duration: f32,
 }

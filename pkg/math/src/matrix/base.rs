@@ -75,6 +75,9 @@ pub type Vector3f = VectorStatic<f32, U3>;
 pub type Vector4f = VectorStatic<f32, U4>;
 pub type Vector4d = VectorStatic<f64, U4>;
 
+#[cfg(feature = "alloc")]
+pub type VectorXf = Matrix<f32, Dynamic, U1>;
+
 /// Special alias for selecting the best storage for the given matrix shape.
 pub type MatrixNew<T, R, C> = MatrixBase<T, R, C, <MatrixNewStorage as NewStorage<T, R, C>>::Type>;
 

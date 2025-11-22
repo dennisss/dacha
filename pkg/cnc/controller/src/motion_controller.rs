@@ -2,14 +2,15 @@ use std::time::Instant;
 use std::time::Duration;
 use std::sync::Arc;
 use std::collections::VecDeque;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
 use executor::lock;
 use executor::sync::AsyncMutex;
 use cnc::linear_motion_planner::*;
-use math::matrix::Vector3f;
+use math::matrix::VectorXf;
+use math::vecxf;
 use peripherals_proto::peripherals::StepperMotorMotion_Direction;
 use peripherals_service::device::PeripheralsDevice;
 use executor_multitask::{TaskResource, impl_resource_passthrough};
@@ -68,7 +69,7 @@ const IDLE_START_TIMEOUT: Duration = Duration::from_millis(200);
 ///
 /// This must be larger than the worst case clock drift and request RTT with
 /// the motor MCUs to avoid scheduling a motion in the past.
-const MIN_MOTION_START_DELAY: Duration = Duration::from_millis(400);
+const MIN_MOTION_START_DELAY: Duration = Duration::from_millis(200);
 
 /// Relative to the current point in time, how many seconds of motions in the
 /// LinearMotionPlanner we will consume when in the 'Active' state.
@@ -93,10 +94,10 @@ const PLANNER_MIN_TIME_STEP: Duration = Duration::from_millis(200);
 /// motions from the planner. Otherwise it will plan for empty time. 
 ///
 /// MUST BE >> MIN_MOTION_START_DELAY
-const STEP_GENERATION_WINDOW: Duration = Duration::from_millis(1000);
+const STEP_GENERATION_WINDOW: Duration = Duration::from_millis(400);
 
 
-const POLL_INTERVAL: Duration = Duration::from_millis(25);
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 
 // pub struct MotionControllerOptions {
@@ -116,8 +117,6 @@ struct Shared {
     devices: Arc<DevicesController>,
 
     motors: Vec<Arc<TMC2209Device>>,
-
-    // position: Vector3f,
 
     state: AsyncMutex<State>
 }
@@ -175,6 +174,7 @@ The next challenge:
 
 impl MotionController {
 
+/// Performs basic validation of the config and sets up final values.
     pub fn adjust_config(config: &mut MotionControllerConfig) -> Result<()> {
         let mut motor_indexes = HashMap::new();
 
@@ -187,6 +187,19 @@ impl MotionController {
                 .ok_or_else(|| format_err!("Unknown motor named: {}", name))
         };
 
+        let mut used_axes = HashSet::new();
+        let mut max_axis = 0;
+
+        let mut mark_used_axis = |index: u32| -> Result<()> {
+            if !used_axes.insert(index) {
+                return Err(err_msg("Multiple mapping for axis"));
+            }
+
+            max_axis = max_axis.max(index);
+            Ok(())
+        };
+
+
         // Setting up all motor indexes in the geometry so we don't need to
         // do name to index lookups later.
         for geometry in config.geometry_mut() {
@@ -195,17 +208,33 @@ impl MotionController {
                 AxisGeometryGeometryCase::Direct(v) => {
                     let i = get_motor_index(v.motor_name())?;
                     v.set_motor_index(i);
+
+                    mark_used_axis(v.axis_index())?;
                 }
                 AxisGeometryGeometryCase::CoreXy(v) => {
                     let a = get_motor_index(v.a_motor_name())?;
                     v.set_a_motor_index(a);
                     let b = get_motor_index(v.b_motor_name())?;
                     v.set_b_motor_index(b);
+
+                    mark_used_axis(v.x_axis_index())?;
+                    mark_used_axis(v.y_axis_index())?;
                 }
                 AxisGeometryGeometryCase::NOT_SET => {
                     return Err(err_msg("Undefined geometry"));
                 }
             }
+        }
+
+        if used_axes.is_empty() {
+            return Err(err_msg("No axes defined"));
+        }
+        if (max_axis + 1) as usize != used_axes.len() {
+            return Err(err_msg("Some axis indexes skipped"));
+        }
+
+        if (max_axis + 1) as usize != config.axes().len() {
+            return Err(err_msg("Bad axes list in config"));
         }
 
         for endstop in config.endstops_mut() {

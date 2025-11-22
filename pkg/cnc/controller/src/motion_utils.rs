@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use cnc_controller_proto::cnc::*;
-use math::matrix::Vector3f;
+use math::matrix::VectorXf;
 use cnc::linear_motion::*;
 use cnc::quadratic_stepper_motion::*;
 use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorMotion_Direction};
@@ -11,7 +11,7 @@ use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorMotion_Dire
 use crate::time::DeviceTime;
 
 
-pub fn to_motor_space(x: &Vector3f, config: &MotionControllerConfig) -> Vec<f32> {
+pub fn to_motor_space(x: &VectorXf, config: &MotionControllerConfig) -> Vec<f32> {
 
     let mut x_motor = vec![0.0; config.motors_len()];
 

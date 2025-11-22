@@ -5,6 +5,7 @@ use cnc::linear_motion::LinearMotion;
 use math::matrix::Vector3f;
 
 fn main() {
+    /*
     let motions = [
         LinearMotion {
             start_position: Vector3f::from_slice(&[0.0, 0.0, 0.0]),
@@ -36,4 +37,5 @@ fn main() {
         let start_position = motion.start_position[0] as i32;
         println!("{}", start_position);
     }
+    */
 }

@@ -51,11 +51,27 @@ message MotionControllerConfig {
 
     repeated Endstop endstops = 7;
 
-    float max_acceleration_xy = 3;
-    float max_acceleration_z = 4;
-    float maz_acceleration_e = 5;
+    repeated Axis axes = 3;
 
     LinearMotionPlannerConfig planner = 6;
+}
+
+message Axis {
+    // (also used as the default acceleration)
+    float max_acceleration = 1;
+
+    // (also used as the default speed)
+    float max_speed = 2;
+
+    string name = 3;
+
+    // Determines how the feed rate is interprated.
+    // - The axe with the lowest priority that is moving determined the overall coordination_priority.
+    // - Only axes at that coordination_priority follow
+    //   the feedrate. Other axes are driven at whatever
+    //   speed is needed to coordinate them with the main
+    //   axes.
+    uint32 coordination_priority = 4;
 }
 
 message Endstop {

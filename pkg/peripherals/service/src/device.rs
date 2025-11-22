@@ -28,7 +28,7 @@ impl PeripheralsDevice {
 
         let mut selector = usb::DeviceSelector::default();
         selector.vendor_id = Some(0x8888);
-        selector.product_id = Some(0x0004);
+        selector.product_id = Some(if config.product_id() != 0 { config.product_id() as u16 } else { 0x0004 });
         let mut usb_device = USBRadio::find(&selector).await?;
 
         let mut config_responses = HashMap::default();
@@ -73,6 +73,10 @@ impl PeripheralsDevice {
         let res = self.usb_device.send_request(&req).await?;
         Ok(res.uint_val())
         */
+    }
+
+    pub async fn get_idle_counter(&self) -> Result<u32> {
+        self.usb_device.get_idle_counter().await
     }
 
     pub async fn uart_transfer(

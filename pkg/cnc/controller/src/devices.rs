@@ -5,13 +5,16 @@ use std::time::Instant;
 use common::errors::*;
 use executor::lock;
 use common::hash::FastHasherBuilder;
-use executor::sync::AsyncRwLock;
+use executor::sync::{AsyncRwLock, AsyncMutex};
 use peripherals_service::device::PeripheralsDevice;
 use peripherals_service::config::BoardConfigRegistry;
+use executor::bundle::TaskResultBundle;
 use cnc_controller_proto::cnc::*;
+use peripherals_proto::peripherals::{PeripheralRequest, PeripheralResponse};
 
 use crate::tmc2209::TMC2209Device;
 use crate::time::*;
+use crate::utilization_tracker::*;
 
 
 /// TODO: Think of a better name for this.
@@ -21,6 +24,8 @@ pub struct DevicesController {
     state: AsyncRwLock<State>,
 
     time: Arc<TimeSyncer>,
+
+    utilization_tracker: Arc<RemoteUtilizationTracker>,
 }
 
 // TODO: Need to do propagation of ServiceResources (especially for each device's background thread).
@@ -43,7 +48,8 @@ impl DevicesController {
             state: AsyncRwLock::new(State {
                 entries: HashMap::default()
             }),
-            time: Arc::new(TimeSyncer::create())
+            time: Arc::new(TimeSyncer::create()),
+            utilization_tracker: Arc::new(RemoteUtilizationTracker::create()),
         });
 
         for proto in config.devices() {
@@ -57,6 +63,7 @@ impl DevicesController {
                     // TODO: We can optimize some of the locks in the TimeSyncer if we just
                     // pre-initialize all the PeripheralsDevices before other devices.
                     inst.time.add_device(proto.name(), device.clone()).await?;
+                    inst.utilization_tracker.add_device(proto.name(), device.clone()).await?;
 
                     DeviceEntry::PeripheralsDevice(device)
 
@@ -105,4 +112,85 @@ impl DevicesController {
     pub fn time(&self) -> &TimeSyncer {
         &self.time
     }
+
+    pub fn new_batch(self: &Arc<Self>) -> DevicesPeripheralRequestBatch {
+        DevicesPeripheralRequestBatch {
+            devices: self.clone(),
+            requests_by_device: HashMap::default(),
+            results: vec![],
+        }
+    }
 }
+
+
+pub struct DevicesPeripheralRequestBatch {
+    devices: Arc<DevicesController>,
+    results: Vec<PeripheralResponse>,
+    requests_by_device: HashMap<String, DeviceBatchEntry, FastHasherBuilder>
+}
+
+#[derive(Default)]
+struct DeviceBatchEntry {
+    indexes: Vec<usize>,
+    requests: Vec<PeripheralRequest>
+}
+
+const MAX_BATCH_SIZE: usize = 64;
+
+impl DevicesPeripheralRequestBatch {
+
+    // TODO: Consider using some other request format that allows the generator of the request to
+    // include the device name.
+    pub fn add(&mut self, device_name: &str, request: PeripheralRequest) {
+        let index = self.results.len();
+        self.results.push(PeripheralResponse::default());
+
+        let entry = self.requests_by_device.entry(device_name.to_string()).or_default();
+        entry.indexes.push(index);
+        entry.requests.push(request);
+    }
+
+    pub fn len(&self) -> usize {
+        self.results.len()
+    }
+
+    pub async fn send(self) -> Result<Vec<PeripheralResponse>> {
+        let results = Arc::new(AsyncMutex::new(self.results));
+
+        let mut bundle = TaskResultBundle::new();
+
+        for (device_name, entry) in self.requests_by_device {
+            let dev = self.devices.get_peripherals_device(&device_name).await?;
+
+            let results = results.clone();
+            bundle.add(&format!("{} send", device_name), async move {
+
+                let iter = entry.requests.chunks(MAX_BATCH_SIZE).zip(entry.indexes.chunks(MAX_BATCH_SIZE));
+
+                for (requests, indexes) in iter {
+                    let responses = dev.send_request_batch(requests).await?;
+
+                    lock!(results <= results.lock().await?, {
+                        for (res, index) in responses.into_iter().zip(indexes.iter()) {
+                            results[*index] = res;
+                        }
+                    });
+                }
+
+                Ok(())
+            });
+        }
+
+        bundle.join().await?;
+
+        let mut final_results = vec![];
+        lock!(results <= results.lock().await?, {
+            core::mem::swap(&mut *results, &mut final_results);
+        });
+
+        Ok(final_results)
+    }
+
+}
+
+

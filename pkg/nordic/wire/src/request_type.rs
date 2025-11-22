@@ -45,6 +45,9 @@ enum_def_with_unknown!(ProtocolRequestType u8 =>
     // [Device -> Host]
     PeripheralResponse = 8,
 
-    // [Host -> Device]
-    GetClockTime = 9
+    // [Device -> Host]
+    GetClockTime = 9,
+
+    // [Device -> Host]
+    GetIdleCounter = 10
 );

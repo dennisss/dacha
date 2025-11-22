@@ -12,6 +12,7 @@ extern crate std;
 extern crate macros;
 
 pub mod displacement;
+#[cfg(feature = "alloc")]
 pub mod linear_motion;
 #[cfg(feature = "alloc")]
 pub mod linear_motion_constraints;

@@ -138,11 +138,6 @@ impl TMC2209Device {
 
         Ok(inst)
     }
-    
-    // TODO: Hide this.
-    pub fn device(&self) -> &PeripheralsDevice {
-        &self.device
-    }
 
     pub fn device_name(&self) -> &str {
         self.config.device_name()

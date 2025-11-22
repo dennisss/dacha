@@ -90,6 +90,8 @@ message BoardConfig {
 
     string base_config = 2;
 
+    uint32 product_id = 6;
+
     // TODO: Information on USB device/vendor ids.
 
     // TODO: Information on how to build binaries for this board.
