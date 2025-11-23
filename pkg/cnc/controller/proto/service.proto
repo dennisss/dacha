@@ -11,11 +11,18 @@ service Controller {
 }
 
 message ExecuteRequest {
-    repeated MoveToCommand move_to = 1;
+    repeated Command commands = 1;
 }
 
 message ExecuteResponse {
 
+}
+
+message Command {
+    MoveToCommand move_to = 1;
+    HomeCommand home = 2;
+    SetTemperatureCommand set_temp = 3;
+    SetPosition set_position = 4;
 }
 
 message MoveToCommand {
@@ -25,4 +32,17 @@ message MoveToCommand {
     float e = 4;
 
     float feed_rate = 5;
+}
+
+message HomeCommand {}
+
+message SetTemperatureCommand {
+    float target = 1;
+}
+
+message SetPosition {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+    float e = 4;
 }

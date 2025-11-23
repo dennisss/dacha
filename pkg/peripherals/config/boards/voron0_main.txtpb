@@ -1,6 +1,8 @@
 name: "voron0_main"
 base_config: "nrf52840_itsybitsy"
 
+product_id: 10
+
 peripherals {
     name: "stepper_uart"
     uart {

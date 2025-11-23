@@ -42,5 +42,7 @@ motion_controller {
         }
     ]
 
-    max_acceleration_xy: 200
+    axes: [
+        { name: "X" max_speed: 40 max_acceleration: 200 }
+    ]
 }

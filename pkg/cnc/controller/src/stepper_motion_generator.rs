@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use common::errors::*;
 use cnc_controller_proto::cnc::*;
-use math::matrix::Vector3f;
 use cnc::linear_motion::*;
 use cnc::quadratic_stepper_motion::*;
 use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorMotion_Direction};
@@ -27,7 +26,8 @@ pub struct StepperMotionGenerator {
     config: Arc<MotionControllerConfig>,
 
     /// In the remote MCU clock space, this is '0' zero of all the stuff in this struct.
-    remote_start_time: DeviceTime,
+/// (this is one entry per motor in case motors are on different MCUs)
+    remote_start_time: Vec<DeviceTime>,
 
     /// Sequence of contiguous motions which we need to encode as steps.
     motions: VecDeque<LinearMotion>,
@@ -63,15 +63,16 @@ impl StepperMotionGenerator {
     pub fn new(
         config: Arc<MotionControllerConfig>,
         motor_position: &[i64],
-        remote_start_time: DeviceTime
+        remote_start_time: &[DeviceTime]
     ) -> Self {
         let num_motors = config.motors().len();
 
         assert_eq!(motor_position.len(), num_motors);
+assert_eq!(remote_start_time.len(), num_motors);
 
         Self {
             config,
-            remote_start_time,
+            remote_start_time: remote_start_time.to_vec(),
             motions: VecDeque::new(),
             first_motion_start_time: 0.0,
             motor_position: motor_position.to_vec(),
@@ -281,14 +282,16 @@ impl StepperMotionGenerator {
 
     fn step_times_to_commands(
         &self, motor_i: usize, mut dir: bool, step_times: &[u32], out: &mut Vec<StepperMotorMotion>
-    ) {
+    ) -> Result<()> {
         if step_times.len() == 1 {
-            return;
+            return Ok(());
         }
 
         // TODO: Also need to check against the last step before all of these.
         for i in 1..step_times.len() {
-            assert!(step_times[i] > step_times[i - 1]);
+            if step_times[i] <= step_times[i - 1] {
+                return Err(err_msg("Non-monotonic step times"));
+}
 
             let step_duration = step_times[i] - step_times[i - 1];
 
@@ -330,10 +333,10 @@ impl StepperMotionGenerator {
                 };
 
                 if delta_time > 16_000_000 {
-                    panic!("Really far out step!");
+                    return Err(err_msg("Really far out step!"));
                 }
                 if delta_time < 40 && !is_first {
-                    panic!("Really small step: {}", delta_time);
+                    return Err(format_err!("Really small step: {}", delta_time));
                 }
 
                 last_time = next_time;
@@ -350,7 +353,7 @@ impl StepperMotionGenerator {
             dir = !dir;
         }
 
-        let time_offset = self.remote_start_time.lower()
+        let time_offset = self.remote_start_time[motor_i].lower()
             .wrapping_add(self.seconds_to_ticks(self.first_motion_start_time));
 
         for raw_motion in raw_motions {
@@ -372,6 +375,8 @@ impl StepperMotionGenerator {
             step.set_num_steps(raw_motion.num_steps.count());
             out.push(step);
         }
+
+        Ok(())
     }
 }
 
@@ -380,31 +385,7 @@ impl StepperMotionGenerator {
 mod tests {
     use super::*;
 
-    use math::matrix::vec3f;
-
-    /*
-    #[test]
-    fn works2() {
-        let mut i = 0;
-
-        let mut time = 0;
-        let mut dur = 100;
-        let step = 10;
-
-        for _ in 0..100 {
-            println!("{},{}", time, i);
-            i += 1;
-            time += dur;
-            dur += step;
-        }
-
-
-
-        // let a = 4294966916u32;
-        // println!("{}", a as i32);
-
-    }
-    */
+    use math::vecxf;
 
     #[test]
     fn works() {
@@ -439,52 +420,52 @@ mod tests {
         };
 
         run_motion(LinearMotion {
-            start_velocity: vec3f(0.0, 0.0, 0.0),
-            end_position: vec3f(400.0, 0.0, 0.0), // 
-            acceleration: vec3f(80.0 * 1000.0, 0.0, 0.0), //
+            start_velocity: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(400.0, 0.0, 0.0), // 
+            acceleration: vecxf!(80.0 * 1000.0, 0.0, 0.0), //
             duration: 0.1,
 
             // Not important.
-            start_position: vec3f(0.0, 0.0, 0.0),
-            end_velocity: vec3f(0.0, 0.0, 0.0),
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_velocity: vecxf!(0.0, 0.0, 0.0),
         });
 
         return;
 
         // Constant velocity
         run_motion(LinearMotion {
-            start_velocity: vec3f(1.0, 0.0, 0.0),
-            end_position: vec3f(1.0, 0.0, 0.0), // 
-            acceleration: vec3f(0.0, 0.0, 0.0), //
+            start_velocity: vecxf!(1.0, 0.0, 0.0),
+            end_position: vecxf!(1.0, 0.0, 0.0), // 
+            acceleration: vecxf!(0.0, 0.0, 0.0), //
             duration: 1.0,
 
             // Not important.
-            start_position: vec3f(0.0, 0.0, 0.0),
-            end_velocity: vec3f(0.0, 0.0, 0.0),
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_velocity: vecxf!(0.0, 0.0, 0.0),
         });
 
         // Doing nothing
         run_motion(LinearMotion {
-            start_velocity: vec3f(0.0, 0.0, 0.0),
-            end_position: vec3f(0.0, 0.0, 0.0), // 
-            acceleration: vec3f(0.0, 0.0, 0.0), //
+            start_velocity: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(0.0, 0.0, 0.0), // 
+            acceleration: vecxf!(0.0, 0.0, 0.0), //
             duration: 1.0,
 
             // Not important.
-            start_position: vec3f(0.0, 0.0, 0.0),
-            end_velocity: vec3f(0.0, 0.0, 0.0),
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_velocity: vecxf!(0.0, 0.0, 0.0),
         });
 
         // Accelerate from zero velocity.
         run_motion(LinearMotion {
-            start_velocity: vec3f(0.0, 0.0, 0.0),
-            end_position: vec3f(5.0, 0.0, 0.0), // 
-            acceleration: vec3f(10.0, 0.0, 0.0), //
+            start_velocity: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(5.0, 0.0, 0.0), // 
+            acceleration: vecxf!(10.0, 0.0, 0.0), //
             duration: 1.0,
 
             // Not important.
-            start_position: vec3f(0.0, 0.0, 0.0),
-            end_velocity: vec3f(0.0, 0.0, 0.0),
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_velocity: vecxf!(0.0, 0.0, 0.0),
         });
 
 

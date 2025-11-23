@@ -148,6 +148,18 @@ impl PeripheralsDevice {
         Ok(())
     }
 
+    pub fn gpio_write_request(
+        &self,
+        periph_name: &str,
+        high: bool
+    ) -> Result<PeripheralRequest> {
+        let periph_index = self.periph_config(periph_name)?.index();
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.set_gpio_level_mut().set_high(high);
+        Ok(req)
+    }
+
     pub async fn gpio_read(
         &self,
         periph_name: &str
@@ -159,6 +171,14 @@ impl PeripheralsDevice {
         req.get_gpio_level_mut();
         let res = self.usb_device.send_request(&req).await?;
         Ok(res.uint_val() != 0)
+    }
+
+    pub fn gpio_read_request(&self, periph_name: &str) -> Result<PeripheralRequest> {
+        let periph_index = self.periph_config(periph_name)?.index();
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.get_gpio_level_mut();
+        Ok(req)
     }
 
     pub async fn pwm_write(
@@ -224,8 +244,9 @@ impl PeripheralsDevice {
         Ok(v)
     }
 
+    /// Returns the time at which the user defined trigger was hit (if it was hit).
     /// Returns whether or not the window contains any values that hit the user defined trigger. 
-    pub async fn analog_read_window(&self, periph_name: &str) -> Result<bool> {
+    pub async fn analog_read_window(&self, periph_name: &str) -> Result<Option<u32>> {
         let periph = self.periph_config(periph_name)?;
         let periph_index = periph.index();
 
@@ -239,7 +260,7 @@ impl PeripheralsDevice {
         req.set_peripheral_index(periph_index);
         req.sample_adc_mut().set_window(true);
         let res = self.usb_device.send_request(&req).await?;
-        Ok(res.uint_val() != 0)
+        Ok(if res.uint_val() != 0 { Some(res.uint_val()) } else { None })
     }
 
     /// TODO: We should have the window internally marked with which peripheral it can from to
@@ -364,14 +385,14 @@ impl PeripheralsDevice {
         Ok(req)
     }
 
-    pub async fn clear_stepper_queue(&self, periph_name: &str) -> Result<()> {
+    pub async fn clear_stepper_queue(&self, periph_name: &str) -> Result<u32> {
         let periph_index = self.periph_config(periph_name)?.index();
 
         let mut req = PeripheralRequest::default();
         req.set_peripheral_index(periph_index);
         req.set_clear_stepper_queue(true);
         let res = self.usb_device.send_request(&req).await?;
-        Ok(())
+        Ok(res.uint_val())
     }
 
 }

@@ -659,8 +659,23 @@ impl MotionController {
         Ok(())
     }
 
+    /// NOTE: The assumption is that the motion controller is idle and all queues are empty.
+    pub async fn set_position(&self, position: VectorXf) -> Result<()> {
+        let num_axes = self.shared.config.axes().len();
+
+        lock!(state <= self.shared.state.lock().await?, {
+            state.position_offset = position;
+            state.planner.set_start_position(VectorXf::zero_with_shape(num_axes, 1));
+            for p in &mut state.motor_positions {
+                *p = 0;
+            }
+        });
+
+        Ok(())
+    }
+
     /// Returns the last position to which the motion controller will move to.
-    pub async fn last_position(&self) -> Result<Vector3f> {
+    pub async fn last_position(&self) -> Result<VectorXf> {
         lock!(state <= self.shared.state.lock().await?, {
             Ok(state.planner.last_position().clone())
         })
@@ -689,11 +704,15 @@ impl MotionController {
         Ok(())
     }
 
+    pub fn num_axes(&self) -> usize {
+        self.shared.config.axes().len()
+    }
+
     /// Schedules a movement to be performed in the future.
     ///
     /// Note that this blocks until the movement is schedules but the actual motion
     /// will happen later.
-    pub async fn move_to(&self, pos: Vector3f, feed_rate: f32) -> Result<()> {
+    pub async fn move_to(&self, pos: VectorXf, feed_rate: f32) -> Result<()> {
         
         // TODO: Quantize to step unit boundaries.
 
@@ -705,7 +724,9 @@ impl MotionController {
                 state.first_motion_time = Instant::now();
             }
 
-            state.planner.move_to(pos, feed_rate)?;
+let next_pos = pos - &state.position_offset;
+
+            state.planner.move_to(next_pos, feed_rate)?;
 
             Ok(())
         })
@@ -722,7 +743,10 @@ pub struct MotionControllerLinearPlanner {
 impl MotionControllerLinearPlanner {
     pub fn new(config: Arc<MotionControllerConfig>) -> Self {
         Self {
-            inner: LinearMotionPlanner::new(Vector3f::zero(), config.planner().clone()),
+            inner: LinearMotionPlanner::new(
+VectorXf::zero_with_shape(config.axes().len(), 1),
+config.planner().clone()
+),
             config
         }
     }
@@ -736,8 +760,12 @@ impl MotionControllerLinearPlanner {
         self.inner.next(max_duration, max_count, out);
     }
 
-    pub fn last_position(&self) -> &Vector3f {
+    pub fn last_position(&self) -> &VectorXf {
         self.inner.last_position()
+    }
+
+    pub fn set_start_position(&mut self, start_position: VectorXf) {
+        self.inner.set_start_position(start_position);
     }
 
     pub fn is_empty(&self) -> bool {

@@ -1,4 +1,5 @@
 use alloc::{collections::VecDeque, vec::Vec};
+use std::f32::consts::PI;
 
 use math::matrix::cwise_binary_ops::*;
 use math::matrix::VectorXf;
@@ -8,6 +9,7 @@ use cnc_motion_proto::cnc::LinearMotionPlannerConfig;
 use crate::displacement::*;
 use crate::linear_motion::*;
 use crate::linear_motion_constraints::*;
+use crate::constrained_vector::*;
 
 
 /// Plans a sequence of linear motions that are chained one
@@ -45,9 +47,7 @@ struct LinearMotionQueueEntry {
     /// This is initially 0 to imply that the final motion should bring us to a
     /// stop and set to a higher value when the next motion is appended to the
     /// plan.
-    ///
-    /// TODO: Remove since not used in this code.
-    max_cornering_speed: f32,
+        max_cornering_speed: f32,
 
     /// If true, max_start_velocity will no longer change if additional motions
     /// are added to this
@@ -68,6 +68,13 @@ impl LinearMotionPlanner {
 
     pub fn clear(&mut self) {
         self.queue.clear();
+    }
+
+    pub fn set_start_position(&mut self, start_position: VectorXf) {
+        assert!(self.queue.is_empty());
+
+        self.start_position = start_position.clone();
+        self.start_velocity = VectorXf::zero_with_shape(start_position.rows(), 1);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -119,15 +126,10 @@ impl LinearMotionPlanner {
 
             let cornering_accel = max_acceleration.min(last_motion.constraints.max_acceleration);
 
-            // Motion directions relative to the corner between last and current motion.
-            let entry_direction =
-                (&last_motion.constraints.end_position - &last_motion.constraints.start_position).normalized();
-            let exit_direction = (&end_position - &start_position).normalized();
-
-            // TODO: Support separately computing Z cornering speed.
-            let mut max_cornering_speed = Self::compute_max_cornering_speed(
-                entry_direction,
-                exit_direction,
+                        let mut max_cornering_speed = Self::compute_max_cornering_speed(
+                &last_motion.constraints.start_position,
+                &last_motion.constraints.end_position,
+                &end_position,
                 self.config.max_junction_deviation(),
                 cornering_accel,
             );
@@ -156,22 +158,91 @@ impl LinearMotionPlanner {
         self.backpropagate_speed_limits();
     }
 
-    // NOTE: entry_direction and exit_direction should be normalized.
-    fn compute_max_cornering_speed(
-        entry_direction: VectorXf,
-        exit_direction: VectorXf,
+        fn compute_max_cornering_speed(
+        start_position: &VectorXf,
+        corner_position: &VectorXf,
+        next_position: &VectorXf,
         max_deviation: f32,
         max_acceleration: f32,
     ) -> f32 {
-        let cornering_angle = entry_direction.dot(&exit_direction).acos();
+        /*
+        Generalized cornering:
+        - For X/Y, use corner radius
+
+
+        - For Z use max jerk.
+        - If any group stops moving across the turn, then cornering is zero.
+
+
+        */
+
+        let mut overall_limits = vec![];
+
+        // Junction deviation for X/Y since they are a coupled mass.
+        {
+            let entry_delta = corner_position - start_position;
+            let exit_delta = next_position - corner_position;
+
+            if entry_delta.norm() < 0.001 || exit_delta.norm() < 0.001 {
+                for i in 0..start_position.len().min(2) {
+                    overall_limits.push(0.0);
+                }
+            } else {
+                let mut entry_direction = entry_delta.clone();
+                let mut exit_direction = exit_delta.clone();
+                // We only consider cornering over the first 3 axes.
+                // Other axes are coordinated.
+                // TODO: Need to make this behavior more configurable.
+                for i in 2..entry_delta.len() {
+                    entry_direction[i] = 0.0;
+                    exit_direction[i] = 0.0;
+                }
+                entry_direction.normalize();
+                exit_direction.normalize();
+
+                let cornering_angle = (entry_direction.clone() * -1.0).dot(&exit_direction).acos();
 
         // Note: Divide by zero here will make the corner_radius 'inf'
         let corner_radius =
             max_deviation * ((cornering_angle / 2.0).sin() / (1.0 - (cornering_angle / 2.0).sin()));
 
-        let cornering_speed = (max_acceleration * corner_radius).sqrt();
+        let cornering_speed = (max_acceleration * corner_radius).sqrt()
+                    .min(1000000.0);
 
-        cornering_speed
+let         cornering_speed_vec = entry_direction * cornering_speed;
+
+                for i in 0..start_position.len().min(2) {
+                    overall_limits.push(cornering_speed_vec[i]);
+                }
+
+            }
+
+        }
+
+        // Rest of axes are considered to be independent.
+        for i in 2..start_position.len() {
+            let entry_delta = corner_position[i] - start_position[i];
+            let exit_delta = next_position[i] - corner_position[i];
+
+            if entry_delta < 0.0001 || exit_delta <= 0.001 {
+                overall_limits.push(0.0);
+                continue;
+            }
+
+            // Check if both directions have the same sign.
+            if (entry_delta < 0.0) == (exit_delta < 0.0) {
+                // No limit on exit speed.
+                overall_limits.push(1000000.0);
+            } else {
+                // TODO: Allow a max instantaneous speed change?
+                overall_limits.push(0.0);
+            }
+        }
+
+        constrained_vector(
+            &(corner_position - start_position).normalized(),
+            &overall_limits
+        ).norm()
     }
 
     fn backpropagate_speed_limits(&mut self) {
@@ -274,18 +345,80 @@ impl LinearMotionPlanner {
 mod test {
     use super::*;
 
+    use math::vecxf;
+
     fn default_config() -> LinearMotionPlannerConfig {
         let mut config = LinearMotionPlannerConfig::default();
         config.set_max_junction_deviation(0.01);
         config
     }
 
+    #[test]
+    fn cornering() {
+
+        println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
+            &vecxf!(0.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            &vecxf!(2.0, 0.0, 0.0),
+            0.2,
+            1000.0
+        ));
+
+        println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
+            &vecxf!(0.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            &vecxf!(2.0, 0.2, 0.0),
+            0.2,
+            1000.0
+        ));
+
+        println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
+            &vecxf!(0.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            &vecxf!(2.0, 0.6, 0.0),
+            0.2,
+            1000.0
+        ));
+
+        println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
+            &vecxf!(0.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            &vecxf!(2.0, 1.0, 0.0),
+            0.2,
+            1000.0
+        ));
+
+        println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
+            &vecxf!(0.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            &vecxf!(1.0, 1.0, 0.0),
+            0.2,
+            1000.0
+        ));
+
+        println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
+            &vecxf!(0.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            &vecxf!(0.0, 0.0, 0.0),
+            0.2,
+            1000.0
+        ));
+
+        println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
+            &vecxf!(0.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            &vecxf!(1.0, 0.0, 0.0),
+            0.2,
+            1000.0
+        ));
+    }
+
     // motion_controller.move_to(vec3f(3600.0, 0.0, 0.0), 100.0).await?;
 
     #[test]
     fn split_motion_path() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
-        planner.move_to(Vector3f::from_slice(&[3600.0, 0.0, 0.0]), 100.0, 1000.0);
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
+        planner.move_to(vecxf!(3600.0, 0.0, 0.0), 100.0, 1000.0);
 
         let mut out = vec![];
         planner.next(1000.0, 100, &mut out);
@@ -298,8 +431,8 @@ mod test {
 
     #[test]
     fn single_axis_path() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
-        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
+        planner.move_to(vecxf!(100.0, 0.0, 0.0), 100.0, 1000.0);
 
 
         // let mut out = vec![];
@@ -309,10 +442,10 @@ mod test {
 
     #[test]
     fn straight_line() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
-        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
+        planner.move_to(vecxf!(100.0, 0.0, 0.0), 200.0, 1000.0);
         // Changing the speed so that these lines can't be merged.
-        planner.move_to(Vector3f::from_slice(&[200.0, 0.0, 0.0]), 200.0, 1000.0);
+        planner.move_to(vecxf!(110.0, 0.0, 0.0), 200.0, 1000.0);
 
         let mut out = vec![];
         planner.next(1000.0, 1000, &mut out);
@@ -321,9 +454,9 @@ mod test {
 
     #[test]
     fn reverse_line() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
-        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
-        planner.move_to(Vector3f::from_slice(&[0.0, 0.0, 0.0]), 100.0, 1000.0);
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
+        planner.move_to(vecxf!(100.0, 0.0, 0.0), 100.0, 1000.0);
+        planner.move_to(vecxf!(0.0, 0.0, 0.0), 100.0, 1000.0);
 
         let mut out = vec![];
         planner.next(1000.0, 1000, &mut out);
@@ -334,8 +467,8 @@ mod test {
 
     #[test]
     fn single_axis_not_enough_time_to_speed_up() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
-        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1.0);
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
+        planner.move_to(vecxf!(100.0, 0.0, 0.0), 100.0, 1.0);
 
         // let mut out = vec![];
         // planner.next(&mut out);
@@ -344,11 +477,11 @@ mod test {
 
     #[test]
     fn square_path() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
-        planner.move_to(Vector3f::from_slice(&[100.0, 0.0, 0.0]), 100.0, 1000.0);
-        planner.move_to(Vector3f::from_slice(&[100.0, 100.0, 0.0]), 100.0, 1000.0);
-        planner.move_to(Vector3f::from_slice(&[0.0, 100.0, 0.0]), 100.0, 1000.0);
-        planner.move_to(Vector3f::from_slice(&[0.0, 0.0, 0.0]), 100.0, 1000.0);
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
+        planner.move_to(vecxf!(100.0, 0.0, 0.0), 100.0, 1000.0);
+        planner.move_to(vecxf!(100.0, 100.0, 0.0), 100.0, 1000.0);
+        planner.move_to(vecxf!(0.0, 100.0, 0.0), 100.0, 1000.0);
+        planner.move_to(vecxf!(0.0, 0.0, 0.0), 100.0, 1000.0);
 
         // let mut out = vec![];
         // planner.next(&mut out);
@@ -362,8 +495,8 @@ mod test {
     fn works() {
         // 20 revolutions
 
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
-        planner.move_to(Vector3f::from_slice(&[64000.0, 0.0, 0.0]), 3200.0, 500.0);
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
+        planner.move_to(vecxf!(64000.0, 0.0, 0.0), 3200.0, 500.0);
 
         // let mut out = vec![];
         // planner.next(&mut out);
@@ -373,18 +506,18 @@ mod test {
     /*
     #[test]
     fn works() {
-        let mut planner = LinearMotionPlanner::new(Vector3f::zero(), default_config());
+        let mut planner = LinearMotionPlanner::new(vecxf!(0.0, 0.0, 0.0), default_config());
 
         planner.append(
-            Vector3f::from_slice(&[0.0, 0.0, 0.0]),
-            Vector3f::from_slice(&[100.0, 0.0, 0.0]),
+            vecxf!(0.0, 0.0, 0.0),
+            vecxf!(100.0, 0.0, 0.0),
             50.0,
             1000.0,
         );
 
         planner.append(
-            Vector3f::from_slice(&[100.0, 0.0, 0.0]),
-            Vector3f::from_slice(&[200.0, 0.0, 0.0]),
+            vecxf!(100.0, 0.0, 0.0),
+            vecxf!(200.0, 0.0, 0.0),
             50.0,
             1000.0,
         );

@@ -120,6 +120,42 @@ impl USBRadio {
         }
     }
 
+    async fn control_write(shared: &Shared, request_type: ProtocolRequestType, data: &[u8]) -> Result<()> {
+        executor::timeout(
+            Duration::from_millis(10000),
+            shared.device
+                .write_control(
+                    SetupPacket {
+                        bmRequestType: 0b01000000,
+                        bRequest: request_type.to_value(),
+                        wValue: 0,
+                        wIndex: 0,
+                        wLength: data.len() as u16,
+                    },
+                    data,
+                )
+        )
+        .await
+        .map_err(|_| err_msg("Timeout during write_control"))?
+    }
+
+    async fn control_read(shared: &Shared, request_type: ProtocolRequestType, data: &mut [u8]) -> Result<usize> {
+        executor::timeout(
+            Duration::from_millis(10000),
+            shared.device
+                .read_control(
+                    SetupPacket {
+                        bmRequestType: 0b11000000,
+                        bRequest: request_type.to_value(),
+                        wValue: 0,
+                        wIndex: 0,
+                        wLength: data.len() as u16,
+                    },
+                    data,
+                )
+        ).await.map_err(|_| err_msg("Timeout during read_control"))?
+    }
+
     async fn background_thread(
         guard: ConnectionGuard,
         shared: Arc<Shared>
@@ -175,18 +211,11 @@ impl USBRadio {
                     }
 
                     // TODO: Support retrying this (must consider the idempotence of actions).
-                    shared.device
-                        .write_control(
-                            SetupPacket {
-                                bmRequestType: 0b01000000,
-                                bRequest: ProtocolRequestType::PeripheralRequest.to_value(),
-                                wValue: 0,
-                                wIndex: 0,
-                                wLength: send_buffer.len() as u16,
-                            },
-                            &send_buffer,
-                        )
-                        .await?;
+                    Self::control_write(
+                        &shared,
+                        ProtocolRequestType::PeripheralRequest,
+                        &send_buffer
+                    ).await?;
 
                     continue;
                 }
@@ -199,19 +228,11 @@ impl USBRadio {
                 // Attempt to RX.
 
                 loop {
-                    let nread = shared
-                        .device
-                        .read_control(
-                            SetupPacket {
-                                bmRequestType: 0b11000000,
-                                bRequest: ProtocolRequestType::PeripheralResponse.to_value(),
-                                wValue: 0,
-                                wIndex: 0,
-                                wLength: res_buffer.len() as u16,
-                            },
-                            &mut res_buffer,
-                        )
-                        .await?;
+                    let nread = Self::control_read(
+                        &shared,
+                        ProtocolRequestType::PeripheralResponse,
+                        &mut res_buffer
+                    ).await?;
 
                     if nread == 0 {
                         break;
@@ -264,19 +285,13 @@ impl USBRadio {
         let mut buf = [0u8; 4];
 
         let local_request_time = Instant::now();
-        let n = shared
-            .device
-            .read_control(
-                SetupPacket {
-                    bmRequestType: 0b11000000,
-                    bRequest: ProtocolRequestType::GetClockTime.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: buf.len() as u16,
-                },
-                &mut buf,
-            )
-            .await?;
+        
+        let n = Self::control_read(
+            shared,
+ProtocolRequestType::GetClockTime,
+                &mut buf
+        ).await?;
+
         let local_response_time = Instant::now();
 
         if n != buf.len() {
@@ -323,19 +338,11 @@ impl USBRadio {
     pub async fn get_idle_counter(&self) -> Result<u32> {
         let mut buf = [0u8; 4];
 
-        let n = self.shared
-            .device
-            .read_control(
-                SetupPacket {
-                    bmRequestType: 0b11000000,
-                    bRequest: ProtocolRequestType::GetIdleCounter.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: buf.len() as u16,
-                },
-                &mut buf,
-            )
-            .await?;
+        let n = Self::control_read(
+            &self.shared,
+ProtocolRequestType::GetIdleCounter,
+                &mut buf
+        ).await?;
 
         if n != buf.len() {
             return Err(err_msg("Did not read a full u32"));
@@ -346,38 +353,23 @@ impl USBRadio {
 
     pub async fn set_network_config(&mut self, config: &NetworkConfig) -> Result<()> {
         let proto = config.serialize()?;
-        self.shared.device
-            .write_control(
-                SetupPacket {
-                    bmRequestType: 0b01000000,
-                    bRequest: ProtocolRequestType::SetNetworkConfig.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: proto.len() as u16,
-                },
-                &proto,
-            )
-            .await?;
+        Self::control_write(
+            &self.shared,
+ProtocolRequestType::SetNetworkConfig,
+                &proto
+        ).await?;
         Ok(())
     }
 
     pub async fn get_network_config(&mut self) -> Result<Option<NetworkConfig>> {
         let mut read_buffer = [0u8; 256];
         // TODO: Set a timeout on this and reset the device on failure.
-        let n = self
-            .shared
-            .device
-            .read_control(
-                SetupPacket {
-                    bmRequestType: 0b11000000,
-                    bRequest: ProtocolRequestType::GetNetworkConfig.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: read_buffer.len() as u16,
-                },
-                &mut read_buffer,
-            )
-            .await?;
+        
+        let n = Self::control_read(
+            &self.shared,
+ProtocolRequestType::GetNetworkConfig,
+                &mut read_buffer
+        ).await?;
 
         if n == 0 {
             return Ok(None);
@@ -388,19 +380,11 @@ impl USBRadio {
 
     pub async fn send_packet(&mut self, packet: &PacketBuffer) -> Result<()> {
         // TODO: Support retrying this (must consider the idempotence of actions).
-        self.shared.device
-            .write_control(
-                SetupPacket {
-                    bmRequestType: 0b01000000,
-                    bRequest: ProtocolRequestType::Send.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: packet.as_bytes().len() as u16,
-                },
-                packet.as_bytes(),
-            )
-            .await?;
-
+        Self::control_write(
+            &self.shared,
+ProtocolRequestType::Send,
+                packet.as_bytes()
+        ).await?;
         Ok(())
     }
 
@@ -453,20 +437,11 @@ impl USBRadio {
 
     pub async fn read_log_entries(&mut self) -> Result<Vec<LogEntry>> {
         let mut buffer = [0u8; 256];
-        let n = self
-            .shared
-            .device
-            .read_control(
-                SetupPacket {
-                    bmRequestType: 0b11000000,
-                    bRequest: ProtocolRequestType::ReadLog.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: buffer.len() as u16,
-                },
-                &mut buffer,
-            )
-            .await?;
+        let n = Self::control_read(
+            &self.shared,
+ProtocolRequestType::ReadLog,
+                &mut buffer
+        ).await?;
 
         let mut out = vec![];
 

@@ -240,13 +240,13 @@ mod tests {
 
     use super::*;
 
-    use math::matrix::vec3f;
+    use math::vecxf;
 
     #[test]
     fn real_example() {
-        let start_velocity = vec3f(16.762085, 0.0, 0.0);
+        let start_velocity = vecxf!(16.762085, 0.0, 0.0);
 
-        let c = LinearMotionConstraints { start_position: vec3f(3199.8596, 0.0, 0.0), end_position: vec3f(3200.0, 0.0, 0.0), max_end_speed: 0.0, max_speed: 200.0, max_acceleration: 1000.0 };
+        let c = LinearMotionConstraints { start_position: vecxf!(3199.8596, 0.0, 0.0), end_position: vecxf!(3200.0, 0.0, 0.0), max_end_speed: 0.0, max_speed: 200.0, max_acceleration: 1000.0 };
 
         // Mainly verifying it doesn't crash.
         let mut out = vec![];
@@ -258,11 +258,11 @@ mod tests {
 
         // All three curves can be added.
         {
-            let start_velocity = vec3f(0.0, 0.0, 0.0);
+            let start_velocity = vecxf!(0.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(1000.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(1000.0, 0.0, 0.0),
                 max_end_speed: 0.0,
                 max_speed: 100.0,
                 max_acceleration: 100.0,
@@ -271,31 +271,31 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(0., 0., 0.),
-                    end_position: vec3f(50., 0., 0.),
-                    end_velocity: vec3f(100., 0., 0.),
-                    acceleration: vec3f(100., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(0., 0., 0.),
+                    end_position: vecxf!(50., 0., 0.),
+                    end_velocity: vecxf!(100., 0., 0.),
+                    acceleration: vecxf!(100., 0., 0.),
                     duration: 1.0,
                 },
                 LinearMotion {
-                    start_position: vec3f(50., 0., 0.),
-                    start_velocity: vec3f(100., 0., 0.),
-                    end_position: vec3f(950., 0., 0.),
-                    end_velocity: vec3f(100., 0., 0.),
-                    acceleration: vec3f(0., 0., 0.),
+                    start_position: vecxf!(50., 0., 0.),
+                    start_velocity: vecxf!(100., 0., 0.),
+                    end_position: vecxf!(950., 0., 0.),
+                    end_velocity: vecxf!(100., 0., 0.),
+                    acceleration: vecxf!(0., 0., 0.),
                     duration: 9.0,
                 },
                 LinearMotion {
-                    start_position: vec3f(950., 0., 0.),
-                    start_velocity: vec3f(100., 0., 0.),
-                    end_position: vec3f(1000., 0., 0.),
-                    end_velocity: vec3f(0., 0., 0.),
-                    acceleration: vec3f(-100., 0., 0.),
+                    start_position: vecxf!(950., 0., 0.),
+                    start_velocity: vecxf!(100., 0., 0.),
+                    end_position: vecxf!(1000., 0., 0.),
+                    end_velocity: vecxf!(0., 0., 0.),
+                    acceleration: vecxf!(-100., 0., 0.),
                     duration: 1.0,
                 },
             ][..]);
@@ -303,11 +303,11 @@ mod tests {
 
         // Just enough time for two curves
         {
-            let start_velocity = vec3f(0.0, 0.0, 0.0);
+            let start_velocity = vecxf!(0.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(100.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(100.0, 0.0, 0.0),
                 max_end_speed: 0.0,
                 max_speed: 100.0,
                 max_acceleration: 100.0,
@@ -316,23 +316,23 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(0., 0., 0.),
-                    end_position: vec3f(50., 0., 0.),
-                    end_velocity: vec3f(100., 0., 0.),
-                    acceleration: vec3f(100., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(0., 0., 0.),
+                    end_position: vecxf!(50., 0., 0.),
+                    end_velocity: vecxf!(100., 0., 0.),
+                    acceleration: vecxf!(100., 0., 0.),
                     duration: 1.0,
                 },
                 LinearMotion {
-                    start_position: vec3f(50., 0., 0.),
-                    start_velocity: vec3f(100., 0., 0.),
-                    end_position: vec3f(100., 0., 0.),
-                    end_velocity: vec3f(0., 0., 0.),
-                    acceleration: vec3f(-100., 0., 0.),
+                    start_position: vecxf!(50., 0., 0.),
+                    start_velocity: vecxf!(100., 0., 0.),
+                    end_position: vecxf!(100., 0., 0.),
+                    end_velocity: vecxf!(0., 0., 0.),
+                    acceleration: vecxf!(-100., 0., 0.),
                     duration: 1.0,
                 },
             ][..]);
@@ -341,11 +341,11 @@ mod tests {
         // We have just enough space to get to top speed but shouldn't because we need to immediately start
         // slowing down.
         {
-            let start_velocity = vec3f(0.0, 0.0, 0.0);
+            let start_velocity = vecxf!(0.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(50.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(50.0, 0.0, 0.0),
                 max_end_speed: 0.0,
                 max_speed: 100.0,
                 max_acceleration: 100.0,
@@ -354,23 +354,23 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(0., 0., 0.),
-                    end_position: vec3f(25., 0., 0.),
-                    end_velocity: vec3f(70.710677, 0., 0.),
-                    acceleration: vec3f(100., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(0., 0., 0.),
+                    end_position: vecxf!(25., 0., 0.),
+                    end_velocity: vecxf!(70.710677, 0., 0.),
+                    acceleration: vecxf!(100., 0., 0.),
                     duration: 0.70710677,
                 },
                 LinearMotion {
-                    start_position: vec3f(25., 0., 0.),
-                    start_velocity: vec3f(70.710677, 0., 0.),
-                    end_position: vec3f(50., 0., 0.),
-                    end_velocity: vec3f(0., 0., 0.),
-                    acceleration: vec3f(-100., 0., 0.),
+                    start_position: vecxf!(25., 0., 0.),
+                    start_velocity: vecxf!(70.710677, 0., 0.),
+                    end_position: vecxf!(50., 0., 0.),
+                    end_velocity: vecxf!(0., 0., 0.),
+                    acceleration: vecxf!(-100., 0., 0.),
                     duration: 0.70710677,
                 },
             ]);
@@ -378,11 +378,11 @@ mod tests {
 
         // Similar to last case but we have a little more space.
         {
-            let start_velocity = vec3f(0.0, 0.0, 0.0);
+            let start_velocity = vecxf!(0.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(80.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(80.0, 0.0, 0.0),
                 max_end_speed: 0.0,
                 max_speed: 100.0,
                 max_acceleration: 100.0,
@@ -391,23 +391,23 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(0., 0., 0.),
-                    end_position: vec3f(40., 0., 0.),
-                    end_velocity: vec3f(89.44272, 0., 0.),
-                    acceleration: vec3f(100., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(0., 0., 0.),
+                    end_position: vecxf!(40., 0., 0.),
+                    end_velocity: vecxf!(89.44272, 0., 0.),
+                    acceleration: vecxf!(100., 0., 0.),
                     duration: 0.8944272,
                 },
                 LinearMotion {
-                    start_position: vec3f(40., 0., 0.),
-                    start_velocity: vec3f(89.44272, 0., 0.),
-                    end_position: vec3f(80., 0., 0.),
-                    end_velocity: vec3f(0., 0., 0.),
-                    acceleration: vec3f(-100., 0., 0.),
+                    start_position: vecxf!(40., 0., 0.),
+                    start_velocity: vecxf!(89.44272, 0., 0.),
+                    end_position: vecxf!(80., 0., 0.),
+                    end_velocity: vecxf!(0., 0., 0.),
+                    acceleration: vecxf!(-100., 0., 0.),
                     duration: 0.8944272,
                 },
             ][..]);
@@ -421,11 +421,11 @@ mod tests {
     fn start_moving() {
         // Just cruising at start speed.
         {
-            let start_velocity = vec3f(100.0, 0.0, 0.0);
+            let start_velocity = vecxf!(100.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(200.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(200.0, 0.0, 0.0),
                 max_end_speed: 100.0,
                 max_speed: 100.0,
                 max_acceleration: 100.0,
@@ -434,15 +434,15 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(100.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(100.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(100., 0., 0.),
-                    end_position: vec3f(200., 0., 0.),
-                    end_velocity: vec3f(100., 0., 0.),
-                    acceleration: vec3f(0., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(100., 0., 0.),
+                    end_position: vecxf!(200., 0., 0.),
+                    end_velocity: vecxf!(100., 0., 0.),
+                    acceleration: vecxf!(0., 0., 0.),
                     duration: 2.0,
                 },
             ][..]);
@@ -452,11 +452,11 @@ mod tests {
 
         // Speed up then cruise
         {
-            let start_velocity = vec3f(100.0, 0.0, 0.0);
+            let start_velocity = vecxf!(100.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(1000.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(1000.0, 0.0, 0.0),
                 max_end_speed: 200.0,
                 max_speed: 200.0,
                 max_acceleration: 100.0,
@@ -465,23 +465,23 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(200.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(200.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(100., 0., 0.),
-                    end_position: vec3f(150., 0., 0.),
-                    end_velocity: vec3f(200., 0., 0.),
-                    acceleration: vec3f(100., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(100., 0., 0.),
+                    end_position: vecxf!(150., 0., 0.),
+                    end_velocity: vecxf!(200., 0., 0.),
+                    acceleration: vecxf!(100., 0., 0.),
                     duration: 1.0,
                 },
                 LinearMotion {
-                    start_position: vec3f(150., 0., 0.),
-                    start_velocity: vec3f(200., 0., 0.),
-                    end_position: vec3f(1000., 0., 0.),
-                    end_velocity: vec3f(200., 0., 0.),
-                    acceleration: vec3f(0., 0., 0.),
+                    start_position: vecxf!(150., 0., 0.),
+                    start_velocity: vecxf!(200., 0., 0.),
+                    end_position: vecxf!(1000., 0., 0.),
+                    end_velocity: vecxf!(200., 0., 0.),
+                    acceleration: vecxf!(0., 0., 0.),
                     duration: 4.25,
                 },
             ][..]);
@@ -496,11 +496,11 @@ mod tests {
 
         // Need to immediately slow down.
         {
-            let start_velocity = vec3f(100.0, 0.0, 0.0);
+            let start_velocity = vecxf!(100.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(50.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(50.0, 0.0, 0.0),
                 max_end_speed: 0.0,
                 max_speed: 200.0,
                 max_acceleration: 100.0,
@@ -509,15 +509,15 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(100., 0., 0.),
-                    end_position: vec3f(50., 0., 0.),
-                    end_velocity: vec3f(0., 0., 0.),
-                    acceleration: vec3f(-100., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(100., 0., 0.),
+                    end_position: vecxf!(50., 0., 0.),
+                    end_velocity: vecxf!(0., 0., 0.),
+                    acceleration: vecxf!(-100., 0., 0.),
                     duration: 1.0,
                 },
             ][..]);
@@ -530,11 +530,11 @@ mod tests {
     fn stop_soon() {
 
         {
-            let start_velocity = vec3f(100.0, 0.0, 0.0);
+            let start_velocity = vecxf!(100.0, 0.0, 0.0);
 
             let c = LinearMotionConstraints {
-                start_position: vec3f(0.0, 0.0, 0.0),
-                end_position: vec3f(60.0, 0.0, 0.0),
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(60.0, 0.0, 0.0),
                 max_end_speed: 0.0,
                 max_speed: 200.0,
                 max_acceleration: 100.0,
@@ -543,25 +543,25 @@ mod tests {
             let mut out = vec![];
             let end_velocity = c.calculate_motions(start_velocity, &mut out);
 
-            assert_eq!(end_velocity, vec3f(0.0, 0.0, 0.0));
+            assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
             // TODO: This needs a better comparator.
             /*
             assert_eq!(&out[..], &[
                 LinearMotion {
-                    start_position: vec3f(0., 0., 0.),
-                    start_velocity: vec3f(100., 0., 0.),
-                    end_position: vec3f(5., 0., 0.),
-                    end_velocity: vec3f(104.8809, 0., 0.),
-                    acceleration: vec3f(100., 0., 0.),
+                    start_position: vecxf!(0., 0., 0.),
+                    start_velocity: vecxf!(100., 0., 0.),
+                    end_position: vecxf!(5., 0., 0.),
+                    end_velocity: vecxf!(104.8809, 0., 0.),
+                    acceleration: vecxf!(100., 0., 0.),
                     duration: 0.048808824,
                 },
                 LinearMotion {
-                    start_position: vec3f(5., 0., 0.),
-                    start_velocity: vec3f(104.8809, 0., 0.),
-                    end_position: vec3f(60., 0., 0.),
-                    end_velocity: vec3f(0., 0., 0.),
-                    acceleration: vec3f(-100., 0., 0.),
+                    start_position: vecxf!(5., 0., 0.),
+                    start_velocity: vecxf!(104.8809, 0., 0.),
+                    end_position: vecxf!(60., 0., 0.),
+                    end_velocity: vecxf!(0., 0., 0.),
+                    acceleration: vecxf!(-100., 0., 0.),
                     duration: 1.0488088,
                 },
             ][..]);

@@ -192,7 +192,10 @@ impl TMC2209Device {
     pub async fn disable(&self) -> Result<()> {
         self.device.gpio_write(self.config.enable_peripheral(), true).await?;
         Ok(())
+}
 
+pub fn disable_request(&self) -> Result<PeripheralRequest> {
+        self.device.gpio_write_request(self.config.enable_peripheral(), true)
     }
 
     pub async fn enqueue_stepper_motion(
@@ -227,7 +230,7 @@ impl TMC2209Device {
         Ok(r.tstep())
     }
 
-    pub async fn clear_stepper_queue(&self) -> Result<()> {
+    pub async fn clear_stepper_queue(&self) -> Result<u32> {
         self.device.clear_stepper_queue(self.config.step_peripheral()).await
     }
 

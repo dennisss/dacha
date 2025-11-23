@@ -2,7 +2,7 @@
 extern crate regexp_macros;
 
 use core::fmt::{Debug, Display};
-use core::ops::{Add, Sub};
+use core::ops::{Add, AddAssign, Sub};
 use core::str::FromStr;
 
 use base_error::*;
@@ -287,6 +287,12 @@ impl Add for Decimal {
     fn add(mut self, rhs: Self) -> Self::Output {
         self.value += rhs.value;
         self
+    }
+}
+
+impl AddAssign for Decimal {
+    fn add_assign(&mut self, rhs: Self) {
+        self.value += rhs.value;
     }
 }
 

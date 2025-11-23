@@ -4,6 +4,8 @@
 name: "voron0_toolhead"
 base_config: "nrf52840"
 
+product_id: 11
+
 ###############################################################################
 
 pins {
@@ -113,6 +115,7 @@ peripherals {
             default_value: 0
             frequency: 10
             high_drive: true
+            timeout_millis: 4000
         }
     }
 }
@@ -165,10 +168,11 @@ peripherals {
         negative_pin_name: "PROBE-"
         config {
             max_voltage: 0.6
-            sample_rate: 1024
-            trigger_above: 0.2
-            trigger_below: -0.2
+            sample_rate: 2048
+            trigger_above: 0.05
+            trigger_below: -0.05
             stop_on_trigger: true
+            window_size: 1024
         }
     }
 }

@@ -24,3 +24,5 @@ pub mod quadratic_stepper_motion;
 mod quadratic_interpolation;
 #[cfg(feature = "alloc")]
 pub mod stepping;
+#[cfg(feature = "alloc")]
+pub mod constrained_vector;

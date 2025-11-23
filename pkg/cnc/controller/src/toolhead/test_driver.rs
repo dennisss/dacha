@@ -135,7 +135,9 @@ impl ToolheadTestDriver {
 
     pub async fn read_state(&mut self) -> Result<ToolheadTrainingDataRow> {
         let mut now = Instant::now();
-    
+
+        // TODO: Don't need timeouts on the peripherals anymore since we have other timeouts in the USBRadio now.
+
         let heater = self.current_heater_duty_cycle;
         let heater_temp = executor::timeout(Duration::from_secs(1),
             self.device.analog_read("thermistor_sense"))
@@ -196,7 +198,7 @@ impl ToolheadTestDriver {
             log_state.file.write_all(state.to_csv_row().as_bytes()).await?;
         }
 
-        println!("FIL: {:?}", self.device.analog_read("filament_sense").await?);
+        // println!("FIL: {:?}", self.device.analog_read("filament_sense").await?);
 
         println!("{:?}", state);
 

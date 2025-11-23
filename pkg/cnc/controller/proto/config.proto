@@ -23,8 +23,15 @@ message ControllerConfig {
 
     MotionControllerConfig motion_controller = 3;
 
+    repeated HeaterControllerConfig heater_controllers = 5;
+
     // For now this should always have 4 numbers.
     repeated float bed_fem_weights = 4;
+}
+
+message HeaterControllerConfig {
+
+
 }
 
 message BedClientConfig {
@@ -83,6 +90,9 @@ message Endstop {
     repeated string motors = 3;
 
     repeated uint32 motor_indexes = 4; // internal only
+
+    // If true, this endstop is only checked during homing.
+    bool homing_only = 5;
 }
 
 message AxisGeometry {

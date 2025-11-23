@@ -8,6 +8,12 @@ devices: [
         }
     },
     {
+        name: "toolhead"
+        peripheral_config {
+            base_config: "voron0_toolhead"
+        }
+    },
+    {
         name: "stepper1"
         tmc2209 {
             device_name: "main"
@@ -36,6 +42,15 @@ devices: [
             enable_peripheral: "stepper3_enable"
             addr: 2
         }
+    },
+    {
+        name: "stepper_extruder"
+        tmc2209 {
+            device_name: "toolhead"
+            step_peripheral: "stepper_step"
+            uart_peripheral: "stepper_uart"
+            enable_peripheral: "stepper_enable"
+        }
     }
 ]
 
@@ -52,6 +67,11 @@ motion_controller {
         {
             device_name: "stepper3"
             steps_per_mm: 400
+            inverted: true
+        },
+        {
+            device_name: "stepper_extruder"
+            steps_per_mm: 708.365708
             inverted: true
         }
     ]
@@ -89,9 +109,21 @@ motion_controller {
                 motor_name: "stepper3"
                 axis_index: 2
             }
+        },
+        {
+            direct {
+                motor_name: "stepper_extruder"
+                axis_index: 3
+            }
         }
     ]
 
-    max_acceleration_xy: 200
-    max_acceleration_z: 20
+    axes: [
+        { name: "X" max_speed: 60 max_acceleration: 200 coordination_priority: 0 },
+        { name: "Y" max_speed: 60 max_acceleration: 200 coordination_priority: 0 },
+        { name: "Z" max_speed: 12 max_acceleration: 20  coordination_priority: 0 },
+        { name: "E" max_speed: 10 max_acceleration: 10  coordination_priority: 1 }
+    ]
 }
+
+heater_controllers {}

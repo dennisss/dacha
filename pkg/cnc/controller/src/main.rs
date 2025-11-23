@@ -201,6 +201,9 @@ enum Mode {
     #[arg(name = "train-toolhead-model")]
     TrainToolheadModel(TrainToolheadModelCommand),
 
+    #[arg(name = "toolhead-pid")]
+    ToolheadPID(ToolheadPIDCommand),
+
     #[arg(name = "control-toolhead-heater")]
     ControlToolheadHeater(ControlToolheadHeaterCommand),
 
@@ -335,10 +338,11 @@ TODO: Constantly high DIAG implies there is something messed up with the motor.
 async fn toolhead_test() -> Result<()> {
     let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
 
-    let config = configs.remove("breadboard_toolhead")
+    let config = configs.remove("voron0_toolhead")
         .ok_or_else(|| err_msg("No config with the given name"))?;
 
 
+        /*
     let mut stepper_config = TMC2209Config::default();
     protobuf::text::parse_text_proto(r#"
         step_peripheral: "stepper_step"
@@ -346,12 +350,13 @@ async fn toolhead_test() -> Result<()> {
         diag_peripheral: "stepper_diag"
         enable_peripheral: "stepper_enable"
     "#, &mut stepper_config)?;
+    */
 
     let (mut device, _) = PeripheralsDevice::create(&config).await?;
 
     let device = Arc::new(device);
 
-    let stepper = TMC2209Device::create(stepper_config, device.clone()).await?;
+    // let stepper = TMC2209Device::create(stepper_config, device.clone()).await?;
     // let mag = MA732::new(device.clone());
 
     /*
@@ -421,16 +426,21 @@ async fn toolhead_test() -> Result<()> {
 
 
 
-    /*
     loop {
-        let triggered = stepper.device.analog_read_window("probe").await?;
-        println!("..");
+        // println!("{:?}", device.get_clock_time().await?);
+        // println!("{:?}", device.get_idle_counter().await?);
 
-        if triggered || true {
-            println!("{:?}", stepper.device.analog_fetch_window("probe").await?);
-        }
+        // executor::sleep(Duration::from_millis(500)).await?;
+
+        let s = Instant::now();
+        let triggered = device.analog_read_window("probe").await?;
+        let e = Instant::now();
+        println!(".. : {:?} {:?}", triggered, e - s);
+
+        // if triggered {
+        //     println!("{:?}", device.analog_fetch_window("probe").await?);
+        // }
     }
-    */
 
     /*
 
@@ -444,6 +454,7 @@ async fn toolhead_test() -> Result<()> {
     */
 
 
+    /*
 
     stepper.enable().await?;
 
@@ -462,7 +473,7 @@ async fn toolhead_test() -> Result<()> {
 
     stepper.disable().await?;
 
-
+    */
 
     /*
     DRV_STATUS  0x6F
@@ -507,6 +518,7 @@ async fn main() -> Result<()> {
         Mode::TrainToolheadModel(cmd) => {
             cmd.run().await
         }
+        Mode::ToolheadPID(cmd) => cmd.run().await,
         Mode::ControlToolheadHeater(cmd) => cmd.run().await,
         Mode::ToolheadTest => {
             return toolhead_test().await;
