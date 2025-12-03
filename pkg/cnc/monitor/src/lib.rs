@@ -30,6 +30,7 @@ mod serial_send_buffer;
 pub mod syslog_parser;
 mod tables;
 mod timestamped_value;
+mod leveling;
 
 use std::time::Duration;
 

@@ -4,22 +4,25 @@ node -r esm pkg/cnc/controller/vis/node.js
 
 const { createCanvas, loadImage, registerFont } = require('canvas')
 const { encode_frames } = require('./video_encoder');
-const { configure } = require('./toolhead_animation');
+const { configure } = require('./motion_animation');
 
 
 
 registerFont('third_party/noto_sans/font_normal.ttf', { family: 'Noto Sans' });
+registerFont('third_party/noto_sans/font_mono_normal.ttf', { family: 'Noto Sans Mono' });
 registerFont('third_party/noto_color_emoji/NotoColorEmoji-Regular.ttf', { family: 'Noto Color Emoji' });
 
 
 const canvas = createCanvas(3840, 2160)
 const ctx = canvas.getContext('2d');
 
+ctx.antialias = 'subpixel';
+
 let inner_canvas = { width: 960, height: 540 };
 ctx.scale(4, 4);
 
 
-const FRAME_RATE = 30;
+const FRAME_RATE = 29.97;
 
 class Frames {
     constructor(timeline) {
@@ -54,5 +57,5 @@ class Frames {
 let frames = new Frames(configure(inner_canvas));
 
 (async () => {
-    await encode_frames(frames, 'dump/pz.mp4');
+    await encode_frames(frames, 'dump/chapter9_slow.mp4');
 })()

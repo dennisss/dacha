@@ -4,7 +4,7 @@ use crate::quadratic_stepper_motion::QuadraticStepperMotion;
 
 /// NOTE: THis must be much smaller than half the min step duration to ensure that
 /// steps don't swap ordering in time between two consecutive curves.
-const MAX_ERROR: i32 = 250;
+const MAX_ERROR: i32 = 600;
 
 // TODO: Also read https://klipper.discourse.group/t/improved-stepcompress-implementation/3203
 
@@ -54,6 +54,7 @@ pub fn bisect_fit(step_times: &[u32], out: &mut Vec<QuadraticStepperMotion>) {
 
     let mut all_good = true;
 
+    // TODO: Don't need to  check first few times.
     for i in 0..(step_times.len() - 1) {
         let error = ((step_times[i] as i32) - (current_motion.next_step_time as i32)).abs();
         if error > MAX_ERROR {

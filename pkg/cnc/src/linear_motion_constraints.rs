@@ -253,6 +253,200 @@ mod tests {
         let end_velocity = c.calculate_motions(start_velocity, &mut out);
     }
 
+    use alloc::string::ToString;
+
+    #[test]
+    fn dump_curve1() {
+        let start_velocity = vecxf!(0.0, 0.0, 0.0);
+
+        let c = LinearMotionConstraints {
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(500.0, 0.0, 0.0),
+            max_end_speed: 0.0,
+            max_speed: 100.0,
+            max_acceleration: 100.0,
+        };
+
+        let mut out = vec![];
+        let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+        assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
+
+        let mut t = 0.0;
+
+        let num_steps = 100;
+
+        let mut csv = "time,x,dx\n".to_string();
+
+        for motion in out {
+            for i in 0..(num_steps + 1) {
+
+                let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+                let v = motion.clone().split_at(ti).1;
+
+                csv.push_str(&format!("{:},{},{}\n", t + ti, v.start_position[0], v.start_velocity[0]));
+            }
+
+            println!("Time: {}", motion.duration);
+            t += motion.duration;
+        }
+
+
+        println!("{}", csv);
+    }
+
+    #[test]
+    fn dump_curve2() {
+        let start_velocity = vecxf!(0.0, 0.0, 0.0);
+
+        let c = LinearMotionConstraints {
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(50.0, 0.0, 0.0),
+            max_end_speed: 0.0,
+            max_speed: 100.0,
+            max_acceleration: 100.0,
+        };
+
+        let mut out = vec![];
+        let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+        assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
+
+        let mut t = 0.0;
+
+        let num_steps = 100;
+
+        let mut csv = "time,x,dx\n".to_string();
+
+        for motion in out {
+            for i in 0..(num_steps + 1) {
+
+                let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+                let v = motion.clone().split_at(ti).1;
+
+                csv.push_str(&format!("{:},{},{}\n", t + ti, v.start_position[0], v.start_velocity[0]));
+            }
+
+            println!("Time: {}", motion.duration);
+            t += motion.duration;
+        }
+
+
+        println!("{}", csv);
+    }
+
+    #[test]
+    fn dump_curve3() {
+        let start_velocity = vecxf!(0.0, 0.0, 0.0);
+
+        let c = LinearMotionConstraints {
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(50.0, 0.0, 0.0),
+            max_end_speed: 0.0,
+            max_speed: 100.0,
+            max_acceleration: 100.0,
+        };
+
+        let mut t = 0.0;
+        let mut last_pos = 0.0;
+
+        let num_steps = 40;
+
+        let mut csv = "time,x,dx\n".to_string();
+
+
+
+        for i in 0..10 {
+            let velocity = ((i + 1) as f32) * 10.0;
+
+
+            let next_pos = last_pos + displacement_traveled(velocity, 0.0, 1.0);
+
+            let motion = LinearMotion {
+                start_position: vecxf!(last_pos, 0., 0.),
+                start_velocity: vecxf!(velocity, 0., 0.),
+                end_position: vecxf!(next_pos, 0., 0.),
+                end_velocity: vecxf!(velocity, 0., 0.),
+                acceleration: vecxf!(0., 0., 0.),
+                duration: 1.0,
+            };
+
+            last_pos = next_pos;
+
+            for i in 0..(num_steps + 1) {
+
+                let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+                let v = motion.clone().split_at(ti).1;
+
+                csv.push_str(&format!("{:},{},{}\n", t + ti, v.start_position[0], v.start_velocity[0]));
+            }
+
+            println!("Time: {}", motion.duration);
+            t += motion.duration;
+        }
+
+
+        println!("{}", csv);
+    }
+
+
+    #[test]
+    fn dump_curve4() {
+
+        /*
+        First two adjacent motions with no cornering.
+        */
+
+        let mut start_velocity = vecxf!(0.0, 0.0, 0.0);
+
+        let mut out = vec![];
+
+        {
+            let c = LinearMotionConstraints {
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                end_position: vecxf!(200.0, 0.0, 0.0),
+                max_end_speed: 40.0,
+                max_speed: 100.0,
+                max_acceleration: 100.0,
+            };
+            start_velocity = c.calculate_motions(start_velocity, &mut out);            
+        }
+        {
+            let c = LinearMotionConstraints {
+                start_position: vecxf!(200.0, 0.0, 0.0),
+                end_position: vecxf!(400.0, 0.0, 0.0),
+                max_end_speed: 0.0,
+                max_speed: 100.0,
+                max_acceleration: 100.0,
+            };
+            start_velocity = c.calculate_motions(start_velocity, &mut out);            
+        }
+
+
+        let mut t = 0.0;
+
+        let num_steps = 100;
+
+        let mut csv = "time,x,dx\n".to_string();
+
+        for motion in out {
+            for i in 0..(num_steps + 1) {
+
+                let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+                let v = motion.clone().split_at(ti).1;
+
+                csv.push_str(&format!("{:},{},{}\n", t + ti, v.start_position[0], v.start_velocity[0]));
+            }
+
+            println!("Time: {}", motion.duration);
+            t += motion.duration;
+        }
+
+
+        println!("{}", csv);
+    }
+
+
     #[test]
     fn start_and_stop_at_rest() {
 
@@ -525,6 +719,40 @@ mod tests {
             // println!("{:#?}", out);
         }
     }
+
+
+    #[test]
+    fn instant_accel() {
+        let start_velocity = vecxf!(0.0, 0.0, 0.0);
+
+        let c = LinearMotionConstraints {
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(50.0, 0.0, 0.0),
+            max_end_speed: 0.0,
+            max_speed: 200.0,
+            max_acceleration: 10000000.0,
+        };
+
+        let mut out = vec![];
+        let end_velocity = c.calculate_motions(start_velocity, &mut out);
+
+        println!("{:#?}", out);
+
+        // assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
+
+        // assert_eq!(&out[..], &[
+        //     LinearMotion {
+        //         start_position: vecxf!(0., 0., 0.),
+        //         start_velocity: vecxf!(100., 0., 0.),
+        //         end_position: vecxf!(50., 0., 0.),
+        //         end_velocity: vecxf!(0., 0., 0.),
+        //         acceleration: vecxf!(-100., 0., 0.),
+        //         duration: 1.0,
+        //     },
+        // ][..]);
+
+    }
+
 
     #[test]
     fn stop_soon() {

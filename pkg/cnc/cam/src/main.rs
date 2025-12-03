@@ -45,9 +45,10 @@ TODO: Make this a golden test case:
         --output_path=duet_magnet_stencil.gcode \
         --mode=stencil-front
 
-    cargo run --bin cam --release -- \
+    cargo run --bin pcb_cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
         --board_path=pkg/cnc/boards/voron_v0_umbilical/board-latest/board-latest.kicad_pcb \
-        --mode=single-back \
+        single-back \
         --output_path=umbilical.gcode
 
 
@@ -124,6 +125,49 @@ pkg/cnc/boards/voron_v0_umbilical/board-latest/board-latest.kicad_pcb
         
 
 
+pkg/cnc/boards/voron_v0_main/board/board.kicad_pcb
+
+    cargo run --bin pcb_cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
+        --board_path=pkg/cnc/boards/voron_v0_main/board/board.kicad_pcb \
+        double-front \
+        --output_path=voron0_main_front.gcode
+
+
+    cargo run --bin pcb_cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
+        --board_path=pkg/cnc/boards/voron_v0_main/board/board.kicad_pcb \
+        double-back \
+        --alignment_data=voron0_main_alignment_data.txtpb \
+        --output_path=voron0_main_back.gcode
+
+
+    cargo run --bin pcb_cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
+        --board_path=pkg/cnc/boards/voron_v0_main/board/board.kicad_pcb \
+        laser-stencil-back \
+        --output_path=voron0_main_back_stencil.svg
+
+
+pkg/cnc/boards/buck_adapter/board/board.kicad_pcb
+
+    cargo run --bin pcb_cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
+        --board_path=pkg/cnc/boards/buck_adapter/board/board.kicad_pcb \
+        single-back \
+        --output_path=buck_adapter.gcode
+
+    cargo run --release --bin gcode_tile -- \
+        --input=buck_adapter.gcode \
+        --output=buck_adapter_tiled.gcode
+
+
+
+    cargo run --bin cam --release -- \
+        --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
+        --board_path=pkg/cnc/boards/magnet_sensor/board/board.kicad_pcb \
+        single-front \
+        --output_path=magnetic_tile.gcode
 
 
     ============
@@ -172,6 +216,8 @@ TODO: Wireless probing auto-suggest # of points based on x/y distance
 For stencil need to export an SVG that is inward offset
 - https://www.youtube.com/watch?v=mw0mskVCvis
 
+
+TODO: If we do manual moves while a program is paused, we need to eventually move back to the original position and change back to the original relative/absolute mode to avoid discontinuities in the program.
 
 TODO: When doing a toolchange, reset back to the original feed rate instead of using the last user set one.
 

@@ -1,5 +1,8 @@
 use crate::interrupts::{trigger_pendsv, wait_for_pendsv};
-use crate::mutex::*;
+use crate::critical_mutex::*;
+use crate::CriticalSection;
+
+// TODO: For event sending, we can probably just optimize this down further.
 
 /// Container for relaying a value from some producer(s) to some consumer(s).
 ///
@@ -7,18 +10,18 @@ use crate::mutex::*;
 /// time. Senders must wait until a consumer takes the value before being able
 /// to send a new value.
 pub struct Channel<T> {
-    value: Mutex<Option<T>>,
+    value: CriticalMutex<Option<T>>,
 }
 
 impl<T> Channel<T> {
     pub const fn new() -> Self {
         Self {
-            value: Mutex::new(None),
+            value: CriticalMutex::new(None),
         }
     }
 
-    pub async fn try_send(&self, value: T) -> bool {
-        let mut value_guard = self.value.lock().await;
+    pub fn try_send(&self, value: T) -> bool {
+        let mut value_guard = self.value.lock();
         if !value_guard.is_some() {
             *value_guard = Some(value);
             trigger_pendsv();
@@ -28,6 +31,7 @@ impl<T> Channel<T> {
         }
     }
 
+    /*
     pub async fn send(&self, value: T) {
         loop {
             let mut value_guard = self.value.lock().await;
@@ -42,9 +46,10 @@ impl<T> Channel<T> {
             wait_for_pendsv().await;
         }
     }
+    */
 
-    pub async fn try_recv(&self) -> Option<T> {
-        let mut value_guard = self.value.lock().await;
+    pub fn try_recv(&self) -> Option<T> {
+        let mut value_guard = self.value.lock();
         let value = value_guard.take();
         if value.is_some() {
             trigger_pendsv();
@@ -55,14 +60,17 @@ impl<T> Channel<T> {
 
     pub async fn recv(&self) -> T {
         loop {
-            let mut value_guard = self.value.lock().await;
+            // TODO: This is redundant with the critical seciton used for the locking.
+            let cs = CriticalSection::new();
+
+            let mut value_guard = self.value.lock();
             if let Some(value) = value_guard.take() {
                 return value;
             }
 
             // TODO: Register a waker first and then release the lock.
             drop(value_guard);
-            wait_for_pendsv().await;
+            wait_for_pendsv(cs).await;
         }
     }
 }

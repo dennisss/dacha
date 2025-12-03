@@ -488,5 +488,80 @@ impl ControlToolheadHeaterCommand {
 
 }
 
+use crate::pid::*;
+
+
+
+
+#[derive(Args)]
+pub struct ToolheadPIDCommand {
+    log_path: Option<LocalPathBuf>,
+}
+
+impl ToolheadPIDCommand {
+
+    pub async fn run(self) -> Result<()> {
+        let target_temp = 215.0;
+        
+        let mut pid = PIDController::new();
+
+        // For simulating how the PID controller performs.
+        /*
+        let weights = &[
+            15.831538, 0.20786208, 0.5193688, 0.67528397
+        ];
+
+        let mut model = ToolheadThermalModel::create(weights);
+        let start = Instant::now();
+    
+        for i in 0..100 {
+           
+            let current_temp = model.fem.elements[model.ring_el];
+            println!("{}", current_temp);
+            // println!("=> {}", pid.k_i * pid.error_integral)
+
+            let error = target_temp - current_temp;
+
+            let value = pid.next(error, start + Duration::from_secs(i));
+            model.set_heater(value);
+            model.fem.step(1.0);
+        }
+        */
+
+        let mut driver = ToolheadTestDriver::create(
+            self.log_path.clone(), None, None).await?;
+
+
+        let cancellation_token = executor::signals::new_shutdown_token();
+
+        while !cancellation_token.is_cancelled().await {
+            let now = Instant::now();
+            let state = driver.read_state().await?;
+
+            let current_temp = state.heater_temp.as_ref().unwrap();
+            let error = target_temp - current_temp;
+
+            let input = pid.next(error, now);
+
+            driver.set_heater_duty_cycle(input).await?;
+
+
+            executor::sleep(Duration::from_millis(1000)).await?;
+        }
+
+        println!("Finishing...");
+
+        driver.set_heater_duty_cycle(0.0).await?;
+
+        if self.log_path.is_some() {
+            driver.stop_logging().await?;
+        }
+
+        Ok(())
+
+    }
+
+}
+
 
 

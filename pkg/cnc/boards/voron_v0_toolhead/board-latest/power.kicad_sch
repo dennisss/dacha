@@ -597,10 +597,6 @@
     (effects (font (size 1.27 1.27)) (justify left bottom))
     (uuid a3a7a905-af6f-43d9-9d51-40c776d99c7f)
   )
-  (text "TODO: Smaller inductor footprint." (at 71.12 25.4 0)
-    (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid fee8aa1f-e896-43bd-b6e1-7212409d2795)
-  )
 
   (symbol (lib_id "Device:C_Small") (at 40.767 45.339 180) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)

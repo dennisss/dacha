@@ -163,7 +163,7 @@ impl USBRadio {
         let mut send_buffer = vec![];
         send_buffer.reserve_exact(SEND_BUFFER_SIZE);
 
-        let mut res_buffer = vec![0u8; 256];
+        let mut res_buffer = vec![];
 
         loop {
             let mut have_active_requests = false;
@@ -223,50 +223,12 @@ impl USBRadio {
                 break;
             }
 
+            // TODO: Interrupt/Bulk data must be multiple of 4 bytes on NRF52
+
 
             if have_active_requests {
                 // Attempt to RX.
-
-                loop {
-                    let nread = Self::control_read(
-                        &shared,
-                        ProtocolRequestType::PeripheralResponse,
-                        &mut res_buffer
-                    ).await?;
-
-                    if nread == 0 {
-                        break;
-                    }
-
-                    let mut i = 0;
-                    while i < nread {
-                        let len = res_buffer[i] as usize;
-                        i += 1;
-
-                        if len == 0 {
-                            break;
-                        }
-
-                        // TODO: Do a bounds check
-
-                        let response = PeripheralResponse::parse(&res_buffer[i..(i + len)])?;
-                        i += len;
-
-                        // TODO: Maybe lock this once for the entire parsing part (maybe after doing parsing and we have the responses in a vec).
-                        lock!(state <= shared.state.lock().await?, {
-                            for batch_i in 0..(response.ack_next_n() + 1) {
-                                let seq = response.request_sequence() + batch_i;
-                                
-                                let sender = state.active_requests.remove(&seq)
-                                    .ok_or_else(|| format_err!("No active request for response with sequence: {}", seq))?;
-
-                                let _ = sender.send(response.clone());
-                            }
-
-                            Result::<_, Error>::Ok(())
-                        })?;
-                    }
-                }
+                Self::receive_responses(&shared, &mut res_buffer).await?;
             }
 
             // Wait either 10ms or for more requests to be available to send.
@@ -281,6 +243,77 @@ impl USBRadio {
         }
     }
 
+    async fn receive_responses(shared: &Shared, res_buffer: &mut Vec<u8>) -> Result<()> {
+        // TODO: Maybe decrease and use padding to simplify things.
+        const CHUNK_SIZE: usize = 256;
+        
+        assert!(res_buffer.is_empty());
+
+        loop {
+            let original_buffer_len = res_buffer.len();
+            res_buffer.resize(original_buffer_len + CHUNK_SIZE, 0);
+
+            let nread = Self::control_read(
+                shared,
+                ProtocolRequestType::PeripheralResponse,
+                &mut res_buffer[original_buffer_len..]
+            ).await?;
+            res_buffer.truncate(original_buffer_len + nread);
+
+            // The device will always fill the whole buffer if it has enough data.
+            // So if the buffer wasn't filled, there is nothing else to read for now.
+            let mut done = nread < CHUNK_SIZE;
+
+            let mut i = 0;
+            while i < res_buffer.len() {
+                let len = res_buffer[i] as usize;
+                
+                // Zero length packets are treated as padding and also signal that the device
+                // didn't have more data to send.
+                if len == 0 {
+                    done = true;
+                    i = res_buffer.len();
+                    break;
+                }
+
+                if i + len > res_buffer.len() {
+                    if done {
+                        return Err(err_msg("Done but expecting more data immediately"));
+                    }
+
+                    break;
+                }
+
+                i += 1;
+                let response = PeripheralResponse::parse(&res_buffer[i..(i + len)])?;
+                i += len;
+
+                // TODO: Maybe lock this once for the entire parsing part (maybe after doing parsing and we have the responses in a vec).
+                lock!(state <= shared.state.lock().await?, {
+                    for batch_i in 0..(response.ack_next_n() + 1) {
+                        let seq = response.request_sequence() + batch_i;
+                        
+                        let sender = state.active_requests.remove(&seq)
+                            .ok_or_else(|| format_err!("No active request for response with sequence: {}", seq))?;
+
+                        let _ = sender.send(response.clone());
+                    }
+
+                    Result::<_, Error>::Ok(())
+                })?;
+            }
+
+            // Clean up read bytes
+            // Note that this fairly cheap (bounded by CHUNK_SIZE)
+            res_buffer.drain(..i);
+
+            if done {
+                return Ok(());
+            }
+        }
+    }
+
+
     async fn execute_get_clock_time(shared: &Shared) -> Result<()> {
         let mut buf = [0u8; 4];
 
@@ -288,10 +321,10 @@ impl USBRadio {
         
         let n = Self::control_read(
             shared,
-ProtocolRequestType::GetClockTime,
-                &mut buf
+            ProtocolRequestType::GetClockTime,
+            &mut buf
         ).await?;
-
+        
         let local_response_time = Instant::now();
 
         if n != buf.len() {
@@ -340,8 +373,8 @@ ProtocolRequestType::GetClockTime,
 
         let n = Self::control_read(
             &self.shared,
-ProtocolRequestType::GetIdleCounter,
-                &mut buf
+            ProtocolRequestType::GetIdleCounter,
+            &mut buf
         ).await?;
 
         if n != buf.len() {
@@ -355,8 +388,8 @@ ProtocolRequestType::GetIdleCounter,
         let proto = config.serialize()?;
         Self::control_write(
             &self.shared,
-ProtocolRequestType::SetNetworkConfig,
-                &proto
+            ProtocolRequestType::SetNetworkConfig,
+            &proto
         ).await?;
         Ok(())
     }
@@ -364,11 +397,11 @@ ProtocolRequestType::SetNetworkConfig,
     pub async fn get_network_config(&mut self) -> Result<Option<NetworkConfig>> {
         let mut read_buffer = [0u8; 256];
         // TODO: Set a timeout on this and reset the device on failure.
-        
+
         let n = Self::control_read(
             &self.shared,
-ProtocolRequestType::GetNetworkConfig,
-                &mut read_buffer
+            ProtocolRequestType::GetNetworkConfig,
+            &mut read_buffer
         ).await?;
 
         if n == 0 {
@@ -382,8 +415,8 @@ ProtocolRequestType::GetNetworkConfig,
         // TODO: Support retrying this (must consider the idempotence of actions).
         Self::control_write(
             &self.shared,
-ProtocolRequestType::Send,
-                packet.as_bytes()
+            ProtocolRequestType::Send,
+            packet.as_bytes()
         ).await?;
         Ok(())
     }
@@ -439,8 +472,8 @@ ProtocolRequestType::Send,
         let mut buffer = [0u8; 256];
         let n = Self::control_read(
             &self.shared,
-ProtocolRequestType::ReadLog,
-                &mut buffer
+            ProtocolRequestType::ReadLog,
+            &mut buffer
         ).await?;
 
         let mut out = vec![];
@@ -526,6 +559,7 @@ ProtocolRequestType::ReadLog,
                 let mut request = request.clone();
                 request.set_request_sequence(seq);
 
+                // TODO: Ideally serialize outside of the lock.
                 state.send_queue.push_back(request.serialize()?);
                 state.active_requests.insert(seq, sender);
             }

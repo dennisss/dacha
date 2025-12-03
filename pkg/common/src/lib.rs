@@ -75,6 +75,7 @@ pub mod buffered_reader;
 pub mod collections;
 pub mod concat_slice;
 pub mod const_default;
+pub mod cyclic_buffer;
 #[cfg(feature = "std")]
 pub mod factory;
 pub mod fixed;

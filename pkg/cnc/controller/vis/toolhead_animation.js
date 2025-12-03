@@ -1,3 +1,4 @@
+import { Timeline, draw_title, deg2rad, draw_box } from './utils.js';
 import { drawArrow } from './arrow.js';
 import { getRayToRectIntersection } from './box_angle.js';
 import { Gear } from './gear.js';
@@ -13,179 +14,7 @@ python3 -m http.server 9000
 
 
 
-function box(ctx, width, height) {
-    ctx.fillRect(
-        -(width / 2),
-        -(height / 2),
-        width,
-        height
-    );
-    ctx.strokeRect(
-        -(width / 2),
-        -(height / 2),
-        width,
-        height
-    );
-}
 
-function box_text(ctx, width, height, text, text_color) {
-
-    box(ctx, width, height);
-
-    ctx.fillStyle = '#000';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (text_color) {
-        ctx.fillStyle = text_color;
-    }
-    ctx.fillText(text, 0, 0);
-}
-
-
-function shallow_copy(object) {
-    let out = {};
-    Object.assign(out, object);
-    return out;
-}
-
-class Timeline {
-    constructor() {
-        this._objects = [];
-        this._key_frames = [];
-        this._duration = 0.0;
-    }
-
-    set_duration(v) {
-        this._duration = v;
-    }
-
-    duration() {
-        return this._duration;
-    }
-
-    add_object(name, params, draw) {
-        // Adding some built in params.
-        let all_params = {
-            opacity: 0
-        };
-
-        for (const [key, value] of Object.entries(params)) {
-            all_params[key] = value;
-        }
-
-        this._objects.push({
-            name,
-            params: all_params,
-            draw
-        });
-    }
-
-    add_key_frame(object, time, params) {
-        if (object instanceof Array) {
-            for (var i = 0; i < object.length; i++) {
-                this.add_key_frame(object[i], time, params);
-            }
-            return;
-        }
-
-        this._key_frames.push({
-            object,
-            time,
-            params,
-            original_index: this._key_frames.length
-        });
-    }
-
-    draw(canvas, ctx, time) {
-        // Clear the entire canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Make canvas white
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Calculate param values.
-
-        // Map from object name to param objects.
-        let object_params = {};
-
-        for (var i = 0; i < this._objects.length; i++) {
-            // The time of the key frame used for each parameter for interpolation.
-            let times = {};
-            for (const [key, _] of Object.entries(this._objects[i].params)) {
-                times[key] = 0;
-            }
-
-            object_params[this._objects[i].name] = {
-                values: shallow_copy(this._objects[i].params),
-                times
-            };
-        }
-
-        for (var i = 0; i < this._key_frames.length; i++) {
-            let key_frame = this._key_frames[i];
-            let params = object_params[key_frame.object];
-
-            for (const [param_key, param_value] of Object.entries(key_frame.params)) {
-                if (time <= params.times[param_key]) {
-                    continue;
-                }
-
-                if (time >= key_frame.time) {
-                    params.values[param_key] = param_value;
-                    params.times[param_key] = key_frame.time;
-                    continue;
-                }
-
-                let last_time = params.times[param_key];
-                let last_value = params.values[param_key];
-
-                // Linear interpolation.
-                if (typeof (param_value) == 'number' && typeof (last_value) == 'number') {
-                    let percent = (time - last_time) / (key_frame.time - last_time);
-                    params.values[param_key] = last_value + (param_value - last_value) * percent;
-                    params.times[param_key] = key_frame.time;
-                }
-            }
-        }
-
-        for (var i = 0; i < this._objects.length; i++) {
-            let object = this._objects[i];
-            let params = object_params[object.name].values;
-
-            if (params.opacity == 0) {
-                continue;
-            }
-
-            ctx.save();
-            ctx.globalAlpha = params.opacity;
-            object.draw(ctx, params);
-            ctx.restore();
-        }
-    }
-
-    start(canvas, ctx) {
-        this._key_frames.sort((a, b) => {
-            if (a.time == b.time) {
-                return a.original_index - b.original_index;
-            }
-
-            return a.time - b.time;
-        });
-        this.draw_loop(canvas, ctx, new Date());
-    }
-
-    draw_loop(canvas, ctx, start_time) {
-        let now = new Date();
-        let t = (now - start_time) / 1000;
-        this.draw(canvas, ctx, t);
-        requestAnimationFrame(() => this.draw_loop(canvas, ctx, start_time));
-    }
-}
-
-function deg2rad(v) {
-    return (3.14159 / 180) * v;
-}
 
 function graph(ctx, color, fx) {
 
@@ -242,10 +71,7 @@ function model_mode(canvas) {
     let vid = new Timeline();
 
     vid.add_object('title', { opacity: 0 }, (ctx) => {
-        ctx.fillStyle = '#000000';
-        ctx.lineWidth = 1;
-        ctx.font = '30px "Noto Sans"';
-        ctx.fillText('Tool Head Thermal Model', 30, 60);
+        draw_title(ctx, 'Tool Head Thermal Model');
     });
 
     const centerX = canvas.width / 2;
@@ -296,7 +122,7 @@ function model_mode(canvas) {
         ctx.strokeStyle = '#000'
         ctx.font = '25px "Noto Sans"';
 
-        box_text(ctx, box_width, box_height, text, '#000');
+        draw_box_text(ctx, box_width, box_height, text, '#000');
 
         ctx.restore();
     }
@@ -433,10 +259,7 @@ function plan_mode(canvas) {
     let vid = new Timeline();
 
     vid.add_object('title', { opacity: 1 }, (ctx) => {
-        ctx.fillStyle = '#000000';
-        ctx.lineWidth = 1;
-        ctx.font = '30px "Noto Sans"';
-        ctx.fillText('The Plan', 30, 60);
+        draw_title(ctx, 'The Plan');
     });
 
     const centerX = canvas.width / 2;
@@ -487,10 +310,7 @@ function pz_mode(canvas) {
     let vid = new Timeline();
 
     vid.add_object('title', { opacity: 0 }, (ctx) => {
-        ctx.fillStyle = '#000000';
-        ctx.lineWidth = 1;
-        ctx.font = '30px "Noto Sans"';
-        ctx.fillText('PZ Probe Signal Processing', 30, 60);
+        draw_title(ctx, 'PZ Probe Signal Processing');
     });
 
     let noise = [];
@@ -638,7 +458,7 @@ function pz_mode(canvas) {
         ctx.strokeStyle = '#000'
         ctx.font = '25px "Noto Sans"';
 
-        box_text(ctx, box_width, box_height, text, '#000');
+        draw_box_text(ctx, box_width, box_height, text, '#000');
 
         ctx.restore();
     }
@@ -720,16 +540,15 @@ function pz_mode(canvas) {
 
 
     {
-        vid.add_key_frame(['title', 'graph'], t, { opacity: 0 });
-        vid.add_key_frame(['title', 'graph'], t + 0.5, { opacity: 1 });
+        vid.add_transition(['title', 'graph'], t, 0.5, { opacity: 1 });
         t + 0.5;
     }
 
     t += 1;
 
+
     {
-        vid.add_key_frame('graph', t, { scan: 0 });
-        vid.add_key_frame('graph', t + 4, { scan: 1 });
+        vid.add_transition('graph', t, 4, { scan: 1 });
         t += 4;
     }
 
@@ -831,10 +650,7 @@ export function configure(canvas, mode) {
     }
 
     vid.add_object('title', { opacity: 0 }, (ctx) => {
-        ctx.fillStyle = '#000000';
-        ctx.lineWidth = 1;
-        ctx.font = '30px "Noto Sans"';
-        ctx.fillText(title, 30, 60);
+        draw_title(ctx, title);
     });
 
 
@@ -887,7 +703,7 @@ export function configure(canvas, mode) {
         ctx.fillStyle = '#ddd';
 
         ctx.translate(centerX, body_middle);
-        box(ctx, body_width, body_height);
+        draw_box(ctx, body_width, body_height);
     });
 
     vid.add_object('heater', {}, (ctx) => {
@@ -914,7 +730,7 @@ export function configure(canvas, mode) {
 
         ctx.save();
         ctx.translate(centerX, heater_top + (heater_height / 2));
-        box(ctx, heater_width, heater_height);
+        draw_box(ctx, heater_width, heater_height);
         ctx.restore();
 
         let thermistor_width = 20;
@@ -926,7 +742,7 @@ export function configure(canvas, mode) {
             centerX - (heater_width / 2) + (thermistor_width / 2),
             heater_top + 4.5 * (heater_height / 6)
         );
-        box(ctx, thermistor_width, thermistor_height);
+        draw_box(ctx, thermistor_width, thermistor_height);
         ctx.restore();
     });
 
@@ -961,7 +777,7 @@ export function configure(canvas, mode) {
 
         let v = Math.round(50 + random_numbers[Math.floor(params.t * 20)] * 20);
 
-        box_text(ctx, box_width, box_height, `${v}W`, '#000');
+        draw_box_text(ctx, box_width, box_height, `${v}W`, '#000');
     });
 
     vid.add_object('heater_labels', { opacity: 0 }, (ctx) => {
@@ -1038,7 +854,7 @@ export function configure(canvas, mode) {
         let num_lines = 4;
 
         ctx.fillStyle = '#666';
-        box(ctx, fan_width, fan_height);
+        draw_box(ctx, fan_width, fan_height);
 
         ctx.beginPath();
         for (var i = 0; i < num_lines; i++) {
@@ -1175,12 +991,12 @@ export function configure(canvas, mode) {
 
         ctx.fillStyle = '#444';
         ctx.translate(0, (sheet_height / 2) + (layer_height / 2));
-        box(ctx, bed_width, sheet_height);
+        draw_box(ctx, bed_width, sheet_height);
 
         ctx.fillStyle = '#ddd';
         ctx.font = '20px "Noto Sans"';
         ctx.translate(0, (sheet_height / 2) + (bed_height / 2));
-        box_text(ctx, bed_width, bed_height, 'Bed');
+        draw_box_text(ctx, bed_width, bed_height, 'Bed');
 
     });
 
@@ -1257,7 +1073,7 @@ export function configure(canvas, mode) {
                 ctx.strokeStyle = `rgba(0,0,0, ${params.magnet_opacity})`;
                 ctx.fillStyle = `rgba(238,238,238, ${params.magnet_opacity})`;
                 ctx.translate(40 - magnet_width / 2, 5 + magnet_height / 2);
-                box(ctx, magnet_width, magnet_height);
+                draw_box(ctx, magnet_width, magnet_height);
             }
 
             ctx.restore();
@@ -1280,7 +1096,7 @@ export function configure(canvas, mode) {
         ctx.fillStyle = 'rgba(0,0,0,0)';
         ctx.strokeStyle = 'red';
         ctx.lineWidth = 4;
-        box(ctx, 300, 100);
+        draw_box(ctx, 300, 100);
     });
 
     vid.add_object('hall_highlight2', { opacity: 0 }, (ctx, params) => {
@@ -1291,7 +1107,7 @@ export function configure(canvas, mode) {
         ctx.fillStyle = 'rgba(0,0,0,0)';
         ctx.strokeStyle = 'red';
         ctx.lineWidth = 4;
-        box(ctx, w, h);
+        draw_box(ctx, w, h);
     });
 
     vid.add_object('hall_sensor', { opacity: 0, value: 1.5 }, (ctx, params) => {
@@ -1301,7 +1117,7 @@ export function configure(canvas, mode) {
         ctx.font = '18px "Noto Sans"';
 
         let v = Math.round(params.value * 100) / 100;
-        box_text(ctx, hall_sensor_width, hall_sensor_height, `${v}V\n`, '#fff');
+        draw_box_text(ctx, hall_sensor_width, hall_sensor_height, `${v}V\n`, '#fff');
 
         ctx.translate(hall_sensor_width / 2 / 2, 0);
 
@@ -1358,7 +1174,7 @@ export function configure(canvas, mode) {
         ctx.fillStyle = 'rgba(0,0,0,0)';
         ctx.strokeStyle = 'red';
         ctx.lineWidth = 4;
-        box(ctx, heater_width * 1.5, heater_height * 1.5);
+        draw_box(ctx, heater_width * 1.5, heater_height * 1.5);
 
     });
 
@@ -1523,8 +1339,7 @@ export function configure(canvas, mode) {
         t += 1;
 
         {
-            vid.add_key_frame('heatsink', t, { opacity: 0 });
-            vid.add_key_frame('heatsink', t + 0.5, { opacity: 1 });
+            vid.add_transition('heatsink', t, 0.5, { opacity: 1 });
             t += 0.5;
         }
 
@@ -1568,8 +1383,7 @@ export function configure(canvas, mode) {
 
         // Highlight area
         {
-            vid.add_key_frame('hall_highlight', t, { opacity: 0 });
-            vid.add_key_frame('hall_highlight', t + 0.5, { opacity: 1 });
+            vid.add_transition('hall_highlight', t, 0.5, { opacity: 1 });
             t += 0.5;
         }
 
@@ -1578,8 +1392,7 @@ export function configure(canvas, mode) {
 
         // Show magnet
         {
-            vid.add_key_frame('gears', t, { magnet_opacity: 0 });
-            vid.add_key_frame('gears', t + 0.5, { magnet_opacity: 1 });
+            vid.add_transition('gears', t, 0.5, { magnet_opacity: 1 });
             t += 0.5;
         }
 
@@ -1588,8 +1401,7 @@ export function configure(canvas, mode) {
 
         // Show sensor
         {
-            vid.add_key_frame('hall_sensor', t, { opacity: 0 });
-            vid.add_key_frame('hall_sensor', t + 0.5, { opacity: 1 });
+            vid.add_transition('hall_sensor', t, 0.5, { opacity: 1 });
             t += 0.5;
         }
 
@@ -1598,8 +1410,7 @@ export function configure(canvas, mode) {
 
         // Highlight area
         {
-            vid.add_key_frame('hall_highlight', t, { opacity: 1 });
-            vid.add_key_frame('hall_highlight', t + 0.5, { opacity: 0 });
+            vid.add_transition('hall_highlight', t, 0.5, { opacity: 0 });
             t += 0.5;
         }
 
@@ -1646,8 +1457,7 @@ export function configure(canvas, mode) {
         t += 1;
 
         {
-            vid.add_key_frame('hall_highlight2', t, { opacity: 0 });
-            vid.add_key_frame('hall_highlight2', t + 0.5, { opacity: 1 });
+            vid.add_transition('hall_highlight2', t, 0.5, { opacity: 1 });
             t += 0.5;
         }
 
@@ -1729,19 +1539,4 @@ export function configure(canvas, mode) {
 
 
     return vid;
-}
-
-export async function main() {
-    const noto_font = new FontFace('Noto Sans', 'url("font_normal.ttf")');
-    document.fonts.add(noto_font);
-    await noto_font.load();
-
-    let canvas = document.getElementById('frame-canvas');
-
-    let vid = configure(canvas);
-
-    const ctx = canvas.getContext('2d');
-
-    vid.start(canvas, ctx);
-
 }

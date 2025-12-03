@@ -304,17 +304,18 @@ impl PeripheralsController {
         uarte0: UARTE0,
         timer0: TIMER0,
         timer1: TIMER1,
+timer4: TIMER4,
         ppi: PPI,
         saadc: SAADC
     ) -> Self {
 
         // The stepper interrupt.
-        make_high_priority_irq(Interrupt::TIMER0);
+        make_high_priority_irq(Interrupt::TIMER4);
 
         // TODO: Don't create this here. We should ban calling this outside of main().
         let mut peripherals = peripherals::raw::Peripherals::new();
         let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
-        let timer = Timer::new(timer0);
+        let timer = Timer::new(timer4.into());
 
         let mut entries = [DEFAULT_ENTRY_VALUE; MAX_NUM_PERIPHERALS];
         for i in 0..entries.len() {
@@ -636,11 +637,14 @@ impl PeripheralsController {
                 ).ok_or_else(|| ExecuteError::ErrorCode(
                     PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                 ))?;
-
                 
                 state.entries[peripheral_idx] = PeripheralEntry::Stepper {
                     controller
                 };
+
+                if !StepperPeripheralThread::is_running() {
+                    StepperPeripheralThread::start(self);
+                }
 
                 Ok(OkResponse)
             }
@@ -750,6 +754,10 @@ impl PeripheralsController {
                     }
                 }
 
+// NOTE: There is a risk that these won't be able to immediately stop
+                // the threads if they are actively being polled but that shouldn't ever
+                // happen since this code should run in a lower priority interrupt that
+                // doesn't interrupt these threads.
                 StepperPeripheralThread::stop();
                 InterruptPeripheralThread::stop();
 

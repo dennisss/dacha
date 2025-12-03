@@ -51,6 +51,7 @@ extern crate logging;
 use core::arch::asm;
 
 use executor::singleton::Singleton;
+use executor::CriticalSection;
 use nordic::controller::PeripheralsController;
 use nordic::ecb::ECB;
 use nordic::gpio::*;
@@ -100,6 +101,7 @@ async fn main_thread_fn() {
             peripherals.uarte0,
             peripherals.timer0,
             peripherals.timer1,
+            peripherals.timer4,
             peripherals.ppi,
             peripherals.saadc,
         ))
@@ -194,6 +196,8 @@ entry!(main);
 fn main() -> () {
     // Disable interrupts.
     // TODO: Disable FIQ interrupts?
+    let cs = CriticalSection::new();
+
     unsafe { asm!("cpsid i") }
 
     let mut peripherals = peripherals::raw::Peripherals::new();
@@ -211,6 +215,7 @@ fn main() -> () {
     Main::start();
 
     // Enable interrupts.
-    unsafe { asm!("cpsie i") };
+    drop(cs);
+
     idle_loop()
 }

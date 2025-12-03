@@ -63,7 +63,7 @@ impl<'a, T> CondValueGuard<'a, T> {
         let _ = inst.waiters.recv().await;
     }
 
-    pub async fn notify_one(&mut self) {
-        let _ = self.inst.waiters.try_send(()).await;
+    pub fn notify_one(&mut self) {
+        let _ = self.inst.waiters.try_send(());
     }
 }

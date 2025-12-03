@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animated Video</title>
+    <style>
+        body {
+            margin: 0;
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+            background: #2a2a2a;
+        }
+
+        canvas {
+            background: #f0f0f0;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="frame-canvas" width="960" height="540"></canvas>
+
+    <script type="module">
+        // import { configure } from "./toolhead_animation.js";
+        import { configure } from "./motion_animation.js";
+
+        async function main() {
+            // TODO: Also add the noto emoji font.
+
+            const noto_font = new FontFace('Noto Sans', 'url("font_normal.ttf")');
+            document.fonts.add(noto_font);
+
+            const mono_font = new FontFace('Noto Sans Mono', 'url("font_mono_normal.ttf")');
+            document.fonts.add(mono_font);
+
+            await noto_font.load();
+            await mono_font.load();
+
+            let canvas = document.getElementById('frame-canvas');
+
+            let vid = configure(canvas);
+
+            const ctx = canvas.getContext('2d');
+
+            vid.start(canvas, ctx);
+        }
+
+        main();
+    </script>
+</body>
+
+</html>

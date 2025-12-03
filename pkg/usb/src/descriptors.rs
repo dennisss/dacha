@@ -156,7 +156,8 @@ enum_def_with_unknown!(InterfaceClass u8 =>
     Unknown0 = 0,
     Communication = 2,
     HID = 3,
-    ApplicationSpecific = 0xFE
+    ApplicationSpecific = 0xFE,
+    VendorSpecific = 0xFF
 );
 
 // Interface subclas of 2 is Abstract Control Model for CDC

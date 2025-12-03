@@ -67,6 +67,7 @@ impl HeaterController {
             // TODO: Eventually need active cooling.
             if target_temp <= 30.0 {
                 state.active = None;
+                return;
             }
 
             state.active = Some(ActiveState {

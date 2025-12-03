@@ -209,7 +209,7 @@ impl LinearMotionPlanner {
         let cornering_speed = (max_acceleration * corner_radius).sqrt()
                     .min(1000000.0);
 
-let         cornering_speed_vec = entry_direction * cornering_speed;
+let cornering_speed_vec = entry_direction * cornering_speed;
 
                 for i in 0..start_position.len().min(2) {
                     overall_limits.push(cornering_speed_vec[i]);
@@ -356,11 +356,13 @@ mod test {
     #[test]
     fn cornering() {
 
+        let radius = 0.2;
+
         println!("{}", LinearMotionPlanner::compute_max_cornering_speed(
             &vecxf!(0.0, 0.0, 0.0),
             &vecxf!(1.0, 0.0, 0.0),
             &vecxf!(2.0, 0.0, 0.0),
-            0.2,
+            radius,
             1000.0
         ));
 
@@ -368,7 +370,7 @@ mod test {
             &vecxf!(0.0, 0.0, 0.0),
             &vecxf!(1.0, 0.0, 0.0),
             &vecxf!(2.0, 0.2, 0.0),
-            0.2,
+            radius,
             1000.0
         ));
 
@@ -376,7 +378,7 @@ mod test {
             &vecxf!(0.0, 0.0, 0.0),
             &vecxf!(1.0, 0.0, 0.0),
             &vecxf!(2.0, 0.6, 0.0),
-            0.2,
+            radius,
             1000.0
         ));
 
@@ -384,7 +386,7 @@ mod test {
             &vecxf!(0.0, 0.0, 0.0),
             &vecxf!(1.0, 0.0, 0.0),
             &vecxf!(2.0, 1.0, 0.0),
-            0.2,
+            radius,
             1000.0
         ));
 
@@ -392,7 +394,7 @@ mod test {
             &vecxf!(0.0, 0.0, 0.0),
             &vecxf!(1.0, 0.0, 0.0),
             &vecxf!(1.0, 1.0, 0.0),
-            0.2,
+            radius,
             1000.0
         ));
 
@@ -400,7 +402,7 @@ mod test {
             &vecxf!(0.0, 0.0, 0.0),
             &vecxf!(1.0, 0.0, 0.0),
             &vecxf!(0.0, 0.0, 0.0),
-            0.2,
+            radius,
             1000.0
         ));
 

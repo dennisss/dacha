@@ -102,7 +102,7 @@ impl TimeSyncer {
 
                 for (device_name, device) in &state.devices {
                     // TODO: Need a timeout on this.
-                    match Self::get_time_sample(&device.device).await {
+                    match Self::get_time_sample(device_name, &device.device).await {
                         Ok(sample) => {
                             new_samples.push((device_name.to_string(), sample));
                         }
@@ -147,7 +147,7 @@ impl TimeSyncer {
     }
 
     // NOTE: This will return a mcu_time sample with only 32bits of informaiton.
-    async fn get_time_sample(device: &PeripheralsDevice) -> Result<TimeSample> {
+    async fn get_time_sample(device_name: &str, device: &PeripheralsDevice) -> Result<TimeSample> {
         let mcu_time = device.get_clock_time().await?;
 
         let rtt = mcu_time.local_response_time - mcu_time.local_request_time;
@@ -158,6 +158,8 @@ impl TimeSyncer {
         if rtt > MAX_RTT {
             return Err(format_err!("RTT too large: {:?}", rtt));
         }
+
+        println!("[{} rtt] {:?}", device_name, rtt);
 
         Ok(TimeSample {
             local_time,

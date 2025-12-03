@@ -1,0 +1,58 @@
+name: "voron0"
+
+replicas: 1
+
+scheduling {
+    labels {
+        label {
+            key: "name"
+            value: "voron0"
+        }
+    }
+}
+
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/cnc/controller/cnc_controller",
+        "service",
+        "--port=service",
+        "--config_name=voron0"
+    ]
+
+    ports {
+        name: "service"
+        type: TCP
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cnc/controller:bundle"
+        }
+    ]
+
+    additional_groups: ["plugdev"]
+    devices: [
+        {
+            source {
+                usb {
+                    vendor: 0x8888
+                    product: 0x000a
+                }
+                limit: 1
+            }
+            exclusive: true
+        },
+        {
+            source {
+                usb {
+                    vendor: 0x8888
+                    product: 0x000b
+                }
+                limit: 1
+            }
+            exclusive: true
+        }
+    ]
+}

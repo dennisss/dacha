@@ -167,7 +167,7 @@ impl RadioSocket {
 
         // Notify the RadioController that a change has occured in case it is waiting
         // for one.
-        self.transmit_pending.try_send(()).await;
+        self.transmit_pending.try_send(());
 
         Ok(())
     }
@@ -257,7 +257,7 @@ impl RadioSocket {
         state_guard.exit();
 
         // TODO: Make sure that this doesn't block if the channel is full.
-        self.transmit_pending.try_send(()).await;
+        self.transmit_pending.try_send(());
 
         Ok(())
     }
@@ -460,13 +460,13 @@ impl RadioController {
                     link_state.set_last_packet_counter(packet_buf.counter());
 
                     if let Some(e) = &self.rx_event {
-                        e.try_send(()).await;
+                        e.try_send(());
                     }
 
                     // TODO: Record the newly received packet counter.
 
                     socket_state.receive_buffer.write(packet_buf.as_bytes());
-                    let _ = self.socket.receive_pending.try_send(()).await;
+                    let _ = self.socket.receive_pending.try_send(());
 
                     drop(socket_state);
                 }
@@ -509,7 +509,7 @@ impl RadioController {
                     }
 
                     if let Some(e) = &self.tx_event {
-                        e.try_send(()).await;
+                        e.try_send(());
                     }
 
                     self.radio.set_address(&to_address);

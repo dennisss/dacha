@@ -58,6 +58,30 @@ pub mod linux;
 #[cfg(feature = "std")]
 pub use linux::*;
 
+
+pub struct CriticalSection {
+    hidden: ()
+}
+
+impl CriticalSection {
+    pub fn new() -> Self {
+        crate::interrupts::disable_interrupts();
+        Self { hidden: () }
+    }
+}
+
+impl !Send for CriticalSection {}
+
+impl !Sync for CriticalSection {}
+
+impl Drop for CriticalSection {
+    fn drop(&mut self) {
+        crate::interrupts::enable_interrupts();
+    }
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use core::ptr::null_mut;

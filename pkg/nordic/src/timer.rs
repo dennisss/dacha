@@ -9,22 +9,62 @@ use peripherals::raw::{Interrupt, InterruptState, PinDirection, EventRegister};
 
 use crate::pins::{connect_pin, disconnect_pin, is_pin_connected, PeripheralPin};
 
-pub struct Timer {
-    periph: TIMER0,
+
+// TODO: Codegen this.
+pub struct TIMERx {
+    base_address: u32,
     interrupt: Interrupt,
-    // TODO: Instead use a bit mask
-    used_channels: usize,
     total_channels: usize,
 }
 
+impl Deref for TIMERx {
+    type Target = TIMER0_REGISTERS;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+impl DerefMut for TIMERx {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { ::core::mem::transmute(self.base_address) }
+    }
+}
+
+macro_rules! timerx_from {
+    ($t:ident, $i:ident, $n:expr) => {
+        impl From<$t> for TIMERx {
+            fn from(mut value: $t) -> Self {
+                TIMERx {
+                    base_address: unsafe {
+                        core::mem::transmute::<&mut TIMER0_REGISTERS, u32>(value.deref_mut())
+                    },
+                    interrupt: Interrupt::$i,
+                    total_channels: $n,
+                }
+            }
+        }
+    };
+}
+
+timerx_from!(TIMER0, TIMER0, 4);
+timerx_from!(TIMER4, TIMER4, 6);
+
+
+pub struct Timer {
+    periph: TIMERx,
+    // TODO: Instead use a bit mask
+    used_channels: usize,
+}
+
 impl Timer {
-    pub fn new(mut periph: TIMER0) -> Self {
+    pub fn new(mut periph: TIMERx) -> Self {
         periph.mode.write_timer();
         periph.prescaler.write(0); // 16 MHz
         periph.bitmode.write_32bit();
         periph.tasks_start.write_trigger();
 
-        Self { periph, interrupt: Interrupt::TIMER0, used_channels: 0, total_channels: 4 }
+        Self { periph, used_channels: 0 }
     }
 
     pub fn reset(&mut self) {
@@ -32,7 +72,7 @@ impl Timer {
     }
 
     pub fn new_channel(&mut self) -> Option<TimerChannel> {
-        if self.used_channels + 1 > self.total_channels {
+        if self.used_channels + 1 > self.periph.total_channels {
             return None;
         }
 
@@ -44,7 +84,7 @@ impl Timer {
     }
 
     pub fn capture(&mut self) -> Option<u32> {
-        if self.used_channels + 1 > self.total_channels {
+        if self.used_channels + 1 > self.periph.total_channels {
             return None;
         }
 

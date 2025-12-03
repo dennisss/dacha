@@ -30,7 +30,7 @@ use peripherals::raw::Interrupt;
 use peripherals::raw::TaskRegister;
 use peripherals_proto::peripherals::{StepperMotorStatus, StepperMotorMotion, StepperMotorMotion_Direction};
 use cnc::quadratic_stepper_motion::{QuadraticStepperMotion, StepCount};
-
+use cnc::time_remaining_u32;
 
 use crate::controller::allocator::Box;
 use crate::gpio::GPIOPin;
@@ -54,6 +54,8 @@ const MIN_STEP_TIME: u32 = 20;
 const MAX_STEP_TIME: u32 = 2 * 16_000_000;  // 2 seconds
 
 
+// This thread is started when the first stepper is configured is stopped
+// when all the peripherals are unconfigured.
 define_thread!(
     StepperPeripheralThread,
     stepper_worker_thread,

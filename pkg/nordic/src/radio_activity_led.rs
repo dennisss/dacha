@@ -57,7 +57,7 @@ async fn run_single_led(mut led_pin: GPIOPin, event: &'static Channel<()>, mut r
 
     loop {
         let now = rtc.now();
-        if event.try_recv().await.is_some() {
+        if event.try_recv().is_some() {
             last_time = Some(now);
         } else if let Some(t) = &last_time {
             if now.millis_since(t) > ACTIVITY_TIMEOUT_MS {

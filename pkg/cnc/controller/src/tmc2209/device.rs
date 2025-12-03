@@ -72,6 +72,7 @@ impl TMC2209Device {
         inst.write_register(&TCOOLTHRS::from_raw(/* (1 << 20) - 1 */ 600)).await?;
 
         // SG_RESULT <= 2*10 will trigger DIAG to fire
+        // TODO: Probably we want one value for motion and one for homing.
         inst.write_register(&SGTHRS::from_raw(50)).await?;
 
         // Disable CoolStep
@@ -192,9 +193,9 @@ impl TMC2209Device {
     pub async fn disable(&self) -> Result<()> {
         self.device.gpio_write(self.config.enable_peripheral(), true).await?;
         Ok(())
-}
+    }
 
-pub fn disable_request(&self) -> Result<PeripheralRequest> {
+    pub fn disable_request(&self) -> Result<PeripheralRequest> {
         self.device.gpio_write_request(self.config.enable_peripheral(), true)
     }
 
