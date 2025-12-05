@@ -1,3 +1,4 @@
+use base_util::aligned::Aligned;
 use common::segmented_buffer::SegmentedBuffer;
 
 use crate::constants::{RadioAddress, RADIO_ADDRESS_SIZE};
@@ -36,13 +37,13 @@ pub const MAX_PACKET_DATA_SIZE: usize = MAX_PACKET_BUFFER_SIZE - DATA_OFFSET - T
 ///   - Byte [9..(9+N)): DATA:
 ///   - Byte [(9+N)..(9+N+4)): MIC
 pub struct PacketBuffer {
-    buf: [u8; MAX_PACKET_BUFFER_SIZE],
+    buf: Aligned<[u8; MAX_PACKET_BUFFER_SIZE], u32>,
 }
 
 impl PacketBuffer {
     /// Creates a new empty packet buffer.
     pub fn new() -> Self {
-        let mut buf = [0u8; MAX_PACKET_BUFFER_SIZE];
+        let mut buf = Aligned::new([0u8; MAX_PACKET_BUFFER_SIZE]);
         // Minimum packet length with zero data.
         buf[0] = ((DATA_OFFSET - START_OF_PAYLOAD) + TAG_SIZE) as u8;
 

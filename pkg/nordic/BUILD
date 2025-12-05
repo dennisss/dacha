@@ -29,6 +29,16 @@ proto_data(
 )
 
 proto_data(
+    name = "nrf52840_voron0_main",
+    src = "nrf52840_voron0_main.textproto"
+)
+
+proto_data(
+    name = "nrf52840_voron0_tool",
+    src = "nrf52840_voron0_tool.textproto"
+)
+
+proto_data(
     name = "nrf52840_bootloader",
     src = "nrf52840_bootloader.textproto"
 )

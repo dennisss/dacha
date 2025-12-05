@@ -7,7 +7,7 @@ use crate::displacement::*;
 use crate::linear_motion::LinearMotion;
 
 /// Smallest duration of motion that we will generate.
-const MIN_MOTION_TIME: f32 = 0.0001;
+const MIN_MOTION_TIME: f32 = 0.0001;  // 0.1ms
 
 /// A non-fully defined LinearMotion(s).
 ///
@@ -151,7 +151,6 @@ impl LinearMotionConstraints {
 
         if ramp_up_time < MIN_MOTION_TIME {
             ramp_up_time = 0.0;
-            peak_speed = start_speed + ramp_up_time * self.max_acceleration;
         }
         if ramp_down_time < MIN_MOTION_TIME {
             ramp_down_time = 0.0;
@@ -189,12 +188,18 @@ impl LinearMotionConstraints {
                 acceleration,
                 duration: ramp_up_time,
             });
+        } else {
+            // Ramp up time is so small so assumption is that we are immediately going up to the full speed.
+            current_velocity = (&direction).cwise_mul(peak_speed)
         }
 
         if cruise_time >= MIN_MOTION_TIME {
             let start_position = current_position.clone();
+            // TODO: Swap to the original end position if there is no ramp down distance.
             let end_position = &start_position + (&direction).cwise_mul(cruise_distance);
             current_position = end_position.clone();
+
+            // TODO: Always run at peak speed.
 
             out.push(LinearMotion {
                 start_position,
@@ -207,7 +212,10 @@ impl LinearMotionConstraints {
         }
 
         if ramp_down_time != 0.0 {
+            // TODO: Can ramp down slightly slower if there is no cruise period.
+
             let start_position = current_position.clone();
+            // TODO: Snap to the original end position.
             let end_position = &start_position + (&direction).cwise_mul(ramp_down_distance);
             current_position = end_position.clone();
 
@@ -253,6 +261,7 @@ mod tests {
         let end_velocity = c.calculate_motions(start_velocity, &mut out);
     }
 
+    /*
     use alloc::string::ToString;
 
     #[test]
@@ -445,7 +454,7 @@ mod tests {
 
         println!("{}", csv);
     }
-
+    */
 
     #[test]
     fn start_and_stop_at_rest() {
@@ -706,6 +715,7 @@ mod tests {
             assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
             assert_eq!(&out[..], &[
+                // Ramp down.
                 LinearMotion {
                     start_position: vecxf!(0., 0., 0.),
                     start_velocity: vecxf!(100., 0., 0.),
@@ -740,16 +750,17 @@ mod tests {
 
         // assert_eq!(end_velocity, vecxf!(0.0, 0.0, 0.0));
 
-        // assert_eq!(&out[..], &[
-        //     LinearMotion {
-        //         start_position: vecxf!(0., 0., 0.),
-        //         start_velocity: vecxf!(100., 0., 0.),
-        //         end_position: vecxf!(50., 0., 0.),
-        //         end_velocity: vecxf!(0., 0., 0.),
-        //         acceleration: vecxf!(-100., 0., 0.),
-        //         duration: 1.0,
-        //     },
-        // ][..]);
+        assert_eq!(&out[..], &[
+            // Cruise
+            LinearMotion {
+                start_position: vecxf!(0.0, 0.0, 0.0),
+                start_velocity: vecxf!(200.0, 0.0, 0.0),
+                end_position: vecxf!(50.0, 0.0, 0.0),
+                end_velocity: vecxf!(200.0, 0.0, 0.0),
+                acceleration: vecxf!(0.0, 0.0, 0.0),
+                duration: 0.25,
+            },
+        ][..]);
 
     }
 

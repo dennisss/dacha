@@ -28,7 +28,7 @@ use common::register::RegisterWrite;
 use peripherals::raw::EventRegister;
 use peripherals::raw::Interrupt;
 use peripherals::raw::TaskRegister;
-use peripherals_proto::peripherals::{StepperMotorStatus, StepperMotorMotion, StepperMotorMotion_Direction};
+use peripherals_proto::peripherals::{StepperMotorStatus, StepperMotorMotion, StepperMotorMotion_Direction, StepperMotorStatus_StoppedReason};
 use cnc::quadratic_stepper_motion::{QuadraticStepperMotion, StepCount};
 use cnc::time_remaining_u32;
 
@@ -66,8 +66,6 @@ async fn stepper_worker_thread(
     controller: &'static PeripheralsController,
 ) {
     loop {
-        let mut pending = false;
-
         lock!(state <= controller.state.lock().await.unwrap(), {
             for entry in &mut state.entries {
                 let stepper = match entry {
@@ -75,16 +73,11 @@ async fn stepper_worker_thread(
                     _ => continue
                 };
 
-                pending |= stepper.tick(); 
+                stepper.tick(); 
             }
         });
 
-        if !pending {
-            return;
-        }
-
-        // TODO: Make this a higher priority interrupt compared to other ones.
-        wait_for_irq(Interrupt::TIMER0).await;
+        wait_for_irq(Interrupt::TIMER4).await;
     }
 }
 
@@ -107,6 +100,9 @@ pub struct StepperMotorController {
     /// reading from it is enabled.
     have_enqueued_step: bool,
 
+    enqueued_step_dir: i32,
+
+    /// Direction of the last enqueued motion.
     last_direction: bool,
 
     stats: Stats
@@ -114,12 +110,14 @@ pub struct StepperMotorController {
 
 #[derive(Default)]
 struct Stats {
-    /// Total number of steps we have stepped through completely.
-    total_steps: u32,
+    position: i32,
 
     /// Number of failures encountered. A failure is one where we weren't able to
     /// trigger a step fast enough.
-    faults: u32,
+    ///
+    /// TODO: If one motor is ever stopped, allow other dependent motors (A/B)
+    /// to be simultaneously stopped)
+    stopped: StepperMotorStatus_StoppedReason,
 }
 
 impl StepperMotorController {
@@ -166,6 +164,7 @@ impl StepperMotorController {
             dir_pin,
             motion_queue: Box::default(),
             have_enqueued_step: false,
+            enqueued_step_dir: 1,
             last_direction: false,
             stats: Stats::default(),
         })
@@ -180,10 +179,6 @@ impl StepperMotorController {
             return false;
         }
 
-        if req.num_steps() == 0 {
-            return true;
-        }
-
         let direction = match req.direction() {
             StepperMotorMotion_Direction::UNCHANGED => self.last_direction,
             StepperMotorMotion_Direction::FORWARD => true,
@@ -191,11 +186,16 @@ impl StepperMotorController {
         };
         self.last_direction = direction;
 
+        // Reject motions until the controller explicitly clears the error condition.
+        if self.stats.stopped != StepperMotorStatus_StoppedReason::NONE {
+            return true;
+        }
+
         let motion = QuadraticStepperMotion {
             next_step_time: req.next_step_time(),
             next_step_duration: req.next_step_duration(),
             step_duration_increment: req.step_duration_increment(),
-            num_steps: StepCount::new(req.num_steps(), direction),
+            num_steps: StepCount::new(req.num_steps_minus_one() + 1, direction),
         };
 
         self.motion_queue.push_back(motion);
@@ -206,12 +206,17 @@ impl StepperMotorController {
     /// the next tick will attempt to clear it.
     pub fn clear_motions(&mut self) {
         self.motion_queue.clear();
+        self.stats.stopped = StepperMotorStatus_StoppedReason::HOST_CLEAR;
+    }
+
+    pub fn reset(&mut self) {
+        self.stats.stopped = StepperMotorStatus_StoppedReason::NONE;
     }
 
     pub fn status(&self) -> StepperMotorStatus {
         let mut proto = StepperMotorStatus::default();
-        proto.set_total_steps(self.stats.total_steps);
-        proto.set_faults(self.stats.faults);
+        proto.set_position(self.stats.position);
+        proto.set_stopped(self.stats.stopped);
         proto.set_empty_queue_slots((self.motion_queue.capacity() - self.motion_queue.len()) as u32);
         proto.set_active(!self.motion_queue.is_empty() || self.have_enqueued_step);
         proto
@@ -244,7 +249,7 @@ impl StepperMotorController {
                 self.have_enqueued_step = false;
                 self.step_ppi_channel.disable();
                 self.step_timer_channel.disable_interrupt();
-                self.stats.total_steps += 1;
+                self.stats.position += self.enqueued_step_dir;
             } else {
                 // Still waiting for the step.
                 return true;
@@ -260,23 +265,16 @@ impl StepperMotorController {
             None => return false
         };
 
-        let next_time = motion.next_step_time;
+        let mut next_time = motion.next_step_time;
 
         // Amount of time remaining between now and the next step.
-        let delta_time = {
-            let mut t = next_time.wrapping_sub(current_time);
-            if next_time < current_time {
-                t = t.wrapping_add(u32::max_value());
-            }
-
-            t
-        };
+        let delta_time = time_remaining_u32(next_time, current_time);
 
         // Must have a delay between CC setup and triggering of at least ~2 so that 
         // DIR rises/falls early enough before STEP. Also need extra time for CPU processing delay.
         if delta_time < MIN_STEP_TIME || delta_time >= MAX_STEP_TIME {
             self.motion_queue.clear();
-            self.stats.faults += 1;
+            self.stats.stopped = StepperMotorStatus_StoppedReason::TIMING_FAULT;
             return false;
         }
 
@@ -285,14 +283,11 @@ impl StepperMotorController {
         // take at least a cycle and then we clear it again here.
         let _ = self.step_timer_channel.pending_event();
 
-        // TODO:
-        self.dir_pin.write(if motion.num_steps.direction() {
-            PinLevel::High
-        } else {
-            PinLevel::Low
-        });
+        self.dir_pin.write_bool(motion.num_steps.direction());
+        // TODO: Optimize this.
+        self.enqueued_step_dir = if motion.num_steps.direction() { 1 } else { -1 };
 
-        self.step_timer_channel.set_compare_value(motion.next_step_time);
+        self.step_timer_channel.set_compare_value(next_time);
 
         motion.next();
 

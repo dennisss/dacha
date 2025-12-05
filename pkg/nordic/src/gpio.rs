@@ -152,7 +152,11 @@ impl GPIOPin {
     }
 
     pub fn write(&mut self, level: PinLevel) {
-        if level == PinLevel::High {
+        self.write_bool(level == PinLevel::High);
+    }
+
+    pub fn write_bool(&mut self, level: bool) {
+        if level {
             self.port
                 .outset
                 .write(OUTSET_WRITE_VALUE::from_raw(self.pin_mask));

@@ -4,7 +4,7 @@ use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 use usb::DescriptorSet;
 
 use crate::usb::controller::{
-    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceNormalRequest,
+    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceNormalRequest, USBDeviceNormalResponse,
 };
 use crate::usb::handler::{USBDeviceHandler, USBError};
 
@@ -23,8 +23,9 @@ impl<D: DescriptorSet + 'static> USBDeviceHandler for USBDeviceDefaultHandler<D>
 
     type HandleNormalRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
-    type HandleNormalResponseAcknowledgedFuture<'a> =
-        impl Future<Output = Result<(), USBError>> + 'a;
+    type HandleNormalResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
+
+    type PollNormalResponseReadyFuture<'a> = impl Future<Output = ()> + 'a;
 
     fn handle_reset<'a>(
         &'a mut self,
@@ -49,16 +50,24 @@ impl<D: DescriptorSet + 'static> USBDeviceHandler for USBDeviceDefaultHandler<D>
     fn handle_normal_request<'a>(
         &'a mut self,
         endpoint_index: usize,
-        req: USBDeviceNormalRequest,
+        req: USBDeviceNormalRequest<'a>,
     ) -> Self::HandleNormalRequestFuture<'a> {
         async move { Ok(()) }
     }
 
-    fn handle_normal_response_acknowledged<'a>(
+    fn handle_normal_response<'a>(
         &'a mut self,
         endpoint_index: usize,
-    ) -> Self::HandleNormalResponseAcknowledgedFuture<'a> {
+        res: USBDeviceNormalResponse<'a>,
+    ) -> Self::HandleNormalResponseFuture<'a> {
         async move { Ok(()) }
+    }
+
+    fn poll_normal_response_ready<'a>(
+        &'a self,
+        endpoint_index: usize,
+    ) -> Self::PollNormalResponseReadyFuture<'a> {
+        executor::futures::pending()
     }
 }
 

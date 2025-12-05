@@ -3,6 +3,7 @@ use core::pin::Pin;
 use core::ptr::{null, null_mut};
 use core::task::Poll;
 
+use crate::CriticalSection;
 use crate::stack_pinned::stack_pinned;
 
 // TODO: Remove the Clone and Copy
@@ -61,6 +62,10 @@ impl WakerList {
     /// NOTE: If a waker is inserted while this is running, it will not be
     /// awakened.
     pub fn wake_all(&mut self) {
+        // TODO: This code probably requires some crticial sections for everything but the callback.s
+
+        let cs = CriticalSection::new();
+
         let mut waker_marker = stack_pinned(Waker::new(|_| panic!(), null_mut()));
 
         let waker_marker = {
@@ -70,6 +75,8 @@ impl WakerList {
 
         Self::insert_after(&mut self.head, waker_marker);
 
+        drop(cs);
+
         // TODO: If there are multiple entries for a single thread, consider marking
         // them all as awakened before invoking the callback.
         while waker_marker.next != null_mut() {
@@ -77,6 +84,10 @@ impl WakerList {
             next_waker.unlink();
             (next_waker.callback)(next_waker.callback_arg);
         }
+
+        let cs = CriticalSection::new();
+        drop(waker_marker);
+        drop(cs);
     }
 
     /// Returns whether or not the list contains zero wakers.

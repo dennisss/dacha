@@ -65,7 +65,7 @@ pub struct CriticalSection {
 
 impl CriticalSection {
     pub fn new() -> Self {
-        crate::interrupts::disable_interrupts();
+        unsafe { crate::interrupts::disable_interrupts() };
         Self { hidden: () }
     }
 }
@@ -76,7 +76,7 @@ impl !Sync for CriticalSection {}
 
 impl Drop for CriticalSection {
     fn drop(&mut self) {
-        crate::interrupts::enable_interrupts();
+        unsafe { crate::interrupts::enable_interrupts() };
     }
 }
 

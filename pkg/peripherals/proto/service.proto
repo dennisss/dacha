@@ -166,12 +166,22 @@ message BoardConfig {
         ADCCalibration calibration = 7;
     }
     
+    message ADCBufferPeripheral {
+        AllocateADCBufferRequest config = 1;
+    }
+
     message SPIPeripheral {
         string mosi_pin_name = 1;
         string miso_pin_name = 2;
         string sclk_pin_name = 3;
         string cs_pin_name = 4;
         ConfigureSPIRequest config = 5;
+    }
+
+    message I2CPeripheral {
+        string sda_pin_name = 1;
+        string scl_pin_name = 2;
+        ConfigureI2CRequest config = 3;
     }
 
     message Peripheral {
@@ -189,6 +199,8 @@ message BoardConfig {
             NeopixelPeripheral neopixel = 7;
             ADCPeripheral adc = 8;
             SPIPeripheral spi = 9;
+            ADCBufferPeripheral adc_buffer = 10;
+            I2CPeripheral i2c = 11;
         }
     }
     repeated Peripheral peripherals = 4;

@@ -105,7 +105,7 @@ impl RemoteUtilizationTracker {
                         };
 
                         // TODO: Pull the ticks_per_second number from the MCU.
-                        let idle_utilization = ((count_delta as f64) / (64_000_000.0 / 6.0)) / time_delta.as_secs_f64();
+                        let idle_utilization = ((count_delta as f64) / (64_000_000.0 / 10.0)) / time_delta.as_secs_f64();
 
                         println!("[{} utilization] {:.3}", name, 1.0 - idle_utilization);
                     }

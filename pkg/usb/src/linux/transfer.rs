@@ -31,9 +31,9 @@ impl DeviceTransfer {
 /// Represents a single ongoing USB I/O request to the linux kernel.
 /// (corresponds to a single Linux USBDEVFS URB)
 ///
-/// NOTE: The DeviceTransfer must be pinned at a static location in memory as
+/// NOTE: The DeviceTransferState must be pinned at a static location in memory as
 /// the 'urb' is referenced in kernel requests (so you'll only ever see
-/// Arc<DeviceTransfer>'s and never bare ones).
+/// Arc<DeviceTransferState>'s and never bare ones).
 pub struct DeviceTransferState {
     /// Id of this transfer. Specific to this device.
     pub(crate) id: usize,
@@ -52,6 +52,9 @@ pub struct DeviceTransferState {
 
     /// Channel sender used for notifying the corresponding receiver that the
     /// transfer is complete (or failed).
+    ///
+    /// TODO: Can probably optimize this since there will only ever be a single
+    /// element and there is no need  for allocating
     pub(crate) sender: channel::Sender<std::result::Result<(), crate::Error>>,
     pub(crate) receiver: channel::Receiver<std::result::Result<(), crate::Error>>,
 }

@@ -9,5 +9,7 @@ mod interrupt;
 mod adc;
 mod spi;
 mod allocator;
+mod sleep;
+mod i2c;
 
 pub use peripherals_controller::*;

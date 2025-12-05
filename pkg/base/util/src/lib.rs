@@ -18,6 +18,7 @@ pub mod iter;
 #[cfg(feature = "alloc")]
 pub mod null_terminated;
 pub mod zip_all;
+pub mod aligned;
 
 #[cfg(feature = "alloc")]
 use alloc::string::String;

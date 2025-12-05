@@ -82,11 +82,10 @@ async fn main_thread_fn() {
     RadioControllerThread::start(radio_controller);
 
     let mut usb_controller = USBDeviceController::new(peripherals.usbd, peripherals.power);
-    usb_controller.set_send_buffer(&REPORT_SEND_BUFFER);
 
     KeyboardUSBThread::start(
         usb_controller,
-        KeyboardUSBHandler::new(&STATE, &RADIO_SOCKET, rtc.clone()),
+        KeyboardUSBHandler::new(&STATE, &REPORT_SEND_BUFFER, &RADIO_SOCKET, rtc.clone()),
     );
 
     log!("Started up!");

@@ -1,0 +1,23 @@
+name: "hall_tile"
+base_config: "nrf52840"
+
+peripherals {
+    name: "value"
+    adc {
+        pin_name: "P0.29"
+        config {
+            max_voltage: 1
+            sample_rate: 16000
+            oversampling: 16
+        }
+    }
+}
+
+peripherals {
+    name: "buf1"
+    adc_buffer {
+        config {
+            size: 1000
+        }
+    }
+}

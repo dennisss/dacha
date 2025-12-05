@@ -48,6 +48,7 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
                 callback(&name, config.config_mut().negative_pin_mut())?;
             }
         }
+        BoardConfig_PeripheralConfigCase::AdcBuffer(_) => {}
         BoardConfig_PeripheralConfigCase::Spi(config) => {
             let name = config.mosi_pin_name().to_string();
             callback(&name, config.config_mut().mosi_pin_mut())?;
@@ -60,6 +61,13 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
 
             let name = config.sclk_pin_name().to_string();
             callback(&name, config.config_mut().sclk_pin_mut())?;
+        }
+        BoardConfig_PeripheralConfigCase::I2c(config) => {
+            let name = config.scl_pin_name().to_string();
+            callback(&name, config.config_mut().scl_pin_mut())?;
+
+            let name = config.sda_pin_name().to_string();
+            callback(&name, config.config_mut().sda_pin_mut())?;
         }
         BoardConfig_PeripheralConfigCase::NOT_SET => {
             return Err(err_msg("Unconfigured peripheral"));
@@ -270,6 +278,12 @@ pub fn build_configuration_requests(config: &BoardConfig) -> Result<(Vec<Periphe
             BoardConfig_PeripheralConfigCase::Adc(config) => {
                 req.set_configure_adc(config.config().clone());
                 s.adc_mut();
+            }
+            BoardConfig_PeripheralConfigCase::AdcBuffer(config) => {
+                req.set_allocate_adc_buffer(config.config().clone());
+            }
+            BoardConfig_PeripheralConfigCase::I2c(config) => {
+                req.set_configure_i2c(config.config().clone());
             }
             BoardConfig_PeripheralConfigCase::Spi(config) => {
                 req.set_configure_spi(config.config().clone());

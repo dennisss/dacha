@@ -163,7 +163,7 @@ pkg/cnc/boards/buck_adapter/board/board.kicad_pcb
 
 
 
-    cargo run --bin cam --release -- \
+    cargo run --bin pcb_cam --release -- \
         --config_path=pkg/cnc/cam/config/makera_carvera.txtpb \
         --board_path=pkg/cnc/boards/magnet_sensor/board/board.kicad_pcb \
         single-front \

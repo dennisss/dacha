@@ -1,5 +1,6 @@
 use core::mem::MaybeUninit;
 
+// TODO: Dedup this with the CyclicBuffer code.
 pub struct FixedQueue<T, const LEN: usize> {
     pub(super) data: [MaybeUninit<T>; LEN],
     pub(super) offset: usize,

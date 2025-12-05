@@ -105,6 +105,7 @@ use core::arch::asm;
 use core::future::Future;
 use core::ptr::read_volatile;
 
+use base_util::aligned::Aligned;
 use common::fixed::vec::FixedVec;
 use common::register::RegisterRead;
 use common::register::RegisterWrite;
@@ -118,10 +119,9 @@ use nordic::gpio::*;
 use nordic::reset::*;
 use nordic::rtc::RTC;
 use nordic::uarte::UARTE;
-use nordic::usb::aligned::Aligned;
 use nordic::usb::controller::USBDeviceControlRequest;
 use nordic::usb::controller::{
-    USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest,
+    USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest, USBDeviceNormalResponse,
 };
 use nordic::usb::default_handler::USBDeviceDefaultHandler;
 use nordic::usb::handler::{USBDeviceHandler, USBError};
@@ -204,8 +204,9 @@ impl USBDeviceHandler for BootloaderUSBHandler {
 
     type HandleNormalRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
-    type HandleNormalResponseAcknowledgedFuture<'a> =
-        impl Future<Output = Result<(), USBError>> + 'a;
+    type HandleNormalResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
+
+    type PollNormalResponseReadyFuture<'a> = impl Future<Output = ()> + 'a;
 
     fn handle_reset<'a>(
         &'a mut self,
@@ -230,16 +231,24 @@ impl USBDeviceHandler for BootloaderUSBHandler {
     fn handle_normal_request<'a>(
         &'a mut self,
         endpoint_index: usize,
-        req: USBDeviceNormalRequest,
+        req: USBDeviceNormalRequest<'a>,
     ) -> Self::HandleNormalRequestFuture<'a> {
         async move { Ok(()) }
     }
 
-    fn handle_normal_response_acknowledged<'a>(
+    fn handle_normal_response<'a>(
         &'a mut self,
         endpoint_index: usize,
-    ) -> Self::HandleNormalResponseAcknowledgedFuture<'a> {
+        res: USBDeviceNormalResponse<'a>,
+    ) -> Self::HandleNormalResponseFuture<'a> {
         async move { Ok(()) }
+    }
+
+    fn poll_normal_response_ready<'a>(
+        &'a self,
+        endpoint_index: usize,
+    ) -> Self::PollNormalResponseReadyFuture<'a> {
+        executor::futures::pending()
     }
 }
 

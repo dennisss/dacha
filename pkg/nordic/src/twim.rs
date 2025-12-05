@@ -1,13 +1,20 @@
+use core::ops::{Deref, DerefMut};
+
 use common::errors::*;
 use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::twim0::TWIM0;
 use peripherals::raw::{Interrupt, InterruptState};
+use peripherals::raw::twim0::frequency::FREQUENCY_FIELD;
 
 use crate::pins::{connect_pin, disconnect_pin, PeripheralPin};
 
 /// NOTE: Requires a HFCLK.
 pub struct TWIM {
-    periph: TWIM0,
+    periph: TWIMInner,
+}
+
+pub struct TWIMConfig {
+    frequency: FREQUENCY_FIELD
 }
 
 #[derive(Clone, Copy, Debug, Errable)]
@@ -19,7 +26,14 @@ pub enum TWIMError {
     UnsupportedBaudrate,
 }
 
-impl Drop for TWIM {
+struct TWIMInner {
+    periph: TWIM0,
+}
+
+impl_deref!(TWIMInner::periph as TWIM0);
+
+
+impl Drop for TWIMInner {
     fn drop(&mut self) {
         self.periph.enable.write_disabled();
 
@@ -30,21 +44,29 @@ impl Drop for TWIM {
 }
 
 impl TWIM {
+    pub fn configure(frequency: usize) -> Option<TWIMConfig> {
+        let frequency = match frequency {
+            100_000 => FREQUENCY_FIELD::K100,
+            250_000 => FREQUENCY_FIELD::K250,
+            400_000 => FREQUENCY_FIELD::K400,
+            _ => return None
+        };
+
+        Some(TWIMConfig { 
+            frequency
+        })        
+    }
+
     pub fn new<SCLPin: PeripheralPin, SDAPin: PeripheralPin>(
         mut periph: TWIM0,
         scl: SCLPin,
         sda: SDAPin,
-        frequency: usize,
+        config: TWIMConfig,
     ) -> Self {
         connect_pin(scl, &mut periph.psel.scl);
         connect_pin(sda, &mut periph.psel.sda);
 
-        match frequency {
-            100_000 => periph.frequency.write_k100(),
-            250_000 => periph.frequency.write_k250(),
-            400_000 => periph.frequency.write_k400(),
-            _ => panic!(), // TODO: Return an error
-        };
+        periph.frequency.write(config.frequency);
 
         periph.inten.write_with(|v| {
             v.set_stopped(InterruptState::Enabled)
@@ -52,7 +74,12 @@ impl TWIM {
         });
         periph.enable.write_enabled();
 
-        Self { periph }
+        Self { periph: TWIMInner { periph } }
+    }
+
+    pub fn into_inner(self) -> TWIM0 {
+        drop(self);
+        unsafe { TWIM0::new() }
     }
 
     // TODO: Support vectorized read

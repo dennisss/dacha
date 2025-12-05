@@ -104,6 +104,7 @@ async fn main_thread_fn() {
             peripherals.timer4,
             peripherals.ppi,
             peripherals.saadc,
+            peripherals.twim0,
         ))
         .await;
 
@@ -197,8 +198,6 @@ fn main() -> () {
     // Disable interrupts.
     // TODO: Disable FIQ interrupts?
     let cs = CriticalSection::new();
-
-    unsafe { asm!("cpsid i") }
 
     let mut peripherals = peripherals::raw::Peripherals::new();
 

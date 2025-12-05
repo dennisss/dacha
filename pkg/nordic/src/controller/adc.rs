@@ -1,4 +1,5 @@
 use common::fixed::vec::FixedVec;
+use common::fixed::queue::FixedQueue;
 use peripherals_proto::peripherals::{
     PeripheralRequest, PeripheralRequestCommandCase, PeripheralResponse,
     PeripheralResponse_ErrorCode,
@@ -6,98 +7,285 @@ use peripherals_proto::peripherals::{
 
 
 use crate::adc::*;
-use crate::controller::peripherals_controller::PeripheralsController;
+use crate::controller::peripherals_controller::{PeripheralsController, PeripheralsControllerState};
 use crate::controller::PeripheralEntry;
+use crate::controller::allocator::*;
 
-type AdcBufferType = [i16; 1024];
+pub struct ADCBuffer {
+    buffer: BoxedSlice<i16>,
+    used: usize,
+    consumed: usize,
+}
 
-static mut ADC_BUFFER: AdcBufferType = [0i16; 1024];
-static mut ADC_BUFFER_LEN: usize = 0;
+impl ADCBuffer {
+    pub fn new(size: usize) -> Self {
+        Self {
+            buffer: BoxedSlice::new_zeroed(size),
+            used: 0,
+            consumed: 0,
+        }
+    }
 
+    pub fn read(&mut self, res: &mut PeripheralResponse) {
+        let data: &[u8] = unsafe {
+            let len = core::mem::size_of::<i16>() * self.used;
+            core::slice::from_raw_parts(
+                core::mem::transmute::<*const i16, *const u8>(self.buffer.as_ptr()),
+                len
+            )
+        };
 
-define_thread!(
-    ADCCalibratePeripheralThread,
-    adc_calibrate_worker_thread,
-    controller: &'static PeripheralsController,
-    request_sequence: u32,
-    inst: WindowADC
-);
+        let offset = self.consumed;
+        if offset >= data.len() {
+            return;
+        }
 
-async fn adc_calibrate_worker_thread(
-    controller: &'static PeripheralsController,
-    request_sequence: u32,
-    mut inst: WindowADC
-) {
-    inst.calibrate_offset().await;
+        let offset_end = core::cmp::min(offset + 32, data.len());
+        self.consumed = offset_end;
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
-        state.adc = Some(inst);
-        let mut res = PeripheralResponse::default();
-        res.set_request_sequence(request_sequence);
-        controller.write_response(&mut state, &res);
-    });
+        res.data_val_mut().extend_from_slice(&data[offset..offset_end]);
+    }
+
+}
+
+#[derive(Default)]
+pub struct ADCRequestQueue {
+    requests: FixedQueue<ADCRequest, 16>
+}
+
+// TODO: Double check this only takes 4 bytes?
+pub struct ADCRequest {
+    pub request_sequence: u8,
+    pub typ: ADCRequestType,
+}
+
+pub enum ADCRequestType {
+    Calibrate,
+    SingleSample {
+        peripheral_index: u8,
+
+    },
+    WindowSample {
+        peripheral_index: u8,
+        buffer_index: u8,
+    },
+}
+
+impl ADCRequestQueue {
+    /// Returns true if it was successfully enqueued.
+    pub fn enqueue(&mut self, request: ADCRequest) -> bool {
+        if self.requests.is_full() {
+            return false;
+        }
+
+        self.requests.push_back(request);
+
+        true
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.requests.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.requests.clear();
+    }
 }
 
 define_thread!(
     ADCSamplePeripheralThread,
     adc_sample_worker_thread,
-    controller: &'static PeripheralsController,
-    peripheral_index: usize,
-    request_sequence: u32,
-    inst: WindowADC,
-    config: ADCChannelConfig,
-    window_sample: bool
+    controller: &'static PeripheralsController
 );
 
-async fn adc_sample_worker_thread(
-    controller: &'static PeripheralsController,
-    peripheral_index: usize,
+struct InternalADCRequest {
+    adc: WindowADC,
     request_sequence: u32,
-    mut inst: WindowADC,
-    config: ADCChannelConfig,
-    window_sample: bool
-) {
-    let mut res = PeripheralResponse::default();
-    res.set_request_sequence(request_sequence);
+    typ: InternalADCRequestType
+}
 
-    if window_sample {
-        let status = inst.window_sample(&config, unsafe { &mut ADC_BUFFER }).await;
-        unsafe {
-            ADC_BUFFER_LEN = status.num_samples;
-        }
+enum InternalADCRequestType {
+    Calibrate,
 
-        if status.limit_high_exceeded || status.limit_low_exceeded {
-            res.set_uint_val(1u32);
-        }
-    } else {
-        let value = inst.single_sample(&config).await as u16 as u32;
-        res.set_uint_val(value);
+    SingleSample {
+        config: WindowADCChannelConfig,
+    },
+
+    WindowSample {
+        config: WindowADCChannelConfig,
+        buffer: ADCBuffer,
+        buffer_index: usize,
     }
+}
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
-        state.entries[peripheral_index] = PeripheralEntry::ADC {
-            config
+impl InternalADCRequest {
+
+    fn resolve(
+        state: &mut PeripheralsControllerState,
+        req: &ADCRequest
+    ) -> Result<Self, PeripheralResponse_ErrorCode> {
+
+        let typ = match &req.typ {
+            ADCRequestType::Calibrate => {
+                InternalADCRequestType::Calibrate
+            },
+            ADCRequestType::SingleSample { peripheral_index } => {
+
+                let config = match &mut state.entries[*peripheral_index as usize] {
+                    PeripheralEntry::ADC(config) => config.clone(),
+                    _ => {
+                        return Err(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        );
+                    }
+                };
+
+                InternalADCRequestType::SingleSample {
+                    config
+                }
+            },
+            ADCRequestType::WindowSample { peripheral_index, buffer_index } => {
+
+                // TODO: Dedup me with above.
+                let config = match &mut state.entries[*peripheral_index as usize] {
+                    PeripheralEntry::ADC(config) => config.clone(),
+                    _ => {
+                        return Err(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        );
+                    }
+                };
+
+                let buffer_index = *buffer_index as usize;
+
+                match &mut state.entries[buffer_index] {
+                    PeripheralEntry::ADCBuffer { .. } => {}
+                    _ => {
+                        return Err(PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND);
+                    }
+                };
+
+                let buffer = {
+                    let mut e = PeripheralEntry::Borrowed;
+                    core::mem::swap(&mut e, &mut state.entries[buffer_index]);
+                    match e {
+                        PeripheralEntry::ADCBuffer(buffer) => buffer,
+                        _ => panic!(),
+                    }
+                };
+
+                InternalADCRequestType::WindowSample {
+                    config,
+                    buffer,
+                    buffer_index
+                }
+            },
         };
 
-        state.adc = Some(inst);
-        controller.write_response(&mut state, &res);
-    });
-}
+        // This is the only thread using the ADC so it should always be available.
+        let adc = state.adc.take().unwrap();
 
-pub fn read_adc_buffer(offset: usize, res: &mut PeripheralResponse) {
-    let data: &[u8] = unsafe {
-        let len = core::mem::size_of::<i16>() * ADC_BUFFER_LEN;
-        core::slice::from_raw_parts(
-            core::mem::transmute::<*const i16, *const u8>(ADC_BUFFER.as_ptr()),
-            len
-        )
-    };
-
-    if offset >= data.len() {
-        return;
+        Ok(Self {
+            adc,
+            request_sequence: req.request_sequence as u32,
+            typ
+        })
     }
 
-    let offset_end = core::cmp::min(offset + 32, data.len());
-    
-    res.data_val_mut().extend_from_slice(&data[offset..offset_end]);
+    async fn execute(&mut self) -> PeripheralResponse {
+        let mut res = PeripheralResponse::default();
+        res.set_request_sequence(self.request_sequence);
+
+        match &mut self.typ {
+            InternalADCRequestType::Calibrate => {
+                self.adc.calibrate_offset().await;
+            }
+            InternalADCRequestType::SingleSample { config } => {
+                let value = self.adc.single_sample(&config).await as u16 as u32;
+                res.set_uint_val(value);
+            }
+            InternalADCRequestType::WindowSample { config, buffer, .. } => {
+                // TODO: Check for failure.
+                let status = match self.adc.window_sample(&config, &mut buffer.buffer).await {
+                    Some(v) => v,
+                    None => {
+                        // TODO: Pick a better error.
+                        res.set_error_code(PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND);
+                        return res;
+                    }
+                };
+
+                buffer.used = status.num_samples;
+                buffer.consumed = 0;
+
+                if status.limit_high_exceeded || status.limit_low_exceeded {
+                    // TODO: Mark the current time (if zero, return 1)
+                    // return_time = true;
+                    res.set_uint_val(1u32);
+                }
+            }
+        }
+
+        res
+    }
+
+    fn reclaim(self, state: &mut PeripheralsControllerState) {
+        state.adc = Some(self.adc);
+
+        if let InternalADCRequestType::WindowSample { config, buffer, buffer_index } = self.typ {
+            state.entries[buffer_index] = PeripheralEntry::ADCBuffer(buffer);
+        }
+    }
 }
+
+async fn adc_sample_worker_thread(
+    controller: &'static PeripheralsController
+) {
+    loop {
+        // Extract everything from the state needed to fulfill the next request.
+        let request = lock!(state <= controller.state.lock().await.unwrap(), {
+
+            let req = match state.adc_request_queue.requests.pop_front() {
+                Some(v) => v,
+                None => return None
+            };
+
+            let internal_req = match InternalADCRequest::resolve(&mut state, &req) {
+                Ok(v) => v,
+                Err(e) => {
+                    let mut res = PeripheralResponse::default();
+                    res.set_request_sequence(req.request_sequence as u32);
+                    res.set_error_code(PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED);
+                    controller.write_response(&mut state, &res);
+                    return None
+                }
+            };
+
+            Some(internal_req)
+        });
+
+        // Execute the request
+        if let Some(mut request) = request {
+            let mut res = request.execute().await;
+
+            lock!(state <= controller.state.lock().await.unwrap(), {
+                // Return roughly the time of the last sample.
+                match state.timer.capture() {
+                    Some(v) => res.set_time(v),
+                    None => {
+                        res.set_error_code(PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED);
+                    }
+                }
+                
+                request.reclaim(&mut state);
+                controller.write_response(&mut state, &res);
+            });
+
+            // Check immediately for more requests.
+            continue;
+        }
+
+        controller.adc_request_queue_filled.recv().await;
+    }
+}
+

@@ -530,25 +530,34 @@ impl Device {
             .await
     }
 
-    async fn read_impl(&self, typ: u8, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
+    fn enqueue_read_impl(&self, typ: u8, endpoint: u8, buffer_len: usize) -> Result<PendingRead> {
         check_can_read_endpoint(endpoint)?;
 
         // TODO: Verify that the endpoint has a descriptor?
 
-        let buf = vec![0u8; buffer.len()];
+        let buf = vec![0u8; buffer_len];
         let transfer = self.start_transfer(typ, endpoint, 0, buf)?;
 
-        transfer.wait().await?;
+        Ok(PendingRead {
+            transfer
+        })
+    }
 
-        let n = transfer.state.urb.actual_length as usize;
-
+    async fn read_impl(&self, typ: u8, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
+        let read = self.enqueue_read_impl(typ, endpoint, buffer.len())?.wait().await?;
+    
+        let n = read.buffer().len();
         if n > buffer.len() {
             return Err(crate::Error::Overflow.into());
         }
 
-        buffer[0..n].copy_from_slice(&transfer.state.buffer[0..n]);
+        buffer[0..n].copy_from_slice(read.buffer());
 
         Ok(n)
+    }
+
+    pub fn enqueue_read_interrupt(&self, endpoint: u8, buffer_len: usize) -> Result<PendingRead> {
+        self.enqueue_read_impl(USBDEVFS_URB_TYPE_INTERRUPT, endpoint, buffer_len)
     }
 
     pub async fn read_interrupt(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
@@ -612,3 +621,31 @@ impl Device {
         Ok(())
     }
 }
+
+pub struct PendingRead {
+    transfer: DeviceTransfer
+}
+
+impl PendingRead {
+    pub async fn wait(self) -> Result<CompletedRead> {
+        // TODO: Prevent this from being polled twice.
+        self.transfer.wait().await?;
+
+        Ok(CompletedRead {
+            transfer: self.transfer
+        })
+    }
+}
+
+
+pub struct CompletedRead {
+    transfer: DeviceTransfer
+}
+
+impl CompletedRead {
+    pub fn buffer(&self) -> &[u8] {
+        let n = self.transfer.state.urb.actual_length as usize;
+        &self.transfer.state.buffer[0..n]
+    }
+}
+

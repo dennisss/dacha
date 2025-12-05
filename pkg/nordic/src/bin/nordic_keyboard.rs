@@ -49,7 +49,6 @@ use core::future::Future;
 use executor::singleton::Singleton;
 use logging::Logger;
 use nordic::gpio::{GPIOPin, Resistor, GPIO};
-use nordic::protocol::ProtocolUSBHandler;
 use nordic::radio_socket::RadioSocket;
 use nordic::spi::*;
 use nordic::rtc::RTC;

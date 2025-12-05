@@ -46,8 +46,11 @@ TODO: Even If USB resets don't reset the MCU, I need to use them to reset the US
 */
 
 use common::fixed::vec::FixedVec;
-use common::segmented_buffer::SegmentedBuffer;
+use common::cyclic_buffer::CyclicBuffer;
+use common::list::Appendable;
 use executor::sync::AsyncMutex;
+use executor::critical_mutex::CriticalMutex;
+use executor::channel::Channel;
 use peripherals_proto::peripherals::{
     PeripheralRequest, PeripheralRequestCommandCase, PeripheralResponse,
     PeripheralResponse_ErrorCode, ConfigureGPIO_InterruptPolarity,
@@ -66,8 +69,10 @@ use peripherals::raw::spim3::SPIM3;
 use peripherals::raw::temp::TEMP;
 use peripherals::raw::timer0::TIMER0;
 use peripherals::raw::timer1::TIMER1;
+use peripherals::raw::timer4::TIMER4;
 use peripherals::raw::uarte0::UARTE0;
 use peripherals::raw::ppi::PPI;
+use peripherals::raw::twim0::TWIM0;
 use protobuf::{Message, StaticMessage};
 use executor::interrupts::make_high_priority_irq;
 use peripherals::raw::Interrupt;
@@ -84,6 +89,7 @@ use crate::ppi::PPIChannels;
 use crate::spi::*;
 use crate::neopixel::*;
 use crate::adc::*;
+use crate::twim::*;
 
 use super::neopixel::NeopixelPeripheralThread;
 use super::tachometer::TachometerPeripheralThread;
@@ -92,8 +98,10 @@ use super::timeout::TimeoutPeripheralThread;
 use super::uart::UartTransmitPeripheralThread;
 use super::stepper::{StepperMotorController, StepperPeripheralThread};
 use super::interrupt::InterruptPeripheralThread;
-use super::adc::{ADCSamplePeripheralThread, ADCCalibratePeripheralThread, read_adc_buffer};
+use super::adc::*;
 use super::spi::SPIPeripheralThread;
+use super::sleep::SleepPeripheralThread;
+use super::i2c::I2CPeripheralThread;
 
 const MAX_NUM_PERIPHERALS: usize = 32;
 
@@ -107,13 +115,16 @@ const RESPONSE_BUFFER_SIZE: usize = 512;
 
 const DEFAULT_ENTRY_VALUE: PeripheralEntry = PeripheralEntry::Unconfigured;
 
+
 pub struct PeripheralsController {
     pub(super) clock: RTC,
-    pub(super) state: AsyncMutex<State>,
+    pub(super) state: AsyncMutex<PeripheralsControllerState>,
+    response_buffer_readable: Channel<()>,
+    pub(super) adc_request_queue_filled: Channel<()>
 }
 
 // TODO: Unconfigure all peripherals when this is dropped.
-pub(super) struct State {
+pub(super) struct PeripheralsControllerState {
     pub entries: [PeripheralEntry; MAX_NUM_PERIPHERALS],
 
     /// Has a bit set for every pin that is in use by one of the entries.
@@ -144,12 +155,22 @@ pub(super) struct State {
 
     pub adc: Option<WindowADC>,
 
-    pub batch_ack: Option<BatchAck>,
+    pub adc_request_queue: ADCRequestQueue,
+
+    twim0: Option<TWIM0>,
+
+    batch_ack: Option<BatchAck>,
 
     /// Stores PeripheralResponse protos that need to be read back by the host.
     //
     // TODO: Clear this on USB reset.
-    pub response_buffer: SegmentedBuffer<[u8; RESPONSE_BUFFER_SIZE]>,
+    //
+    // TODO: Just use a cyclic buffer. If we overflow, wait for everything to be read and then write
+    // an overflow message.
+    response_buffer: CyclicBuffer<[u8; RESPONSE_BUFFER_SIZE]>,
+
+    // TODO: While overflowed, we need to surpress responses until we have space to say that we overflowed.
+    response_buffer_overflowed: bool,
 }
 
 struct BatchAck {
@@ -177,24 +198,46 @@ pub(super) enum PeripheralEntry {
         timeout_millis: Option<u32>,
     },
 
-    UARTE {
-        inst: UARTE,
-    },
+    UARTE(UARTE),
 
     Stepper {
         controller: StepperMotorController
     },
 
-    Neopixel {
-        inst: Neopixel
-    },
+    Neopixel(Neopixel),
 
-    ADC {
-        config: ADCChannelConfig
-    },
+    ADC(WindowADCChannelConfig),
 
-    SPI {
-        inst: SPIHost
+    ADCBuffer(ADCBuffer),
+
+    SPI(SPIHost),
+
+    I2C(TWIM),
+}
+
+macro_rules! check_peripheral_type {
+    ($state:ident, $peripheral_idx:expr, $t:ident) => {
+        match &mut $state.entries[$peripheral_idx] {
+            PeripheralEntry::$t { .. } => {}
+            _ => {
+                return Err(ExecuteError::ErrorCode(
+                    PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                ));
+            }
+        };
+    }
+}
+
+macro_rules! borrow_peripheral {
+    ($state:ident, $peripheral_idx:expr, $t:ident) => {
+        {
+            let mut e = PeripheralEntry::Borrowed;
+            core::mem::swap(&mut e, &mut $state.entries[$peripheral_idx]);
+            match e {
+                PeripheralEntry::$t(inst) => inst,
+                _ => panic!(),
+            }
+        }
     }
 }
 
@@ -304,12 +347,15 @@ impl PeripheralsController {
         uarte0: UARTE0,
         timer0: TIMER0,
         timer1: TIMER1,
-timer4: TIMER4,
+        timer4: TIMER4,
         ppi: PPI,
-        saadc: SAADC
+        saadc: SAADC,
+        twim0: TWIM0,
     ) -> Self {
 
         // The stepper interrupt.
+        // NOTE: The usefulness of this relies on the
+        // PeripheralControllerState having interrupts disabled when locked. Overwise, this high pri interrupt may interrupt when it is locked and have to retry after a pendsv interrupt.
         make_high_priority_irq(Interrupt::TIMER4);
 
         // TODO: Don't create this here. We should ban calling this outside of main().
@@ -335,7 +381,7 @@ timer4: TIMER4,
 
         Self {
             clock,
-            state: AsyncMutex::new(State {
+            state: AsyncMutex::new(PeripheralsControllerState {
                 entries,
                 config_finalized: false,
                 pwms: [
@@ -352,10 +398,15 @@ timer4: TIMER4,
                 used_pins: [0; NUM_PINS / 4],
                 spim,
                 timer,
+                twim0: Some(twim0),
                 adc: Some(adc),
+                adc_request_queue: ADCRequestQueue::default(),
                 batch_ack: None,
-                response_buffer: SegmentedBuffer::new([0u8; RESPONSE_BUFFER_SIZE]),
+                response_buffer: CyclicBuffer::new([0u8; RESPONSE_BUFFER_SIZE]),
+                response_buffer_overflowed: false,
             }),
+            response_buffer_readable: Channel::new(),
+            adc_request_queue_filled: Channel::new(),
         }
     }
 
@@ -385,39 +436,53 @@ timer4: TIMER4,
         });
     }
 
+    /// Should be called when the USB connection is reset.
+    /// This event means that all previous request data needs to be invalidated.
+    pub async fn handle_reset(&self) {
+        // TODO: Currently this isn't fool proof since if there are since any running
+        // requests then they may still append to the buffer shortly after it is cleared
+        // with stale request ids.
+        lock!(state <= self.state.lock().await.unwrap(), {
+            state.batch_ack = None;
+            state.response_buffer.clear();
+            state.response_buffer_overflowed = false;
+        });
+    }
+
     /// Reads response data to be sent back to the host.
     /// Each response is prefixed by a 1 byte length field so that
     /// multiple responses can be send back at once. This can also
     /// be safely padded with zeros if needed. 
     pub async fn read_response(&self, out: &mut [u8]) -> usize {
         lock!(state <= self.state.lock().await.unwrap(), {
+            if state.response_buffer_overflowed && state.response_buffer.is_empty() {
+                state.response_buffer_overflowed = false;
+                out[0] = 0;
+                return 1;
+            }
+            
             // Putting this here is probably fine as the host will always write
             // all requests before getting responses 
             if let Some(batch_ack) = state.batch_ack.take() {
                 self.write_batch_ack(&mut state, batch_ack);
             }
-            
-            let mut n = 0;
-            
-            loop {
-                let len = match state.response_buffer.peek() {
-                    Some(v) => v,
-                    None => break
-                };
 
-                if out.len() < n + 1 + len {
-                    break;
-                }
+            state.response_buffer.read(out)
+        })
+    }
 
-                out[n] = len as u8;
-                n += 1;
+    pub async fn wait_until_readable(&self) {
+        loop {
+            let state = self.state.lock().await.unwrap().read_exclusive();
 
-                let _ = state.response_buffer.read(&mut out[n..]);
-                n += len;
+            if state.response_buffer.len() > 0 || state.batch_ack.is_some() || state.response_buffer_overflowed {
+                return;
             }
 
-            n
-        })
+            drop(state);
+
+            let _ = self.response_buffer_readable.recv().await;
+        }
     }
 
     pub async fn get_clock_time(&self) -> Option<u32> {
@@ -437,7 +502,7 @@ timer4: TIMER4,
     ///   asynchronously write a response.
     fn execute_impl(
         &'static self,
-        state: &mut State,
+        state: &mut PeripheralsControllerState,
         request: &PeripheralRequest,
         response: &mut PeripheralResponse,
     ) -> Result<OkResponse, ExecuteError> {
@@ -466,7 +531,7 @@ timer4: TIMER4,
                 let mut pin = state.gpio.pin(IndexedPin { index: req.pin() });
 
                 if !req.is_input() {
-                    pin.write(if req.default_value() { PinLevel::High } else { PinLevel::Low });
+                    pin.write_bool(req.default_value());
                 }
 
                 pin.set_direction(if req.is_input() {
@@ -612,9 +677,9 @@ timer4: TIMER4,
 
                 // TODO: Validate the baud_rate is ok.
 
-                state.entries[peripheral_idx] = PeripheralEntry::UARTE {
-                    inst: UARTE::new(inst, tx_pin, rx_pin, req.baud_rate() as usize)
-                };
+                state.entries[peripheral_idx] = PeripheralEntry::UARTE(
+                    UARTE::new(inst, tx_pin, rx_pin, req.baud_rate() as usize)
+                );
 
                 Ok(OkResponse)
             }
@@ -637,7 +702,7 @@ timer4: TIMER4,
                 ).ok_or_else(|| ExecuteError::ErrorCode(
                     PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                 ))?;
-                
+
                 state.entries[peripheral_idx] = PeripheralEntry::Stepper {
                     controller
                 };
@@ -669,7 +734,20 @@ timer4: TIMER4,
 
                 response.set_adc_format(config.format());
                 
-                state.entries[peripheral_idx] = PeripheralEntry::ADC { config };
+                state.entries[peripheral_idx] = PeripheralEntry::ADC(config);
+
+                if !ADCSamplePeripheralThread::is_running() {
+                    ADCSamplePeripheralThread::start(self);
+                }
+
+                Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::AllocateAdcBuffer(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
+
+                let buffer = ADCBuffer::new(req.size() as usize);
+
+                state.entries[peripheral_idx] = PeripheralEntry::ADCBuffer(buffer);
 
                 Ok(OkResponse)
             }
@@ -686,9 +764,9 @@ timer4: TIMER4,
                 let pin = state.gpio.pin(IndexedPin { index: req.pin() });
                 let spi = state.spim.pop().unwrap();
 
-                state.entries[peripheral_idx] = PeripheralEntry::Neopixel {
-                    inst: Neopixel::new(spi, pin, req.inverted())
-                };
+                state.entries[peripheral_idx] = PeripheralEntry::Neopixel(
+                    Neopixel::new(spi, pin, req.inverted())
+                );
 
                 Ok(OkResponse)
             }
@@ -719,10 +797,41 @@ timer4: TIMER4,
                     SPIMode::Mode0                
                 );
 
-                state.entries[peripheral_idx] = PeripheralEntry::SPI { inst };
+                state.entries[peripheral_idx] = PeripheralEntry::SPI(inst);
 
                 Ok(OkResponse)
             }
+            PeripheralRequestCommandCase::ConfigureI2c(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
+                self.check_valid_pin(req.sda_pin());
+                self.check_valid_pin(req.scl_pin());
+
+                if state.twim0.is_none() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ));
+                }
+
+                // TODO: Pick a better error.
+                let config = TWIM::configure(req.frequency() as usize)
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ))?;
+
+                let twim0 = state.twim0.take().unwrap();
+
+                let inst = TWIM::new(
+                    twim0,
+                    IndexedPin { index: req.scl_pin() },
+                    IndexedPin { index: req.sda_pin() },
+                    config,
+                );
+
+                state.entries[peripheral_idx] = PeripheralEntry::I2C(inst);
+
+                Ok(OkResponse)
+            }
+
             PeripheralRequestCommandCase::FinalizeConfig(_) => {
                 if state.config_finalized {
                     return Err(ExecuteError::ErrorCode(
@@ -754,12 +863,17 @@ timer4: TIMER4,
                     }
                 }
 
-// NOTE: There is a risk that these won't be able to immediately stop
+                // NOTE: There is a risk that these won't be able to immediately stop
                 // the threads if they are actively being polled but that shouldn't ever
                 // happen since this code should run in a lower priority interrupt that
                 // doesn't interrupt these threads.
                 StepperPeripheralThread::stop();
                 InterruptPeripheralThread::stop();
+
+                // NOTE: Only save to stop this if the ADC is still in the state
+                ADCSamplePeripheralThread::stop();
+
+                state.adc_request_queue.clear();
 
                 for entry in state.entries.iter_mut() {
                     let mut e = PeripheralEntry::Unconfigured;
@@ -781,19 +895,23 @@ timer4: TIMER4,
                             drop(interrupt);
                             pin.reset();
                         }
-                        PeripheralEntry::UARTE { inst } => {
+                        PeripheralEntry::UARTE(inst) => {
                             // Pins get disconnected on drop
                             state.uarte = Some(inst.into_inner());
                         }
                         PeripheralEntry::Stepper { controller } => {} 
 
-                        PeripheralEntry::Neopixel { inst } => {
+                        PeripheralEntry::Neopixel(inst) => {
                             state.spim.push(inst.into_inner());
                         }
-                        PeripheralEntry::SPI { inst } => {
+                        PeripheralEntry::SPI(inst) => {
                             state.spim.push(inst.into_inner());
                         }
-                        PeripheralEntry::ADC { .. } => {}
+                        PeripheralEntry::ADC(_) => {}
+                        PeripheralEntry::ADCBuffer(_) => {}
+                        PeripheralEntry::I2C(inst) => {
+                            state.twim0 = Some(inst.into_inner());
+                        }
                     }
                 }
 
@@ -869,7 +987,7 @@ timer4: TIMER4,
 
                 // TODO: Check configured as an input.
 
-// NOTE: If the response is low, then the entire response can
+                // NOTE: If the response is low, then the entire response can
                 // be batch ack'ed so is cheap to return.
                 if pin.read() == PinLevel::High {
                     response.set_uint_val(1 as u32);
@@ -974,23 +1092,9 @@ timer4: TIMER4,
                     ));
                 }
 
-                match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::UARTE { inst } => {}
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                check_peripheral_type!(state, peripheral_idx, UARTE);
 
-                let inst = {
-                    let mut e = PeripheralEntry::Borrowed;
-                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
-                    match e {
-                        PeripheralEntry::UARTE { inst } => inst,
-                        _ => panic!(),
-                    }
-                };
+                let inst = borrow_peripheral!(state, peripheral_idx, UARTE);
 
                 let mut read_request = None;
                 if req.has_rx_after_tx() {
@@ -1017,23 +1121,9 @@ timer4: TIMER4,
                     ));
                 }
                 
-                match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::SPI { inst } => {}
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                check_peripheral_type!(state, peripheral_idx, SPI);
 
-                let inst = {
-                    let mut e = PeripheralEntry::Borrowed;
-                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
-                    match e {
-                        PeripheralEntry::SPI { inst } => inst,
-                        _ => panic!(),
-                    }
-                };
+                let inst = borrow_peripheral!(state, peripheral_idx, SPI);
 
                 SPIPeripheralThread::start(
                     self,
@@ -1054,7 +1144,14 @@ timer4: TIMER4,
                 Ok(OkResponse)
             }
             PeripheralRequestCommandCase::Sleep(_) => {
-                todo!()
+                if SleepPeripheralThread::is_running() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                SleepPeripheralThread::start(self, request.request_sequence());
+                Err(ExecuteError::AsyncReply)
             }
             PeripheralRequestCommandCase::Now(_) => {
                 todo!()
@@ -1074,6 +1171,21 @@ timer4: TIMER4,
                     }
                 };
 
+                // Optional checks if we want to be paranoid.
+                /*
+                let time = state.timer.capture()
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ))?;
+
+                let delta_time = cnc::time_remaining_u32(req.next_step_time(), time);
+                if delta_time < 30 || delta_time > 16_000_000 {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::TIMEOUT,
+                    ));
+                }
+                */
+
                 if !stepper.enqueue_motion(req) {
                     return Err(ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
@@ -1081,10 +1193,6 @@ timer4: TIMER4,
                 }
 
                 stepper.tick();
-
-                if !StepperPeripheralThread::is_running() {
-                    StepperPeripheralThread::start(self);
-                }
 
                 Ok(OkResponse)
             }
@@ -1102,8 +1210,19 @@ timer4: TIMER4,
                 stepper.tick();
                 Ok(OkResponse)
             }
+            PeripheralRequestCommandCase::ResetStepperMotor(_) => {
+                let stepper = match &mut state.entries[peripheral_idx] {
+                    PeripheralEntry::Stepper { controller } => controller,
+                    _ => {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }
+                };
 
-
+                stepper.reset();
+                Ok(OkResponse)
+            }
             PeripheralRequestCommandCase::GetClockTime(_) => {
                 self.check_fully_configured(state)?;
 
@@ -1142,73 +1261,66 @@ timer4: TIMER4,
             PeripheralRequestCommandCase::SampleAdc(req) => {
                 self.check_fully_configured(state)?;
 
-                if state.adc.is_none() {
+                // NOTE: The validity of the peripheral and buffer indexes
+                // is checked during request execution (after enqueuing).
+                let inner_request = ADCRequest {
+                    request_sequence: request.request_sequence() as u8,
+                    typ: if req.has_buffer() {
+                        ADCRequestType::WindowSample {
+                            peripheral_index: peripheral_idx as u8,
+                            buffer_index: req.buffer() as u8,
+                        }
+                    } else {
+                        ADCRequestType::SingleSample {
+                            peripheral_index: peripheral_idx as u8,
+                        }
+                    }
+                };
+
+                let was_empty = state.adc_request_queue.is_empty();
+
+                if !state.adc_request_queue.enqueue(inner_request) {
                     return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                     ));
                 }
 
-                match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::ADC { .. } => {}
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
-
-                let adc = state.adc.take().unwrap();
-
-                let config = {
-                    let mut e = PeripheralEntry::Borrowed;
-                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
-                    match e {
-                        PeripheralEntry::ADC { config } => config,
-                        _ => panic!(),
-                    }
-                };
-
-                ADCSamplePeripheralThread::start(
-                    self,
-                    peripheral_idx,
-                    request.request_sequence(),
-                    adc,
-                    config,
-                    req.window()
-                );
+                if was_empty {
+                    self.adc_request_queue_filled.try_send(());
+                }
 
                 Err(ExecuteError::AsyncReply)
             }
             PeripheralRequestCommandCase::CalibrateAdc(_) => {
                 self.check_fully_configured(state)?;
 
-                if state.adc.is_none() {
+                // TODO: Dedup with SampleAdc.
+
+                let inner_request = ADCRequest {
+                    request_sequence: request.request_sequence() as u8,
+                    typ: ADCRequestType::Calibrate
+                };
+
+                let was_empty = state.adc_request_queue.is_empty();
+
+                if !state.adc_request_queue.enqueue(inner_request) {
                     return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                     ));
                 }
 
-                let adc = state.adc.take().unwrap();
-
-                ADCCalibratePeripheralThread::start(
-                    self,
-                    request.request_sequence(),
-                    adc
-                );
+                if was_empty {
+                    self.adc_request_queue_filled.try_send(());
+                }
 
                 Err(ExecuteError::AsyncReply)
             }
 
             PeripheralRequestCommandCase::ReadAdcBuffer(offset) => {
-                read_adc_buffer(*offset as usize, response);
-                Ok(OkResponse)
-            }
-
-            PeripheralRequestCommandCase::NeopixelTransfer(req) => {
                 self.check_fully_configured(state)?;
 
-                match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::Neopixel { .. } => {}
+                let buf = match &state.entries[peripheral_idx] {
+                    PeripheralEntry::ADCBuffer(buf) => buf,
                     _ => {
                         return Err(ExecuteError::ErrorCode(
                             PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
@@ -1216,14 +1328,22 @@ timer4: TIMER4,
                     }
                 };
 
-                let inst = {
-                    let mut e = PeripheralEntry::Borrowed;
-                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
-                    match e {
-                        PeripheralEntry::Neopixel { inst } => inst,
-                        _ => panic!(),
-                    }
-                };
+                buf.read(*offset as usize, response);
+                Ok(OkResponse)
+            }
+
+            PeripheralRequestCommandCase::NeopixelTransfer(req) => {
+                self.check_fully_configured(state)?;
+
+                check_peripheral_type!(state, peripheral_idx, Neopixel);
+
+                if NeopixelPeripheralThread::is_running() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+                
+                let inst = borrow_peripheral!(state, peripheral_idx, Neopixel);
 
                 NeopixelPeripheralThread::start(
                     self,
@@ -1235,7 +1355,29 @@ timer4: TIMER4,
 
                 Err(ExecuteError::AsyncReply)
             }
+            PeripheralRequestCommandCase::I2cTransfer(req) => {
+                self.check_fully_configured(state)?;
 
+                check_peripheral_type!(state, peripheral_idx, I2C);
+
+                if I2CPeripheralThread::is_running() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                let inst = borrow_peripheral!(state, peripheral_idx, I2C);
+
+                I2CPeripheralThread::start(
+                    self,
+                    peripheral_idx,
+                    request.request_sequence(),
+                    inst,
+                    req.as_ref().clone()
+                );
+
+                Err(ExecuteError::AsyncReply)
+            }
         }
     }
 
@@ -1244,7 +1386,7 @@ timer4: TIMER4,
     /// configuration commands.
     fn check_entry_not_configured(
         &self,
-        state: &mut State,
+        state: &mut PeripheralsControllerState,
         peripheral_idx: usize,
     ) -> Result<(), ExecuteError> {
         if state.config_finalized {
@@ -1262,7 +1404,7 @@ timer4: TIMER4,
     }
 
     /// Always call this as the first thing for peripheral accessing commands.
-    fn check_fully_configured(&self, state: &mut State) -> Result<(), ExecuteError> {
+    fn check_fully_configured(&self, state: &mut PeripheralsControllerState) -> Result<(), ExecuteError> {
         if !state.config_finalized {
             return Err(ExecuteError::ErrorCode(
                 PeripheralResponse_ErrorCode::CONFIG_NOT_FINALIZED,
@@ -1282,7 +1424,7 @@ timer4: TIMER4,
         Ok(())
     }
 
-    pub(super) fn write_response(&self, state: &mut State, res: &PeripheralResponse) {
+    pub(super) fn write_response(&self, state: &mut PeripheralsControllerState, res: &PeripheralResponse) {
         // This sequence is just used for locally triggered init commands.
         if res.request_sequence() == 0 {
             return;
@@ -1308,37 +1450,39 @@ timer4: TIMER4,
                 first_sequence: res.request_sequence(),
                 num_requests: 0
             });
+            self.response_buffer_readable.try_send(());
             return;
         }
 
         self.write_response_raw(state, res);
     }
 
-    fn write_batch_ack(&self, state: &mut State, batch_ack: BatchAck) {
+    fn write_batch_ack(&self, state: &mut PeripheralsControllerState, batch_ack: BatchAck) {
         let mut res = PeripheralResponse::default();
         res.set_request_sequence(batch_ack.first_sequence);
-        res.set_ack_next_n(batch_ack.num_requests);
+        if batch_ack.num_requests > 0 {
+            res.set_ack_next_n(batch_ack.num_requests);
+        }
         self.write_response_raw(state, &res);
     }
 
-    fn write_response_raw(&self, state: &mut State, res: &PeripheralResponse) {
-        // TODO: We can just directly serialize to the output buffer if we take out a
-        // view?
-        let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
-        res.serialize_to(&protobuf::SerializeOptions::default(), &mut raw_proto).unwrap();
-        let overflow = state.response_buffer.write(&raw_proto);
-
-        // TODO: Think about adding this.
-        /*
-        if overflow {
-            let mut res = PeripheralResponse::default();
-            res.set_request_sequence(0xff as u32);
-            raw_proto.clear();
-            res.serialize_to(&protobuf::SerializeOptions::default(), &mut raw_proto).unwrap();
-            state.response_buffer.clear();
-            state.response_buffer.write(&raw_proto);
-
+    fn write_response_raw(&self, state: &mut PeripheralsControllerState, res: &PeripheralResponse) {
+        // Writes are paused until we report the overflow.
+        if state.response_buffer_overflowed {
+            return;
         }
-        */
+
+        let mut c = state.response_buffer.checkpoint();
+        c.push(0);
+        res.serialize_to(&protobuf::SerializeOptions::default(), &mut c).unwrap();
+
+        if c.overflowed() {
+            state.response_buffer_overflowed = true;
+        } else {
+            // TODO: Check for responses above 256 bytes in length
+            c[0] = (c.len() - 1) as u8;
+        }
+
+        self.response_buffer_readable.try_send(());
     }
 }

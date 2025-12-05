@@ -4,7 +4,9 @@ use common::errors::*;
 use usb::descriptors::SetupPacket;
 
 use crate::usb::controller::{
-    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceNormalRequest,
+    USBDeviceControlRequest, USBDeviceControlResponse,
+    USBDeviceNormalRequest,
+    USBDeviceNormalResponse,
 };
 
 // TODO: Rename to USBDeviceError.
@@ -34,7 +36,11 @@ pub trait USBDeviceHandler {
     where
         Self: 'a;
 
-    type HandleNormalResponseAcknowledgedFuture<'a>: Future<Output = Result<(), USBError>> + 'a
+    type HandleNormalResponseFuture<'a>: Future<Output = Result<(), USBError>> + 'a
+    where
+        Self: 'a;
+
+    type PollNormalResponseReadyFuture<'a>: Future<Output = ()> + 'a
     where
         Self: 'a;
 
@@ -62,11 +68,17 @@ pub trait USBDeviceHandler {
     fn handle_normal_request<'a>(
         &'a mut self,
         endpoint_index: usize,
-        req: USBDeviceNormalRequest,
+        req: USBDeviceNormalRequest<'a>,
     ) -> Self::HandleNormalRequestFuture<'a>;
 
-    fn handle_normal_response_acknowledged<'a>(
+    fn handle_normal_response<'a>(
         &'a mut self,
         endpoint_index: usize,
-    ) -> Self::HandleNormalResponseAcknowledgedFuture<'a>;
+        res: USBDeviceNormalResponse<'a>,
+    ) -> Self::HandleNormalResponseFuture<'a>;
+
+    fn poll_normal_response_ready<'a>(
+        &'a self,
+        endpoint_index: usize,
+    ) -> Self::PollNormalResponseReadyFuture<'a>;
 }

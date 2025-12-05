@@ -1,6 +1,7 @@
 use core::arch::asm;
 use core::ops::{Deref, DerefMut};
 
+use base_util::aligned::Aligned;
 use common::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::pwm0::prescaler::PRESCALER_FIELD;
 use peripherals::raw::pwm0::r#loop::LOOP_VALUE;
@@ -14,7 +15,6 @@ use peripherals::raw::pwm3::PWM3;
 use crate::{
     events::flush_events_clear,
     pins::{connect_pin, disconnect_pin, PeripheralPin},
-    usb::aligned::Aligned,
 };
 
 const MAX_COUNTERTOP: u32 = (1 << 15) - 1;

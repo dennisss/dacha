@@ -32,9 +32,7 @@ async fn spi_worker_thread(
     inst.transfer(&data, &mut out).await;
 
     lock!(state <= controller.state.lock().await.unwrap(), {
-        state.entries[peripheral_index] = PeripheralEntry::SPI {
-            inst
-        };
+        state.entries[peripheral_index] = PeripheralEntry::SPI(inst);
 
         let mut res = PeripheralResponse::default();
         res.set_request_sequence(request_sequence);

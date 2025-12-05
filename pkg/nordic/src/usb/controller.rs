@@ -47,8 +47,23 @@ TODO:
 
 */
 
+/*
+
+// TODO: Interrupt/Bulk data must be multiple of 4 bytes on NRF52
+
+
+Other weird stuff:
+- Off number of transfered bytes doesn't work well
+    https://github.com/NordicSemiconductor/nrfx/blob/master/drivers/src/nrfx_usbd.c#L1786
+
+https://devzone.nordicsemi.com/f/nordic-q-a/114956/usbd-endpoint-transfer-completion-event
+
+
+*/
+
 use core::arch::asm;
 
+use base_util::aligned::Aligned;
 use common::register::{RegisterRead, RegisterWrite};
 use common::struct_bytes::struct_bytes;
 use executor::futures;
@@ -61,7 +76,6 @@ use peripherals::raw::EventState;
 use peripherals::raw::Interrupt;
 use usb::descriptors::*;
 
-use crate::usb::aligned::Aligned;
 use crate::usb::handler::{USBDeviceHandler, USBError};
 use crate::usb::send_buffer::USBDeviceSendBuffer;
 
@@ -83,7 +97,9 @@ pub struct USBDeviceController {
     /// than one transfer.
     pending_transfer: Option<(EndpointDirection, usize)>,
 
-    send_buffer: Option<&'static USBDeviceSendBuffer>,
+    /// If true, there is data in the USBD peripheral's internal buffer waiting to be
+    /// sent back to the host on EP1 so we can't queue up more data yet.
+    epin1_active: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -100,20 +116,20 @@ enum State {
 
 #[derive(PartialEq, Clone, Copy)]
 enum Event {
-    PowerDetected = 1 << 0,
-    PowerReady = 1 << 1,
-    PowerRemoved = 1 << 2,
+    PowerDetected,
+    PowerReady,
+    PowerRemoved,
 
-    USBEvent = 1 << 3,
-    EP0Setup = 1 << 4,
-    USBReset = 1 << 5,
-    EndEpIN = 1 << 6,
-    EndEpOUT = 1 << 7,
-    EP0DataDone = 1 << 8,
-    EPData = 1 << 9,
+    USBEvent,
+    EP0Setup,
+    USBReset,
+    // EndEpIN,
+    // EndEpOUT,
+    EP0DataDone,
+    EPData,
 
     /// Only emitted in USBDeviceController::run() when the
-    SendBufferReadable = 1 << 10,
+    SendBufferReadable,
 }
 
 impl USBDeviceController {
@@ -132,24 +148,28 @@ impl USBDeviceController {
             v.set_usbreset()
                 .set_ep0setup()
                 .set_usbevent()
-                .set_endepin0()
-                .set_endepin1()
-                .set_endepin2()
-                .set_endepin3()
-                .set_endepin4()
-                .set_endepin5()
-                .set_endepin6()
-                .set_endepin7()
-                .set_endepout0()
-                .set_endepout1()
-                .set_endepout2()
-                .set_endepout3()
-                .set_endepout4()
-                .set_endepout5()
-                .set_endepout6()
-                .set_endepout7()
                 .set_ep0datadone()
                 .set_epdata()
+                // NOTE: For simplicity, we currently always block for these
+                // to finish. They should be quick and if we don't block, then we need to
+                // deal with deferring other events.
+                // .set_endepin0()
+                // .set_endepin1()
+                // .set_endepin2()
+                // .set_endepin3()
+                // .set_endepin4()
+                // .set_endepin5()
+                // .set_endepin6()
+                // .set_endepin7()
+                // .set_endepout0()
+                // .set_endepout1()
+                // .set_endepout2()
+                // .set_endepout3()
+                // .set_endepout4()
+                // .set_endepout5()
+                // .set_endepout6()
+                // .set_endepout7()
+
         });
 
         power
@@ -161,12 +181,8 @@ impl USBDeviceController {
             power,
             state: State::Disconnected,
             pending_transfer: None,
-            send_buffer: None,
+            epin1_active: false
         }
-    }
-
-    pub fn set_send_buffer(&mut self, buffer: &'static USBDeviceSendBuffer) {
-        self.send_buffer = Some(buffer);
     }
 
     pub async fn run<H: USBDeviceHandler>(&mut self, mut handler: H) {
@@ -174,22 +190,20 @@ impl USBDeviceController {
             // If we are in an active state, we may be able to send packets back to the
             // host.
             let send_buffer_future = {
-                futures::optional(self.send_buffer.and_then(|buf| {
+                futures::optional({
                     if self.state != State::Active {
-                        return None;
+                        None
+                    } else if self.epin1_active {
+                        None
+                    } else {
+                        Some(futures::map(handler.poll_normal_response_ready(1), |_| {
+                            Event::SendBufferReadable
+                        }))
                     }
-
-                    Some(futures::map(buf.wait_until_readable(), |_| {
-                        Event::SendBufferReadable
-                    }))
-                }))
+                })
             };
 
             let event = race!(self.wait_for_event(), send_buffer_future).await;
-
-            // self.send_buffer.map(|buf| buf.)
-
-            // futures::map(, mapper)
 
             /*
             // In all cases, if we detect USBREMOVED, power off the device.
@@ -265,6 +279,7 @@ impl USBDeviceController {
 
                     if let Event::USBReset = event {
                         self.configure_endpoints();
+                        handler.handle_reset().await;
                         self.state = State::Active;
                     }
                 }
@@ -289,6 +304,7 @@ impl USBDeviceController {
                                     if e == USBError::Reset {
                                         log!("RESET");
                                         self.configure_endpoints();
+                                        handler.handle_reset().await;
                                     } else if e == USBError::NewSetupPacket {
                                         log!("RE-SETUP");
                                         continue;
@@ -301,6 +317,7 @@ impl USBDeviceController {
                     } else if let Event::USBReset = event {
                         log!("RESET");
                         self.configure_endpoints();
+                        handler.handle_reset().await;
                     } else if let Event::EPData = event {
                         let status = self.periph.epdatastatus.read();
 
@@ -310,7 +327,6 @@ impl USBDeviceController {
                             .write(EPDATASTATUS_VALUE::from_raw(0xffffffff));
 
                         let mut endpoint_index = None;
-                        let mut input_done = false;
 
                         // TODO: What if while we are processing this, we get another EPData event
                         // (need to )
@@ -332,29 +348,11 @@ impl USBDeviceController {
                         } else if status.epout7().is_started() {
                             endpoint_index = Some(7);
                         } else if status.epin1().is_datadone() {
-                            input_done = true;
+                            self.epin1_active = false;
                         } else if status.epin2().is_datadone() {
-                            input_done = true;
+                            // TODO:
                         }
                         // TODO: Add other ones.
-
-                        if input_done {
-                            log!("IDONE");
-                        }
-
-                        /*
-
-                        The NRF52 USBD peripheral has its own internal buffer for Bulk/Interrupt transfers.
-
-                        - When we write data using STARTEPIN/ENDEPIN, the next IN packet after the ENDEPIN will receive that data and will be acknowledged.
-                            - We get a notification of when the ACK actually occurs using the EPDATA event
-
-                        - When the host writes things with OUT, and the internal buffer is empty (meaning that SIZE.EPOUT was edited)
-
-                        NOTE: This means that all the DMA transfers are fast and not blocking for a long time.
-
-
-                        */
 
                         if let Some(endpoint_index) = endpoint_index {
                             let mut request = USBDeviceNormalRequest {
@@ -362,62 +360,42 @@ impl USBDeviceController {
                                 endpoint_index,
                             };
 
-                            let mut buf = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
-
-                            let nread = match request.read(&mut buf[..]).await {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    log!("ERR");
-                                    continue;
-                                }
-                            };
-
-                            /*
-                            let original = buf[0];
-                            buf[0] = b'X';
-
-                            log!("EPD: ", nread as u32);
-
-                            for i in 0..1000 {
-                                log!("...............................................................................");
-                            }
-
-                            buf[0] = original;
-                            */
-
-                            // TODO: There is a race condition here:
-                            // - If the host sends an IN token, it must receive data from the last
-                            //   time .write() was called rather than the data we are about to write
-                            //   here.
-
-                            let mut request2 = USBDeviceNormalResponse {
-                                controller: self,
-                                endpoint_index: 1,
-                            };
-                            request2.write(&buf[0..nread]).await;
-
-                            log!("DONE!");
-                        }
-                    } else if let Event::SendBufferReadable = event {
-                        let send_buffer = self.send_buffer.as_ref().unwrap();
-                        if let Some(data) = send_buffer.try_read().await {
-                            let mut res = USBDeviceNormalResponse {
-                                controller: self,
-                                endpoint_index: 1,
-                            };
-
-                            match res.write(&data).await {
+                            match handler.handle_normal_request(endpoint_index, request).await {
                                 Ok(()) => {}
                                 Err(e) => {
                                     if e == USBError::Reset {
                                         log!("RESET");
                                         self.configure_endpoints();
+                                        handler.handle_reset().await;
                                     } else if e == USBError::NewSetupPacket {
                                         // TODO: Must re-enqueue this event in a bit map so that we
                                         // know to process it again.
                                         log!("TODO RE-SETUP");
                                         continue;
                                     }
+                                }
+                            }
+                        }
+
+
+                    } else if let Event::SendBufferReadable = event {
+                        let mut res = USBDeviceNormalResponse {
+                            controller: self,
+                            endpoint_index: 1,
+                        };
+
+                        match handler.handle_normal_response(1, res).await {
+                            Ok(()) => {}
+                            Err(e) => {
+                                if e == USBError::Reset {
+                                    log!("RESET");
+                                    self.configure_endpoints();
+                                    handler.handle_reset().await;
+                                } else if e == USBError::NewSetupPacket {
+                                    // TODO: Must re-enqueue this event in a bit map so that we
+                                    // know to process it again.
+                                    log!("TODO RE-SETUP");
+                                    continue;
                                 }
                             }
                         }
@@ -441,6 +419,7 @@ impl USBDeviceController {
         }
     }
 
+    // TODO: This is generally bad since it allows many events to be ignored 
     async fn wait_for_specific_event(
         &mut self,
         event: Event,
@@ -500,6 +479,7 @@ impl USBDeviceController {
             return Some(Event::EP0DataDone);
         }
 
+        /*
         if let Some((dir, index)) = self.pending_transfer.clone() {
             match dir {
                 EndpointDirection::In => {
@@ -516,6 +496,7 @@ impl USBDeviceController {
                 }
             }
         }
+        */
 
         // MUST be checked after the EndEP events are checked as we react to those
         // events first in the code.
@@ -523,7 +504,6 @@ impl USBDeviceController {
             return Some(Event::EPData);
         }
 
-        crate::events::flush_events_clear();
 
         None
     }
@@ -532,7 +512,11 @@ impl USBDeviceController {
         register: &mut R,
     ) -> bool {
         let v = register.read() == EventState::Generated;
-        register.write(EventState::NotGenerated);
+        if v {
+            register.write(EventState::NotGenerated);
+            crate::events::flush_events_clear();
+        }
+
         v
     }
 
@@ -547,6 +531,7 @@ impl USBDeviceController {
         // TODO: Make this more configurable.
         epouten.set_out2_with(|v| v.set_enable());
         epinen.set_in1_with(|v| v.set_enable());
+        self.epin1_active = false;
 
         self.periph.epinen.write(epinen);
         self.periph.epouten.write(epouten);
@@ -648,19 +633,31 @@ impl<'a> USBDeviceControlRequest<'a> {
         self.controller.pending_transfer = None;
 
         while self.host_remaining > 0 {
+            // Allow an 'OUT' data packet to be received from the host and placed in the USBD
+            // peripheral's internal buffer. 
             self.controller.periph.tasks_ep0rcvout.write_trigger();
+            
+            // Wait for data packet to be ready in the USBD peripheral's internal buffer.
             self.controller
                 .wait_for_specific_event(Event::EP0DataDone, false)
                 .await?;
 
-            // XXX: Critical DMA section
-            // startepout will trigger the beginning of the DMA
-
+            // Start DMA transfer from USB peripheral to main memory.
+            // 'ptr' and 'maxcnt' are captured by this task.
+            //
+            // TODO: Short EP0DataDone -> STARTEPOUT[0]
             self.controller.pending_transfer = Some((EndpointDirection::Out, 0));
             self.controller.periph.tasks_startepout[0].write_trigger();
-            self.controller
-                .wait_for_specific_event(Event::EndEpOUT, true)
-                .await?;
+
+            // When this event fires, it means that the DMA transfer from USBD peripheral to main
+            // memory is done.
+            while !USBDeviceController::take_event(&mut self.controller.periph.events_endepout[0]) {
+                unsafe { asm!("nop") } ;
+            }
+
+            // self.controller
+            //     .wait_for_specific_event(Event::EndEpOUT, true)
+            //     .await?;
             // TODO: Not needed?
             self.controller.pending_transfer = None;
 
@@ -757,10 +754,6 @@ impl<'a> USBDeviceControlResponse<'a> {
                     asm!("nop");
                     asm!("nop");
                     asm!("nop");
-                    asm!("nop");
-                    asm!("nop");
-                    asm!("nop");
-                    asm!("nop");
                 }
 
                 self.controller.pending_transfer = Some((EndpointDirection::In, 0));
@@ -780,48 +773,31 @@ impl<'a> USBDeviceControlResponse<'a> {
                 //     .wait_for_specific_event(Event::EndEpIN, true)
                 //     .await?;
 
+                while !USBDeviceController::take_event(&mut self.controller.periph.events_endepin[0]) {
+                    unsafe { asm!("nop") } ;
+                }
+
                 // We MUST always wait for EndEpIN0 to happen first to ensure that the DMA
                 // transfer is done. Then we should wait for EP0DataDone but we
                 // may exist early on a reset/disconnect event.
                 {
-                    let mut result = Ok(());
-                    let mut dma_done = false;
-
                     loop {
                         match self.controller.wait_for_event().await {
                             Event::EP0DataDone => break,
                             Event::PowerRemoved => {
-                                result = Err(USBError::Disconnected);
-                                if dma_done {
-                                    break;
-                                }
+                                return Err(USBError::Disconnected);
                             }
                             Event::USBReset => {
-                                result = Err(USBError::Reset);
-                                if dma_done {
-                                    break;
-                                }
+                                return Err(USBError::Reset);
                             }
                             Event::EP0Setup => {
-                                result = Err(USBError::NewSetupPacket);
-                                if dma_done {
-                                    break;
-                                }
-                            }
-                            // TODO: Must not return errors until the DMA is done.
-                            Event::EndEpIN => {
-                                dma_done = true;
-                                if !result.is_ok() {
-                                    break;
-                                }
+                                return Err(USBError::NewSetupPacket);
                             }
                             e => {
                                 log!("E", e as u32);
                             }
                         }
                     }
-
-                    result?;
                 }
 
                 // TODO: Not needed?
@@ -840,8 +816,6 @@ impl<'a> USBDeviceControlResponse<'a> {
             asm!("nop");
             asm!("nop");
         }
-
-        // log!("<");
 
         // Status stage
         self.controller.periph.tasks_ep0status.write_trigger();
@@ -869,22 +843,42 @@ impl<'a> USBDeviceNormalRequest<'a> {
     pub async fn read(&mut self, mut output: &mut [u8]) -> Result<usize, USBError> {
         // TODO: Re-use a global buffer
         let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
+        let packet_len = self.read_aligned(&mut packet_buffer[..]).await?;
 
-        let ptr: u32 = unsafe { core::mem::transmute(packet_buffer.as_ptr()) };
+        if packet_len > output.len() {
+            // Overflow. Panic!
+        }
+
+        output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
+        Ok(packet_len)
+    }
+
+    // TODO: ONly allow calling this once.
+    pub async fn read_aligned(&mut self, output: &mut [u8]) -> Result<usize, USBError> {
+
+        let ptr: u32 = unsafe { core::mem::transmute(output.as_ptr()) };
         assert!(ptr % 4 == 0);
 
         self.controller.periph.epout[self.endpoint_index]
             .ptr
             .write(ptr);
+
+        // TODO: What happens if USB wants to transfer more bytes than what our buffer can handle?
         self.controller.periph.epout[self.endpoint_index]
             .maxcnt
-            .write(packet_buffer.len() as u32);
+            .write(output.len().min(MAX_PACKET_SIZE) as u32);
 
         self.controller.pending_transfer = Some((EndpointDirection::Out, self.endpoint_index));
         self.controller.periph.tasks_startepout[self.endpoint_index].write_trigger();
-        self.controller
-            .wait_for_specific_event(Event::EndEpOUT, true)
-            .await?;
+        
+        // DMA transfer should be fairly fast.
+        while !USBDeviceController::take_event(&mut self.controller.periph.events_endepout[self.endpoint_index]) {
+            unsafe { asm!("nop") } ;
+        }
+        
+        // self.controller
+        //     .wait_for_specific_event(Event::EndEpOUT, true)
+        //     .await?;
 
         // TODO: Not needed?
         self.controller.pending_transfer = None;
@@ -902,11 +896,6 @@ impl<'a> USBDeviceNormalRequest<'a> {
         // Clear it to allow receiving additional requests.
         self.controller.periph.size.epout[self.endpoint_index].write_with(|v| v.set_size(0));
 
-        if packet_len > output.len() {
-            // Overflow. Panic!
-        }
-
-        output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
         Ok(packet_len)
     }
 }
@@ -924,12 +913,18 @@ impl<'a> USBDeviceNormalResponse<'a> {
     /// given data. The data can't be safely replaced until we get an EPDATA event
     /// for the endpoint and direction.
     pub async fn write(&mut self, data: &[u8]) -> Result<(), USBError> {
+        // TODO: Check it is > 0 bytes.
+
         // TODO: Re-use a global buffer
         let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
 
         packet_buffer[0..data.len()].copy_from_slice(data);
 
-        let ptr: u32 = unsafe { core::mem::transmute(packet_buffer.as_ptr()) };
+        self.write_aligned(&packet_buffer[0..data.len()]).await
+    }
+
+    pub async fn write_aligned(&mut self, data: &[u8]) -> Result<(), USBError> {
+        let ptr: u32 = unsafe { core::mem::transmute(data.as_ptr()) };
         assert!(ptr % 4 == 0);
 
         self.controller.periph.epin[self.endpoint_index]
@@ -939,50 +934,25 @@ impl<'a> USBDeviceNormalResponse<'a> {
             .maxcnt
             .write(data.len() as u32);
 
+        self.controller.epin1_active = true;
+
+        // TODO: Initially write the event to not be generated?
+
         self.controller.pending_transfer = Some((EndpointDirection::In, self.endpoint_index));
         self.controller.periph.tasks_startepin[self.endpoint_index].write_trigger();
 
-        self.controller
-            .wait_for_specific_event(Event::EndEpIN, true)
-            .await?;
+        // DMA transfer should be fairly fast.
+        while !USBDeviceController::take_event(&mut self.controller.periph.events_endepin[self.endpoint_index]) {
+            unsafe { asm!("nop") } ;
+        }
+
+        // TODO: We need to ensure that we eventually handle the deferered errors here.
+        // self.controller
+        //     .wait_for_specific_event(Event::EndEpIN, true)
+        //     .await?;
 
         // TODO: Not needed?
         self.controller.pending_transfer = None;
-
-        /*
-        self.controller
-            .wait_for_specific_event(Event::EPData, false)
-            .await?;
-
-        // TODO: Read the EPDATASTATUS and verify it is actually setting the correct
-        // value.
-
-        // Clear by writing all 1's
-        self.controller
-            .periph
-            .epdatastatus
-            .write(EPDATASTATUS_VALUE::from_raw(0xffffffff));
-        */
-
-        /*
-
-        */
-
-        // TODO: Wait for EPDATA and acknowledge the bit.
-
-        /*
-        (EPIN[1].PTR=0xnnnnnnnn
-        EPIN[1].MAXCNT = <MaxPacketSize
-        STARTEPIN[1]=1
-
-        Invoke STARTEPIN[1]
-
-        Will get events:
-        - STARTED
-        - ENDEPIN[1]
-        - EPDATA
-
-        */
 
         Ok(())
     }

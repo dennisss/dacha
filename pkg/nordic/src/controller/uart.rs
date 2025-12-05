@@ -65,9 +65,7 @@ async fn uart_transmit_worker_thread(
 
 
     lock!(state <= controller.state.lock().await.unwrap(), {
-        state.entries[peripheral_index] = PeripheralEntry::UARTE {
-            inst: uarte
-        };
+        state.entries[peripheral_index] = PeripheralEntry::UARTE(uarte);
 
         controller.write_response(&mut state, &res);
     });

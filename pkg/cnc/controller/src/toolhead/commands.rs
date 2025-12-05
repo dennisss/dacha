@@ -315,7 +315,7 @@ async fn step(n: u32, device: &PeripheralsDevice, driver: &TMC2209Device) -> Res
     {
         let mut m = StepperMotorMotion::default();
         m.set_next_step_time(start_time);
-        m.set_num_steps(n);
+        m.set_num_steps_minus_one(n - 1);
         m.set_next_step_duration(8_000u32);
         driver.enqueue_stepper_motion(m).await?;
     }

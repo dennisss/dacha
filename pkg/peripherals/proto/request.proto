@@ -112,6 +112,14 @@ message PeripheralRequest {
         bool calibrate_adc = 34;
 
         bool get_idle_counter = 35;
+
+        AllocateADCBufferRequest allocate_adc_buffer = 36;
+
+        ConfigureI2CRequest configure_i2c = 37;
+
+        I2CTransfer i2c_transfer = 38;
+
+        ResetStepperMotor reset_stepper_motor = 39;
     }
 
     reserved 6;
@@ -168,6 +176,8 @@ message PeripheralResponse {
     }
 
     ErrorCode error_code = 2;
+
+    uint32 time = 10;
 
     oneof response {
         // Used for basic integer responses.
@@ -298,6 +308,22 @@ message UARTReceiveRequest {
     uint32 num_bytes = 1;
 }
 
+message ConfigureI2CRequest {
+    uint32 sda_pin = 1;
+    uint32 scl_pin = 2;
+    uint32 frequency = 3;
+}
+
+message I2CTransfer {
+    // 7-bit device address for reading/writing.
+    uint32 address = 1;
+    
+    // Bytes to write
+    bytes write_data = 2 [(dacha.max_length) = 8];
+
+    uint32 read_count = 3;
+}
+
 
 message ConfigureSPIRequest {
     uint32 mosi_pin = 1;
@@ -325,35 +351,54 @@ message ConfigureStepperMotor {
     uint32 dir_pin = 2;
 }
 
+message ResetStepperMotor {
+
+}
+
 // TODO: Need to be able to stop all stepper operations immediately in an emergency stop mode.
 
+// Proto form of a QuadraticStepperMotion with additional compression.
 message StepperMotorMotion {
     enum Direction {
         UNCHANGED = 0;
         FORWARD = 1;
         BACKWARD = 2;
     }
-
-    // TODO: We can get rid of this and use a separate command?
-    // (or make this an optional field or enum)
     Direction direction = 1;
 
-    // See QuadraticStepperMotion
-    // Assuming num_steps > 0, this is the time at which we first flip the 'STEP' pin. 
+    // TODO: Make this a delta since the last step time.
     uint32 next_step_time = 2;
+    
     uint32 next_step_duration = 3;
+
     sint32 step_duration_increment = 4;
-    uint32 num_steps = 5;
+    
+    // This is the actual number of steps - 1.
+    uint32 num_steps_minus_one = 5;
 }
 
 message StepperMotorStatus {
-    // Total number of completed steps.
-    uint32 total_steps = 1;
+    sint32 position = 1;
 
-    uint32 faults = 2;
+    // When non-NONE, the motor is stopped and will silently reject
+    // all attempts to enqueue steps until it is reset.
+    enum StoppedReason {
+        NONE = 0;
 
+        // We missed the next step time. 
+        TIMING_FAULT = 1;
+
+        // The host computer issued a 'clear' command.
+        HOST_CLEAR = 2;
+    }
+    StoppedReason stopped = 2;
+
+    // Number of additional 
     uint32 empty_queue_slots = 3;
 
+    // If true, then steps are actively running.
+    // NOTE: This may be true even after the motion queue is cleared
+    // while any in-flight steps are resolved.
     bool active = 4;
 }
 
@@ -413,6 +458,10 @@ message ConfigureADCRequest {
     uint32 window_size = 12;
 }
 
+message AllocateADCBufferRequest {
+    uint32 size = 1;
+}
+
 message ADCFormat {
     uint32 bits_per_sample = 1;
 
@@ -420,9 +469,10 @@ message ADCFormat {
 }
 
 message SampleADCRequest {
-    bool window = 1;
+    // Index of the buffer to use for the sampling. If not set,
+    // then just a single sample will be collected.
+    optional uint32 buffer = 1;
 }
-
 
 message ConfigureNeopixelRequest {
     uint32 pin = 1;

@@ -68,7 +68,6 @@ impl<T> Channel<T> {
                 return value;
             }
 
-            // TODO: Register a waker first and then release the lock.
             drop(value_guard);
             wait_for_pendsv(cs).await;
         }

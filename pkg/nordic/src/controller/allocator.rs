@@ -6,7 +6,7 @@
 // unconfigured (num_allocated will reach 0 in the bump allocator below).
 
 use core::cell::UnsafeCell;
-use core::mem::transmute;
+use core::mem::{transmute, MaybeUninit, size_of};
 use core::ops::{Deref, DerefMut};
 use core::marker::PhantomData;
 
@@ -76,7 +76,7 @@ impl<T> Drop for Box<T> {
 impl<T: Default> Default for Box<T> {
     fn default() -> Self {
         unsafe { 
-            let ptr = ALLOCATOR.alloc(core::mem::size_of::<T>()) as *mut T;
+            let ptr = ALLOCATOR.alloc(size_of::<T>()) as *mut T;
             core::ptr::write(ptr, T::default());
             Self { ptr }
         }
@@ -85,3 +85,58 @@ impl<T: Default> Default for Box<T> {
 
 unsafe impl<T: Sync> Sync for Box<T> {}
 unsafe impl<T: Send> Send for Box<T> {}
+
+
+pub struct BoxedSlice<T> {
+    len: usize,
+    data: Box<T>,
+}
+
+pub trait Primitive {}
+
+impl Primitive for i16 {}
+
+
+// NOTE: new_zeroed is only safe for basic types which make sense being zero'ed in memory.
+impl<T: Sized + Primitive> BoxedSlice<T> {
+
+    pub fn new_zeroed(len: usize) -> Self {
+        unsafe {
+            let size = size_of::<T>() * len;
+
+            // TODO: THis will always be 4 byte aligned so should be fast to zero.
+            let ptr = ALLOCATOR.alloc(size);
+            core::ptr::write_bytes(ptr, 0x00, size);
+
+            BoxedSlice {
+                len,
+                data: Box {
+                    ptr: ptr as *mut T
+                }
+            }
+        }
+    }
+}
+
+impl<T> Deref for BoxedSlice<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            core::slice::from_raw_parts(self.data.ptr, self.len)
+        }
+    }
+}
+
+impl<T> DerefMut for BoxedSlice<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            core::slice::from_raw_parts_mut(self.data.ptr, self.len)
+        }
+    }
+}
+
+unsafe impl<T: Sync> Sync for BoxedSlice<T> {}
+unsafe impl<T: Send> Send for BoxedSlice<T> {}
+
+

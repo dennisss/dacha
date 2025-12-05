@@ -63,7 +63,6 @@ fn generate_protocol_usb_descriptors(
         bMaxPower: 50,
     });
 
-    /*
     config_builder
         .add_interface(
             "",
@@ -73,7 +72,7 @@ fn generate_protocol_usb_descriptors(
                 bInterfaceNumber: 0,
                 bAlternateSetting: 0,
                 bNumEndpoints: 0,
-                bInterfaceClass: 0, // TODO
+                bInterfaceClass: InterfaceClass::VendorSpecific.to_value(),
                 bInterfaceSubClass: 0,
                 bInterfaceProtocol: 0,
                 iInterface: 0,
@@ -87,7 +86,7 @@ fn generate_protocol_usb_descriptors(
                 bEndpointAddress: 0x81, // EP IN 1
                 bmAttributes: 0b11,     // Interrupt
                 wMaxPacketSize: 64,
-                bInterval: 64, // TODO: Check me.
+                bInterval: 1,
             },
         )
         .add_endpoint(
@@ -98,10 +97,9 @@ fn generate_protocol_usb_descriptors(
                 bEndpointAddress: 0x02, // EP OUT 2
                 bmAttributes: 0b11,     // Interrupt
                 wMaxPacketSize: 64,
-                bInterval: 64, // TODO: Check me.
+                bInterval: 1,
             },
         );
-    */
 
     config_builder.add_dfu_runtime_interface();
 

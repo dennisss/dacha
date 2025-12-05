@@ -3,10 +3,13 @@ use executor::channel::Channel;
 use executor::lock;
 use executor::sync::AsyncMutex;
 
+use base_util::aligned::Aligned;
 use common::fixed::vec::FixedVec;
 
-use crate::usb::aligned::Aligned;
 use crate::usb::controller::MAX_PACKET_SIZE;
+
+// TODO: Align this buffer?
+
 
 /// Stores the next Interrupt/Bulk packet which should be transferred to the
 /// host the next time the host requests a transfer.
@@ -36,7 +39,7 @@ impl USBDeviceSendBuffer {
             state.data.extend_from_slice(data);
         });
 
-        let _ = self.channel.try_send(()).await;
+        let _ = self.channel.try_send(());
     }
 
     pub async fn try_read(&self) -> Option<FixedVec<u8, MAX_PACKET_SIZE>> {

@@ -28,6 +28,14 @@ pub use timeout::*;
 pub use utils::*;
 pub use yielding::yield_now;
 
+pub mod interrupts {
+
+    pub unsafe fn disable_interrupts() {}
+
+    pub unsafe fn enable_interrupts() {}
+
+}
+
 /*
 TODO: Write a design doc for this.
 

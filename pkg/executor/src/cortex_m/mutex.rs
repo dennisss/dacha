@@ -3,6 +3,7 @@ use core::ops::Deref;
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicBool;
 
+use crate::CriticalSection;
 use crate::interrupts::{trigger_pendsv, wait_for_pendsv};
 
 // TODO: This only works on single-threaded devices.
@@ -27,7 +28,10 @@ impl<T> Mutex<T> {
     }
 
     pub async fn lock<'a>(&'a self) -> MutexGuard<'a, T> {
+        let mut cs;
         loop {
+            cs = CriticalSection::new();
+
             match self.locked.get() {
                 MutexLockState::Unlocked => {
                     self.locked.set(MutexLockState::Locked);
@@ -39,10 +43,10 @@ impl<T> Mutex<T> {
                 MutexLockState::LockedWithWaiters => {}
             }
 
-            wait_for_pendsv().await;
+            wait_for_pendsv(cs).await;
         }
 
-        MutexGuard { inst: self }
+        MutexGuard { inst: self, cs }
     }
 }
 
@@ -51,6 +55,10 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 
 pub struct MutexGuard<'a, T> {
     inst: &'a Mutex<T>,
+
+    // TODO: Eventually switch over the PeripheralsController to a CriticalMutex and get rid of this.
+    // (though we still need to be a critical section during drop)
+    cs: CriticalSection,
 }
 
 impl<'a, T> Drop for MutexGuard<'a, T> {

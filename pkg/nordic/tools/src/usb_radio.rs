@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::time::Instant;
 use std::sync::Arc;
 use std::collections::{HashMap, VecDeque};
+use std::future::Future;
 
 use common::errors::*;
 use common::bit_set::BitSet;
@@ -16,12 +17,15 @@ use executor::channel::oneshot;
 use executor::lock;
 use executor::sync::AsyncVariable;
 use executor_multitask::{impl_resource_passthrough, TaskResource};
-
+use executor::bundle::TaskResultBundle;
 
 const MAX_ACTIVE_REQUESTS: usize = 128;
 
-// NOTE: With the current implentation, we may end up sending a bit more than this.
-const SEND_BUFFER_SIZE: usize = 64;
+const MAX_PACKET_SIZE: usize = 64;
+
+/// Timeout on a single USB transaction.
+const USB_TIMEOUT: Duration = Duration::from_millis(10000);
+
 
 #[derive(Clone, Debug)]
 pub struct ClockTimeResponse {
@@ -46,9 +50,8 @@ struct Shared {
 }
 
 struct State {
-
-    // TODO: Need to know if the background thread is still healthy (this also needs to be aware of whether the background thread got cancelled so couldn't mark itself as dead).
-
+    /// Becomes false when the background thread dies indicating that we can no longer
+    /// talk to the device.
     connected: bool,
 
     /// Last sequence number used by a request added to send_queue.
@@ -92,6 +95,8 @@ impl USBRadio {
         device.reset()?;
         println!("Device reset!");
 
+        device.claim_interface(0)?;
+
         // TODO: Before handling it over, do an initial round of receiving any data and make sure the receiver buffer is clear.
 
         Ok(Self::new(device))
@@ -122,7 +127,7 @@ impl USBRadio {
 
     async fn control_write(shared: &Shared, request_type: ProtocolRequestType, data: &[u8]) -> Result<()> {
         executor::timeout(
-            Duration::from_millis(10000),
+            USB_TIMEOUT,
             shared.device
                 .write_control(
                     SetupPacket {
@@ -141,7 +146,7 @@ impl USBRadio {
 
     async fn control_read(shared: &Shared, request_type: ProtocolRequestType, data: &mut [u8]) -> Result<usize> {
         executor::timeout(
-            Duration::from_millis(10000),
+            USB_TIMEOUT,
             shared.device
                 .read_control(
                     SetupPacket {
@@ -160,10 +165,15 @@ impl USBRadio {
         guard: ConnectionGuard,
         shared: Arc<Shared>
     ) -> Result<()> {
-        let mut send_buffer = vec![];
-        send_buffer.reserve_exact(SEND_BUFFER_SIZE);
+        let mut bundle = TaskResultBundle::new();
+        bundle.add("Sender", Self::sending_thread(shared.clone()));
+        bundle.add("Receier", Self::receiver_thread(shared.clone()));
+        bundle.join().await
+    }
 
-        let mut res_buffer = vec![];
+    async fn sending_thread(shared: Arc<Shared>) -> Result<()> {
+        let mut send_buffer = vec![];
+        send_buffer.reserve_exact(MAX_PACKET_SIZE);
 
         loop {
             let mut have_active_requests = false;
@@ -176,7 +186,7 @@ impl USBRadio {
                 lock!(state <= shared.state.lock().await?, {
                     need_clock_sync = !state.get_time_requests.is_empty();
                     
-                    while send_buffer.len() < SEND_BUFFER_SIZE {
+                    while send_buffer.len() < MAX_PACKET_SIZE {
                         let request = match state.send_queue.front() {
                             Some(v) => v,
                             None => break
@@ -184,7 +194,11 @@ impl USBRadio {
 
                         // TODO: Compress requests and don't send requests with consecutive sequences.
 
-                        if send_buffer.len() + 1 + request.len() > SEND_BUFFER_SIZE {
+                        if send_buffer.len() + 1 + request.len() > MAX_PACKET_SIZE {
+                            if send_buffer.len() == 0 {
+                                return Err(err_msg("Request too big to fit in send buffer."));
+                            }
+
                             break;
                         }
 
@@ -204,31 +218,21 @@ impl USBRadio {
                 }
 
                 if !send_buffer.is_empty() {
-                    // TODO: For whatever reason, if the packet is some specific sizes (e.g. 9),
-                    // then the nordic controller just stalls.
-                    if send_buffer.len() < SEND_BUFFER_SIZE {
-                        send_buffer.resize(SEND_BUFFER_SIZE, 0);
-                    }
+                    // The nRF52 is really bad with odd numbers of bytes or non-multiples of 4 so
+                    // add some padding for stability.
+                    send_buffer.resize(send_buffer.len().next_multiple_of(4), 0);
 
-                    // TODO: Support retrying this (must consider the idempotence of actions).
-                    Self::control_write(
-                        &shared,
-                        ProtocolRequestType::PeripheralRequest,
-                        &send_buffer
-                    ).await?;
+                    executor::timeout(
+                        USB_TIMEOUT,
+                        shared.device.write_interrupt(0x02, &send_buffer)
+                    )
+                    .await
+                    .map_err(|_| err_msg("Timeout while doing write_interrupt"))??;
 
                     continue;
                 }
 
                 break;
-            }
-
-            // TODO: Interrupt/Bulk data must be multiple of 4 bytes on NRF52
-
-
-            if have_active_requests {
-                // Attempt to RX.
-                Self::receive_responses(&shared, &mut res_buffer).await?;
             }
 
             // Wait either 10ms or for more requests to be available to send.
@@ -243,22 +247,33 @@ impl USBRadio {
         }
     }
 
-    async fn receive_responses(shared: &Shared, res_buffer: &mut Vec<u8>) -> Result<()> {
-        // TODO: Maybe decrease and use padding to simplify things.
-        const CHUNK_SIZE: usize = 256;
+    async fn receiver_thread(shared: Arc<Shared>) -> Result<()> {
+        // This is the max size of one USB packet. Note that the device doesn't send
+        // ZLPs so we can't make this bigger (since it won't work correctly if exactly
+        // this many bytes are transfered).
+        const CHUNK_SIZE: usize = 64;
         
-        assert!(res_buffer.is_empty());
+        let mut res_buffer = vec![];
+
+        // TODO: Vec dequeue.
+        let mut read_queue = vec![];
 
         loop {
-            let original_buffer_len = res_buffer.len();
-            res_buffer.resize(original_buffer_len + CHUNK_SIZE, 0);
+            while read_queue.len() < 2 {
+                read_queue.push(shared.device.enqueue_read_interrupt(0x81, CHUNK_SIZE)?);
+            }
 
-            let nread = Self::control_read(
-                shared,
-                ProtocolRequestType::PeripheralResponse,
-                &mut res_buffer[original_buffer_len..]
-            ).await?;
-            res_buffer.truncate(original_buffer_len + nread);
+            let read = executor::timeout(
+                    USB_TIMEOUT,
+                    read_queue.remove(0).wait()
+                )
+                .await
+                .map_err(|_| err_msg("Timeout while doing read_interrupt"))??;
+
+            let original_buffer_len = res_buffer.len();
+            let nread = read.buffer().len();
+            res_buffer.resize(original_buffer_len + nread, 0);
+            res_buffer[original_buffer_len..].copy_from_slice(read.buffer());
 
             // The device will always fill the whole buffer if it has enough data.
             // So if the buffer wasn't filled, there is nothing else to read for now.
@@ -268,15 +283,21 @@ impl USBRadio {
             while i < res_buffer.len() {
                 let len = res_buffer[i] as usize;
                 
-                // Zero length packets are treated as padding and also signal that the device
+                // Zero length responses are treated as padding and also signal that the device
                 // didn't have more data to send.
                 if len == 0 {
+                    // Main exception is that if the device sends back a packet with nothing but
+                    // zeroes, then its a signal that we overflowed the response buffer.
+                    if i == original_buffer_len {
+                        return Err(err_msg("MCU buffer overflowed"));
+                    }
+
                     done = true;
                     i = res_buffer.len();
                     break;
                 }
 
-                if i + len > res_buffer.len() {
+                if i + 1 + len > res_buffer.len() {
                     if done {
                         return Err(err_msg("Done but expecting more data immediately"));
                     }
@@ -306,10 +327,6 @@ impl USBRadio {
             // Clean up read bytes
             // Note that this fairly cheap (bounded by CHUNK_SIZE)
             res_buffer.drain(..i);
-
-            if done {
-                return Ok(());
-            }
         }
     }
 
@@ -496,6 +513,23 @@ impl USBRadio {
         Ok(out)
     }
 
+    /*
+    TODO: Only assign sequences right before sending.
+    - Then we can do sequence compression and support having prioritized requests
+    to jump the queue without penalties.
+    */
+
+    pub async fn enqueue_request<'a>(
+        &'a self,
+        request: &PeripheralRequest,
+    ) -> Result<impl Future<Output = Result<PeripheralResponse>> + 'a> {
+        let mut results = self.enqueue_request_batch(core::slice::from_ref(request)).await?;
+        Ok(async move {
+            Ok(results.await?.pop().unwrap())
+        })
+    }
+
+
     /// Issues a PeripheralRequest to the device and waits for the response.
     ///
     /// Errors in the PeriheralResponse will be raised as Result::Error.
@@ -512,9 +546,11 @@ impl USBRadio {
         Ok(results.pop().unwrap())
     }
 
-    pub async fn send_request_batch(
-        &self, requests: &[PeripheralRequest]
-    ) -> Result<Vec<PeripheralResponse>> {
+    pub async fn enqueue_request_batch<'a>(
+        &'a self, requests: &[PeripheralRequest]
+    ) -> Result<impl Future<Output = Result<Vec<PeripheralResponse>>> + 'a> {
+
+        let requests = requests.to_vec();
 
         let mut senders = vec![];
         let mut receivers = vec![];
@@ -569,21 +605,29 @@ impl USBRadio {
             Result::<_, _>::Ok(())
         })?;
 
-        let mut responses = vec![];
+        Ok(async move {
+            let mut responses = vec![];
 
-        for (i, receiver) in receivers.into_iter().enumerate() {
-            let response = receiver.recv().await
-                .map_err(|_| err_msg("Device background thread failed"))?;
+            for (i, receiver) in receivers.into_iter().enumerate() {
+                let response = receiver.recv().await
+                    .map_err(|_| err_msg("Device background thread failed"))?;
 
-            if response.error_code() != PeripheralResponse_ErrorCode::NO_ERROR {
-                // TODO: Use an inline formatter for the request.
-                return Err(format_err!("Request '{:?}' failed with code: {:?}", requests[i], response.error_code()));
+                if response.error_code() != PeripheralResponse_ErrorCode::NO_ERROR {
+                    // TODO: Use an inline formatter for the request.
+                    return Err(format_err!("Request '{:?}' failed with code: {:?}", requests[i], response.error_code()));
+                }
+
+                responses.push(response);
             }
 
-            responses.push(response);
-        }
+            Ok(responses)
+        })
+    }
 
-        Ok(responses)
+    pub async fn send_request_batch(
+        &self, requests: &[PeripheralRequest]
+    ) -> Result<Vec<PeripheralResponse>> {
+        self.enqueue_request_batch(requests).await?.await
     }
 }
 

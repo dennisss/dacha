@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+base_util = { path = "../../base/util", default-features = false }
 common = { path = "../../common", default-features = false }
 protobuf = { path = "../../protobuf", default-features = false }
 crypto = { path = "../../crypto", default-features = false }
@@ -17,5 +18,5 @@ common = { path = "../../common" }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "nordic_proto/alloc"]
-std = ["common/std", "crypto/std", "protobuf/std", "usb/std", "nordic_proto/std"]
+alloc = ["base_util/alloc", "common/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "nordic_proto/alloc"]
+std = ["base_util/std", "common/std", "crypto/std", "protobuf/std", "usb/std", "nordic_proto/std"]

@@ -8,6 +8,7 @@ use peripherals_raw::nvic::*;
 use peripherals_raw::Interrupt;
 
 use crate::waker::WakerList;
+use crate::CriticalSection;
 
 /// Interrupt/exception number of the first external interrupt.
 const EXTERNAL_INTERRUPT_OFFSET: usize = 16;
@@ -18,9 +19,34 @@ const NUM_EXTERNAL_INTERRUPTS: usize = 48; // TODO: Use Interrupt::MAX.
 const NUM_INTERRUPTS: usize = EXTERNAL_INTERRUPT_OFFSET + NUM_EXTERNAL_INTERRUPTS; // TODO: Check this
 static mut INTERRUPT_WAKER_LISTS: [WakerList; NUM_INTERRUPTS] = [WakerList::new(); NUM_INTERRUPTS];
 
+static mut DISABLED_INTERRUPTS_NESTING: usize = 0; 
+
 const PENDSV_EXCEPTION_NUM: usize = 14;
 
 pub type InterruptHandler = unsafe extern "C" fn() -> ();
+
+/// Prefer to use CriticalSection over this.
+///
+/// TODO: Make these unsafe and only use in a CriticalSection.
+/// TODO: Biggest concern is interrupt disables inside of interrupt disables (e.g. using a mutex inside a mutex)
+#[inline(always)]
+pub unsafe fn disable_interrupts() {
+    unsafe {
+        asm!("cpsid i");
+        DISABLED_INTERRUPTS_NESTING += 1;
+    }
+}
+
+/// Prefer to use CriticalSection over this.
+#[inline(always)]
+pub unsafe fn enable_interrupts() {
+    unsafe {
+        DISABLED_INTERRUPTS_NESTING -= 1;
+        if DISABLED_INTERRUPTS_NESTING == 0 {
+            asm!("cpsie i");
+        }
+    };
+}
 
 struct ExternalInterruptEnabledContext<'a> {
     nvic: NVIC,
@@ -49,10 +75,14 @@ impl<'a> ExternalInterruptEnabledContext<'a> {
 
 impl Drop for ExternalInterruptEnabledContext<'_> {
     fn drop(&mut self) {
+        let cs = CriticalSection::new();
+
         // Disable the interrupt if no one else is waiting for it.
         if self.waker_list.is_empty() {
             self.nvic.icer[self.register_index].write(self.register_mask);
         }
+
+        drop(cs);
     }
 }
 
@@ -65,10 +95,12 @@ impl Drop for ExternalInterruptEnabledContext<'_> {
 /// high by the interrupt to avoid marking the interrupt as pending immediately
 /// after the interrupt handler returns.
 pub async fn wait_for_irq(num: Interrupt) {
+    let mut cs = CriticalSection::new();
+
     let num = num as usize;
 
     let mut waker =
-        crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread());
+        crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread(&mut cs));
 
     let waker = waker.into_pin();
 
@@ -82,12 +114,14 @@ pub async fn wait_for_irq(num: Interrupt) {
 
     let ctx = ExternalInterruptEnabledContext::new(nvic, register_index, register_mask, waker_list);
 
+    drop(cs);
+
     waker.await;
 
     drop(ctx);
 }
 
-// TODO: Find some way to verify this is working.
+// TODO: Find some way to verify this is working (see if threads are stacking)
 pub fn make_high_priority_irq(num: Interrupt) {
 
     let mut nvic = unsafe { NVIC::new() };
@@ -100,7 +134,8 @@ pub fn make_high_priority_irq(num: Interrupt) {
 
         // 0 is the highest priority.
         // Note that on most architectures, the lower 4 bits are ignored.
-        let priority = if i == (num as usize) { 0 } else { 0x10 };
+        // nRF52 only uses 3 bits (so only the top 3 bits of this value matter).
+        let priority = if i == (num as usize) { 0 } else { 0xff };
 
         let v = (nvic.ipr[register_index].read() & mask) | (priority << register_shift);
         nvic.ipr[register_index].write(v); 
@@ -109,6 +144,8 @@ pub fn make_high_priority_irq(num: Interrupt) {
 }
 
 pub fn trigger_pendsv() {
+    let cs = CriticalSection::new();
+
     let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[PENDSV_EXCEPTION_NUM] };
     if waker_list.is_empty() {
         return;
@@ -119,16 +156,25 @@ pub fn trigger_pendsv() {
 }
 
 // TODO: Verify that this interrupt is at the same priority as all others.
-pub async fn wait_for_pendsv() {
+pub async fn wait_for_pendsv(mut cs: CriticalSection) {
     let mut waker =
-        crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread());
+        crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread(&mut cs));
 
     let waker = waker.into_pin();
 
     let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[PENDSV_EXCEPTION_NUM] };
 
     let waker = waker_list.insert(waker);
+
+    drop(cs);
+
     waker.await;
+}
+
+pub async fn yield_now() {
+    let cs = CriticalSection::new();
+    trigger_pendsv();
+    wait_for_pendsv(cs).await
 }
 
 extern "C" {
@@ -218,15 +264,13 @@ unsafe extern "C" fn default_interrupt() -> () {
         }
     }
 
-    // unsafe { asm!("cpsid i") }
-
     // TODO: Subtract 1 from this?
     let waker_list = &mut INTERRUPT_WAKER_LISTS[interrupt_num];
     waker_list.wake_all();
 
+    let cs = CriticalSection::new();
+
     // Check if we need to disable the interrupt.
-    // Because wake_all() adds an extra entry to the waker list, it will never
-    // appear as empty while wake_all is empty so may not be cleared.
     if waker_list.is_empty() && interrupt_num >= EXTERNAL_INTERRUPT_OFFSET {
         let num = interrupt_num - EXTERNAL_INTERRUPT_OFFSET;
 
@@ -243,10 +287,10 @@ unsafe extern "C" fn default_interrupt() -> () {
     }
 
     // Enable interrupts.
-    // unsafe { asm!("cpsie i") };
+    drop(cs);
 
-    asm!("nop");
-    asm!("nop");
+    // Nordic requires 4 cycles to clear the interrupt.
+    // The 'drop(cs)' will take at least 2 cycles.
     asm!("nop");
     asm!("nop");
 }

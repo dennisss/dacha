@@ -137,7 +137,6 @@ peripherals {
         config {
             oversampling: 256
             sample_rate: 2560
-            window_size: 1
         }
         calibration {
             offset: 0.00054
@@ -172,7 +171,24 @@ peripherals {
             trigger_above: 0.05
             trigger_below: -0.05
             stop_on_trigger: true
-            window_size: 1024
+        }
+    }
+}
+
+# Each buffer can keep going for ~500ms.
+peripherals {
+    name: "probe_buf1"
+    adc_buffer {
+        config {
+            size: 1024
+        }
+    }
+}
+peripherals {
+    name: "probe_buf2"
+    adc_buffer {
+        config {
+            size: 1024
         }
     }
 }
@@ -191,9 +207,7 @@ peripherals {
     name: "24v_sense"
     adc {
         pin_name: "24V_SENSE"
-        config {
-            sample_rate: 1024 # TODO: Remove
-        }
+        config {}
         resistor_divider {
             top_resistor: 10000
             bottom_resistor: 1000
@@ -205,9 +219,7 @@ peripherals {
     name: "5v_sense"
     adc {
         pin_name: "5V_SENSE"
-        config {
-            sample_rate: 1024 # TODO: Remove
-        }
+        config {}
         resistor_divider {
             top_resistor: 10000
             bottom_resistor: 10000

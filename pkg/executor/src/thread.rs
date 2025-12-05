@@ -4,6 +4,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 
 use crate::raw_waker::RAW_WAKER;
+use crate::CriticalSection;
 
 /// Reference to the thread's polling function
 ///
@@ -24,15 +25,17 @@ static mut CURRENT_THREAD: Option<ThreadReference> = None;
 pub struct Thread<Fut: 'static + Sized + Future<Output = ()>> {
     // TODO: Should technically use a mutex for this?
     fut: Option<Fut>,
+    polling: bool,
 }
 
 impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
     pub const fn new() -> Self {
-        Self { fut: None }
+        Self { fut: None, polling: false }
     }
 
     #[inline(always)]
     pub fn is_running(&self) -> bool {
+        let cs = CriticalSection::new();
         self.fut.is_some()
     }
 
@@ -40,17 +43,34 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
     pub fn start<F: FnOnce() -> Fut>(&'static mut self, f: F) {
         // TODO: Validate not restarting inside of our own thread.
 
+        let cs = CriticalSection::new();
+        
+        if self.polling {
+            return;
+        }
+        
+        // TODO: Call stop() to handle stuff.
         // Clean up the past run of this thread.
         self.fut = None;
 
         self.fut = Some(f());
 
-        Self::poll(unsafe { core::mem::transmute(&mut *self) });
+        Self::poll_inner(unsafe { core::mem::transmute(&mut *self) }, cs);;
     }
 
     #[inline(never)]
     fn poll(ptr: *mut ()) {
+        Self::poll_inner(ptr, CriticalSection::new());
+    }
+
+    fn poll_inner(ptr: *mut (), cs: CriticalSection) {
         let this: &mut Self = unsafe { core::mem::transmute(ptr) };
+
+        if this.polling {
+            return;
+        }
+
+        this.polling = true;
 
         // static waker: Waker = unsafe { Waker::from_raw(RAW_WAKER) };
         // static mut cx: Context = Context::from_waker(&waker);
@@ -69,7 +89,15 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
             })
         };
 
-        match p.poll(&mut cx) {
+        drop(cs);
+
+        let res = p.poll(&mut cx);
+
+        let cs = CriticalSection::new();
+
+        this.polling = false;
+
+        match res {
             Poll::Ready(()) => {
                 this.fut = None;
             }
@@ -79,27 +107,33 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
         unsafe {
             CURRENT_THREAD = parent_thread;
         }
+
+        drop(cs);
     }
 
+    /// NOTE: Currently if the thread is actively being polled, then this will do nothing.
     pub fn stop(&'static mut self) {
-        if !self.fut.is_some() {
+        let cs = CriticalSection::new();
+
+        if self.polling {
+            // TODO: Implement asking for a stop after the poll is done.
             return;
         }
 
-        // TODO: Assert not stopping ourselves.
-
-        // A thread stopping itself is undefined behavior and should panic.
-        // avr_assert_ne!(unsafe { CURRENT_THREAD_ID }, Some(self.id));
+        if !self.fut.is_some() {
+            return;
+        }
 
         // Drop all variables. This should also drop any WakerFutures used by the thread
         // (thus ensuring that this thread id is safe to re-use later).
         self.fut = None;
 
-        // unsafe { RUNNING_THREADS.remove(self.id) };
+        drop(cs);
     }
 }
 
-pub fn new_waker_for_current_thread() -> crate::waker::Waker {
+/// Since this touches CURRENT_THREAD which is a 'static mut', this must be run uninterrupted. 
+pub fn new_waker_for_current_thread(cs: &mut CriticalSection) -> crate::waker::Waker {
     let current_ref = unsafe { CURRENT_THREAD.as_ref().unwrap() };
     crate::waker::Waker::new(current_ref.poll_fn, current_ref.ptr)
 }
@@ -118,6 +152,7 @@ macro_rules! define_thread {
 
         const _: () = {
             trait ThreadFn {
+                // TODO: Require futures to be Send?
                 type Fut: ::core::future::Future<Output = ()> + 'static;
                 fn start($($arg: $t,)*) -> Self::Fut;
             }

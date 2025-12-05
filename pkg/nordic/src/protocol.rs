@@ -32,6 +32,7 @@ Syncronization
 
 use core::future::Future;
 
+use base_util::aligned::Aligned;
 use common::attribute::GetAttributeValue;
 use common::errors::*;
 use common::fixed::vec::FixedVec;
@@ -51,7 +52,7 @@ use crate::radio::Radio;
 use crate::radio_socket::RadioSocket;
 use crate::rtc::RTC;
 use crate::usb::controller::{
-    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest,
+    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest, USBDeviceNormalResponse,
 };
 use crate::usb::default_handler::USBDeviceDefaultHandler;
 use crate::usb::handler::{USBDeviceHandler, USBError};
@@ -67,9 +68,18 @@ pub struct ProtocolUSBHandler<D> {
     packet_buf: PacketBuffer,
 }
 
+/*
+Want to have a very fancy buffer for receiving requests:
+- 256 bytes
+- smart enough to amortize when to copy down bytes.
+- same exact code as in the USBRadio ideally.
+
+
+*/
+
 // TODO: Have a macro to auto-generate this.
 impl<D: ProtocolUSBDescriptorSet> USBDeviceHandler for ProtocolUSBHandler<D> {
-type HandleResetFuture<'a> = impl Future<Output = ()> + 'a;
+    type HandleResetFuture<'a> = impl Future<Output = ()> + 'a;
 
     type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
@@ -77,12 +87,21 @@ type HandleResetFuture<'a> = impl Future<Output = ()> + 'a;
 
     type HandleNormalRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
-    type HandleNormalResponseAcknowledgedFuture<'a> =
-        impl Future<Output = Result<(), USBError>> + 'a;
+    type HandleNormalResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
-fn handle_reset<'a>(
+    type PollNormalResponseReadyFuture<'a> = impl Future<Output = ()> + 'a;
+
+    fn handle_reset<'a>(
         &'a mut self,
-    ) -> Self::HandleResetFuture<'a> { async move { () } }
+    ) -> Self::HandleResetFuture<'a> {
+        async move {
+            if let Some(controller) = &self.peripherals_controller {
+                return controller.handle_reset().await;
+            }
+
+            ()
+        }
+    }
 
     fn handle_control_request<'a>(
         &'a mut self,
@@ -103,16 +122,37 @@ fn handle_reset<'a>(
     fn handle_normal_request<'a>(
         &'a mut self,
         endpoint_index: usize,
-        req: USBDeviceNormalRequest,
+        mut req: USBDeviceNormalRequest<'a>,
     ) -> Self::HandleNormalRequestFuture<'a> {
-        async move { Ok(()) }
+        async move {
+            // TODO: Decouple the buffer from being 'packet' typed and length.
+            let mut raw_proto = self.packet_buf.raw_mut();
+            let n = req.read_aligned(raw_proto).await?;
+            self.process_peripheral_request_data(&self.packet_buf.raw()[0..n]).await;
+
+            Ok(())
+        }
     }
 
-    fn handle_normal_response_acknowledged<'a>(
+    fn handle_normal_response<'a>(
         &'a mut self,
         endpoint_index: usize,
-    ) -> Self::HandleNormalResponseAcknowledgedFuture<'a> {
-        async move { Ok(()) }
+        res: USBDeviceNormalResponse<'a>,
+    ) -> Self::HandleNormalResponseFuture<'a> {
+        self.handle_normal_response_impl(endpoint_index, res)
+    }
+
+    fn poll_normal_response_ready<'a>(
+        &'a self,
+        endpoint_index: usize,
+    ) -> Self::PollNormalResponseReadyFuture<'a> {
+        async move {
+            if let Some(controller) = &self.peripherals_controller {
+                return controller.wait_until_readable().await;
+            }
+
+            executor::futures::pending().await
+        }
     }
 }
 
@@ -130,6 +170,41 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
             rtc,
             packet_buf: PacketBuffer::new(),
         }
+    }
+
+    async fn process_peripheral_request_data(&self, data: &[u8]) {
+        let n = data.len();
+        let mut i = 0;
+        while i < n {
+            let len = data[i] as usize;
+            i += 1;
+
+            if len == 0 {
+                break;
+            }
+
+            if i + len > n {
+                break;
+            }
+
+            let s = &data[i..(i + len)];
+            i += len;
+
+            let proto = match PeripheralRequest::parse(s) {
+                Ok(v) => v,
+                Err(e) => {
+                    log!("PARSE FAIL");
+                    return;
+                }
+            };
+
+            // TODO: If we get no sequence, imply that it is the same as the last received request + 1
+
+            if let Some(controller) = &self.peripherals_controller {
+                controller.execute(&proto).await;
+            }
+        }
+
     }
 
     // TODO: Add a 'FactoryReset' command which simply clears all in-volatile state
@@ -184,36 +259,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 // TODO: Decouple the buffer from being 'packet' typed and length.
                 let mut raw_proto = self.packet_buf.raw_mut();
                 let n = req.read(raw_proto).await?;
-
-                let mut i = 0;
-                while i < n {
-                    let len = raw_proto[i] as usize;
-                    i += 1;
-
-                    if len == 0 {
-                        break;
-                    }
-
-                    if i + len > n {
-                        break;
-                    }
-
-                    let s = &raw_proto[i..(i + len)];
-                    i += len;
-
-                    let proto = match PeripheralRequest::parse(s) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            log!("PARSE FAIL");
-                            return Ok(());
-                        }
-                    };
-
-                    if let Some(controller) = &self.peripherals_controller {
-                        controller.execute(&proto).await;
-                                            }
-                }
-
+                self.process_peripheral_request_data(&self.packet_buf.raw()[0..n]).await;
                 return Ok(());
             }
         }
@@ -261,7 +307,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
             } else if setup.bRequest == ProtocolRequestType::GetNetworkConfig.to_value() {
                 log!("USB GETCFG");
 
-// TODO: Re-use the packet buffer.
+                // TODO: Re-use the packet buffer.
                 let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
 
                 let network_config = self.radio_socket.lock_network_config().await;
@@ -312,11 +358,11 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
 
                 // TODO: Don't consume unless the host ACKs the data?
                 if let Some(controller) = self.peripherals_controller {
-                                        let n = controller.read_response(buffer).await;
+                    let n = controller.read_response(buffer).await;
                     res.write(&buffer[0..n]).await?;
                     return Ok(());
                 }
-} else if setup.bRequest == ProtocolRequestType::GetClockTime.to_value() {
+            } else if setup.bRequest == ProtocolRequestType::GetClockTime.to_value() {
                 if (setup.wLength as usize) < 4 {
                     res.stale();
                     return Ok(());
@@ -329,7 +375,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                         return Ok(());
                     }
                 }
-} else if setup.bRequest == ProtocolRequestType::GetIdleCounter.to_value() {
+            } else if setup.bRequest == ProtocolRequestType::GetIdleCounter.to_value() {
                 if (setup.wLength as usize) < 4 {
                     res.stale();
                     return Ok(());
@@ -346,6 +392,33 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
             .handle_control_response(setup, res)
             .await
     }
+
+    async fn handle_normal_response_impl<'a>(
+        &'a mut self,
+        endpoint_index: usize,
+        mut res: USBDeviceNormalResponse<'a>,
+    ) -> Result<(), USBError> {
+
+        if let Some(controller) = self.peripherals_controller {
+            // TODO: We can probably avoid copying and just re-use the same buffer as the controller.
+            let mut buf = Aligned::<_, u32>::new([0u8; 64]);
+            let n = controller.read_response(&mut buf[..]).await;
+            let n_padded = fast_next_multiple_of_4(n);
+            
+            if n > 0 {
+                res.write_aligned(&buf[0..n_padded]).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+}
+
+#[inline(always)]
+fn fast_next_multiple_of_4(n: usize) -> usize {
+    // (n + alignment - 1) & !(alignment - 1)
+    (n + 3) & !3
 }
 
 pub async fn protocol_usb_thread_fn<D: ProtocolUSBDescriptorSet>(
