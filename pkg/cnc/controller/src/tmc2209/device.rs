@@ -221,6 +221,10 @@ impl TMC2209Device {
         self.device.get_stepper_motor_status_request(self.config.step_peripheral())
     }
 
+    pub async fn reset_stepper_motor_queue(&self) -> Result<()> {
+        self.device.reset_stepper_motor_queue(self.config.step_peripheral()).await
+    }
+
     pub async fn sg_result(&self) -> Result<u16> {
         let r = self.read_register::<SG_RESULT>().await?;
         Ok(r.sg_result())
@@ -233,6 +237,10 @@ impl TMC2209Device {
 
     pub async fn clear_stepper_queue(&self) -> Result<u32> {
         self.device.clear_stepper_queue(self.config.step_peripheral()).await
+    }
+
+    pub fn clear_stepper_queue_request(&self) -> Result<PeripheralRequest> {
+        self.device.clear_stepper_queue_request(self.config.step_peripheral())
     }
 
     /*

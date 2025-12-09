@@ -76,24 +76,6 @@ motion_controller {
         }
     ]
 
-    endstops {
-        device_name: "main"
-        peripheral_name: "stepper1_diag"
-        motors: ["stepper1", "stepper2"]
-    }
-
-    endstops {
-        device_name: "main"
-        peripheral_name: "stepper2_diag"
-        motors: ["stepper1", "stepper2"]
-    }
-
-    #endstops {
-    #    device_name: "main"
-    #    peripheral_name: "stepper3_diag"
-    #    motors: ["stepper3"]
-    #}
-
     geometry: [
         {
             core_xy {
@@ -124,6 +106,48 @@ motion_controller {
         { name: "Z" max_speed: 12 max_acceleration: 20  coordination_priority: 0 },
         { name: "E" max_speed: 10 max_acceleration: 10  coordination_priority: 1 }
     ]
+}
+
+default_endstops: ["stepper1_stall", "stepper2_stall"]
+
+endstop_controller {
+    endstops: [
+        {
+            name: "stepper1_stall"
+            peripheral {
+                device_name: "main"
+                peripheral_name: "stepper1_diag"
+            }
+            hard: true
+            motors: ["stepper1", "stepper2"]
+        },
+        {
+            name: "stepper2_stall"
+            peripheral {
+                device_name: "main"
+                peripheral_name: "stepper2_diag"
+            }
+            hard: true
+            motors: ["stepper1", "stepper2"]
+        },
+
+        #endstops {
+        #    device_name: "main"
+        #    peripheral_name: "stepper3_diag"
+        #    motors: ["stepper3"]
+        #}
+
+        {
+            name: "z_probe"
+            peripheral {
+                device_name: "toolhead"
+                peripheral_name: "probe"
+            }
+            motors: ["stepper3"]
+            analog_buffers: ["probe_buf1", "probe_buf1"]
+        }
+    ]
+
 }
 
 heater_controllers {}

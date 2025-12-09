@@ -57,16 +57,37 @@ struct State {
     /// Last sequence number used by a request added to send_queue.
     last_sequence: u32,
 
+    last_id: u64,
+
     /// Requests enqueud to be sent to the device by the background thread.
     /// TODO: Flatten this and have senders directly serialize in a buffer that is swapped out
     /// when the background thread is ready to send stuff.
-    send_queue: VecDeque<Vec<u8>>,
+    send_queue: VecDeque<SendQueueEntry>,
 
-    get_time_requests: Vec<oneshot::Sender<ClockTimeResponse>>,
+    high_priority_send_queue: VecDeque<SendQueueEntry>,
 
     /// Map of sequence number to the channel to use to deliver the response
     /// for an active request.
-    active_requests: HashMap<u32, oneshot::Sender<PeripheralResponse>, FastHasherBuilder>,
+    active_requests: HashMap<u32, ActiveRequestsEntry, FastHasherBuilder>,
+}
+
+struct SendQueueEntry {
+    data: Vec<u8>,
+    sequence: u32,
+    id: u64,
+    cancellation: bool,
+}
+
+struct ActiveRequestsEntry {
+    id: u64,
+    sender: oneshot::Sender<USBRadioRequestResponse>,
+    send_time: Option<Instant>,
+}
+
+pub struct USBRadioRequestResponse {
+    pub res: PeripheralResponse,
+    pub send_time: Instant,
+    pub receive_time: Instant
 }
 
 impl USBRadio {
@@ -109,9 +130,10 @@ impl USBRadio {
             state: AsyncVariable::new(State {
                 connected: true,
                 last_sequence: 0,
+                last_id: 0,
                 send_queue: VecDeque::new(),
+                high_priority_send_queue: VecDeque::new(),
                 active_requests: HashMap::default(),
-                get_time_requests: vec![],
             })
         });
 
@@ -176,25 +198,31 @@ impl USBRadio {
         send_buffer.reserve_exact(MAX_PACKET_SIZE);
 
         loop {
-            let mut have_active_requests = false;
-
             // Send all available requests of batches of requests of size SEND_BUFFER_SIZE.
             loop {
                 send_buffer.clear();
 
-                let mut need_clock_sync = false;
                 lock!(state <= shared.state.lock().await?, {
-                    need_clock_sync = !state.get_time_requests.is_empty();
                     
+                    let now = Instant::now();
+
                     while send_buffer.len() < MAX_PACKET_SIZE {
-                        let request = match state.send_queue.front() {
-                            Some(v) => v,
-                            None => break
+                        let (is_high_pri, request) = match state.high_priority_send_queue.front() {
+                            Some(v) => {
+                                (true, v)
+                            },
+                            None => {
+                                match state.send_queue.front() {
+                                    Some(v) => (false, v),
+                                    None => break
+                                }
+                            }
                         };
+
 
                         // TODO: Compress requests and don't send requests with consecutive sequences.
 
-                        if send_buffer.len() + 1 + request.len() > MAX_PACKET_SIZE {
+                        if send_buffer.len() + 1 + request.data.len() > MAX_PACKET_SIZE {
                             if send_buffer.len() == 0 {
                                 return Err(err_msg("Request too big to fit in send buffer."));
                             }
@@ -202,32 +230,41 @@ impl USBRadio {
                             break;
                         }
 
-                        send_buffer.push(request.len() as u8);
-                        send_buffer.extend_from_slice(&request);
-                        state.send_queue.pop_front();
-                    } 
+                        send_buffer.push(request.data.len() as u8);
+                        send_buffer.extend_from_slice(&request.data);
+                        
+                        // TODO: Check if still in active_requests earlier since the response may have
+                        // been received by the time we got ready to send the cancellation.
+                        if !request.cancellation {
+                            let seq = request.sequence;
 
-                    have_active_requests = !state.active_requests.is_empty();
+                            state.active_requests.get_mut(&seq).unwrap()
+                                .send_time = Some(now);
+                        }
+                        
+                        if is_high_pri {
+                            state.high_priority_send_queue.pop_front();
+                        } else {
+                            state.send_queue.pop_front();
+                        }
+
+                    } 
 
                     Result::<_, Error>::Ok(())
                 })?;
-
-                if need_clock_sync {
-                    Self::execute_get_clock_time(&shared).await
-                        .map_err(|e| format_err!("While getting time: {}", e))?;
-                }
 
                 if !send_buffer.is_empty() {
                     // The nRF52 is really bad with odd numbers of bytes or non-multiples of 4 so
                     // add some padding for stability.
                     send_buffer.resize(send_buffer.len().next_multiple_of(4), 0);
 
+                    // TODO: Need to support enqueuing multiple packets at once.
                     executor::timeout(
                         USB_TIMEOUT,
-                        shared.device.write_interrupt(0x02, &send_buffer)
+                        shared.device.write_bulk(0x02, &send_buffer)
                     )
                     .await
-                    .map_err(|_| err_msg("Timeout while doing write_interrupt"))??;
+                    .map_err(|_| err_msg("Timeout while doing write_bulk"))??;
 
                     continue;
                 }
@@ -238,11 +275,11 @@ impl USBRadio {
             // Wait either 10ms or for more requests to be available to send.
             {
                 let state = shared.state.lock().await?.read_exclusive();
-                if !state.send_queue.is_empty() {
+                if !state.send_queue.is_empty() || !state.high_priority_send_queue.is_empty() {
                     continue;
                 }
 
-                executor::timeout(Duration::from_millis(10), state.wait()).await;
+                executor::timeout(Duration::from_millis(100), state.wait()).await;
             }
         }
     }
@@ -259,16 +296,15 @@ impl USBRadio {
         let mut read_queue = vec![];
 
         loop {
-            while read_queue.len() < 2 {
-                read_queue.push(shared.device.enqueue_read_interrupt(0x81, CHUNK_SIZE)?);
+            while read_queue.len() < 4 {
+                read_queue.push(shared.device.enqueue_read_bulk(0x81, CHUNK_SIZE)?);
             }
 
-            let read = executor::timeout(
-                    USB_TIMEOUT,
-                    read_queue.remove(0).wait()
-                )
-                .await
-                .map_err(|_| err_msg("Timeout while doing read_interrupt"))??;
+            let read = read_queue.remove(0).wait().await?;
+
+            // TODO: Need per-byte receive times since a response may be split across
+            // one or more packets.
+            let receive_time = Instant::now();
 
             let original_buffer_len = res_buffer.len();
             let nread = read.buffer().len();
@@ -313,11 +349,15 @@ impl USBRadio {
                 lock!(state <= shared.state.lock().await?, {
                     for batch_i in 0..(response.ack_next_n() + 1) {
                         let seq = response.request_sequence() + batch_i;
-                        
-                        let sender = state.active_requests.remove(&seq)
-                            .ok_or_else(|| format_err!("No active request for response with sequence: {}", seq))?;
 
-                        let _ = sender.send(response.clone());
+                        let active_req = state.active_requests.remove(&seq)
+                            .ok_or_else(|| format_err!("No active request for response with sequence: {}. {:?}", seq, response))?;
+
+                        let _ = active_req.sender.send(USBRadioRequestResponse {
+                            res: response.clone(),
+                            send_time: active_req.send_time.clone().unwrap(),
+                            receive_time: receive_time
+                        });
                     }
 
                     Result::<_, Error>::Ok(())
@@ -330,75 +370,22 @@ impl USBRadio {
         }
     }
 
-
-    async fn execute_get_clock_time(shared: &Shared) -> Result<()> {
-        let mut buf = [0u8; 4];
-
-        let local_request_time = Instant::now();
-        
-        let n = Self::control_read(
-            shared,
-            ProtocolRequestType::GetClockTime,
-            &mut buf
-        ).await?;
-        
-        let local_response_time = Instant::now();
-
-        if n != buf.len() {
-            return Err(err_msg("Did not read a full u32"));
-        }
-
-        let remote_time = u32::from_le_bytes(buf);
-
-        let res = ClockTimeResponse { remote_time, local_request_time, local_response_time };
-
-        lock!(state <= shared.state.lock().await?, {
-            for sender in state.get_time_requests.drain(..) {
-                let _ = sender.send(res.clone());
-            }
-        });
-
-        Ok(())
-    }
-
     /// WARNING: If multiple calls to this happen for a single device, then this may return a time
     /// from a request performed shortly before get_clock_time() was called.
     pub async fn get_clock_time(&self) -> Result<ClockTimeResponse> {
-        // The actual request is send in the background thread to reduce RTT by not
-        // overlapping with other requests.
 
-        let (sender, receiver) = oneshot::channel();
-        lock!(state <= self.shared.state.lock().await?, {
-            if !state.connected {
-                return Err(err_msg("Device is already disconnected"));
-            }
+        let mut req = PeripheralRequest::default();
+        req.set_get_clock_time(true);
 
-            state.get_time_requests.push(sender);
+        let res = self.enqueue_request_batch_inner(&[req], true).await?.await?;
+        let res = &res[0];
 
-            Result::<_, Error>::Ok(())
-        })?;
-
-        let response = receiver.recv().await
-            .map_err(|_| err_msg("Device background thread failed"))?;
-
-        Ok(response)
-    }
-
-    // TODO: Maybe move this to the background thread too.
-    pub async fn get_idle_counter(&self) -> Result<u32> {
-        let mut buf = [0u8; 4];
-
-        let n = Self::control_read(
-            &self.shared,
-            ProtocolRequestType::GetIdleCounter,
-            &mut buf
-        ).await?;
-
-        if n != buf.len() {
-            return Err(err_msg("Did not read a full u32"));
-        }
-
-        Ok(u32::from_le_bytes(buf))
+        let remote_time = res.res.uint_val();
+        Ok(ClockTimeResponse {
+            remote_time,
+            local_request_time: res.send_time,
+            local_response_time: res.receive_time
+        })
     }
 
     pub async fn set_network_config(&mut self, config: &NetworkConfig) -> Result<()> {
@@ -549,6 +536,17 @@ impl USBRadio {
     pub async fn enqueue_request_batch<'a>(
         &'a self, requests: &[PeripheralRequest]
     ) -> Result<impl Future<Output = Result<Vec<PeripheralResponse>>> + 'a> {
+        let f = self.enqueue_request_batch_inner(requests, false).await?;
+
+        Ok(async move {
+            let res = f.await?;
+            Ok(res.into_iter().map(|r| r.res).collect::<Vec<_>>())
+        })
+    }
+
+    pub async fn enqueue_request_batch_inner<'a>(
+        &'a self, requests: &[PeripheralRequest], high_priority: bool,
+    ) -> Result<impl Future<Output = Result<Vec<USBRadioRequestResponse>>> + 'a> {
 
         let requests = requests.to_vec();
 
@@ -563,7 +561,7 @@ impl USBRadio {
             receivers.push(r);
         }
 
-        lock!(state <= self.shared.state.lock().await?, {
+        let mut request_guard = lock!(state <= self.shared.state.lock().await?, {
             // TODO: Check that the background thread is still healthy.
 
             if !state.connected {
@@ -574,7 +572,13 @@ impl USBRadio {
                 return Err(err_msg("Too much active requests to device"));
             }
 
+            let mut pending_requests = vec![];
+            pending_requests.reserve_exact(requests.len());
+
             for (request, sender) in requests.iter().zip(senders.into_iter()) {
+                let id = state.last_id + 1;
+                state.last_id = id;
+                
                 // Acquire the next unused sequence
                 // This is guaranteed to terminate since 'active_requests' isn't large
                 // enough to occupy all slots. 
@@ -594,16 +598,42 @@ impl USBRadio {
                 let seq = state.last_sequence;
                 let mut request = request.clone();
                 request.set_request_sequence(seq);
+                pending_requests.push(PendingRequest {
+                    id,
+                    sequence: seq,
+                    peripheral_index: request.peripheral_index()
+                });
 
                 // TODO: Ideally serialize outside of the lock.
-                state.send_queue.push_back(request.serialize()?);
-                state.active_requests.insert(seq, sender);
+                let send_entry = SendQueueEntry {
+                    data: request.serialize()?,
+                    id,
+                    sequence: seq,
+                    cancellation: false,
+                };
+
+                if high_priority {
+                    state.high_priority_send_queue.push_back(send_entry);
+                } else {
+                    state.send_queue.push_back(send_entry);
+                }
+
+                state.active_requests.insert(seq, ActiveRequestsEntry {
+                    sender,
+                    id,
+                    send_time: None,
+                });
             }
 
             state.notify_all();
 
-            Result::<_, _>::Ok(())
+            Result::<_, _>::Ok(RequestGuard {
+                shared: self.shared.clone(),
+                pending_requests: Some(pending_requests),
+            })
         })?;
+
+        // tODO: If any of this is dropped, we should isue request cancellations.
 
         Ok(async move {
             let mut responses = vec![];
@@ -612,13 +642,17 @@ impl USBRadio {
                 let response = receiver.recv().await
                     .map_err(|_| err_msg("Device background thread failed"))?;
 
-                if response.error_code() != PeripheralResponse_ErrorCode::NO_ERROR {
+                if response.res.error_code() != PeripheralResponse_ErrorCode::NO_ERROR {
                     // TODO: Use an inline formatter for the request.
-                    return Err(format_err!("Request '{:?}' failed with code: {:?}", requests[i], response.error_code()));
+                    return Err(format_err!("Request '{:?}' failed with code: {:?}", requests[i], response.res.error_code()));
                 }
 
                 responses.push(response);
             }
+
+            // All responses were received, so no need to cancel anything.
+            request_guard.pending_requests = None;
+            drop(request_guard);
 
             Ok(responses)
         })
@@ -648,10 +682,62 @@ impl Drop for ConnectionGuard {
                 state.connected = false;
                 // Notifies all waiters on the channels to wake up.
                 state.active_requests.clear();
-                state.get_time_requests.clear();
+                state.high_priority_send_queue.clear();
             });
         });
     }
+}
 
+struct RequestGuard {
+    shared: Arc<Shared>,
+    pending_requests: Option<Vec<PendingRequest>>
+}
+
+struct PendingRequest {
+    sequence: u32,
+    peripheral_index: u32,
+    id: u64,
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        let pending_requests = match self.pending_requests.take() {
+            Some(v) => v,
+            None => return
+        };
+
+        let shared = self.shared.clone();
+        executor::spawn(async move {
+            let state = match shared.state.lock().await {
+                Ok(v) => v,
+                Err(_) => return
+            };
+
+            lock!(state <= state, {
+                for entry in pending_requests {
+                    let active_req = match state.active_requests.get(&entry.sequence) {
+                        Some(v) => v,
+                        None => continue
+                    };
+
+                    if active_req.id != entry.id {
+                        continue;
+                    }
+
+                    let mut cancel_req = PeripheralRequest::default();
+                    cancel_req.set_peripheral_index(entry.peripheral_index);
+                    cancel_req.set_request_sequence(entry.sequence);
+                    cancel_req.set_cancel(true);
+
+                    state.send_queue.push_back(SendQueueEntry {
+                        data: cancel_req.serialize().unwrap(),
+                        sequence: entry.sequence,
+                        id: entry.id,
+                        cancellation: true
+                    });
+                }
+            });
+        });
+    }
 }
 

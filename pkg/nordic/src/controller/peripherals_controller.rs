@@ -102,6 +102,7 @@ use super::adc::*;
 use super::spi::SPIPeripheralThread;
 use super::sleep::SleepPeripheralThread;
 use super::i2c::I2CPeripheralThread;
+use super::buffer::Buffer;
 
 const MAX_NUM_PERIPHERALS: usize = 32;
 
@@ -185,10 +186,7 @@ pub(super) enum PeripheralEntry {
     /// access to it.
     Borrowed,
 
-    GPIO {
-        pin: GPIOPin,
-        interrupt: Option<GPIOInterruptState>,
-    },
+    GPIO(GPIOEntry),
     PWM {
         index: usize,
         channel: usize,
@@ -200,19 +198,23 @@ pub(super) enum PeripheralEntry {
 
     UARTE(UARTE),
 
-    Stepper {
-        controller: StepperMotorController
-    },
+    Stepper(StepperMotorController),
 
     Neopixel(Neopixel),
 
     ADC(WindowADCChannelConfig),
 
-    ADCBuffer(ADCBuffer),
+    Buffer(Buffer),
 
     SPI(SPIHost),
 
     I2C(TWIM),
+}
+
+pub(super) struct GPIOEntry {
+    pub pin: GPIOPin,
+    pub interrupt_polarity: ConfigureGPIO_InterruptPolarity,
+    pub pending_interrupt_sequence: Option<u32>
 }
 
 macro_rules! check_peripheral_type {
@@ -241,18 +243,21 @@ macro_rules! borrow_peripheral {
     }
 }
 
-pub(super) struct GPIOInterruptState {
-    pub fired: bool,
-    // TODO: Switch this to not using GPIOTE
-    pub channel: GPIOInterruptChannel<IndexedPin>
+macro_rules! get_peripheral_mut {
+    ($state:ident, $peripheral_idx:expr, $t:ident) => {
+        {
+            match &mut $state.entries[$peripheral_idx] {
+                PeripheralEntry::$t(entry) => entry,
+                _ => {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                    ));
+                }
+            }
+        }
+    }
 }
 
-/*
-Memory required for the PWM peripheral?
-- Basically nothing (I can tell if a PWM thing is enabled)
-    - But I need to be able to disable it.
-
-*/
 
 /*
 
@@ -260,43 +265,6 @@ Memory required for the PWM peripheral?
 Handling async operations:
 - We have a thread pool
     - We start a thread giving it a task to do.
-
-*/
-
-/*
-
-SAADC:
-- Configure all channels initially
-    - Inputs:
-        - Positive Pin
-        - Negative Pin (may also want to support this being a reference voltage)
-        - Desired voltage range to measure
-            - Used to set the gains and set optimially.
-        - Max sample rate
-        - Max acquisition time.
-        - Target resolution?
-    - Returns:
-        - Units per Volt
-        - Min voltage in range
-        - Max voltage in range
-
-- After all pins are configured:
-    - Start ADC thread
-    - Generally simplest to just keep the sampling always running
-    - Note that there will be some skew in the readings since they are sampled one after another.
-- When the user requests an ADC voltage
-    - Verify the ADC is still healthy.
-    - Take the last sampled one.
-
-- TODO: also need to deal with calibration (for now just do during init)
-
-- Ideally just short the 'EVENT_END' -> 'TASKS_START'
-
-- Read 'RESULT.AMOUNT' to see how many memory entries have already been written.
-
-Need to wrangel all the flash memory usage.
-
-Need likely separate space for the network config and for the static stuff.
 
 */
 
@@ -530,6 +498,9 @@ impl PeripheralsController {
 
                 let mut pin = state.gpio.pin(IndexedPin { index: req.pin() });
 
+                // TODO: Standardize doing this more.
+                pin.reset();
+
                 if !req.is_input() {
                     pin.write_bool(req.default_value());
                 }
@@ -549,37 +520,11 @@ impl PeripheralsController {
 
                 // TODO: Also need to support NRF52 high drive.
 
-
-                let mut interrupt = None;
-                
-                let interrupt_polarity = match req.interrupt() {
-                    ConfigureGPIO_InterruptPolarity::DISABLED => None,
-                    ConfigureGPIO_InterruptPolarity::RISING_EDGE => Some(GPIOInterruptPolarity::RisingEdge),
-                    ConfigureGPIO_InterruptPolarity::FALLING_EDGE => Some(GPIOInterruptPolarity::FallingEdge)
-                };
-
-                if let Some(polarity) = interrupt_polarity {
-                    // NOTE: We rely on this function immediately enabling interrupts for the channel. 
-                    let channel = state.gpiote.new_interrupt_channel(
-                        IndexedPin { index: req.pin() },
-                        polarity
-                    ).ok_or_else(|| ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ))?;
-
-                    interrupt = Some(GPIOInterruptState {
-                        channel,
-                        fired: false
-                    });
-
-                    if !InterruptPeripheralThread::is_running() {
-                        InterruptPeripheralThread::start(self);
-                    }
-
-                    // TODO: Start the background thread if not already started.
-                }
-
-                state.entries[peripheral_idx] = PeripheralEntry::GPIO { pin, interrupt };
+                state.entries[peripheral_idx] = PeripheralEntry::GPIO(GPIOEntry {
+                    pin,
+                    interrupt_polarity: req.interrupt(),
+                    pending_interrupt_sequence: None
+                });
 
                 Ok(OkResponse)
             }
@@ -703,9 +648,7 @@ impl PeripheralsController {
                     PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                 ))?;
 
-                state.entries[peripheral_idx] = PeripheralEntry::Stepper {
-                    controller
-                };
+                state.entries[peripheral_idx] = PeripheralEntry::Stepper(controller);
 
                 if !StepperPeripheralThread::is_running() {
                     StepperPeripheralThread::start(self);
@@ -742,12 +685,12 @@ impl PeripheralsController {
 
                 Ok(OkResponse)
             }
-            PeripheralRequestCommandCase::AllocateAdcBuffer(req) => {
+            PeripheralRequestCommandCase::AllocateBuffer(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
 
-                let buffer = ADCBuffer::new(req.size() as usize);
+                let buffer = Buffer::new(req.size() as usize);
 
-                state.entries[peripheral_idx] = PeripheralEntry::ADCBuffer(buffer);
+                state.entries[peripheral_idx] = PeripheralEntry::Buffer(buffer);
 
                 Ok(OkResponse)
             }
@@ -873,6 +816,8 @@ impl PeripheralsController {
                 // NOTE: Only save to stop this if the ADC is still in the state
                 ADCSamplePeripheralThread::stop();
 
+                // TODO: This will forget requests from the current USB reset session
+                // which is probably not a good thing.
                 state.adc_request_queue.clear();
 
                 for entry in state.entries.iter_mut() {
@@ -891,15 +836,14 @@ impl PeripheralsController {
                         PeripheralEntry::PWM { index, channel, .. } => {
                             state.pwms[index].disconnect(channel);
                         }
-                        PeripheralEntry::GPIO { mut pin, interrupt } => {
-                            drop(interrupt);
-                            pin.reset();
+                        PeripheralEntry::GPIO(mut entry) => {
+                            entry.pin.reset();
                         }
                         PeripheralEntry::UARTE(inst) => {
                             // Pins get disconnected on drop
                             state.uarte = Some(inst.into_inner());
                         }
-                        PeripheralEntry::Stepper { controller } => {} 
+                        PeripheralEntry::Stepper(controller) => {} 
 
                         PeripheralEntry::Neopixel(inst) => {
                             state.spim.push(inst.into_inner());
@@ -908,7 +852,7 @@ impl PeripheralsController {
                             state.spim.push(inst.into_inner());
                         }
                         PeripheralEntry::ADC(_) => {}
-                        PeripheralEntry::ADCBuffer(_) => {}
+                        PeripheralEntry::Buffer(_) => {}
                         PeripheralEntry::I2C(inst) => {
                             state.twim0 = Some(inst.into_inner());
                         }
@@ -956,40 +900,22 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::SetGpioLevel(req) => {
                 self.check_fully_configured(state)?;
 
-                let pin = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::GPIO { pin, .. } => pin,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                let entry = get_peripheral_mut!(state, peripheral_idx, GPIO);
 
-                pin.write(if req.high() {
-                    PinLevel::High
-                } else {
-                    PinLevel::Low
-                });
+                entry.pin.write_bool(req.high());
 
                 Ok(OkResponse)
             }
             PeripheralRequestCommandCase::GetGpioLevel(_) => {
                 self.check_fully_configured(state)?;
 
-                let pin = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::GPIO { pin, .. } => pin,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                let entry = get_peripheral_mut!(state, peripheral_idx, GPIO);
 
                 // TODO: Check configured as an input.
 
                 // NOTE: If the response is low, then the entire response can
                 // be batch ack'ed so is cheap to return.
-                if pin.read() == PinLevel::High {
+                if entry.pin.read() == PinLevel::High {
                     response.set_uint_val(1 as u32);
                 }
 
@@ -998,30 +924,75 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::PollGpioInterrupt(_) => {
                 self.check_fully_configured(state)?;
 
-                let mut interrupt = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::GPIO { interrupt, .. } => interrupt,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                let entry = get_peripheral_mut!(state, peripheral_idx, GPIO);
 
-                let interrupt = match &mut interrupt {
-                    Some(v) => v,
-                    None => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
-
-                if interrupt.fired {
-                    response.set_uint_val(1 as u32);
-                    interrupt.fired = false;
+                // Currently only allowed to have one request polling each pin at a time.
+                if entry.pending_interrupt_sequence.is_some() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
                 }
 
-                Ok(OkResponse)
+                match entry.interrupt_polarity {
+                    ConfigureGPIO_InterruptPolarity::DISABLED => {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }
+                    ConfigureGPIO_InterruptPolarity::HIGH_LEVEL => {
+                        entry.pin.set_sense(Some(PinLevel::High));
+
+                        if entry.pin.read() == PinLevel::High {
+                            entry.pin.set_sense(None);
+                            return Ok(OkResponse);
+                        }
+                    }
+                    ConfigureGPIO_InterruptPolarity::LOW_LEVEL => {
+                        entry.pin.set_sense(Some(PinLevel::Low));
+
+                        if entry.pin.read() == PinLevel::Low {
+                            entry.pin.set_sense(None);
+                            return Ok(OkResponse);
+                        }
+                    }
+
+                    ConfigureGPIO_InterruptPolarity::RISING_EDGE |
+                    ConfigureGPIO_InterruptPolarity::FALLING_EDGE => {
+                        // TODO: Eventually support these again.
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                        ));
+                    }          
+                }
+
+                entry.pending_interrupt_sequence = Some(request.request_sequence());
+
+                if !InterruptPeripheralThread::is_running() {
+                    InterruptPeripheralThread::start(self);
+                }
+
+                Err(ExecuteError::AsyncReply)
+            }
+            PeripheralRequestCommandCase::Cancel(_) => {
+                self.check_fully_configured(state)?;
+
+                match &mut state.entries[peripheral_idx] {
+                    PeripheralEntry::GPIO(entry) => {
+                        if entry.pending_interrupt_sequence == Some(request.request_sequence()) {
+                            entry.pending_interrupt_sequence = None;
+                            entry.pin.set_sense(None);
+
+                            return Err(ExecuteError::ErrorCode(
+                                PeripheralResponse_ErrorCode::CANCELLED,
+                            ));
+                        }
+                    }
+                    // Other peripherals don't implement cancellation.
+                    _ => {}
+                }
+
+
+                Err(ExecuteError::AsyncReply)
             }
             PeripheralRequestCommandCase::ReadTachometer(_) => {
                 self.check_fully_configured(state)?;
@@ -1034,32 +1005,15 @@ impl PeripheralsController {
 
                 // TODO: Veriffy no existing interrupt since we will end up deleting it.
 
-                // TODO: Check that the thread isn't running.
+                check_peripheral_type!(state, peripheral_idx, GPIO);
 
-                // TODO: Place into a 'Borrowed' state.
-                match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::GPIO { .. } => {}
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
-
-                let pin = {
-                    let mut e = PeripheralEntry::Borrowed;
-                    core::mem::swap(&mut e, &mut state.entries[peripheral_idx]);
-                    match e {
-                        PeripheralEntry::GPIO { pin, .. } => pin,
-                        _ => panic!(),
-                    }
-                };
+                let entry = borrow_peripheral!(state, peripheral_idx, GPIO);
 
                 TachometerPeripheralThread::start(
                     self,
                     peripheral_idx,
                     request.request_sequence(),
-                    pin,
+                    entry,
                 );
 
                 // To be returned asyncronously.
@@ -1153,23 +1107,13 @@ impl PeripheralsController {
                 SleepPeripheralThread::start(self, request.request_sequence());
                 Err(ExecuteError::AsyncReply)
             }
-            PeripheralRequestCommandCase::Now(_) => {
-                todo!()
-            }
             PeripheralRequestCommandCase::Noop(_) => Ok(OkResponse),
             PeripheralRequestCommandCase::Info(_) => todo!(),
 
             PeripheralRequestCommandCase::EnqueueStepperMotion(req) => {
                 self.check_fully_configured(state)?;
 
-                let stepper = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::Stepper { controller } => controller,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
 
                 // Optional checks if we want to be paranoid.
                 /*
@@ -1197,29 +1141,14 @@ impl PeripheralsController {
                 Ok(OkResponse)
             }
             PeripheralRequestCommandCase::ClearStepperQueue(_) => {
-                let stepper = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::Stepper { controller } => controller,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
-
+                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
                 stepper.clear_motions();
                 stepper.tick();
                 Ok(OkResponse)
             }
             PeripheralRequestCommandCase::ResetStepperMotor(_) => {
-                let stepper = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::Stepper { controller } => controller,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
-
+                // TODO: THis should probably reset an erorr if not stopped or there are entries in the queue.
+                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
                 stepper.reset();
                 Ok(OkResponse)
             }
@@ -1244,14 +1173,7 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::GetStepperMotorStatus(_) => {
                 self.check_fully_configured(state)?;
 
-                let stepper = match &mut state.entries[peripheral_idx] {
-                    PeripheralEntry::Stepper { controller } => controller,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
 
                 response.set_stepper_status(stepper.status());
 
@@ -1316,19 +1238,12 @@ impl PeripheralsController {
                 Err(ExecuteError::AsyncReply)
             }
 
-            PeripheralRequestCommandCase::ReadAdcBuffer(offset) => {
+            PeripheralRequestCommandCase::ReadBuffer(_) => {
                 self.check_fully_configured(state)?;
 
-                let buf = match &state.entries[peripheral_idx] {
-                    PeripheralEntry::ADCBuffer(buf) => buf,
-                    _ => {
-                        return Err(ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
-                        ));
-                    }
-                };
+                let buf = get_peripheral_mut!(state, peripheral_idx, Buffer);
 
-                buf.read(*offset as usize, response);
+                buf.read(response);
                 Ok(OkResponse)
             }
 

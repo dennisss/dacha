@@ -27,12 +27,6 @@ motion_controller {
         }
     ]
 
-    endstops {
-        device_name: "mcu"
-        peripheral_name: "stepper_diag"
-        motors: ["stepper"]
-    }
-
     geometry: [
         {
             direct {
@@ -45,4 +39,25 @@ motion_controller {
     axes: [
         { name: "X" max_speed: 40 max_acceleration: 200 }
     ]
+}
+
+default_endstops: ["stepper_stall", "user_button"]
+
+endstop_controller {
+    endstops {
+        name: "stepper_stall"
+        peripheral {
+            device_name: "mcu"
+            peripheral_name: "stepper_diag"
+        }
+        motors: ["stepper"]
+    }
+    endstops {
+        name: "user_button"
+        peripheral {
+            device_name: "mcu"
+            peripheral_name: "button"
+        }
+        motors: ["stepper"]
+    }
 }

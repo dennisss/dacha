@@ -30,7 +30,7 @@ use peripherals::raw::p0::dirclr::DIRCLR_WRITE_VALUE;
 use peripherals::raw::p0::dirset::DIRSET_WRITE_VALUE;
 use peripherals::raw::p0::outclr::OUTCLR_WRITE_VALUE;
 use peripherals::raw::p0::outset::OUTSET_WRITE_VALUE;
-use peripherals::raw::p0::pin_cnf::{DIR_FIELD, INPUT_FIELD, PULL_FIELD, DRIVE_FIELD};
+use peripherals::raw::p0::pin_cnf::{DIR_FIELD, INPUT_FIELD, PULL_FIELD, DRIVE_FIELD, SENSE_FIELD};
 use peripherals::raw::p0::{P0, P0_REGISTERS};
 use peripherals::raw::p1::P1;
 
@@ -147,6 +147,19 @@ impl GPIOPin {
         } else {
             DRIVE_FIELD::S0S1
         });
+        self.port.pin_cnf[self.pin_index].write(pin_cnf);
+        self
+    }
+
+    pub fn set_sense(&mut self, level: Option<PinLevel>) -> &mut Self {
+        let mut pin_cnf = self.port.pin_cnf[self.pin_index].read();
+
+        pin_cnf.set_sense(match level {
+            Some(PinLevel::Low) => SENSE_FIELD::Low,
+            Some(PinLevel::High) => SENSE_FIELD::High,
+            _ => SENSE_FIELD::Disabled
+        });
+
         self.port.pin_cnf[self.pin_index].write(pin_cnf);
         self
     }

@@ -426,6 +426,7 @@ async fn toolhead_test() -> Result<()> {
 
 
 
+    /*
     loop {
         // println!("{:?}", device.get_clock_time().await?);
         // println!("{:?}", device.get_idle_counter().await?);
@@ -441,6 +442,7 @@ async fn toolhead_test() -> Result<()> {
         //     println!("{:?}", device.analog_fetch_window("probe").await?);
         // }
     }
+    */
 
     /*
 

@@ -11,10 +11,10 @@ use peripherals_service::config::BoardConfigRegistry;
 use executor::bundle::TaskResultBundle;
 use cnc_controller_proto::cnc::*;
 use peripherals_proto::peripherals::{PeripheralRequest, PeripheralResponse};
+use peripherals_service::utilization_tracker::*;
 
 use crate::tmc2209::TMC2209Device;
 use crate::time::*;
-use crate::utilization_tracker::*;
 
 
 /// TODO: Think of a better name for this.

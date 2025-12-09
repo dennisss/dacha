@@ -9,44 +9,8 @@ use peripherals_proto::peripherals::{
 use crate::adc::*;
 use crate::controller::peripherals_controller::{PeripheralsController, PeripheralsControllerState};
 use crate::controller::PeripheralEntry;
-use crate::controller::allocator::*;
+use crate::controller::buffer::Buffer;
 
-pub struct ADCBuffer {
-    buffer: BoxedSlice<i16>,
-    used: usize,
-    consumed: usize,
-}
-
-impl ADCBuffer {
-    pub fn new(size: usize) -> Self {
-        Self {
-            buffer: BoxedSlice::new_zeroed(size),
-            used: 0,
-            consumed: 0,
-        }
-    }
-
-    pub fn read(&mut self, res: &mut PeripheralResponse) {
-        let data: &[u8] = unsafe {
-            let len = core::mem::size_of::<i16>() * self.used;
-            core::slice::from_raw_parts(
-                core::mem::transmute::<*const i16, *const u8>(self.buffer.as_ptr()),
-                len
-            )
-        };
-
-        let offset = self.consumed;
-        if offset >= data.len() {
-            return;
-        }
-
-        let offset_end = core::cmp::min(offset + 32, data.len());
-        self.consumed = offset_end;
-
-        res.data_val_mut().extend_from_slice(&data[offset..offset_end]);
-    }
-
-}
 
 #[derive(Default)]
 pub struct ADCRequestQueue {
@@ -113,7 +77,7 @@ enum InternalADCRequestType {
 
     WindowSample {
         config: WindowADCChannelConfig,
-        buffer: ADCBuffer,
+        buffer: Buffer,
         buffer_index: usize,
     }
 }
@@ -159,7 +123,7 @@ impl InternalADCRequest {
                 let buffer_index = *buffer_index as usize;
 
                 match &mut state.entries[buffer_index] {
-                    PeripheralEntry::ADCBuffer { .. } => {}
+                    PeripheralEntry::Buffer(_) => {}
                     _ => {
                         return Err(PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND);
                     }
@@ -169,7 +133,7 @@ impl InternalADCRequest {
                     let mut e = PeripheralEntry::Borrowed;
                     core::mem::swap(&mut e, &mut state.entries[buffer_index]);
                     match e {
-                        PeripheralEntry::ADCBuffer(buffer) => buffer,
+                        PeripheralEntry::Buffer(buffer) => buffer,
                         _ => panic!(),
                     }
                 };
@@ -205,8 +169,10 @@ impl InternalADCRequest {
                 res.set_uint_val(value);
             }
             InternalADCRequestType::WindowSample { config, buffer, .. } => {
+                let mut buffer_view = buffer.view_mut::<i16>();
+
                 // TODO: Check for failure.
-                let status = match self.adc.window_sample(&config, &mut buffer.buffer).await {
+                let status = match self.adc.window_sample(&config, buffer_view.raw()).await {
                     Some(v) => v,
                     None => {
                         // TODO: Pick a better error.
@@ -215,8 +181,7 @@ impl InternalADCRequest {
                     }
                 };
 
-                buffer.used = status.num_samples;
-                buffer.consumed = 0;
+                buffer_view.set_used(status.num_samples);
 
                 if status.limit_high_exceeded || status.limit_low_exceeded {
                     // TODO: Mark the current time (if zero, return 1)
@@ -233,7 +198,7 @@ impl InternalADCRequest {
         state.adc = Some(self.adc);
 
         if let InternalADCRequestType::WindowSample { config, buffer, buffer_index } = self.typ {
-            state.entries[buffer_index] = PeripheralEntry::ADCBuffer(buffer);
+            state.entries[buffer_index] = PeripheralEntry::Buffer(buffer);
         }
     }
 }

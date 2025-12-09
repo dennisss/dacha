@@ -37,6 +37,7 @@ pub fn to_motor_space(x: &VectorXf, config: &MotionControllerConfig) -> Vec<f32>
         }
     }
 
+    // Convert from mm to steps.
     for i in 0..x_motor.len() {
         x_motor[i] = x_motor[i] * config.motors()[i].steps_per_mm();
     }
@@ -45,3 +46,35 @@ pub fn to_motor_space(x: &VectorXf, config: &MotionControllerConfig) -> Vec<f32>
 }
 
 
+pub fn from_motor_space(x: &[i32], config: &MotionControllerConfig) -> VectorXf {
+
+    // Convert from steps to mm.
+    let mut x_motor = vec![0.0; config.motors_len()];
+    for i in 0..x_motor.len() {
+        x_motor[i] = (x[i] as f32) / config.motors()[i].steps_per_mm();
+    }
+
+    let mut x_pos = VectorXf::zero_with_shape(config.axes().len(), 1);
+
+    for geometry in config.geometry() {
+
+        match geometry.geometry_case() {
+            AxisGeometryGeometryCase::Direct(v) => {
+                x_pos[v.axis_index() as usize] = x_motor[v.motor_index() as usize];
+            }
+            AxisGeometryGeometryCase::CoreXy(v) => {
+                let da = x_motor[v.a_motor_index() as usize];
+                let db = x_motor[v.b_motor_index() as usize];
+                
+                x_pos[v.x_axis_index() as usize] = 0.5 * (da + db);
+                x_pos[v.y_axis_index() as usize] = 0.5 * (da - db);
+            }
+            AxisGeometryGeometryCase::NOT_SET => {
+                // return 
+            }
+            //
+        }
+    }
+
+    x_pos
+}

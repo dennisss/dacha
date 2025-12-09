@@ -40,7 +40,7 @@ peripherals {
         config {
             is_input: true
             pull_down: true
-            interrupt: RISING_EDGE
+            interrupt: HIGH_LEVEL
         }
     }
 }
@@ -59,3 +59,16 @@ peripherals {
 #       }
 #   }
 #}
+
+
+peripherals {
+    name: "button"
+    gpio {
+        pin_name: "SWITCH"
+        config {
+            is_input: true
+            pull_up: true
+            interrupt: LOW_LEVEL
+        }
+    }
+}

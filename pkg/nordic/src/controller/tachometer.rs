@@ -16,7 +16,7 @@ use peripherals_proto::peripherals::{
 use peripherals::raw::gpiote::GPIOTE;
 
 use crate::controller::peripherals_controller::PeripheralsController;
-use crate::controller::PeripheralEntry;
+use crate::controller::{PeripheralEntry, GPIOEntry};
 use crate::gpio::GPIOPin;
 use crate::gpiote::GPIOInterruptPolarity;
 use crate::rtc::RTC;
@@ -34,18 +34,18 @@ define_thread!(
     controller: &'static PeripheralsController,
     peripheral_index: usize,
     request_sequence: u32,
-    pin: GPIOPin
+    entry: GPIOEntry
 );
 
 async fn tachometer_worker_thread(
     controller: &'static PeripheralsController,
     peripheral_index: usize,
     request_sequence: u32,
-    pin: GPIOPin,
+    entry: GPIOEntry,
 ) {
     // TODO: Handle failure of this on unwrap.
     let mut int = lock!(state <= controller.state.lock().await.unwrap(), {
-        state.gpiote.new_interrupt_channel(pin, GPIOInterruptPolarity::FallingEdge)
+        state.gpiote.new_interrupt_channel(&entry.pin, GPIOInterruptPolarity::FallingEdge)
     }).unwrap();
 
     let mut clock1 = controller.clock.clone();
@@ -79,10 +79,7 @@ async fn tachometer_worker_thread(
     let result = race!(collector, timeout).await;
 
     lock!(state <= controller.state.lock().await.unwrap(), {
-        state.entries[peripheral_index] = PeripheralEntry::GPIO {
-            pin: int.take_pin(),
-            interrupt: None
-        };
+        state.entries[peripheral_index] = PeripheralEntry::GPIO(entry);
 
         let mut res = PeripheralResponse::default();
         res.set_request_sequence(request_sequence);

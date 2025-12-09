@@ -293,74 +293,107 @@ impl USBDeviceController {
                     // TODO: Are we able to get a setup packet while a previous setup packet is
                     // being processed?
 
-                    if let Event::EP0Setup = event {
-                        // TODO: Improve the error handling by enqueuing pending events in the outer
-                        // loop.
-                        loop {
-                            let pkt = self.get_setup_packet();
-                            match self.handle_setup_packet(pkt, &mut handler).await {
-                                Ok(()) => {}
-                                Err(e) => {
-                                    if e == USBError::Reset {
-                                        log!("RESET");
-                                        self.configure_endpoints();
-                                        handler.handle_reset().await;
-                                    } else if e == USBError::NewSetupPacket {
-                                        log!("RE-SETUP");
-                                        continue;
+                    match event {
+                        Event::EP0Setup => {
+                            // TODO: Improve the error handling by enqueuing pending events in the outer
+                            // loop.
+                            loop {
+                                let pkt = self.get_setup_packet();
+                                match self.handle_setup_packet(pkt, &mut handler).await {
+                                    Ok(()) => {}
+                                    Err(e) => {
+                                        if e == USBError::Reset {
+                                            log!("RESET");
+                                            self.configure_endpoints();
+                                            handler.handle_reset().await;
+                                        } else if e == USBError::NewSetupPacket {
+                                            log!("RE-SETUP");
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                break;
+                            }
+                        }
+                        Event::USBReset => {
+                            log!("RESET");
+                            self.configure_endpoints();
+                            handler.handle_reset().await;
+                        }
+                        Event::EPData => {
+                            let status = self.periph.epdatastatus.read();
+
+                            // Clear by writing all 1's
+                            // NOTE: We can only clear the bits that are currently set to avoid
+                            // race conditions of unsetting things that are about to be set.
+                            self.periph.epdatastatus.write(status);
+
+                            let mut endpoint_index = None;
+
+                            // TODO: What if while we are processing this, we get another EPData event
+                            // (need to )
+
+                            // TODO: It is possible that multiple could have data available, so we need
+                            // to handle all of them (including input completions)
+                            // if status.epout1().is_started() {
+                            //     endpoint_index = Some(1);
+                            // } 
+                            
+                            if status.epout2().is_started() {
+                                endpoint_index = Some(2);
+                            }
+                            
+                            // else if status.epout3().is_started() {
+                            //     endpoint_index = Some(3);
+                            // } else if status.epout4().is_started() {
+                            //     endpoint_index = Some(4);
+                            // } else if status.epout5().is_started() {
+                            //     endpoint_index = Some(5);
+                            // } else if status.epout6().is_started() {
+                            //     endpoint_index = Some(6);
+                            // } else if status.epout7().is_started() {
+                            //     endpoint_index = Some(7);
+                            // } 
+                            
+                            if status.epin1().is_datadone() {
+                                self.epin1_active = false;
+                            }
+                            // if status.epin2().is_datadone() {
+                            //     // TODO:
+                            // }
+                            // TODO: Add other ones.
+
+                            if let Some(endpoint_index) = endpoint_index {
+                                let mut request = USBDeviceNormalRequest {
+                                    controller: self,
+                                    endpoint_index,
+                                };
+
+                                match handler.handle_normal_request(endpoint_index, request).await {
+                                    Ok(()) => {}
+                                    Err(e) => {
+                                        if e == USBError::Reset {
+                                            log!("RESET");
+                                            self.configure_endpoints();
+                                            handler.handle_reset().await;
+                                        } else if e == USBError::NewSetupPacket {
+                                            // TODO: Must re-enqueue this event in a bit map so that we
+                                            // know to process it again.
+                                            log!("TODO RE-SETUP");
+                                            continue;
+                                        }
                                     }
                                 }
                             }
-
-                            break;
                         }
-                    } else if let Event::USBReset = event {
-                        log!("RESET");
-                        self.configure_endpoints();
-                        handler.handle_reset().await;
-                    } else if let Event::EPData = event {
-                        let status = self.periph.epdatastatus.read();
-
-                        // Clear by writing all 1's
-                        self.periph
-                            .epdatastatus
-                            .write(EPDATASTATUS_VALUE::from_raw(0xffffffff));
-
-                        let mut endpoint_index = None;
-
-                        // TODO: What if while we are processing this, we get another EPData event
-                        // (need to )
-
-                        // TODO: It is possible that multiple could have data available, so we need
-                        // to handle all of them (including input completions)
-                        if status.epout1().is_started() {
-                            endpoint_index = Some(1);
-                        } else if status.epout2().is_started() {
-                            endpoint_index = Some(2);
-                        } else if status.epout3().is_started() {
-                            endpoint_index = Some(3);
-                        } else if status.epout4().is_started() {
-                            endpoint_index = Some(4);
-                        } else if status.epout5().is_started() {
-                            endpoint_index = Some(5);
-                        } else if status.epout6().is_started() {
-                            endpoint_index = Some(6);
-                        } else if status.epout7().is_started() {
-                            endpoint_index = Some(7);
-                        } else if status.epin1().is_datadone() {
-                            self.epin1_active = false;
-                        } else if status.epin2().is_datadone() {
-                            // TODO:
-                        }
-                        // TODO: Add other ones.
-
-                        if let Some(endpoint_index) = endpoint_index {
-                            let mut request = USBDeviceNormalRequest {
+                        Event::SendBufferReadable => {
+                            let mut res = USBDeviceNormalResponse {
                                 controller: self,
-                                endpoint_index,
+                                endpoint_index: 1,
                             };
 
-                            match handler.handle_normal_request(endpoint_index, request).await {
+                            match handler.handle_normal_response(1, res).await {
                                 Ok(()) => {}
                                 Err(e) => {
                                     if e == USBError::Reset {
@@ -376,29 +409,7 @@ impl USBDeviceController {
                                 }
                             }
                         }
-
-
-                    } else if let Event::SendBufferReadable = event {
-                        let mut res = USBDeviceNormalResponse {
-                            controller: self,
-                            endpoint_index: 1,
-                        };
-
-                        match handler.handle_normal_response(1, res).await {
-                            Ok(()) => {}
-                            Err(e) => {
-                                if e == USBError::Reset {
-                                    log!("RESET");
-                                    self.configure_endpoints();
-                                    handler.handle_reset().await;
-                                } else if e == USBError::NewSetupPacket {
-                                    // TODO: Must re-enqueue this event in a bit map so that we
-                                    // know to process it again.
-                                    log!("TODO RE-SETUP");
-                                    continue;
-                                }
-                            }
-                        }
+                        _ => {}
                     }
                 }
             }

@@ -11,5 +11,6 @@ mod spi;
 mod allocator;
 mod sleep;
 mod i2c;
+mod buffer;
 
 pub use peripherals_controller::*;

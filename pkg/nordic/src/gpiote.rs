@@ -67,16 +67,18 @@ impl GPIOTEChannels {
         })
     }
 
+    // TODO: Think more abotu whether or not I want this to take ownership of the pin.
     pub fn new_interrupt_channel<Pin: PeripheralPin>(
         &mut self,
-        pin: Pin,
+        pin: &Pin,
         polarity: GPIOInterruptPolarity
-    ) -> Option<GPIOInterruptChannel<Pin>> {
+    ) -> Option<GPIOInterruptChannel> {
         let channel = match self.next_free_channel() {
             Some(v) => v,
             None => return None
         };
 
+        // TODO: Ideally set this up closer to the waiter since we can't guarantee it will be consistently polled.
         self.periph.intenset.write_with(|v| match channel.index {
             0 => v.set_in0(),
             1 => v.set_in1(),
@@ -101,7 +103,6 @@ impl GPIOTEChannels {
         });
 
         Some(GPIOInterruptChannel {
-            pin,
             channel
         })
     }
@@ -178,16 +179,16 @@ pub enum GPIOInterruptPolarity {
 /// 
 ///
 /// Corresponds to a single GPIOTE channel on which 
-pub struct GPIOInterruptChannel<Pin> {
-    pin: Pin,
+pub struct GPIOInterruptChannel {
+    // pin: Pin,
     channel: GPIOTEChannel,
 }
 
-impl<Pin> GPIOInterruptChannel<Pin> {
+impl GPIOInterruptChannel {
 
-    pub fn take_pin(self) -> Pin {
-        self.pin
-    }
+    // pub fn take_pin(self) -> Pin {
+    //     self.pin
+    // }
 
     /// Checks if the interrupt event is currently pending and clears it.
     /// Returns the initial value when this was called.
@@ -213,4 +214,46 @@ impl<Pin> GPIOInterruptChannel<Pin> {
     }
 
 }
+
+
+/// TODO: The correctness of this assumes there is only one consumer of the port event and interrupts.
+pub struct GPIOPortWaiter {
+    periph: GPIOTE
+}
+
+impl Drop for GPIOPortWaiter {
+    fn drop(&mut self) {
+        self.periph.intenclr.write_with(|v| v.set_port());
+    }
+}
+
+impl GPIOPortWaiter {
+    pub unsafe fn new() -> Self {
+        let mut periph = GPIOTE::new();
+
+        periph.intenset.write_with(|v| v.set_port());
+
+        Self {
+            periph
+        }
+    }
+
+    pub fn pending_event(&mut self) -> bool {
+        if self.periph.events_port.read().is_generated() {
+            self.periph.events_port.write_notgenerated();
+            crate::events::flush_events_clear();
+            return true;
+        }
+
+        false
+    }
+
+    pub async fn wait(&mut self) {
+        while !self.pending_event() {
+            wait_for_irq(Interrupt::GPIOTE).await;
+        }
+    }
+
+}
+
 

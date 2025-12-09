@@ -30,7 +30,11 @@ message PeripheralRequest {
 
     oneof command {
         ConfigureGPIO configure_gpio = 3;
+
         SetGPIOLevel set_gpio_level = 4;
+
+        // Gets the current value of a GPIO which has been configured as an input.
+        // Returns 0 or 1 in the uint_val field.
         GetGPIOLevelRequest get_gpio_level = 5;
 
         // Unconfigures all peripherals and restores them back to the initial state
@@ -59,12 +63,10 @@ message PeripheralRequest {
         // further configuration commands are not allowed after this is called.
         FinalizeConfigRequest finalize_config = 12;
 
+        // TODO: Ideally also include stuff like the heap pointer.
         bool get_stack_pointer = 13;
 
         SleepRequest sleep = 14;
-
-        // Returns the current time in u32 microseconds
-        bool now = 15;
 
         // Cheapest possible request. Immediately returns an empty response.
         bool noop = 16;
@@ -78,7 +80,7 @@ message PeripheralRequest {
 
         ConfigureStepperMotor configure_stepper = 20;
 
-        StepperMotorMotion enqueue_stepper_motion = 21;
+        StepperMotorMotion enqueue_stepper_motion = 15;
 
         bool get_clock_time = 22;
 
@@ -93,8 +95,9 @@ message PeripheralRequest {
 
         NeopixelTransfer neopixel_transfer = 27;
 
-        // Check if the interrupt on a GPIO peripheral has fired.
-        // The response will have a non-zero uint_val if it fired.
+        // Blocks until the interrupt condition is met
+        // - For High/low polarity interrupts, this will return immediately if the pin is already
+        //   at the right level.
         bool poll_gpio_interrupt = 28;
 
         // Note that if a step was enqueued to be started, it will 
@@ -102,8 +105,11 @@ message PeripheralRequest {
         // happened.
         bool clear_stepper_queue = 29;
 
-        // Data is returned in the 'data_val' 
-        uint32 read_adc_buffer = 31;
+        // Reads the next chunk of data accumulated in the buffer.
+        // - Data is returned in the 'data_val'
+        // - The final request will a partially filled data_val field.
+        // - All attempts to read beyond the end of the buffer will return zero bytes.
+        bool read_buffer = 31;
 
         ConfigureSPIRequest configure_spi = 32;
 
@@ -113,13 +119,18 @@ message PeripheralRequest {
 
         bool get_idle_counter = 35;
 
-        AllocateADCBufferRequest allocate_adc_buffer = 36;
+        AllocateBufferRequest allocate_buffer = 36;
 
         ConfigureI2CRequest configure_i2c = 37;
 
         I2CTransfer i2c_transfer = 38;
 
         ResetStepperMotor reset_stepper_motor = 39;
+
+        // Cancel a previous request that was issued with this same (peripheral_index, request_sequence).
+        // Note that the request is not fully cancelled until the MCU sends back a
+        // response using this sequence number.
+        bool cancel = 40;
     }
 
     reserved 6;
@@ -127,9 +138,13 @@ message PeripheralRequest {
 
 // NOTE: If no data needs to be returned, this may be empty.
 message PeripheralResponse {
-    // Indicates which request this corresponds to.
-    // Always non-zero.
-    uint32 request_sequence = 1;
+    oneof source {
+        // Indicates which request this corresponds to.
+        // Always non-zero.
+        uint32 request_sequence = 1;
+
+        uint32 stream_index = 2;
+    }
 
     enum ErrorCode {
         NO_ERROR = 0;
@@ -173,30 +188,34 @@ message PeripheralResponse {
 
         // finalize_config hasn't been called yet.
         CONFIG_NOT_FINALIZED = 13;
+
+        CANCELLED = 14;
     }
 
-    ErrorCode error_code = 2;
+    ErrorCode error_code = 3;
 
-    uint32 time = 10;
+    uint32 time = 4;
+
+    // 5-10 reserved for future top level fields.
 
     oneof response {
-        // Used for basic integer responses.
-        // - For GetGPIOLevel, this is 1 if the pin is high.
-        uint32 uint_val = 3;
-
-        float float_val = 4;
-
-        bytes data_val = 5 [(dacha.max_length) = 32];
-
-        uint64 wide_val = 6;
-
-        StepperMotorStatus stepper_status = 7;
-
-        ADCFormat adc_format = 8;
-
         // This request and this number after it with consecutive sequences will all be acked
         // with empty NO_ERROR responses. 
-        uint32 ack_next_n = 9;
+        uint32 ack_next_n = 11;
+
+        // Used for basic integer responses.
+        // - For GetGPIOLevel, this is 1 if the pin is high.
+        uint32 uint_val = 12;
+
+        float float_val = 13;
+
+        bytes data_val = 14 [(dacha.max_length) = 48];
+
+        uint64 wide_val = 15;
+
+        StepperMotorStatus stepper_status = 16;
+
+        ADCFormat adc_format = 17;
     }
 }
 
@@ -243,6 +262,8 @@ message ConfigureGPIO {
         DISABLED = 0;
         RISING_EDGE = 1;
         FALLING_EDGE = 2;
+        HIGH_LEVEL = 3;
+        LOW_LEVEL = 4;
     }
     InterruptPolarity interrupt = 5;
 
@@ -458,7 +479,8 @@ message ConfigureADCRequest {
     uint32 window_size = 12;
 }
 
-message AllocateADCBufferRequest {
+message AllocateBufferRequest {
+    // Size of the buffer in bytes.
     uint32 size = 1;
 }
 

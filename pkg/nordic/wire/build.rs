@@ -84,7 +84,7 @@ fn generate_protocol_usb_descriptors(
                 bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
                 bDescriptorType: DescriptorType::ENDPOINT as u8,
                 bEndpointAddress: 0x81, // EP IN 1
-                bmAttributes: 0b11,     // Interrupt
+                bmAttributes: 0b10, // Bulk // 0b11,     // Interrupt
                 wMaxPacketSize: 64,
                 bInterval: 1,
             },
@@ -95,7 +95,7 @@ fn generate_protocol_usb_descriptors(
                 bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
                 bDescriptorType: DescriptorType::ENDPOINT as u8,
                 bEndpointAddress: 0x02, // EP OUT 2
-                bmAttributes: 0b11,     // Interrupt
+                bmAttributes: 0b10, // Bulk // 0b11,     // Interrupt
                 wMaxPacketSize: 64,
                 bInterval: 1,
             },

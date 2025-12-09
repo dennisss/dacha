@@ -94,6 +94,7 @@ pub struct BoxedSlice<T> {
 
 pub trait Primitive {}
 
+impl Primitive for u8 {}
 impl Primitive for i16 {}
 
 

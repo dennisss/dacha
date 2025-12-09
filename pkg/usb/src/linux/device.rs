@@ -565,6 +565,10 @@ impl Device {
             .await
     }
 
+    pub fn enqueue_read_bulk(&self, endpoint: u8, buffer_len: usize) -> Result<PendingRead> {
+        self.enqueue_read_impl(USBDEVFS_URB_TYPE_BULK, endpoint, buffer_len)
+    }
+
     pub async fn read_bulk(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
         self.read_impl(USBDEVFS_URB_TYPE_BULK, endpoint, buffer)
             .await

@@ -48,7 +48,7 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
                 callback(&name, config.config_mut().negative_pin_mut())?;
             }
         }
-        BoardConfig_PeripheralConfigCase::AdcBuffer(_) => {}
+        BoardConfig_PeripheralConfigCase::Buffer(_) => {}
         BoardConfig_PeripheralConfigCase::Spi(config) => {
             let name = config.mosi_pin_name().to_string();
             callback(&name, config.config_mut().mosi_pin_mut())?;
@@ -279,8 +279,8 @@ pub fn build_configuration_requests(config: &BoardConfig) -> Result<(Vec<Periphe
                 req.set_configure_adc(config.config().clone());
                 s.adc_mut();
             }
-            BoardConfig_PeripheralConfigCase::AdcBuffer(config) => {
-                req.set_allocate_adc_buffer(config.config().clone());
+            BoardConfig_PeripheralConfigCase::Buffer(config) => {
+                req.set_allocate_buffer(config.config().clone());
             }
             BoardConfig_PeripheralConfigCase::I2c(config) => {
                 req.set_configure_i2c(config.config().clone());

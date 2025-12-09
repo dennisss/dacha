@@ -23,6 +23,8 @@ message Command {
     HomeCommand home = 2;
     SetTemperatureCommand set_temp = 3;
     SetPosition set_position = 4;
+    ConfigureCommand configure = 5;
+    bool reset_alarm = 6;
 }
 
 message MoveToCommand {
@@ -32,6 +34,8 @@ message MoveToCommand {
     float e = 4;
 
     float feed_rate = 5;
+
+    float max_acceleration = 6;
 }
 
 message HomeCommand {}
@@ -45,4 +49,8 @@ message SetPosition {
     float y = 2;
     float z = 3;
     float e = 4;
+}
+
+message ConfigureCommand {
+    float max_junction_deviation = 1;
 }

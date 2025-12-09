@@ -26,7 +26,7 @@ pub struct StepperMotionGenerator {
     config: Arc<MotionControllerConfig>,
 
     /// In the remote MCU clock space, this is '0' zero of all the stuff in this struct.
-/// (this is one entry per motor in case motors are on different MCUs)
+    /// (this is one entry per motor in case motors are on different MCUs)
     remote_start_time: Vec<DeviceTime>,
 
     /// Sequence of contiguous motions which we need to encode as steps.
@@ -42,7 +42,7 @@ pub struct StepperMotionGenerator {
     first_motion_start_time: f64,
 
     /// Current position of the motor.
-    motor_position: Vec<i64>,
+    motor_position: Vec<i32>,
 
     // This is the time at which each motor first reached the motor_position.
     motor_position_reach_time: Vec<f64>,
@@ -62,13 +62,13 @@ impl StepperMotionGenerator {
 
     pub fn new(
         config: Arc<MotionControllerConfig>,
-        motor_position: &[i64],
+        motor_position: &[i32],
         remote_start_time: &[DeviceTime]
     ) -> Self {
         let num_motors = config.motors().len();
 
         assert_eq!(motor_position.len(), num_motors);
-assert_eq!(remote_start_time.len(), num_motors);
+        assert_eq!(remote_start_time.len(), num_motors);
 
         Self {
             config,
@@ -81,7 +81,7 @@ assert_eq!(remote_start_time.len(), num_motors);
         }
     }
 
-    pub fn motor_positions(&self) -> &[i64] {
+    pub fn motor_positions(&self) -> &[i32] {
         &self.motor_position
     }
 
@@ -162,6 +162,8 @@ assert_eq!(remote_start_time.len(), num_motors);
                 // This will be added back to all the tick time values before returning to the caller.   
                 let motion_offset = self.first_motion_start_time;
 
+                // TODO: Verify the initial motor position is fairly close to the position demanded in the motion.
+
                 let mut step_times = vec![
                     self.seconds_to_ticks(self.motor_position_end_time[motor_i] - motion_offset)
                 ];
@@ -177,6 +179,7 @@ assert_eq!(remote_start_time.len(), num_motors);
                     // so we need to skew the timing a bit.
                     let time = {
                         // TODO: Check all the signs of this stuff.
+                        // TODO: The extrusion axis is still a bit lossy. The input linear motions don't perfectly start/end where they need to.
                         if delta.abs() < 0.01 {
                             0.0
                         } else if (delta - motion_delta).abs() < 0.01 {
@@ -219,6 +222,7 @@ assert_eq!(remote_start_time.len(), num_motors);
                     // NOTE: This trick only works if first_motion_start_time is still behind the motor time by a
                     // little bit.
                     if step_times.len() == 1 {
+                        // TODO: Error out if we have an overflowing subtract here.
                         let first_step_dur = step_end_ticks - step_times[0];
                         if first_step_dur < TARGET_MIN_STEP_DUR {
                             let max_shift = step_times[0].min(
@@ -245,7 +249,7 @@ assert_eq!(remote_start_time.len(), num_motors);
 
 
                 // TODO: Perform this across all motions we are doing for the best compression.
-                self.step_times_to_commands(motor_i, sign > 0, &step_times, &mut out[motor_i]);
+                self.step_times_to_commands(motor_i, sign > 0, &step_times, &mut out[motor_i])?;
             }
 
             motion_start_time = motion_end_time;
@@ -281,17 +285,21 @@ assert_eq!(remote_start_time.len(), num_motors);
     }
 
     fn step_times_to_commands(
-        &self, motor_i: usize, mut dir: bool, step_times: &[u32], out: &mut Vec<StepperMotorMotion>
+        &self,
+        motor_i: usize,
+        mut dir: bool,
+        step_times: &[u32],
+        out: &mut Vec<StepperMotorMotion>
     ) -> Result<()> {
         if step_times.len() == 1 {
             return Ok(());
         }
 
         // TODO: Also need to check against the last step before all of these.
-        for i in 1..step_times.len() {
+        for i in 1..step_times.len() {            
             if step_times[i] <= step_times[i - 1] {
                 return Err(err_msg("Non-monotonic step times"));
-}
+            }
 
             let step_duration = step_times[i] - step_times[i - 1];
 
@@ -313,35 +321,49 @@ assert_eq!(remote_start_time.len(), num_motors);
         // TODO: Validate that after compression, we still have the same number of steps.
         QuadraticStepperMotion::interpolate_step_times(&step_times, &mut raw_motions);
 
-        let mut last_time = raw_motions[0].next_step_time;
+        let time_offset = self.remote_start_time[motor_i].lower()
+            .wrapping_add(self.seconds_to_ticks(self.first_motion_start_time));
+        for raw_motion in &mut raw_motions {
+            raw_motion.next_step_time = raw_motion.next_step_time.wrapping_add(time_offset);
+        }
 
-        let mut is_first = true;
+        let mut skip_first = false;
+
+        let mut last_time = {
+            // if let Some(t) = self.motor_position_last_step_time[motor_i] {
+            //     t
+            // } else {
+                skip_first = true;
+                raw_motions[0].next_step_time
+            // }
+        };
 
         for raw_motion in &raw_motions {
             let mut m = raw_motion.clone();
     
+            if skip_first {
+                m.next();
+                skip_first = false;
+            }
+
             while m.num_steps.count() > 0 {
                 let next_time = m.next_step_time;
 
-                let delta_time = {
-                    let mut t = next_time.wrapping_sub(last_time);
-                    if next_time < last_time {
-                        t = t.wrapping_add(u32::max_value());
-                    }
+                let delta_time = cnc::time_remaining_u32(next_time, last_time);
 
-                    t
-                };
-
+                // TODO: It is hard to have this compare to prior steps since we don't know if the motor was intentionally
+                // idle for a while
                 if delta_time > 16_000_000 {
-                    return Err(err_msg("Really far out step!"));
+                    println!("Raw Motion: {:?}", raw_motion);
+
+                    return Err(format_err!("Really far out step: {} vs {}", next_time, last_time));
                 }
-                if delta_time < 40 && !is_first {
+
+                if delta_time < 40 {
                     return Err(format_err!("Really small step: {}", delta_time));
                 }
 
                 last_time = next_time;
-
-                is_first = false;
 
                 m.next();
 
@@ -353,8 +375,6 @@ assert_eq!(remote_start_time.len(), num_motors);
             dir = !dir;
         }
 
-        let time_offset = self.remote_start_time[motor_i].lower()
-            .wrapping_add(self.seconds_to_ticks(self.first_motion_start_time));
 
         for raw_motion in raw_motions {
             let mut step = StepperMotorMotion::default();
@@ -367,12 +387,12 @@ assert_eq!(remote_start_time.len(), num_motors);
             };
 
             step.set_direction(dir_proto);
-            step.set_next_step_time(
-                time_offset
-                .wrapping_add(raw_motion.next_step_time));
+
+            // TODO: Compress this to be a delta relative to the last time.
+            step.set_next_step_time(raw_motion.next_step_time);
             step.set_next_step_duration(if raw_motion.num_steps.count() == 1 { 0 } else { raw_motion.next_step_duration });
             step.set_step_duration_increment(raw_motion.step_duration_increment);
-            step.set_num_steps(raw_motion.num_steps.count());
+            step.set_num_steps_minus_one(raw_motion.num_steps.count() - 1);
             out.push(step);
         }
 
@@ -387,6 +407,97 @@ mod tests {
 
     use math::vecxf;
 
+    /*
+    let start_velocity = vecxf!(0.0, 0.0, 0.0);
+
+    let c = LinearMotionConstraints {
+        start_position: vecxf!(0.0, 0.0, 0.0),
+        end_position: vecxf!(50.0, 0.0, 0.0),
+        max_end_speed: 0.0,
+        max_speed: 100.0,
+        max_acceleration: 100.0,
+    };
+
+    let mut t = 0.0;
+    let mut last_pos = 0.0;
+
+    let num_steps = 40;
+
+    let mut csv = "time,x,dx\n".to_string();
+
+
+
+    for i in 0..10 {
+        let velocity = ((i + 1) as f32) * 10.0;
+
+
+        let next_pos = last_pos + displacement_traveled(velocity, 0.0, 1.0);
+
+        let motion = LinearMotion {
+            start_position: vecxf!(last_pos, 0., 0.),
+            start_velocity: vecxf!(velocity, 0., 0.),
+            end_position: vecxf!(next_pos, 0., 0.),
+            end_velocity: vecxf!(velocity, 0., 0.),
+            acceleration: vecxf!(0., 0., 0.),
+            duration: 1.0,
+        };
+
+        last_pos = next_pos;
+
+        for i in 0..(num_steps + 1) {
+
+            let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+            let v = motion.clone().split_at(ti).1;
+
+            csv.push_str(&format!("{:},{},{}\n", t + ti, v.start_position[0], v.start_velocity[0]));
+        }
+
+        println!("Time: {}", motion.duration);
+        t += motion.duration;
+    }
+
+    */
+
+    use cnc::displacement::time_to_travel;
+
+    #[test]
+    fn dump_curve() {
+        let motion = LinearMotion {
+            start_velocity: vecxf!(0.0, 0.0, 0.0),
+            end_position: vecxf!(400.0, 0.0, 0.0), // 
+            acceleration: vecxf!(80.0 * 1000.0, 0.0, 0.0), //
+            duration: 0.1,
+
+            // Not important.
+            start_position: vecxf!(0.0, 0.0, 0.0),
+            end_velocity: vecxf!(0.0, 0.0, 0.0),
+        };
+
+        let num_steps = 400;
+
+        let mut csv = "time,x,dx\n".to_string();
+
+        for i in 0..(num_steps + 1) {
+
+            let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+            let v = motion.clone().split_at(ti).1;
+
+            csv.push_str(&format!("{:},{},{}\n", ti, v.start_position[0], v.start_velocity[0]));
+        }
+
+        println!("{}", csv);
+
+        println!("=====");
+
+        let mut csv = "time,x\n".to_string();
+
+        for i in 0..401 {
+            let time = time_to_travel(i as f32, 0.0, 80.0 * 1000.0);
+            println!("{},{}", time, i);
+        }
+
+    }
+
     #[test]
     fn works() {
         let mut config = MotionControllerConfig::default();
@@ -399,14 +510,22 @@ mod tests {
             ]
         "#, &mut config).unwrap();
 
+        let config = Arc::new(config);
+
         let run_motion = |motion: LinearMotion| {
 
             println!("====");
 
             let mut motor_positions = vec![0];
-            let mut last_motion_residuals = vec![0];
-            let mut time = DeviceTime::new_test_only(0);
+            let mut time = vec![DeviceTime::new_test_only(0)];
 
+            let mut generator = StepperMotionGenerator::new(config.clone(), &motor_positions, &time);
+            generator.enqueue(motion.clone());
+
+            let step_motions = generator.to_commands((motion.duration + 1.0) as f64).unwrap();
+
+            // TODO: Update this.
+            /*
             let step_motions = motion_to_step_commands(
                 &motion,
                 &mut motor_positions,
@@ -415,8 +534,11 @@ mod tests {
                 &config
             ).unwrap();
 
+
+            */
+
             println!("{:?}", step_motions);
-            println!("{:?}", motor_positions);
+            // println!("{:?}", motor_positions);
         };
 
         run_motion(LinearMotion {

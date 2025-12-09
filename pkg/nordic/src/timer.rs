@@ -17,6 +17,16 @@ pub struct TIMERx {
     total_channels: usize,
 }
 
+impl TIMERx {
+    unsafe fn clone(&self) -> Self {
+        Self {
+            base_address: self.base_address,
+            interrupt: self.interrupt,
+            total_channels: self.total_channels
+        }
+    }
+}
+
 impl Deref for TIMERx {
     type Target = TIMER0_REGISTERS;
 
@@ -80,7 +90,7 @@ impl Timer {
         let index = self.used_channels;
         self.used_channels += 1;
 
-        Some(TimerChannel { periph: unsafe { TIMER0::new() }, index })
+        Some(TimerChannel { periph: unsafe { self.periph.clone() }, index })
     }
 
     pub fn capture(&mut self) -> Option<u32> {
@@ -95,7 +105,7 @@ impl Timer {
 }
 
 pub struct TimerChannel {
-    periph: TIMER0,
+    periph: TIMERx,
     index: usize,
 }
 

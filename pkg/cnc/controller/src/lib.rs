@@ -19,6 +19,7 @@ pub mod devices;
 pub mod service;
 pub mod machine_controller;
 pub mod stepper_motion_generator;
-pub mod utilization_tracker;
 pub mod pid;
 pub mod heater_controller;
+pub mod gcode;
+pub mod endstop_controller;

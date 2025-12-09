@@ -166,8 +166,8 @@ message BoardConfig {
         ADCCalibration calibration = 7;
     }
     
-    message ADCBufferPeripheral {
-        AllocateADCBufferRequest config = 1;
+    message BufferPeripheral {
+        AllocateBufferRequest config = 1;
     }
 
     message SPIPeripheral {
@@ -199,7 +199,7 @@ message BoardConfig {
             NeopixelPeripheral neopixel = 7;
             ADCPeripheral adc = 8;
             SPIPeripheral spi = 9;
-            ADCBufferPeripheral adc_buffer = 10;
+            BufferPeripheral buffer = 10;
             I2CPeripheral i2c = 11;
         }
     }

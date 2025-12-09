@@ -15,9 +15,9 @@ peripherals {
 
 peripherals {
     name: "buf1"
-    adc_buffer {
+    buffer {
         config {
-            size: 1000
+            size: 2000  # 1000 u16's
         }
     }
 }

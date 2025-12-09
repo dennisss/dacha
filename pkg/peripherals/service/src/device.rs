@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::time::Instant;
+use std::future::Future;
 
 use common::errors::*;
 use nordic_tools::usb_radio::{USBRadio, ClockTimeResponse};
@@ -18,6 +20,11 @@ pub struct PeripheralsDevice {
     config: BoardConfig,
     usb_device: USBRadio,
     config_responses: HashMap<u32, PeripheralResponse> 
+}
+
+pub struct AnalogReadWindowResult {
+    pub sampling_completion_time: u32,
+    pub triggered: bool, 
 }
 
 impl PeripheralsDevice {
@@ -181,6 +188,16 @@ impl PeripheralsDevice {
         Ok(req)
     }
 
+    pub async fn poll_gpio_interrupt(&self, periph_name: &str) -> Result<()> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.set_poll_gpio_interrupt(true);
+        let res = self.usb_device.send_request(&req).await?;
+        Ok(())
+    }
+
     pub async fn pwm_write(
         &self,
         periph_name: &str,
@@ -246,9 +263,23 @@ impl PeripheralsDevice {
 
     /// Returns the time at which the user defined trigger was hit (if it was hit).
     /// Returns whether or not the window contains any values that hit the user defined trigger. 
-    pub async fn analog_read_window(&self, periph_name: &str) -> Result<Option<u32>> {
+    pub async fn analog_read_window(
+&self,
+        periph_name: &str,
+        buffer_name: &str,
+    ) -> Result<AnalogReadWindowResult> {
+        self.enqueue_analog_read_window(periph_name, buffer_name).await?.await
+    }
+
+    pub async fn enqueue_analog_read_window<'a>(
+        &'a self,
+        periph_name: &str,
+        buffer_name: &str,
+) -> Result<impl Future<Output = Result<AnalogReadWindowResult>> + 'a> {
         let periph = self.periph_config(periph_name)?;
         let periph_index = periph.index();
+
+        let buffer_index = self.periph_config(buffer_name)?.index();
 
         let config_res = self.config_responses.get(&periph_index)
             .ok_or_else(|| err_msg("No config for ADC"))?;
@@ -258,16 +289,30 @@ impl PeripheralsDevice {
         
         let mut req = PeripheralRequest::default();
         req.set_peripheral_index(periph_index);
-        req.sample_adc_mut().set_window(true);
-        let res = self.usb_device.send_request(&req).await?;
-        Ok(if res.uint_val() != 0 { Some(res.uint_val()) } else { None })
+        req.sample_adc_mut().set_buffer(buffer_index);
+        let res = self.usb_device.enqueue_request(&req).await?;
+        
+        Ok(async move {
+            let res = res.await?;
+
+            Ok(AnalogReadWindowResult {
+                sampling_completion_time: res.time(),
+                triggered: res.uint_val() != 0
+            })
+        })
     }
 
     /// TODO: We should have the window internally marked with which peripheral it can from to
     /// avoid reading another peripheral's data.
-    pub async fn analog_fetch_window(&self, periph_name: &str) -> Result<Vec<f32>> {
+    pub async fn analog_fetch_window(
+&self,
+periph_name: &str,
+        buffer_name: &str,
+) -> Result<Vec<f32>> {
         let periph = self.periph_config(periph_name)?;
         let periph_index = periph.index();
+
+        let buffer_index = self.periph_config(buffer_name)?.index();
 
         let config_res = self.config_responses.get(&periph_index)
             .ok_or_else(|| err_msg("No config for ADC"))?;
@@ -275,12 +320,21 @@ impl PeripheralsDevice {
             return Err(err_msg("Config missing adc_format"));
         }
 
+        // TODO: I should know the size of the buffer from the config so I should be able to tell how many requests I need.
+
+        let mut request_queue = vec![];
+
         let mut buf = vec![];
         loop {
+while request_queue.len() < 4 {
             let mut req = PeripheralRequest::default();
-            req.set_read_adc_buffer(buf.len() as u32);
+req.set_peripheral_index(buffer_index);
+            req.set_read_buffer(true);
+request_queue.push(self.usb_device.enqueue_request(&req).await?);
+            }
 
-            let res = self.usb_device.send_request(&req).await?;
+            let res = request_queue.remove(0).await?;
+
             if res.data_val().len() == 0 {
                 break;
             }
@@ -386,13 +440,29 @@ impl PeripheralsDevice {
     }
 
     pub async fn clear_stepper_queue(&self, periph_name: &str) -> Result<u32> {
+let req = self.clear_stepper_queue_request(periph_name)?;
+        let res = self.usb_device.send_request(&req).await?;
+        Ok(res.uint_val())
+    }
+
+    pub fn clear_stepper_queue_request(&self, periph_name: &str) -> Result<PeripheralRequest> {
         let periph_index = self.periph_config(periph_name)?.index();
 
         let mut req = PeripheralRequest::default();
         req.set_peripheral_index(periph_index);
         req.set_clear_stepper_queue(true);
+
+        Ok(req)
+    }
+
+    pub async fn reset_stepper_motor_queue(&self, periph_name: &str) -> Result<()> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.reset_stepper_motor_mut();
         let res = self.usb_device.send_request(&req).await?;
-        Ok(res.uint_val())
+        Ok(())
     }
 
 }

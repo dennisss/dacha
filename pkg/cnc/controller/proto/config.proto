@@ -25,13 +25,28 @@ message ControllerConfig {
 
     repeated HeaterControllerConfig heater_controllers = 5;
 
+    EndstopControllerConfig endstop_controller = 6;
+
     // For now this should always have 4 numbers.
     repeated float bed_fem_weights = 4;
+
+    // Names of all endstops that should be normally monitored
+    // (when motors are energized but not homing).
+    repeated string default_endstops = 7;
 }
 
 message HeaterControllerConfig {
 
+    PeripheralReference thermistor = 1;
 
+    PeripheralReference heater = 2;
+
+
+}
+
+message PeripheralReference {
+    string device_name = 1;
+    string peripheral_name = 2;
 }
 
 message BedClientConfig {
@@ -56,8 +71,6 @@ message MotionControllerConfig {
 
     repeated AxisGeometry geometry = 2;
 
-    repeated Endstop endstops = 7;
-
     repeated Axis axes = 3;
 
     LinearMotionPlannerConfig planner = 6;
@@ -81,18 +94,25 @@ message Axis {
     uint32 coordination_priority = 4;
 }
 
-message Endstop {
-    string device_name = 1;
+message EndstopControllerConfig {
+    repeated Endstop endstops = 1;
+}
 
-    string peripheral_name = 2;
+message Endstop {
+    string name = 1;
+
+    PeripheralReference peripheral = 2;
 
     // When this endstop is triggered, this list of motors will be immediately stopped.
     repeated string motors = 3;
 
-    repeated uint32 motor_indexes = 4; // internal only
+    // If true, then when this endstop is hit, it means that the associated motors will
+    // lose their step position when this endstop is hit.
+    bool hard = 4;
 
-    // If true, this endstop is only checked during homing.
-    bool homing_only = 5;
+    // If present, then this is a list of buffers
+    // to use for scanning an analog endstop.
+    repeated string analog_buffers = 5;
 }
 
 message AxisGeometry {

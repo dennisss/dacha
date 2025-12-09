@@ -69,7 +69,7 @@ async fn stepper_worker_thread(
         lock!(state <= controller.state.lock().await.unwrap(), {
             for entry in &mut state.entries {
                 let stepper = match entry {
-                    PeripheralEntry::Stepper { controller } => controller,
+                    PeripheralEntry::Stepper(controller) => controller,
                     _ => continue
                 };
 
@@ -258,14 +258,32 @@ impl StepperMotorController {
 
         // Attempt to setup the next step.
 
-        let current_time = self.step_timer_channel.capture();
+        let (next_time, next_direction) = {
+            let mut motion = match self.motion_queue.first_mut() {
+                Some(v) => v,
+                None => return false
+            };
 
-        let mut motion = match self.motion_queue.first_mut() {
-            Some(v) => v,
-            None => return false
+            let next_time = motion.next_step_time;
+            let next_direction = motion.num_steps.direction();
+
+            motion.next();
+
+            if motion.num_steps.count() == 0 {
+                self.motion_queue.pop_front();
+            }
+
+            (next_time, next_direction)
         };
 
-        let mut next_time = motion.next_step_time;
+        // TODO: Optimize this.
+        self.enqueued_step_dir = if next_direction { 1 } else { -1 };
+
+        self.dir_pin.write_bool(next_direction);
+
+        // TIMING: The code is structured so that this line is low as possible in this function
+        // so that we can bound the amount of time it takes after this to fully setup the step.
+        let current_time = self.step_timer_channel.capture();
 
         // Amount of time remaining between now and the next step.
         let delta_time = time_remaining_u32(next_time, current_time);
@@ -283,17 +301,7 @@ impl StepperMotorController {
         // take at least a cycle and then we clear it again here.
         let _ = self.step_timer_channel.pending_event();
 
-        self.dir_pin.write_bool(motion.num_steps.direction());
-        // TODO: Optimize this.
-        self.enqueued_step_dir = if motion.num_steps.direction() { 1 } else { -1 };
-
         self.step_timer_channel.set_compare_value(next_time);
-
-        motion.next();
-
-        if motion.num_steps.count() == 0 {
-            self.motion_queue.pop_front();
-        }
 
         self.have_enqueued_step = true;
         self.step_ppi_channel.enable();

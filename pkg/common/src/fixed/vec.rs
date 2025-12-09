@@ -24,6 +24,10 @@ impl<T, const LEN: usize> FixedVec<T, LEN> {
         }
     }
 
+    pub const fn capacity(&self) -> usize {
+        LEN
+    }
+
     pub fn get(&self, index: usize) -> Option<&T> {
         self.as_ref().get(index)
     }
