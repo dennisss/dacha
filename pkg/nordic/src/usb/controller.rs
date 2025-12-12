@@ -555,7 +555,7 @@ impl USBDeviceController {
         // SIZE.EPOUT[n], indicating that the content of the local buffer can be
         // overwritten.".
         //
-        // NOTE: We also do this after every OUT bulk/interrupt transfer is done.
+        // NOTE: We only do this for enabling the first transfer.
         for reg in &mut self.periph.size.epout {
             reg.write(EPOUT_VALUE::from_raw(0));
         }
@@ -866,6 +866,16 @@ impl<'a> USBDeviceNormalRequest<'a> {
 
     // TODO: ONly allow calling this once.
     pub async fn read_aligned(&mut self, output: &mut [u8]) -> Result<usize, USBError> {
+// NOTE: We need to read this before the DMA transfer starts since as soon as the DMA
+        // transfer ends, the peripheral is allowed to accept another packet.
+        //
+        // Per this line in the datasheet:
+        // "Only when the EasyDMA transfer is done (signalled by the ENDEPOUT[n] event), or as soon
+        //  as any values are written by the software in register SIZE.EPOUT[n], the endpoint n
+        //  will accept incoming OUT+DATA again."
+        let packet_len = self.controller.periph.size.epout[self.endpoint_index]
+            .read()
+            .size() as usize;
 
         let ptr: u32 = unsafe { core::mem::transmute(output.as_ptr()) };
         assert!(ptr % 4 == 0);
@@ -900,12 +910,10 @@ impl<'a> USBDeviceNormalRequest<'a> {
         // let packet_len = self.controller.periph.epout[self.endpoint_index]
         //     .amount
         //     .read() as usize;
-        let packet_len = self.controller.periph.size.epout[self.endpoint_index]
-            .read()
-            .size() as usize;
-
-        // Clear it to allow receiving additional requests.
-        self.controller.periph.size.epout[self.endpoint_index].write_with(|v| v.set_size(0));
+        
+        // NOTE: We do not clear SIZE.EPOUT here since the end of the DMA transfer will also
+        // trigger the acceptance of the next USB packet (which may race ahead of us and set
+        // a new value for SIZE.EPOUT before we clear it).
 
         Ok(packet_len)
     }

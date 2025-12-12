@@ -205,6 +205,8 @@ impl StepperMotorController {
     /// Clear the entire queue of motions. If a step is currently in progress,
     /// the next tick will attempt to clear it.
     pub fn clear_motions(&mut self) {
+        // TODO: Eventually support cancelling any step that hasn't finished yet.
+
         self.motion_queue.clear();
         self.stats.stopped = StepperMotorStatus_StoppedReason::HOST_CLEAR;
     }
@@ -245,11 +247,12 @@ impl StepperMotorController {
         // TIMING: In the case that we are done the step, this should be take at least a
         // few timer cycles so we shouldn't need extra hold time for the previous step. 
         if self.have_enqueued_step {
-            if self.step_timer_channel.pending_event() || self.motion_queue.is_empty() {
-                self.have_enqueued_step = false;
-                self.step_ppi_channel.disable();
-                self.step_timer_channel.disable_interrupt();
+            if self.step_timer_channel.pending_event() {
                 self.stats.position += self.enqueued_step_dir;
+                self.have_enqueued_step = false;
+                self.step_timer_channel.disable_interrupt();
+                // This line is last to ensure that the PPI actually fires before we disable it.
+                self.step_ppi_channel.disable();
             } else {
                 // Still waiting for the step.
                 return true;

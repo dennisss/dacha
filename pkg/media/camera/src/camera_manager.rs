@@ -19,11 +19,13 @@ use video::h264::NALUnitType;
 use crate::frame::*;
 use crate::frame_buffer_op::{ImageFrameBufferOp, ImageFrameSubscribers};
 use crate::h264_buffer_op::H264BufferOp;
+#[cfg(feature = "libcamera")]
 use crate::libcamera_op::LibcameraOp;
 use crate::v4l2::{V4L2CaptureOp, V4L2EncoderOp, V4L2EncoderOptions};
 
 pub enum CameraEntry {
     USB(usb::DeviceEntry),
+    #[cfg(feature = "libcamera")]
     Libcamera(libcamera::AvailableCamera),
 }
 
@@ -38,6 +40,7 @@ impl CameraEntry {
 
                 format!("[V4L2/USB] {}", product_name)
             }
+            #[cfg(feature = "libcamera")]
             CameraEntry::Libcamera(camera) => {
                 let model = camera
                     .properties()
@@ -55,6 +58,7 @@ impl CameraEntry {
                 let id = device.sysfs_dir().as_str().to_string();
                 format!("usb:{}", id)
             }
+            #[cfg(feature = "libcamera")]
             CameraEntry::Libcamera(camera) => {
                 let id = camera.id();
                 format!("libcamera:{}", id)
@@ -75,6 +79,20 @@ impl CameraSubscriber {
     pub async fn recv(&mut self) -> Result<ImageFrame> {
         let data = self.receiver.recv().await?;
         Ok(data)
+    }
+
+    /// Receives the next frame that is captured after this function is called.
+    pub async fn recv_new(&mut self) -> Result<ImageFrame> {
+        // TODO: Ideally come up with a better way that compares absolute timestamps of frames.
+        
+        for _ in 0..self.receiver.capacity() {
+            match self.receiver.try_recv() {
+                Some(v) => {}
+                None => break
+            }
+        }
+
+        self.recv().await
     }
 
     pub fn try_recv(&mut self) -> Option<Result<ImageFrame>> {
@@ -140,7 +158,8 @@ pub struct CameraManager {
 struct Shared {
     state: AsyncMutex<State>,
     usb_context: usb::Context,
-    libcamera_manager: Arc<libcamera::CameraManager>,
+    #[cfg(feature = "libcamera")]
+    libcamera_manager: Option<Arc<libcamera::CameraManager>>,
 }
 
 #[derive(Default)]
@@ -155,9 +174,26 @@ struct OpenCameraEntry {
 }
 
 impl CameraManager {
-    pub fn create(
+    /// Creates a CameraManager with brand new USB and libcamera contexts.
+    pub fn create() -> Result<Self> {
+        let usb_context = usb::Context::create()?;
+        #[cfg(feature = "libcamera")]
+        let libcamera_manager = libcamera::CameraManager::create()?;
+
+        Ok(Self {
+            shared: Arc::new(Shared {
+                state: AsyncMutex::default(),
+                usb_context,
+                #[cfg(feature = "libcamera")]
+                libcamera_manager,
+            }),
+        })
+    }
+
+    #[cfg(feature = "libcamera")]
+    pub fn create_with(
         usb_context: usb::Context,
-        libcamera_manager: Arc<libcamera::CameraManager>,
+        libcamera_manager: Option<Arc<libcamera::CameraManager>>,
     ) -> Result<Self> {
         Ok(Self {
             shared: Arc::new(Shared {
@@ -192,11 +228,15 @@ impl CameraManager {
             out.insert(entry.id(), entry);
         }
 
-        let cameras = self.shared.libcamera_manager.cameras();
-        for camera in cameras {
-            let entry = CameraEntry::Libcamera(camera);
-            out.insert(entry.id(), entry);
+        #[cfg(feature = "libcamera")]
+        if let Some(libcamera_manager) = &self.shared.libcamera_manager {
+            let cameras = libcamera_manager.cameras();
+            for camera in cameras {
+                let entry = CameraEntry::Libcamera(camera);
+                out.insert(entry.id(), entry);
+            }
         }
+
 
         Ok(out)
     }
@@ -218,6 +258,7 @@ impl CameraManager {
 
                         let (graph, output_names, entry) = match entry {
                             CameraEntry::USB(entry) => Self::open_usb_device(entry).await?,
+                            #[cfg(feature = "libcamera")]
                             CameraEntry::Libcamera(camera) => {
                                 Self::open_libcamera_device(camera).await?
                             }
@@ -252,6 +293,7 @@ impl CameraManager {
         })
     }
 
+    #[cfg(feature = "libcamera")]
     async fn open_libcamera_device(
         camera: libcamera::AvailableCamera,
     ) -> Result<(Graph, Vec<String>, OpenCameraEntry)> {

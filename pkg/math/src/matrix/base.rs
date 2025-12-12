@@ -58,6 +58,8 @@ pub type Matrix4f = MatrixStatic<f32, U4, U4>;
 pub type Matrix4d = MatrixStatic<f64, U4, U4>;
 pub type Matrix8f = MatrixStatic<f32, U8, U8>;
 #[cfg(feature = "alloc")]
+pub type MatrixXf = Matrix<f32, Dynamic, Dynamic>;
+#[cfg(feature = "alloc")]
 pub type MatrixXd = Matrix<f64, Dynamic, Dynamic>;
 
 #[cfg(feature = "alloc")]

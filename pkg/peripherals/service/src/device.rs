@@ -74,13 +74,7 @@ impl PeripheralsDevice {
 
     pub async fn get_clock_time(&self) -> Result<ClockTimeResponse> {
         self.usb_device.get_clock_time().await
-        /*
-        let mut req = PeripheralRequest::default();
-        req.set_get_clock_time(true);
-        let res = self.usb_device.send_request(&req).await?;
-        Ok(res.uint_val())
-        */
-    }
+            }
 
     pub async fn get_idle_counter(&self) -> Result<u32> {
         self.usb_device.get_idle_counter().await

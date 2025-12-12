@@ -18,7 +18,10 @@ use crate::motion_controller::*;
 use crate::heater_controller::*;
 use crate::gcode::CommandConverter;
 use crate::endstop_controller::*;
+use crate::proto_utils::VectorProtoExt;
 
+
+// TODO: Need to block most commands until we are homed.
 
 pub struct MachineController {
     config: ControllerConfig,
@@ -67,6 +70,12 @@ impl MachineController {
         })
     }
 
+    pub async fn get_position(&self) -> Result<GetPositionResponse> {
+        let mut res = GetPositionResponse::default();
+        res.set_position(self.motion_controller.last_position().await?.to_proto());
+        Ok(res)
+    }
+
     pub async fn execute(&self, request: &ExecuteRequest) -> Result<()> {
         /*
         // TODO: At most one execute request should be allowed to run at a time.
@@ -94,7 +103,11 @@ impl MachineController {
 
                 let v = VectorXf::from_slice_with_shape(points.len(), 1, &points);
 
-                self.motion_controller.move_to(v, cmd.feed_rate()).await?;
+                if cmd.towards_endstop() {
+                    self.move_towards_endstop(v, cmd.feed_rate()).await?;
+                } else {
+                    self.motion_controller.move_to(v, cmd.feed_rate()).await?;
+                }
             }
 
             if cmd.has_set_position() {
@@ -124,6 +137,10 @@ impl MachineController {
 
             }
 
+            if cmd.wait_until_idle() {
+                self.motion_controller.wait_until_idle().await?;
+            }
+
             if cmd.has_home() {
 
                 // TODO: After homing, set the endstops back to their default state.
@@ -146,20 +163,13 @@ impl MachineController {
                 // Lift in Z
                 current_pos[2] = 10.0;
                 self.motion_controller.move_to(current_pos.clone(), 10.0).await?;
-                self.motion_controller.wait_until_idle().await?;
-
 
                 for axis_i in 0..2 {
-                    let xy_endstops = vec!["stepper1_stall".to_string(), "stepper2_stall".to_string()];
-                    self.endstop_controller.start(&xy_endstops, &xy_endstops).await?;
-
+                    println!("Raming min {}!", axis_i);
                     {
                         current_pos[axis_i] = -200.0;
-                        self.motion_controller.move_to(current_pos.clone(), feed_rate).await?;
-                        println!("Ramping min {}!", axis_i);
+                        self.move_towards_endstop(current_pos.clone(), feed_rate).await?;
                     }
-
-                    self.motion_controller.wait_until_idle().await?;
 
                     // tODO: Must verify we actually hit the expected endstops (and reset to using all normal endstops.)
 
@@ -174,7 +184,6 @@ impl MachineController {
                         self.motion_controller.move_to(current_pos.clone(), feed_rate).await?;
                     }
 
-                    self.motion_controller.wait_until_idle().await?;
                     // TODO: Issue is that after any move we may enter estop mode again so ideally wait_until_idle
                     // returns an error in that case if we aren't expecting it (or we are expecting it but didn't get it)
 
@@ -213,18 +222,11 @@ impl MachineController {
 
                 println!("GO Z!!!");
 
-                let dev = self.devices.get_peripherals_device("toolhead").await?;
-
-                let z_endstops = vec!["z_probe".to_string()];
-                self.endstop_controller.start(&z_endstops, &z_endstops).await?;
-
                 current_pos[2] = -200.0;
-                self.motion_controller.move_to(current_pos.clone(), 5.0).await?;
-
-                self.motion_controller.wait_until_idle().await?;
+                self.move_towards_endstop(current_pos.clone(), 5.0).await?;
 
                 // TODO: Eventually rely on better timing data about hits to improve this.
-                current_pos[2] = -0.1;
+                current_pos[2] = 0.0;
                 self.motion_controller.set_position(current_pos.clone()).await?;
 
                 current_pos[2] = 10.0;
@@ -234,4 +236,85 @@ impl MachineController {
 
         Ok(())
     }
+
+    async fn move_towards_endstop(
+        &self,
+        position: VectorXf,
+        feed_rate: f32,
+    ) -> Result<()> {
+        if position.len() != self.config.motion_controller().axes().len() {
+            return Err(err_msg("Wrong number of dimensions in position"));
+        } 
+
+        // Must be idle before we change the endstops.
+        self.motion_controller.wait_until_idle().await?;
+
+        let last_position = self.motion_controller.last_position().await?;
+        
+        let mut selected_set_i = None;
+
+        for i in 0..position.len() {
+            let delta = position[i] - last_position[i];
+
+            if delta.abs() < 0.001 {
+                continue;
+            }
+
+            let axis_name = self.config.motion_controller().axes()[i].name();
+
+            let mut found = false;
+
+            for (i, endstop_set) in self.config.endstop_sets().iter().enumerate() {
+                if endstop_set.axis().iter().find(|a| a == &axis_name).is_none() {
+                    continue;
+                }
+
+                if delta > 0.0 && !endstop_set.max_limit() {
+                    continue;
+                }
+
+                if delta < 0.0 && !endstop_set.min_limit() {
+                    continue;
+                }
+
+                if let Some(last_i) = selected_set_i {
+                    if last_i != i {
+                        return Err(err_msg("Overlapping endstop sets selected"));
+                    }
+                }
+
+                selected_set_i = Some(i);
+            }
+
+            if selected_set_i.is_none() {
+                return Err(format_err!("No endstop set to capture motion in axis: {}", axis_name))
+            }
+        }
+
+        let selected_set_i = selected_set_i
+            .ok_or_else(|| err_msg("Unable to resolve an endstop set for motion"))?;
+
+        let endstop_set = &self.config.endstop_sets()[selected_set_i];
+
+        self.endstop_controller.start(
+            endstop_set.monitored_endstops(),
+            endstop_set.expected_endstops()
+        ).await?;
+
+        self.motion_controller.move_to(position, feed_rate).await?;
+        self.motion_controller.wait_until_idle().await?;
+
+        // TODO: This only checks that we hit an endstop but doesn't verify that
+        // the motion stopped due to that endstop (and not due to the motion finishing
+        // naturally)
+        self.endstop_controller.check_hit_something().await?;
+
+        // Reset back to default endstops.
+        // TODO: Ensure this always happens even if the above code fails?
+        self.endstop_controller.start(self.config.default_endstops(), &[]).await?;
+
+        Ok(())
+    }
+
+
 }

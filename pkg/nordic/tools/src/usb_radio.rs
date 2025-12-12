@@ -222,6 +222,10 @@ impl USBRadio {
 
                         // TODO: Compress requests and don't send requests with consecutive sequences.
 
+                        if request.data.len() == 0 {
+                            return Err(err_msg("Empty request"));
+                        }
+
                         if send_buffer.len() + 1 + request.data.len() > MAX_PACKET_SIZE {
                             if send_buffer.len() == 0 {
                                 return Err(err_msg("Request too big to fit in send buffer."));
@@ -370,13 +374,12 @@ impl USBRadio {
         }
     }
 
-    /// WARNING: If multiple calls to this happen for a single device, then this may return a time
-    /// from a request performed shortly before get_clock_time() was called.
     pub async fn get_clock_time(&self) -> Result<ClockTimeResponse> {
 
         let mut req = PeripheralRequest::default();
         req.set_get_clock_time(true);
 
+        // Using the high priority queue.
         let res = self.enqueue_request_batch_inner(&[req], true).await?.await?;
         let res = &res[0];
 
@@ -386,6 +389,14 @@ impl USBRadio {
             local_request_time: res.send_time,
             local_response_time: res.receive_time
         })
+    }
+
+    pub async fn get_idle_counter(&self) -> Result<u32> {
+        let mut req = PeripheralRequest::default();
+        req.set_get_idle_counter(true);
+
+        let res = self.send_request(&req).await?;
+        Ok(res.uint_val())
     }
 
     pub async fn set_network_config(&mut self, config: &NetworkConfig) -> Result<()> {

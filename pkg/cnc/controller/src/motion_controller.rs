@@ -94,7 +94,7 @@ const STEP_GENERATION_WINDOW: Duration = Duration::from_millis(200);
 // TODO: Use me.
 const STEP_GENERATION_STEP: Duration = Duration::from_millis(200);
 
-const POLL_INTERVAL: Duration = Duration::from_millis(100);
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 
 // pub struct MotionControllerOptions {
@@ -121,6 +121,13 @@ struct Shared {
 struct State {
     mode: MotionControllerMode,
 
+    /// When non-None, the backthread is currently attempting to perform a state transition away from
+    /// 'mode' to 'next_mode'.
+    next_mode: Option<MotionControllerMode>,
+
+    /// User desired mode. 'mode' will eventually become this value.
+    /// This will become None once the backthread notices the value and starts
+    /// the transition by putting it into next_mode.
     desired_mode: Option<MotionControllerMode>,
 
     /// 
@@ -290,6 +297,7 @@ impl MotionController {
             motors,
             state: AsyncVariable::new(State {
                 mode: MotionControllerMode::Disabled,
+                next_mode: None,
                 desired_mode: None,
                 position_offset: VectorXf::zero_with_shape(config.motors().len(), 1),
                 first_motion_time: Instant::now(), // doesn't matter
@@ -351,19 +359,27 @@ impl MotionController {
         loop {
             let cycle_start = Instant::now();
 
-            let (mode, mut desired_mode) = lock!(state <= shared.state.lock().await?, {
-                // TODO: Take the desired_mode value.
-                (state.mode.clone(), state.desired_mode.clone())
+            let (mode, next_mode) = lock!(state <= shared.state.lock().await?, {
+
+                if let Some(mode) = state.desired_mode.take() {
+                    state.next_mode = Some(mode);
+                }
+
+                if let Some(mode) = state.next_mode.clone() {
+                    if mode == state.mode {
+                        state.next_mode = None;
+                    }
+                }
+
+                (state.mode.clone(), state.next_mode.clone())
             });
 
-            if desired_mode == Some(mode) {
-                desired_mode = None;
-            }
-
             // State transitions.
-            if let Some(desired_mode) = desired_mode {
+            if let Some(next_mode) = next_mode {
 
-                match desired_mode {
+                println!("Transition to {:?}", next_mode);
+
+                match next_mode {
                     MotionControllerMode::Disabled | MotionControllerMode::Alarm => {
                         // Disable motors.
                         for motor in shared.motors.iter().rev() {
@@ -403,11 +419,9 @@ impl MotionController {
 
                 // TODO: Can't change to enabled until we are done getting the 
                 lock!(state <= shared.state.lock().await?, {
-                    state.mode = desired_mode;
-
-                    if state.desired_mode == Some(state.mode) {
-                        state.desired_mode = None;
-                    }
+                    // TODO: Don't configure a next mode of Enabled until the cycles finish successfully (since we need to resync motor positions).
+                    state.mode = next_mode;
+                    state.next_mode = None;
                 });
             }
 
@@ -430,7 +444,7 @@ impl MotionController {
 
             // TODO: Bring back.
             // if sent_something > 0 {
-            //     println!("Cycle: {:.2?} ; Enqueue {}", cycle_dur, sent_something);
+                println!("Cycle: {:.2?} ; {:?}", cycle_dur, mode);
             // }
 
 
@@ -455,8 +469,11 @@ impl MotionController {
         }
     }
 
-    async fn cycle_enabled(shared: &Shared, enabled_state: &mut EnabledState, cycle_start: Instant) -> Result<()> {
+    /// Returns true if the state has stabilized and the 
+    async fn cycle_enabled(shared: &Shared, enabled_state: &mut EnabledState, cycle_start: Instant) -> Result<bool> {
         
+        // TODO: All requests in here need a timeout.
+
         let state_responses = {
             let mut batch = shared.devices.new_batch();
 
@@ -465,7 +482,9 @@ impl MotionController {
                 batch.add(dev.device_name(), dev.get_stepper_motor_status_request()?);
             }
 
-            batch.send().await?
+            executor::timeout(Duration::from_millis(2000), batch.send())
+            .await
+            .map_err(|_| err_msg("state responses timed out"))??
         };
         let mut state_responses_i = 0;
 
@@ -489,15 +508,14 @@ impl MotionController {
                     // TODO: Go into alarm mode.
                     // (clear everything + )
 
+                    println!("[ALARM] TIMING_FAULT for motor: {}", shared.config.motors()[motor_i].device_name());
                     println!("Status: {:?}", s);
-
-                    println!("[ALARM] TIMING_FAULT");
 
                     lock!(state <= shared.state.lock().await?, {
                         state.desired_mode = Some(MotionControllerMode::Alarm);
                     });
 
-                    return Ok(())
+                    return Ok(false);
                 }
 
             }
@@ -514,7 +532,7 @@ impl MotionController {
 
             // Wait for all the steppers to come to rest.
             if some_motors_active {
-                return Ok(());
+                return Ok(false);
             }
 
             // Ensure some time has elapsed since the motors were stopped (e.g. so that the drivers
@@ -574,8 +592,15 @@ impl MotionController {
 
                 enabled_state.reset();
                 state.planner.clear();
+
+                // Note that this is only valid if we assume that all motors that were moving have been stopped
+                // simultaneously.
+                if let Some(active_state) = state.active_state.take() {
+                    state.motor_positions.copy_from_slice(active_state.queue.motor_positions());
+                }
+
                 // TODO: Whenever we do this, pull out the current motor positions before ending?
-                state.active_state = None;
+                // state.active_state = None;
 
                 // Retrieve the current position of each motor from the MCU since we don't know
                 // how many of the planned steps were exactly completed.
@@ -583,6 +608,8 @@ impl MotionController {
                     if statuses[motor_i].stopped() != StepperMotorStatus_StoppedReason::NONE {
                         state.motor_positions[motor_i] = statuses[motor_i].position() -
                             state.motor_position_offsets[motor_i];
+                    } else {
+                        // TODO: Check position unchanged.
                     }
                 }
 
@@ -677,12 +704,15 @@ impl MotionController {
                     }
 
                     // Take from the 'queue' and prepare to send to the machine.
+                    // TODO: Move this out of the lock.
                     {
                         // TODO: Limit the minimum time step for this?
 
                         let next_queue_consumed_time = now + STEP_GENERATION_WINDOW;
                         let queue_max_time = next_queue_consumed_time - active_state.start_time;
 
+                        // TODO: Entire alarm mode if this fails.
+                        // TODO: Make this a deterministic step.
                         let step_motions = active_state.queue.to_commands(queue_max_time.as_secs_f64()).unwrap();
                         active_state.queue_consumed_time = next_queue_consumed_time;
 
@@ -702,9 +732,6 @@ impl MotionController {
                 }
                 
             }
-
-
-
         });
 
         // Do enqueues.
@@ -759,6 +786,8 @@ impl MotionController {
             // TODO: This can be optimized a bit since we are discarding the responses.
             batch.send().await
             .map_err(|e| {
+                println!("NOW: {:?}", now);
+
                 println!("CURRENT DEV TIME: {:?}", now_remote_times);
 
                 let now2 = Instant::now();
@@ -776,11 +805,11 @@ impl MotionController {
 
         let cycle_dur = cycle_end - cycle_start;
 
-        if sent_something > 0 {
-            println!("Cycle: {:.2?} ; Enqueue {}", cycle_dur, sent_something);
-        }
+        // if sent_something > 0 {
+        //     println!("Cycle: {:.2?} ; Enqueue {}", cycle_dur, sent_something);
+        // }
 
-        Ok(())
+        Ok(true)
     }
 
     /*
@@ -798,22 +827,12 @@ impl MotionController {
         let target_mode = if enabled { MotionControllerMode::Enabled } else { MotionControllerMode::Disabled };
 
         let alarm = lock!(state <= self.shared.state.lock().await?, {
-            match state.desired_mode {
-                Some(MotionControllerMode::Disabled) | Some(MotionControllerMode::Enabled) | None => {
-                    state.desired_mode = Some(target_mode);
-                }
-                Some(MotionControllerMode::Alarm) => {
-                    return true;
-                }
+            if self.will_reach_alarm_mode(&state) {
+                return true;
             }
 
-            match state.mode {
-                MotionControllerMode::Alarm => {
-                    return true;
-                }
-                _ => {}
-            }
-
+            state.desired_mode = Some(target_mode);
+            state.notify_all();
             false
         });
 
@@ -821,54 +840,66 @@ impl MotionController {
             return Err(err_msg("In alarm mode"));
         }
 
-        /*
-        loop {
-            let alarm = lock!(state <= self.shared.state.lock().await?, {
-                match state.desired_mode {
-                    Some(MotionControllerMode::Disabled) | Some(MotionControllerMode::Enabled) | None => {
-                        state.desired_mode = Some(target_mode);
-                    }
-                    Some(MotionControllerMode::Alarm) => {
-                        return true;
-                    }
-                }
-
-                match state.mode {
-                    MotionControllerMode::Alarm => {
-                        return true;
-                    }
-                    _ => {}
-                }
-
-                false
-            });
-
-            executor::sleep(Duration::from_millis(100)).await?;
-        }
-        */
-
-        // TODO: Keep checking until we reach the state.
+        self.wait_for_mode(|m| m == target_mode).await?;
 
         Ok(())
 
         // todo!()
     }
 
+    fn will_reach_alarm_mode(&self, state: &State) -> bool {
+        state.mode == MotionControllerMode::Alarm ||
+        state.next_mode == Some(MotionControllerMode::Alarm) ||
+        state.desired_mode == Some(MotionControllerMode::Alarm)
+    }
+
     // TODO: This needs to block for us to exit alarm mode.
     pub async fn reset_alarm(&self) -> Result<()> {
-        /*
-        One of the challenges is that if "Alarm" was a desired_mode at some point, it can still become that even if we do this stuff 
-        */
-
         lock!(state <= self.shared.state.lock().await?, {
-            if state.mode == MotionControllerMode::Alarm ||
-                state.desired_mode == Some(MotionControllerMode::Alarm) {
+            if self.will_reach_alarm_mode(&state) {
                 state.desired_mode = Some(MotionControllerMode::Disabled);
+                state.notify_all();
             }
         });
 
+        self.wait_for_mode(|m| m != MotionControllerMode::Alarm).await?;
+
         Ok(())
     }
+
+    async fn wait_for_mode<F: Fn(MotionControllerMode) -> bool>(&self, f: F) -> Result<()> {
+        loop {
+            let done = lock!(state <= self.shared.state.lock().await?, {
+
+                let reached = f(state.mode) && state.next_mode.is_none() && state.desired_mode.is_none();
+                if reached {
+                    return Ok(true);
+                }
+
+                let mut might_reach = false;
+                if let Some(m) = state.desired_mode {
+                    might_reach = f(m);
+                } else if let Some(m) = state.next_mode {
+                    might_reach = f(m);
+                }
+
+                if !might_reach {
+                    return Err(format_err!("Will not reach desired state : {:?}, {:?}, {:?}", state.mode, state.next_mode, state.desired_mode));
+                }
+
+                Result::<_, Error>::Ok(false)
+
+            })?;
+
+            if done {
+                return Ok(());
+            }
+
+            // TODO: Speed me up
+            executor::sleep(Duration::from_millis(100)).await?;
+        }
+    }
+
 
     /// Requests that the MotionController enter into alarm mode.
     ///
@@ -890,6 +921,10 @@ impl MotionController {
                 .ok_or_else(|| format_err!("No motor named: {}", motor_name))?;
             
             let motor = &self.shared.motors[motor_i];
+            
+            // If the controller is currently in the enabled state, this will
+            // have the effect of causing the background thread to notice that the MCU stepper queues
+            // have been stopped on the next cycle and resync with that last moved to position.
             batch.add(motor.device_name(), motor.clear_stepper_queue_request()?);
 
             if disable {
@@ -903,10 +938,6 @@ impl MotionController {
             self.trigger_alarm().await?;
         }
 
-        /*
-        TODO: If not currently Enabled, it should be an error to receive this 
-        */
-
         Ok(())
     }
 
@@ -915,6 +946,8 @@ impl MotionController {
         let num_axes = self.shared.config.axes().len();
 
         lock!(state <= self.shared.state.lock().await?, {
+            self.check_accepting_movements(&state)?;
+
             state.position_offset = position;
             state.planner.set_start_position(VectorXf::zero_with_shape(num_axes, 1));
 
@@ -922,15 +955,15 @@ impl MotionController {
                 state.motor_position_offsets[i] += state.motor_positions[i];
                 state.motor_positions[i] = 0;
             }
-        });
 
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Returns the last position to which the motion controller will move to.
     pub async fn last_position(&self) -> Result<VectorXf> {
         lock!(state <= self.shared.state.lock().await?, {
-            Ok(state.planner.last_position().clone())
+            Ok(state.planner.last_position().clone() + &state.position_offset)
         })
     }
 
@@ -966,18 +999,15 @@ impl MotionController {
     }
     
     fn check_accepting_movements(&self, state: &State) -> Result<()> {
-        if state.desired_mode == Some(MotionControllerMode::Alarm) {
+        if self.will_reach_alarm_mode(state) {
             return Err(err_msg("In Alarm state"));
         }
-
-        match state.mode {
-            MotionControllerMode::Enabled => {
-                return Ok(())
-            }
-            _ => {
-                return Err(format_err!("Not accepting movements. Current state: {:?}", state.mode));
-            }
+    
+        if state.mode != MotionControllerMode::Enabled {
+            return Err(format_err!("Not accepting movements. Current state: {:?}", state.mode));
         }
+
+        Ok(())
     }
 
     /// Schedules a movement to be performed in the future.
@@ -1083,8 +1113,7 @@ impl MotionControllerLinearPlanner {
         let dir = &pos - last_pos;
 
         if dir.norm() < 0.001 {
-            return Err(format_err!("Empty movement requested: {:?} => {:?}", last_pos, pos));
-            // return Ok(());
+            return Ok(());
         }
 
 

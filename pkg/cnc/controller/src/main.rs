@@ -171,9 +171,6 @@ enum Mode {
     #[arg(name = "service")]
     Service(ControllerServiceCommand),
 
-    #[arg(name = "execute")]
-    Execute(ExecuteCommand),
-
     #[arg(name = "measure-bed")]
     MeasureBed(MeasureBedCommand),
 
@@ -492,7 +489,6 @@ async fn main() -> Result<()> {
 
     match args.mode {
         Mode::Service(cmd) => cmd.run().await,
-        Mode::Execute(cmd) => cmd.run().await,
         Mode::MeasureBed(cmd) => {
             cmd.run().await
         }

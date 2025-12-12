@@ -39,17 +39,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use math::matrix::vec3f;
+use math::matrix::VectorXf;
+use math::vecxf;
 use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
 use cluster_client::ClusterServer;
 use cnc_controller_proto::cnc::*;
 use rpc_util::NamedPortArg;
 use file::LocalPathBuf;
+use cnc::linear_motion_planner::LinearMotionPlanner;
 
 use crate::devices::*;
 use crate::config::*;
 use crate::motion_controller::*;
+use crate::gcode::CommandConverter;
+use crate::endstop_controller::*;
+use crate::machine_controller::MachineController;
 
 const SERVICE_ACL_PROTO: &'static str = r#"
     rules: [
@@ -68,40 +73,14 @@ const SERVICE_ACL_PROTO: &'static str = r#"
 
 
 struct ControllerServiceImpl {
-    devices: Arc<DevicesController>,
-    motion_controller: Arc<MotionController>,
-
+    machine: MachineController,
 }
 
 impl ControllerServiceImpl {
     async fn create(config: ControllerConfig) -> Result<Self> {
-
-        let devices = DevicesController::create(&config).await?;
-
-        println!("Wait for sync...");
-        devices.time().wait_for_sync().await?;
-
-        let motion_controller = Arc::new(MotionController::create(
-            config.motion_controller().clone(), devices.clone()).await?);
-
-        motion_controller.toggle_motors(true).await?;
-
-
-        Ok(Self {
-            devices,
-            motion_controller
-        })
+let machine = MachineController::create(config).await?;
+        Ok(Self { machine })
     }
-
-    async fn execute_impl(&self, request: &ExecuteRequest) -> Result<()> {
-
-        for cmd in request.move_to() {
-            self.motion_controller.move_to(vec3f(cmd.x(), cmd.y(), cmd.z()), (1600.0 / 80.0) * 2.0).await?;
-        }
-
-        Ok(())
-    }
-
 }
 
 #[async_trait]
@@ -111,14 +90,20 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<ExecuteRequest>,
         response: &mut rpc::ServerResponse<ExecuteResponse>,
     ) -> Result<()> {
-        self.execute_impl(&request.value).await?;
-        // response.value = ...;
+        self.machine.execute(&request).await?;
+        Ok(())
+    }
+
+    async fn GetPosition(
+        &self,
+        request: rpc::ServerRequest<GetPositionRequest>,
+        response: &mut rpc::ServerResponse<GetPositionResponse>,
+    ) -> Result<()> {
+response.value = self.machine.get_position().await?;
         Ok(())
     }
 }
 
-use cnc::quadratic_stepper_motion::QuadraticStepperMotion;
-use common::fixed::queue::FixedQueue;
 
 #[derive(Args)]
 pub struct ControllerServiceCommand {

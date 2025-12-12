@@ -20,6 +20,9 @@ enum Command {
 
     #[arg(name = "record")]
     Record(RecordCommand),
+
+    #[arg(name = "snapshot")]
+    Snapshot(SnapshotCommand)
 }
 
 #[derive(Args)]
@@ -30,6 +33,11 @@ struct RecordCommand {
     camera_id: String,
 }
 
+#[derive(Args)]
+struct SnapshotCommand {
+    camera_id: String,
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
     // libcamera::disable_logging();
@@ -37,9 +45,9 @@ async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     let usb_context = usb::Context::create()?;
-    let libcamera_manager = libcamera::CameraManager::create()?;
+    // let libcamera_manager = libcamera::CameraManager::create()?;
 
-    let camera_manager = CameraManager::create(usb_context, libcamera_manager)?;
+    let camera_manager = CameraManager::create(usb_context, None)?;
 
     let mut entries = camera_manager.list().await?;
 
@@ -48,6 +56,25 @@ async fn main() -> Result<()> {
             for (id, entry) in entries {
                 println!("\"{}\"\n    {}", id, entry.name().await?);
             }
+        }
+        Command::Snapshot(cmd) => {
+            let entry = entries
+                .remove(&cmd.camera_id)
+                .ok_or_else(|| err_msg("Unknown camera with given id"))?;
+
+            let mut subscriber = camera_manager.open(entry).await?;
+            let format = subscriber.format().await?;
+
+            println!("Format: {:?}", format);
+
+            let frame = subscriber.recv().await?;
+
+            let timestamp = frame.monotonic_timestamp;
+            println!("Timestamp: {:?}", timestamp);
+
+            let data = frame.data.data().unwrap();
+            file::write("image.jpg", data).await?;
+
         }
         Command::Record(cmd) => {
             let entry = entries

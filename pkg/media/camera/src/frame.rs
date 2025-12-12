@@ -46,7 +46,7 @@ pub struct DMABuffer {
     pub bytes_used: u64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ImageFormat {
     pub width: u32,
     pub height: u32,

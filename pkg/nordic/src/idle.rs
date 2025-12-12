@@ -17,10 +17,8 @@ pub fn idle_loop() -> ! {
 /// - It ACTUALLY takes 6 cycles to run since the 'str' only takes 1
 ///   cycle and the second cycle is pipelined with then next instruction
 ///   to complete the RAM write.
-/// - I added another 4 noops to the code so that the overall time becomes
-///   10 cycles. This simplifies the math and reduces the risk of an
-///   interrupt happening right after the 'str' and having one extra cycle
-///   wasted on waiting for the prior write.
+///   - Note that if interrupted by an interrupt, the second cycle of the
+///     'str' will slow down the interrupt by 1 cycle.
 ///
 /// -- AI PART --
 ///
@@ -50,11 +48,6 @@ unsafe fn idle_loop_inner(counter: &AtomicU32) -> ! {
             // Since only this loop writes, and interrupts only read, 
             // a standard 32-bit aligned STR is atomic enough on Cortex-M4.
             "str {tmp}, [{ptr}]",
-            
-            "nop",
-            "nop",
-            "nop",
-            "nop",
 
             // 4. Branch (2 cycles)
             "b 2b",

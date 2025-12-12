@@ -8,6 +8,8 @@ import "pkg/cnc/motion/proto/config.proto";
 
 service Controller {
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
+
+    rpc GetPosition (GetPositionRequest) returns (GetPositionResponse);
 }
 
 message ExecuteRequest {
@@ -19,12 +21,15 @@ message ExecuteResponse {
 }
 
 message Command {
-    MoveToCommand move_to = 1;
-    HomeCommand home = 2;
-    SetTemperatureCommand set_temp = 3;
-    SetPosition set_position = 4;
-    ConfigureCommand configure = 5;
-    bool reset_alarm = 6;
+    oneof command {
+        MoveToCommand move_to = 1;
+        HomeCommand home = 2;
+        SetTemperatureCommand set_temp = 3;
+        SetPosition set_position = 4;
+        ConfigureCommand configure = 5;
+        bool reset_alarm = 6;
+        bool wait_until_idle = 7;
+    }
 }
 
 message MoveToCommand {
@@ -36,6 +41,8 @@ message MoveToCommand {
     float feed_rate = 5;
 
     float max_acceleration = 6;
+
+    bool towards_endstop = 7;
 }
 
 message HomeCommand {}
@@ -53,4 +60,16 @@ message SetPosition {
 
 message ConfigureCommand {
     float max_junction_deviation = 1;
+}
+
+message GetPositionRequest {
+
+}
+
+message GetPositionResponse {
+    VectorProto position = 1;
+}
+
+message VectorProto {
+    repeated float values = 1;
 }

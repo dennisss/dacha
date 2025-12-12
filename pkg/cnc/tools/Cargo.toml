@@ -11,3 +11,15 @@ common = { path = "../../common" }
 executor = { path = "../../executor" }
 file = { path = "../../file" }
 gcode = { path = "../gcode" }
+rpc = { path = "../../rpc" }
+math = { path = "../../math" }
+media_camera = { path = "../../media/camera" }
+math_compute = { path = "../../math/compute" }
+crypto = { path = "../../crypto" }
+protobuf = { path = "../../protobuf" }
+executor_multitask = { path = "../../executor/multitask" }
+peripherals_proto = { path = "../../peripherals/proto" }
+cnc_controller = { path = "../controller" }
+cnc_controller_proto = { path = "../controller/proto" }
+cluster_client = { path = "../../container/client" }
+container_proto = { path = "../../container/proto" }

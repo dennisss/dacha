@@ -53,12 +53,48 @@ First application:
 async fn main() -> Result<()> {
     // TODO: Verify that unconfiguring the PWM actually sets the thing back to 0
     
+    /*
+    loop {
+        let a = Instant::now();
+        let b = Instant::now();
+        let c = Instant::now();
+
+        println!("{:?}", c - a);
+        executor::sleep(Duration::from_secs(1)).await?;
+    }
+    */
+
     let mut selector = usb::DeviceSelector::default();
     selector.vendor_id = Some(0x8888);
-    selector.product_id = Some(0x0004);
+    selector.product_id = Some(4);
 
     let mut dev = nordic_tools::usb_radio::USBRadio::find(&selector).await?;
 
+    let mut last_time = Instant::now();
+    let mut last_count = 0;
+
+    loop {
+        let time = Instant::now();
+        let count = dev.get_idle_counter().await?;
+
+        if last_count != 0 {
+            let diff = count - last_count;
+
+            let utilization = ((diff as f64) / (64_000_000.0 / 6.0)) / (time - last_time).as_secs_f64();
+
+            println!("Util: {}", utilization);
+        }
+
+        last_time = time;
+        last_count = count;
+
+
+        executor::sleep(Duration::from_secs(4)).await?;
+
+    }
+
+
+    return Ok(());
 
 
     // Unconfiugre
@@ -211,7 +247,7 @@ pins {
             
             let m = req.enqueue_stepper_motion_mut();
             m.set_next_time(start_time);
-            m.set_num_steps(16u32);
+            m.set_num_steps_minus_one(16u32 - 1);
             m.set_next_velocity(4_000_000u32);
 
             let res = dev.send_request(&req).await?;

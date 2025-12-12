@@ -53,7 +53,12 @@ struct State {
     /// Tasks for polling all of the individual endstops.
     /// 
     /// TODO: Currently there is a cyclic dependency since the task threads hold an Arc<Shared>
-    tasks: HashMap<String, ChildTask, FastHasherBuilder>
+    ///
+    /// TODO; No need for this to be a HashMap.
+    tasks: HashMap<String, ChildTask, FastHasherBuilder>,
+
+    hit_expected: bool,
+    hit_unexpected: bool,
 
     // TODO: Need to handle background thread failures.
 
@@ -138,6 +143,20 @@ impl EndstopController {
         })
     }
 
+    pub async fn check_hit_something(&self) -> Result<()> {
+        lock!(state <= self.shared.state.lock().await?, {
+            if state.hit_unexpected {
+                return Err(err_msg("Unexpected endstop hit!"));
+            }
+
+            if !state.hit_expected {
+                return Err(err_msg("No endstops hit"));
+            }
+
+            Ok(())
+        })
+    }
+
     async fn endstop_watcher_thread(
         shared: Arc<Shared>,
         endstop_name: String,
@@ -177,7 +196,7 @@ impl EndstopController {
                         &endstop_config.analog_buffers()[next_buffer_index]
                     ).await?);
 
-                    next_buffer_index += 1;
+                    next_buffer_index = (next_buffer_index + 1) % endstop_config.analog_buffers().len();
                 }
 
                 let req = enqueued_requests.remove(0);
@@ -192,17 +211,29 @@ impl EndstopController {
             dev.poll_gpio_interrupt(endstop_config.peripheral().peripheral_name()).await?;
         }
 
-        println!("Endstop hit: {}", endstop_config.name());
+        lock!(state <= shared.state.lock().await?, {
+            if expected {
+                state.hit_expected = true;
+            } else {
+                state.hit_unexpected = true;
+            }
+        });
 
         // Mark the hit.
         // TODO:
 
         // TODO: Need to implement some reasonable behavior if two endstops trigger that touch the same motors (e.g. A and B diag pins)
 
+        let t1 = Instant::now();
+
         // Stop motors.
         let disable_motors = endstop_config.hard();
         let alarm = !expected;
         shared.motion_controller.stop_motors(endstop_config.motors(), disable_motors, alarm).await?;
+
+        let t2 = Instant::now();
+
+        println!("Endstop hit: {} ; {:?}", endstop_config.name(), t2 - t1);
 
         Ok(())
     }

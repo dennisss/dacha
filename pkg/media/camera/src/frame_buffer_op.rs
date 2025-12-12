@@ -106,9 +106,9 @@ impl Operation for ImageFrameBufferOp {
                                 subscribers.swap_remove(i);
                                 continue;
                             }
-                        } else {
-                            last_sent_frame = now;
                         }
+
+                        last_sent_frame = now;
 
                         i += 1;
                     }

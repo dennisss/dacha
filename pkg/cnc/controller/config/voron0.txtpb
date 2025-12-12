@@ -110,6 +110,26 @@ motion_controller {
 
 default_endstops: ["stepper1_stall", "stepper2_stall"]
 
+endstop_sets: [
+    {
+        axis: ["X", "Y"]
+        min_limit: true
+        max_limit: true
+
+        # TODO: Eventually also monitor Z diag
+        monitored_endstops: ["stepper1_stall", "stepper2_stall"]
+        expected_endstops: ["stepper1_stall", "stepper2_stall"]
+    },
+    {
+        axis: ["Z"]
+        min_limit: true
+
+        # TODO: Also monitor X/Y/Z stepper stalls.
+        monitored_endstops: ["z_probe"]
+        expected_endstops: ["z_probe"]
+    }
+]
+
 endstop_controller {
     endstops: [
         {

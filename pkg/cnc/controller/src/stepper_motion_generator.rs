@@ -137,20 +137,6 @@ impl StepperMotionGenerator {
 
                 let motion_delta = motion_end_motor_position[motor_i] - motion_start_motor_position[motor_i];
 
-                // Skip 
-                if motion_delta.abs() < 0.01 {
-                    // if motor_i == 0 {
-                    //     println!("TO END: {}", motion_end_time);
-                    //     println!("  {}, {}", motion_end_motor_position[motor_i], motion_start_motor_position[motor_i]);
-                    //     println!("  Dur: {}", motion.duration);
-                    // }
-
-
-                    // Motor does not move for this motion.
-                    self.motor_position_end_time[motor_i] = motion_end_time;
-                    continue;
-                }
-
                 if first_used_motion.is_none() {
                     first_used_motion = Some(motion_i);
                 }
@@ -233,9 +219,6 @@ impl StepperMotionGenerator {
                             );
 
                             let want_shift = 2 * TARGET_MIN_STEP_DUR - first_step_dur;
-
-                            // println!("Fixing {} by {}", first_step_dur, want_shift.min(max_shift));
-
                             step_times[0] -= want_shift.min(max_shift);
                         }
                     }
@@ -245,6 +228,25 @@ impl StepperMotionGenerator {
                     self.motor_position_end_time[motor_i] = step_end_time;
 
                     step_times.push(step_end_ticks);
+                }
+
+                // Even if we produced no steps in this time window, we still need to advance the
+                // end time for the motor so that we don't end up issuing steps that are far into the past
+                // in future iterations.
+                //
+                // This mainly comes up in two scenarios:
+                // 1. If a motion doesn't move a specific motor, we need to skip past it in time.
+                // 2. If max_time only captures a relatively small slice of the current motion, we may
+                //    not have observed a full step yet.
+                //    - This case is tricky as a very slow velocity may mean that 1 step takes several
+                //      seconds
+                //    - TODO: Allow this time to be slightly in the past as long as it doesn't risk our
+                //      scheduling buffer for steps. 
+                if step_times.len() == 1 {
+                    // Alternative is to mark the end as motion_end_time.min(max_time);
+
+                    // Motor did not move for this motion.
+                    self.motor_position_end_time[motor_i] = motion_end_time.min(max_time);
                 }
 
 
@@ -298,7 +300,8 @@ impl StepperMotionGenerator {
         // TODO: Also need to check against the last step before all of these.
         for i in 1..step_times.len() {            
             if step_times[i] <= step_times[i - 1] {
-                return Err(err_msg("Non-monotonic step times"));
+                return Err(format_err!("Non-monotonic step times : step_times[{}] = {}; step_times[{}] = {}",
+                    i, step_times[i], i - 1, step_times[i - 1]));
             }
 
             let step_duration = step_times[i] - step_times[i - 1];
