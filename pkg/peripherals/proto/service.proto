@@ -184,6 +184,10 @@ message BoardConfig {
         ConfigureI2CRequest config = 3;
     }
 
+    message RadioPeripheral {
+        ConfigureRadioRequest config = 1;
+    }
+
     message Peripheral {
         // Stable human readable name for the pin.
         string name = 1;
@@ -201,6 +205,7 @@ message BoardConfig {
             SPIPeripheral spi = 9;
             BufferPeripheral buffer = 10;
             I2CPeripheral i2c = 11;
+            RadioPeripheral radio = 12;
         }
     }
     repeated Peripheral peripherals = 4;

@@ -167,7 +167,10 @@ peripherals {
         negative_pin_name: "PROBE-"
         config {
             max_voltage: 0.6
-            sample_rate: 2048
+# Used as filtering. This many samples in a
+            # row must align.
+            oversampling: 2
+            sample_rate: 16384
             trigger_above: 0.05
             trigger_below: -0.05
             stop_on_trigger: true
@@ -180,7 +183,7 @@ peripherals {
     name: "probe_buf1"
     buffer {
         config {
-            size: 2048  # 1024 u16's
+            size: 8192  # 4096 u16's
         }
     }
 }
@@ -287,7 +290,7 @@ peripherals {
         config {
             is_input: true
             pull_down: true
-            interrupt: RISING_EDGE
+            interrupt: HIGH_LEVEL
         }
     }
 }

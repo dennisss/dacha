@@ -84,13 +84,15 @@ use crate::pwm::{PWMConfig, PWM};
 use crate::rtc::{RTCInstant, RTC};
 use crate::temp::Temp;
 use crate::uarte::UARTE;
-use crate::timer::Timer;
+use crate::timer::{Timer, TimerChannel};
 use crate::ppi::PPIChannels;
 use crate::spi::*;
 use crate::neopixel::*;
 use crate::adc::*;
 use crate::twim::*;
+use crate::radio::*;
 
+use super::time::*;
 use super::neopixel::NeopixelPeripheralThread;
 use super::tachometer::TachometerPeripheralThread;
 use super::temp::TemperaturePeripheralThread;
@@ -103,6 +105,7 @@ use super::spi::SPIPeripheralThread;
 use super::sleep::SleepPeripheralThread;
 use super::i2c::I2CPeripheralThread;
 use super::buffer::Buffer;
+use super::radio::*;
 
 const MAX_NUM_PERIPHERALS: usize = 32;
 
@@ -121,7 +124,10 @@ pub struct PeripheralsController {
     pub(super) clock: RTC,
     pub(super) state: AsyncMutex<PeripheralsControllerState>,
     response_buffer_readable: Channel<()>,
-    pub(super) adc_request_queue_filled: Channel<()>
+    pub(super) adc_request_queue_filled: Channel<()>,
+
+    // NOTE: Locking the state is still recommended for this to avoid multiple users taking the same channel slot.
+    pub(super) timer: Timer,
 }
 
 // TODO: Unconfigure all peripherals when this is dropped.
@@ -152,15 +158,18 @@ pub(super) struct PeripheralsControllerState {
 
     pub spim: FixedVec<SPIMx, 4>,
 
-    pub timer: Timer,
-
     pub adc: Option<WindowADC>,
 
     pub adc_request_queue: ADCRequestQueue,
 
+    pub radio: Option<Radio>,
+
     twim0: Option<TWIM0>,
 
     batch_ack: Option<BatchAck>,
+
+    // NOTE: THis always has a value after fully configured.
+    usb_sof_tracker: Option<TimedEvent>,
 
     /// Stores PeripheralResponse protos that need to be read back by the host.
     //
@@ -209,6 +218,8 @@ pub(super) enum PeripheralEntry {
     SPI(SPIHost),
 
     I2C(TWIM),
+
+    Radio(RadioEntry),
 }
 
 pub(super) struct GPIOEntry {
@@ -257,16 +268,6 @@ macro_rules! get_peripheral_mut {
         }
     }
 }
-
-
-/*
-
-
-Handling async operations:
-- We have a thread pool
-    - We start a thread giving it a task to do.
-
-*/
 
 impl Default for PeripheralEntry {
     fn default() -> Self {
@@ -319,6 +320,7 @@ impl PeripheralsController {
         ppi: PPI,
         saadc: SAADC,
         twim0: TWIM0,
+        radio: Radio,
     ) -> Self {
 
         // The stepper interrupt.
@@ -349,6 +351,7 @@ impl PeripheralsController {
 
         Self {
             clock,
+            timer,
             state: AsyncMutex::new(PeripheralsControllerState {
                 entries,
                 config_finalized: false,
@@ -365,13 +368,14 @@ impl PeripheralsController {
                 temp: Some(Temp::new(temp)),
                 used_pins: [0; NUM_PINS / 4],
                 spim,
-                timer,
                 twim0: Some(twim0),
                 adc: Some(adc),
                 adc_request_queue: ADCRequestQueue::default(),
                 batch_ack: None,
                 response_buffer: CyclicBuffer::new([0u8; RESPONSE_BUFFER_SIZE]),
                 response_buffer_overflowed: false,
+                radio: Some(radio),
+                usb_sof_tracker: None,
             }),
             response_buffer_readable: Channel::new(),
             adc_request_queue_filled: Channel::new(),
@@ -451,14 +455,6 @@ impl PeripheralsController {
 
             let _ = self.response_buffer_readable.recv().await;
         }
-    }
-
-    pub async fn get_clock_time(&self) -> Option<u32> {
-        // TODO: Ensure that the timer is running?
-
-        lock!(state <= self.state.lock().await.unwrap(), {
-            state.timer.capture()
-        })
     }
 
     /// Returns:
@@ -643,7 +639,7 @@ impl PeripheralsController {
                     dir_pin,
                     &mut state.ppi,
                     &mut state.gpiote,
-                    &mut state.timer,
+                    &self.timer,
                 ).ok_or_else(|| ExecuteError::ErrorCode(
                     PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                 ))?;
@@ -774,7 +770,30 @@ impl PeripheralsController {
 
                 Ok(OkResponse)
             }
+            PeripheralRequestCommandCase::ConfigureRadio(req) => {
+                self.check_entry_not_configured(state, peripheral_idx)?;
 
+                if state.radio.is_none() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                let radio = state.radio.take().unwrap();
+
+                // TODO: There is a risk of losing the radio instance if this fails.
+                let entry = RadioEntry::create(
+                    radio,
+                    &self.timer,
+                    &mut state.ppi
+                ).ok_or_else(|| ExecuteError::ErrorCode(
+                    PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                ))?;
+
+                state.entries[peripheral_idx] = PeripheralEntry::Radio(entry);
+
+                Ok(OkResponse)
+            }
             PeripheralRequestCommandCase::FinalizeConfig(_) => {
                 if state.config_finalized {
                     return Err(ExecuteError::ErrorCode(
@@ -786,6 +805,20 @@ impl PeripheralsController {
                     if pwm.has_connected_pins() {
                         pwm.start();
                     }
+                }
+
+                if state.usb_sof_tracker.is_none() {
+                    let usbd = unsafe { peripherals::raw::usbd::USBD::new() };
+                    
+                    state.usb_sof_tracker = Some(
+                        TimedEvent::create(
+                            &usbd.events_sof,
+                            &self.timer,
+                            &mut state.ppi,
+                        ).ok_or_else(|| ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                        ))?
+                    );
                 }
 
                 state.config_finalized = true;
@@ -851,6 +884,9 @@ impl PeripheralsController {
                         PeripheralEntry::SPI(inst) => {
                             state.spim.push(inst.into_inner());
                         }
+                        PeripheralEntry::Radio(inst) => {
+                            state.radio = Some(inst.into_inner());
+                        }
                         PeripheralEntry::ADC(_) => {}
                         PeripheralEntry::Buffer(_) => {}
                         PeripheralEntry::I2C(inst) => {
@@ -858,9 +894,6 @@ impl PeripheralsController {
                         }
                     }
                 }
-
-                // TODO: Do this automatically
-                state.timer.reset();
 
                 state.config_finalized = false;
 
@@ -1117,7 +1150,7 @@ impl PeripheralsController {
 
                 // Optional checks if we want to be paranoid.
                 /*
-                let time = state.timer.capture()
+                let time = self.timer.capture()
                     .ok_or_else(|| ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                     ))?;
@@ -1142,7 +1175,12 @@ impl PeripheralsController {
             }
             PeripheralRequestCommandCase::ClearStepperQueue(_) => {
                 let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
-                stepper.clear_motions();
+                let time = self.timer.capture()
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ))?;
+
+                stepper.clear_motions(time);
                 stepper.tick();
                 Ok(OkResponse)
             }
@@ -1155,7 +1193,7 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::GetClockTime(_) => {
                 self.check_fully_configured(state)?;
 
-                let time = state.timer.capture()
+                let time = self.timer.capture()
                     .ok_or_else(|| ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                     ))?;
@@ -1163,7 +1201,75 @@ impl PeripheralsController {
                 response.set_uint_val(time);
                 Ok(OkResponse)
             }
+            PeripheralRequestCommandCase::GetUsbSofTime(_) => {
+                /*
+                This has to deal with race conditions related to a new start_of_frame packet
+                being received while this is executing. An ideal solution would be to capture
+                the values in an interrupt waiting on EVENTS_SOF but that would require more
+                RTT delay or waking up every 1ms which is likely going to be more expensive than
+                just handlign the race conditions in here since the host polls the time much less
+                than 1000 times a second.
 
+                Timing:
+                - FRAMECNTR is updated
+                - Then EVENTS_SOF is triggered
+                - Then we capture the frame time.
+
+                There is a small chance we get a misaligned time and frame counter.
+                */
+
+                self.check_fully_configured(state)?;
+
+                use core::arch::asm;
+                use crate::common::register::RegisterRead;
+
+                let usbd = unsafe { peripherals::raw::usbd::USBD::new() };
+
+                let frame_counter = usbd.framecntr.read();
+
+                // Just in case the frame counter was just updated, wait at least 2 PPI cycles to ensure that
+                // the counter is also updated.
+                //
+                // TODO: For whatever reason, this still isn't sufficient to ensure
+                // that there aren't any issues.
+                unsafe {
+                    asm!("nop");
+                    asm!("nop");
+                    asm!("nop");
+                    asm!("nop");
+
+                    asm!("nop");
+                    asm!("nop");
+                    asm!("nop");
+                    asm!("nop");
+
+                    asm!("nop");
+                    asm!("nop");
+                    asm!("nop");
+                    asm!("nop");
+                }
+
+                let sof_time = state.usb_sof_tracker.as_ref().unwrap().last_time();
+
+                // Check for the rare case that we are on the edge of a frame so can't 
+                // easily correlate the time and frame counter values.
+                let frame_counter2 = usbd.framecntr.read();
+                if frame_counter2 != frame_counter {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::ABORTED,
+                    ));
+                }
+
+                let now = self.timer.capture()
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ))?;
+
+                response.usb_sof_mut().set_frame_start_time(sof_time);
+                response.usb_sof_mut().set_frame_counter(frame_counter);
+                response.set_time(now);
+                Ok(OkResponse)
+            }
             PeripheralRequestCommandCase::GetIdleCounter(_) => {
                 let v = crate::idle::idle_counter_value();
                 response.set_uint_val(v);

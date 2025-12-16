@@ -34,6 +34,13 @@ pub struct ClockTimeResponse {
     pub local_response_time: Instant,
 }
 
+#[derive(Clone, Debug)]
+pub struct USBSOFResponse {
+    pub timing: ClockTimeResponse,
+    pub frame_start_time: u32,
+    pub frame_counter: u32
+}
+
 
 // TODO: Every single USB transfer should have some timeout.
 pub struct USBRadio {
@@ -388,6 +395,28 @@ impl USBRadio {
             remote_time,
             local_request_time: res.send_time,
             local_response_time: res.receive_time
+        })
+    }
+
+    pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
+        let mut req = PeripheralRequest::default();
+        req.set_get_usb_sof_time(true);
+
+        // Using the high priority queue.
+        let res = self.enqueue_request_batch_inner(&[req], true).await?.await?;
+        let res = &res[0];
+
+        let remote_time = res.res.time();
+        let timing = ClockTimeResponse {
+            remote_time,
+            local_request_time: res.send_time,
+            local_response_time: res.receive_time
+        };
+
+        Ok(USBSOFResponse {
+            timing,
+            frame_start_time: res.res.usb_sof().frame_start_time(),
+            frame_counter: res.res.usb_sof().frame_counter()
         })
     }
 

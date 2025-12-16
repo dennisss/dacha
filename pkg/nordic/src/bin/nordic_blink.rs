@@ -53,7 +53,7 @@ async fn blinker_thread_fn() {
     BlinkUSBThread::start(
         BLINK_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
-        &RADIO_SOCKET,
+        Some(&RADIO_SOCKET),
         None,
         timer.clone(),
     );
@@ -93,7 +93,7 @@ define_thread!(
     protocol_usb_thread_fn,
     descriptors: BlinkUSBDescriptors,
     usb: USBDeviceController,
-    radio_socket: &'static RadioSocket,
+    radio_socket: Option<&'static RadioSocket>,
     peripherals_controller: Option<&'static PeripheralsController>,
     rtc: RTC
 );

@@ -88,7 +88,7 @@ impl KeyboardUSBHandler {
         rtc: RTC,
     ) -> Self {
         let inner_handler =
-            ProtocolUSBHandler::new(KEYBOARD_USB_DESCRIPTORS, radio_socket, None, rtc.clone());
+            ProtocolUSBHandler::new(KEYBOARD_USB_DESCRIPTORS, Some(radio_socket), None, rtc.clone());
 
         Self {
             state,

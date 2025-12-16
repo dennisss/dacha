@@ -95,6 +95,10 @@ impl StepCount {
         self.sign_bit() != 0
     }
 
+    pub fn set_direction(&mut self, dir: bool) {
+        *self = Self::new(self.count(), dir);
+    }
+
     pub fn delta(&self) -> i32 {
         let mut count = self.count() as i32;
         if !self.direction() {

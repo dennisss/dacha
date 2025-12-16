@@ -23,7 +23,7 @@ peripherals {
         config {
             is_input: true
             pull_down: true
-            interrupt: RISING_EDGE
+            interrupt: HIGH_LEVEL
         }
     }
 }
@@ -34,7 +34,7 @@ peripherals {
         config {
             is_input: true
             pull_down: true
-            interrupt: RISING_EDGE
+            interrupt: HIGH_LEVEL
         }
     }
 }
@@ -45,7 +45,7 @@ peripherals {
         config {
             is_input: true
             pull_down: true
-            interrupt: RISING_EDGE
+            interrupt: HIGH_LEVEL
         }
     }
 }

@@ -1,6 +1,7 @@
 use common::register::{RegisterRead, RegisterWrite};
 use executor::interrupts::wait_for_irq;
 use peripherals::raw::Interrupt;
+use peripherals::raw::EventRegister;
 
 type RadioAddress = [u8; 4];
 
@@ -137,6 +138,10 @@ impl Radio {
         guard.periph.tasks_txen.write_trigger();
         guard.wait_for_end().await;
         guard.disable().await;
+    }
+
+    pub fn end_event(&self) -> &EventRegister {
+        &self.periph.events_end
     }
 }
 

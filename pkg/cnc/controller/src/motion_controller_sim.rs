@@ -125,10 +125,10 @@ impl MotionControllerSimulator {
                 n.push(commands[j].len());
 
                 for cmd in &commands[j] {
-                    let sign = if cmd.direction() == StepperMotorMotion_Direction::FORWARD { -1 } else { 1 };
+                    let sign = if cmd.num_steps.direction() { -1 } else { 1 };
 
-                    motor_position[j] += sign * ((cmd.num_steps_minus_one() + 1) as i64);
-                    self.total_steps += (cmd.num_steps_minus_one() + 1) as usize;
+                    motor_position[j] += sign * (cmd.num_steps.count() as i64);
+                    self.total_steps += cmd.num_steps.count() as usize;
                 }
 
             }

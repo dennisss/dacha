@@ -9,7 +9,6 @@ use cluster_client::ClusterMetaClient;
 use cnc_controller_proto::cnc::*;
 use cnc_controller::motion_controller_sim::MotionControllerSimulator;
 use cnc_controller::motion_controller::MotionController;
-use cnc_controller::gcode::CommandConverter;
 use cnc_controller::config::ControllerConfigRegistry;
 use file::LocalPathBuf;
 use file::project_path;
@@ -27,6 +26,8 @@ impl RemoteMachineController {
 
         let channel = cluster_client::service::create_rpc_channel(
             "localhost:8000", client.clone()).await?;
+        // let channel = cluster_client::service::create_rpc_channel(
+        //     "voron0.job.local.cluster.internal", client.clone()).await?;
 
         let stub = ControllerStub::new(channel);
 
@@ -36,35 +37,42 @@ impl RemoteMachineController {
         })
     }
 
+    pub async fn execute(&mut self, request: &ExecuteRequest) -> Result<ExecuteResponse> {
+        let request_context = rpc::ClientRequestContext::default();
+        self.stub.Execute(&request_context, request).await.result
+    }
+
     pub async fn move_to(&mut self, pos: &VectorXf, feed_rate: f32) -> Result<()> {
         let request_context = rpc::ClientRequestContext::default();
         let mut request = ExecuteRequest::default();
 
         let cmd = request.new_commands();
         let m = cmd.move_to_mut();
-        m.set_x(pos.x());
-        m.set_y(pos.y());
-        m.set_z(pos.z());
+        m.set_position(pos.to_proto());
         m.set_feed_rate(feed_rate);
 
         self.stub.Execute(&request_context, &request).await.result?;
         Ok(())
     }
 
-    pub async fn move_towards_endstop(&mut self, pos: &VectorXf, feed_rate: f32) -> Result<()> {
+    pub async fn move_towards_endstop(&mut self, pos: &VectorXf, feed_rate: f32) -> Result<Option<VectorXf>> {
         let request_context = rpc::ClientRequestContext::default();
         let mut request = ExecuteRequest::default();
 
         let cmd = request.new_commands();
         let m = cmd.move_to_mut();
-        m.set_x(pos.x());
-        m.set_y(pos.y());
-        m.set_z(pos.z());
+        m.set_position(pos.to_proto());
         m.set_feed_rate(feed_rate);
         m.set_towards_endstop(true);
 
-        self.stub.Execute(&request_context, &request).await.result?;
-        Ok(())
+        let res = self.stub.Execute(&request_context, &request).await.result?;
+        
+        let mut out = None;
+        if res.has_hit_position() {
+            out = Some(VectorXf::from_proto(res.hit_position()));
+        }
+
+        Ok(out)
     }
 
     pub async fn wait_until_idle(&mut self) -> Result<()> {

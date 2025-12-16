@@ -12,5 +12,7 @@ mod allocator;
 mod sleep;
 mod i2c;
 mod buffer;
+mod radio;
+mod time;
 
 pub use peripherals_controller::*;

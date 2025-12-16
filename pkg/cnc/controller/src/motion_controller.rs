@@ -139,7 +139,7 @@ struct State {
 
     planner: MotionControllerLinearPlanner,
 
-    active_state: Option<ActiveState>,
+    active: bool,
 
     /// Position of each motor in step units.
     ///
@@ -302,7 +302,7 @@ impl MotionController {
                 position_offset: VectorXf::zero_with_shape(config.motors().len(), 1),
                 first_motion_time: Instant::now(), // doesn't matter
                 planner: MotionControllerLinearPlanner::new(config.clone()),
-                active_state: None,
+                active: false,
                 motor_positions: vec![0; config.motors().len()],
                 motor_position_offsets: vec![0; config.motors().len()],
             })
@@ -410,7 +410,8 @@ impl MotionController {
                         enabled_state = Some(EnabledState {
                             pending_step_motions,
                             have_pending_motions,
-                            last_directions
+                            last_directions,
+                            active_state: None,
                         });
                     }
                 }
@@ -595,9 +596,11 @@ impl MotionController {
 
                 // Note that this is only valid if we assume that all motors that were moving have been stopped
                 // simultaneously.
-                if let Some(active_state) = state.active_state.take() {
+                if let Some(active_state) = enabled_state.active_state.take() {
                     state.motor_positions.copy_from_slice(active_state.queue.motor_positions());
                 }
+state.active = false;
+
 
                 // TODO: Whenever we do this, pull out the current motor positions before ending?
                 // state.active_state = None;
@@ -606,7 +609,12 @@ impl MotionController {
                 // how many of the planned steps were exactly completed.
                 for motor_i in 0..shared.config.motors().len() {
                     if statuses[motor_i].stopped() != StepperMotorStatus_StoppedReason::NONE {
-                        state.motor_positions[motor_i] = statuses[motor_i].position() -
+let mut pos = statuses[motor_i].position();
+                        if shared.config.motors()[motor_i].inverted() {
+                            pos = -pos;
+                        }
+
+                        state.motor_positions[motor_i] = pos -
                             state.motor_position_offsets[motor_i];
                     } else {
                         // TODO: Check position unchanged.
@@ -624,7 +632,7 @@ impl MotionController {
             // TODO: Need checks to ensure that the queue is sufficiently full.
             // If we are active and the queue becomes empty, we need to delay future steps?
 
-            if state.active_state.is_none() {
+            if enabled_state.active_state.is_none() {
                 if !state.planner.is_empty() && state.first_motion_time + IDLE_START_TIMEOUT >= now {
 
                     let start_time = now + MIN_MOTION_START_DELAY;
@@ -639,7 +647,8 @@ impl MotionController {
                     println!("-> Active : {:?}", remote_start_time);
 
                     // TODO: Need to preserve motor positions across queue initializations.
-                    state.active_state = Some(ActiveState {
+state.active = true;
+                    enabled_state.active_state = Some(ActiveState {
                         start_time,
                         planner_start_time: start_time,
                         queue_consumed_time: start_time,
@@ -652,15 +661,15 @@ impl MotionController {
                 }
             }
 
-            if let Some(active_state) = &mut state.active_state {
+            if let Some(active_state) = &mut enabled_state.active_state {
                 // TODO: Also check that the queue of commands to send is empty?
                 if state.planner.is_empty() && active_state.queue.is_empty() {
                     if !some_motors_active {
                         println!("=> Idle");
 
                         state.motor_positions.copy_from_slice(active_state.queue.motor_positions());
-
-                        state.active_state = None;
+state.active = false;
+                        enabled_state.active_state = None;
                         // TODO: Have a 'continue' here?
                     }
                     
@@ -703,9 +712,16 @@ impl MotionController {
                         }
                     }
 
+                    // TODO: Maybe propagate back the latest machine position to the planner as the new planner
+                    // start_position to account for drift due to step quantization.
+
+                }
+                
+            }
+        });
+
                     // Take from the 'queue' and prepare to send to the machine.
-                    // TODO: Move this out of the lock.
-                    {
+        if let Some(active_state) = &mut enabled_state.active_state {
                         // TODO: Limit the minimum time step for this?
 
                         let next_queue_consumed_time = now + STEP_GENERATION_WINDOW;
@@ -725,14 +741,6 @@ impl MotionController {
                             }
                         }
                     }
-
-                    // TODO: Maybe propagate back the latest machine position to the planner as the new planner
-                    // start_position to account for drift due to step quantization.
-
-                }
-                
-            }
-        });
 
         // Do enqueues.
 
@@ -980,7 +988,7 @@ impl MotionController {
             let done = lock!(state <= self.shared.state.lock().await?, {
                 self.check_accepting_movements(&state)?;
 
-                Result::<_, Error>::Ok(state.planner.is_empty() && state.active_state.is_none())
+                Result::<_, Error>::Ok(state.planner.is_empty() && !state.active)
             })?;
 
             if done {

@@ -76,6 +76,10 @@ impl PeripheralsDevice {
         self.usb_device.get_clock_time().await
             }
 
+pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
+        self.usb_device.get_usb_sof_time().await
+    }
+
     pub async fn get_idle_counter(&self) -> Result<u32> {
         self.usb_device.get_idle_counter().await
     }

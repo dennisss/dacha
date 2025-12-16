@@ -52,7 +52,6 @@ use cnc::linear_motion_planner::LinearMotionPlanner;
 use crate::devices::*;
 use crate::config::*;
 use crate::motion_controller::*;
-use crate::gcode::CommandConverter;
 use crate::endstop_controller::*;
 use crate::machine_controller::MachineController;
 
@@ -90,7 +89,7 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<ExecuteRequest>,
         response: &mut rpc::ServerResponse<ExecuteResponse>,
     ) -> Result<()> {
-        self.machine.execute(&request).await?;
+        response.value = self.machine.execute(&request).await?;
         Ok(())
     }
 
@@ -144,157 +143,5 @@ impl ControllerServiceCommand {
     }
 
 }
-
-#[derive(Args)]
-pub struct ExecuteCommand {
-    // #[arg(positional)]
-    proto: Option<String>,
-
-    gcode_file: Option<LocalPathBuf>,
-}
-
-impl ExecuteCommand {
-    pub async fn run(self) -> Result<()> {
-        let client = ClusterMetaClient::create_from_environment().await?;
-
-        let channel = cluster_client::service::create_rpc_channel(
-            "localhost:8000", client.clone()).await?;
-
-        let stub = ControllerStub::new(channel);
-        let request_context = rpc::ClientRequestContext::default();
-
-
-        if let Some(path) = self.gcode_file {
-
-            let cmds = Self::get_all_gcode_commands(&path).await?;
-
-            let mut last_pos = vec![0.0, 0.0, 0.0];
-
-            for cmd in cmds {
-
-
-
-                match cmd {
-                    gcode::Command::SetBedTemperatureAndWaitCommand(_) => {
-
-                    }
-                    gcode::Command::SetExtruderTemperature(_) => {
-
-                    }
-                    gcode::Command::SetExtruderTemperatureAndWait(_) => {
-
-                    }
-                    gcode::Command::SetUnitsToMillimeters(_) => {
-
-                    }
-                    gcode::Command::SetToAbsoluteMode(_) => {
-
-                    }
-                    gcode::Command::SetExtruderToRelativeMode(_) => {
-
-                    }
-                    gcode::Command::FanOn(_) => {
-
-                    }
-
-                    // LinearMove(LinearMove { inner: Move { x: Some(51.312), y: Some(57.403), z: None, e: Some(0.29417), feed_rate: None } })
-                    gcode::Command::LinearMove(cmd) => {
-
-                        // TODO: Use deref and get rid of the inners.
-                        if let Some(v) = cmd.inner.x {
-                            last_pos[0] = v.to_f32();
-                        }
-                        if let Some(v) = cmd.inner.y {
-                            last_pos[1] = v.to_f32();
-                        }
-                        if let Some(v) = cmd.inner.z {
-                            last_pos[2] = v.to_f32();
-                        }
-
-                        let mut request = ExecuteRequest::default();
-                        let move_to = request.new_move_to();
-                        move_to.set_x(last_pos[0]);
-                        move_to.set_y(last_pos[1]);
-                        move_to.set_z(last_pos[2]);
-
-                        stub.Execute(&request_context, &request).await.result?;
-
-                    }
-                    gcode::Command::FanOff(_) => {
-
-                    }
-                    gcode::Command::SetDefaultAcceleration(_) => {
-
-                    }
-                    gcode::Command::SetPosition(_) => {
-                        // TODO: This is used for setting extruder position to zero.
-                    }
-                    c @ _ => {
-                        eprintln!("Uknown: {:?}", c);
-                    }
-
-                }
-
-            }
-
-
-        }
-
-        if let Some(proto) = &self.proto {
-            let mut request = ExecuteRequest::default();
-            protobuf::text::parse_text_proto(&proto, &mut request)?;
-            println!("{:?}", stub.Execute(&request_context, &request).await.result?);
-        }
-
-        Ok(())
-    }
-
-    async fn get_all_gcode_commands(path: &file::LocalPath) -> Result<Vec<gcode::Command>> {
-        let data = file::read(&path).await?;
-
-        let mut parser = gcode::ProgramParser::default();
-        let mut remaining = &data[..];
-
-        let mut commands = vec![];
-
-        let mut els = vec![];
-        while !remaining.is_empty() {
-            els.clear();
-            let nread = parser.parse_line(remaining, true, &mut els);
-            remaining = &remaining[nread..];
-
-            let mut command = None;
-
-            for el in els.drain(..) {
-                match el {
-                    gcode::ProgramElement::Command(c) => {
-                        if command.is_some() {
-                            return Err(err_msg("Multi-command line"));
-                        }
-
-                        command = Some(c);
-                    }
-                    gcode::ProgramElement::Error(e) => {
-                        return Err(format_err!("Error while parsing gcode line: {}", e));
-                    }
-                    gcode::ProgramElement::EndOfLine |
-                    gcode::ProgramElement::Thumbnail(_) |
-                    gcode::ProgramElement::Metadata { .. } => {},
-                }
-            }
-
-            if let Some(command) = command {
-                commands.push(command);
-                
-                // println!("{:?}", command);
-            }
-        }
-
-        Ok(commands)
-    }
-
-}
-
-
 
 

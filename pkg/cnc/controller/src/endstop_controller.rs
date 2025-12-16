@@ -184,6 +184,8 @@ impl EndstopController {
 
         let dev = shared.devices.get_peripherals_device(endstop_config.peripheral().device_name()).await?;
 
+        let mut hit_time = None;
+
         if !endstop_config.analog_buffers().is_empty() {
 
             let mut next_buffer_index = 0;
@@ -203,11 +205,19 @@ impl EndstopController {
                 let res = req.await?;
 
                 if res.triggered {
+                    // TODO: Need to make sure this is using a precise time.
+                    let t = shared.devices.time().wrap_raw_time(
+                        endstop_config.peripheral().device_name(),
+                        res.sampling_completion_time
+                    ).await?;
+                    hit_time = Some(t);
+
                     break;
                 }
             }
 
         } else {
+            // TODO: I sometimes get RESOURCE_BUSY for this.
             dev.poll_gpio_interrupt(endstop_config.peripheral().peripheral_name()).await?;
         }
 
@@ -229,7 +239,7 @@ impl EndstopController {
         // Stop motors.
         let disable_motors = endstop_config.hard();
         let alarm = !expected;
-        shared.motion_controller.stop_motors(endstop_config.motors(), disable_motors, alarm).await?;
+        shared.motion_controller.stop_motors(endstop_config.motors(), disable_motors, alarm, hit_time).await?;
 
         let t2 = Instant::now();
 

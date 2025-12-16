@@ -33,6 +33,22 @@ message ControllerConfig {
     // Names of all endstops that should be normally monitored
     // (when motors are energized but not homing).
     repeated string default_endstops = 7;
+
+    repeated EndstopSet endstop_sets = 8;
+}
+
+message EndstopSet {
+    // When any of these axes is moving intentionally towards endstops,
+    // we will use this endstop set.
+    repeated string axis = 1;
+
+    bool max_limit = 2;
+
+    bool min_limit = 3;
+
+    repeated string monitored_endstops = 4;
+
+    repeated string expected_endstops = 5;
 }
 
 message HeaterControllerConfig {

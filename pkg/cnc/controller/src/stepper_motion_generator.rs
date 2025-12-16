@@ -103,7 +103,7 @@ impl StepperMotionGenerator {
     /// Gets all commands 
     pub fn to_commands(
         &mut self, max_time: f64
-    ) -> Result<Vec<Vec<StepperMotorMotion>>> {
+    ) -> Result<Vec<Vec<QuadraticStepperMotion>>> {
 
         let num_motors = self.config.motors().len();
 
@@ -291,7 +291,7 @@ impl StepperMotionGenerator {
         motor_i: usize,
         mut dir: bool,
         step_times: &[u32],
-        out: &mut Vec<StepperMotorMotion>
+        out: &mut Vec<QuadraticStepperMotion>
     ) -> Result<()> {
         if step_times.len() == 1 {
             return Ok(());
@@ -326,8 +326,14 @@ impl StepperMotionGenerator {
 
         let time_offset = self.remote_start_time[motor_i].lower()
             .wrapping_add(self.seconds_to_ticks(self.first_motion_start_time));
+
+        if self.config.motors()[motor_i].inverted() {
+            dir = !dir;
+        }
+
         for raw_motion in &mut raw_motions {
             raw_motion.next_step_time = raw_motion.next_step_time.wrapping_add(time_offset);
+            raw_motion.num_steps.set_direction(dir);
         }
 
         let mut skip_first = false;
@@ -371,32 +377,6 @@ impl StepperMotionGenerator {
                 m.next();
 
             }
-        }
-
-
-        if self.config.motors()[motor_i].inverted() {
-            dir = !dir;
-        }
-
-
-        for raw_motion in raw_motions {
-            let mut step = StepperMotorMotion::default();
-
-            // NOTE: Direction compression should be performed by the caller across motions right
-            // before the motions are sent to the device.
-            let dir_proto = match dir {
-                true => StepperMotorMotion_Direction::FORWARD,
-                false => StepperMotorMotion_Direction::BACKWARD
-            };
-
-            step.set_direction(dir_proto);
-
-            // TODO: Compress this to be a delta relative to the last time.
-            step.set_next_step_time(raw_motion.next_step_time);
-            step.set_next_step_duration(if raw_motion.num_steps.count() == 1 { 0 } else { raw_motion.next_step_duration });
-            step.set_step_duration_increment(raw_motion.step_duration_increment);
-            step.set_num_steps_minus_one(raw_motion.num_steps.count() - 1);
-            out.push(step);
         }
 
         Ok(())

@@ -69,6 +69,7 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
             let name = config.sda_pin_name().to_string();
             callback(&name, config.config_mut().sda_pin_mut())?;
         }
+        BoardConfig_PeripheralConfigCase::Radio(config) => {}
         BoardConfig_PeripheralConfigCase::NOT_SET => {
             return Err(err_msg("Unconfigured peripheral"));
         }
@@ -284,6 +285,9 @@ pub fn build_configuration_requests(config: &BoardConfig) -> Result<(Vec<Periphe
             }
             BoardConfig_PeripheralConfigCase::I2c(config) => {
                 req.set_configure_i2c(config.config().clone());
+            }
+            BoardConfig_PeripheralConfigCase::Radio(config) => {
+                req.set_configure_radio(config.config().clone());
             }
             BoardConfig_PeripheralConfigCase::Spi(config) => {
                 req.set_configure_spi(config.config().clone());

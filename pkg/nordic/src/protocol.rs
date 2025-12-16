@@ -62,7 +62,7 @@ pub trait ProtocolUSBDescriptorSet =
 
 pub struct ProtocolUSBHandler<D> {
     descriptors: D,
-    radio_socket: &'static RadioSocket,
+    radio_socket: Option<&'static RadioSocket>,
     peripherals_controller: Option<&'static PeripheralsController>,
     rtc: RTC,
     packet_buf: PacketBuffer,
@@ -159,7 +159,7 @@ impl<D: ProtocolUSBDescriptorSet> USBDeviceHandler for ProtocolUSBHandler<D> {
 impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
     pub fn new(
         descriptors: D,
-        radio_socket: &'static RadioSocket,
+        radio_socket: Option<&'static RadioSocket>,
         peripherals_controller: Option<&'static PeripheralsController>,
         rtc: RTC,
     ) -> Self {
@@ -175,6 +175,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
     async fn process_peripheral_request_data(&self, data: &[u8]) {
         let n = data.len();
         let mut i = 0;
+        // TODO: Send back errors whenever this notices an inconsistency of parse failure.
         while i < n {
             let len = data[i] as usize;
             i += 1;
@@ -230,7 +231,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                     return Ok(());
                 }
 
-                let _ = self.radio_socket.enqueue_tx(&mut self.packet_buf).await;
+                let _ = self.radio_socket.as_ref().unwrap().enqueue_tx(&mut self.packet_buf).await;
 
                 return Ok(());
             } else if setup.bRequest == ProtocolRequestType::SetNetworkConfig.to_value() {
@@ -250,16 +251,10 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 };
 
                 // Ignore errors.
-                let _ = self.radio_socket.set_network_config(proto).await;
+                let _ = self.radio_socket.as_ref().unwrap().set_network_config(proto).await;
 
                 log!("=> DONE");
 
-                return Ok(());
-            } else if setup.bRequest == ProtocolRequestType::PeripheralRequest.to_value() {
-                // TODO: Decouple the buffer from being 'packet' typed and length.
-                let mut raw_proto = self.packet_buf.raw_mut();
-                let n = req.read(raw_proto).await?;
-                self.process_peripheral_request_data(&self.packet_buf.raw()[0..n]).await;
                 return Ok(());
             }
         }
@@ -296,7 +291,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
             if setup.bRequest == ProtocolRequestType::Receive.to_value() {
                 // log!("USB RX");
                 // TODO: Don't dequeue until the host has ACK'ed the response?
-                let has_data = self.radio_socket.dequeue_rx(&mut self.packet_buf).await;
+                let has_data = self.radio_socket.as_ref().unwrap().dequeue_rx(&mut self.packet_buf).await;
                 res.write(if has_data {
                     self.packet_buf.as_bytes()
                 } else {
@@ -310,7 +305,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 // TODO: Re-use the packet buffer.
                 let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
 
-                let network_config = self.radio_socket.lock_network_config().await;
+                let network_config = self.radio_socket.as_ref().unwrap().lock_network_config().await;
                 if let Some(network_config) = network_config.get() {
                     if let Err(_) = network_config.serialize_to(&protobuf::SerializeOptions::default(), &mut raw_proto) {
                         // TODO: Make sure this returns an error over USB?
@@ -346,44 +341,6 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
                 }
 
                 res.write(&buffer[0..n]).await?;
-                return Ok(());
-            } else if setup.bRequest == ProtocolRequestType::PeripheralResponse.to_value() {
-                // TODO: Decouple the buffer from being 'packet' typed and length.
-                let mut buffer = self.packet_buf.raw_mut();
-                
-                if (setup.wLength as usize) < buffer.len() {
-                    res.stale();
-                    return Ok(());
-                }
-
-                // TODO: Don't consume unless the host ACKs the data?
-                if let Some(controller) = self.peripherals_controller {
-                    let n = controller.read_response(buffer).await;
-                    res.write(&buffer[0..n]).await?;
-                    return Ok(());
-                }
-            } else if setup.bRequest == ProtocolRequestType::GetClockTime.to_value() {
-                if (setup.wLength as usize) < 4 {
-                    res.stale();
-                    return Ok(());
-                }
-
-                if let Some(controller) = self.peripherals_controller {
-                    if let Some(t) = controller.get_clock_time().await {
-                        let buffer = t.to_le_bytes();
-                        res.write(&buffer[..]).await?;
-                        return Ok(());
-                    }
-                }
-            } else if setup.bRequest == ProtocolRequestType::GetIdleCounter.to_value() {
-                if (setup.wLength as usize) < 4 {
-                    res.stale();
-                    return Ok(());
-                }
-
-                let num = crate::idle::idle_counter_value();
-                let buffer = num.to_le_bytes();
-                res.write(&buffer[..]).await?;
                 return Ok(());
             }
         }
@@ -424,7 +381,7 @@ fn fast_next_multiple_of_4(n: usize) -> usize {
 pub async fn protocol_usb_thread_fn<D: ProtocolUSBDescriptorSet>(
     descriptors: D,
     mut usb: USBDeviceController,
-    radio_socket: &'static RadioSocket,
+    radio_socket: Option<&'static RadioSocket>,
     peripherals_controller: Option<&'static PeripheralsController>,
     rtc: RTC,
 ) {

@@ -7,3 +7,4 @@ pub mod plane;
 pub mod leveling;
 pub mod remote;
 pub mod grid;
+pub mod gcode;

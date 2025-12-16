@@ -3,9 +3,12 @@ use core::ops::{Deref, DerefMut, Drop};
 use core::pin::Pin;
 
 use common::register::{RegisterRead, RegisterWrite};
+use executor::critical_mutex::CriticalMutex;
+use executor::lock;
 use peripherals::raw::timer0::{TIMER0, TIMER0_REGISTERS};
 use peripherals::raw::timer4::TIMER4;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection, EventRegister};
+use peripherals::raw::TaskRegister;
 
 use crate::pins::{connect_pin, disconnect_pin, is_pin_connected, PeripheralPin};
 
@@ -63,8 +66,7 @@ timerx_from!(TIMER4, TIMER4, 6);
 
 pub struct Timer {
     periph: TIMERx,
-    // TODO: Instead use a bit mask
-    used_channels: usize,
+    available_channels: CriticalMutex<u8>
 }
 
 impl Timer {
@@ -74,42 +76,66 @@ impl Timer {
         periph.bitmode.write_32bit();
         periph.tasks_start.write_trigger();
 
-        Self { periph, used_channels: 0 }
-    }
-
-    pub fn reset(&mut self) {
-        self.used_channels = 0;
-    }
-
-    pub fn new_channel(&mut self) -> Option<TimerChannel> {
-        if self.used_channels + 1 > self.periph.total_channels {
-            return None;
+        let mut available_channels = 0;
+        for i in 0..periph.total_channels {
+            available_channels |= 1 << i;
         }
 
-        // TODO: Auto de-allocate channels once the channels are dropped.
-        let index = self.used_channels;
-        self.used_channels += 1;
-
-        Some(TimerChannel { periph: unsafe { self.periph.clone() }, index })
+        Self { periph, available_channels: CriticalMutex::new(available_channels) }
     }
 
-    pub fn capture(&mut self) -> Option<u32> {
-        if self.used_channels + 1 > self.periph.total_channels {
-            return None;
+    pub fn new_channel<'a>(&'a self) -> Option<TimerChannel<'a>> {
+
+        let mut available_channels = self.available_channels.lock();
+
+        let mut index = None;
+        for i in 0..8 {
+            let mask: u8 = 1 << i;
+            if *available_channels & mask != 0 {
+                index = Some(i);
+                *available_channels &= !mask;
+                break;
+            }
         }
 
-        let i = self.used_channels;
-        self.periph.tasks_capture[i].write_trigger();
-        Some(self.periph.cc[i].read())
+        let index = match index {
+            Some(v) => v,
+            None => return None
+        };
+
+        Some(TimerChannel { timer: self, periph: unsafe { self.periph.clone() }, index })
+    }
+
+    pub fn capture(&self) -> Option<u32> {
+        let mut channel = match self.new_channel() {
+            Some(v) => v,
+            None => return None
+        };
+        
+        Some(channel.capture())
     }
 }
 
-pub struct TimerChannel {
+pub struct TimerChannel<'a> {
+    // TODO: Eventually find a nice way to dedup these.
+    timer: &'a Timer,
     periph: TIMERx,
+
     index: usize,
 }
 
-impl TimerChannel {
+impl<'a> Drop for TimerChannel<'a> {
+    fn drop(&mut self) {
+        let mut available_channels = self.timer.available_channels.lock();
+        *available_channels |= 1 << self.index;
+    }
+}
+
+impl<'a> TimerChannel<'a> {
+
+    pub fn compare_value(&self) -> u32 {
+        self.periph.cc[self.index].read()
+    }
 
     pub fn set_compare_value(&mut self, value: u32) {
         self.periph.cc[self.index].write(value);
@@ -135,6 +161,10 @@ impl TimerChannel {
 
     pub fn compare_event(&self) -> &EventRegister {
         &self.periph.events_compare[self.index]
+    }
+
+    pub fn capture_task(&mut self) -> &mut TaskRegister {
+        &mut self.periph.tasks_capture[self.index]
     }
 
     pub fn enable_interrupt(&mut self) {

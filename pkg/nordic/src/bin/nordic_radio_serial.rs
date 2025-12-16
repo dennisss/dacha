@@ -209,7 +209,7 @@ async fn main_thread_fn() {
     RadioSerialUSBThread::start(
         RADIO_SERIAL_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
-        &RADIO_SOCKET,
+        Some(&RADIO_SOCKET),
         None,
         rtc.clone(),
     );
@@ -220,7 +220,7 @@ define_thread!(
     protocol_usb_thread_fn,
     descriptors: RadioSerialUSBDescriptors,
     usb: USBDeviceController,
-    radio_socket: &'static RadioSocket,
+    radio_socket: Option<&'static RadioSocket>,
     peripherals_controller: Option<&'static PeripheralsController>,
     rtc: RTC
 );

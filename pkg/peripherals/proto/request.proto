@@ -131,6 +131,10 @@ message PeripheralRequest {
         // Note that the request is not fully cancelled until the MCU sends back a
         // response using this sequence number.
         bool cancel = 40;
+
+        ConfigureRadioRequest configure_radio = 41;
+
+        bool get_usb_sof_time = 42;
     }
 
     reserved 6;
@@ -190,6 +194,9 @@ message PeripheralResponse {
         CONFIG_NOT_FINALIZED = 13;
 
         CANCELLED = 14;
+
+        // For some reason, the request couldn't be fulfilled correctly. The caller should retry.
+        ABORTED = 15;
     }
 
     ErrorCode error_code = 3;
@@ -216,6 +223,8 @@ message PeripheralResponse {
         StepperMotorStatus stepper_status = 16;
 
         ADCFormat adc_format = 17;
+
+        USBSOFResponse usb_sof = 18;
     }
 }
 
@@ -505,4 +514,13 @@ message NeopixelTransfer {
     bytes data = 1 [(dacha.max_length) = 16];
 }
 
+
+message ConfigureRadioRequest {
+
+}
+
+message USBSOFResponse {
+    uint32 frame_start_time = 1;
+    uint32 frame_counter = 2;
+}
 

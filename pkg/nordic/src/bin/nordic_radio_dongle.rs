@@ -105,6 +105,7 @@ async fn main_thread_fn() {
             peripherals.ppi,
             peripherals.saadc,
             peripherals.twim0,
+            Radio::new(peripherals.radio),
         ))
         .await;
 
@@ -149,11 +150,11 @@ async fn main_thread_fn() {
     }
     */
 
-    let mut radio_controller = RadioController::new(
-        &RADIO_SOCKET,
-        Radio::new(peripherals.radio),
-        ECB::new(peripherals.ecb),
-    );
+    // let mut radio_controller = RadioController::new(
+    //     &RADIO_SOCKET,
+    //     Radio::new(peripherals.radio),
+    //     ECB::new(peripherals.ecb),
+    // );
 
     /*
     // TODO: Make this more scalable.
@@ -172,12 +173,12 @@ async fn main_thread_fn() {
     setup_radio_activity_leds(tx_pin, rx_pin, rtc.clone(), &mut radio_controller);
     */
 
-    RadioControllerThread::start(radio_controller);
+    // RadioControllerThread::start(radio_controller);
 
     RadioDongleUSBThread::start(
         RADIO_DONGLE_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
-        &RADIO_SOCKET,
+        None, // Some(&RADIO_SOCKET),
         Some(peripheral_controller),
         rtc.clone(),
     );
@@ -188,7 +189,7 @@ define_thread!(
     protocol_usb_thread_fn,
     descriptors: RadioDongleUSBDescriptors,
     usb: USBDeviceController,
-    radio_socket: &'static RadioSocket,
+    radio_socket: Option<&'static RadioSocket>,
     peripherals_controller: Option<&'static PeripheralsController>,
     rtc: RTC
 );

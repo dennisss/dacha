@@ -235,7 +235,7 @@ async fn adc_sample_worker_thread(
 
             lock!(state <= controller.state.lock().await.unwrap(), {
                 // Return roughly the time of the last sample.
-                match state.timer.capture() {
+                match controller.timer.capture() {
                     Some(v) => res.set_time(v),
                     None => {
                         res.set_error_code(PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED);

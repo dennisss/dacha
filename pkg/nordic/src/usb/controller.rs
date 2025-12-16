@@ -672,6 +672,7 @@ impl<'a> USBDeviceControlRequest<'a> {
             // TODO: Not needed?
             self.controller.pending_transfer = None;
 
+            // TODO: Check if in the right spot?
             let packet_len = self.controller.periph.epout[0].amount.read() as usize;
             // let packet_len = self.controller.periph.size.epout[0].read().size() as usize;
             if packet_len > output.len() {
@@ -866,7 +867,7 @@ impl<'a> USBDeviceNormalRequest<'a> {
 
     // TODO: ONly allow calling this once.
     pub async fn read_aligned(&mut self, output: &mut [u8]) -> Result<usize, USBError> {
-// NOTE: We need to read this before the DMA transfer starts since as soon as the DMA
+        // NOTE: We need to read this before the DMA transfer starts since as soon as the DMA
         // transfer ends, the peripheral is allowed to accept another packet.
         //
         // Per this line in the datasheet:
@@ -910,7 +911,7 @@ impl<'a> USBDeviceNormalRequest<'a> {
         // let packet_len = self.controller.periph.epout[self.endpoint_index]
         //     .amount
         //     .read() as usize;
-        
+
         // NOTE: We do not clear SIZE.EPOUT here since the end of the DMA transfer will also
         // trigger the acceptance of the next USB packet (which may race ahead of us and set
         // a new value for SIZE.EPOUT before we clear it).

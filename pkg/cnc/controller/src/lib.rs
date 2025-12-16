@@ -22,6 +22,6 @@ pub mod machine_controller;
 pub mod stepper_motion_generator;
 pub mod pid;
 pub mod heater_controller;
-pub mod gcode;
 pub mod endstop_controller;
 pub mod proto_utils;
+pub mod stats;

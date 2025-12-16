@@ -18,6 +18,10 @@ message ExecuteRequest {
 
 message ExecuteResponse {
 
+    VectorProto last_position = 1;
+
+    VectorProto hit_position = 2;
+
 }
 
 message Command {
@@ -29,7 +33,20 @@ message Command {
         ConfigureCommand configure = 5;
         bool reset_alarm = 6;
         bool wait_until_idle = 7;
+        SetFanSpeed set_fan_speed = 8;
+        SetServoPosition set_servo_position = 9;
     }
+}
+
+message SetFanSpeed {
+    float speed = 1;
+
+    string name = 2;
+}
+
+message SetServoPosition {
+    // Position in microseconds.
+    float position = 1;
 }
 
 message MoveToCommand {
@@ -37,6 +54,9 @@ message MoveToCommand {
     float y = 2;
     float z = 3;
     float e = 4;
+
+    // Alternative way to specify the next position
+    VectorProto position = 8;
 
     float feed_rate = 5;
 
@@ -52,10 +72,7 @@ message SetTemperatureCommand {
 }
 
 message SetPosition {
-    float x = 1;
-    float y = 2;
-    float z = 3;
-    float e = 4;
+    VectorProto position = 1;
 }
 
 message ConfigureCommand {
@@ -72,4 +89,25 @@ message GetPositionResponse {
 
 message VectorProto {
     repeated float values = 1;
+}
+
+message SkewData {
+    message Point {
+        uint32 fixed_group = 1;
+
+        VectorProto machine_position = 2;
+
+        uint32 image_index = 3;
+
+        fixed64 time_micros = 4;
+
+    }
+
+    repeated Point points = 1;
+}
+
+message MatrixProto {
+    repeated float values = 1;
+    uint32 rows = 2;
+    uint32 cols = 3;
 }

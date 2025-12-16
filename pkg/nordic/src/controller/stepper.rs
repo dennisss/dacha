@@ -84,7 +84,7 @@ async fn stepper_worker_thread(
 
 
 pub struct StepperMotorController {
-    step_timer_channel: TimerChannel,
+    step_timer_channel: TimerChannel<'static>,
 
     step_ppi_channel: PPIChannel,
 
@@ -126,7 +126,7 @@ impl StepperMotorController {
         mut dir_pin: GPIOPin,
         ppi: &mut PPIChannels,
         gpiote: &mut GPIOTEChannels,
-        timer: &mut Timer,
+        timer: &'static Timer,
     ) -> Option<Self> {
         // Initialize GPIO pins as outputs with arbitrary initial values.
         step_pin
@@ -204,8 +204,18 @@ impl StepperMotorController {
 
     /// Clear the entire queue of motions. If a step is currently in progress,
     /// the next tick will attempt to clear it.
-    pub fn clear_motions(&mut self) {
-        // TODO: Eventually support cancelling any step that hasn't finished yet.
+    pub fn clear_motions(&mut self, current_time: u32) {
+        // Attempt to abort the enqueued step if it is far enough away in time
+        // (and hasn't occured yet) that we think we can safely stop it.
+        if self.have_enqueued_step {
+            let next_time = self.step_timer_channel.compare_value();
+            let delta_time = time_remaining_u32(next_time, current_time);
+            if delta_time > MIN_STEP_TIME && delta_time < MAX_STEP_TIME {
+                self.step_ppi_channel.disable();
+                self.step_timer_channel.disable_interrupt();
+                self.have_enqueued_step = false;
+            }
+        }
 
         self.motion_queue.clear();
         self.stats.stopped = StepperMotorStatus_StoppedReason::HOST_CLEAR;

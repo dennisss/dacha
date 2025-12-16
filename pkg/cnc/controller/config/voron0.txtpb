@@ -100,6 +100,11 @@ motion_controller {
         }
     ]
 
+    planner {
+        max_junction_deviation: 0.05
+    }
+
+    # TODO: Need to setup a max jerk for Z and E 
     axes: [
         { name: "X" max_speed: 60 max_acceleration: 200 coordination_priority: 0 },
         { name: "Y" max_speed: 60 max_acceleration: 200 coordination_priority: 0 },
@@ -164,6 +169,7 @@ endstop_controller {
                 peripheral_name: "probe"
             }
             motors: ["stepper3"]
+            # Always keep 1 extra request enqueued while the first one is probing.
             analog_buffers: ["probe_buf1", "probe_buf1"]
         }
     ]
@@ -171,3 +177,45 @@ endstop_controller {
 }
 
 heater_controllers {}
+
+
+fans: [
+    {
+        group_index: 1
+        speed_control {
+            device_name: "toolhead"
+            peripheral_name: "fan_l_pwm"
+        }
+    },
+    {
+        group_index: 1
+        speed_control {
+            device_name: "toolhead"
+            peripheral_name: "fan_r_pwm"
+        }
+    },
+    {
+        name: "chassis_fan"
+        speed_control {
+            device_name: "main"
+            peripheral_name: "chassis_fan_pwm"
+        }
+    },
+    {
+        name: "air_filter_fan"
+        speed_control {
+            device_name: "main"
+            peripheral_name: "air_filter_fan_pwm"
+        }
+    }
+]
+
+servos: [
+    {
+        name: "wiper"
+        pwm {
+            device_name: "main"
+            peripheral_name: "wiper_servo_pwm"
+        }
+    }
+]

@@ -28,7 +28,6 @@ cluster_client = { path = "../../container/client" }
 container_proto = { path = "../../container/proto" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
-gcode = { path = "../gcode" }
 color = { path = "../../image/color" }
 scpi = { path = "../../peripherals/scpi" }
 cnc = { path = ".." }
