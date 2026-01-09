@@ -178,5 +178,11 @@ impl SCPIClient {
         })
     }
 
+    /// For multimeters
+    pub async fn measure_voltage(&mut self) -> Result<f32> {
+        let data = self.run_command("MEAS:VOLT:DC?").await?;
+        Ok(data.parse::<f32>()?)
+    }
+
 }
 

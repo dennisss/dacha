@@ -38,3 +38,11 @@ pub fn gcd(mut a: i64, mut b: i64) -> i64 {
 
     a
 }
+
+pub fn gcd128(mut a: i128, mut b: i128) -> i128 {
+    while b != 0 {
+        tup!((a, b) = (b, a % b));
+    }
+
+    a
+}

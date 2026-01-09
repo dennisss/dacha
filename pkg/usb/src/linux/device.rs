@@ -653,3 +653,26 @@ impl CompletedRead {
     }
 }
 
+
+pub struct PendingWrite {
+    transfer: DeviceTransfer
+}
+
+impl PendingWrite {
+    pub async fn wait(self) -> Result<CompletedWrite> {
+        self.transfer.wait().await?;
+
+        if self.transfer.state.urb.actual_length as usize != self.transfer.state.buffer.len() {
+            return Err(err_msg("Not all bytes were written"));
+        }
+
+        Ok(CompletedWrite {
+            transfer: self.transfer
+        })
+    }
+}
+
+pub struct CompletedWrite {
+    transfer: DeviceTransfer
+}
+

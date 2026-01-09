@@ -190,15 +190,16 @@ impl CameraManager {
         })
     }
 
-    #[cfg(feature = "libcamera")]
     pub fn create_with(
         usb_context: usb::Context,
+        #[cfg(feature = "libcamera")]
         libcamera_manager: Option<Arc<libcamera::CameraManager>>,
     ) -> Result<Self> {
         Ok(Self {
             shared: Arc::new(Shared {
                 state: AsyncMutex::default(),
                 usb_context,
+                #[cfg(feature = "libcamera")]
                 libcamera_manager,
             }),
         })

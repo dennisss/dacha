@@ -124,6 +124,9 @@ impl EndstopController {
                 task.cancel().await;
             }
 
+            state.hit_expected = false;
+            state.hit_unexpected = false;
+
             // TODO: Reset internal triggered state.
 
             for endstop_name in monitored_endstops {

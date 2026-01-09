@@ -191,7 +191,13 @@ impl Status {
     }
 
     pub fn tape(&self) -> Option<Tape> {
-        Tape::from_status(self)
+        let t = Tape::from_status(self);
+
+        if t.is_none() && self.media_type != MediaType::NO_MEDIA {
+            eprintln!("Unknown tape type inserted: {:?}", self);
+        }
+
+        t
     }
 }
 

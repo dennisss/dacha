@@ -26,7 +26,10 @@ mod quadratic_interpolation;
 pub mod stepping;
 #[cfg(feature = "alloc")]
 pub mod constrained_vector;
-
+#[cfg(feature = "alloc")]
+pub mod grid;
+#[cfg(feature = "alloc")]
+pub mod rewriting;
 
 /// Computes 'next_time - current_time' assuming that that value
 /// should be positive (will account for u32 wrapping).

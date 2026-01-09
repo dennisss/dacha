@@ -25,7 +25,7 @@ mask_removal {
     tool_diameter: 0.3
     spindle_speed: 6000
     cut_depth: 0.1
-    cut_compression: 0.15
+    cut_compression: 0.3
     overlap_percentage: 0.5
     travel_z: 1
     clearance_z: 10

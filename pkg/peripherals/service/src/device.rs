@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 use std::future::Future;
 
 use common::errors::*;
-use nordic_tools::usb_radio::{USBRadio, ClockTimeResponse};
+use nordic_tools::usb_radio::{USBRadio, ClockTimeResponse, USBSOFResponse};
 use peripherals_proto::peripherals::*;
 
 use crate::config::*;
@@ -43,6 +43,11 @@ impl PeripheralsDevice {
         // TODO: Need to support batch sending of requests. 
         for req in reqs {
             let res = usb_device.send_request(&req).await?;
+
+            if req.has_finalize_config()  {
+                continue;
+            }
+
             config_responses.insert(req.peripheral_index(), res);
         }
 
@@ -51,6 +56,10 @@ impl PeripheralsDevice {
             usb_device,
             config_responses
         }, peripherals_state))
+    }
+
+    pub fn raw(&self) -> &USBRadio {
+        &self.usb_device
     }
 
     pub fn config(&self) -> &BoardConfig {
@@ -74,9 +83,9 @@ impl PeripheralsDevice {
 
     pub async fn get_clock_time(&self) -> Result<ClockTimeResponse> {
         self.usb_device.get_clock_time().await
-            }
+    }
 
-pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
+    pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
         self.usb_device.get_usb_sof_time().await
     }
 
@@ -124,18 +133,79 @@ pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
         Ok(n)
     }
 
-    pub async fn neopixel_transfer(
+    pub async fn i2c_transfer(
         &self,
         periph_name: &str,
-        data: &[u8],
+        address: u8,
+        send: &[u8],
+        receive: &mut [u8],
     ) -> Result<()> {
         let periph_index = self.periph_config(periph_name)?.index();
 
         let mut req = PeripheralRequest::default();
         req.set_peripheral_index(periph_index);
-        req.neopixel_transfer_mut().data_mut().extend_from_slice(data);
-        
+        req.i2c_transfer_mut().set_address(address as u32);
+        req.i2c_transfer_mut().write_data_mut().extend_from_slice(send);
+        req.i2c_transfer_mut().set_read_count(receive.len() as u32);
+
+        let res = self.usb_device.send_request(&req).await?;
+
+        // TODO: Check in range of 'receive' size.
+        let n = res.data_val().len();
+        if n != receive.len() {
+            return Err(err_msg("Did not receive the requested amount"));
+        }
+
+        receive[..n].copy_from_slice(res.data_val());
+        Ok(())
+    }
+
+    pub async fn neopixel_transfer(
+        &self,
+        periph_name: &str,
+        mut index: usize,
+        mut data: &[u8],
+    ) -> Result<()> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let max_bytes_per_request = {
+            let mut req = PeripheralRequest::default();            
+            req.neopixel_transfer_mut().data_mut().capacity()
+        };
+
+        while !data.is_empty() {
+            let n = core::cmp::min(max_bytes_per_request, data.len());
+            let chunk = &data[0..n];
+
+            // TODO: These can be pipelined.
+
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(periph_index);
+            req.neopixel_transfer_mut().set_index(index as u32);
+            req.neopixel_transfer_mut().data_mut().extend_from_slice(chunk);
+
+            self.usb_device.send_request(&req).await?;
+
+            data = &data[n..];
+            index += n;
+        }
+
+
+        Ok(())
+    }
+
+    pub async fn neopixel_show(
+        &self,
+        periph_name: &str,
+    ) -> Result<()> {
+        let periph_index = self.periph_config(periph_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(periph_index);
+        req.neopixel_show_mut();
+
         self.usb_device.send_request(&req).await?;
+
         Ok(())
     }
 
@@ -217,8 +287,6 @@ pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
         Ok(())
     }
 
-    
-    /*
     /// Returns RPM
     pub async fn read_tachometer(
         &self,
@@ -226,14 +294,60 @@ pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
     ) -> Result<f32> {
         let periph_index = self.periph_config(periph_name)?.index();
 
-        let mut req = PeripheralRequest::default();
-        req.set_peripheral_index(periph_index);
-        req.get_gpio_level_mut();
-        let res = self.usb_device.send_request(&req).await?;
-        Ok(res.uint_val() != 0)
-    }
-    */
+        let start_time = {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(periph_index);
+            req.set_start_tachometer(true);
+            let res = self.usb_device.send_request(&req).await?;
+            res.uint_val()
+        };
 
+        // TODO: Make this customizable based on how long we expect the fan
+        // to spin a reasonable number of times.
+        executor::sleep(Duration::from_secs(1)).await?;
+
+        let (end_time, cycle_count) = {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(periph_index);
+            req.set_end_tachometer(true);
+            let res = self.usb_device.send_request(&req).await?;
+            (res.time(), res.uint_val())
+        };
+
+        // 2 cycles per rotation
+        let rotations = (cycle_count as f64) / 2.0;
+
+        let time_delta = ((time_remaining_u32(end_time, start_time) as f64) / 16_000_000.0);
+
+        let rps = rotations / time_delta;
+
+        // Converting from rotations per second to per minute.
+        Ok((rps * 60.0) as f32)
+    }
+
+    pub async fn read_tachometers(
+        &self, periph_names: &[String]
+    ) -> Result<Vec<f32>> {
+        let mut out = vec![];
+
+        // TODO: Make it more configurable what the max concurrency is on the device based on number of
+        // unused timers / GPIOTEs
+        for names in periph_names.chunks(3) {
+
+            let mut futures = vec![];
+            for name in names {
+                futures.push(self.read_tachometer(name));
+            }
+
+            let results = common::futures::future::join_all(futures).await;
+
+            for res in results {
+                out.push(res?);
+            }
+        }
+
+        Ok(out)
+    }
 
     pub async fn analog_read(
         &self,
@@ -256,13 +370,14 @@ pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
 
         let v = Self::convert_raw_analog_output((res.uint_val() as u16) as i16, periph, config_res)?;
 
+        // TODO: Also return the time. 
         Ok(v)
     }
 
     /// Returns the time at which the user defined trigger was hit (if it was hit).
     /// Returns whether or not the window contains any values that hit the user defined trigger. 
     pub async fn analog_read_window(
-&self,
+        &self,
         periph_name: &str,
         buffer_name: &str,
     ) -> Result<AnalogReadWindowResult> {
@@ -273,7 +388,7 @@ pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
         &'a self,
         periph_name: &str,
         buffer_name: &str,
-) -> Result<impl Future<Output = Result<AnalogReadWindowResult>> + 'a> {
+    ) -> Result<impl Future<Output = Result<AnalogReadWindowResult>> + 'a> {
         let periph = self.periph_config(periph_name)?;
         let periph_index = periph.index();
 
@@ -289,7 +404,7 @@ pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
         req.set_peripheral_index(periph_index);
         req.sample_adc_mut().set_buffer(buffer_index);
         let res = self.usb_device.enqueue_request(&req).await?;
-        
+
         Ok(async move {
             let res = res.await?;
 
@@ -303,10 +418,10 @@ pub async fn get_usb_sof_time(&self) -> Result<USBSOFResponse> {
     /// TODO: We should have the window internally marked with which peripheral it can from to
     /// avoid reading another peripheral's data.
     pub async fn analog_fetch_window(
-&self,
-periph_name: &str,
+        &self,
+        periph_name: &str,
         buffer_name: &str,
-) -> Result<Vec<f32>> {
+    ) -> Result<Vec<f32>> {
         let periph = self.periph_config(periph_name)?;
         let periph_index = periph.index();
 
@@ -324,11 +439,11 @@ periph_name: &str,
 
         let mut buf = vec![];
         loop {
-while request_queue.len() < 4 {
-            let mut req = PeripheralRequest::default();
-req.set_peripheral_index(buffer_index);
-            req.set_read_buffer(true);
-request_queue.push(self.usb_device.enqueue_request(&req).await?);
+            while request_queue.len() < 4 {
+                let mut req = PeripheralRequest::default();
+                req.set_peripheral_index(buffer_index);
+                req.set_read_buffer(true);
+                request_queue.push(self.usb_device.enqueue_request(&req).await?);
             }
 
             let res = request_queue.remove(0).await?;
@@ -438,7 +553,7 @@ request_queue.push(self.usb_device.enqueue_request(&req).await?);
     }
 
     pub async fn clear_stepper_queue(&self, periph_name: &str) -> Result<u32> {
-let req = self.clear_stepper_queue_request(periph_name)?;
+        let req = self.clear_stepper_queue_request(periph_name)?;
         let res = self.usb_device.send_request(&req).await?;
         Ok(res.uint_val())
     }
@@ -463,4 +578,15 @@ let req = self.clear_stepper_queue_request(periph_name)?;
         Ok(())
     }
 
+}
+
+
+// TODO: Dedup me.
+fn time_remaining_u32(next_time: u32, current_time: u32) -> u32 {
+    let mut t = next_time.wrapping_sub(current_time);
+    if next_time < current_time {
+        t = t.wrapping_add(u32::max_value());
+    }
+
+    t
 }

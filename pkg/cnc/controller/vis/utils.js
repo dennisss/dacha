@@ -6,6 +6,15 @@ export class Timeline {
         this._key_frames = [];
         this._duration = 0.0;
         this._start_time = 0.0;
+        this._name = '';
+    }
+
+    name() {
+        return this._name;
+    }
+
+    set_name(name) {
+        this._name = name;
     }
 
     set_start_time(v) {
@@ -238,6 +247,30 @@ export function draw_box_text(ctx, width, height, text, text_color) {
     ctx.restore();
 }
 
+export function draw_multiline_text(ctx, params) {
+
+    let font_size = params.font_size || 25;
+    let font_family = params.font_family || 'Noto Sans';
+    let color = params.color || '#000';
+    let text = params.text;
+    let text_align = params.text_align || 'center';
+
+    ctx.font = `${font_size}px "${font_family}"`;
+
+    ctx.fillStyle = color;
+    ctx.textAlign = text_align;
+    ctx.textBaseline = 'middle';
+
+    let lines = text.split('\n');
+
+    let line_height = font_size * 1.2;
+
+    let start_y = -((lines.length - 1) * line_height) / 2;
+    lines.forEach((line, i) => {
+        ctx.fillText(line, 0, start_y + (i * line_height));
+    });
+}
+
 export class DiagramBox {
     constructor(params) {
         this._width = params.width;
@@ -245,10 +278,10 @@ export class DiagramBox {
         this._text = params.text || '';
         this._font_size = params.font_size || 25;
         this._font_family = params.font_family || 'Noto Sans';
-        this._text_color = '#000';
+        this._text_color = params.text_color || '#000';
         this._position = params.position || { x: 0, y: 0 }
         this._text_offset = params.text_offset || { x: 0, y: 0 };
-        this._background_color = '#aaccee';
+        this._background_color = params.background_color || '#aaccee';
     }
 
     set_background_color(color) {
@@ -274,21 +307,16 @@ export class DiagramBox {
 
         ctx.fillStyle = this._background_color;
         ctx.strokeStyle = '#000'
-        ctx.font = `${this._font_size}px "${this._font_family}"`;
 
         draw_box(ctx, this._width, this._height);
 
-        ctx.fillStyle = this._text_color;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.translate(this._text_offset.x, this._text_offset.y);
 
-        let lines = this._text.split('\n');
-
-        let line_height = this._font_size * 1.2;
-
-        let start_y = -((lines.length - 1) * line_height) / 2;
-        lines.forEach((line, i) => {
-            ctx.fillText(line, 0 + this._text_offset.x, start_y + this._text_offset.y + (i * line_height));
+        draw_multiline_text(ctx, {
+            text: this._text,
+            font_size: this._font_size,
+            font_family: this._font_family,
+            color: this._text_color
         });
 
         ctx.restore();
@@ -352,6 +380,20 @@ export class Grid {
             x: this._left + (this._width / 2),
             y: this._top + (this._height / 2)
         };
+    }
+
+    top_center() {
+        return {
+            x: this._left + (this._width / 2),
+            y: this._top
+        };
+    }
+
+    bottom_center() {
+        return {
+            x: this._left + (this._width / 2),
+            y: this._top + this._height
+        }
     }
 
     left_center() {

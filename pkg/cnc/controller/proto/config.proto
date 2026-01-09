@@ -4,6 +4,7 @@ package cnc;
 
 import "pkg/peripherals/proto/service.proto";
 import "pkg/cnc/motion/proto/config.proto";
+import "pkg/cnc/motion/proto/grid.proto";
 
 
 message ControllerConfig {
@@ -35,7 +36,32 @@ message ControllerConfig {
     repeated string default_endstops = 7;
 
     repeated EndstopSet endstop_sets = 8;
+
+    ZProbeConfig z_probe = 9;
+
+    repeated FanConfig fans = 10;
+
+    repeated ServoConfig servos = 11;
 }
+
+message FanConfig {
+    // NOTE: Index '1' is the primary set of part cooling fans.
+    // All fans with the same index are controlled together. 
+    uint32 group_index = 1;
+
+    string name = 2;
+
+    PeripheralReference speed_control = 3;
+
+    // TODO: Add tachometer.
+}
+
+message ServoConfig {
+    string name = 1;
+
+    PeripheralReference pwm = 2;
+}
+
 
 message EndstopSet {
     // When any of these axes is moving intentionally towards endstops,
@@ -73,6 +99,8 @@ message BedClientConfig {
     float calibration_a = 4;
     float calibration_b = 5;
     float chip_temp_calibration = 6;
+
+    PeripheralReference serial_peripheral = 7;
 }
 
 
@@ -155,6 +183,39 @@ message AxisGeometry {
         Direct direct = 1;
         CoreXY core_xy = 2;
     }
+}
+
+message ZProbeConfig {
+    float travel_feed_rate_xy = 1;
+    
+    float travel_feed_rate_z = 2;
+    
+    float probe_feed_rate = 3;
+    
+    float travel_position_z = 4;
+    
+    float probe_position_z = 5;
+
+    // After homing, if the Z position of the bed is probed to
+    // be > this distance from the origin (Z=0), then we will
+    // reject the point as noise and  
+    float max_origin_deviation = 6;
+
+    // Maximum number of times we will attempt to probe a single (x,y) point.
+    uint32 max_probe_attempts = 7;
+}
+
+message ZGridFadeLevelerConfig {
+
+
+}
+
+// Serialized version of the ZGridFadeLeveler that can be saved/restored to re-use
+// previous leveling data.
+message ZGridFadeLevelerProto {
+    GridValuesProto z_values = 1;
+
+    // TODO: Also include config data.
 }
 
 

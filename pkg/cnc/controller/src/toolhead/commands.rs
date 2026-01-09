@@ -442,7 +442,8 @@ impl ControlToolheadHeaterCommand {
                 color[1] = 0xff;
             }
 
-            driver.device().neopixel_transfer("leds", &color).await?;
+            driver.device().neopixel_transfer("leds", 0, &color).await?;
+            driver.device().neopixel_show("leds").await?;
 
 
 

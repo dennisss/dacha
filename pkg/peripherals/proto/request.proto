@@ -93,7 +93,12 @@ message PeripheralRequest {
 
         ConfigureNeopixelRequest configure_neopixel = 26;
 
+        // Transfers color values from the host and stores them in the MCU's color buffer.
         NeopixelTransfer neopixel_transfer = 27;
+
+        // Transfers the data in the peripherals color buffer to the
+        // LEDs.
+        NeopixelShow neopixel_show = 43;
 
         // Blocks until the interrupt condition is met
         // - For High/low polarity interrupts, this will return immediately if the pin is already
@@ -135,6 +140,20 @@ message PeripheralRequest {
         ConfigureRadioRequest configure_radio = 41;
 
         bool get_usb_sof_time = 42;
+
+        // Starts a counter at 0 which counts up every time the GPIO pin goes low.
+        //
+        // Returns the start time (on the main 16Mhz clock) of the counter in the uint_val
+        // response field. 
+        // 
+        // Reserves a GPIOTE channel and a TIMERx instance.
+        bool start_tachometer = 44;
+
+        // Stops the counter and deallocates resources taken by start_tachometer.
+        //
+        // Returns the final counter value in the uint_val field.
+        // The take at which this value was sampled will be in the 'time' response field.
+        bool end_tachometer = 45;
     }
 
     reserved 6;
@@ -507,12 +526,19 @@ message SampleADCRequest {
 
 message ConfigureNeopixelRequest {
     uint32 pin = 1;
+
     bool inverted = 2;
+
+    uint32 num_bytes = 3;
 }
 
 message NeopixelTransfer {
     bytes data = 1 [(dacha.max_length) = 16];
+
+    uint32 index = 2;
 }
+
+message NeopixelShow {}
 
 
 message ConfigureRadioRequest {

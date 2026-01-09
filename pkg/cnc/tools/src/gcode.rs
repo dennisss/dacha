@@ -1,6 +1,6 @@
 use common::errors::*;
 use cnc_controller_proto::cnc::Command;
-use math::matrix::VectorXf;
+use math::matrix::{VectorXf, MatrixXf};
 use cnc_controller::proto_utils::*;
 
 use crate::leveling::*;
@@ -13,7 +13,8 @@ pub struct CommandConverter {
     last_machine_position: VectorXf,
     last_position: Vec<gcode::Decimal>,
     last_feed_rate: f32,
-    leveler: Option<ZGridFadeLeveler>
+    leveler: Option<ZGridFadeLeveler>,
+    skew: Option<MatrixXf>,
 }
 
 impl CommandConverter {
@@ -35,11 +36,34 @@ impl CommandConverter {
             absolute_mode_set: false,
             extruder_relative_mode: false,
             leveler: None,
+            skew: None,
         }
     }
 
     pub fn set_leveler(&mut self, leveler: Option<ZGridFadeLeveler>) {
         self.leveler = leveler;
+    }
+
+    pub fn set_skew(&mut self, skew: Option<MatrixXf>) {
+
+        let mat = match skew {
+            Some(v) => v,
+            None => {
+                self.skew = None;
+                return;
+            }
+        };
+
+        let mut extended = MatrixXf::identity_with_shape(
+            self.last_machine_position.len(), self.last_machine_position.len());
+
+        for i in 0..mat.rows() {
+            for j in 0..mat.cols() {
+                extended[(i, j)] = mat[(i, j)];
+            }
+        }
+
+        self.skew = Some(extended);
     }
 
     fn decimal_to_vector(v: &[gcode::Decimal]) -> VectorXf {
@@ -73,10 +97,26 @@ impl CommandConverter {
             gcode::Command::SetExtruderToAbsoluteMode(_) => {
                 self.extruder_relative_mode = false;
             }
-            gcode::Command::FanOn(_) => {
+            gcode::Command::FanOn(cmd) => {
+                // TODO: Dedup this logic a bit.
+                let speed = cmd
+                    .speed
+                    .ok_or_else(|| err_msg("M106 requires S parameter"))?
+                    .to_f32();
 
+                if speed < 0.0 || speed > 255.0 {
+                    return Err(err_msg("Invalid fan speed"));
+                }
+
+                let mut cmd = Command::default();
+                cmd.set_fan_speed_mut().set_speed(speed / 255.0);
+                out.push(cmd);
             }
-
+            gcode::Command::FanOff(_) => {
+                let mut cmd = Command::default();
+                cmd.set_fan_speed_mut().set_speed(0.0);
+                out.push(cmd);
+            }
             // LinearMove(LinearMove { inner: Move { x: Some(51.312), y: Some(57.403), z: None, e: Some(0.29417), feed_rate: None } })
             gcode::Command::LinearMove(cmd) => {
 
@@ -111,11 +151,19 @@ impl CommandConverter {
 
                 let end_position = Self::decimal_to_vector(&self.last_position);
 
+                let end_machine_position = {
+                    if let Some(skew) = &self.skew {
+                        skew * end_position
+                    } else {
+                        end_position
+                    }
+                };
+
                 let machine_positions = {
                     if let Some(leveler) = &self.leveler {
-                        leveler.rewrite_move(start_machine_position, &end_position, false)
+                        leveler.rewrite_move(start_machine_position, &end_machine_position, false)
                     } else {
-                        vec![end_position]
+                        vec![end_machine_position]
                     }
                 };
 
@@ -133,9 +181,7 @@ impl CommandConverter {
                     self.last_machine_position = pos;
                 }
             }
-            gcode::Command::FanOff(_) => {
 
-            }
             gcode::Command::SetDefaultAcceleration(_) => {
 
             }

@@ -4138,7 +4138,7 @@ function part8_video(canvas) {
 
 }
 
-function draw_graph(ctx, params, ft) {
+export function draw_graph(ctx, params, ft) {
 
     ctx.beginPath();
     ctx.moveTo(0, 0);

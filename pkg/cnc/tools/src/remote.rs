@@ -75,6 +75,16 @@ impl RemoteMachineController {
         Ok(out)
     }
 
+    pub async fn set_servo_position(&mut self, pos: f32) -> Result<()> {
+        let mut request = ExecuteRequest::default();
+        let cmd = request.new_commands();
+        cmd.set_servo_position_mut().set_position(pos);
+
+        self.execute(&request).await?;
+
+        Ok(())
+    }
+
     pub async fn wait_until_idle(&mut self) -> Result<()> {
         let request_context = rpc::ClientRequestContext::default();
         let mut request = ExecuteRequest::default();

@@ -810,6 +810,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "cluster_jbod"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "base_error",
+ "base_radix",
+ "base_util",
+ "cluster_client",
+ "cluster_jbod_proto",
+ "common",
+ "compression",
+ "container_proto",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "macros",
+ "net",
+ "peripherals_service",
+ "protobuf",
+ "protobuf_builtins",
+ "regexp_macros",
+ "rpc",
+ "rpc_util",
+ "scpi",
+ "storage",
+ "sys",
+ "web",
+]
+
+[[package]]
+name = "cluster_jbod_proto"
+version = "0.0.0"
+dependencies = [
+ "builder_proto",
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "protobuf_compiler_proto",
+ "rpc",
+]
+
+[[package]]
 name = "cluster_manager"
 version = "0.1.0"
 dependencies = [
@@ -1005,6 +1051,7 @@ dependencies = [
 name = "cnc_controller"
 version = "0.1.0"
 dependencies = [
+ "base_util",
  "cluster_client",
  "cnc",
  "cnc_controller_proto",
@@ -1016,7 +1063,6 @@ dependencies = [
  "executor",
  "executor_multitask",
  "file",
- "gcode",
  "macros",
  "math",
  "math_compute",
@@ -1059,6 +1105,7 @@ dependencies = [
  "bgcode",
  "cam",
  "cluster_client",
+ "cnc",
  "cnc_monitor_proto",
  "common",
  "compression",
@@ -1124,11 +1171,24 @@ version = "0.1.0"
 dependencies = [
  "base_args",
  "base_error",
+ "cluster_client",
+ "cnc",
+ "cnc_controller",
+ "cnc_controller_proto",
  "common",
+ "container_proto",
+ "crypto",
  "executor",
+ "executor_multitask",
  "file",
  "gcode",
  "macros",
+ "math",
+ "math_compute",
+ "media_camera",
+ "peripherals_proto",
+ "protobuf",
+ "rpc",
 ]
 
 [[package]]
@@ -2525,6 +2585,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "klipper"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "common",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "macros",
+ "parsing",
+ "peripherals",
+]
+
+[[package]]
 name = "kv-log-macro"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3391,6 +3466,7 @@ name = "peripherals_service"
 version = "0.1.0"
 dependencies = [
  "base_error",
+ "base_util",
  "cluster_client",
  "common",
  "container_proto",

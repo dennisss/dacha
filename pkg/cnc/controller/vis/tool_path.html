@@ -1,0 +1,172 @@
+<!-- https://gemini.google.com/app/e7da996a261c19da  -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>3D Tool Path Visualizer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #222;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #eee;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 14px;
+            line-height: 1.5;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+            border-left: 4px solid #888;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-top: 5px;
+            font-weight: bold;
+        }
+
+        .color-swatch {
+            width: 12px;
+            height: 12px;
+            margin-right: 8px;
+            border-radius: 2px;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div id="info">
+        <div style="opacity: 0.9;">
+            <div class="legend-item">
+                <div class="color-swatch" style="background-color: #00ffff;"></div> Machine Position
+            </div>
+            <div class="legend-item">
+                <div class="color-swatch" style="background-color: #ff5500;"></div> Real "Camera" Position
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- 1. IMPORT DATA ---
+        import { pathA, pathB, config } from './tool_path_data.js';
+
+        // --- 2. THREE.JS STANDARD SETUP ---
+        const scene = new THREE.Scene();
+        // Center camera looking at the middle of the 120x120x120 volume
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.up.set(0, 0, 1);
+        camera.position.set(180, 160, 220);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(60, 60, 60); // Look at center of working volume
+        controls.update();
+
+        // Lighting (Technical style)
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const dl1 = new THREE.DirectionalLight(0xffffff, 0.6);
+        dl1.position.set(50, 200, 100);
+        scene.add(dl1);
+        const dl2 = new THREE.DirectionalLight(0xffffff, 0.3); // Fill light
+        dl2.position.set(-100, 50, -50);
+        scene.add(dl2);
+
+        // Helpers
+        const axesHelper = new THREE.AxesHelper(130); // Slightly larger than workspace
+        scene.add(axesHelper);
+
+        // Optional: Bounding Box to define the 0-120 workspace visually
+        if (config.showBoundingBox) {
+            const boxGeo = new THREE.BoxGeometry(120, 120, 120);
+            const boxEdges = new THREE.EdgesGeometry(boxGeo);
+            const boxLine = new THREE.LineSegments(boxEdges, new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.1, transparent: true }));
+            boxLine.position.set(60, 60, 60); // Center the box
+            scene.add(boxLine);
+        }
+
+
+        // --- 3. CORE FUNCTION: DRAW ORDERED PATH ---
+        function drawOrderedPath(pointsData, colorHex, sceneInstance) {
+            if (!pointsData || pointsData.length < 2) return;
+
+            const pathGroup = new THREE.Group();
+
+            // A. Shared Materials & Geometry for efficiency
+            // Use standard material for spheres so they react to light
+            const sphereMat = new THREE.MeshStandardMaterial({
+                color: colorHex, roughness: 0.3, metalness: 0.2
+            });
+            // Shared geometry for all points on this path
+            const sphereGeo = new THREE.SphereGeometry(config.sphereRadius, 16, 12);
+
+            // Basic material for connecting lines
+            const lineMat = new THREE.LineBasicMaterial({ color: colorHex });
+            const linePositions = [];
+
+            // B. Iterate through ordered list
+            pointsData.forEach(p => {
+                // 1. Place Sphere at point
+                const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+                sphereMesh.position.set(p.x, p.y, p.z);
+                pathGroup.add(sphereMesh);
+
+                // 2. Collect coordinates for the connecting line
+                linePositions.push(p.x, p.y, p.z);
+            });
+
+            // C. Create the continuous line geometry
+            const lineGeometry = new THREE.BufferGeometry();
+            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+            const lineMesh = new THREE.Line(lineGeometry, lineMat);
+            pathGroup.add(lineMesh);
+
+            sceneInstance.add(pathGroup);
+        }
+
+        // --- 4. EXECUTE DRAWING ---
+        drawOrderedPath(pathA, config.colorA, scene);
+        drawOrderedPath(pathB, config.colorB, scene);
+
+
+        // --- 5. RENDER LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+
+</html>

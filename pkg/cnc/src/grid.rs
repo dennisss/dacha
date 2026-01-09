@@ -1,6 +1,7 @@
+use alloc::vec::Vec;
 
-use base_error::*;
-use cnc_controller_proto::cnc::{GridProto, GridValuesProto};
+use common::errors::*;
+use cnc_motion_proto::cnc::{GridProto, GridValuesProto};
 
 
 #[derive(Clone)]
@@ -29,6 +30,14 @@ impl Grid {
         Self {
             proto
         }
+    }
+
+    pub fn x_interval(&self) -> f32 {
+        self.proto.x_interval()
+    }
+
+    pub fn y_interval(&self) -> f32 {
+        self.proto.y_interval()
     }
 
     pub fn to_proto(&self) -> GridProto {
@@ -69,6 +78,13 @@ impl Grid {
 
         out
     }
+
+    fn position(&self, i: usize, j: usize) -> (f32, f32) {
+        (
+            self.proto.base_point_x() + (j as f32) * self.proto.x_interval(),
+            self.proto.base_point_y() + (i as f32) * self.proto.y_interval()
+        )
+    }
 }
 
 pub struct GridValues {
@@ -79,6 +95,25 @@ pub struct GridValues {
 }
 
 impl GridValues {
+
+    pub fn grid(&self) -> &Grid {
+        &self.grid
+    }
+
+    pub fn iter(&self) -> Vec<(f32, f32, f32)> {
+        let mut out = vec![];
+        
+        for i in 0..self.values.len() {
+            for j in 0..self.values[i].len() {
+                let (x, y) = self.grid.position(i, j);
+                let z = self.values[i][j];
+
+                out.push((x,y,z));
+            }
+        }
+
+        out
+    } 
 
     pub fn to_proto(&self) -> GridValuesProto {
         let mut out = GridValuesProto::default();

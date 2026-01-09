@@ -1,0 +1,153 @@
+name: "jbod_backplane_tester"
+base_config: "nrf52840_itsybitsy"
+
+peripherals {
+    name: "5v_sense"
+    adc {
+        pin_name: "P0.30"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 10000
+            max_input_voltage: 6
+        }
+    }
+}
+
+peripherals {
+    name: "sas_gnd2_sense"
+    adc {
+        pin_name: "P0.28"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 10000
+            max_input_voltage: 6
+        }
+    }
+}
+
+peripherals {
+    name: "sas_v2_sense"
+    adc {
+        pin_name: "P0.31"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 10000
+            max_input_voltage: 6
+        }
+    }
+}
+
+peripherals {
+    name: "sas_gnd1_sense"
+    adc {
+        pin_name: "P0.02"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 10000
+            max_input_voltage: 6
+        }
+    }
+}
+
+peripherals {
+    name: "sas_v1_sense"
+    adc {
+        pin_name: "P0.03"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 10000
+            max_input_voltage: 6
+        }
+    }
+}
+
+##################
+
+peripherals {
+    name: "power_res2_ctrl"
+    gpio {
+        pin_name: "P0.13"
+        config {
+            is_input: false
+            pull_down: true
+            default_value: false
+        }
+    }
+}
+
+peripherals {
+    name: "power_res1_ctrl"
+    gpio {
+        pin_name: "P0.15"
+        config {
+            is_input: false
+            pull_down: true
+            default_value: false
+        }
+    }
+}
+
+peripherals {
+    name: "power_res1s_ctrl"
+    gpio {
+        pin_name: "P0.20"
+        config {
+            is_input: false
+            pull_down: true
+            default_value: false
+        }
+    }
+}
+
+peripherals {
+    name: "power_res2s_ctrl"
+    gpio {
+        pin_name: "P1.02"
+        config {
+            is_input: false
+            pull_down: true
+            default_value: false
+        }
+    }
+}
+
+##################
+
+peripherals {
+    name: "mcp23008_i2c"
+    i2c {
+        sda_pin_name: "P0.24"
+        scl_pin_name: "P0.25"
+        config {
+            frequency: 100000
+        }
+    }
+}
+
+
+

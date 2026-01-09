@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package cnc;
+
+message GridProto {
+    float base_point_x = 1;
+    float base_point_y = 2;
+    float x_interval = 3;
+    float y_interval = 4;
+    uint32 x_count = 5;
+    uint32 y_count = 6;
+}
+
+message GridValuesProto {
+    GridProto grid = 1;
+    repeated float values = 2;
+}

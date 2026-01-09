@@ -7,6 +7,7 @@ edition = "2018"
 doctest = false
 
 [dependencies]
+base_util = { path = "../../base/util" }
 macros = { path = "../../macros" }
 protobuf = { path = "../../protobuf", default-features = false }
 math = { path = "../../math", default-features = false }

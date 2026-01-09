@@ -14,6 +14,16 @@ use crate::pins::{connect_pin, disconnect_pin, is_pin_connected, PeripheralPin};
 // TODO: Also need to hold the interrupt.
 pub struct UARTEx {
     base_address: u32,
+    interrupt: Interrupt,
+}
+
+impl UARTEx {
+    unsafe fn clone(&self) -> Self {
+        Self {
+            base_address: self.base_address,
+            interrupt: self.interrupt
+        }
+    }
 }
 
 impl Deref for UARTEx {
@@ -31,21 +41,23 @@ impl DerefMut for UARTEx {
 }
 
 macro_rules! uartex_from {
-    ($t:ident) => {
+    ($t:ident, $i:ident) => {
         impl From<$t> for UARTEx {
             fn from(mut value: $t) -> Self {
                 UARTEx {
                     base_address: unsafe {
                         core::mem::transmute::<&mut UARTE0_REGISTERS, u32>(value.deref_mut())
                     },
+                    interrupt: Interrupt::$i
                 }
             }
         }
     };
 }
 
-uartex_from!(UARTE0);
-uartex_from!(UARTE1);
+uartex_from!(UARTE0, UART0_UARTE0);
+uartex_from!(UARTE1, UARTE1);
+
 
 /// Internal implementation details:
 /// - After new() is called, the peripheral is in the 'idle' state where:
@@ -64,7 +76,7 @@ pub struct UARTE {
 
 impl UARTE {
     pub fn new<TXPin: PeripheralPin, RXPin: PeripheralPin>(
-        mut periph: UARTE0,
+        mut periph: UARTEx,
         txd: TXPin,
         rxd: RXPin,
         baudrate: usize,
@@ -111,7 +123,7 @@ impl UARTE {
 
         Self {
             reader: UARTEReader {
-                periph: unsafe { UARTE0::new() },
+                periph: unsafe { periph.clone() },
             },
             writer: UARTEWriter { periph },
         }
@@ -121,9 +133,11 @@ impl UARTE {
         (self.reader, self.writer)
     }
 
-    pub fn into_inner(self) -> UARTE0 {
+    pub fn into_inner(self) -> UARTEx {
+        let inst = unsafe { self.reader.periph.clone() };
+
         drop(self);
-        unsafe { UARTE0::new() }
+        inst
     }
 
     pub async fn write(&mut self, data: &[u8]) {
@@ -140,7 +154,7 @@ impl UARTE {
 }
 
 pub struct UARTEWriter {
-    periph: UARTE0,
+    periph: UARTEx,
 }
 
 impl Drop for UARTEWriter {
@@ -202,7 +216,7 @@ impl<'a> Drop for UARTEWrite<'a> {
 impl<'a> UARTEWrite<'a> {
     pub async fn wait(&mut self) {
         while self.writer.periph.events_endtx.read().is_notgenerated() {
-            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
+            executor::interrupts::wait_for_irq(self.writer.periph.interrupt).await;
         }
         self.writer.periph.events_endtx.write_notgenerated();
         self.running = false;
@@ -225,7 +239,7 @@ impl<'a> UARTEWrite<'a> {
             // Clearing any other events that would immediately re-trigger an interrupt.
             self.writer.periph.events_endtx.write_notgenerated();
 
-            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
+            executor::interrupts::wait_for_irq(self.writer.periph.interrupt).await;
         }
 
         self.writer.periph.events_txstopped.write_notgenerated();
@@ -264,7 +278,7 @@ impl<'a> UARTEWrite<'a> {
 }
 
 pub struct UARTEReader {
-    periph: UARTE0,
+    periph: UARTEx,
 }
 
 impl Drop for UARTEReader {
@@ -358,7 +372,7 @@ impl<'a> UARTERead<'a> {
         // assert!(self.running);
 
         while self.reader.periph.events_endrx.read().is_notgenerated() {
-            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
+            executor::interrupts::wait_for_irq(self.reader.periph.interrupt).await;
         }
         self.reader.periph.events_endrx.write_notgenerated();
         self.reader.periph.events_rxdrdy.write_notgenerated();
@@ -388,8 +402,7 @@ impl<'a> UARTERead<'a> {
             // Clearing any other events that would immediately re-trigger an interrupt.
             self.reader.periph.events_endrx.write_notgenerated();
 
-            // TODO: Need a unique interrupt per peripheral type.
-            executor::interrupts::wait_for_irq(Interrupt::UART0_UARTE0).await;
+            executor::interrupts::wait_for_irq(self.reader.periph.interrupt).await;
         }
 
         self.reader.periph.events_endrx.write_notgenerated();

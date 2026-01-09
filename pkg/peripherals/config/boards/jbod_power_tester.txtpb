@@ -1,0 +1,13 @@
+name: "jbod_power_tester"
+base_config: "nrf52840"
+
+peripherals {
+    name: "relay_coil_ctrl"
+    gpio {
+        pin_name: "P1.15"
+        config {
+            is_input: false
+            default_value: false
+        }
+    }
+}

@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 base_error = { path = "../../base/error" }
+base_util = { path = "../../base/util" }
 common = { path = "../../common" }
 usb = { path = "../../usb" }
 graphics = { path = "../../graphics" }

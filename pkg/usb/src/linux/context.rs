@@ -548,7 +548,7 @@ impl DeviceEntry {
         let fd = match unsafe { sys::open(path.as_ptr(), sys::O_RDWR | sys::O_CLOEXEC, 0) } {
             Ok(v) => v,
             Err(e) => {
-                return Err(format_err!("Failed to open USB device: {:?}", e));
+                return Err(format_err!("Failed to open USB device at {}: {:?}", self.usbdevfs_path.as_str(), e));
             }
         };
 

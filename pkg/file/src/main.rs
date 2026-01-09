@@ -20,6 +20,9 @@ enum Command {
     /// directory.
     #[arg(name = "glob")]
     Glob(GlobCommand),
+
+    #[arg(name = "confirm")]
+    Confirm,
 }
 
 #[derive(Args)]
@@ -54,6 +57,10 @@ async fn main() -> Result<()> {
                 println!("{}", path.as_str());
             }
 
+            Ok(())
+        }
+        Command::Confirm => {
+            println!("{}", file::read_user_confirmation().await?);
             Ok(())
         }
     }

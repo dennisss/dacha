@@ -4,7 +4,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use common::errors::*;
-use file::LocalPath;
+use file::{LocalPath, LocalPathBuf};
 
 use crate::LOGICAL_BLOCK_SIZE;
 
@@ -17,6 +17,8 @@ pub struct BlockDevice {
     /// the adapter model rather than the disk model. It is best to directly
     /// probe the ATA identity if a more accurate name is required.
     pub model: Option<String>,
+
+    pub device_path: Option<LocalPathBuf>,
 
     /// Size in bytes.
     pub size: usize,
@@ -31,11 +33,12 @@ pub struct BlockDevice {
     pub protocol: BlockDeviceProtocol,
 
     pub partitions: Vec<BlockDevicePartition>,
+
+    pub sas_address: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockDeviceProtocol {
-    /// This includes generic SCSI disks for now.
     Unknown,
 
     /// NOTE: Currently this is currently only able to detect ATA devices that
@@ -43,6 +46,8 @@ pub enum BlockDeviceProtocol {
     ATA,
 
     NVME,
+
+    SAS,
 }
 
 #[derive(Clone, Debug)]
@@ -70,6 +75,16 @@ impl BlockDevice {
             let name = entry.name().to_string();
             let device_dir = path.join(entry.name());
 
+            let device_path = {
+                let p = device_dir.join("device");
+                if file::exists(&p).await? {
+                    let mut p = file::realpath(&p).await?;;
+                    Some(p.normalized())
+                } else {
+                    None
+                }
+            };
+
             let size = Self::read_property(device_dir.join("size")).await? * LOGICAL_BLOCK_SIZE;
             let removable = Self::read_bool_property(device_dir.join("removable")).await?;
             let logical_block_size =
@@ -86,16 +101,27 @@ impl BlockDevice {
                 }
             };
 
+            let mut sas_address = None;
+
             let protocol = {
                 if entry.name().starts_with("nvme") {
                     BlockDeviceProtocol::NVME
                 } else if entry.name().starts_with("sd") {
-                    let vendor_prop = device_dir.join("device/vendor");
-
-                    if file::read_to_string(vendor_prop).await?.trim() == "ATA" {
-                        BlockDeviceProtocol::ATA
+                    let sas_address_path = device_dir.join("device/sas_address");
+                    if file::exists(&sas_address_path).await? {
+                        sas_address = Some(file::read_to_string(&sas_address_path).await?.trim().to_string());
+                        
+                        BlockDeviceProtocol::SAS
                     } else {
-                        BlockDeviceProtocol::Unknown
+                        // NOTE: For SAS drives, this will actually be the disk manufacturer
+                        // (e.g. "WDC" for Western Digital drives.)
+                        let vendor_prop = device_dir.join("device/vendor");
+
+                        if file::read_to_string(vendor_prop).await?.trim() == "ATA" {
+                            BlockDeviceProtocol::ATA
+                        } else {
+                            BlockDeviceProtocol::Unknown
+                        }
                     }
                 } else {
                     BlockDeviceProtocol::Unknown
@@ -138,10 +164,12 @@ impl BlockDevice {
                 model,
                 size,
                 removable,
+                device_path,
                 logical_block_size,
                 physical_block_size,
                 partitions,
                 protocol,
+                sas_address,
             });
         }
 

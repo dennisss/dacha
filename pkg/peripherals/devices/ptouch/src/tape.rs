@@ -69,6 +69,51 @@ impl Tape {
                     dpi: DPI,
                 })
             }
+            MediaType::NON_LAMINATED_TAPE => {
+                let (width, print_area) = match status.media_width {
+                    // For https://www.amazon.com/dp/B08748QQNX
+                    // "IDIK HSe-221 Heat Shrink Tubing Label Tape for Brother 8.8mm Black on White for Brother Printer Ribbon Label Tape HS2-221"
+                    9 => (8.8, 48),
+                    _ => return None,
+                };
+
+                let name = format!(
+                    "Non-Laminated {}mm ({:?} on {:?})",
+                    width, status.text_color, status.tape_color
+                );
+
+                Some(Self {
+                    name,
+                    width: Self::mm_to_dots_impl(width, DPI as f32).round() as usize,
+                    print_area,
+                    margin: 14,
+                    dpi: DPI,
+                })
+
+            }
+
+            MediaType::HEAT_SHRINK_TUBE_3_TO_1 => {
+                let (width, print_area) = match status.media_width {
+                    // For https://www.amazon.com/dp/B0C138HXLR
+                    // "Brother HSe251E 21mm (0.82in) Black on White 3:1 Heat Shrink Tube"
+                    21 => (21., 120),
+                    _ => return None 
+                };
+
+                let name = format!(
+                    "HSe 3:1 {}mm ({:?} on {:?})",
+                    width, status.text_color, status.tape_color
+                );
+
+                Some(Self {
+                    name,
+                    width: Self::mm_to_dots_impl(width, DPI as f32).round() as usize,
+                    print_area,
+                    margin: 14,
+                    dpi: DPI,
+                })
+            }
+
             _ => {
                 return None;
             }

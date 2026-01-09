@@ -54,16 +54,32 @@ impl Writeable for Stdout {
     }
 }
 
+/// NOTE: The default value for entering a blank line is 'N' (false)
 pub async fn read_user_confirmation() -> Result<bool> {
     let mut stdin = Stdin::get();
 
-    // Note that we will also consume any newline characters added.
-    let mut buf = [0u8; 10];
-    let n = stdin.read(&mut buf[..]).await?;
+    loop {
+        // Note that we will also consume any newline characters added.
+        let mut buf = [0u8; 10];
+        let n = stdin.read(&mut buf[..]).await?;
 
-    Ok(if n > 0 && buf[0].to_ascii_lowercase() == b'y' {
-        true
-    } else {
-        false
-    })
+        let s = match std::str::from_utf8(&buf[0..n]) {
+            Ok(v) => v,
+            Err(_) => continue
+        };
+
+        for line in s.lines() {
+            let lower = line.trim().to_ascii_lowercase();
+            if lower == "y" {
+                return Ok(true);
+            } else if lower == "n" {
+                return Ok(false);
+            }
+
+            // Default value.
+            if lower.is_empty() {
+                return Ok(false);
+            }
+        }
+    }
 }

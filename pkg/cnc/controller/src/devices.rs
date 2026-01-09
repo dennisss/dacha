@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use common::io::*;
 use common::errors::*;
 use executor::lock;
 use common::hash::FastHasherBuilder;
@@ -15,6 +16,7 @@ use peripherals_service::utilization_tracker::*;
 
 use crate::tmc2209::TMC2209Device;
 use crate::time::*;
+use crate::bed::client::BedClient;
 
 
 /// TODO: Think of a better name for this.
@@ -36,7 +38,8 @@ struct State {
 
 enum DeviceEntry {
     PeripheralsDevice(Arc<PeripheralsDevice>),
-    TMC2209(Arc<TMC2209Device>)
+    TMC2209(Arc<TMC2209Device>),
+    BedClient(Arc<BedClient>),
 }
 
 impl DevicesController {
@@ -74,6 +77,14 @@ impl DevicesController {
                     let inst = TMC2209Device::create(proto.tmc2209().clone(), dev).await?;
 
                     DeviceEntry::TMC2209(Arc::new(inst))
+                } else if proto.has_bed_client() {
+                    
+                    let dev = inst.get_peripherals_device(proto.bed_client().serial_peripheral().device_name()).await?;
+
+                    // serial_peripheral
+
+                    todo!()
+
                 } else {
                     return Err(err_msg("Unknown type of device entry"));
                 }
@@ -95,6 +106,15 @@ impl DevicesController {
         let state = self.state.read().await?;
         match state.entries.get(name) {
             Some(DeviceEntry::PeripheralsDevice(d)) => Ok(d.clone()),
+            Some(_) => Err(format_err!("Wrong type of device for '{}'", name)),
+            None => Err(format_err!("No such device named '{}'", name))
+        }
+    }
+
+    pub async fn get_bed_client(&self, name: &str) -> Result<Arc<BedClient>> {
+        let state = self.state.read().await?;
+        match state.entries.get(name) {
+            Some(DeviceEntry::BedClient(d)) => Ok(d.clone()),
             Some(_) => Err(format_err!("Wrong type of device for '{}'", name)),
             None => Err(format_err!("No such device named '{}'", name))
         }
@@ -193,4 +213,35 @@ impl DevicesPeripheralRequestBatch {
 
 }
 
+pub struct RemoteSerialPort {
+    device: Arc<PeripheralsDevice>,
+    peripheral_name: String
+}
+
+#[async_trait]
+impl Readable for RemoteSerialPort {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.device.uart_transfer(
+            &self.peripheral_name,
+            &[],
+            buf
+        ).await
+    }
+}
+
+#[async_trait]
+impl Writeable for RemoteSerialPort {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.device.uart_transfer(
+            &self.peripheral_name,
+            &buf,
+            &mut []
+        ).await?;
+        Ok(buf.len())
+    }
+
+    async fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
 

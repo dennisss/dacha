@@ -553,11 +553,6 @@
     (uuid f96224e0-1ed3-45ff-8007-8e9545e51b5f)
   )
 
-  (text "TODO: Check if this is ok or whether we need to maintain polarity"
-    (at 26.67 24.13 0)
-    (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid dd6828c8-9e4c-4836-af5a-3527fa4caabe)
-  )
   (text "TODO: Switch to a level shifter approach to simplify the software"
     (at 24.13 29.21 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))

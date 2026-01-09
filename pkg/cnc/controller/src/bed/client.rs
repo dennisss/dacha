@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use common::errors::*;
-use common::io::{Readable, Writeable};
+use common::io::{Readable, Writeable, ReadWriteable};
 use peripherals::serial::SerialPort;
 use file::LocalPath;
 use parsing::cstruct::*;
@@ -13,7 +13,7 @@ const ADDRESS: u8 = 0xAB;
 const TIMEOUT: Duration = Duration::from_millis(100);
 
 pub struct BedClient {
-    port: SerialPort,
+    port: Box<dyn ReadWriteable + Sync + 'static>,
     last_sequence: u8,
     options: BedClientOptions,
 }
@@ -60,8 +60,12 @@ struct ResponsePacket {
 
 
 impl BedClient {
-    pub fn create(path: &LocalPath, options: BedClientOptions) -> Result<Self> {
-        let port = SerialPort::open(path, BAUD_RATE)?;
+    pub fn create_from_tty_path(path: &LocalPath, options: BedClientOptions) -> Result<Self> {
+        let port = Box::new(SerialPort::open(path, BAUD_RATE)?);
+        Self::create(port, options)
+    }
+
+    pub fn create(port: Box<dyn ReadWriteable + Sync + 'static>, options: BedClientOptions) -> Result<Self> {
         Ok(Self {
             port,
             last_sequence: 0,

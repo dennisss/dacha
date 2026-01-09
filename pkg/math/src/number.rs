@@ -139,7 +139,13 @@ pub trait Round {
     fn round(self) -> Self;
 }
 
-pub trait Float: From<i8> + From<i16> + From<f32> + CastTo + Round {
+pub trait Float: From<i8> + From<i16> + From<f32> + CastTo + Round +
+    core::ops::Neg<Output = Self> +
+    core::ops::Mul<Output = Self> +
+    core::ops::Div<Output = Self> +
+    core::ops::Add<Output = Self> +
+    core::ops::Sub<Output = Self>
+{
     fn sqrt(self) -> Self;
 }
 

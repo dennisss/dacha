@@ -1,5 +1,6 @@
 // Written by Google Gemini
 // https://gemini.google.com/app/4a1936db705c51f8
+// https://gemini.google.com/app/0448097e5fc98f04
 
 /**
  * Linearly interpolates a value from a sorted array of data points.
@@ -62,4 +63,44 @@ export function interpolateValue(data, targetTime, key) {
     const ratio = (targetTime - p0.time) / timeSpan;
 
     return p0[key] + (p1[key] - p0[key]) * ratio;
+}
+
+/**
+ * Performs linear interpolation on a sorted list of {x, y} points.
+ *
+ * @param {Array<{x: number, y: number}>} data - List of points sorted by x.
+ * @param {number} targetX - The x value to find the corresponding y for.
+ * @returns {number|null} The interpolated y value, or null if input is invalid.
+ */
+export function getInterpolatedY(data, targetX) {
+    // 1. Input validation
+    if (!data || data.length === 0) return null;
+    if (data.length === 1) return data[0].y;
+
+    // 2. Handle out of bounds (Clamp to first/last value)
+    // If targetX is smaller than the first point, return the first y
+    if (targetX <= data[0].x) return data[0].y;
+    // If targetX is larger than the last point, return the last y
+    if (targetX >= data[data.length - 1].x) return data[data.length - 1].y;
+
+    // 3. Find the segment (Linear Search)
+    // We look for the first point that is greater than our targetX.
+    // The segment will be between [i-1] and [i].
+    for (let i = 1; i < data.length; i++) {
+        if (data[i].x >= targetX) {
+            const p0 = data[i - 1]; // Lower bound
+            const p1 = data[i];     // Upper bound
+
+            // Avoid division by zero if x values are identical
+            if (p0.x === p1.x) return p0.y;
+
+            // Calculate the ratio (0.0 to 1.0)
+            const ratio = (targetX - p0.x) / (p1.x - p0.x);
+
+            // Linear Interpolation formula: y0 + ratio * (y1 - y0)
+            return p0.y + ratio * (p1.y - p0.y);
+        }
+    }
+
+    return null; // Should technically be unreachable due to bounds checks
 }

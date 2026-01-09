@@ -49,6 +49,7 @@ use common::fixed::vec::FixedVec;
 use common::cyclic_buffer::CyclicBuffer;
 use common::list::Appendable;
 use executor::sync::AsyncMutex;
+use common::register::RegisterRead;
 use executor::critical_mutex::CriticalMutex;
 use executor::channel::Channel;
 use peripherals_proto::peripherals::{
@@ -69,8 +70,11 @@ use peripherals::raw::spim3::SPIM3;
 use peripherals::raw::temp::TEMP;
 use peripherals::raw::timer0::TIMER0;
 use peripherals::raw::timer1::TIMER1;
+use peripherals::raw::timer2::TIMER2;
+use peripherals::raw::timer3::TIMER3;
 use peripherals::raw::timer4::TIMER4;
 use peripherals::raw::uarte0::UARTE0;
+use peripherals::raw::uarte1::UARTE1;
 use peripherals::raw::ppi::PPI;
 use peripherals::raw::twim0::TWIM0;
 use protobuf::{Message, StaticMessage};
@@ -83,9 +87,9 @@ use crate::pins::{PeripheralPin, Port};
 use crate::pwm::{PWMConfig, PWM};
 use crate::rtc::{RTCInstant, RTC};
 use crate::temp::Temp;
-use crate::uarte::UARTE;
-use crate::timer::{Timer, TimerChannel};
-use crate::ppi::PPIChannels;
+use crate::uarte::*;
+use crate::timer::{Timer, TimerChannel, TIMERx};
+use crate::ppi::*;
 use crate::spi::*;
 use crate::neopixel::*;
 use crate::adc::*;
@@ -93,7 +97,7 @@ use crate::twim::*;
 use crate::radio::*;
 
 use super::time::*;
-use super::neopixel::NeopixelPeripheralThread;
+use super::neopixel::*;
 use super::tachometer::TachometerPeripheralThread;
 use super::temp::TemperaturePeripheralThread;
 use super::timeout::TimeoutPeripheralThread;
@@ -106,6 +110,7 @@ use super::sleep::SleepPeripheralThread;
 use super::i2c::I2CPeripheralThread;
 use super::buffer::Buffer;
 use super::radio::*;
+use super::allocator::BoxedSlice;
 
 const MAX_NUM_PERIPHERALS: usize = 32;
 
@@ -154,9 +159,12 @@ pub(super) struct PeripheralsControllerState {
 
     pub temp: Option<Temp>,
 
-    pub uarte: Option<UARTE0>,
+    pub uarte: FixedVec<UARTEx, 2>,
 
-    pub spim: FixedVec<SPIMx, 4>,
+    spim: FixedVec<SPIMx, 4>,
+
+    /// Extra unused timers.
+    pub timers: FixedVec<TIMERx, 3>,
 
     pub adc: Option<WindowADC>,
 
@@ -209,7 +217,7 @@ pub(super) enum PeripheralEntry {
 
     Stepper(StepperMotorController),
 
-    Neopixel(Neopixel),
+    Neopixel(NeopixelPeripheral),
 
     ADC(WindowADCChannelConfig),
 
@@ -225,7 +233,14 @@ pub(super) enum PeripheralEntry {
 pub(super) struct GPIOEntry {
     pub pin: GPIOPin,
     pub interrupt_polarity: ConfigureGPIO_InterruptPolarity,
-    pub pending_interrupt_sequence: Option<u32>
+    pub pending_interrupt_sequence: Option<u32>,
+    pub tachometer: Option<GPIOTachometerState>,
+}
+
+pub(super) struct GPIOTachometerState {
+    interrupt: GPIOInterruptChannel,
+    timer: TIMERx,
+    ppi: PPIChannel,
 }
 
 macro_rules! check_peripheral_type {
@@ -314,8 +329,11 @@ impl PeripheralsController {
         gpiote: GPIOTE,
         temp: TEMP,
         uarte0: UARTE0,
+        uarte1: UARTE1,
         timer0: TIMER0,
         timer1: TIMER1,
+        timer2: TIMER2,
+        timer3: TIMER3,
         timer4: TIMER4,
         ppi: PPI,
         saadc: SAADC,
@@ -349,6 +367,15 @@ impl PeripheralsController {
 
         let adc = WindowADC::create(ADC::new(saadc), timer1, &mut ppi, clock.clone()).unwrap();
 
+        let mut uarte = FixedVec::new();
+        uarte.push(uarte0.into());
+        uarte.push(uarte1.into());
+
+        let mut timers = FixedVec::new();
+        timers.push(timer0.into());
+        timers.push(timer2.into());
+        timers.push(timer3.into());
+
         Self {
             clock,
             timer,
@@ -361,7 +388,7 @@ impl PeripheralsController {
                     PWM::new(pwm2.into()),
                     PWM::new(pwm3.into()),
                 ],
-                uarte: Some(uarte0),
+                uarte,
                 gpio,
                 gpiote: GPIOTEChannels::new(gpiote),
                 ppi,
@@ -370,6 +397,7 @@ impl PeripheralsController {
                 spim,
                 twim0: Some(twim0),
                 adc: Some(adc),
+                timers,
                 adc_request_queue: ADCRequestQueue::default(),
                 batch_ack: None,
                 response_buffer: CyclicBuffer::new([0u8; RESPONSE_BUFFER_SIZE]),
@@ -519,7 +547,8 @@ impl PeripheralsController {
                 state.entries[peripheral_idx] = PeripheralEntry::GPIO(GPIOEntry {
                     pin,
                     interrupt_polarity: req.interrupt(),
-                    pending_interrupt_sequence: None
+                    pending_interrupt_sequence: None,
+                    tachometer: None,
                 });
 
                 Ok(OkResponse)
@@ -602,7 +631,7 @@ impl PeripheralsController {
                 self.check_valid_pin(req.tx_pin())?;
                 self.check_valid_pin(req.rx_pin())?;
 
-                if state.uarte.is_none() {
+                if state.uarte.is_empty() {
                     return Err(ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_BUSY,
                     ));
@@ -614,7 +643,7 @@ impl PeripheralsController {
 
                 let tx_pin = IndexedPin { index: req.tx_pin() };
                 let rx_pin = IndexedPin { index: req.rx_pin() };
-                let inst = state.uarte.take().unwrap();
+                let inst = state.uarte.pop().unwrap();
 
                 // TODO: Validate the baud_rate is ok.
 
@@ -703,8 +732,15 @@ impl PeripheralsController {
                 let pin = state.gpio.pin(IndexedPin { index: req.pin() });
                 let spi = state.spim.pop().unwrap();
 
+                let inst = Neopixel::new(spi, pin, req.inverted());
+                
+                let buf = NeopixelDataBuffer::new(
+                   BoxedSlice::<u8>::new_zeroed(NeopixelDataBuffer::<[u8; 1]>::size_for(req.num_bytes() as usize)),
+                   req.inverted()
+                );
+
                 state.entries[peripheral_idx] = PeripheralEntry::Neopixel(
-                    Neopixel::new(spi, pin, req.inverted())
+                    NeopixelPeripheral::new(inst, buf)
                 );
 
                 Ok(OkResponse)
@@ -871,15 +907,19 @@ impl PeripheralsController {
                         }
                         PeripheralEntry::GPIO(mut entry) => {
                             entry.pin.reset();
+
+                            if let Some(tach) = entry.tachometer.take() {
+                                state.timers.push(tach.timer);
+                            }
                         }
                         PeripheralEntry::UARTE(inst) => {
                             // Pins get disconnected on drop
-                            state.uarte = Some(inst.into_inner());
+                            state.uarte.push(inst.into_inner());
                         }
                         PeripheralEntry::Stepper(controller) => {} 
 
                         PeripheralEntry::Neopixel(inst) => {
-                            state.spim.push(inst.into_inner());
+                            state.spim.push(inst.into_inner().into_inner());
                         }
                         PeripheralEntry::SPI(inst) => {
                             state.spim.push(inst.into_inner());
@@ -1052,6 +1092,80 @@ impl PeripheralsController {
                 // To be returned asyncronously.
                 Err(ExecuteError::AsyncReply)
             }
+            PeripheralRequestCommandCase::StartTachometer(_) => {
+                self.check_fully_configured(state)?;
+
+                let gpio = get_peripheral_mut!(state, peripheral_idx, GPIO);
+                
+                if gpio.tachometer.is_some() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+                
+                let interrupt = state.gpiote.new_interrupt_channel(&gpio.pin, GPIOInterruptPolarity::FallingEdge)
+                    .ok_or_else(|| ExecuteError::ErrorCode(PeripheralResponse_ErrorCode::RESOURCE_BUSY))?;
+
+                let mut timer = state.timers.pop()
+                    .ok_or_else(|| ExecuteError::ErrorCode(PeripheralResponse_ErrorCode::RESOURCE_BUSY))?;
+                timer.mode.write_counter();
+                timer.bitmode.write_32bit();
+                timer.tasks_clear.write_trigger();
+                // TODO: Eventually ensure the timer is always stopped.
+                timer.tasks_start.write_trigger();
+
+                let mut ppi = state.ppi.new_channel(
+                    interrupt.in_event(),
+                    &mut timer.tasks_count,
+                ).ok_or_else(|| ExecuteError::ErrorCode(PeripheralResponse_ErrorCode::RESOURCE_BUSY))?;
+
+                ppi.enable();
+
+                let time = self.timer.capture()
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ))?;
+                
+                response.set_uint_val(time);
+
+                gpio.tachometer = Some(GPIOTachometerState {
+                    interrupt,
+                    timer,
+                    ppi,
+                });
+
+                Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::EndTachometer(_) => {
+                self.check_fully_configured(state)?;
+
+                let gpio = get_peripheral_mut!(state, peripheral_idx, GPIO);
+                
+                let mut tach = gpio.tachometer.take()
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ))?;
+
+                let final_count = {
+                    tach.timer.tasks_capture[0].write_trigger();
+                    tach.timer.cc[0].read()
+                };
+
+                state.timers.push(tach.timer);
+
+
+                let time = self.timer.capture()
+                    .ok_or_else(|| ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                    ))?;
+                
+                response.set_time(time);
+
+                response.set_uint_val(final_count);
+
+                Ok(OkResponse)
+
+            }
             PeripheralRequestCommandCase::MeasureMcuTemperature(_) => {
                 self.check_fully_configured(state)?;
 
@@ -1149,19 +1263,17 @@ impl PeripheralsController {
                 let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
 
                 // Optional checks if we want to be paranoid.
-                /*
                 let time = self.timer.capture()
                     .ok_or_else(|| ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                     ))?;
 
                 let delta_time = cnc::time_remaining_u32(req.next_step_time(), time);
-                if delta_time < 30 || delta_time > 16_000_000 {
+                if delta_time < 30 || delta_time > 4*16_000_000 {
                     return Err(ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::TIMEOUT,
                     ));
                 }
-                */
 
                 if !stepper.enqueue_motion(req) {
                     return Err(ExecuteError::ErrorCode(
@@ -1357,6 +1469,18 @@ impl PeripheralsController {
                 self.check_fully_configured(state)?;
 
                 check_peripheral_type!(state, peripheral_idx, Neopixel);
+                
+                let inst = get_peripheral_mut!(state, peripheral_idx, Neopixel);
+
+                // TODO: Propagate errors.
+                inst.write(req.index() as usize, req.data());
+
+                Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::NeopixelShow(req) => {
+                self.check_fully_configured(state)?;
+
+                check_peripheral_type!(state, peripheral_idx, Neopixel);
 
                 if NeopixelPeripheralThread::is_running() {
                     return Err(ExecuteError::ErrorCode(
@@ -1370,8 +1494,7 @@ impl PeripheralsController {
                     self,
                     peripheral_idx,
                     request.request_sequence(),
-                    inst,
-                    req.data().into()
+                    inst
                 );
 
                 Err(ExecuteError::AsyncReply)

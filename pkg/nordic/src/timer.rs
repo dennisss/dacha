@@ -6,6 +6,9 @@ use common::register::{RegisterRead, RegisterWrite};
 use executor::critical_mutex::CriticalMutex;
 use executor::lock;
 use peripherals::raw::timer0::{TIMER0, TIMER0_REGISTERS};
+use peripherals::raw::timer1::TIMER1;
+use peripherals::raw::timer2::TIMER2;
+use peripherals::raw::timer3::TIMER3;
 use peripherals::raw::timer4::TIMER4;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection, EventRegister};
 use peripherals::raw::TaskRegister;
@@ -61,6 +64,9 @@ macro_rules! timerx_from {
 }
 
 timerx_from!(TIMER0, TIMER0, 4);
+timerx_from!(TIMER1, TIMER1, 4);
+timerx_from!(TIMER2, TIMER2, 4);
+timerx_from!(TIMER3, TIMER3, 6);
 timerx_from!(TIMER4, TIMER4, 6);
 
 

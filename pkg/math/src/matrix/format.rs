@@ -49,6 +49,7 @@ impl<R: Dimension, C: Dimension, D: StorageType<f64, R, C>> Debug for MatrixBase
     }
 }
 
+#[cfg(feature = "alloc")]
 fn format_f32(f: &mut core::fmt::Formatter, v: f32) -> core::fmt::Result {
     let va = AbsoluteValue::abs(v);
     if va < 1e-12 {
@@ -65,16 +66,11 @@ fn format_f32(f: &mut core::fmt::Formatter, v: f32) -> core::fmt::Result {
     Ok(())
 }
 
+#[cfg(feature = "alloc")]
 impl<R: Dimension, C: Dimension, D: StorageType<f32, R, C>> Debug for MatrixBase<f32, R, C, D> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         if self.rows() == 3 && self.cols() == 1 {
-            write!(f, "vec3f(")?;
-            format_f32(f, self.data[0]);
-            write!(f, ", ")?;
-            format_f32(f, self.data[1]);
-            write!(f, ", ")?;
-            format_f32(f, self.data[2]);
-            write!(f, ")")?;
+            write!(f, "vec3f({}, {}, {})", self.data[0], self.data[1], self.data[2])?;
             return Ok(());
         }
 

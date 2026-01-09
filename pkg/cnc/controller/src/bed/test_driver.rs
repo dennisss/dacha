@@ -48,7 +48,7 @@ impl BedTestDriver {
             chip_temp_calibration: 0.955696203
         "#, &mut config)?;
 
-        BedClient::create(LocalPath::new("/dev/ttyUSB0"), BedClientOptions {
+        BedClient::create_from_tty_path(LocalPath::new("/dev/ttyUSB0"), BedClientOptions {
             config
         })
     }

@@ -13,6 +13,7 @@ use crate::fake_machine::FakeMachine;
 pub enum AvailableDevice {
     USB(AvailableUSBDevice),
     Fake(usize),
+    #[cfg(feature = "libcamera")]
     Libcamera(libcamera::AvailableCamera),
 }
 
@@ -30,6 +31,7 @@ pub struct AvailableUSBDevice {
 impl AvailableDevice {
     pub async fn list_all(
         usb_context: &usb::Context,
+        #[cfg(feature = "libcamera")]
         libcamera_manager: &Arc<libcamera::CameraManager>,
     ) -> Result<Vec<Self>> {
         let mut out = vec![];
@@ -59,6 +61,7 @@ impl AvailableDevice {
             }));
         }
 
+        #[cfg(feature = "libcamera")]
         for camera in libcamera_manager.cameras() {
             // We will not use libcamera for any USB cameras.
             if let Some(system_devices) = camera
@@ -98,6 +101,7 @@ impl AvailableDevice {
         match self {
             Self::USB(dev) => dev.usb_entry.sysfs_dir().to_string(),
             Self::Fake(i) => format!("fake:{}", *i),
+            #[cfg(feature = "libcamera")]
             Self::Libcamera(dev) => {
                 format!("libcamera:{}", dev.id())
             }
@@ -116,6 +120,7 @@ impl AvailableDevice {
             Self::Fake(i) => {
                 format!("Fake #{}", i)
             }
+            #[cfg(feature = "libcamera")]
             Self::Libcamera(dev) => {
                 format!("Libcamera: {}", dev.id())
             }
@@ -158,6 +163,7 @@ impl AvailableDevice {
             }
         }
 
+        #[cfg(feature = "libcamera")]
         if !selector.libcamera().id().is_empty() {
             let self_id = match self {
                 Self::Libcamera(dev) => dev.id(),
@@ -186,6 +192,7 @@ impl AvailableDevice {
             Self::Fake(i) => {
                 sel.set_fake(*i as u32);
             }
+            #[cfg(feature = "libcamera")]
             Self::Libcamera(dev) => {
                 sel.libcamera_mut().set_id(dev.id());
             }
@@ -231,6 +238,7 @@ impl AvailableDevice {
                 sel.set_fake(*i as u32);
                 sel.add_serial_path(format!("/fake/{}", *i));
             }
+            #[cfg(feature = "libcamera")]
             Self::Libcamera(dev) => {
                 sel.libcamera_mut().set_id(dev.id());
 
@@ -270,6 +278,7 @@ impl AvailableDevice {
                 Ok((serial_reader, serial_writer))
             }
             Self::Fake(i) => FakeMachine::create().await,
+            #[cfg(feature = "libcamera")]
             Self::Libcamera(device) => {
                 return Err(err_msg("Can't be opened as a serial port"));
             }
@@ -285,6 +294,7 @@ impl AvailableDevice {
                     ))
                     .await
             }
+            #[cfg(feature = "libcamera")]
             Self::Libcamera(device) => {
                 camera_manager
                     .open(media_camera::camera_manager::CameraEntry::Libcamera(

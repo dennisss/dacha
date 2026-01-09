@@ -16,7 +16,6 @@ use crate::devices::*;
 use crate::config::*;
 use crate::motion_controller::*;
 use crate::heater_controller::*;
-use crate::gcode::CommandConverter;
 use crate::endstop_controller::*;
 use crate::proto_utils::VectorProtoExt;
 
@@ -76,7 +75,9 @@ impl MachineController {
         Ok(res)
     }
 
-    pub async fn execute(&self, request: &ExecuteRequest) -> Result<()> {
+    pub async fn execute(&self, request: &ExecuteRequest) -> Result<ExecuteResponse> {
+        let mut res = ExecuteResponse::default();
+
         /*
         // TODO: At most one execute request should be allowed to run at a time.
 
@@ -98,13 +99,27 @@ impl MachineController {
             if cmd.has_move_to() {
                 let cmd = cmd.move_to();
 
-                let mut points = vec![cmd.x(), cmd.y(), cmd.z(), cmd.e()];
-                points.truncate(self.motion_controller.num_axes());
-
-                let v = VectorXf::from_slice_with_shape(points.len(), 1, &points);
+                let v = {
+                    if cmd.has_position() {
+                        // TODO: Make sure this has checks on number of axes
+                        VectorXf::from_proto(cmd.position())
+                    } else {
+                        let mut points = vec![cmd.x(), cmd.y(), cmd.z(), cmd.e()];
+                        points.truncate(self.motion_controller.num_axes());
+                        VectorXf::from_slice_with_shape(points.len(), 1, &points)
+                    }
+                };
 
                 if cmd.towards_endstop() {
                     self.move_towards_endstop(v, cmd.feed_rate()).await?;
+
+                    // NOTE: Hit position is only available for timed endstops.
+                    let hit_position = self.motion_controller.hit_position().await?;
+
+                    if let Some(pos) = hit_position {
+                        res.set_hit_position(pos.to_proto());
+                    }
+
                 } else {
                     self.motion_controller.move_to(v, cmd.feed_rate()).await?;
                 }
@@ -116,11 +131,7 @@ impl MachineController {
                 self.motion_controller.wait_until_idle().await?;
 
                 let cmd = cmd.set_position();
-
-                let mut points = vec![cmd.x(), cmd.y(), cmd.z(), cmd.e()];
-                points.truncate(self.motion_controller.num_axes());
-
-                let v = VectorXf::from_slice_with_shape(points.len(), 1, &points);
+                let v = VectorXf::from_proto(cmd.position());
 
                 self.motion_controller.set_position(v).await?;
 
@@ -223,7 +234,7 @@ impl MachineController {
                 println!("GO Z!!!");
 
                 current_pos[2] = -200.0;
-                self.move_towards_endstop(current_pos.clone(), 5.0).await?;
+                self.move_towards_endstop(current_pos.clone(), 10.0).await?;
 
                 // TODO: Eventually rely on better timing data about hits to improve this.
                 current_pos[2] = 0.0;
@@ -232,11 +243,63 @@ impl MachineController {
                 current_pos[2] = 10.0;
                 self.motion_controller.move_to(current_pos.clone(), 10.0).await?;
             }
+
+            if cmd.has_set_fan_speed() {
+                // TODO: This needs to be syncronized with motions.
+
+                let cmd = cmd.set_fan_speed();
+
+                // TODO: Batch these
+                for fan_config in self.config.fans() {
+                    if !cmd.name().is_empty() {
+                        if fan_config.name() != cmd.name() {
+                            continue;
+                        }
+                    } else if fan_config.group_index() != 1 {
+                        continue;
+                    }
+
+                    let device = self.devices.get_peripherals_device(
+                        fan_config.speed_control().device_name()).await?;
+
+                    device.pwm_write(
+                        fan_config.speed_control().peripheral_name(),
+                        cmd.speed()
+                    ).await?;
+                }
+            }
+
+            if cmd.has_set_servo_position() {
+                let cmd = cmd.set_servo_position();
+
+                // TODO: Read from the peripheral
+                let frequency = 200.0;
+                let period = 1.0 / frequency;
+
+                let pulse_time = cmd.position() / 1000000.0;
+
+                // pulse_time = period * duty_cycle
+                // So 'duty_cycle = pulse_time / period'
+                let duty_cycle = pulse_time / period;
+
+                for servo in self.config.servos() {
+                    // if servo.name() != 
+
+                    let device = self.devices.get_peripherals_device(
+                        servo.pwm().device_name()).await?;
+
+                    device.pwm_write(
+                        servo.pwm().peripheral_name(),
+                        duty_cycle
+                    ).await?;
+                }
+            }
         }
 
-        Ok(())
+        Ok(res)
     }
 
+    // TODO: Failure of this should trigger an alarm (even if done by a remote script).
     async fn move_towards_endstop(
         &self,
         position: VectorXf,

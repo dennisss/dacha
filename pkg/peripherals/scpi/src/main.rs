@@ -17,6 +17,9 @@ cargo run --bin scpi -- record-screen --addr=10.1.0.135 --output_path=scope.mp4
 
 
 cargo run --bin scpi --release -- record-screen --addr=10.1.0.135 --output_path=hall_effect_demo.mp4
+
+
+cargo run --bin scpi -- measure-voltage --addr=10.1.0.135
 */
 
 #[derive(Args)]
@@ -31,6 +34,9 @@ enum ArgCommand {
 
     #[arg(name = "measure-temp")]
     MeasureTemp(MeasureTempCommand),
+
+    #[arg(name = "measure-voltage")]
+    MeasureVoltage(MeasureVoltageCommand),
 }
 
 #[derive(Args)]
@@ -121,6 +127,25 @@ impl MeasureTempCommand {
 
 }
 
+#[derive(Args)]
+struct MeasureVoltageCommand {
+    addr: String
+}
+
+impl MeasureVoltageCommand {
+
+
+    pub async fn run(self) -> Result<()> {
+        let mut client = SCPIClient::create(&self.addr).await?;
+
+        let v = client.measure_voltage().await?;
+        println!("{}", v);
+
+        Ok(())
+    }
+
+}
+
 /*
 cargo run --bin scpi -- measure-temp --addr=10.1.0.134
 */
@@ -179,6 +204,7 @@ async fn main() -> Result<()> {
     match args.command {
         ArgCommand::RecordScreen(cmd) => cmd.run().await,
         ArgCommand::MeasureTemp(cmd) => cmd.run().await,
+        ArgCommand::MeasureVoltage(cmd) => cmd.run().await,
     }
 
     // FETC?

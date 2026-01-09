@@ -1,0 +1,15 @@
+name: "jbod_led_tester"
+base_config: "nrf52840_itsybitsy"
+
+
+peripherals {
+    name: "led"
+
+    neopixel {
+        pin_name: "D5"
+        config {
+            inverted: false
+            num_bytes: 180 # 15 cols * 4 rows * 3 (RGB)
+        }
+    }
+}

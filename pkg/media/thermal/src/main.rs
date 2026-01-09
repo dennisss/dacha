@@ -180,6 +180,7 @@ async fn record(cmd: RecordCommand) -> Result<()> {
         let value_buffer = &buf.used_memory()[start_offset..end_offset];
 
 
+        // TODO: Use a min/max tracker.
         let mut min_temp = 1000.0f32;
         let mut max_temp = 0.0f32;
 

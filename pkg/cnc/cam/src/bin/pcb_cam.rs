@@ -122,9 +122,15 @@ async fn main() -> Result<()> {
         side: PCBLayerSide::Back
     });
 
+    let double_sided = match args.mode {
+        Mode::DoubleSidedFront | Mode::DoubleSidedBack { .. } => true,
+        _ => false
+    };
+
     let options = PCBProcessorOptions {
         config,
         layers,
+        add_alignment_holes: double_sided
     };
 
     // TODO: For all isolation passes, inset inward all holes and on't do any isolation in the holes to save time

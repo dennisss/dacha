@@ -24,9 +24,11 @@
 <body>
     <canvas id="frame-canvas" width="960" height="540"></canvas>
 
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@4.0.0/tex-svg.js"></script>
     <script type="module">
         // import { configure } from "./toolhead_animation.js";
-        import { configure } from "./motion_animation.js";
+        // import { configure } from "./motion_animation.js";
+        import { configure } from "./alignment_animation.js";
 
         async function main() {
             // TODO: Also add the noto emoji font.
@@ -42,7 +44,7 @@
 
             let canvas = document.getElementById('frame-canvas');
 
-            let vid = configure(canvas);
+            let vid = await configure(canvas);
 
             const ctx = canvas.getContext('2d');
 

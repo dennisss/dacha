@@ -51,7 +51,7 @@ const MIN_STEP_TIME: u32 = 20;
 ///
 /// Note that this is also used to guard against steps that we missed since these will
 /// appear as times that overflowed and are 'before' the current time (have very large duration)
-const MAX_STEP_TIME: u32 = 2 * 16_000_000;  // 2 seconds
+const MAX_STEP_TIME: u32 = 4 * 16_000_000;  // 2 seconds
 
 
 // This thread is started when the first stepper is configured is stopped

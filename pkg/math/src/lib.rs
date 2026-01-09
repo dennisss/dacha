@@ -57,17 +57,18 @@ pub use number::Float;
 /// numbers).
 ///
 /// Returns the 2 roots. The first root is always >= the second root.
-pub fn find_quadratic_roots(a: f32, b: f32, c: f32) -> (f32, f32) {
+pub fn find_quadratic_roots<T: Float + matrix::element::ErrorEpsilon>(a: T, b: T, c: T) -> (T, T) {
     // TODO: Use approximate comparison
-    if a == 0.0 {
+    if a.approx_zero() {
         let r = -c / b;
         return (r, r);
     }
 
-    let det = b * b - 4.0 * a * c;
+    let det = b * b - T::from(4.0) * a * c;
     let det_root = det.sqrt();
 
-    let root1 = (-b + det_root) / (2.0 * a);
-    let root2 = (-b - det_root) / (2.0 * a);
+    let two = T::from(2.0);
+    let root1 = (-b + det_root) / (two * a);
+    let root2 = (-b - det_root) / (two * a);
     (root1, root2)
 }

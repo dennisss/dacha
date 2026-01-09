@@ -36,6 +36,7 @@
 		"esm": "^3.2.25",
 		"leveldown": "6.0.1",
 		"levelup": "5.0.1",
+		"mathjax-node": "^2.1.1",
 		"rocksdb": "5.1.0",
 		"tslib": "^2.3.1"
 	}

@@ -31,6 +31,7 @@ image = { path = "../../image" }
 json = { path = "../../format/json" }
 cnc_monitor_proto = { path = "./proto" }
 cam = { path = "../cam" }
+cnc = { path = "../" }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }
 peripherals = { path = "../../peripherals" }
@@ -44,10 +45,11 @@ graphics = { path = "../../graphics" }
 media_camera = { path = "../../media/camera" }
 video = { path = "../../media/video" }
 compression = { path = "../../compression" }
-libcamera = { path = "../../../third_party/libcamera" }
+libcamera = { path = "../../../third_party/libcamera", optional = true }
 reflection = { path = "../../reflection" }
 
 [features]
 default = ["std"]
 std = ["alloc"]
 alloc = []
+libcamera = ["dep:libcamera", "media_camera/libcamera"]

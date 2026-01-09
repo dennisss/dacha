@@ -1,40 +1,3 @@
-/*
-cargo run --bin cnc_controller -- service \
-    --config_name=breadboard_motor \
-    --port=8000
-
-cargo run --bin cnc_controller -- service \
-    --config_name=voron0 \
-    --port=8000
-
-cargo run --bin cnc_controller -- execute "move_to { x: 160 }"
-
-
-cargo run --bin cnc_controller -- execute --proto="
-    move_to { x: 50 } move_to { x: 50 y: 50 } move_to { x: 0 y: 50 } move_to { x: 0 y: 0 }
-    move_to { x: 40 y: 0 }
-    move_to { x: 90 y: 50 }
-    move_to { x: 40 y: 50 }
-    move_to { x: 90 y: 0 }
-    move_to { x: 40 y: 0 }
-    move_to { x: 0 y: 0 }
-"
-
-cargo run --bin cnc_controller -- execute "
-    move_to { x: 0 y: 0 }
-"
-
-cargo run --bin cnc_controller -- execute "
-    move_to { x: 0 y: 0 z: -10 }
-    move_to { x: 0 y: 0 z: 10 }
-    move_to { x: 0 y: 0 z: 0 }
-"
-
-
-cargo run --bin cnc_controller -- execute --gcode_file=testdata/cnc/voron0/voron0-calibration-cube.gcode
-
-*/
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -77,7 +40,7 @@ struct ControllerServiceImpl {
 
 impl ControllerServiceImpl {
     async fn create(config: ControllerConfig) -> Result<Self> {
-let machine = MachineController::create(config).await?;
+        let machine = MachineController::create(config).await?;
         Ok(Self { machine })
     }
 }
@@ -98,7 +61,7 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<GetPositionRequest>,
         response: &mut rpc::ServerResponse<GetPositionResponse>,
     ) -> Result<()> {
-response.value = self.machine.get_position().await?;
+        response.value = self.machine.get_position().await?;
         Ok(())
     }
 }

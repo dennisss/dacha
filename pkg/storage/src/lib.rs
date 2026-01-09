@@ -26,6 +26,8 @@ mod proto;
 pub mod scsi;
 mod smart;
 mod volume;
+pub mod sas;
+pub mod enclosure;
 
 pub const LOGICAL_BLOCK_SIZE: usize = 512;
 

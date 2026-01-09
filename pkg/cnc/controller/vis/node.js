@@ -4,7 +4,7 @@ node -r esm pkg/cnc/controller/vis/node.js
 
 const { createCanvas, loadImage, registerFont } = require('canvas')
 const { encode_frames } = require('./video_encoder');
-const { configure } = require('./motion_animation');
+const { configure } = require('./alignment_animation');
 
 
 
@@ -54,8 +54,13 @@ class Frames {
     }
 }
 
-let frames = new Frames(configure(inner_canvas));
-
 (async () => {
-    await encode_frames(frames, 'dump/chapter9_slow.mp4');
+    let timeline = await configure(inner_canvas);
+    if (!timeline.name()) {
+        throw new Error('Unnamed timeline');
+    }
+
+    let frames = new Frames(timeline);
+
+    await encode_frames(frames, `dump/${timeline.name()}.mp4`);
 })()

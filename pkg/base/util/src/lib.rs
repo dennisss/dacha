@@ -19,6 +19,7 @@ pub mod iter;
 pub mod null_terminated;
 pub mod zip_all;
 pub mod aligned;
+pub mod bit_field;
 
 #[cfg(feature = "alloc")]
 use alloc::string::String;

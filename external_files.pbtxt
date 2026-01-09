@@ -1240,9 +1240,99 @@ files: [
         sha256_sum: "7f45cb0fd2608da9fc7bc2b431678f1d6d3dfa5eaeba2c7eba92779b356c1947"
     },
     {
+        path: "pkg/cluster/machines/jbod/parts/backplane-back-left-panel.stl"
+        size: 83484
+        sha256_sum: "d22ea71655c3ea65eb21f6f47192c12501b5d51a511de8ac667daed3ba48a755"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-back-right-panel.stl"
+        size: 83484
+        sha256_sum: "28dbee9d33ba7bcbfd0de982f9089ba9fb2b83b028e7b35ef3ffa410d9099180"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-front-left-panel.stl"
+        size: 102684
+        sha256_sum: "fdbda155cb5036759fb27c90a1fd1a44b7eabd6a8ef21f7866048ecb07961281"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-front-right-panel.stl"
+        size: 101884
+        sha256_sum: "107daa1c0ae187735fcdcee893dbad6b0cb1c28649a7cb558ed82a8e727037e3"
+    },
+    {
         path: "pkg/cluster/machines/jbod/parts/backplane-m3-18mm-heatset-standoff.stl"
         size: 115284
         sha256_sum: "c558066a4556f1f9efb7c4d0edcae402e46bded48129d9a52433d86df1c22a73"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-mid-left-panel.stl"
+        size: 162684
+        sha256_sum: "df56f1f9efcfe583fc571251b290aad230f8d7d3ddbc87a4449247da53ed72e4"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-mid-right-panel.stl"
+        size: 162684
+        sha256_sum: "94cd3147d319683f3ecf5bc7dc7aa464f8a0734e6a83beded4f25e079e5001a8"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-separator.dxf"
+        size: 111153
+        sha256_sum: "0b30641f3159df4bc431de16ef30c86549ee5b66cd3cfbedb5c299ffa722e06d"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-separator.svg"
+        size: 10529
+        sha256_sum: "1476a34e4768ff39ed33584411382fee32ebf84d1f00548e851225550f76139d"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-tester-holder.stl"
+        size: 146684
+        sha256_sum: "d76cb6cc0093f9ed52b68ae45bb3c725fa31ce4a04adf0c41c221c5f0f93b0ab"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/backplane-tester-pcb-plate.stl"
+        size: 287484
+        sha256_sum: "320ed9d99a6968ca7a92372fdca0162a1d1737d6e31eea236fa9e296e6552209"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/cover-front-clamp.stl"
+        size: 362684
+        sha256_sum: "5f8804501081a512c2b87667a22c665ab5d4eaa8c2fc6237fad19ac9e0c618b2"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/cover-roller.stl"
+        size: 57684
+        sha256_sum: "83d3f1c270173749b123e4abea8292e78459d534205ad5f383d1f5e659a2bbca"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/disk-retainer-front-flap.stl"
+        size: 59084
+        sha256_sum: "d2606364d64a49b96975a862cf70ecc6862caf2acfcfd946689e743777e106e5"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/disk-retainer-left.stl"
+        size: 1211384
+        sha256_sum: "83747f1d1ef8770b1aed963ac8d9f7b3fcd9164f6397e8f2b3d6e098689b5324"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/disk-retainer-rear-flap.stl"
+        size: 59284
+        sha256_sum: "f7af5bc7134c13d70e755a03856355b34258c26ac60fc19fed13880c248142f7"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/disk-retainer-right.stl"
+        size: 1253384
+        sha256_sum: "2768abfffe565498e715b3604a8a5a7b5a4d812cc055ac5571a1b952e4e4094d"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/disk-retainer.stl"
+        size: 847784
+        sha256_sum: "f9f8c5cdb9caaf0a7255b6386fb3a2a903118e870ee66f02bca096d96abd6596"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/esas-bracket.stl"
+        size: 59884
+        sha256_sum: "17d398d4817458d0d51d6d0f16227efd431e8ce8c4e8776f3eaffba593fccd1b"
     },
     {
         path: "pkg/cluster/machines/jbod/parts/fan-spacer-120mm-3mm.stl"
@@ -1253,6 +1343,56 @@ files: [
         path: "pkg/cluster/machines/jbod/parts/fan-washer-m4-3mm.stl"
         size: 57684
         sha256_sum: "2ce74fa08894ad9314b6346addee48c36069d904919114f98581f5d02ab8b031"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/led-m2-washer.stl"
+        size: 57684
+        sha256_sum: "6d34d31d9929ddb1583773cf7bd30003497438176c5fe9b0b71cb71ba8601f4a"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/management-holder.stl"
+        size: 1773984
+        sha256_sum: "17fb7c31de6cce4634cdc94d472f400fa9adb200d42653d38890a45dbfe0b9f3"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/power-tester-holder.stl"
+        size: 146684
+        sha256_sum: "f74c7ada5f4289a641d3f79698a214500d1ee39db780238b09a3df0c242c82a7"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/sas-expander-standoff.stl"
+        size: 57684
+        sha256_sum: "11a47091cd29930ecc2a8bf2b4e5e679d123e2135887f3a481e126c559d5cf5f"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-back-r3.dxf"
+        size: 2760137
+        sha256_sum: "3717233787c8a9e200d10c53f72032f05028fce73e41ee526ecafd4221591122"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-body-r3.dxf"
+        size: 246150
+        sha256_sum: "1842e388056de97717aceefb33b967e72b21c0676c59e2edf7c11ff5dacfab31"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-cover-r3.step"
+        size: 96772
+        sha256_sum: "601fe0e24ce988837db548908e34b6c2313c9958fa7f5a2363eaaac549fab313"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-front-r3.step"
+        size: 102156
+        sha256_sum: "d3455d0049603e733e55efb0630558de776471336f05d5269039ff8f172ec3d9"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-rear-fan-r3.step"
+        size: 161308
+        sha256_sum: "7849f6c916ea0d461a172cc3e7b365ce7f9a1259ea1a12913c4b2585a19a972d"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/usb-bracket.stl"
+        size: 117284
+        sha256_sum: "7e33888591d1994f89eaf16b670dc90b93b47b3abf8914bfd01ee0dfeee46533"
     },
     {
         path: "pkg/cnc/boards/cnc_controller/board/plot/board-B_Cu.gbl"

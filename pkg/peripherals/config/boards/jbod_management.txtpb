@@ -1,0 +1,272 @@
+name: "jbod_management"
+base_config: "nrf52840_itsybitsy"
+
+product_id: 12
+
+#######################################
+
+peripherals {
+    name: "5v_r_sense"
+    adc {
+        pin_name: "P0.30"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 10000
+            bottom_resistor: 10000
+            max_input_voltage: 6
+        }
+    }
+}
+
+peripherals {
+    name: "5v_l_sense"
+    adc {
+        pin_name: "P0.02"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 9880
+            bottom_resistor: 9880
+            max_input_voltage: 6
+        }
+    }
+}
+
+#######################################
+
+peripherals {
+    name: "12v_r_sense"
+    adc {
+        pin_name: "P0.04"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 51000
+            bottom_resistor: 10000
+            max_input_voltage: 14
+        }
+    }
+}
+
+peripherals {
+    name: "12v_l_sense"
+    adc {
+        pin_name: "P0.03"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 33100
+            bottom_resistor: 9890
+            max_input_voltage: 14
+        }
+    }
+}
+
+#######################################
+
+peripherals {
+    name: "ps_on_r_sense"
+    adc {
+        pin_name: "P0.28"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 100000
+            bottom_resistor: 100000
+            max_input_voltage: 6
+        }
+    }
+}
+
+peripherals {
+    name: "ps_on_l_sense"
+    adc {
+        pin_name: "P0.31"
+        config {
+            # Average over 10ms
+            oversampling: 256
+            sample_rate: 25600
+        }
+        resistor_divider {
+            top_resistor: 100000
+            bottom_resistor: 100000
+            max_input_voltage: 6
+        }
+    }
+}
+
+#######################################
+
+# Set low to enable the expander.
+
+peripherals {
+    name: "sas_on_r"
+    gpio {
+        pin_name: "P0.13"
+        config {
+            is_input: false
+            default_value: false
+        }
+    }
+}
+
+peripherals {
+    name: "sas_on_l"
+    gpio {
+        pin_name: "P0.15"
+        config {
+            is_input: false
+            default_value: false
+        }
+    }
+}
+
+#######################################
+
+# Set low to enable the PSU.
+
+
+peripherals {
+    name: "ps_on_r"
+    gpio {
+        pin_name: "P0.11"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+peripherals {
+    name: "ps_on_l"
+    gpio {
+        pin_name: "P0.05"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+#######################################
+
+peripherals {
+    name: "fan_pwm"
+    pwm {
+        pin_name: "D5"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+
+#######################################
+
+peripherals {
+    name: "fan1_tach"
+    gpio {
+        pin_name: "P0.25"
+        config {
+            is_input: true
+            pull_up: true
+        }
+    }
+}
+
+peripherals {
+    name: "fan2_tach"
+    gpio {
+        pin_name: "P0.24"
+        config {
+            is_input: true
+            pull_up: true
+        }
+    }
+}
+
+peripherals {
+    name: "fan3_tach"
+    gpio {
+        pin_name: "P0.16"
+        config {
+            is_input: true
+            pull_up: true
+        }
+    }
+}
+
+peripherals {
+    name: "fan4_tach"
+    gpio {
+        pin_name: "P0.14"
+        config {
+            is_input: true
+            pull_up: true
+        }
+    }
+}
+
+peripherals {
+    name: "fan5_tach"
+    gpio {
+        pin_name: "P0.08"
+        config {
+            is_input: true
+            pull_up: true
+        }
+    }
+}
+
+peripherals {
+    name: "fan6_tach"
+    gpio {
+        pin_name: "P0.07"
+        config {
+            is_input: true
+            pull_up: true
+        }
+    }
+}
+
+#######################################
+
+peripherals {
+    name: "led"
+
+    neopixel {
+        pin_name: "P0.12"
+        config {
+            inverted: false
+            num_bytes: 180 # 15 cols * 4 rows * 3 (RGB)
+        }
+    }
+}
+
+#######################################
+
+peripherals {
+    name: "aux"
+    gpio {
+        pin_name: "P0.26"
+        config {
+            is_input: false
+        }
+    }
+}

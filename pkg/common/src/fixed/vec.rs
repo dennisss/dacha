@@ -183,7 +183,9 @@ impl<T: Clone, const LEN: usize> Clone for FixedVec<T, LEN> {
 impl<T: PartialEq, const LEN: usize> PartialEq for FixedVec<T, LEN> {
     fn eq(&self, other: &Self) -> bool {
         // Use slice comparison.
-        *self == *other
+        let a: &[T] = self.as_ref();
+        let b: &[T] = other.as_ref();
+        a == b
     }
 }
 

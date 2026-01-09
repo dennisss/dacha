@@ -9,6 +9,7 @@ use core::cell::UnsafeCell;
 use core::mem::{transmute, MaybeUninit, size_of};
 use core::ops::{Deref, DerefMut};
 use core::marker::PhantomData;
+use core::convert::{AsRef, AsMut};
 
 extern "C" {
     static mut _sheap: u8;
@@ -134,6 +135,18 @@ impl<T> DerefMut for BoxedSlice<T> {
         unsafe {
             core::slice::from_raw_parts_mut(self.data.ptr, self.len)
         }
+    }
+}
+
+impl<T> AsRef<[T]> for BoxedSlice<T> {
+    fn as_ref(&self) -> &[T] {
+        &*self
+    }
+}
+
+impl<T> AsMut<[T]> for BoxedSlice<T> {
+    fn as_mut(&mut self) -> &mut [T] {
+        &mut *self
     }
 }
 

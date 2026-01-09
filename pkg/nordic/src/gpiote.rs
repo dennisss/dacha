@@ -206,6 +206,11 @@ impl GPIOInterruptChannel {
         pending
     }
 
+    pub fn in_event(&self) -> &EventRegister {
+        let i = self.channel.index;
+        &self.channel.periph.events_in[i]
+    }
+
     pub async fn wait_for_interrupts(&mut self) -> bool {
         // TODO: Enable the interrupt when entering this function and disable it when out of here.
 

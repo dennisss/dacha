@@ -67,7 +67,10 @@ pub const fn set_bit_field(v: u32, shift: usize, width: usize, field: u32) -> u3
 ```
 */
 
+use base_util::bit_field::*;
+
 use crate::tmc2209::utils::*;
+
 
 /// GCONF – Global configuration flags
 /// (R/W) Addr: 0x00
