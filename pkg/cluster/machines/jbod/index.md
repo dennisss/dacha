@@ -1,8 +1,6 @@
 # JBOD Enclosure
 
-TLDR: Watch this video:
-
-<iframe width="560" height="315" src="https://www.youtube.com/embed/vVI7atoAeoo?si=nXOQHgSuOzzLJKoR" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+TLDR: [Watch this video first](https://www.youtube.com/watch?v=vVI7atoAeoo)
 
 This project is a custom built SAS JBOD enclosure meant to store 45 drives in a 4U 19" server rack slot.
 
