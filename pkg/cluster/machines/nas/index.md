@@ -126,6 +126,8 @@ Gateway=10.1.0.1
 DNS=10.1.0.1
 ```
 
+Note that you way need to change the name based on what is listed in `ip addr`
+
 And create `/etc/systemd/network/21-sfp.network` with the following
 
 ```

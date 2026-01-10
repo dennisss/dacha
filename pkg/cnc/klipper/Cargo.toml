@@ -9,8 +9,10 @@ common = { path = "../../common" }
 parsing = { path = "../../parsing" }
 macros = { path = "../../macros" }
 executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 crypto = { path = "../../crypto" }
+peripherals = { path = "../../peripherals" }
 
 [features]
 default = ["std"]

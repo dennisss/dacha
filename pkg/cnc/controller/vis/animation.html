@@ -24,19 +24,22 @@
 <body>
     <canvas id="frame-canvas" width="960" height="540"></canvas>
 
+    <!-- TODO: Make this work with local files. -->
     <script defer src="https://cdn.jsdelivr.net/npm/mathjax@4.0.0/tex-svg.js"></script>
+
     <script type="module">
         // import { configure } from "./toolhead_animation.js";
         // import { configure } from "./motion_animation.js";
-        import { configure } from "./alignment_animation.js";
+        // import { configure } from "./alignment_animation.js";
+        import { configure } from "./jbod_animation.js";
 
         async function main() {
             // TODO: Also add the noto emoji font.
 
-            const noto_font = new FontFace('Noto Sans', 'url("font_normal.ttf")');
+            const noto_font = new FontFace('Noto Sans', 'url("/third_party/noto_sans/font_normal.ttf")');
             document.fonts.add(noto_font);
 
-            const mono_font = new FontFace('Noto Sans Mono', 'url("font_mono_normal.ttf")');
+            const mono_font = new FontFace('Noto Sans Mono', 'url("/third_party/noto_sans/font_mono_normal.ttf")');
             document.fonts.add(mono_font);
 
             await noto_font.load();

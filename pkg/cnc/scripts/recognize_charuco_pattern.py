@@ -15,8 +15,13 @@ INPUT_FOLDER = 'data/skew'
 OUTPUT_FOLDER = 'data/skew_out'
 CSV_FILENAME = 'camera_poses.csv'
 CALIB_FILENAME = 'calibration_data.npz'
-SAVE_DEBUG_EVERY_N = 10
+SAVE_DEBUG_EVERY_N = 1
 CALIBRATION_SAMPLE_SIZE = 200  # Max images to use for calibration
+
+# Visual Settings for Debug Images
+DEBUG_DOT_RADIUS = 25           # Size of the corner dots
+DEBUG_DOT_COLOR = (0, 0, 255) # Yellow (BGR)
+DEBUG_OUTLINE_COLOR = (0, 0, 255) # Red (BGR)
 
 # Board Settings
 SQUARES_X = 34
@@ -51,6 +56,8 @@ def process_image(args):
         
         marker_corners, marker_ids, _ = detector.detectMarkers(gray)
         
+        debug_img = img.copy()
+
         result = None
         if marker_ids is not None and len(marker_ids) > 0:
             retval, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
@@ -59,12 +66,24 @@ def process_image(args):
             
             if retval > 6:
                 if index % SAVE_DEBUG_EVERY_N == 0:
-                    debug_img = cv2.aruco.drawDetectedCornersCharuco(
-                        img.copy(), charuco_corners, charuco_ids, (0, 255, 0)
-                    )
-                    cv2.putText(debug_img, f"ID: {index}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-                    base_name = os.path.basename(img_path)
-                    cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"debug_{base_name}"), debug_img)
+                    
+                    # 1. Draw standard ID numbers (optional, helps identifying specific corners)
+                    # cv2.aruco.drawDetectedCornersCharuco(
+                    #     debug_img, charuco_corners, charuco_ids, (0, 255, 0)
+                    # )
+                    
+                    # 2. Draw Large High-Visibility Dots on top
+                    if charuco_corners is not None:
+                        for corner in charuco_corners:
+                            pt = (int(corner[0][0]), int(corner[0][1]))
+                            # Draw filled center (Yellow)
+                            cv2.circle(debug_img, pt, DEBUG_DOT_RADIUS, DEBUG_DOT_COLOR, -1)
+                            # Draw thick outline (Red)
+                            cv2.circle(debug_img, pt, DEBUG_DOT_RADIUS, DEBUG_OUTLINE_COLOR, 2)
+
+                    # Label the frame ID
+                    cv2.putText(debug_img, f"ID: {index}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,0,255), 3)
+                    
 
                 result = {
                     'path': img_path,
@@ -72,6 +91,11 @@ def process_image(args):
                     'ids': charuco_ids,
                     'size': image_size
                 }
+
+        if index % SAVE_DEBUG_EVERY_N == 0:
+            base_name = os.path.basename(img_path)
+            cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"debug_{base_name}"), debug_img)
+
         return result
     except Exception as e:
         print(f"\nError processing {img_path}: {e}")

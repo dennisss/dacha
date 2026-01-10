@@ -1,0 +1,320 @@
+<!-- Written by Google Gemini: https://gemini.google.com/app/e7da996a261c19da -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Bed Mesh Visualizer (Configurable)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #222;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #eee;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #00ff00;
+            font-size: 14px;
+            line-height: 1.5;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            pointer-events: auto;
+        }
+
+        .stat-group {
+            margin-top: 10px;
+            border-top: 1px solid #444;
+            padding-top: 5px;
+        }
+
+        .val {
+            font-family: monospace;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .pos {
+            color: #ff6666;
+        }
+
+        .neg {
+            color: #66ccff;
+        }
+
+        .controls {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+
+        label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 8px;
+            transform: scale(1.2);
+            accent-color: #00ff00;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div id="info">
+        <strong>Bed Mesh Visualizer</strong><br>
+        <div id="stats-output">Processing data...</div>
+
+        <div class="controls">
+            <label>
+                <input type="checkbox" id="toggle-fit" checked>
+                Show Best Fit Plane
+            </label>
+        </div>
+
+        <div style="margin-top:15px; font-size: 12px; opacity: 0.7;">
+            Legend:<br>
+            <span style="color:#ff0000">■ High</span> | <span style="color:#0000ff">■ Low</span><br>
+            <span style="color:#00ff00;">■ Best Fit Plane</span>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- 1. IMPORT DATA & CONFIG ---
+        // We now import 'config' as well
+        import { rawData as importedData, config } from './bed_mesh_data.js';
+
+        // Set default scaling if config is missing, otherwise use config
+        const Z_SCALE = (config && config.scaleZ) ? config.scaleZ : 20;
+
+        // --- 2. PREPROCESSING (CENTER Z) ---
+        function centerDataZ(points) {
+            if (!points || points.length === 0) return [];
+            const totalZ = points.reduce((sum, p) => sum + p.z, 0);
+            const meanZ = totalZ / points.length;
+            console.log(`Centering Mesh: Subtracting average Z offset of ${meanZ.toFixed(4)}mm`);
+            return points.map(p => ({ x: p.x, y: p.y, z: p.z - meanZ }));
+        }
+
+        const rawData = centerDataZ(importedData);
+
+        // --- 3. MATH & STATS ---
+        function calculateBestFitPlane(points) {
+            let sumX = 0, sumY = 0, sumZ = 0, sumXX = 0, sumXY = 0, sumYY = 0, sumXZ = 0, sumYZ = 0;
+            const n = points.length;
+            for (let p of points) {
+                sumX += p.x; sumY += p.y; sumZ += p.z;
+                sumXX += p.x * p.x; sumXY += p.x * p.y; sumYY += p.y * p.y;
+                sumXZ += p.x * p.z; sumYZ += p.y * p.z;
+            }
+            const m11 = sumXX, m12 = sumXY, m13 = sumX;
+            const m21 = sumXY, m22 = sumYY, m23 = sumY;
+            const m31 = sumX, m32 = sumY, m33 = n;
+            const det = m11 * (m22 * m33 - m23 * m32) - m12 * (m21 * m33 - m23 * m31) + m13 * (m21 * m32 - m22 * m31);
+            if (Math.abs(det) < 1e-9) return { a: 0, b: 0, c: 0 };
+            const detA = sumXZ * (m22 * m33 - m23 * m32) - m12 * (sumYZ * m33 - sumZ * m32) + m13 * (sumYZ * m23 - sumZ * m22);
+            const detB = m11 * (sumYZ * m33 - sumZ * m32) - sumXZ * (m21 * m33 - m23 * m31) + m13 * (m21 * sumZ - sumYZ * m31);
+            const detC = m11 * (m22 * sumZ - m23 * sumYZ) - m12 * (m21 * sumZ - m31 * sumYZ) + sumXZ * (m21 * m32 - m22 * m31);
+            return { a: detA / det, b: detB / det, c: detC / det };
+        }
+
+        function calculateStats(points, fit) {
+            let rawMin = Infinity, rawMax = -Infinity;
+            let alignMin = Infinity, alignMax = -Infinity;
+            points.forEach(p => {
+                if (p.z < rawMin) rawMin = p.z;
+                if (p.z > rawMax) rawMax = p.z;
+                const idealZ = fit.a * p.x + fit.b * p.y + fit.c;
+                const deviation = p.z - idealZ;
+                if (deviation < alignMin) alignMin = deviation;
+                if (deviation > alignMax) alignMax = deviation;
+            });
+            return { rawMin, rawMax, alignMin, alignMax };
+        }
+
+        const fit = calculateBestFitPlane(rawData);
+        const stats = calculateStats(rawData, fit);
+        const fmt = (n) => (n >= 0 ? "+" : "") + n.toFixed(3);
+        const diff = (a, b) => (b - a).toFixed(3);
+
+        document.getElementById('stats-output').innerHTML = `
+            <div class="stat-group">
+                <strong>Centered Raw Data:</strong><br>
+                Max: <span class="val pos">${fmt(stats.rawMax)}</span> mm<br>
+                Min: <span class="val neg">${fmt(stats.rawMin)}</span> mm<br>
+                Range: <span class="val">${diff(stats.rawMin, stats.rawMax)}</span> mm
+            </div>
+            <div class="stat-group">
+                <strong>Best Fit Deviation:</strong><br>
+                Max: <span class="val pos">${fmt(stats.alignMax)}</span> mm<br>
+                Min: <span class="val neg">${fmt(stats.alignMin)}</span> mm<br>
+                Range: <span class="val">${diff(stats.alignMin, stats.alignMax)}</span> mm
+            </div>
+            <div style="margin-top:5px; font-size:11px; color:#aaa;">
+                Vis Scale: ${Z_SCALE}x
+            </div>
+        `;
+
+        // --- 4. GRID RECONSTRUCTION ---
+        function processUnorderedData(points) {
+            const TOLERANCE = 0.01;
+            const uniqueX = [];
+            const uniqueY = [];
+            const insertUnique = (arr, val) => {
+                if (!arr.some(v => Math.abs(v - val) < TOLERANCE)) arr.push(val);
+            };
+            points.forEach(p => {
+                insertUnique(uniqueX, p.x);
+                insertUnique(uniqueY, p.y);
+            });
+            uniqueX.sort((a, b) => a - b);
+            uniqueY.sort((a, b) => a - b);
+
+            const grid = Array(uniqueY.length).fill().map(() => Array(uniqueX.length).fill(null));
+            points.forEach(p => {
+                const xi = uniqueX.findIndex(x => Math.abs(x - p.x) < TOLERANCE);
+                const yi = uniqueY.findIndex(y => Math.abs(y - p.y) < TOLERANCE);
+                if (xi !== -1 && yi !== -1) grid[yi][xi] = p.z;
+            });
+
+            const vertices = [], colors = [], indices = [];
+            let vertCount = 0;
+            const indexMap = Array(uniqueY.length).fill().map(() => Array(uniqueX.length).fill(-1));
+            const colorHigh = new THREE.Color(0xff0000);
+            const colorLow = new THREE.Color(0x0000ff);
+
+            for (let y = 0; y < uniqueY.length; y++) {
+                for (let x = 0; x < uniqueX.length; x++) {
+                    const zVal = grid[y][x];
+                    if (zVal !== null) {
+                        indexMap[y][x] = vertCount++;
+                        // APPLY Z SCALE HERE
+                        vertices.push(uniqueX[x], zVal * Z_SCALE, uniqueY[y]);
+
+                        const range = Math.max(0.01, stats.rawMax - stats.rawMin);
+                        const t = (zVal - stats.rawMin) / range;
+                        const c = new THREE.Color().lerpColors(colorLow, colorHigh, t);
+                        colors.push(c.r, c.g, c.b);
+                    }
+                }
+            }
+            for (let y = 0; y < uniqueY.length - 1; y++) {
+                for (let x = 0; x < uniqueX.length - 1; x++) {
+                    const p1 = indexMap[y][x], p2 = indexMap[y][x + 1];
+                    const p3 = indexMap[y + 1][x], p4 = indexMap[y + 1][x + 1];
+                    if (p1 !== -1 && p3 !== -1 && p4 !== -1) indices.push(p1, p4, p3);
+                    if (p1 !== -1 && p4 !== -1 && p2 !== -1) indices.push(p1, p2, p4);
+                }
+            }
+            return { vertices, colors, indices };
+        }
+
+        const meshData = processUnorderedData(rawData);
+
+        // --- 5. THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(180, 120, 180);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(60, 0, 60);
+        controls.update();
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dl = new THREE.DirectionalLight(0xffffff, 0.8);
+        dl.position.set(50, 100, 50);
+        scene.add(dl);
+        scene.add(new THREE.AxesHelper(20));
+
+        // --- 6. RENDER MESH ---
+        const geometry = new THREE.BufferGeometry();
+        geometry.setIndex(meshData.indices);
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.vertices, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(meshData.colors, 3));
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshStandardMaterial({
+            vertexColors: true, side: THREE.DoubleSide, flatShading: true,
+            polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        const wireGeo = new THREE.WireframeGeometry(geometry);
+        const wireMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 });
+        const wireLines = new THREE.LineSegments(wireGeo, wireMat);
+        scene.add(mesh);
+        scene.add(wireLines);
+
+        // --- 7. RENDER PLANES ---
+        const zeroPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(120, 120),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.05, side: THREE.DoubleSide })
+        );
+        zeroPlane.rotation.x = -Math.PI / 2;
+        zeroPlane.position.set(60, 0, 60);
+        scene.add(zeroPlane);
+
+        // Best Fit Plane Geometry
+        const fitGeo = new THREE.BufferGeometry();
+        // APPLY Z SCALE HERE
+        const z00 = (fit.a * 0 + fit.b * 0 + fit.c) * Z_SCALE;
+        const z10 = (fit.a * 120 + fit.b * 0 + fit.c) * Z_SCALE;
+        const z01 = (fit.a * 0 + fit.b * 120 + fit.c) * Z_SCALE;
+        const z11 = (fit.a * 120 + fit.b * 120 + fit.c) * Z_SCALE;
+
+        const fitVerts = [0, z00, 0, 120, z10, 0, 0, z01, 120, 120, z11, 120];
+        const fitInds = [0, 2, 1, 1, 2, 3];
+        fitGeo.setIndex(fitInds);
+        fitGeo.setAttribute('position', new THREE.Float32BufferAttribute(fitVerts, 3));
+        fitGeo.computeVertexNormals();
+
+        const fitMesh = new THREE.Mesh(fitGeo, new THREE.MeshBasicMaterial({
+            color: 0x00ff00, transparent: true, opacity: 0.2, side: THREE.DoubleSide
+        }));
+        scene.add(fitMesh);
+
+        // --- 8. UI EVENT LISTENERS ---
+        document.getElementById('toggle-fit').addEventListener('change', (e) => {
+            fitMesh.visible = e.target.checked;
+        });
+
+        // --- LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+
+</html>

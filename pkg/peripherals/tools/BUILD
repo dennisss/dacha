@@ -12,3 +12,8 @@ rust_binary(
     name = "serial_shell",
     bin = "serial_shell"
 )
+
+rust_binary(
+    name = "adxl_read",
+    bin = "adxl_read"
+)

@@ -282,6 +282,7 @@ export class DiagramBox {
         this._position = params.position || { x: 0, y: 0 }
         this._text_offset = params.text_offset || { x: 0, y: 0 };
         this._background_color = params.background_color || '#aaccee';
+        this._stroke_color = params.stroke_color || '#000';
     }
 
     set_background_color(color) {
@@ -306,7 +307,7 @@ export class DiagramBox {
         ctx.translate(this._position.x, this._position.y);
 
         ctx.fillStyle = this._background_color;
-        ctx.strokeStyle = '#000'
+        ctx.strokeStyle = this._stroke_color;
 
         draw_box(ctx, this._width, this._height);
 

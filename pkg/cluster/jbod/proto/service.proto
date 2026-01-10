@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package cluster;
+
+
+service Enclosure {
+    rpc GetState (GetStateRequest) returns (EnclosureState);
+
+    rpc Execute (ExecuteRequest) returns (ExecuteResponse);
+}
+
+message GetStateRequest {
+
+}
+
+message ExecuteRequest {
+    oneof command {
+        TogglePsuCommand toggle_psu = 1;
+        SetFanSpeed set_fan_speed = 2;
+        SetLEDState set_led_state = 3;
+    }
+}
+
+message ExecuteResponse {
+
+}
+
+message TogglePsuCommand {
+    string psu_name = 1;
+    bool on = 2;
+    bool sas_on = 3;
+}
+
+message SetFanSpeed {
+    float duty_cycle = 1;
+}
+
+message SetLEDState {
+    repeated uint32 colors = 1;
+
+    LEDStripMode mode = 2;
+}
+
+message LEDStripState {
+    repeated uint32 colors = 1;
+
+    LEDStripMode mode = 2;
+}
+
+enum LEDStripMode {
+    UNKNOWN = 0;
+    OFF = 1;
+    STATUS_ID = 2;
+    MANUAL = 3;
+}
+
+
+message EnclosureState {
+    repeated FanGroupState fan_groups = 1;
+
+    repeated DiskBayState bays = 2;    
+
+    repeated PowerSupplyState psus = 3;
+
+    LEDStripState leds = 4;
+
+    repeated StorageDeviceState storage_devices = 5;
+}
+
+
+message PowerSupplyState {
+    string name = 1;
+
+    bool on = 2;
+
+    // TODO: Eventually need an error state if we are on but there is no voltage for a while.
+    bool waiting_for_power_on = 3;
+
+    // If true, the PSU is turned on and voltages have stabilized to good values. 
+    bool output_stable = 4;
+
+    float voltage_ps_on = 5;
+
+    float voltage_5 = 6;
+
+    float voltage_12 = 7;
+
+    bool sas_on = 8; 
+}
+
+message PowerSupplyStats {
+
+}
+
+enum StorageDeviceUsage {
+    UNKNOWN = 0;
+    DISK = 1;
+    EXPANDER = 2;
+    HOST_ADAPTER = 3;
+}
+
+message StorageDeviceState {
+
+    string name = 1;
+
+    string model = 2;
+
+    string parent = 3;
+
+    StorageDeviceUsage usage = 4;
+
+    float temperature = 5;
+
+    string position = 6;
+
+    string serial_number = 7;
+
+    string wwid = 8;
+
+    DiskStats disk_stats = 9;
+}
+
+message DiskStats {
+    string smart_status = 1;
+
+    uint64 read_soft_errors = 2;
+
+    uint64 read_hard_errors = 3;
+
+    uint64 write_soft_errors = 4;
+
+    uint64 write_hard_errors = 5;
+
+}
+
+message DiskBayState {
+    string connected_device_name = 1;
+}
+
+
+message FanGroupState {
+    string name = 1;
+
+    float duty_cycle = 2;
+
+    repeated FanState fans = 3;
+}
+
+message FanState {
+    string name = 1;
+
+    float measured_speed = 2;
+}

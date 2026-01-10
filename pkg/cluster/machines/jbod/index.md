@@ -1,0 +1,256 @@
+# JBOD Enclosure
+
+TLDR: Watch this video:
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/vVI7atoAeoo?si=nXOQHgSuOzzLJKoR" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+This project is a custom built SAS JBOD enclosure meant to store 45 drives in a 4U 19" server rack slot.
+
+Other requirements is that it must fit in a short 550mm long rack (excluding the front cover) and must be fairly silent. Both of these are achieved by only using high efficiency consumer grade SFF PSUs and large 120mm Noctua fans.
+
+This enclosure will only contain management, SAS expander, and power electronics and will need to connect to another computer via external SAS cables to actually read/write from the disks.
+
+## Parts
+
+This section contains information on all the individual parts we are using and why they were selected. Use this as a general guide for buying compatible parts for new builds. 
+
+### Sheet Metal Parts
+
+There are 5 pieces that need to be made of sheet metal:
+
+- `Body`
+- `Rear Fan`
+- `Back`
+- `Cover`
+- `Front`
+
+The designs are currently configured to be used with the following metals (these are available from `Send Cut Send`):
+
+- G90 Steel : 0.075in thick
+    - Use for `Front`
+
+- G90 Steel : 0.059in thick
+    - Use for `Body`, `Rear Fan`, `Back`
+    - K-Factor: 0.36
+    - Bend Radius: 0.063
+    - Bend Deducation: 0.1117"
+    - Bend Allowance: 0.1323 in
+
+- G90 Steel : 0.036"
+    - Use for `Cover`
+    - K-Factor: 0.38
+    - Bend Radius: 0.045in
+    - Bend Deducation: 0.073in
+    - Bend Allowance: 0.0922
+
+Bending directions:
+
+- `Body`
+    - All up 90 degrees
+- `Rear Fan`
+    - All down 90 degrees
+- `Back`
+    - All down 90 degrees
+- `Cover`
+    - All up 90 degrees
+- `Front`
+    - N/A
+
+You should get the following hardware pre-installed in the sheet metal parts:
+
+- `Body`
+    - For mounting rails:
+        - 6 x `Flush Nut, M5 x 0.8`
+        - Pull Direction: Down
+        - Insert into some of the 4.0mm holes
+    - For attaching the front panel
+        - 7 x `Nut, M4x0.7`
+        - Pull Direction: Down
+        - Insert into some of the 4.0mm holes
+    - For attaching the rear fan and back panels
+        - 3 x `Flush stud, M4 x 0.7, .315"`
+        - Pull Direction: Up
+        - Insert into the 4.11mm holes
+    - For installing the backplane standoffs
+        - Recommend getting M3 flush studs. Any length between 2 - 6mm (prefer around 3mm).
+        - You will need 48 of these.
+        - The alternative is to use low profile M3 screws.
+- `Rear Fan`
+    - 4 x `Nut, M4x0.7`
+    - Pull direction: Up
+    - These all go into the side holes to fix this panel to the body frame.
+- `Back`
+    - 4 x `Nut, M4x0.7`
+    - Pull Direction: Up
+    - Insert into the 4.4mm diameter wholes on the side (all but the bottom hole)
+- `Cover`
+    - None
+- `Front`
+    - None
+
+### 3D Printed Parts
+
+All the parts are designed to be printed roughly dimensionally accurate and I usually use ASA filament with 100.5% scaling for most of them. Important settings for specific parts are listed below:
+
+- The main two disk retainer pieces
+    - Print in 40%+ infill.
+    - Do everything you can to prevent the parts from warping (adding brims, etc.).
+
+- Printing Fan Spacers and Washers
+    - TPU 95a
+    - Infill: 10% triangles
+    - 2 top and bottom solid layers
+    - 1 perimeter
+    - Rest default recommended for for the printer (probably will have high extrusion multiplier or high parameter/infill overlap to get solid layers).
+
+- 18mm Standoffs
+    - Print with default Prusa PETG settings (0.45mm extrusion width, 0.4mm nozzle) and no scaling
+    - Should shrink to 8mm outer diameter / 4mm hole diameter
+        - Standard size short 3mm heatset inserts should snap.
+
+### Drives
+
+We aim to support 45 of the `WD HC550 18TB SAS` drives in the enclosure though you can use any similar drives:
+
+- Full Name: `Western Digital Ultrastar DC HC550 WUH721818AL5204 0F38353`
+- Peak Current
+    - 5V:   1A
+    - 12V:  2A
+- Average (Active) Current
+    - 5V:   0.5A
+    - 12V:  0.6A
+- Connector
+    - 29pin SAS SFF 8680
+
+### Power Supply
+
+Since peak current requirements are fairly large, we will use 2 x `Corsair SF600/500 PSUs`. Each PSU will be wired up to ~half of the drives with no fallback to the second PSU. There is not much point in going to a higher wattage SFF PSU (e.g. SF1000) since the 5V power envelope doesn't increase so is still too low from a single PSU to handle even average active power draw.
+
+Note that the PSUs need to be short SFF style (100mm) to be able to fit in the case.
+
+Specs for a single PSU:
+
+- Max Current
+    - 5V: 20A
+    - 12V : 50A
+- Female Connectors (on the PSU)
+    - General rule of thumb is that each pin is limited to 8A
+        - So assuming each given each backplane blade has up to 4 drives (peak 4A@5V, 8A@12V), we want one dedicated pin going to each blade for 12V and 0.5 pins per blade for 5V.
+        - So overall need 6 12V+GND pins and 3 5V+GND pins per PSU.
+    - One extra of each of the 12V, 5V, and GND pins is also required to run to the management board.
+
+**Cabling to get:**
+
+- Male PSU connector set
+    - https://www.moddiy.com/products/Modular-Connector-Full-Set-7pcs-for-Corsair-SF.html
+    - Also need a crimping tool (I use a `ENGINEER PA-21` for all crimps in this build).
+- 18 AWG wire
+    - ~10 meters of black (GND)
+    - 5 meters of white (12V)
+        - (or yellow if you want to follow PC standards)
+    - 5 meters of blue (5V)
+        - (or red if you want to follow PC standards)
+
+### SAS Expanders
+
+We will use 2 x `Adaptec AEC-82885T Expander`s (easier to buy on eBay). Specs from each of them:
+
+- 1 (or 2) x Mini SAS HD => 6 x Mini SAS HD
+- Power requirement: 1.34A @ 12V
+- Supports `SES-3` for querying the processor temperature.
+
+Each expander will be powered from a single PSU.
+
+### Fans
+
+- 6 x `NF-A12x25`
+    - Each uses peak 0.14A @ 12V
+    - So total is 0.84A
+- By default fan power is pulled from the left power supply but this will fallback to the right one if ther left one is now powered on. This switching is done via a relay to avoid electrically coupling the two 12V lines.
+
+
+### Fasteners
+
+- If I forgot to mention a screw type, then it is probably one of these:
+    - M3 x 6mm Button Head screws
+        - IDK how many. A pack of 100 screws is enough for the entire build
+    - M4 x 6mm Button Head screws
+        - IDK how many. A pack of 100 screws is enough for the entire build
+- Screwing Front Panel to Body
+    - 7 x M4 6mm pan head
+- Screwing fans on
+    - 24 x M4 35mm pan head screws
+    - 24 x M4 standard hex nuts
+- For attaching rear fan and back panels to the body frame
+    - 3 x M4 nuts
+    - 3 x M4 washers
+- For attaching the disk retainer to the frame
+    - 8 x `M3 x 5.7mm` heatset inserts
+    - 8 x M3 6mm button head screws
+- For attaching the backplanes to the standoffs:
+    - 48 x `M3 x 6mm` button head screws
+    - 96 x M3 x 3mm short heatset inserts in all the 3d printed 18mm standoffs
+- For attaching SAS expanders to the management holder
+    - 3 x `M4 x 4mm` heatset inserts
+    - 3 x `M4 24mm` screws
+- For attaching the management board to the management holder
+    - 2 x `M2 x 3 x 3.5mm` heatset inserts
+    - 2 x M2 4mm machine screws
+- For attaching LED strips to the disk retainer
+    - 24 x `M2 x 3 x 3.5mm` heatset inserts
+    - 24 x 3d printed M2 washers
+    - 24 x M2 6mm machine screws
+
+Note that I got all the M3 and M4 heatset inserts from CNC Kitchen.
+
+
+### Backplane
+
+The backplane is composed of individual blades that connect 3 or 4 SAS drives to 1 Mini SAS HD connector going to the SAS expander. In total the enclosure will 3 rows of blades with each row having 1 x 3-drive blade and 3 x 4-drive blades. This is in contrast to enclosures like the HL15 which uses a single PCB for an entire row: the single PCB approach makes alignment easier but is more annoying to solder and more expensive if replacing an individual component.
+
+The latest stable board design is in the `boards/backplane-r2` folder.
+
+Pre-exported production files are located here (download both as `.zip` files):
+
+- https://storage.googleapis.com/da-sources/sha256/997430bd59564e8fb671e5ee1241b263c594608e8afde709ecd4b5834af568be
+- https://storage.googleapis.com/da-sources/sha256/973f699f585c04ecb686cd4979749b07df52c551a60728020d31dc800b225064
+
+You need to order at least 3 of the 3-disk version and 9 of the 4-disk version.
+
+The exact PCB stackup you order matters such that the board is designed for controlled 100 ohm differntial impedance and high power (8A). The settings that currently work are the following from JLCPCB:
+
+- 1oz outer and 1oz inner copper. 4 layer. 1.6mm pcb
+- 'JLC041611-7628' standup.
+    - We use the following values in the design:
+        - 0.2mm trace spacing
+        - 0.2126mm trace width
+- Min via hole size: 0.3mm
+- Min trace width/spacing: 0.1mm (4 mil)
+- 135*135mm stencil
+
+
+Mini SAS Screws
+
+- M2 x 0.4mm self threading screw
+    - Length: PCB Thickness + 2.5mm max
+
+Other components:
+
+- Power Connector
+    - 2x2 Micro-Fit
+        - https://www.digikey.com/en/products/detail/molex/0430450423/3044577
+    - Mating Male housing
+        - https://www.digikey.com/en/products/detail/molex/0430250400/252497
+    - Crimp Terminal
+        - https://www.digikey.com/en/products/detail/molex/0430300040/11503719?s=N4IgTCBcDaICwGYAMylLkkBdAvkA
+
+- SAS Drive Connector
+    - https://www.digikey.com/en/products/detail/molex/0878390018/5116557
+
+- SAS Data Connector
+    - SFF-8643 (Mini SAS HD)
+    - https://www.digikey.com/en/products/detail/molex/0768671011/4693322
+    - https://www.digikey.com/en/products/detail/te-connectivity-amp-connectors/2227580-1/5445073
+    - https://www.digikey.com/en/products/detail/amphenol-cs-commercial-products/G40H11331HR/5775380
+
+Note that the SAS/SFF parts are standardized and there are multiple manufacturers that make effectively identical parts.

@@ -16,6 +16,10 @@ impl EnclosureEntry {
         let mut out = vec![];
 
         let path = LocalPath::new("/sys/class/enclosure");
+        if !file::exists(path).await? {
+            return Ok(out);
+        }
+
         let devices = file::read_dir(path)?;
         for entry in devices {
             let name = entry.name().to_string();

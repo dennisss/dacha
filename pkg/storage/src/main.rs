@@ -52,22 +52,53 @@ PartitionEntry {
 },
 */
 
+/*
+cargo build --package storage
+
+scp target/debug/storage dennis@10.1.0.135:~
+
+
+*/
+
 #[executor_main]
 async fn main() -> Result<()> {
-    // let devices = storage::devices::BlockDevice::list().await?;
-    // println!("{:#?}", devices);
-    // return Ok(());
+    let devices = storage::devices::BlockDevice::list().await?;
+    println!("Block Devs:\n{:#?}", devices);
 
-    let mut disk = file::LocalFile::open_with_options(
-        "/dev/sdd",
-        &LocalFileOpenOptions::new().read(true).write(true),
-    )?;
 
-    let mut scsi = SCSIDevice::create(disk)?;
+    let hosts = storage::sas::SASExpander::list().await?;
+    println!("SAS Expanders:\n{:#?}", hosts);
 
-    let serial = scsi.unit_serial_number()?;
-    println!("Serial num: {}", serial);
+    {
+        let mut disk = file::LocalFile::open_with_options(
+            "/dev/sda",
+            &LocalFileOpenOptions::new().read(true).write(true),
+        )?;
 
+        let mut scsi = SCSIDevice::create(disk)?;
+
+        let serial = scsi.unit_serial_number()?;
+        println!("Serial num: {}", serial);
+
+        println!("{:?}", scsi.scsi_temperature()?);
+    }
+
+    {
+        let mut disk = file::LocalFile::open_with_options(
+            "/dev/sg1",
+            &LocalFileOpenOptions::new().read(true).write(true),
+        )?;
+
+        let mut scsi = SCSIDevice::create(disk)?;
+
+        println!("Expander Temp: {}", scsi.scsi_enclosure_temperature()?);
+    }
+
+    println!("SCSI Generics:\n{:#?}", storage::scsi::SCSIGenericDeviceEntry::list().await?);
+
+    println!("Enclosures:\n{:#?}", storage::enclosure::EnclosureEntry::list().await?);
+
+    /*
     println!("Identity: {:?}", scsi.ata_identify_device()?);
 
     let dev_stats = scsi.ata_smart_device_statistics()?;
@@ -77,6 +108,7 @@ async fn main() -> Result<()> {
     println!("{:?}", attrs);
 
     println!("{:?}", scsi.ata_concurrent_positioning_ranges()?);
+    */
 
     return Ok(());
 
@@ -87,6 +119,7 @@ async fn main() -> Result<()> {
 
     // disk.seek(std::io::SeekFrom::Start(0))?;
 
+    /*
     disk.seek(0);
 
     let mut first_sector = [0u8; LOGICAL_BLOCK_SIZE];
@@ -139,6 +172,7 @@ async fn main() -> Result<()> {
     }
 
     // Should consume entire disk.
+    */
 
     Ok(())
 }

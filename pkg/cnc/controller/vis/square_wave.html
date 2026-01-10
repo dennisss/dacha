@@ -1,0 +1,110 @@
+<!-- Written by Google Gemini: https://gemini.google.com/app/43106c50376fcd62 -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Variable Square Wave</title>
+    <style>
+        canvas {
+            border: 1px solid #333;
+            background-color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="myCanvas" width="3200" height="1600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('myCanvas');
+        const ctx = canvas.getContext('2d');
+
+        ctx.scale(4, 4)
+
+        const width = canvas.width / 4;
+        const height = canvas.height / 4;
+
+        // Wave settings
+        const lowY = height * 0.8;  // Low value (visual bottom)
+        const highY = height * 0.2; // High value (visual top)
+        const amplitude = (lowY - highY);
+
+        ctx.beginPath();
+        ctx.lineWidth = 6;
+        // ctx.strokeStyle = '#007acc';
+        ctx.strokeStyle = '#fff';
+
+        // --- ADD DROP SHADOW HERE ---
+        ctx.shadowColor = 'rgba(0, 0, 0, 1)'; // Semi-transparent black shadow
+        ctx.shadowBlur = 20;                    // How blurry the shadow is
+        ctx.shadowOffsetX = 0;                  // Horizontal offset (right)
+        ctx.shadowOffsetY = 0;                  // Vertical offset (down)
+
+        // --- FIX FOR SQUARE EDGES ---
+        // ctx.lineCap = 'square';  // Makes the start and end of the line square & extended
+        // ctx.lineJoin = 'miter';  // Makes the 90-degree corners sharp
+        // ----------------------------
+
+        let offset = 400;
+
+        ctx.moveTo(0, lowY);
+
+
+        // We iterate over every pixel on the x-axis
+        for (let x = 0; x < width; x++) {
+
+            // Normalize x to a time variable t (0.0 to 1.0)
+            let t = x / width;
+
+            // Calculate Frequency
+            // We want frequency to start low and get high.
+            // A simple linear increase: freq(t) = base + rate * t
+            // Phase is the integral of frequency: phi = base*t + 0.5*rate*t^2
+
+            // Adjust these multipliers to change the speed of the effect
+            const baseFreq = 10;
+            const acceleration = 500;
+
+            const phase = (baseFreq * t) + (0.5 * acceleration * t * t);
+
+            // Create Square Wave
+            // Math.sin(phase) creates a sine wave.
+            // ( ... > 0) turns it into a square wave (0 or 1).
+            const isHigh = Math.sin(phase) > 0;
+
+            const y = isHigh ? highY : lowY;
+
+
+            // Drawing logic
+            if (x === 0) {
+                ctx.lineTo(offset + x, y);
+            } else {
+                // To make the square wave vertical lines sharp, we need a specific trick:
+                // If the Y value changes, we draw a vertical line at the current X
+                // from the old Y to the new Y.
+                // However, the simple lineTo(x, y) works well enough for high resolution,
+                // but for perfect square edges:
+
+                // Get previous point's state roughly
+                let prevT = (x - 1) / width;
+                let prevPhase = (baseFreq * prevT) + (0.5 * acceleration * prevT * prevT);
+                let prevIsHigh = Math.sin(prevPhase) > 0;
+                let prevY = prevIsHigh ? highY : lowY;
+
+                if (y !== prevY) {
+                    ctx.lineTo(offset + x, prevY); // Hold the previous Y level up to this X
+                    ctx.lineTo(offset + x, y);     // Draw vertical line
+                } else {
+                    ctx.lineTo(offset + x, y);     // Draw horizontal line
+                }
+            }
+        }
+
+        ctx.stroke();
+    </script>
+
+</body>
+
+</html>

@@ -4,7 +4,7 @@ node -r esm pkg/cnc/controller/vis/node.js
 
 const { createCanvas, loadImage, registerFont } = require('canvas')
 const { encode_frames } = require('./video_encoder');
-const { configure } = require('./alignment_animation');
+const { configure } = require('./jbod_animation');
 
 
 

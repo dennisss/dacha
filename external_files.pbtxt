@@ -1325,11 +1325,6 @@ files: [
         sha256_sum: "2768abfffe565498e715b3604a8a5a7b5a4d812cc055ac5571a1b952e4e4094d"
     },
     {
-        path: "pkg/cluster/machines/jbod/parts/disk-retainer.stl"
-        size: 847784
-        sha256_sum: "f9f8c5cdb9caaf0a7255b6386fb3a2a903118e870ee66f02bca096d96abd6596"
-    },
-    {
         path: "pkg/cluster/machines/jbod/parts/esas-bracket.stl"
         size: 59884
         sha256_sum: "17d398d4817458d0d51d6d0f16227efd431e8ce8c4e8776f3eaffba593fccd1b"
