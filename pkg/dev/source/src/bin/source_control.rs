@@ -334,7 +334,12 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
             }
         } else {
             changed = true;
-            status_string = "New";
+
+            if existing_hashes.contains(&hash.as_str()) {
+                status_string = "New (MOVED)";
+            } else {
+                status_string = "New";
+            }
         }
 
         if cmd.verbose || changed {

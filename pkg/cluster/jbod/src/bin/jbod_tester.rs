@@ -17,15 +17,7 @@ use cluster_jbod::management::*;
 
 /*
 
-cargo run --bin builder --  build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840_jbod_management
-cargo run --bin flasher built/pkg/nordic/nordic_radio_dongle uf2-dfu
-
-
-cargo run --bin jbod_tester -- test-backplane --log_path=backplane_data.csv --board_id=xx
-
 cargo run --bin jbod_tester -- test-management
-
-cargo run --bin jbod_tester -- test-power --multimeter_addr=10.1.0.135
 
 cargo run --bin jbod_tester -- test-leds
 

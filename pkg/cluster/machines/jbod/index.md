@@ -8,6 +8,15 @@ Other requirements is that it must fit in a short 550mm long rack (excluding the
 
 This enclosure will only contain management, SAS expander, and power electronics and will need to connect to another computer via external SAS cables to actually read/write from the disks.
 
+## Known Quirks
+
+- The PSUs can be just barely removed for replacement without taking everything apart, but its a bit annoying to unplug the wires.
+    - You may want to clip off the retaining clips on the power connectors so that they are only friction fit.
+- You need to add a 40mm or larger fan behind the expanders to keep them cool.
+    - They haven't failed on me, but will likely have a short life without extra cooling.
+    - Haven't yet designed a proper mount, so for now improvising with some glue.
+- Cover may shake a bit under high random read/writes due to insufficient clamping on the rear side.
+
 ## Parts
 
 This section contains information on all the individual parts we are using and why they were selected. Use this as a general guide for buying compatible parts for new builds. 
@@ -161,7 +170,7 @@ Each expander will be powered from a single PSU.
 
 ### Fans
 
-- 6 x `NF-A12x25`
+- 6 x `NF-F12x25`
     - Each uses peak 0.14A @ 12V
     - So total is 0.84A
 - By default fan power is pulled from the left power supply but this will fallback to the right one if ther left one is now powered on. This switching is done via a relay to avoid electrically coupling the two 12V lines.
@@ -198,6 +207,14 @@ Each expander will be powered from a single PSU.
     - 24 x `M2 x 3 x 3.5mm` heatset inserts
     - 24 x 3d printed M2 washers
     - 24 x M2 6mm machine screws
+- For connecting the two halfs of the disk retainer
+    - 4 x 3mm diameter 16mm long steel dowels
+    - CA / super glue
+- For connecting the flaps to the disk retainer
+    - 8 x 3mm diameter 8mm long steel dowels
+    - CA / super glue
+- Magnets for the management holder
+    - 4 x 6mm diameter 2mm tall 
 
 Note that I got all the M3 and M4 heatset inserts from CNC Kitchen.
 
@@ -218,8 +235,8 @@ You need to order at least 3 of the 3-disk version and 9 of the 4-disk version.
 The exact PCB stackup you order matters such that the board is designed for controlled 100 ohm differntial impedance and high power (8A). The settings that currently work are the following from JLCPCB:
 
 - 1oz outer and 1oz inner copper. 4 layer. 1.6mm pcb
-- 'JLC041611-7628' standup.
-    - We use the following values in the design:
+- 'JLC041611-7628' stackup.
+    - We use the following values in the design to make the SAS data lines 100 ohm impedance:
         - 0.2mm trace spacing
         - 0.2126mm trace width
 - Min via hole size: 0.3mm
@@ -252,3 +269,63 @@ Other components:
     - https://www.digikey.com/en/products/detail/amphenol-cs-commercial-products/G40H11331HR/5775380
 
 Note that the SAS/SFF parts are standardized and there are multiple manufacturers that make effectively identical parts.
+
+### PCBs
+
+The following PCBs are needed to build the JBOD:
+
+- `boards/management`: (1x) This is the main "motherboard" that controls the power supplies, fans, etc.
+    - 2 layer PCB. Use any standard 1.6mm PCB process.
+- `boards/led`: (12x) These are the LED strips to illuminate the disks.
+    - These are 1-2 layer PCBs.
+    - The bottom layer is only used for strengthening so you can make a 1 layer board though 2 is preferred.
+- `boards/led_bridge` (4x) These are the boards to bridge the edge connectors betweend the LED boards
+    - 1 layer 0.8mm PCB recommended.
+
+For testing the boards, you can also make the following test boards:
+
+- `boards/backplane-tester` : This tests individual backplanes
+    - 2 layer PCB
+- `boards/power-tester` : This tests backplane cables (you can do this once you are able to turn up our PSUs).
+    - 1 layer PCB
+
+
+## Software
+
+This section describes all the host and microcontroller software required for getting this thing working.
+
+Note that all the MCUs used in this project are currently nRF52 modules running custom firmware that will require a suitable bootloader flashed to work. See [this page](/pkg/peripherals/doc/flashing.md).
+
+### Testing
+
+The power and backplane tester boards use a generic firmware that can be flashed as follows:
+
+```
+# Build the firmware
+cargo run --bin builder --  build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840
+
+# Flash it
+cargo run --bin flasher built/pkg/nordic/nordic_radio_dongle uf2-dfu
+```
+
+Then these are the commands to run the testing (assuming the boards are connected to the current computer via USB):
+
+```
+cargo run --bin jbod_tester -- test-backplane --log_path=backplane_data.csv --board_id=xx
+
+# TODO: Change the multimeter_addr to the IP address is a SCPI capable multi-meter.
+cargo run --bin jbod_tester -- test-power --multimeter_addr=10.1.0.135
+```
+
+### Management
+
+The management board uses the same firmware but has a custom config to give it a distinct USB device id:
+
+```
+cargo run --bin builder --  build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840_jbod_management
+
+cargo run --bin flasher built/pkg/nordic/nordic_radio_dongle uf2-dfu
+```
+
+The software to control the management board from a computer is located in [//pkg/cluster/jbod/index.md
+](/pkg/cluster/jbod/index.md).

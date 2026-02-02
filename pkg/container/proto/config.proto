@@ -19,9 +19,6 @@ message ContainerProcess {
     // Must be absolute. If not specified, the container will be started at '/' in the container.
     string cwd = 5;
 
-    // TODO: cwd
-    // ^ Must be an absolute path.
-
     // Arguments to use for starting the main process of the container.
     // The first argument should be an absolute path to an executable binary.
     repeated string args = 1;
@@ -47,6 +44,8 @@ message ContainerProcess {
     }
 
     Capabilities capabilities = 6;
+
+    
 }
 
 message ContainerMount {

@@ -6,10 +6,10 @@ This package contains shared utilities for working with KiCad (managing componen
 
 All PCBs in this repository currently use KiCad 7 format files and only reference symbols/footprints either in the builtin KiCad libraries or those in this repository. To avoid simplify component library management, all symbol/footprint libraries need to be defined (via the below command) globally rather than per kicad project.
 
-If you haven't already, ensure that you have KiCad 7 installed. If you don't have it installed, install with:
+If you haven't already, ensure that you have KiCad 9 installed. If you don't have it installed, install with:
 
 ```
-sudo add-apt-repository ppa:kicad/kicad-7.0-releases
+sudo add-apt-repository ppa:kicad/kicad-9.0-releases
 sudo apt update
 
 sudo apt install kicad
@@ -35,7 +35,7 @@ The following KiCad settings are recommended:
 ## Style Guide
 
 - Each PCB revision corresponds to a single KiCad project directory in the repository. Typically a package will have a `boards` direcotry to group together all the PCBs associated with.
-    - Each individual project directory should be named like `[board-name]-latest` or `[board-name]-r1`.
-    - Typically development should happen in the `-latest` directory (or directory without a suffix) and then once it is ready to go to production, we will fork/freeze it into the next `-r1`, `-r2`, etc. directory while also adding a silkscreen label to the PCB to indicate the revision and board name.
+    - Each individual project directory should be named like `[board-name]/latest` or `[board-name]/r1`.
+    - Typically development should happen in the `latest` directory and then once it is ready to go to production, we will fork/freeze it into the next `r1`, `r2`, etc. directory while also adding a silkscreen label to the PCB to indicate the revision and board name.
 
 - Always use 1.27mm grid for laying out schematics.

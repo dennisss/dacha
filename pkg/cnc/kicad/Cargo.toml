@@ -15,6 +15,7 @@ reflection = { path = "../../reflection" }
 executor = { path = "../../executor" }
 file = { path = "../../file" }
 xml = { path = "../../format/xml" }
+json = { path = "../../format/json" }
 protobuf = { path = "../../protobuf" }
 kicad_proto = { path = "./proto" } 
 base_error = { path = "../../base/error" }

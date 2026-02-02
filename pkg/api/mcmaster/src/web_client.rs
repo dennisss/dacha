@@ -129,7 +129,7 @@ impl McMasterWebClient {
     pub async fn list_orders(&self) -> Result<Vec<String>> {
         let mut req = http::RequestBuilder::new()
             .method(http::Method::GET)
-            .uri("https://www.mcmaster.com/mv1752855842/WebParts/Activity/ActivityPageWebPart.aspx?cntnridtxt=MainContent&actablevelc=cisactive&useEs6=true");
+            .uri("https://www.mcmaster.com/mv1769032333/WebParts/OrderHistory/ActivityPageWebPart.aspx?cntnridtxt=MainContent&actablevelc=cisactive&useEs6=true");
 
         req = self.add_common_headers(req, false);
 
@@ -179,7 +179,7 @@ impl McMasterWebClient {
     pub async fn get_order_details(&self, order_id: &str) -> Result<OrderDetailsData> {
         let mut req = http::RequestBuilder::new()
             .method(http::Method::GET)
-            .uri(&format!("https://www.mcmaster.com/mv1752855842/WebParts/Activity/OrderDetailWebPart.aspx?cntnridtxt=OrderDetailContent&OrderId={}&GroupBy=undefined&payment=true&useEs6=true", order_id));
+            .uri(&format!("https://www.mcmaster.com/mv1769032333/WebParts/OrderHistory/OrderDetailWebPart.aspx?cntnridtxt=OrderDetailContent&OrderId={}&GroupBy=null&useEs6=true", order_id));
 
         req = self.add_common_headers(req, true);
 
@@ -221,7 +221,7 @@ impl McMasterWebClient {
             .header("sec-fetch-dest", "empty")
             .header("sec-fetch-mode", "cors")
             .header("sec-fetch-site", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
-            .header("x-mcm-features", "2d92eb3acf402dbc631c9ca6a02272b8:644,61,458,457,0,10,7,1,11,463,293,4,628,54,55,44,612,654,86,102,258,206,50,51,411,412,409,403,188,189,407,602,39,319,298,696,237,697,454,106,721,377,744,432,430,42,49,434,312,349,93,392,197,355,340,341,342,344,356,357,365,708,474,345,346,347,348,682,296,732,631,617,622,480,479,478,486,231,230,229,139,174,113,256,123,124,422,133,517,52,518,323,336,136,182,177,724,148,185,459,533,424,425,191,101,640,135,711,716,715,176,71,72,695,638,225,723,141,350,351,62,24,138,693,173,725")
+            .header("x-mcm-features", "91f36cc5cee021e1fbb4da780cbf6e63:482,666,63,475,0,11,7,1,12,477,333,4,644,58,59,45,621,673,88,111,296,241,54,55,443,442,439,441,607,40,359,338,715,274,717,472,116,742,415,767,449,52,451,352,385,98,431,234,394,378,380,395,396,404,727,484,381,382,383,384,702,336,755,649,627,636,271,270,269,167,206,127,294,139,140,154,513,56,514,363,157,220,177,226,531,448,229,109,660,208,663,263,168,386,387,388,64,24,530,160,748,141,142,500,282,552,550,554,745,735,710,616,655,100,171,219,210,222,525,292,120,217,211,152,265,705,465,645,209")
             .header("x-requested-with", "XMLHttpRequest");
 
         if add_tracing {
