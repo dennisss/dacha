@@ -9,8 +9,8 @@ use kicad::reader::*;
 use kicad::serializer::*;
 use reflection::ParseFrom;
 use reflection::SerializeTo;
+use file::LocalPath;
 
-// /home/dennis/.config/kicad/7.0/sym-lib-table
 /*
 
  fp_lib_table
@@ -30,7 +30,8 @@ use reflection::SerializeTo;
 #[executor_main]
 async fn main() -> Result<()> {
 
-    let data = file::read_to_string("/home/dennis/.config/kicad/7.0/sym-lib-table").await?;
+    let home = std::env::var("HOME")?;
+    let data = file::read_to_string(LocalPath::new(&home).join(".config/kicad/9.0/sym-lib-table")).await?;
 
     let e = kicad::sexpr::SExpr::parse(&data)?;
 

@@ -237,7 +237,9 @@ impl ContainerRuntime {
         loop {
             lock_async!(containers <= self.containers.lock().await?, {
                 for container in &mut containers[..] {
-                    container.cgroup.collect_measurement().await?;
+                    if let Err(e) = container.cgroup.collect_measurement().await {
+                        eprintln!("CGroup metrics collect failed: {}", e);
+                    }
                 }
 
                 Result::<(), Error>::Ok(())

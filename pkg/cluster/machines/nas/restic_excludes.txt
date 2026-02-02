@@ -19,3 +19,4 @@ $HOME/.arduino15
 $HOME/.wine
 $HOME/.npm
 $HOME/.pyenv
+$HOME/.local/lib

@@ -82,6 +82,10 @@ We require that cgroups v2 are enabled for all subsystems on the machine running
     - In Ubuntu this is done by appending these to `GRUB_CMDLINE_LINUX_DEFAULT` in `/etc/default/grub`
       and running `sudo update-grub` (then restart the computer).
 
+**Udev**
+
+For raw management of USB devices or disks (e.g. NAS), also install the udev rules mentioned [here](/pkg/usb/index.md) to ensure that these resources are delegated to non-root groups.
+
 ##### Raspberry Pi
 
 Follow the instructions [here](../rpi/index.md) to flash our custom image to all the SDcards you want to use in the cluster. It is recommended to flash while setting a static ethernet IP address (manually pick the next unused IP).

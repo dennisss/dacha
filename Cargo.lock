@@ -2564,6 +2564,7 @@ dependencies = [
  "common",
  "executor",
  "file",
+"json",
  "kicad_proto",
  "macros",
  "math",
@@ -3495,6 +3496,7 @@ dependencies = [
 name = "peripherals_tools"
 version = "0.0.0"
 dependencies = [
+"base_radix",
  "base_util",
  "common",
  "crypto",

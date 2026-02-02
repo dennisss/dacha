@@ -2387,6 +2387,8 @@ impl Compiler {
     }
 
     /// Compiles the code for serializing a field that is part of a oneof.
+    ///
+    /// TODO: Ideally want to combine everything into a single match!! (though this is hard if fields need to be sortee).
     fn compile_oneof_field_serialize(&self, field: &FieldDescriptor, oneof: &OneOfDescriptor, lines: &mut LineBuilder) -> Result<()> {
 
         let oneof_typename = self.oneof_typename(oneof);

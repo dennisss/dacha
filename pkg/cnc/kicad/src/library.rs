@@ -2,7 +2,8 @@ use common::errors::*;
 
 #[derive(Debug, Clone, Parseable)]
 pub struct LibraryTable {
-    pub version: usize,
+    // Only present in older versions of Kicad
+    pub version: Option<usize>,
     pub lib: xml::List<Library>,
 }
 

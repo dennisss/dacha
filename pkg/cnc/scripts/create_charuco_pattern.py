@@ -6,7 +6,7 @@
 # Teslong: 2592 x 1944
 
 # python3 pkg/cnc/scripts/create_charuco_pattern.py
-# convert -density 600 charuco_board.png charuco_board.pdf
+# convert -density 600 calibration_pattern.png checker_board.png charuco_board.pdf
 # lpr -o scaling=100 charuco_board.pdf -P Brother_HL_L2460DW_USB
 #   TODO: Also need to add high quality settings.
 

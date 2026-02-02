@@ -38,7 +38,7 @@ TC2030 Pinout
 
 For nRF52 boards, we will flash the bootloader over `SWD`:
 
-- Make one of [these](../boards/tc2030_adapter) 2x3 0.1" to 2x5 0.05" header adapters.
+- Make one of [these](../boards/tc2030_adapter/index.md) 2x3 0.1" to 2x5 0.05" header adapters.
 - Use a ribbon cable to connect the 2x5 header to the black magic probe.
 - Use a [TC2030-IDC-NL](https://www.tag-connect.com/product/tc2030-idc-nl) cable to connect the adapter to the target board.
 - Externally power the target board.
@@ -78,6 +78,8 @@ Flashing:
 
 [Adafruit Shop Link](https://www.adafruit.com/product/4481)
 
+![Adafruit ItsyBitsy nRF52840 Express](boards/adafruit_itsybitsy_nrf52840/board.jpg)
+
 General details:
 
 - Has an external 5V USB/Battery to 3.3V regulator (max 600mA)
@@ -87,16 +89,36 @@ General details:
 Flashing:
 
 - First flash the bootloader via `SWD`
-    - I used PCBite probes to connect a blackmagic probe to the SWDIO/SWDCLK test points on the back of the board and then attached GND and 3V pins to the Blackmagic probe via regular jumpers.
+    - Use [this](../boards/tc2030_adapter/index.md) adapter to breakout a Black Magic Probe to 0.1" pins.
+    - Connect the 0.1" pins on the adapter to the MCU board as follows:
+        - VREF (3V), GND can be connected via regular female-female jumper wires
+        - Use PCBite probes (or solder wires) to connect SWDIO/SWDCLK to the labeled test points on the back of the board.
     - Power applied to the board via USB directly to the board.
 
 - Then flash applications/new bootloaders via the `UF2 over USB DFU` method.
+
 
 #### Adafruit Feather nRF52840 Express
 
 [Adafruit Shop Link](https://www.adafruit.com/product/4062)
 
-TODO
+![Adafruit Feather nRF52840 Express](boards/adafruit_feather_nrf52840/board.jpg)
+
+General details:
+
+- Same as the `Adafruit ItsyBitsy nRF52840 Express`
+
+Flashing:
+
+- Directly attach the SWD header on the board to a black magic probe and then 
+
+
+#### XIAO nRF52840
+
+![alt text](boards/xiao_nrf52840/back_pinout.webp) ![alt text](boards/xiao_nrf52840/front_pinout.webp)
+
+Flash via SWD using the pins on the back. The process is similar to flashing the `Adafruit ItsyBitsy nRF52840 Express`.
+
 
 ### ATTiny
 
@@ -123,7 +145,7 @@ openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 ma
 
 We support flashing boards via the ARM SWD protocol. This mainly requires connecting a flasher board to the VCC,GND,SWDIO,SWDCLK pins on the target device.
 
-For flasher boards we recommend using a [Black Magic Probe](https://black-magic.org/index.html) though clones like the Jeff Probe on Amazon also work. BE SURE TO UPDATE THE FIRMWARE to the latest version to support all boards.
+For flasher boards we recommend using a [Black Magic Probe](https://black-magic.org/index.html) though clones like the "Jeff Probe" on Amazon also work. BE SURE TO UPDATE THE FIRMWARE to the latest version to support all boards.
 
 Things should generally be connected as:
 
@@ -140,9 +162,16 @@ cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/n
 cargo run --bin flasher -- built/pkg/nordic/nordic_bootloader blackmagic-swd
 ```
 
+Note that once the bootloader is flashed, it can be reflashed using just a USB cable to the target board as described in the `UF2 over USB DFU` method. e.g.
+
+```
+cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
+cargo run --bin flasher built/pkg/nordic/nordic_bootloader uf2-dfu
+```
+
 If power can't be supplied to the target board easily externally, you can add `--power_device` to the flasher command to power the board at 3.3V via the Black Magic Probe. WARNING: This is more dangerous and may break the board since not all chips are shipped from the factory with registers configured for 3.3V.
 
-### UF2 over USB DFU 
+### UF2 over USB DFU
 
 This protocol converts the application binary into a UF2 file and then transfers via the USB DFU protocol to the microcontroller. This protocol is currently implemented by our nRF52 bootloader and can be used as follows:
 
@@ -150,9 +179,9 @@ This protocol converts the application binary into a UF2 file and then transfers
 - If the device hasn't yet been flashed with an application firmware or the application is not responding, you may need to manually hit the RESET button once to enter the bootloader.
 - If you successfully entered the bootloader, it should show up with id `8888:0001` under `lsusb`
 - Then compile the application:
-    - e.g. `cargo run --bin builder --  build //pkg/nordic:nordic_blink --config=//pkg/nordic:nrf52840`
+    - e.g. `cargo run --bin builder --  build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840`
 - Flash the application:
-    - e.g. `cargo run --bin flasher built/pkg/nordic/nordic_blink uf2-dfu`
+    - e.g. `cargo run --bin flasher built/pkg/nordic/nordic_radio_dongle uf2-dfu`
 - The MCU should automatically reboot into the application.
 
 ### Picoboot

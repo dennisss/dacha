@@ -1,11 +1,11 @@
-mod cutout;
+pub mod cutout; // TODO: Make private.
 mod drill;
 mod isolation;
 mod pcb;
 mod tsp;
 pub mod vbit;
 mod arc;
-mod edge;
+pub mod edge; // TODO: Make private.
 mod histogram;
 mod stencil;
 mod faces;

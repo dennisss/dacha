@@ -51,7 +51,7 @@ const NODE_USER: &'static str = "cluster-node";
 /// List of all groups which (if they exist on the Linux machine) will be allowed
 /// to be delegated through the container runtime for containers to access.
 const MANAGED_GROUPS: &'static [&'static str] = &[
-    "gpio", "plugdev", "dialout", "i2c", "spi", "video", "audio", "edisk",
+    "gpio", "plugdev", "dialout", "i2c", "spi", "video", "audio", "edisk", "disk",
 ];
 
 // TODO: Support parsing "\\n" in a regexp?

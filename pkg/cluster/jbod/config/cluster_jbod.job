@@ -1,0 +1,51 @@
+name: "cluster_jbod"
+
+replicas: 1
+
+scheduling {
+    distinct_nodes: true
+    labels {
+        label {
+            key: "name"
+            value: "nas"
+        }
+    }
+}
+
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/cluster/jbod/cluster_jbod",
+        "--port=service"
+    ]
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/cluster/jbod:bundle"
+        }
+    ]
+
+    ports: [
+        {
+            name: "service"
+            type: TCP
+        }
+    ]
+
+    additional_groups: ["plugdev", "disk"]
+    devices: [
+        {
+            source {
+                raw: "/dev"
+                limit: 1
+            }
+        },
+        {
+            source {
+                raw: "/sys"
+                limit: 1
+            }
+        }
+    ]
+}

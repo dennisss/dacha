@@ -7,7 +7,7 @@ use common::line_builder::LineBuilder;
 use file::LocalPathBuf;
 use graphics::{
     canvas::{Path, PathBuilder},
-    transforms::{scale2f, translate2f},
+    transforms::{scale2f, translate2f, rotate2f},
 };
 use math::{
     geometry::bounding_box::{BoundingBoxBuilder, BoundingBox2},
@@ -27,6 +27,8 @@ pub struct PCBProcessorOptions {
     pub config: PCBProcessorConfig,
 
     pub layers: Vec<PCBLayer>,
+
+    pub add_alignment_holes: bool,
 }
 
 pub struct PCBLayer {
@@ -114,6 +116,7 @@ struct Circle {
     diameter: f32
 }
 
+#[derive(Debug)]
 struct HoleData {
     center: Vector2f,
 
@@ -172,8 +175,34 @@ impl PCBProcessor {
             bbox,
         };
 
+        // TODO: THis doesn't seem to work correctly.
+        /*
+        let width = inst.bbox.max.x() - inst.bbox.min.x();
+        let height = inst.bbox.max.y() - inst.bbox.min.y();
+        if height > width {
+            println!("Vertical PCB: Rotating 90 degrees...");
+            inst.transform_objects(&rotate2f(PI / 2.0)); // 90 degrees.
+
+            // Recompute bbox.
+            inst.bbox = {
+                let mut bbox_builder = BoundingBoxBuilder::new();
+
+                // TODO: Also include the drill holes.
+                for obj in inst.gerber_data.values().map(|v| v.iter()).flatten() {
+                    for path in &obj.paths {
+                        path.path.bbox_to(&mut bbox_builder);
+                    }
+                }
+
+                bbox_builder.build()
+            };
+
+            println!("BBOX: {:?}", inst.bbox);
+        }
+        */
+
         inst.apply_forced_hole_diameter();
-        inst.convert_drills_to_edge_cuts();
+        inst.convert_drills_to_edge_cuts()?;
         inst.transform_vias();
 
         Ok(inst)
@@ -189,7 +218,7 @@ impl PCBProcessor {
 
     // Any hole that can't be drilled with one plunge will be drilled out in
     // multiple passes.
-    fn convert_drills_to_edge_cuts(&mut self) {
+    fn convert_drills_to_edge_cuts(&mut self) -> Result<()> {
         let mut edge_cuts = self.gerber_data
             .entry((PCBLayerSide::All, PCBLayerUsage::EdgeCuts))
             .or_default();
@@ -202,6 +231,30 @@ impl PCBProcessor {
         while i < drill_holes.len() {
             let hole = &drill_holes[i];
 
+            let mut found_drill = false;
+            for tool in self.options.config.drill().tools() {
+                // TODO: Make this the same check as in the drill processor.
+                if (tool.tool_diameter() - hole.diameter).abs() <= 0.01 {
+                    found_drill = true;
+                    break;
+                }
+            }
+
+            if found_drill {
+                println!("Drill: {}", hole.diameter);
+                i += 1;
+                continue;
+            }
+
+            println!("Edge Cut: {}", hole.diameter);
+
+            // offset must be much larger than the min feature size to get a reliable cutout.
+            if hole.diameter < self.options.config.cutout().tool_diameter() + 0.1 {
+                return Err(format_err!("Can't cut hole of diameter: {}", hole.diameter));
+            }
+
+            /*
+            // TODO: What does this mean.
             if hole.diameter <= (self.options.config.drill().tool_diameter() + 0.01) {
                 if (hole.diameter - self.options.config.drill().tool_diameter()).abs() > 0.05 {
                     println!("No ideal drill for hole diameter: {}", hole.diameter);
@@ -210,6 +263,7 @@ impl PCBProcessor {
                 i += 1;
                 continue;
             }
+            */
 
             // TODO: It would probably be ideal to just 
             let mut path_builder = PathBuilder::new();
@@ -234,6 +288,8 @@ impl PCBProcessor {
 
             drill_holes.swap_remove(i);
         }
+
+        Ok(())
     }
 
     // Via analysis
@@ -278,6 +334,17 @@ impl PCBProcessor {
 
         let mut candidate_alignment_holes = vec![];
 
+        // TODO: Make this more customizable.
+        let via_sizes: Vec<(f32, f32)> = vec![
+            (1.1, 2.0),
+            (0.9, 1.8),
+
+            // For freestanding vias only
+            // (0.9, 2)
+        ];
+
+        // println!("{:#?}", holes);
+
         for hole in &holes {
 
             let front_copper_diameter = match hole.circles.get(&(PCBLayerSide::Front, PCBLayerUsage::Copper)) {
@@ -313,11 +380,17 @@ impl PCBProcessor {
 
 
             println!("Tented Via: {}, {} | {} by {}", hole.center.x(), hole.center.y(), drill_diameter, front_copper_diameter);
+            
+            let mut should_untent = false;
+            for size in via_sizes.iter().cloned() {
+                if (drill_diameter - size.0).abs() <= 0.001 &&
+                   (front_copper_diameter - size.1).abs() <= 0.001 {
+                    should_untent = true;
+                    break;
+                }
+            }
 
-            if (drill_diameter - 0.9).abs() <= 0.001 && (
-                (front_copper_diameter - 2.0).abs() <= 0.001 ||
-                (front_copper_diameter - 1.8).abs() <= 0.001
-            ){
+            if should_untent {
                 println!("=> Untenting");
 
                 let mut path_builder = PathBuilder::new();
@@ -362,56 +435,51 @@ impl PCBProcessor {
             // We will auto-untent 
         }
 
-        if candidate_alignment_holes.len() >= 4 {
-            println!("Using existing holes in the board as alignment holes");
-            self.precut_objects.extend(candidate_alignment_holes.into_iter());
-        } else {
-            println!("Making new alignment holes");
 
-            // TODO: Make long/short size dynamic based on which side is smallest (also allow the user to specify a PCB blank size that we can evaluate which side to put it on is easiest). Currently we just assume that the x direction edge is the long size.
-
-            // TODO: Support holes using edge cuts if 'hole_size' is not the same as the drill size.
-
-            // TODO: Verify that the board is long enough to accomadate the alignment holes without them colliding with each other.
-
-            let config = self.options.config.alignment_holes();
-            let points = vec![
-                ("Top Left", self.bbox.min.x() + config.short_edge_offset(), self.bbox.max.y() + config.long_edge_offset()),
-                ("Bottom Left", self.bbox.min.x() + config.short_edge_offset(), self.bbox.min.y() - config.long_edge_offset()),
-                ("Top Right", self.bbox.max.x() - config.short_edge_offset(), self.bbox.max.y() + config.long_edge_offset()),
-                ("Bottom Right", self.bbox.max.x() - config.short_edge_asymetric_offset(), self.bbox.min.y() - config.long_edge_offset()),
-            ];
-            
-
-            let mut drill_holes = self.drill_data
-                .entry((PCBLayerSide::All, PCBLayerUsage::Drill))
-                .or_default();
-
-            for (name, x, y) in points {
-
-                println!("Alignment hole: {} : x: {}, {}", name, x, y);
-
-                let i = drill_holes.len();
-
-                drill_holes.push(gerber::DrillHole {
-                    x, y, diameter: config.hole_size(),
-                });
-
-                self.precut_objects.insert(((PCBLayerSide::All, PCBLayerUsage::Drill), i));
+        if self.options.add_alignment_holes {
+            if candidate_alignment_holes.len() >= 4 {
+                println!("Using existing holes in the board as alignment holes");
+                self.precut_objects.extend(candidate_alignment_holes.into_iter());
+            } else {
+                self.add_alignment_holes();
             }
         }
+    }
 
+    fn add_alignment_holes(&mut self) {
+        println!("Making new alignment holes");
 
-        // match up stuff on other layers to the existing holes.
+        // TODO: Make long/short size dynamic based on which side is smallest (also allow the user to specify a PCB blank size that we can evaluate which side to put it on is easiest). Currently we just assume that the x direction edge is the long size.
 
+        // TODO: Support holes using edge cuts if 'hole_size' is not the same as the drill size.
 
-        // A via that has copper on both the top and bbttom layer (and they have the same diameter)
+        // TODO: Verify that the board is long enough to accomadate the alignment holes without them colliding with each other.
 
-        // If it matches one of our desired diameters, untent it
-        // Else, mark the whole as a whole that we can cut early. 
+        let config = self.options.config.alignment_holes();
+        let points = vec![
+            ("Top Left", self.bbox.min.x() + config.short_edge_offset(), self.bbox.max.y() + config.long_edge_offset()),
+            ("Bottom Left", self.bbox.min.x() + config.short_edge_offset(), self.bbox.min.y() - config.long_edge_offset()),
+            ("Top Right", self.bbox.max.x() - config.short_edge_offset(), self.bbox.max.y() + config.long_edge_offset()),
+            ("Bottom Right", self.bbox.max.x() - config.short_edge_asymetric_offset(), self.bbox.min.y() - config.long_edge_offset()),
+        ];
+        
 
+        let mut drill_holes = self.drill_data
+            .entry((PCBLayerSide::All, PCBLayerUsage::Drill))
+            .or_default();
 
+        for (name, x, y) in points {
 
+            println!("Alignment hole: {} : x: {}, {}", name, x, y);
+
+            let i = drill_holes.len();
+
+            drill_holes.push(gerber::DrillHole {
+                x, y, diameter: config.hole_size(),
+            });
+
+            self.precut_objects.insert(((PCBLayerSide::All, PCBLayerUsage::Drill), i));
+        }
     }
 
     fn find_circles_on_layer(data: &[gerber::GraphicsObject]) -> Vec<Circle> {

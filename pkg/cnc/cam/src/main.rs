@@ -237,4 +237,6 @@ TODO:
 
 */
 
-fn main() {}
+fn main() {
+    panic!("This doesn't do anything");
+}

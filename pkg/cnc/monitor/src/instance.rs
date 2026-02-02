@@ -33,6 +33,7 @@ use crate::serial_controller::DEFAULT_COMMAND_TIMEOUT;
 use crate::tables::{FileTable, MachineTable, MediaFragmentTable, ProgramRunTable};
 use crate::devices::*;
 use crate::{presets::get_machine_presets, serial_controller::SerialController};
+use crate::leveling::*;
 
 const RETRY_BACKOFF: Duration = Duration::from_secs(10);
 
@@ -58,6 +59,7 @@ struct Shared {
     config_presets: Vec<MachineConfig>,
     changes: ChangeDistributer,
     usb_context: usb::Context,
+    #[cfg(feature = "libcamera")]
     libcamera_manager: Arc<libcamera::CameraManager>,
     camera_manager: Arc<CameraManager>,
     db: Arc<ProtobufDB>,
@@ -93,6 +95,9 @@ struct MachineEntry {
     /// This will usually contain one entry for every camera defined in
     /// 'config'.
     cameras: HashMap<u64, CameraEntry>,
+
+    /// TODO: Allow saving to the DB.
+    leveler: Option<Arc<ZGridLeveler>>,
     /*
     - Mesh leveling grid (when external to the machine)
     */
@@ -107,6 +112,7 @@ impl MachineEntry {
             loaded_file: None,
             player: None,
             cameras: HashMap::new(),
+            leveler: None,
         }
     }
 
@@ -268,9 +274,11 @@ impl MonitorImpl {
         let metric_store = MetricStore::new(db.clone());
 
         let usb_context = usb::Context::create()?;
+        #[cfg(feature = "libcamera")]
         let libcamera_manager = libcamera::CameraManager::create()?;
-        let camera_manager = Arc::new(CameraManager::create(
+        let camera_manager = Arc::new(CameraManager::create_with(
             usb_context.clone(),
+            #[cfg(feature = "libcamera")]
             libcamera_manager.clone(),
         )?);
         let program_preview_manager = ProgramPreviewManager::new(db.clone());
@@ -285,6 +293,7 @@ impl MonitorImpl {
             metric_store,
             force_reconcile: reconcile_sender,
             usb_context,
+            #[cfg(feature = "libcamera")]
             libcamera_manager,
             camera_manager,
             make_fake_machines,
@@ -399,7 +408,11 @@ impl MonitorImpl {
 
     async fn run_once(shared: &Arc<Shared>) -> Result<bool> {
         let mut devices =
-            AvailableDevice::list_all(&shared.usb_context, &shared.libcamera_manager).await?;
+            AvailableDevice::list_all(
+                &shared.usb_context,
+                #[cfg(feature = "libcamera")]
+                &shared.libcamera_manager
+        ).await?;
 
         if shared.make_fake_machines {
             for i in 0..4 {
@@ -1434,6 +1447,23 @@ impl MonitorImpl {
                     .send_command(command, DEFAULT_COMMAND_TIMEOUT)
                     .await?;
             }
+            RunMachineCommandRequestCommandCase::ZGridLeveling(cmd) => {
+
+                let serial_controller = self.acquire_machine_control(request.machine_id()).await?;
+
+                let leveler = Arc::new(ZGridLeveler::probe(serial_controller, cmd).await?);
+
+                lock!(state <= self.shared.state.lock().await?, {
+                    let entry = state
+                        .machines
+                        .get_mut(&request.machine_id())
+                        .ok_or_else(|| rpc::Status::not_found("Machine not found."))?;
+
+                    entry.leveler = Some(leveler);
+
+                    Ok::<_, Error>(())
+                })?;
+            }
             RunMachineCommandRequestCommandCase::DeleteMachine(_) => {
                 // TODO: Make this cancel safe.
 
@@ -1482,6 +1512,7 @@ impl MonitorImpl {
         Ok(())
     }
 
+    // TODO: This should hold a guard that prevents it from being pulled twice.
     async fn acquire_machine_control(&self, machine_id: u64) -> Result<Arc<SerialController>> {
         lock!(state <= self.shared.state.lock().await?, {
             let entry = state
@@ -1555,6 +1586,7 @@ impl MonitorImpl {
                     serial_controller.clone(),
                     shared.changes.publisher(),
                     shared.db.clone(),
+                    entry.leveler.clone(),
                 )
                 .await?,
             );

@@ -1570,6 +1570,21 @@ files: [
         sha256_sum: "747e0bfe954144329652301eedc81b85ee46930de3b6c0b6b91ee833e5a24bcd"
     },
     {
+        path: "pkg/cnc/machines/voron_0/rear_ethernet/rear-skirt-ethernet-mesh-top.stl"
+        size: 16284
+        sha256_sum: "92f20317f3173afdcba95d41b281a7ea1206d48d1dfcccb35d8554c08bb70355"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/rear_ethernet/rear-skirt-ethernet-mesh.stl"
+        size: 45884
+        sha256_sum: "19c26461e5cd8025875f8250dacd7dbb9c0504b32a8e462a1af555f2e59fe92d"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/rear_ethernet/rear-skirt-ethernet.stl"
+        size: 3159384
+        sha256_sum: "064e682c47c2602de0b07b8bbcbfea90a7503e9922a73169a4c1f3f6d28a9e65"
+    },
+    {
         path: "pkg/cnc/machines/voron_0/rear_keystone_skirt_mesh/images/back-raw.jpg"
         size: 256986
         sha256_sum: "3d9e4c2558acc5130a0d8be03150dcb27be2b40c2fc256ddd81298d993b22000"
@@ -1845,6 +1860,21 @@ files: [
         sha256_sum: "af0b6712fa114cb45cafa1414187d96f665d06a80c0b317c93e1662bc284b1ac"
     },
     {
+        path: "pkg/peripherals/boards/tc2030_adapter/images/adapter.jpg"
+        size: 918120
+        sha256_sum: "5f831d54a1e2d500622a087bd22097d3fc7a53eb91f068373c6c9b6c23e2711e"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/images/proto_board_back.jpg"
+        size: 731123
+        sha256_sum: "047d41b0a45fb98f14acc531f18de6af6c9175cd3e0115bf97baca546e4bac6c"
+    },
+    {
+        path: "pkg/peripherals/boards/tc2030_adapter/images/proto_board_front.jpg"
+        size: 740332
+        sha256_sum: "24ef9bc55f1aaa37e6d6d0be3d75e433121f536eded607bc5e3eff30eed42a3d"
+    },
+    {
         path: "pkg/peripherals/boards/tc2030_adapter/parts/case-bottom.stl"
         size: 61484
         sha256_sum: "ae9934cdc39adfde2df12ac7639de1c741f7083b8ca98adb23dec2c177e66a44"
@@ -1880,14 +1910,44 @@ files: [
         sha256_sum: "7b0fffde6766f3b73513c4c6b0afd8646cde48a3cd6075111236cfa77adfdd48"
     },
     {
+        path: "pkg/peripherals/doc/boards/adafruit_feather_nrf52840/board.jpg"
+        size: 130680
+        sha256_sum: "074809f735972837a3b00b05aef468e0b95bdcf9a3cf1176a20c7570fbc9229d"
+    },
+    {
         path: "pkg/peripherals/doc/boards/adafruit_itsybitsy_nrf52840/adafruit_products_schem.png"
         size: 30198
         sha256_sum: "6526d142efbed90c84e947d4ea604950c9aa4b4f63549e2e77e71a536aa845b6"
     },
     {
+        path: "pkg/peripherals/doc/boards/adafruit_itsybitsy_nrf52840/back.jpg"
+        size: 696750
+        sha256_sum: "a1a33cbae3783e5b02be5cbbe26e961146f0bfe764faa222d799e561b16819b8"
+    },
+    {
+        path: "pkg/peripherals/doc/boards/adafruit_itsybitsy_nrf52840/board.jpg"
+        size: 211617
+        sha256_sum: "cc99a7b1418bd499a7531d6ff0f605219426e34d351d39da0a5c0fbb810d545a"
+    },
+    {
+        path: "pkg/peripherals/doc/boards/adafruit_itsybitsy_nrf52840/front.jpg"
+        size: 839074
+        sha256_sum: "7a297d96a2dc982d34ff59cbe518d35ad4bfa18433091da12e3a48e00a18d696"
+    },
+    {
         path: "pkg/peripherals/doc/boards/nrf52840_dongle/nrf52840-usb-dongle---hardware-files-2_1_1.zip"
         size: 5845205
         sha256_sum: "c9c204abe1e224d00008960e9ad5666a9e2fd19834beca40d78dc5f41ea8e930"
+    },
+    {
+        path: "pkg/peripherals/doc/boards/xiao_nrf52840/back_pinout.webp"
+        size: 9420
+        sha256_sum: "fea01d96ed48ac67cf6b4eb9d1d4c42eb233be7a7a8ad88231767461044fdc66"
+    },
+    {
+        path: "pkg/peripherals/doc/boards/xiao_nrf52840/front_pinout.webp"
+        size: 31310
+        sha256_sum: "bf96ac2f8aba3dde762ad7083b325e42d5852cffd5e17c667ad75d1670670805"
     },
     {
         path: "pkg/peripherals/doc/tag_connect/TC2030-CTX_1.pdf"
@@ -1973,6 +2033,51 @@ files: [
         path: "testdata/cnc/sata-top_0.2mm_PETG_MK3S_28m.gcode"
         size: 623037
         sha256_sum: "614b38ecc2eebe2f20d1309604d4c00939a49ae12be00f16434068c71afa003d"
+    },
+    {
+        path: "testdata/cnc/voron0/first-layer-test.stl"
+        size: 29484
+        sha256_sum: "dc3995591e6b0b24b401ca97946f147ca7ec3c6eab5955ff3ce4d4f364cb5cf9"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-benchy.3mf"
+        size: 2499208
+        sha256_sum: "e704f6dae6a8c59daa49528b0cfa4bec9b14b9c60793432240dd089f7ae2caed"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-benchy.gcode"
+        size: 3434597
+        sha256_sum: "879638e4774997f654e4a5b760e9ff4b78658a1b23806ac9a57182ab0a07f441"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-calibration-cube.3mf"
+        size: 21775
+        sha256_sum: "6c2686103e6e0bebc7d4c3b2444789fc8180e3656a31570731a5fd5f9ddbaae0"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-calibration-cube.gcode"
+        size: 535142
+        sha256_sum: "b2927a9e119dccbb25a66e9e474c806f85106cfc9455c2986677226e9c45e479"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-first-layer-test.3mf"
+        size: 15219
+        sha256_sum: "59ad79a5c0b9178dc7c1c819c2e157dcdba48156c6c3f4e33d57c7498e038607"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-first-layer-test.gcode"
+        size: 47822
+        sha256_sum: "6df919f1ceef520f36cc121b02565fd1cfcaac961e584360c68efebc759d7a33"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-x-y-skew.3mf"
+        size: 27749
+        sha256_sum: "a9461193caa8d0338b3fb08752dbae21194d57141c0cff20c6af47445895543d"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-x-y-skew.gcode"
+        size: 931318
+        sha256_sum: "cbe82953daac9f2bc2376b1f18de23a2846df459e23de81bf0d57a9090e05b01"
     },
     {
         path: "testdata/cnc/xyzCalibration_cube_0.2mm_PETG_MK3S_49m.gcode"

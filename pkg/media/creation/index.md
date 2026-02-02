@@ -18,7 +18,15 @@ for f in *.webm; do ffmpeg -i "$f" -vf "crop=trunc(iw/2)*2:trunc(ih/2)*2" -vsync
 ```
 
 
+Speed up a video by 30x
 
+```
+ffmpeg -i input.mp4 -vf "select='not(mod(n,30))',setpts=N/30/TB" -an -c:v libx264 -crf 18 -preset slow output.mp4
+ffmpeg -hwaccel cuda -i input.mp4 -vf "select='not(mod(n,30))',setpts=N/30/TB" -an -c:v h264_nvenc -preset p7 -cq 19 -rc vbr output.mp4
+
+
+ffmpeg -i C1221.MP4 -vf "select='not(mod(n,30))',setpts=N/30/TB" -an -c:v libx264 -crf 18 -preset slow C1221_30x.mp4
+```
 
 
 ## Misc

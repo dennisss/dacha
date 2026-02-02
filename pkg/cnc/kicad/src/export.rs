@@ -26,7 +26,7 @@ impl KicadPCBExport {
     pub fn generate(pcb_path: &LocalPath, output_dir: &LocalPath) -> Result<Self> {
         let pcb_path_string = pcb_path.to_string();
 
-        // NOTE: Output path must end with a '/5'
+        // NOTE: Output path must end with a '/'
         let output_dir_string = format!("{}/", output_dir.to_string());
 
         let out = Command::new("kicad-cli")

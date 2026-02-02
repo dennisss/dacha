@@ -81,6 +81,7 @@ export interface CarveraLevelingRequest {
     program_min: Point;
     program_max: Point;
     commands: string[];
+    new_request: any;
 }
 
 export function resolve_leveling_state(machine: any, state: CarveraLevelingState): CarveraLevelingRequest | null {
@@ -159,6 +160,11 @@ export function resolve_leveling_state(machine: any, state: CarveraLevelingState
     max_pos.x += origin.x;
     max_pos.y += origin.y;
 
+    let new_request = {
+        x_origin: origin.x,
+        y_origin: origin.y,
+    };
+
     let probe_points = [];
     if (state.auto_level) {
         let { x, y } = state.auto_level_grid;
@@ -177,6 +183,15 @@ export function resolve_leveling_state(machine: any, state: CarveraLevelingState
                 });
             }
         }
+
+        new_request = extend(new_request, {
+            grid_min_x: min_pos.x,
+            grid_min_y: min_pos.y,
+            grid_max_x: max_pos.x,
+            grid_max_y: max_pos.y,
+            grid_x_count: x,
+            grid_y_count: y,
+        });
     }
 
     let probe_cmd = `M495 X${(min_pos.x - origin.x).toFixed(2)} Y${(min_pos.y - origin.y).toFixed(2)}`;
@@ -200,10 +215,11 @@ export function resolve_leveling_state(machine: any, state: CarveraLevelingState
         program_min: min_pos,
         program_max: max_pos,
         commands: [
-            `G54`,
+            `G54`, // Use workspace 1
             `G10 L2 P1 X${origin.x.toFixed(4)} Y${origin.y.toFixed(4)}`,
             probe_cmd
-        ]
+        ],
+        new_request
     };
 }
 
@@ -239,6 +255,37 @@ export class CarveraBox extends React.Component<{ machine: any, context: PageCon
                         origin_base: 'cs1',
                     })
                 }
+            }
+
+        } catch (e) {
+            this.props.context.notifications.add({
+                text: 'Leveling failed: ' + e,
+                cancellable: true,
+                preset: 'danger'
+            });
+        }
+
+        done();
+    }
+
+    _on_run_new = async (done) => {
+        let machine = this.props.machine;
+        let state = this.props.ui_state.carvera_state();
+
+        try {
+
+            let resolved = resolve_leveling_state(machine, state);
+            if (!resolved) {
+                throw 'Invalid parameters';
+            }
+
+            let res = await this.props.context.channel.call('cnc.Monitor', 'RunMachineCommand', {
+                machine_id: this.props.machine.id,
+                z_grid_leveling: resolved.new_request,
+            });
+
+            if (!res.status.ok()) {
+                throw res.status.toString();
             }
 
         } catch (e) {
@@ -359,6 +406,8 @@ export class CarveraBox extends React.Component<{ machine: any, context: PageCon
 
 
                     <Button disabled={!resolved} style={{ width: '100%' }} preset="primary" onClick={this._on_run}>Run</Button>
+
+                    <Button disabled={!resolved} style={{ width: '100%' }} preset="primary" onClick={this._on_run_new}>Run (new)</Button>
                 </CardBody>
             </Card>
         );

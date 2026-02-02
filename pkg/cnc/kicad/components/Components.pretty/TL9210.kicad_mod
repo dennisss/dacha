@@ -1,0 +1,155 @@
+(footprint "TL9210"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0 -7.6 0)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "4464dda7-e7b3-4b0a-955d-49c37f0efad7")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.1)
+			)
+		)
+	)
+	(property "Value" "TL9210"
+		(at 0 -6.1 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "b22eaf6b-fb51-4618-bff1-751989bc1bae")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3734fd0c-a27c-4461-8083-e09ee5eb5862")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "bc07dcef-0fe6-4ffc-ac2f-f08b5818b765")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_line
+		(start -3 -3)
+		(end -3 -1)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "415fa397-ec24-4b04-9ec4-198801a9689b")
+	)
+	(fp_line
+		(start -3 -3)
+		(end 3 -3)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "4008adbf-7df0-46fd-b074-8723cc9f8b05")
+	)
+	(fp_line
+		(start -3 3)
+		(end -3 1)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "4b3b6d92-b083-487b-a71e-08c400ceb634")
+	)
+	(fp_line
+		(start -3 3)
+		(end 3 3)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "30876f5c-39fd-4d64-a180-d55a44c0d1fd")
+	)
+	(fp_line
+		(start 3 -3)
+		(end 3 -1)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "79f6509c-f51e-4e9a-b293-66a6db972a1f")
+	)
+	(fp_line
+		(start 3 3)
+		(end 3 1)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "c1fcc216-6eee-4036-8818-16f68141bd8b")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 -4.6 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "a70770b8-1da5-41b3-821c-b5b5c61b9847")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" smd roundrect
+		(at -3 0)
+		(size 2 1.8)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.15)
+		(uuid "18510774-2680-44e6-a153-60c73d622787")
+	)
+	(pad "2" smd roundrect
+		(at 3 0)
+		(size 2 1.8)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.15)
+		(uuid "3209ea8a-01b6-48f2-b6ca-f5bde876f69e")
+	)
+	(embedded_fonts no)
+	(model "${DACHA_DIR}/third_party/digikey/TL9210AFxxxx.stp"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)

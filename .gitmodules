@@ -31,3 +31,18 @@
 [submodule "third_party/voron_0_tulip"]
 	path = third_party/voron_0/tulip
 	url = git@github.com:Amekyras/tulip.git
+[submodule "third_party/stm/cmsis_device_c0"]
+	path = third_party/stm/cmsis_device_c0
+	url = https://github.com/STMicroelectronics/cmsis_device_c0.git
+[submodule "third_party/stm/cmsis_core"]
+	path = third_party/stm/cmsis_core
+	url = https://github.com/STMicroelectronics/cmsis_core.git
+[submodule "third_party/stm/cmsis_device_f4"]
+	path = third_party/stm/cmsis_device_f4
+	url = https://github.com/STMicroelectronics/cmsis_device_f4
+[submodule "third_party/stm/cmsis_device_g0"]
+	path = third_party/stm/cmsis_device_g0
+	url = https://github.com/STMicroelectronics/cmsis-device-g0.git
+[submodule "third_party/rpi/linux"]
+	path = third_party/rpi/linux
+	url = https://github.com/raspberrypi/linux

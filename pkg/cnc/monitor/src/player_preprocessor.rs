@@ -2,15 +2,19 @@
 // to the machine by the player.
 
 use std::time::Duration;
+use std::sync::Arc;
 
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
 use common::bytes::Bytes;
 use executor::channel;
+use math::matrix::VectorXf;
+
+use crate::leveling::*;
 
 #[derive(Default)]
 pub struct ParsedLine {
-    pub command_to_send: Option<String>,
+    pub commands_to_send: Vec<String>,
     pub state_update: ProgramRun,
     pub progress_updated: bool,
 
@@ -45,6 +49,9 @@ pub struct PlayerProgramPreprocessor {
     lines: channel::Receiver<Option<Vec<gcode::ProgramElement>>>,
     output: channel::Sender<Option<ParsedLine>>,
     current_object: i32,
+
+    current_position: VectorXf,
+    leveler: Option<Arc<ZGridLeveler>>,
 }
 
 impl PlayerProgramPreprocessor {
@@ -52,6 +59,8 @@ impl PlayerProgramPreprocessor {
         use_silent_mode: bool,
         use_compact_lines: bool,
         lines: channel::Receiver<Option<Vec<gcode::ProgramElement>>>,
+        current_position: VectorXf,
+        leveler: Option<Arc<ZGridLeveler>>,
     ) -> (Self, channel::Receiver<Option<ParsedLine>>) {
         let (sender, receiver) = channel::bounded(20);
 
@@ -61,6 +70,8 @@ impl PlayerProgramPreprocessor {
             lines,
             output: sender,
             current_object: -1,
+            current_position,
+            leveler
         };
 
         (inst, receiver)
@@ -234,6 +245,68 @@ impl PlayerProgramPreprocessor {
                     continue;
                 }
 
+                gcode::Command::RapidMove(gcode::RapidMove { inner }) => {
+                    // TODO: THis assumes that the line is empty aside from the move.
+                    if let Some(leveler) = &self.leveler {
+
+                        let (moves, next_position) = leveler.rewrite_move(
+                            &self.current_position,
+                            inner,
+                            true
+                        );
+                        for c in moves {
+                            let mut line = gcode::LineBuilder::default();
+                            line.add(&gcode::Command::RapidMove(gcode::RapidMove { inner: c }));
+
+                            let cmd = {
+                                if self.use_compact_lines {
+                                    line.to_string_compact()
+                                } else {
+                                    line.to_string()
+                                }
+                            };
+
+                            out.commands_to_send.push(cmd);
+
+                        }
+
+                        self.current_position = next_position;
+
+                        continue;
+                    }
+                }
+
+                gcode::Command::LinearMove(gcode::LinearMove { inner }) => {
+                    // TODO: THis assumes that the line is empty aside from the move.
+                    if let Some(leveler) = &self.leveler {
+
+                        let (moves, next_position) = leveler.rewrite_move(
+                            &self.current_position,
+                            inner,
+                            false
+                        );
+                        for c in moves {
+                            let mut line = gcode::LineBuilder::default();
+                            line.add(&gcode::Command::LinearMove(gcode::LinearMove { inner: c }));
+
+                            let cmd = {
+                                if self.use_compact_lines {
+                                    line.to_string_compact()
+                                } else {
+                                    line.to_string()
+                                }
+                            };
+
+                            out.commands_to_send.push(cmd);
+
+                        }
+
+                        self.current_position = next_position;
+
+                        continue;
+                    }
+                }
+
                 _ => {}
             }
 
@@ -249,7 +322,12 @@ impl PlayerProgramPreprocessor {
                 }
             };
 
-            out.command_to_send = Some(cmd);
+            if !out.commands_to_send.is_empty() {
+                return Err(err_msg("More than just movements on the line"));
+            }
+
+            // TODO: Don't allow this if we did linear moves.
+            out.commands_to_send.push(cmd);
         }
 
         out.object = self.current_object;

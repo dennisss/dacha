@@ -94,7 +94,7 @@ impl CgroupMeasurement {
         // If we take too long to read the metrics, then they may be stale and not
         // representative of the state at the recorded timestamp.
         let end_time = Instant::now();
-        if end_time - time > Duration::from_millis(10) {
+        if end_time - time > Duration::from_millis(100) {
             return Err(format_err!(
                 "Took too long ({:?}) to read cgroup metrics.",
                 end_time - time

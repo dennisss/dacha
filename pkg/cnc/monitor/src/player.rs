@@ -21,6 +21,7 @@ use executor_multitask::{impl_resource_passthrough, TaskResource};
 use file::{LocalFile, LocalPath, LocalPathBuf};
 use protobuf::Message;
 use db_table::ProtobufDB;
+use math::vecxf;
 
 use crate::change::{ChangeEvent, ChangePublisher};
 use crate::config::MachineConfigContainer;
@@ -29,6 +30,7 @@ use crate::program::*;
 use crate::serial_controller::{PendingCommand, SerialController, DEFAULT_COMMAND_TIMEOUT};
 use crate::tables::ProgramRunTable;
 use crate::player_preprocessor::*;
+use crate::leveling::ZGridLeveler;
 
 const MIN_DB_FLUSH_RATE: Duration = Duration::from_secs(30);
 
@@ -93,6 +95,7 @@ impl Player {
         serial_interface: Arc<SerialController>,
         change_publisher: ChangePublisher,
         db: Arc<ProtobufDB>,
+        leveler: Option<Arc<ZGridLeveler>>,
     ) -> Result<Self> {
         let mut now = SystemTime::now();
 
@@ -178,7 +181,7 @@ impl Player {
 
         let task = TaskResource::spawn_interruptable(
             "cnc::Player",
-            Self::run(shared.clone(), serial_interface),
+            Self::run(shared.clone(), serial_interface, leveler),
         );
 
         Ok(Self { shared, task })
@@ -255,7 +258,11 @@ impl Player {
         Ok(proto)
     }
 
-    async fn run(shared: Arc<Shared>, serial_interface: Arc<SerialController>) -> Result<()> {
+    async fn run(
+        shared: Arc<Shared>,
+        serial_interface: Arc<SerialController>,
+        leveler: Option<Arc<ZGridLeveler>>,
+    ) -> Result<()> {
         let mut bundle = TaskResultBundle::new();
 
         let (reader, chunks) = ChunkedFileReader::create(&shared.file.path()).await?;
@@ -264,10 +271,21 @@ impl Player {
         let (parser, elements) = ProgramParserOp::new(chunks);
         bundle.add("ProgramParser", parser.run());
 
+        let current_position = {
+            // TODO: Batch this.
+            let x = serial_interface.get_current_axis_value("X").await?.data.get().unwrap()[0];
+            let y = serial_interface.axis_value("Y").await?.data.get().unwrap()[0];
+            let z = serial_interface.axis_value("Z").await?.data.get().unwrap()[0];
+
+            vecxf!(x, y, z)
+        };
+
         let (processor, lines) = PlayerProgramPreprocessor::new(
             shared.use_silent_mode,
             shared.use_compact_lines,
             elements,
+            current_position,
+            leveler,
         );
         bundle.add("PlayerProgramPreprocessor", processor.run());
 
@@ -667,12 +685,13 @@ impl Player {
                         skipped = true;
 
                         // NOTE: State updates are still applied.
-                        parsed_line.command_to_send = None;
+                        parsed_line.commands_to_send.clear();
                         parsed_line.action = None;
                     }
                 }
 
-                if let Some(cmd) = parsed_line.command_to_send.take() {
+                // TODO: Respect max_enqueued_commands?
+                for cmd in parsed_line.commands_to_send.drain(..) {
                     enqueued_commands.push_back(
                         serial_interface
                             .enqueue_command(cmd, DEFAULT_COMMAND_TIMEOUT)

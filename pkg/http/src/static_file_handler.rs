@@ -99,6 +99,8 @@ impl ServerHandler for StaticFileHandler {
             file_path.push(segment_str);
         }
 
+        // TODO: Validate that the path is in the 'base_path'. Though when running in a ClusterServer, the path normalization done before this will always guarantee this.
+
         let metadata = match file::metadata(&file_path).await {
             Ok(m) => m,
             Err(e) => {

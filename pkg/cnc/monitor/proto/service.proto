@@ -245,7 +245,23 @@ message RunMachineCommandRequest {
         ToggleObjectCommand toggle_object = 22;
 
         bool regenerate_preview = 23;
+
+        ZGridLevelingRequest z_grid_leveling = 24;
     }
+}
+
+message ZGridLevelingRequest {
+    // What should be used as the origin point of the program.
+    // TODO: Decouple origin setting.
+    float x_origin = 1;
+    float y_origin = 2;
+
+    float grid_min_x = 3;
+    float grid_min_y = 4;
+    float grid_max_x = 5;
+    float grid_max_y = 6;
+    uint32 grid_x_count = 7;
+    uint32 grid_y_count = 8;
 }
 
 message ToggleObjectCommand {

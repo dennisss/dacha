@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 base_util = { path = "../../base/util" }
+base_radix = { path = "../../base/radix" }
 common = { path = "../../common" }
 crypto = { path = "../../crypto" }
 executor = { path = "../../executor" }

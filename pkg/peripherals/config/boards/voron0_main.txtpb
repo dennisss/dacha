@@ -90,6 +90,8 @@ peripherals {
 
 ######################################
 
+# TODO: Optimize the : Keep these next to each other to make the MCU code more efficient.
+
 peripherals {
     name: "stepper1_step"
     stepper {
@@ -113,4 +115,90 @@ peripherals {
         dir_pin_name: "SCK"
     }
 }
+
+######################################
+
+pins {
+  name: "WIPER_SERVO_PWM"
+  alias: "P0.02"
+}
+
+peripherals {
+    name: "wiper_servo_pwm"
+    pwm {
+        pin_name: "WIPER_SERVO_PWM"
+        config {
+            default_value: 0
+            frequency: 200
+        }
+    }
+}
+
+######################################
+
+pins {
+  name: "BED_RELAY_PWM"
+  alias: "P0.31"
+}
+
+peripherals {
+    name: "bed_relay"
+    pwm {
+        pin_name: "BED_RELAY_PWM"
+        config {
+            default_value: 0
+            frequency: 2
+            timeout_millis: 4000
+        }
+    }
+}
+
+######################################
+
+pins {
+  name: "CHASSIS_FAN_PWM"
+  alias: "P0.03"
+}
+
+peripherals {
+    name: "chassis_fan_pwm"
+    pwm {
+        pin_name: "CHASSIS_FAN_PWM"
+        config {
+            default_value: 0
+            frequency: 25000
+        }
+    }
+}
+
+######################################
+
+pins {
+  name: "AIR_FILTER_FAN_PWM"
+  alias: "D5"
+}
+
+peripherals {
+    name: "air_filter_fan_pwm"
+    pwm {
+        pin_name: "AIR_FILTER_FAN_PWM"
+        config {
+            default_value: 0
+            frequency: 10
+        }
+    }
+}
+
+######################################
+
+# peripherals {
+#    name: "bed_serial"
+#    uart {
+#        tx_pin_name: "P0.28"
+#        rx_pin_name: "P0.30"
+#        config {
+#            baud_rate: 115200
+#        }
+#    }
+#}
 

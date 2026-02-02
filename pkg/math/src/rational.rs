@@ -3,7 +3,7 @@ use core::convert::From;
 use core::fmt::{Debug, Display};
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use crate::gcd::gcd;
+use crate::gcd::{gcd, gcd128};
 use crate::matrix::element::ErrorEpsilon;
 use crate::number::{AbsoluteValue, Cast, Number, One, Round, Zero};
 
@@ -12,10 +12,13 @@ use crate::number::{AbsoluteValue, Cast, Number, One, Round, Zero};
 /// Internally it is always stored as follows:
 /// - Sign stored in the upper (numerator) of the fraction.
 /// - The GCD of the numerator and denominitor is 1.
+///
+/// TODO: Eventually make this based on i64 again once we better control the
+/// precision of intermediate results during intersection finding.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Rational {
-    upper: i64,
-    lower: i64,
+    upper: i128,
+    lower: i128,
 }
 
 impl Default for Rational {
@@ -89,7 +92,7 @@ impl Debug for Rational {
 }
 
 impl Rational {
-    fn new(mut upper: i64, mut lower: i64) -> Self {
+    fn new(mut upper: i128, mut lower: i128) -> Self {
         assert!(lower != 0);
         if upper == 0 {
             return Self { upper: 0, lower: 1 };
@@ -100,7 +103,7 @@ impl Rational {
             lower *= -1;
         }
 
-        let x = gcd(upper.abs(), lower);
+        let x = gcd128(upper.abs(), lower);
         Self {
             upper: upper / x,
             lower: lower / x,
@@ -108,18 +111,18 @@ impl Rational {
     }
 
     /// Returns (upper1, upper2, lower)
-    fn common_lower(self, other: Self) -> (i64, i64, i64) {
+    fn common_lower(self, other: Self) -> (i128, i128, i128) {
         if self.lower == other.lower {
             return (self.upper, other.upper, self.lower);
         }
 
-        fn exact_div(a: i64, b: i64) -> i64 {
+        fn exact_div(a: i128, b: i128) -> i128 {
             assert_eq!(a % b, 0);
             a / b
         }
 
         // Least common multiple
-        let lower_gcd = gcd(self.lower, other.lower);
+        let lower_gcd = gcd128(self.lower, other.lower);
         let lcm = self.lower * exact_div(other.lower, lower_gcd);
 
         (
@@ -156,6 +159,20 @@ impl Rational {
     pub fn to_f32(self) -> f32 {
         (self.upper as f32) / (self.lower as f32)
     }
+
+    /// Optimized function to ensure that the value is between '[0, 1]'
+    /// Returns the original number if it is in that range or the nearest end point on that range.
+    pub fn clamp_between_0_to_1(mut self) -> Self {
+        if self.upper < 0 {
+            return Self::zero();
+        }
+
+        if self.upper > self.lower {
+            return Self::one();
+        }
+
+        self
+    }
 }
 
 impl Round for Rational {
@@ -177,7 +194,7 @@ impl Round for Rational {
 impl From<i16> for Rational {
     fn from(v: i16) -> Self {
         Self {
-            upper: v as i64,
+            upper: v as i128,
             lower: 1,
         }
     }
@@ -186,7 +203,7 @@ impl From<i16> for Rational {
 impl From<i32> for Rational {
     fn from(v: i32) -> Self {
         Self {
-            upper: v as i64,
+            upper: v as i128,
             lower: 1,
         }
     }
@@ -194,7 +211,7 @@ impl From<i32> for Rational {
 
 impl From<i64> for Rational {
     fn from(v: i64) -> Self {
-        Self { upper: v, lower: 1 }
+        Self { upper: v as i128, lower: 1 }
     }
 }
 
@@ -206,7 +223,7 @@ impl Cast<Rational> for i64 {
 
 impl Cast<i64> for Rational {
     fn cast(self) -> i64 {
-        self.upper / self.lower
+        (self.upper / self.lower) as i64
     }
 }
 

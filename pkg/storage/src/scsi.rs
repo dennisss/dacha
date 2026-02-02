@@ -37,7 +37,7 @@ use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter};
 
 use common::{errors::*, format::format_bytes};
-use file::LocalFile;
+use file::{LocalFile, LocalPathBuf, LocalPath};
 use sys::bindings::{
     sg_io_hdr_t, SG_DXFER_FROM_DEV, SG_GET_VERSION_NUM, SG_INFO_OK, SG_INFO_OK_MASK, SG_IO,
 };
@@ -46,6 +46,44 @@ use crate::smart::*;
 
 /// Maximum amount of time to wait for individual SCSI commands to execute.
 const SCSI_TIMEOUT_MILLIS: u32 = 500;
+
+#[derive(Debug, Clone)]
+pub struct SCSIGenericDeviceEntry {
+    
+    /// This will be string like "sg0", "sg1", etc.
+    /// (each corresponds to a device file like /dev/sg0, /dev/sg1, etc.)
+    pub name: String,
+
+    pub device_path: LocalPathBuf,
+}
+
+impl SCSIGenericDeviceEntry {
+    pub async fn list() -> Result<Vec<Self>> {
+        let mut out = vec![];
+
+        let path = LocalPath::new("/sys/class/scsi_generic");
+        if !file::exists(path).await? {
+            return Ok(out);
+        }
+
+        let devices = file::read_dir(path)?;
+        for entry in devices {
+            let name = entry.name().to_string();
+            let dir = path.join(entry.name());
+
+            let device_path = file::realpath(dir.join("device")).await?;
+
+            out.push(Self {
+                name,
+                device_path
+            })
+        }
+
+        Ok(out)
+    }
+}
+
+
 
 /// Interface for controlling a disk that is supported by the linux 'SCSI
 /// Generic' (SG) driver. This ends up working for ATA devices as well via SCSI
@@ -160,7 +198,106 @@ impl SCSIDevice {
         let ret = str_from_ascii(&data[first_offset..(first_offset + page_length)])
             .ok_or_else(|| err_msg("Serial number is not valid ASCII"))?;
 
-        Ok(ret.to_string())
+        Ok(ret.trim().to_string())
+    }
+
+    fn log_sense(&mut self, page: u8, out: &mut [u8]) -> Result<()> {
+        assert!(out.len() <= 255);
+        
+        let cdb = [
+            0x4d, // LOG SENSE op code
+            0x00,
+            page,
+            0, // subpage
+            0, // reserved
+            0, // parameter pointer (MSB)
+            0, // parameter pointer (LSB)
+            0, // allocation length (MSB)
+            out.len() as u8, // allocation length (LSB)
+            0x00,
+        ];
+
+        self.read(&cdb, out)?;
+        Ok(())
+    }
+
+    pub fn scsi_temperature(&mut self) -> Result<SCSITemperaturePage> {
+        let mut buf = [0u8; 16];
+        self.log_sense(0x0d, &mut buf)?;
+
+        Ok(SCSITemperaturePage {
+            current_temp: buf[9],
+            reference_temp: buf[15],
+        })
+    }
+
+    pub fn scsi_smart_sense(&mut self) -> Result<SCSISmartBytes> {
+        let mut buf = [0u8; 32];
+        self.log_sense(0x2f, &mut buf)?;
+
+        // tODO: Actually parse the page and find the right parameter.
+
+        Ok(SCSISmartBytes {
+            sense_code_byte: buf[8],
+            sense_qualifier: buf[9],
+        })
+    }
+
+    fn scsi_read_error_page(&mut self, page: u8) -> Result<(u64, u64)> {
+        let mut buf = [0u8; 88];
+        self.log_sense(page, &mut buf)?;
+
+        Ok((
+            u64::from_be_bytes(*array_ref![buf, 20, 8]),
+            u64::from_be_bytes(*array_ref![buf, 80, 8]),
+        ))
+    }
+
+    pub fn scsi_error_counters(&mut self) -> Result<SCSIErrorCounters> {
+        
+        let (write_soft_errors, write_hard_errors) = self.scsi_read_error_page(0x02)?;
+        let (read_soft_errors, read_hard_errors) = self.scsi_read_error_page(0x03)?;
+
+        Ok(SCSIErrorCounters {
+            read_soft_errors,
+            read_hard_errors,
+            write_soft_errors,
+            write_hard_errors,
+        })
+    }
+
+    fn receive_diagnostic_results(&mut self, page: u8, out: &mut [u8]) -> Result<()> {        
+        let len = (out.len() as u16).to_be_bytes();
+
+        let cdb = [
+            0x1c, // LOG SENSE op code
+            0x01,
+            page,
+            len[0],
+            len[1],
+            0
+        ];
+
+        self.read(&cdb, out)?;
+        Ok(())
+    }
+
+    pub fn scsi_enclosure_temperature(&mut self) -> Result<isize> {
+        /*
+        let mut config = [0u8; 512];
+        // TODO: Figure out how to check the number of transfered bytes.
+        // 'sudo sg_raw -r 1024 /dev/sg1 1c 01 02 04 00 00' seems to be aware of how many bytes are transfered.
+        self.receive_diagnostic_results(0x01, &mut config)?;
+        // println!("{:#x?}", config);
+        */
+
+        let mut status = [0u8; 512];
+        self.receive_diagnostic_results(0x02, &mut status)?;
+
+        // TODO: Parse the config page and make this less hard coded.
+        let temp = (status[98] as isize) - 20;
+
+        Ok(temp)
     }
 
     pub fn ata_general_purpose_log_directory(&mut self) -> Result<ATALogDirectory> {
@@ -397,6 +534,33 @@ impl SCSIDevice {
 
         self.read(&cdb, data)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct SCSISmartBytes {
+    pub sense_code_byte: u8,
+    pub sense_qualifier: u8,
+}
+
+impl SCSISmartBytes {
+    pub fn is_ok(&self) -> bool {
+        self.sense_code_byte == 0 && self.sense_qualifier == 0
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct SCSITemperaturePage {
+    pub current_temp: u8,
+    pub reference_temp: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct SCSIErrorCounters {
+    pub read_soft_errors: u64,
+    pub read_hard_errors: u64,
+    pub write_soft_errors: u64,
+    pub write_hard_errors: u64,
 }
 
 struct ATACommand {
@@ -731,5 +895,187 @@ mod tests {
         let out = SCSIDevice::parse_ata_concurrent_ranges(&data).unwrap();
 
         println!("{:?}", out);
+    }
+
+    #[test]
+    fn scsi_ses_config_page() {
+        // This is the SES config page from one of the SAS expanders.
+
+        let data = [
+            0x1,
+            0x0,
+            0x0,
+            0x88,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x1,
+            0x0,
+            0x2,
+            0x58,
+            0x50,
+            0x0,
+            0xd,
+            0x17,
+            0x2,
+            0x58,
+            0x2c,
+            0xbe,
+            0x49,
+            0x4e,
+            0x54,
+            0x45,
+            0x4c,
+            0x20,
+            0x20,
+            0x20,
+            0x52,
+            0x45,
+            0x53,
+            0x33,
+            0x46,
+            0x56,
+            0x32,
+            0x38,
+            0x38,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x42,
+            0x30,
+            0x32,
+            0x32,
+            0x0,
+            0x32,
+            0x34,
+            0x2d,
+            0x53,
+            0x6c,
+            0x6f,
+            0x74,
+            0x20,
+            0x42,
+            0x61,
+            0x63,
+            0x6b,
+            0x70,
+            0x6c,
+            0x61,
+            0x6e,
+            0x65,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x31,
+            0x32,
+            0x33,
+            0x34,
+            0x41,
+            0x42,
+            0x43,
+            0x44,
+            0x45,
+            0x0,
+            0x52,
+            0x31,
+            0x30,
+            0x30,
+            0x42,
+            0x30,
+            0x32,
+            0x32,
+            0x0,
+            0x17,
+            0x14,
+            0x0,
+            0x10,
+            0x4,
+            0x1,
+            0x0,
+            0x10,
+            0x41,
+            0x72,
+            0x72,
+            0x61,
+            0x79,
+            0x20,
+            0x44,
+            0x65,
+            0x76,
+            0x69,
+            0x63,
+            0x65,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x54,
+            0x65,
+            0x6d,
+            0x70,
+            0x65,
+            0x72,
+            0x61,
+            0x74,
+            0x75,
+            0x72,
+            0x65,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x20,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+        ];
+
+
     }
 }

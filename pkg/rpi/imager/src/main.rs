@@ -303,6 +303,23 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         */
     }
 
+    // BTRFS likes keeping track of all the partitions it has ever mounted so it will
+    // get annoyed if mounting an old version of a filesystem it has previously modified. 
+    //
+    // NOTE: We don't randomize the MBR/GPT UUID since that is referenced in the fstab and
+    // cmdline.txt files.
+    println!("Randomize BTRFS UUID...");
+    {
+        let dev_name = format!("{}2", &cmd.disk.as_str());
+
+        let status = std::process::Command::new("btrfstune")
+            .args(&["-f", "-u", &dev_name])
+            .status()?;
+        if !status.success() {
+            return Err(err_msg("Failed to randomize BTRFS partition UUID"));
+        }
+    }
+
     println!("Mounting root filesystem...");
 
     let root_dir = TempDir::create()?;

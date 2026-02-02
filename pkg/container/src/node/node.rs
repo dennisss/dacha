@@ -1423,6 +1423,9 @@ impl NodeInner {
             // - re-mounting dynamically on hotplugs.
             // - custom destination path
 
+            let mut exclude_sys = false;
+            let mut exclude_dev = false;
+
             match device.source().source_case() {
                 DeviceSourceSourceCase::Usb(selector) => {
                     let devices = self.shared.usb_context.enumerate_devices().await?;
@@ -1477,16 +1480,46 @@ impl NodeInner {
                     }
                     */
 
+                    let mut options = "bind";
+
+                    // NOTE: We can't mount a 'sysfs' type filesystem in a user namespace.
+                    // I don't know why, but they only seem to be bindable with MS_REC.
+                    if path == "/sys" {
+                        exclude_sys = true;
+                        options = "rbind";
+                    }
+                    if path == "/dev" {
+                        exclude_dev = true;
+                        options = "rbind";
+                    }
+
                     let mut mount = ContainerMount::default();
                     mount.set_source(path.as_str());
                     mount.set_destination(path.as_str());
-                    mount.add_options("bind".into());
+                    mount.add_options(options.into());
                     container_config.add_mounts(mount);
                 }
                 DeviceSourceSourceCase::NOT_SET => {
                     return Err(
                         rpc::Status::invalid_argument("No source configured for device").into(),
                     );
+                }
+            }
+
+            {
+                let mut i = 0;
+                while i < container_config.mounts().len() {
+                    let mount = &container_config.mounts()[i];
+                    let remove =
+                        (exclude_dev && mount.destination().starts_with("/dev/")) ||
+                        (exclude_sys && mount.destination().starts_with("/sys/"));
+                    
+                    if remove {
+                        container_config.mounts_mut().remove(i);
+                        continue;
+                    }
+
+                    i += 1;
                 }
             }
         }

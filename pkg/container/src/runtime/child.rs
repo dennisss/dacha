@@ -142,6 +142,7 @@ fn run_child_process_inner(
 
     let flag_options = &[
         ("bind", MsFlags::MS_BIND),
+        ("rbind", MsFlags::MS_BIND | MsFlags::MS_REC),
         ("nosuid", MsFlags::MS_NOSUID),
         ("noexec", MsFlags::MS_NOEXEC),
         ("nodev", MsFlags::MS_NODEV),

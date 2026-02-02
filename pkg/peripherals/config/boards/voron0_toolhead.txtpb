@@ -47,11 +47,14 @@ peripherals {
     pwm {
         pin_name: "FAN_MID_PWM"
         config {
+            # TODO: Default to on with a timeout.
             default_value: 0
             frequency: 10
         }
     }
 }
+
+# TODO: Also stop all motors if we don't get host communication.
 
 ###############################################################################
 
@@ -167,12 +170,12 @@ peripherals {
         negative_pin_name: "PROBE-"
         config {
             max_voltage: 0.6
-# Used as filtering. This many samples in a
+            # Used as filtering. This many samples in a
             # row must align.
-            oversampling: 2
-            sample_rate: 16384
-            trigger_above: 0.05
-            trigger_below: -0.05
+            oversampling: 4
+            sample_rate: 100000
+            trigger_above: 0.07
+            trigger_below: -0.07
             stop_on_trigger: true
         }
     }
@@ -183,7 +186,7 @@ peripherals {
     name: "probe_buf1"
     buffer {
         config {
-            size: 8192  # 4096 u16's
+            size: 25000  # 12500 u16's
         }
     }
 }
@@ -350,6 +353,7 @@ peripherals {
         pin_name: "LED_SERIAL"
         config {
             inverted: true
+            num_bytes: 11 # 4 + 4 + 3
         }
     }
 }

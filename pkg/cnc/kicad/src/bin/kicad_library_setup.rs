@@ -6,7 +6,7 @@ extern crate file;
 
 use std::process::Command;
 use std::io::Write;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use common::errors::*;
 use kicad::library::*;
@@ -29,7 +29,7 @@ async fn check_kicad_version() -> Result<()> {
     let version = String::from_utf8(output.stdout)?;
     let v = version.trim();
 
-    if !v.starts_with("7.0.") {
+    if !v.starts_with("9.0.") {
         return Err(format_err!("Unsupported kicad version: {}", v))
     }
 
@@ -44,12 +44,46 @@ async fn main() -> Result<()> {
 
     let home = LocalPath::new(&std::env::var("HOME")?).to_owned();
 
-    let sym_table_path = home.join(".config/kicad/7.0/sym-lib-table");
-    let fp_table_path = home.join(".config/kicad/7.0/fp-lib-table");
+    let config_path = home.join(".config/kicad/9.0/kicad_common.json");
+    let sym_table_path = home.join(".config/kicad/9.0/sym-lib-table");
+    let fp_table_path = home.join(".config/kicad/9.0/fp-lib-table");
+
+    {
+        let config_data = file::read_to_string(&config_path).await?;
+        let mut config_val = json::parse(&config_data)?;
+
+        let auto_backup = config_val.get_field_mut("auto_backup")
+            .ok_or_else(|| err_msg("No auto_backup settings"))?;
+        // TODO: THese will panic if auto_backup isn't an object
+        auto_backup.set_field("backup_on_autosave", false);
+        auto_backup.set_field("enabled", false);
+
+        let env = config_val.get_field_mut("environment")
+            .ok_or_else(|| err_msg("No environment settings"))?;
+        let env_vars = env.get_field_mut("vars")
+            .ok_or_else(|| err_msg("No environment.vars settings"))?;
+        match env_vars {
+            json::Value::Object(_) => {},
+            json::Value::Null => { *env_vars = json::Value::Object(HashMap::default()) },
+            _ => return Err(err_msg("Unknown format for environment.vars settings"))
+        };
+        env_vars.set_field("DACHA_DIR", project_dir.as_str());
+
+        file::write(&config_path, json::pretty_stringify(&config_val)).await?;
+        println!("Wrote to {}", config_path.as_str());
+    }
+
 
     let mut lib_paths = vec![ &sym_table_path, &fp_table_path ];
     let mut lib_tables = vec![];
     let mut used_names = HashSet::new();
+
+    let system_prefixes = &[
+        "${KICAD7_FOOTPRINT_DIR}/",
+        "${KICAD7_SYMBOL_DIR}/",
+        "${KICAD9_FOOTPRINT_DIR}/",
+        "${KICAD9_SYMBOL_DIR}/",
+    ];
 
     for path in lib_paths.iter().cloned() {
         if !file::exists(path).await? {
@@ -70,7 +104,15 @@ async fn main() -> Result<()> {
                 continue;
             }
 
-            if !uri.starts_with("${KICAD7_FOOTPRINT_DIR}/") && !uri.starts_with("${KICAD7_SYMBOL_DIR}/") {
+            let mut is_system_library = false;
+            for prefix in system_prefixes {
+                if uri.starts_with(prefix) {
+                    is_system_library = true;
+                    break;
+                }
+            }
+
+            if !is_system_library {
                 println!("WARNING: Unmanaged symbol or footprint library: {}", table.lib[i].name);
             }
 
@@ -142,7 +184,9 @@ async fn main() -> Result<()> {
                     fp_path = Some(path.parent().unwrap().to_owned());
                 }
                 "stl" | "step" | "stp" => {
+                    // ${DACHA_DIR}
                     // TODO: Verify 3d files are linked
+                    // println!("{:?}", path);
                 }
                 _ => {}
             }
