@@ -1,0 +1,106 @@
+
+(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)
+  (symbol "SFH_4715AS_A01" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
+    (property "Reference" "D" (id 0) (at -3.556 4.826 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Value" "SFH_4715AS_A01" (id 1) (at -3.556 -3.302 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Footprint" "SFH_4715AS_A01:LED_SFH_4715AS_A01" (id 2) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "PARTREV" "1.0" (id 4) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MF" "Osram" (id 5) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "STANDARD" "Manufacturer Recommendations" (id 6) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (symbol "SFH_4715AS_A01_0_0"
+      (polyline
+        (pts (xy -2.54 1.524) (xy -2.54 -1.524)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -2.54 -1.524) (xy 0.0 0.0)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.0 0.0) (xy -2.54 1.524)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.0 1.524) (xy 0.0 -1.524)) (stroke (width 0.254))
+      )
+      (text "IR" (at 1.016 2.032 0)
+        (effects (font (size 1.016 1.016)) (justify bottom left))
+      )
+      (polyline
+        (pts (xy 1.016 4.064) (xy -0.762 2.032)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.6858 3.0988) (xy 0.127 3.5814)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.127 3.5814) (xy 1.016 4.064)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 1.016 4.064) (xy 0.6858 3.0988)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.6858 3.0988) (xy 0.7112 3.8354)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.7112 3.8354) (xy 0.5842 3.8354)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.3048 3.5052) (xy 0.5334 3.6576)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -0.2286 4.1656) (xy -2.0066 2.1336)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -0.5588 3.2004) (xy -1.1176 3.683)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -1.1176 3.683) (xy -0.2286 4.1656)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -0.2286 4.1656) (xy -0.5588 3.2004)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -0.5588 3.2004) (xy -0.5334 3.937)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -0.5334 3.937) (xy -0.6604 3.937)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -0.9398 3.6068) (xy -0.7112 3.7592)) (stroke (width 0.254))
+      )
+      (pin passive line (at 5.08 0.0 180.0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "C"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -7.62 0.0 0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "A1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -7.62 0.0 0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "A2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+    )
+  )
+)

@@ -2150,6 +2150,11 @@ files: [
         sha256_sum: "fb89336192452f4e6fa24d771d36df4baf93a5e208ad3086e8d9b77f531252b3"
     },
     {
+        path: "third_party/digikey/3-1827231-6/3-1827231-6.step"
+        size: 10691131
+        sha256_sum: "f6b8dea4c2b2cef0438bc63a2da0ce56009839eb7e8727b8685ebe1490cc08d6"
+    },
+    {
         path: "third_party/digikey/AGQ20012/RELAY_AGQ_PAN.stl"
         size: 12484
         sha256_sum: "4889118a457aa0156fa19f1cf33387f25623f2317068195ed3caa3b4fefafb92"
@@ -2165,9 +2170,64 @@ files: [
         sha256_sum: "e48cdfbec40ffc940c69c54a896eb16f3f706ee40d1c1df7096c57cdbe5a7e88"
     },
     {
+        path: "third_party/digikey/TL9210AFxxxx.stp"
+        size: 80504
+        sha256_sum: "bb6e8ac2db28dbd37b0ae39bffac3eb9fe6c74ea6d31732707e6ff05f4fbdf16"
+    },
+    {
         path: "third_party/noctua/Noctua_PWM_specifications_white_paper.pdf"
         size: 699708
         sha256_sum: "a0817e99540ba4e9319381902ba16443847a08474b0fc5306b1543675abf34a7"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/10164227-1001a1rlf.stp"
+        size: 2724486
+        sha256_sum: "f0cd3739094465c8d0670b5895e0f6b5dd9885e02f48acfc6b06976833adce9a"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/471511051.stp"
+        size: 1841701
+        sha256_sum: "7b1bad188bae8d59cb3883e52c01938a759ca566a95a3358bf258bee292f56bf"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/BM04B-SRSS-TB.STEP"
+        size: 617224
+        sha256_sum: "0b16c7cf76209d0449404b17f30c41a1fee12f318fd07843a1e7503b574c3b71"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/FH12-22S-0.5SH.stp"
+        size: 1274118
+        sha256_sum: "559b7f24bd15d8fa9717abba6e98751cbc34f1cc97182199a063b44aecf0d4aa"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/MTSSD03-67MSW337.STEP"
+        size: 3107520
+        sha256_sum: "f38a2b7cee8dcb459dbe1f2dbe6c5abdcf1c7bad605ec02376159b884bcc654a"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/SRP5030CC.stp"
+        size: 119587
+        sha256_sum: "65a46864d15a4efd04d55b5f4bc565b05c8c3a5363fbde94c1df1f91ee030570"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/TRJG0926HENL .stp"
+        size: 622404
+        sha256_sum: "dac5be76a0577323a8653ae33f120e11d0a3751f34fab11a22a611dfd51993e0"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.3dshapes/USB3stacked.STEP"
+        size: 4694495
+        sha256_sum: "418ed5ec717088749df193f4268c44fa36323615c3e58c28556e8170e5a9ba48"
+    },
+    {
+        path: "third_party/rpi/cm5io/CM5IO.pretty/CM5R5-3dsteps.step"
+        size: 14332693
+        sha256_sum: "6adc64e5f69b2799b65d56c94b3543bad136fa4191cadaba0aa0e49fa345598f"
+    },
+    {
+        path: "third_party/rpi/rp2350a/RP2350_QFN60.step"
+        size: 1042197
+        sha256_sum: "7ad93f789bcb3a149bb6e5458b57741be019b15fbc334876de467cb704084919"
     },
     {
         path: "third_party/snapeda/amphenol_mini_sas_hd/G40H11331HR.step"
@@ -2178,6 +2238,136 @@ files: [
         path: "third_party/snapeda/molex_sas_29p/0878390018.stp"
         size: 1027473
         sha256_sum: "8dae5f031ade8aac27b74c1e8632297a41590ce76b5c342d9fe46069f035b5d9"
+    },
+    {
+        path: "third_party/snapmagic/530470210/530470210.step"
+        size: 137546
+        sha256_sum: "25bed1112e8a686cd580662cec43e43ac7e941210068f3964847e96dd7b71db9"
+    },
+    {
+        path: "third_party/snapmagic/7447709220/WE-PD_1210.step"
+        size: 772544
+        sha256_sum: "28784f386ab74f38c8ae42c51f2548f53e0f6a785c8ee839a61605dbc044098a"
+    },
+    {
+        path: "third_party/snapmagic/ASPI_4030S_470M_T/ASPI-4030S-470M-T.step"
+        size: 984661
+        sha256_sum: "bcd04a1169562f74320b21f52bfba1c3fda324e9ae32f94d79b94260d057ab55"
+    },
+    {
+        path: "third_party/snapmagic/ASTX_H11_24_000MHZ_T/ASTX-H11-24.000MHZ-T.step"
+        size: 607707
+        sha256_sum: "36751f404093a56ceee23f21e38cffa060a1cdc76f9f03dc860059487ff6c61c"
+    },
+    {
+        path: "third_party/snapmagic/BK_912_TR/BK-912-TR.step"
+        size: 273307
+        sha256_sum: "3f6ed2fc147e3532afe39ebe6a1d24fd1215aa038881c8ca88fe9d4ddc76ee01"
+    },
+    {
+        path: "third_party/snapmagic/DLM11SN900HZ2L/DLM11SN900HZ2L.step"
+        size: 98955
+        sha256_sum: "653d96434835a51a3570cdcf446d6329f35a329fbd6862eaabff73b768246c09"
+    },
+    {
+        path: "third_party/snapmagic/DRV5032FBDBZR/DRV5032FBDBZR.step"
+        size: 137482
+        sha256_sum: "8f59d96eca8975a465c39c89e52d23bbcc3e1a91acc1f1ef1699278de566ee6d"
+    },
+    {
+        path: "third_party/snapmagic/FH34SRJ-22S-0.5SH_50_/FH34SRJ-22S-0.5SH_50_.step"
+        size: 728006
+        sha256_sum: "8c76e1957ea59b17ff4061ed55b304b0184072ccc3f0bd24415f01bfaaf5cf8e"
+    },
+    {
+        path: "third_party/snapmagic/FH34SRJ_24S_0_5SH_50_/FH34SRJ-24S-0.5SH.stp"
+        size: 781851
+        sha256_sum: "629abaa3451a2d1c97ce932d61733a8a997326e53ce778040e0a6b2ba645d9df"
+    },
+    {
+        path: "third_party/snapmagic/LPJG0926HENL/LPJG0926HENL--3DModel-STEP-455599.STEP"
+        size: 1056640
+        sha256_sum: "a88bb5e84cf0d0621da2e22fd41a742d800fe1cd14a14b32cdb73a955f517313"
+    },
+    {
+        path: "third_party/snapmagic/LPJG0926HENL/LPJG0926HENL.step"
+        size: 1056640
+        sha256_sum: "a88bb5e84cf0d0621da2e22fd41a742d800fe1cd14a14b32cdb73a955f517313"
+    },
+    {
+        path: "third_party/snapmagic/MSS1210-153MED/IND_MSS1210_COC.step"
+        size: 31428
+        sha256_sum: "6d79e746b7c6bec5daf0db96bba3ea6f9154e500fba081e0a5466a7c4d52d9a5"
+    },
+    {
+        path: "third_party/snapmagic/PEC12R_4220F_S0024/PEC12R-4220F-S0024.step"
+        size: 779129
+        sha256_sum: "765b2030e15afb77ced250e71d2c97e04e9fd2e738d3c670e142f6ce66a23f28"
+    },
+    {
+        path: "third_party/snapmagic/SFH_4715AS_A01/SFH_4715AS_A01.step"
+        size: 465665
+        sha256_sum: "1ed77e083a9f0bd2be1659529a48e6699fd716c7f392f851a4a9da44453e7fa4"
+    },
+    {
+        path: "third_party/snapmagic/TPS22922YZPR/TPS22922YZPR.step"
+        size: 63456
+        sha256_sum: "9c739263cf0f2bd3f5cea34f16f492a8655f0d8619a97e559ef018c853dfa389"
+    },
+    {
+        path: "third_party/snapmagic/TPS2378DDAR/TPS2378DDAR.step"
+        size: 408029
+        sha256_sum: "14455480199dc756251e8fa9edcfe49c61f1cba62dd344e226488175883c2107"
+    },
+    {
+        path: "third_party/snapmagic/TPS26625DRCR/TPS26625DRCR.step"
+        size: 435269
+        sha256_sum: "fde20dcecc228effd5df7e8446fdc02e626c71815136bec151c5b5907b74dfa4"
+    },
+    {
+        path: "third_party/snapmagic/TPS922055DRRR/TPS922055DRRR.step"
+        size: 366225
+        sha256_sum: "6d7f156bc0528c8a6a3157009543798779427d4e5194b741361c70fa69322d61"
+    },
+    {
+        path: "third_party/ultralibrarian/ADXL362BCCZ_RL/ADXL362BCCZ-RL.step"
+        size: 379456
+        sha256_sum: "e6bb6d97267e28f49d549d31537d818e190d7533470ccb0e7b30012a9434daed"
+    },
+    {
+        path: "third_party/ultralibrarian/ISO7720FDR/D0008B.stp"
+        size: 289418
+        sha256_sum: "c9b9c630632f59a6c7f69f0038d4036f099905be9edfe2a0cc75b18c148e6a19"
+    },
+    {
+        path: "third_party/ultralibrarian/LM65645RZTR/RZT0020A.stp"
+        size: 2670337
+        sha256_sum: "257d47365782b9a92f538381e784771825af1ad196dc36f0e57a81a71ecf075a"
+    },
+    {
+        path: "third_party/ultralibrarian/MSS1P3L_M3_89A/MSMP package.step"
+        size: 58032
+        sha256_sum: "fa09f8ea681264797a89b1ade27c60732d29925e8ccd8401c8cedd8356c737bb"
+    },
+    {
+        path: "third_party/ultralibrarian/OPT3004DNPR/DNP0006A.stp"
+        size: 832963
+        sha256_sum: "c9dad00d904bfcda415297863d79f5dfbf7d4f59edd28aa57a5502c9e32a010a"
+    },
+    {
+        path: "third_party/ultralibrarian/PEC11S-929K-S0015/PEC11S-929K.STP"
+        size: 1541237
+        sha256_sum: "ef4b4d9742925581f28acda6df19af5b22c551bb64537e9de9f07f87a910e043"
+    },
+    {
+        path: "third_party/ultralibrarian/SRP1265A_220M/SRP1265A series.stp"
+        size: 519954
+        sha256_sum: "6388eb910d41925e6030c8072fd464f6db2da5e4f83dfb9966bd25968235e689"
+    },
+    {
+        path: "third_party/ultralibrarian/TLP2361_V4_TPL_E/5pin SO6.step"
+        size: 256402
+        sha256_sum: "1a6ecc79bd68e88bd88ea8b490ee35f84a5e3e389a04bfb1187c3d099a16704c"
     },
     {
         path: "third_party/ultralibrarian/molex_microfit_2x2/430450423.stl"

@@ -1,0 +1,99 @@
+
+(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)
+  (symbol "PEC12R-4220F-S0024" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
+    (property "Reference" "S" (id 0) (at -10.16 10.795 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Value" "PEC12R-4220F-S0024" (id 1) (at -10.16 -17.78 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Footprint" "PEC12R-4220F-S0024:XDCR_PEC12R-4220F-S0024" (id 2) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "PARTREV" "07/21" (id 4) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "STANDARD" "Manufacturer recommendations" (id 5) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MAXIMUM_PACKAGE_HEIGHT" "20.5mm" (id 6) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MANUFACTURER" "Bourns" (id 7) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (symbol "PEC12R-4220F-S0024_0_0"
+      (polyline
+        (pts (xy -2.54 5.08) (xy 2.794 7.2136)) (stroke (width 0.1524))
+      )
+      (circle (center 2.54 5.08) (radius 0.3302)
+        (stroke (width 0.1524)) (fill (type none))
+      )
+      (polyline
+        (pts (xy 10.16 5.08) (xy 2.921 5.08)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -2.54 5.08) (xy -10.16 5.08)) (stroke (width 0.1524))
+      )
+      (rectangle (start -10.16 -15.24) (end 10.16 10.16)
+        (stroke (width 0.254)) (fill (type background))
+      )
+      (pin passive line (at -15.24 5.08 0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at 15.24 5.08 180.0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -15.24 0.0 0) (length 5.08)
+        (name "CHANNEL_A"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "A"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -15.24 -2.54 0) (length 5.08)
+        (name "CHANNEL_B"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "B"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -15.24 -10.16 0) (length 5.08)
+        (name "SHIELD"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "SH1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -15.24 -5.08 0) (length 5.08)
+        (name "COMMON"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "C"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -15.24 -12.7 0) (length 5.08)
+        (name "SHIELD__1"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "SH2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+    )
+  )
+)

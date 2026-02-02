@@ -268,7 +268,8 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
         // Filter to only files that need to use the external file system.
         // (everything else should use regular git tracking)
         {
-            let by_ext = allowlisted_extensions.contains(rel_path.extension().unwrap_or(""));
+            let by_ext = allowlisted_extensions.contains(
+                rel_path.extension().unwrap_or("").to_ascii_lowercase().as_str());
 
             if !path_to_hash.contains_key(rel_path.as_str()) && !by_ext {
                 continue;

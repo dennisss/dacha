@@ -1,0 +1,83 @@
+(footprint "MP_Lens"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0 -0.5 0)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(hide yes)
+		(uuid "9a792cb9-bc00-4252-aa98-54cd286be15d")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.1)
+			)
+		)
+	)
+	(property "Value" "MP_Lens"
+		(at 0 1 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "6edae3db-1440-48a5-bc8e-335195e42011")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "717b32de-0a56-442c-b020-ee58ff18d453")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "4e31d3d3-fbbd-40db-8ce7-ab4408c88b2c")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "MP" thru_hole circle
+		(at 0 0 90)
+		(size 3 3)
+		(drill 2.2)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(solder_mask_margin 0.1)
+		(solder_paste_margin -10)
+		(thermal_bridge_angle 90)
+		(uuid "03ea17fc-b605-4fdd-9ee0-5b0d5a7efa1a")
+		(padstack
+			(mode front_inner_back)
+			(layer "Inner"
+				(shape circle)
+				(size 3 3)
+				(zone_connect -1)
+			)
+			(layer "B.Cu"
+				(shape circle)
+				(size 5 5)
+				(zone_connect -1)
+			)
+		)
+	)
+	(embedded_fonts no)
+)

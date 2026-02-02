@@ -1,0 +1,1 @@
+From https://datasheets.raspberrypi.com/rp2350/Minimal-KiCAD.zip

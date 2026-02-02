@@ -1,0 +1,74 @@
+
+(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)
+  (symbol "530470210" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
+    (property "Reference" "J" (id 0) (at 0.0 3.81 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Value" "530470210" (id 1) (at 0.0 -7.62 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Footprint" "530470210:MOLEX_530470210" (id 2) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "PARTREV" "A" (id 4) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "STANDARD" "Manufacturer Recommendations" (id 5) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MAXIMUM_PACKAGE_HEIGHT" "4.2 mm" (id 6) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MANUFACTURER" "Molex" (id 7) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (symbol "530470210_0_0"
+      (polyline
+        (pts (xy 0.0 1.27) (xy 1.27 2.54)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.0 -3.81) (xy 1.27 -5.08)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 1.27 -5.08) (xy 7.62 -5.08)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 7.62 -5.08) (xy 7.62 2.54)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 7.62 2.54) (xy 1.27 2.54)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy 0.0 0.0) (xy 1.905 0.0)) (stroke (width 0.254))
+      )
+      (rectangle (start 0.635 -0.3175) (end 2.2225 0.3175)
+        (stroke (width 0.1)) (fill (type outline))
+      )
+      (polyline
+        (pts (xy 0.0 -2.54) (xy 1.905 -2.54)) (stroke (width 0.254))
+      )
+      (rectangle (start 0.635 -2.8575) (end 2.2225 -2.2225)
+        (stroke (width 0.1)) (fill (type outline))
+      )
+      (polyline
+        (pts (xy 0.0 1.27) (xy 0.0 -3.81)) (stroke (width 0.254))
+      )
+      (pin passive line (at -5.08 0.0 0) (length 5.08)
+        (name "1"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -5.08 -2.54 0) (length 5.08)
+        (name "2"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+    )
+  )
+)

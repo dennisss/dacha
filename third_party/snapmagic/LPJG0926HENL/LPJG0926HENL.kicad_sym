@@ -1,0 +1,326 @@
+
+(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)
+  (symbol "LPJG0926HENL" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
+    (property "Reference" "J" (id 0) (at -7.62 33.782 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Value" "LPJG0926HENL" (id 1) (at -7.62 -35.56 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Footprint" "LPJG0926HENL:LINK-PP_LPJG0926HENL" (id 2) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MF" "Link-PP" (id 4) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MAXIMUM_PACKAGE_HEIGHT" "13.3mm" (id 5) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Package" "Package" (id 6) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Price" "None" (id 7) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Check_prices" "https://www.snapeda.com/parts/LPJG0926HENL/Link-PP/view-part/?ref=eda" (id 8) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "STANDARD" "Manufacturer Recommendations" (id 9) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "PARTREV" "A" (id 10) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "SnapEDA_Link" "https://www.snapeda.com/parts/LPJG0926HENL/Link-PP/view-part/?ref=snap" (id 11) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MP" "LPJG0926HENL" (id 12) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Description" "\n                        \n                            RJ45 Connector with 1000 - Base-T Integrated Magnetics for PoE+ Application\n                        \n" (id 13) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MANUFACTURER" "Link-PP" (id 14) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "Availability" "In Stock" (id 15) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "SNAPEDA_PN" "LPJG0926HENL" (id 16) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (symbol "LPJG0926HENL_0_0"
+      (polyline
+        (pts (xy -2.794 -19.431) (xy -1.778 -18.415)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -1.651 -19.558) (xy -0.635 -18.542)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts
+          (xy -1.778 -18.415)
+          (xy -2.667 -18.796)
+          (xy -2.159 -19.304)
+          (xy -1.778 -18.415)
+        )
+        (stroke (width 0.1524)) (fill (type outline))
+      )
+      (polyline
+        (pts
+          (xy -0.635 -18.542)
+          (xy -1.524 -18.923)
+          (xy -1.016 -19.431)
+          (xy -0.635 -18.542)
+        )
+        (stroke (width 0.1524)) (fill (type outline))
+      )
+      (text "GREEN" (at -0.508 -11.176 0)
+        (effects (font (size 1.016 1.016)) (justify top left))
+      )
+      (polyline
+        (pts (xy -2.54 -22.479) (xy -3.556 -20.828)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -3.556 -20.828) (xy -4.572 -22.479)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -2.413 -20.828) (xy -3.556 -20.828)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -3.556 -20.828) (xy -4.826 -20.828)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -2.54 -22.479) (xy -4.572 -22.479)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -3.556 -25.4) (xy -3.556 -22.606)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -3.556 -20.701) (xy -3.556 -17.78)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -3.556 -17.78) (xy -7.62 -17.78)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -3.556 -25.4) (xy -7.62 -25.4)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -2.794 -9.271) (xy -1.778 -8.255)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -1.651 -9.398) (xy -0.635 -8.382)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts
+          (xy -1.778 -8.255)
+          (xy -2.667 -8.636)
+          (xy -2.159 -9.144)
+          (xy -1.778 -8.255)
+        )
+        (stroke (width 0.1524)) (fill (type outline))
+      )
+      (polyline
+        (pts
+          (xy -0.635 -8.382)
+          (xy -1.524 -8.763)
+          (xy -1.016 -9.271)
+          (xy -0.635 -8.382)
+        )
+        (stroke (width 0.1524)) (fill (type outline))
+      )
+      (text "YELLOW" (at -0.508 -21.336 0)
+        (effects (font (size 1.016 1.016)) (justify top left))
+      )
+      (polyline
+        (pts (xy -2.54 -12.319) (xy -3.556 -10.668)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -3.556 -10.668) (xy -4.572 -12.319)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -2.413 -10.668) (xy -3.556 -10.668)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -3.556 -10.668) (xy -4.826 -10.668)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -2.54 -12.319) (xy -4.572 -12.319)) (stroke (width 0.254))
+      )
+      (polyline
+        (pts (xy -3.556 -15.24) (xy -3.556 -12.446)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -3.556 -10.541) (xy -3.556 -7.62)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -3.556 -7.62) (xy -7.62 -7.62)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -3.556 -15.24) (xy -7.62 -15.24)) (stroke (width 0.1524))
+      )
+      (rectangle (start -7.62 -33.02) (end 7.62 33.02)
+        (stroke (width 0.254)) (fill (type background))
+      )
+      (pin passive line (at -12.7 30.48 0) (length 5.08)
+        (name "TD1+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 27.94 0) (length 5.08)
+        (name "TD1-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 25.4 0) (length 5.08)
+        (name "TD2+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "3"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 22.86 0) (length 5.08)
+        (name "TD2-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "6"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 17.78 0) (length 5.08)
+        (name "TD3-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "8"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 15.24 0) (length 5.08)
+        (name "TD4+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "9"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 12.7 0) (length 5.08)
+        (name "TD4-"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "10"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 -17.78 0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "18"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 -25.4 0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "17"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 -7.62 0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "16"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 -15.24 0) (length 5.08)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "15"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 10.16 0) (length 5.08)
+        (name "CT"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "4"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 10.16 0) (length 5.08) hide
+        (name "CT"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "5"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 -30.48 0) (length 5.08)
+        (name "SHIELD"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "S1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 -30.48 0) (length 5.08) hide
+        (name "SHIELD"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "S2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 20.32 0) (length 5.08)
+        (name "TD3+"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "7"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 5.08 0) (length 5.08)
+        (name "VC1"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "11"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 2.54 0) (length 5.08)
+        (name "VC2"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "12"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 0.0 0) (length 5.08)
+        (name "VC3"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "13"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at -12.7 -2.54 0) (length 5.08)
+        (name "VC4"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "14"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,235 @@
+(footprint "XTAL_ASTX-H11-24.000MHZ-T"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 1.29 -3.385 0)
+		(layer "F.SilkS")
+		(uuid "a6a58569-00eb-44f0-9c6e-5774b9fc8f6e")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "XTAL_ASTX-H11-24.000MHZ-T"
+		(at 13.99 2.885 0)
+		(layer "F.Fab")
+		(uuid "289eab8e-dc80-4d40-8898-33266d10485f")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "f73ae94f-c7f4-4f89-98b3-92e022b717d2")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "87c4da0b-461d-458a-95b0-841790a276bb")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -1.25 -0.18)
+		(end -1.25 0.18)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "8942e353-8317-435b-8ccc-c6de31b224a9")
+	)
+	(fp_line
+		(start -0.08 -1.6)
+		(end 0.08 -1.6)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "31e1781f-561f-4848-8ff9-33a785fc1a8e")
+	)
+	(fp_line
+		(start -0.08 1.6)
+		(end 0.08 1.6)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "795bd7d6-7abb-4308-86df-1309e215c800")
+	)
+	(fp_line
+		(start 1.25 -0.18)
+		(end 1.25 0.18)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "292c6b65-0109-4d5f-ad77-1e3cad2ed706")
+	)
+	(fp_circle
+		(center -2.2 -1.15)
+		(end -2.1 -1.15)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "dfb0b93f-d72a-4942-8517-52aead2bc6ba")
+	)
+	(fp_line
+		(start -1.75 -2.05)
+		(end -1.75 2.05)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "c3bab7cd-63f4-4aa8-ab1d-72cc129b4cdb")
+	)
+	(fp_line
+		(start -1.75 2.05)
+		(end 1.75 2.05)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "ab5c7493-e928-414f-8f78-b6a5e4491808")
+	)
+	(fp_line
+		(start 1.75 -2.05)
+		(end -1.75 -2.05)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "109a6277-be92-4e2b-a6d4-737ccf62c5c7")
+	)
+	(fp_line
+		(start 1.75 2.05)
+		(end 1.75 -2.05)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "1ef93a43-ae16-4858-ac1c-f3fcd233dad8")
+	)
+	(fp_line
+		(start -1.25 -1.6)
+		(end 1.25 -1.6)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "b30a6da5-4d01-437b-a261-754ac650e1d8")
+	)
+	(fp_line
+		(start -1.25 1.6)
+		(end -1.25 -1.6)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "ae5c29b9-f2d2-4a63-9925-70e3bf83ba62")
+	)
+	(fp_line
+		(start 1.25 -1.6)
+		(end 1.25 1.6)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "8d271d03-9264-4611-a570-6d93049a1d21")
+	)
+	(fp_line
+		(start 1.25 1.6)
+		(end -1.25 1.6)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "e52bceb4-8a76-4edd-aa7a-ba6e9cc8b257")
+	)
+	(fp_circle
+		(center -2.2 -1.15)
+		(end -2.1 -1.15)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "f2c01dfe-b519-483e-bdbc-01f93e341359")
+	)
+	(pad "1" smd rect
+		(at -0.95 -1.15)
+		(size 1.1 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "56f7bc6e-6c89-4f41-a222-a07b6924d2b4")
+	)
+	(pad "2" smd rect
+		(at -0.95 1.15)
+		(size 1.1 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "81149818-9c23-4931-9cca-0d4689cea6be")
+	)
+	(pad "3" smd rect
+		(at 0.95 1.15)
+		(size 1.1 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "b49cd883-56c8-4435-93bb-9cc42d414e27")
+	)
+	(pad "4" smd rect
+		(at 0.95 -1.15)
+		(size 1.1 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "04c51178-669a-4629-9326-cdcd28310d1e")
+	)
+	(embedded_fonts no)
+	(model "/home/dennis/workspace/dacha/third_party/snapmagic/ASTX_H11_24_000MHZ_T/ASTX-H11-24.000MHZ-T.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz -0 -0 -90)
+		)
+	)
+)

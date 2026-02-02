@@ -69,5 +69,100 @@ libraries: [
     },
     {
         path: "third_party/digikey/AS5601-ASOM"
+    },
+    {
+        path: "third_party/ept/401-51501-51"
+    },
+    {
+        path: "third_party/digikey/3-1827231-6"
+    },
+    {
+        name: "CM5IO",
+        path: "third_party/rpi/cm5io"
+    },
+    {
+        path: "third_party/ultralibrarian/LM65645RZTR"
+    },
+    {
+        path: "third_party/snapmagic/TPS922055DRRR"
+    },
+    {
+        path: "third_party/snapmagic/TPS26625DRCR"
+    },
+    {
+        path: "third_party/snapmagic/TPS2378DDAR"
+    },
+    {
+        path: "third_party/snapmagic/SFH_4715AS_A01"
+    },
+    {
+        path: "third_party/snapmagic/LPJG0926HENL"
+    },
+    {
+        path: "third_party/snapmagic/FH34SRJ-22S-0.5SH_50_"
+    },
+    {
+        path: "third_party/snapmagic/MSS1210-153MED"
+    },
+    {
+        path: "third_party/ultralibrarian/TLP2361_V4_TPL_E"
+    },
+    {
+        path: "third_party/snapmagic/7447709220"
+    },
+    {
+        path: "third_party/ultralibrarian/SRP1265A_220M"
+    },
+    {
+        path: "third_party/snapmagic/BK_912_TR"
+    },
+    {
+        path: "third_party/ultralibrarian/OPT3004DNPR"
+    },
+    {
+        path: "third_party/ultralibrarian/EKMB1101111"
+    },
+    {
+        path: "third_party/ultralibrarian/ADXL362BCCZ_RL"
+    },
+    {
+        path: "third_party/snapmagic/PEC12R_4220F_S0024"
+    },
+    {
+        path: "third_party/ultralibrarian/PEC11S-929K-S0015"
+    },
+    {
+        path: "third_party/snapmagic/FH34SRJ_24S_0_5SH_50_"
+    },
+    {
+        path: "third_party/ultralibrarian/MSS1P3L_M3_89A"
+    },
+    {
+        path: "third_party/snapmagic/TPS22922YZPR"
+    },
+    {
+        path: "third_party/snapmagic/ASPI_4030S_470M_T"
+    },
+    {
+        path: "third_party/snapmagic/DRV5032FBDBZR"
+    },
+    {
+        path: "third_party/rpi/rp2350a"
+    },
+    {
+        path: "third_party/ultralibrarian/ISO7720FDR"
+    },
+    {
+        path: "third_party/snapmagic/530470210"
+    },
+    {
+        path: "third_party/snapmagic/ASTX_H11_24_000MHZ_T"
+    },
+    {
+        path: "third_party/snapmagic/DLM11SN900HZ2L"
+    },
+    {
+        name: "MIRA220ReferenceDesign"
+        path: "third_party/asm_osram/mira220_reference"
     }
 ]

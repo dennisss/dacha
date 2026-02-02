@@ -1,0 +1,179 @@
+(footprint "IND_ASPI-4030S-470M-T"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at -0.268 -2.9064 0)
+		(layer "F.SilkS")
+		(uuid "b4ec5437-d993-4456-8c3f-8beac2be38b5")
+		(effects
+			(font
+				(size 0.64 0.64)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "IND_ASPI-4030S-470M-T"
+		(at 6.2344 2.9064 0)
+		(layer "F.Fab")
+		(uuid "a7b88542-c4f1-4d00-b3f4-1263fb85d6ed")
+		(effects
+			(font
+				(size 0.64 0.64)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "a91bfa55-e3e2-4417-8f75-74d75564d4ce")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "72e3af2e-733d-4983-9f37-236ad86338a7")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -0.63 -2)
+		(end 0.63 -2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "31fae4ff-6025-49be-9633-037913cd1036")
+	)
+	(fp_line
+		(start -0.63 2)
+		(end 0.63 2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "c1f31103-d915-45c9-820d-67f1581dc71d")
+	)
+	(fp_line
+		(start -2.3 -2.25)
+		(end -2.3 2.25)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "70132d5c-a43f-40e2-8a3b-bd968b24e269")
+	)
+	(fp_line
+		(start -2.3 2.25)
+		(end 2.3 2.25)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "d8640a07-102a-4e92-ac97-234183564473")
+	)
+	(fp_line
+		(start 2.3 -2.25)
+		(end -2.3 -2.25)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "21e97161-4a12-4a8f-9179-72b55cd71d57")
+	)
+	(fp_line
+		(start 2.3 2.25)
+		(end 2.3 -2.25)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "4d7a253f-9f27-4242-9a94-27c90912c203")
+	)
+	(fp_line
+		(start -2 -2)
+		(end -2 2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "47dbc69e-bf15-44f8-a177-e1ccb9081817")
+	)
+	(fp_line
+		(start -2 -2)
+		(end 2 -2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "1927c11c-759c-41fc-b4a2-fedf8e8ccd7f")
+	)
+	(fp_line
+		(start -2 2)
+		(end 2 2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "cd95a873-40be-4e22-8d95-44b74b9fdc09")
+	)
+	(fp_line
+		(start 2 -2)
+		(end 2 2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "91aa8311-40d8-45a5-894c-8197ff92306d")
+	)
+	(pad "1" smd rect
+		(at -1.5 0)
+		(size 1.1 3.4)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "ffe1f7a1-41ff-433c-b234-351a9a2ee87f")
+	)
+	(pad "2" smd rect
+		(at 1.5 0)
+		(size 1.1 3.4)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "c796c842-65d6-4b7d-8096-65ff92f25bb7")
+	)
+	(embedded_fonts no)
+	(model "${DACHA_DIR}/third_party/snapmagic/ASPI_4030S_470M_T/ASPI-4030S-470M-T.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz -90 -0 -0)
+		)
+	)
+)

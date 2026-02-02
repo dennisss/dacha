@@ -1,0 +1,61 @@
+
+(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)
+  (symbol "BK-912-TR" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
+    (property "Reference" "BT" (id 0) (at -1.27 3.175 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Value" "BK-912-TR" (id 1) (at -1.27 -5.08 0)
+      (effects (font (size 1.27 1.27)) (justify bottom left))
+    )
+    (property "Footprint" "BK-912-TR:MPD_BK-912-TR" (id 2) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "PARTREV" "H" (id 4) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "STANDARD" "Manufacturer Recommendations" (id 5) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (property "MANUFACTURER" "MPD" (id 6) (at 0 0 0)
+      (effects (font (size 1.27 1.27)) (justify bottom) hide)
+    )
+    (symbol "BK-912-TR_0_0"
+      (polyline
+        (pts (xy -2.54 0.0) (xy -0.635 0.0)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy -0.635 0.635) (xy -0.635 -0.635)) (stroke (width 0.4064))
+      )
+      (polyline
+        (pts (xy 0.635 0.0) (xy 2.54 0.0)) (stroke (width 0.1524))
+      )
+      (polyline
+        (pts (xy 0.635 2.54) (xy 0.635 -2.54)) (stroke (width 0.4064))
+      )
+      (pin passive line (at -5.08 0.0 0) (length 2.54)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "3"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at 5.08 0.0 180.0) (length 2.54)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "1"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+      (pin passive line (at 5.08 0.0 180.0) (length 2.54)
+        (name "~"
+          (effects (font (size 1.016 1.016)))
+        )
+        (number "2"
+          (effects (font (size 1.016 1.016)))
+        )
+      )
+    )
+  )
+)
