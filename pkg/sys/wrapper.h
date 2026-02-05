@@ -17,6 +17,8 @@
 #include <linux/prctl.h>
 #include <linux/capability.h>
 #include <linux/netlink.h>
+#include <linux/i2c.h>
+#include <linux/i2c-dev.h>
 #include <netinet/ip.h>
 #include <pthread.h>
 #include <scsi/sg.h>

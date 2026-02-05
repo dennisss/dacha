@@ -1625,6 +1625,11 @@ files: [
         sha256_sum: "e40bff9a75c101053423da7080f962fdac2bed244e5c0bb56962345ab873a155"
     },
     {
+        path: "pkg/cnc/machines/voron_0/toolboard/xt30-cable-relief.stl"
+        size: 67584
+        sha256_sum: "3bd1651ba6ba95dec91e6a3e7fd8a6cc3ec9e0abbf859ce69c25810208f4ded7"
+    },
+    {
         path: "pkg/fan_controller/board-r3/plot/board-B_Cu.gbl"
         size: 51227
         sha256_sum: "289d0b48407b3c050b2f7e1f72eebf1605ce67262871c4e35d09ff631a25bf15"
@@ -1773,6 +1778,11 @@ files: [
         path: "pkg/fan_controller/board-v0.1/plot/board.drl"
         size: 1539
         sha256_sum: "23328a708aa85cde9e1ae9ca0c7c8af431ff071b09ef728eb3218add84e87adf"
+    },
+    {
+        path: "pkg/media/camera/boards/camera_mira220/r1/plot.zip"
+        size: 86932
+        sha256_sum: "7a7d72f303b429e487008a9cef5d04497a82647ef1f1b0ff4ee24a65d001fb5a"
     },
     {
         path: "pkg/media/thermal/doc/thermal_master_p2/tripod_mount/images/image-1.jpg"
@@ -2180,6 +2190,11 @@ files: [
         sha256_sum: "a0817e99540ba4e9319381902ba16443847a08474b0fc5306b1543675abf34a7"
     },
     {
+        path: "third_party/noto_color_emoji/NotoColorEmoji-Regular.ttf"
+        size: 25096376
+        sha256_sum: "69f216a4ec672bb910d652678301ffe3094c44e5d03276e794ef793d936a1f1d"
+    },
+    {
         path: "third_party/rpi/cm5io/CM5IO.3dshapes/10164227-1001a1rlf.stp"
         size: 2724486
         sha256_sum: "f0cd3739094465c8d0670b5895e0f6b5dd9885e02f48acfc6b06976833adce9a"
@@ -2523,5 +2538,10 @@ files: [
         path: "third_party/voron_0/skirt_rear_keystone/voron-02r1-rear-skirt.step"
         size: 1458577
         sha256_sum: "4c2a4e0ec26984d15345bb3a315fb2fca846a95b9e73f010b926b3b712077cb9"
+    },
+    {
+        path: "third_party/yacs/yacs.stl"
+        size: 322663
+        sha256_sum: "a265cc8297918136f291fb84ecf0d785c2bf080de94659a85b3f8f9dec3e27d7"
     }
 ]

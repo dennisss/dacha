@@ -1,6 +1,14 @@
 //!
 
 /*
+cargo run --bin builder -- build //pkg/peripherals/tools:i2c --config=//pkg/builder/config:rpi64
+scp -i ~/.ssh/id_cluster built/pkg/peripherals/tools/i2c cluster-user@10.1.1.3:~
+
+./i2c write --bus=/dev/i2c-10 --addr=96 --data=300a
+
+
+
+
 cargo build --target aarch64-unknown-linux-gnu --release --bin i2c
 
 scp -i ~/.ssh/id_cluster target/aarch64-unknown-linux-gnu/release/i2c cluster-user@10.1.1.3:~
@@ -33,7 +41,6 @@ struct Args {
     /// Path to the I2C bus (e.g. "/dev/i2c-1")
     bus: String,
 
-    #[arg(positional)]
     command: Command,
 }
 
@@ -56,7 +63,48 @@ enum Command {
     DS3231,
 
     #[arg(name = "as5601")]
-    AS5601
+    AS5601,
+
+    #[arg(name = "write")]
+    Write(WriteCommand),
+
+    #[arg(name = "read")]
+    Read(ReadCommand),
+}
+
+#[derive(Args)]
+struct WriteCommand {
+    data: String,
+    addr: u8,
+    #[arg(default = false)]
+    force: bool
+}
+
+async fn run_write(mut bus: I2CHostController, cmd: WriteCommand) -> Result<()> {
+    let data = base_radix::hex_decode(&cmd.data)?;
+
+
+    let mut dev = bus.device(cmd.addr);
+    dev.set_force(cmd.force);
+    dev.write(&data).await?;
+    Ok(())
+}
+
+#[derive(Args)]
+struct ReadCommand {
+    num: usize,
+    addr: u8,
+    #[arg(default = false)]
+    force: bool
+}
+
+async fn run_read(mut bus: I2CHostController, cmd: ReadCommand) -> Result<()> {
+    let mut data = vec![0u8; cmd.num];
+    let mut dev = bus.device(cmd.addr);
+    dev.set_force(cmd.force);
+    dev.read(&mut data).await?;
+    println!("{:02x?}", data);
+    Ok(())
 }
 
 async fn run_scan(mut bus: I2CHostController) -> Result<()> {
@@ -166,7 +214,9 @@ async fn main() -> Result<()> {
         Command::TrustM => run_trust_m(bus).await?,
         Command::SGP30 => run_sgp30(bus).await?,
         Command::DS3231 => run_ds3231(bus).await?,
-        Command::AS5601 => run_as5601(bus).await?
+        Command::AS5601 => run_as5601(bus).await?,
+        Command::Write(cmd) => run_write(bus, cmd).await?,
+        Command::Read(cmd) => run_read(bus, cmd).await?,
     }
 
     Ok(())

@@ -14,6 +14,11 @@ rust_binary(
 )
 
 rust_binary(
+    name = "i2c",
+    bin = "i2c"
+)
+
+rust_binary(
     name = "adxl_read",
     bin = "adxl_read"
 )

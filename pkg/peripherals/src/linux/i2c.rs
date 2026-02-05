@@ -7,6 +7,8 @@ use std::{
 
 use common::errors::*;
 use executor::sync::AsyncMutex;
+use sys::bindings::{I2C_RETRIES, I2C_SLAVE, I2C_SLAVE_FORCE};
+use sys::ioctl;
 
 /*
 TODO: Use async files, but we should ensure that they aren't buffering the reads/writes.
@@ -16,16 +18,14 @@ https://www.kernel.org/doc/html/v5.5/i2c/dev-interface.html
 All ioctl commands return -1 on error. 0 on success. Read values read the read value.
 */
 
-mod linux {
-    const I2C_IOC_MAGIC: u8 = 0x07;
-
-    const I2C_IOC_TYPE_SLAVE: u8 = 0x03;
-
-    ioctl_write_int!(i2c_set_peripheral_addr, I2C_IOC_MAGIC, I2C_IOC_TYPE_SLAVE);
-}
-
 pub struct I2CHostController {
     file: Arc<AsyncMutex<std::fs::File>>,
+}
+
+#[derive(Clone, Copy)]
+pub enum I2CTestResponse {
+    Available,
+    KernelClaimed,
 }
 
 impl I2CHostController {
@@ -37,8 +37,7 @@ impl I2CHostController {
 
         // TODO: Should be more specific about the frequency.
 
-        let r = unsafe { libc::ioctl(file.as_raw_fd(), 0x0701 as libc::c_ulong, 0) };
-        if r != 0 {
+        if let Err(e) = unsafe { ioctl(file.as_raw_fd(), I2C_RETRIES, 0) } {
             return Err(err_msg("Failed to set retries"));
         }
 
@@ -47,58 +46,38 @@ impl I2CHostController {
         })
     }
 
-    pub async fn test(&mut self, addr: u8) -> Result<bool> {
+    pub async fn test(&mut self, addr: u8) -> Result<I2CTestResponse> {
         let file = self.file.lock().await?.read_exclusive();
 
-        let r = unsafe { libc::ioctl(file.as_raw_fd(), 0x0703 as libc::c_ulong, addr as u64) };
-        if r != 0 {
-            return Err(err_msg("Failed to set addr"));
+        match unsafe { ioctl(file.as_raw_fd(), sys::bindings::I2C_SLAVE, addr as u64) } {
+            Ok(_) => {}
+            Err(sys::Errno::EBUSY) => {
+                return Ok(I2CTestResponse::KernelClaimed);
+            }
+            Err(_) => {
+                return Err(err_msg("Failed to set addr"));
+            }
         }
-
-        // let r = unsafe { linux::i2c_set_peripheral_addr(self.file.as_raw_fd(), addr
-        // as u64) }?; println!("SET ADDR RESULT: {}", r);
-
-        // println!("READ");
 
         let mut data = [0u8; 1];
         let n = file.read_at(&mut data, 0)?;
-        // println!("N: {}", n);
 
-        Ok(true)
+        Ok(I2CTestResponse::Available)
     }
 
-    // TODO: Dedup with the Device function.
     pub async fn write(&mut self, addr: u8, data: &[u8]) -> Result<()> {
-        let file = self.file.lock().await?.read_exclusive();
-
-        let r = unsafe { libc::ioctl(file.as_raw_fd(), 0x0703 as libc::c_ulong, addr as u64) };
-        if r != 0 {
-            return Err(err_msg("Failed to set addr"));
-        }
-
-        file.write_all_at(data, 0)?;
-
-        Ok(())
+        self.device(addr).write(data).await
     }
 
-    // TODO: Dedup with the Device function.
     pub async fn read(&mut self, addr: u8, output: &mut [u8]) -> Result<()> {
-        let file = self.file.lock().await?.read_exclusive();
-
-        let r = unsafe { libc::ioctl(file.as_raw_fd(), 0x0703 as libc::c_ulong, addr as u64) };
-        if r != 0 {
-            return Err(err_msg("Failed to set addr"));
-        }
-
-        file.read_exact_at(output, 0)?;
-
-        Ok(())
+        self.device(addr).read(output).await
     }
 
     pub fn device(&self, addr: u8) -> I2CHostDevice {
         I2CHostDevice {
             file: self.file.clone(),
             addr,
+            force: false,
         }
     }
 }
@@ -106,17 +85,30 @@ impl I2CHostController {
 pub struct I2CHostDevice {
     file: Arc<AsyncMutex<std::fs::File>>,
     addr: u8,
+    force: bool,
 }
 
 impl I2CHostDevice {
+
+    /// Configures if operations should be forced.
+    /// When 'forced', operations will not fail by the kernel has locked the address.
+    pub fn set_force(&mut self, force: bool) {
+        self.force = force;
+    }
+
+    fn configure_addr(&self, file: &std::fs::File) -> Result<()> {
+        let cmd = if self.force { I2C_SLAVE_FORCE } else { I2C_SLAVE };
+        if let Err(e) = unsafe { ioctl(file.as_raw_fd(), sys::bindings::I2C_SLAVE, self.addr as u64) } {
+            return Err(format_err!("Failed to set i2c addr: {}", e));
+        }
+        
+        Ok(())
+    }
+
     pub async fn write(&mut self, data: &[u8]) -> Result<()> {
         let file = self.file.lock().await?.read_exclusive();
 
-        let r = unsafe { libc::ioctl(file.as_raw_fd(), 0x0703 as libc::c_ulong, self.addr as u64) };
-        if r != 0 {
-            return Err(err_msg("Failed to set addr"));
-        }
-
+        self.configure_addr(&file)?;
         file.write_all_at(data, 0)?;
 
         Ok(())
@@ -125,11 +117,7 @@ impl I2CHostDevice {
     pub async fn read(&mut self, output: &mut [u8]) -> Result<()> {
         let file = self.file.lock().await?.read_exclusive();
 
-        let r = unsafe { libc::ioctl(file.as_raw_fd(), 0x0703 as libc::c_ulong, self.addr as u64) };
-        if r != 0 {
-            return Err(err_msg("Failed to set addr"));
-        }
-
+        self.configure_addr(&file)?;
         file.read_exact_at(output, 0)?;
 
         Ok(())

@@ -192,19 +192,19 @@ Each expander will be powered from a single PSU.
     - 3 x M4 nuts
     - 3 x M4 washers
 - For attaching the disk retainer to the frame
-    - 8 x `M3 x 5.7mm` heatset inserts
+    - 8 x `M3 x 5.7mm long x 4.6mm OD` heatset inserts (for a 4.1mm diameter hole)
     - 8 x M3 6mm button head screws
 - For attaching the backplanes to the standoffs:
     - 48 x `M3 x 6mm` button head screws
-    - 96 x M3 x 3mm short heatset inserts in all the 3d printed 18mm standoffs
+    - 96 x `M3 x 3mm long x 4.6mm OD` short heatset inserts in all the 3d printed 18mm standoffs
 - For attaching SAS expanders to the management holder
     - 3 x `M4 x 4mm` heatset inserts
     - 3 x `M4 24mm` screws
 - For attaching the management board to the management holder
-    - 2 x `M2 x 3 x 3.5mm` heatset inserts
+    - 2 x `M2 x 3mm long x 3.5mm OD` heatset inserts
     - 2 x M2 4mm machine screws
 - For attaching LED strips to the disk retainer
-    - 24 x `M2 x 3 x 3.5mm` heatset inserts
+    - 24 x `M2 x 3mm long x 3.5mm OD` heatset inserts
     - 24 x 3d printed M2 washers
     - 24 x M2 6mm machine screws
 - For connecting the two halfs of the disk retainer
@@ -215,6 +215,9 @@ Each expander will be powered from a single PSU.
     - CA / super glue
 - Magnets for the management holder
     - 4 x 6mm diameter 2mm tall 
+- Screws for attaching backplane standoffs to the main frame
+    - 48 x [SSH-M3-6-EL](https://www.nbk1560.com/en-US/products/specialscrew/nedzicom/lowsmallheadscrew/SSH-EL/SSH-M3-EL/SSH-M3-6-EL/)
+    - These are an alternative to getting threaded stubs installed into the main body frame. These is enough tolerance such that the JBOD should fit in a standard 4U slot with either these or PEM inserts.
 
 Note that I got all the M3 and M4 heatset inserts from CNC Kitchen.
 
@@ -329,3 +332,70 @@ cargo run --bin flasher built/pkg/nordic/nordic_radio_dongle uf2-dfu
 
 The software to control the management board from a computer is located in [//pkg/cluster/jbod/index.md
 ](/pkg/cluster/jbod/index.md).
+
+
+### Benchmarking
+
+Assuming you have a ZFS pool named `glacier`, these are the commands I used to benchmark sequential and random read/write performance of the pool. Note that we are intentionalyl not testing compression, caching, etc. since these factors don't represent the actual JBOD performance.
+
+```
+sudo zfs set mountpoint=/zfs/glacier glacier
+sudo zfs set atime=off glacier
+sudo zfs set relatime=off glacier
+sudo zfs set compression=off glacier
+sudo zfs set recordsize=1M glacier
+
+sudo zfs create glacier/test
+sudo zfs set primarycache=metadata glacier/test
+
+sudo zfs create glacier/test-4k
+sudo zfs set primarycache=metadata glacier/test-4k
+sudo zfs set recordsize=4k glacier/test-4k
+
+sudo fio --name=seq_write \
+    --filename=/zfs/glacier/test/fio_test \
+    --size=100G \
+    --rw=write \
+    --bs=1M \
+    --ioengine=sync \
+    --iodepth=1 \
+    --numjobs=1 \
+    --direct=0 \
+    --zero_buffers=1 \
+    --end_fsync=1
+
+sudo fio --name=seq_read \
+    --filename=/zfs/glacier/test/fio_test \
+    --size=100G \
+    --rw=read \
+    --bs=1M \
+    --ioengine=sync \
+    --iodepth=1 \
+    --numjobs=1 \
+    --direct=0
+
+sudo fio --name=rand_write \
+    --filename=/zfs/glacier/test-4k/fio_test \
+    --size=20G \
+    --rw=randwrite \
+    --bs=4k \
+    --ioengine=libaio \
+    --iodepth=16 \
+    --numjobs=1 \
+    --direct=1 \
+    --end_fsync=1 \
+    --runtime=60 \
+    --time_based
+
+sudo fio --name=rand_read \
+    --filename=/zfs/glacier/test-4k/fio_test \
+    --size=20G \
+    --rw=randread \
+    --bs=4k \
+    --ioengine=libaio \
+    --iodepth=16 \
+    --numjobs=1 \
+    --direct=1 \
+    --runtime=60 \
+    --time_based
+```
