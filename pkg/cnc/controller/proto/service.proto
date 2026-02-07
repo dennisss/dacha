@@ -50,17 +50,17 @@ message SetServoPosition {
 }
 
 message MoveToCommand {
-    float x = 1;
-    float y = 2;
-    float z = 3;
-    float e = 4;
+    double x = 1;
+    double y = 2;
+    double z = 3;
+    double e = 4;
 
     // Alternative way to specify the next position
     VectorProto position = 8;
 
-    float feed_rate = 5;
+    double feed_rate = 5;
 
-    float max_acceleration = 6;
+    double max_acceleration = 6;
 
     bool towards_endstop = 7;
 }
@@ -76,7 +76,7 @@ message SetPosition {
 }
 
 message ConfigureCommand {
-    float max_junction_deviation = 1;
+    double max_junction_deviation = 1;
 }
 
 message GetPositionRequest {
@@ -88,7 +88,7 @@ message GetPositionResponse {
 }
 
 message VectorProto {
-    repeated float values = 1;
+    repeated double values = 1;
 }
 
 message SkewData {
@@ -107,7 +107,7 @@ message SkewData {
 }
 
 message MatrixProto {
-    repeated float values = 1;
+    repeated double values = 1;
     uint32 rows = 2;
     uint32 cols = 3;
 }

@@ -1,4 +1,4 @@
-use math::matrix::{VectorXf, MatrixXf};
+use math::matrix::{VectorXd, MatrixXd};
 use cnc_controller_proto::cnc::{VectorProto, MatrixProto};
 
 pub trait VectorProtoExt {
@@ -7,9 +7,9 @@ pub trait VectorProtoExt {
     fn to_proto(&self) -> VectorProto;
 }
 
-impl VectorProtoExt for VectorXf {
+impl VectorProtoExt for VectorXd {
     fn from_proto(p: &VectorProto) -> Self {
-        VectorXf::from_slice_with_shape(p.values().len(), 1, p.values())
+        VectorXd::from_slice_with_shape(p.values().len(), 1, p.values())
     }
 
     fn to_proto(&self) -> VectorProto {
@@ -27,10 +27,10 @@ pub trait MatrixProtoExt {
     fn to_proto(&self) -> MatrixProto;
 }
 
-impl MatrixProtoExt for MatrixXf {
+impl MatrixProtoExt for MatrixXd {
     // TODO: Need size validation
     fn from_proto(p: &MatrixProto) -> Self {
-        MatrixXf::from_slice_with_shape(p.rows() as usize, p.cols() as usize, p.values())
+        MatrixXd::from_slice_with_shape(p.rows() as usize, p.cols() as usize, p.values())
     }
 
     fn to_proto(&self) -> MatrixProto {

@@ -2,7 +2,7 @@
 ///
 ///
 /// Returns the smallest time value >= 0.
-pub fn time_to_travel(displacement: f32, start_velocity: f32, acceleration: f32) -> f32 {
+pub fn time_to_travel(displacement: f64, start_velocity: f64, acceleration: f64) -> f64 {
     if displacement == 0.0 {
         return 0.0;
     }
@@ -22,7 +22,7 @@ pub fn time_to_travel(displacement: f32, start_velocity: f32, acceleration: f32)
     }
 }
 
-pub fn displacement_traveled(start_velocity: f32, acceleration: f32, duration: f32) -> f32 {
+pub fn displacement_traveled(start_velocity: f64, acceleration: f64, duration: f64) -> f64 {
     ((acceleration / 2.0) * duration * duration) + (start_velocity * duration)
 }
 

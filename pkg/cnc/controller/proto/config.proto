@@ -108,7 +108,7 @@ message MotionControllerConfig {
     message Motor {
         string device_name = 1;
         bool inverted = 2;
-        float steps_per_mm = 3;
+        double steps_per_mm = 3;
     }
 
     repeated Motor motors = 1;
@@ -122,10 +122,10 @@ message MotionControllerConfig {
 
 message Axis {
     // (also used as the default acceleration)
-    float max_acceleration = 1;
+    double max_acceleration = 1;
 
     // (also used as the default speed)
-    float max_speed = 2;
+    double max_speed = 2;
 
     string name = 3;
 
@@ -186,20 +186,20 @@ message AxisGeometry {
 }
 
 message ZProbeConfig {
-    float travel_feed_rate_xy = 1;
+    double travel_feed_rate_xy = 1;
     
-    float travel_feed_rate_z = 2;
+    double travel_feed_rate_z = 2;
     
-    float probe_feed_rate = 3;
+    double probe_feed_rate = 3;
     
-    float travel_position_z = 4;
+    double travel_position_z = 4;
     
-    float probe_position_z = 5;
+    double probe_position_z = 5;
 
     // After homing, if the Z position of the bed is probed to
     // be > this distance from the origin (Z=0), then we will
     // reject the point as noise and  
-    float max_origin_deviation = 6;
+    double max_origin_deviation = 6;
 
     // Maximum number of times we will attempt to probe a single (x,y) point.
     uint32 max_probe_attempts = 7;

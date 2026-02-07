@@ -23,7 +23,7 @@ pub struct StepDurationSchedule {
 
 impl StepDurationSchedule {
 
-    pub fn create(start_velocity: f32, acceleration: f32, num_steps: u32, clock_frequency: u32) -> Self {
+    pub fn create(start_velocity: f64, acceleration: f64, num_steps: u32, clock_frequency: u32) -> Self {
 
         let (next_duration, next_i) = {
             if start_velocity <= 0.01 {
@@ -41,7 +41,7 @@ impl StepDurationSchedule {
 
         Self {
             // TODO: Round?
-            next_duration: (next_duration * (clock_frequency as f32)) as u32,
+            next_duration: (next_duration * (clock_frequency as f64)) as u32,
             next_i,
             num_steps,
             accelerating: acceleration > 0.0 

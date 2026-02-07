@@ -2,8 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use math::matrix::VectorXf;
-use math::vecxf;
+use math::vecxd;
 use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
 use cluster_client::ClusterServer;

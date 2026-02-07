@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use math::matrix::VectorXf;
-use math::vecxf;
+use math::matrix::VectorXd;
+use math::vecxd;
 use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
 use cluster_client::ClusterServer;
@@ -81,7 +81,7 @@ impl MachineController {
         /*
         // TODO: At most one execute request should be allowed to run at a time.
 
-    pub fn set_max_junction_deviation(&mut self, value: f32) {
+    pub fn set_max_junction_deviation(&mut self, value: f64) {
         self.config.set_max_junction_deviation(value);
     }
         */
@@ -102,11 +102,11 @@ impl MachineController {
                 let v = {
                     if cmd.has_position() {
                         // TODO: Make sure this has checks on number of axes
-                        VectorXf::from_proto(cmd.position())
+                        VectorXd::from_proto(cmd.position())
                     } else {
                         let mut points = vec![cmd.x(), cmd.y(), cmd.z(), cmd.e()];
                         points.truncate(self.motion_controller.num_axes());
-                        VectorXf::from_slice_with_shape(points.len(), 1, &points)
+                        VectorXd::from_slice_with_shape(points.len(), 1, &points)
                     }
                 };
 
@@ -131,7 +131,7 @@ impl MachineController {
                 self.motion_controller.wait_until_idle().await?;
 
                 let cmd = cmd.set_position();
-                let v = VectorXf::from_proto(cmd.position());
+                let v = VectorXd::from_proto(cmd.position());
 
                 self.motion_controller.set_position(v).await?;
 
@@ -164,7 +164,7 @@ impl MachineController {
 
                 self.motion_controller.wait_until_idle().await?;
 
-                let zero = VectorXf::zero_with_shape(num_axes, 1);
+                let zero = VectorXd::zero_with_shape(num_axes, 1);
                 self.motion_controller.set_position(zero.clone()).await?;
 
                 println!("Zeroed!");
@@ -302,8 +302,8 @@ impl MachineController {
     // TODO: Failure of this should trigger an alarm (even if done by a remote script).
     async fn move_towards_endstop(
         &self,
-        position: VectorXf,
-        feed_rate: f32,
+        position: VectorXd,
+        feed_rate: f64,
     ) -> Result<()> {
         if position.len() != self.config.motion_controller().axes().len() {
             return Err(err_msg("Wrong number of dimensions in position"));

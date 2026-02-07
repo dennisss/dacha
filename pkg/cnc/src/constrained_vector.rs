@@ -1,9 +1,9 @@
-use math::matrix::VectorXf;
+use math::matrix::VectorXd;
 
 /// Gets the largest magnitude vector pointing in the same direction as
 /// 'direction' which ensuring that no axis exceeds the component wise
 /// magnitude 
-pub fn constrained_vector(direction: &VectorXf, axis_limits: &[f32]) -> VectorXf {
+pub fn constrained_vector(direction: &VectorXd, axis_limits: &[f64]) -> VectorXd {
     assert_eq!(axis_limits.len(), direction.len());
 
     let mut direction = direction.clone().normalized();
@@ -44,31 +44,31 @@ pub fn constrained_vector(direction: &VectorXf, axis_limits: &[f32]) -> VectorXf
 mod tests {
     use super::*;
 
-    use math::vecxf;
+    use math::vecxd;
 
     #[test]
     fn constrained_vector_test() {
-        assert_eq!(constrained_vector(&vecxf!(100.0), &[20.0]), vecxf!(20.0));
-        assert_eq!(constrained_vector(&vecxf!(100.0, 0.0), &[20.0, 0.0]), vecxf!(20.0, 0.0));
-        assert_eq!(constrained_vector(&vecxf!(100.0, 0.0), &[20.0, 20.0]), vecxf!(20.0, 0.0));
-        assert_eq!(constrained_vector(&vecxf!(100.0, 0.0), &[20.0, 40.0]), vecxf!(20.0, 0.0));
-        assert_eq!(constrained_vector(&vecxf!(100.0, 0.0), &[40.0, 20.0]), vecxf!(40.0, 0.0));
-        assert_eq!(constrained_vector(&vecxf!(0.0, 100.0), &[40.0, 20.0]), vecxf!(0.0, 20.0));
-        assert_eq!(constrained_vector(&vecxf!(0.0, 100.0), &[20.0, 40.0]), vecxf!(0.0, 40.0));
-        assert_eq!(constrained_vector(&vecxf!(50.0, 50.0), &[20.0, 40.0]), vecxf!(20.0, 20.0));
-        assert_eq!(constrained_vector(&vecxf!(40.0, 60.0), &[20.0, 40.0]), vecxf!(20.0, 30.0));
-        assert_eq!(constrained_vector(&vecxf!(60.0, 40.0), &[40.0, 20.0]), vecxf!(30.0, 20.0));
+        assert_eq!(constrained_vector(&vecxd!(100.0), &[20.0]), vecxd!(20.0));
+        assert_eq!(constrained_vector(&vecxd!(100.0, 0.0), &[20.0, 0.0]), vecxd!(20.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(100.0, 0.0), &[20.0, 20.0]), vecxd!(20.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(100.0, 0.0), &[20.0, 40.0]), vecxd!(20.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(100.0, 0.0), &[40.0, 20.0]), vecxd!(40.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(0.0, 100.0), &[40.0, 20.0]), vecxd!(0.0, 20.0));
+        assert_eq!(constrained_vector(&vecxd!(0.0, 100.0), &[20.0, 40.0]), vecxd!(0.0, 40.0));
+        assert_eq!(constrained_vector(&vecxd!(50.0, 50.0), &[20.0, 40.0]), vecxd!(20.0, 20.0));
+        assert_eq!(constrained_vector(&vecxd!(40.0, 60.0), &[20.0, 40.0]), vecxd!(20.0, 30.0));
+        assert_eq!(constrained_vector(&vecxd!(60.0, 40.0), &[40.0, 20.0]), vecxd!(30.0, 20.0));
 
-        assert_eq!(constrained_vector(&vecxf!(0.0, 40.0, 60.0, 0.0), &[0.0, 20.0, 40.0, 0.0]), vecxf!(0.0, 20.0, 30.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(0.0, 40.0, 60.0, 0.0), &[0.0, 20.0, 40.0, 0.0]), vecxd!(0.0, 20.0, 30.0, 0.0));
         
-        assert_eq!(constrained_vector(&vecxf!(60.0, -40.0), &[40.0, 20.0]), vecxf!(30.0, -20.0));
-        assert_eq!(constrained_vector(&vecxf!(-60.0, 40.0), &[40.0, 20.0]), vecxf!(-30.0, 20.0));
+        assert_eq!(constrained_vector(&vecxd!(60.0, -40.0), &[40.0, 20.0]), vecxd!(30.0, -20.0));
+        assert_eq!(constrained_vector(&vecxd!(-60.0, 40.0), &[40.0, 20.0]), vecxd!(-30.0, 20.0));
 
-        assert_eq!(constrained_vector(&vecxf!(-60.0, 40.0), &[40.0, 0.0]), vecxf!(0.0, 0.0));
-        assert_eq!(constrained_vector(&vecxf!(-60.0, 40.0), &[0.0, 10.0]), vecxf!(0.0, 0.0));
-        assert_eq!(constrained_vector(&vecxf!(-60.0, 40.0), &[0.0, 0.0]), vecxf!(0.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(-60.0, 40.0), &[40.0, 0.0]), vecxd!(0.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(-60.0, 40.0), &[0.0, 10.0]), vecxd!(0.0, 0.0));
+        assert_eq!(constrained_vector(&vecxd!(-60.0, 40.0), &[0.0, 0.0]), vecxd!(0.0, 0.0));
 
-        println!("{:?}", constrained_vector(&vecxf!(2.106, -0.434, 0.0, 0.0), &[ 40.0, 40.0, 12.0, 0.0 ]));
+        println!("{:?}", constrained_vector(&vecxd!(2.106, -0.434, 0.0, 0.0), &[ 40.0, 40.0, 12.0, 0.0 ]));
 
     }
 

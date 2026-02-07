@@ -9,8 +9,8 @@ use common::hash::FastHasherBuilder;
 use executor::lock;
 use executor::sync::AsyncMutex;
 use cnc::linear_motion_planner::*;
-use math::matrix::VectorXf;
-use math::vecxf;
+use math::matrix::VectorXd;
+use math::vecxd;
 use peripherals_proto::peripherals::StepperMotorMotion_Direction;
 use peripherals_proto::peripherals::StepperMotorStatus_StoppedReason;
 use peripherals_proto::peripherals::StepperMotorMotion;
@@ -156,7 +156,7 @@ struct State {
 
 enum Action {
     Motions(MotionControllerLinearPlanner),
-    SetPosition(VectorXf),
+    SetPosition(VectorXd),
     
 }
 
@@ -299,7 +299,7 @@ impl MotionController {
                 mode: MotionControllerMode::Disabled,
                 next_mode: None,
                 desired_mode: None,
-                position_offset: VectorXf::zero_with_shape(config.motors().len(), 1),
+                position_offset: VectorXd::zero_with_shape(config.motors().len(), 1),
                 first_motion_time: Instant::now(), // doesn't matter
                 planner: MotionControllerLinearPlanner::new(config.clone()),
                 active: false,
@@ -701,7 +701,7 @@ state.active = false;
                             // NOTE: We only use the end_position and time in each of these objects.
                             let mut motions = vec![];
                             // TODO: Need to use the duration returned by this (yes since we don't know if we fully saturated the time span)
-                            state.planner.next(PLANNER_STEP_SIZE.as_secs_f32(), 10000, &mut motions);
+                            state.planner.next(PLANNER_STEP_SIZE.as_secs_f64(), 10000, &mut motions);
 
                             for motion in motions {
                                 // TODO: Should warn if the motion was delayed relative to the previous one.
@@ -957,7 +957,7 @@ state.active = false;
             self.check_accepting_movements(&state)?;
 
             state.position_offset = position;
-            state.planner.set_start_position(VectorXf::zero_with_shape(num_axes, 1));
+            state.planner.set_start_position(VectorXd::zero_with_shape(num_axes, 1));
 
             for i in 0..state.motor_positions.len() {
                 state.motor_position_offsets[i] += state.motor_positions[i];
@@ -969,7 +969,7 @@ state.active = false;
     }
 
     /// Returns the last position to which the motion controller will move to.
-    pub async fn last_position(&self) -> Result<VectorXf> {
+    pub async fn last_position(&self) -> Result<VectorXd> {
         lock!(state <= self.shared.state.lock().await?, {
             Ok(state.planner.last_position().clone() + &state.position_offset)
         })
@@ -1022,9 +1022,8 @@ state.active = false;
     ///
     /// Note that this blocks until the movement is schedules but the actual motion
     /// will happen later.
-    pub async fn move_to(&self, pos: VectorXf, feed_rate: f32) -> Result<()> {
-        
-        // TODO: Basically only allow this in the Enabled mode.
+    pub async fn move_to(&self, pos: VectorXd, feed_rate: f64) -> Result<()> {
+                // TODO: Basically only allow this in the Enabled mode.
 
         // TODO: Quantize to step unit boundaries.
 
@@ -1046,7 +1045,7 @@ state.active = false;
         })
     }
 
-    pub async fn set_max_junction_deviation(&self, value: f32) -> Result<()> {
+    pub async fn set_max_junction_deviation(&self, value: f64) -> Result<()> {
         lock!(state <= self.shared.state.lock().await?, {
             state.planner.set_max_junction_deviation(value);
         });
@@ -1066,7 +1065,7 @@ impl MotionControllerLinearPlanner {
     pub fn new(config: Arc<MotionControllerConfig>) -> Self {
         Self {
             inner: LinearMotionPlanner::new(
-                VectorXf::zero_with_shape(config.axes().len(), 1),
+                VectorXd::zero_with_shape(config.axes().len(), 1),
                 config.planner().clone()
             ),
             config
@@ -1075,22 +1074,22 @@ impl MotionControllerLinearPlanner {
 
     pub fn next(
         &mut self,
-        max_duration: f32,
+        max_duration: f64,
         max_count: usize,
         out: &mut Vec<LinearMotion>
     ) {
         self.inner.next(max_duration, max_count, out);
     }
 
-    pub fn set_max_junction_deviation(&mut self, value: f32) {
+    pub fn set_max_junction_deviation(&mut self, value: f64) {
         self.inner.set_max_junction_deviation(value);
     }
 
-    pub fn last_position(&self) -> &VectorXf {
+    pub fn last_position(&self) -> &VectorXd {
         self.inner.last_position()
     }
 
-    pub fn set_start_position(&mut self, start_position: VectorXf) {
+    pub fn set_start_position(&mut self, start_position: VectorXd) {
         self.inner.set_start_position(start_position);
     }
 
@@ -1103,7 +1102,7 @@ impl MotionControllerLinearPlanner {
     }
 
     // TODO: feed_rate doesn't do anything right now.
-    pub fn move_to(&mut self, pos: VectorXf, mut feed_rate: f32) -> Result<()> {
+    pub fn move_to(&mut self, pos: VectorXd, mut feed_rate: f64) -> Result<()> {
         if pos.len() != (self.config.axes().len() as usize) {
             return Err(err_msg("Wrong size tensor"));
         }

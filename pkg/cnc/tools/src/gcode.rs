@@ -1,6 +1,6 @@
 use common::errors::*;
 use cnc_controller_proto::cnc::Command;
-use math::matrix::{VectorXf, MatrixXf};
+use math::matrix::{VectorXd, MatrixXd};
 use cnc_controller::proto_utils::*;
 
 use crate::leveling::*;
@@ -10,16 +10,16 @@ pub struct CommandConverter {
     absolute_mode_set: bool,
     extruder_relative_mode: bool,
 
-    last_machine_position: VectorXf,
+    last_machine_position: VectorXd,
     last_position: Vec<gcode::Decimal>,
-    last_feed_rate: f32,
+    last_feed_rate: f64,
     leveler: Option<ZGridFadeLeveler>,
-    skew: Option<MatrixXf>,
+    skew: Option<MatrixXd>,
 }
 
 impl CommandConverter {
 
-    pub fn new(last_machine_position: VectorXf) -> Self {
+    pub fn new(last_machine_position: VectorXd) -> Self {
         // We assume the last position perfectly translates to the 
         // last machine position after any skew/leveling is applied.
         // This has the main issue of making the first move in the file
@@ -44,7 +44,7 @@ impl CommandConverter {
         self.leveler = leveler;
     }
 
-    pub fn set_skew(&mut self, skew: Option<MatrixXf>) {
+    pub fn set_skew(&mut self, skew: Option<MatrixXd>) {
 
         let mat = match skew {
             Some(v) => v,
@@ -54,7 +54,7 @@ impl CommandConverter {
             }
         };
 
-        let mut extended = MatrixXf::identity_with_shape(
+        let mut extended = MatrixXd::identity_with_shape(
             self.last_machine_position.len(), self.last_machine_position.len());
 
         for i in 0..mat.rows() {
@@ -66,9 +66,9 @@ impl CommandConverter {
         self.skew = Some(extended);
     }
 
-    fn decimal_to_vector(v: &[gcode::Decimal]) -> VectorXf {
-        let mut values = v.iter().map(|v| v.to_f32()).collect::<Vec<_>>();
-        VectorXf::from_slice_with_shape(values.len(), 1, &values)
+    fn decimal_to_vector(v: &[gcode::Decimal]) -> VectorXd {
+        let mut values = v.iter().map(|v| v.to_f64()).collect::<Vec<_>>();
+        VectorXd::from_slice_with_shape(values.len(), 1, &values)
     }
 
     pub fn next(&mut self, command: &gcode::Command, out: &mut Vec<Command>) -> Result<()> {
@@ -146,7 +146,7 @@ impl CommandConverter {
                 }
                 if let Some(v) = cmd.inner.feed_rate {
                     // The value is in mm/min
-                    self.last_feed_rate = (v.to_f32() / 60.0);
+                    self.last_feed_rate = (v.to_f64() / 60.0);
                 }
 
                 let end_position = Self::decimal_to_vector(&self.last_position);

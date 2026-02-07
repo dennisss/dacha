@@ -3,8 +3,8 @@ use std::time::Duration;
 use std::f32::consts::PI;
 
 use common::errors::*;
-use math::matrix::{VectorXf, MatrixXd};
-use math::vecxf;
+use math::matrix::{VectorXd, MatrixXd};
+use math::vecxd;
 use cluster_client::ClusterMetaClient;
 use cnc_controller_proto::cnc::*;
 use cnc_controller::motion_controller_sim::MotionControllerSimulator;
@@ -42,7 +42,7 @@ impl RemoteMachineController {
         self.stub.Execute(&request_context, request).await.result
     }
 
-    pub async fn move_to(&mut self, pos: &VectorXf, feed_rate: f32) -> Result<()> {
+    pub async fn move_to(&mut self, pos: &VectorXd, feed_rate: f32) -> Result<()> {
         let request_context = rpc::ClientRequestContext::default();
         let mut request = ExecuteRequest::default();
 
@@ -55,7 +55,7 @@ impl RemoteMachineController {
         Ok(())
     }
 
-    pub async fn move_towards_endstop(&mut self, pos: &VectorXf, feed_rate: f32) -> Result<Option<VectorXf>> {
+    pub async fn move_towards_endstop(&mut self, pos: &VectorXd, feed_rate: f32) -> Result<Option<VectorXd>> {
         let request_context = rpc::ClientRequestContext::default();
         let mut request = ExecuteRequest::default();
 
@@ -69,7 +69,7 @@ impl RemoteMachineController {
         
         let mut out = None;
         if res.has_hit_position() {
-            out = Some(VectorXf::from_proto(res.hit_position()));
+            out = Some(VectorXd::from_proto(res.hit_position()));
         }
 
         Ok(out)
@@ -95,13 +95,13 @@ impl RemoteMachineController {
         Ok(())
     }
 
-    pub async fn last_position(&mut self) -> Result<VectorXf> {
+    pub async fn last_position(&mut self) -> Result<VectorXd> {
         let request_context = rpc::ClientRequestContext::default();
         let mut request = GetPositionRequest::default();
 
         let res = self.stub.GetPosition(&request_context, &request).await.result?;
 
-        Ok(VectorXf::from_proto(res.position()))
+        Ok(VectorXd::from_proto(res.position()))
     }
 
 

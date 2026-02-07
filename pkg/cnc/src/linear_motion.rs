@@ -1,21 +1,21 @@
-use math::matrix::VectorXf;
+use math::matrix::VectorXd;
 
 /// A single fully defined motion in a straight line with constant acceleration
 #[derive(Debug, PartialEq, Clone)]
 pub struct LinearMotion {
-    pub start_position: VectorXf,
-    pub start_velocity: VectorXf,
+    pub start_position: VectorXd,
+    pub start_velocity: VectorXd,
 
-    pub end_position: VectorXf,
-    pub end_velocity: VectorXf,
+    pub end_position: VectorXd,
+    pub end_velocity: VectorXd,
 
-    pub acceleration: VectorXf,
+    pub acceleration: VectorXd,
 
-    pub duration: f32,
+    pub duration: f64,
 }
 
 impl LinearMotion {
-    pub fn split_at(self, time: f32) -> (Self, Self) {
+    pub fn split_at(self, time: f64) -> (Self, Self) {
         assert!(time <= self.duration);
 
         let mid_point = &self.start_position + (self.start_velocity.clone() * time)

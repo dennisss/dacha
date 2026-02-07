@@ -388,14 +388,14 @@ impl StepperMotionGenerator {
 mod tests {
     use super::*;
 
-    use math::vecxf;
+    use math::vecxd;
 
     /*
-    let start_velocity = vecxf!(0.0, 0.0, 0.0);
+    let start_velocity = vecxd!(0.0, 0.0, 0.0);
 
     let c = LinearMotionConstraints {
-        start_position: vecxf!(0.0, 0.0, 0.0),
-        end_position: vecxf!(50.0, 0.0, 0.0),
+        start_position: vecxd!(0.0, 0.0, 0.0),
+        end_position: vecxd!(50.0, 0.0, 0.0),
         max_end_speed: 0.0,
         max_speed: 100.0,
         max_acceleration: 100.0,
@@ -411,17 +411,17 @@ mod tests {
 
 
     for i in 0..10 {
-        let velocity = ((i + 1) as f32) * 10.0;
+        let velocity = ((i + 1) as f64) * 10.0;
 
 
         let next_pos = last_pos + displacement_traveled(velocity, 0.0, 1.0);
 
         let motion = LinearMotion {
-            start_position: vecxf!(last_pos, 0., 0.),
-            start_velocity: vecxf!(velocity, 0., 0.),
-            end_position: vecxf!(next_pos, 0., 0.),
-            end_velocity: vecxf!(velocity, 0., 0.),
-            acceleration: vecxf!(0., 0., 0.),
+            start_position: vecxd!(last_pos, 0., 0.),
+            start_velocity: vecxd!(velocity, 0., 0.),
+            end_position: vecxd!(next_pos, 0., 0.),
+            end_velocity: vecxd!(velocity, 0., 0.),
+            acceleration: vecxd!(0., 0., 0.),
             duration: 1.0,
         };
 
@@ -429,7 +429,7 @@ mod tests {
 
         for i in 0..(num_steps + 1) {
 
-            let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+            let ti = ((i as f64) / (num_steps as f64)) * motion.duration;
             let v = motion.clone().split_at(ti).1;
 
             csv.push_str(&format!("{:},{},{}\n", t + ti, v.start_position[0], v.start_velocity[0]));
@@ -446,14 +446,14 @@ mod tests {
     #[test]
     fn dump_curve() {
         let motion = LinearMotion {
-            start_velocity: vecxf!(0.0, 0.0, 0.0),
-            end_position: vecxf!(400.0, 0.0, 0.0), // 
-            acceleration: vecxf!(80.0 * 1000.0, 0.0, 0.0), //
+            start_velocity: vecxd!(0.0, 0.0, 0.0),
+            end_position: vecxd!(400.0, 0.0, 0.0), // 
+            acceleration: vecxd!(80.0 * 1000.0, 0.0, 0.0), //
             duration: 0.1,
 
             // Not important.
-            start_position: vecxf!(0.0, 0.0, 0.0),
-            end_velocity: vecxf!(0.0, 0.0, 0.0),
+            start_position: vecxd!(0.0, 0.0, 0.0),
+            end_velocity: vecxd!(0.0, 0.0, 0.0),
         };
 
         let num_steps = 400;
@@ -462,7 +462,7 @@ mod tests {
 
         for i in 0..(num_steps + 1) {
 
-            let ti = ((i as f32) / (num_steps as f32)) * motion.duration;
+            let ti = ((i as f64) / (num_steps as f64)) * motion.duration;
             let v = motion.clone().split_at(ti).1;
 
             csv.push_str(&format!("{:},{},{}\n", ti, v.start_position[0], v.start_velocity[0]));
@@ -475,7 +475,7 @@ mod tests {
         let mut csv = "time,x\n".to_string();
 
         for i in 0..401 {
-            let time = time_to_travel(i as f32, 0.0, 80.0 * 1000.0);
+            let time = time_to_travel(i as f64, 0.0, 80.0 * 1000.0);
             println!("{},{}", time, i);
         }
 
@@ -525,52 +525,52 @@ mod tests {
         };
 
         run_motion(LinearMotion {
-            start_velocity: vecxf!(0.0, 0.0, 0.0),
-            end_position: vecxf!(400.0, 0.0, 0.0), // 
-            acceleration: vecxf!(80.0 * 1000.0, 0.0, 0.0), //
+            start_velocity: vecxd!(0.0, 0.0, 0.0),
+            end_position: vecxd!(400.0, 0.0, 0.0), // 
+            acceleration: vecxd!(80.0 * 1000.0, 0.0, 0.0), //
             duration: 0.1,
 
             // Not important.
-            start_position: vecxf!(0.0, 0.0, 0.0),
-            end_velocity: vecxf!(0.0, 0.0, 0.0),
+            start_position: vecxd!(0.0, 0.0, 0.0),
+            end_velocity: vecxd!(0.0, 0.0, 0.0),
         });
 
         return;
 
         // Constant velocity
         run_motion(LinearMotion {
-            start_velocity: vecxf!(1.0, 0.0, 0.0),
-            end_position: vecxf!(1.0, 0.0, 0.0), // 
-            acceleration: vecxf!(0.0, 0.0, 0.0), //
+            start_velocity: vecxd!(1.0, 0.0, 0.0),
+            end_position: vecxd!(1.0, 0.0, 0.0), // 
+            acceleration: vecxd!(0.0, 0.0, 0.0), //
             duration: 1.0,
 
             // Not important.
-            start_position: vecxf!(0.0, 0.0, 0.0),
-            end_velocity: vecxf!(0.0, 0.0, 0.0),
+            start_position: vecxd!(0.0, 0.0, 0.0),
+            end_velocity: vecxd!(0.0, 0.0, 0.0),
         });
 
         // Doing nothing
         run_motion(LinearMotion {
-            start_velocity: vecxf!(0.0, 0.0, 0.0),
-            end_position: vecxf!(0.0, 0.0, 0.0), // 
-            acceleration: vecxf!(0.0, 0.0, 0.0), //
+            start_velocity: vecxd!(0.0, 0.0, 0.0),
+            end_position: vecxd!(0.0, 0.0, 0.0), // 
+            acceleration: vecxd!(0.0, 0.0, 0.0), //
             duration: 1.0,
 
             // Not important.
-            start_position: vecxf!(0.0, 0.0, 0.0),
-            end_velocity: vecxf!(0.0, 0.0, 0.0),
+            start_position: vecxd!(0.0, 0.0, 0.0),
+            end_velocity: vecxd!(0.0, 0.0, 0.0),
         });
 
         // Accelerate from zero velocity.
         run_motion(LinearMotion {
-            start_velocity: vecxf!(0.0, 0.0, 0.0),
-            end_position: vecxf!(5.0, 0.0, 0.0), // 
-            acceleration: vecxf!(10.0, 0.0, 0.0), //
+            start_velocity: vecxd!(0.0, 0.0, 0.0),
+            end_position: vecxd!(5.0, 0.0, 0.0), // 
+            acceleration: vecxd!(10.0, 0.0, 0.0), //
             duration: 1.0,
 
             // Not important.
-            start_position: vecxf!(0.0, 0.0, 0.0),
-            end_velocity: vecxf!(0.0, 0.0, 0.0),
+            start_position: vecxd!(0.0, 0.0, 0.0),
+            end_velocity: vecxd!(0.0, 0.0, 0.0),
         });
 
 

@@ -19,6 +19,14 @@ macro_rules! vecxf {
     }};
 }
 
+#[macro_export]
+macro_rules! vecxd {
+    ($( $x:expr ),* $(,)?) => {{
+        let values = [ $( $x ),* ];
+        $crate::matrix::VectorXd::from_slice_with_shape(values.len(), 1, &values)
+    }};
+}
+
 #[inline]
 pub fn vec2<T: ElementType>(x: T, y: T) -> Vector2<T> {
     Vector2::from_slice(&[x, y])

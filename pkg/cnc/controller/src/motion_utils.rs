@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use cnc_controller_proto::cnc::*;
-use math::matrix::VectorXf;
+use math::matrix::VectorXd;
 use cnc::linear_motion::*;
 use cnc::quadratic_stepper_motion::*;
 use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorMotion_Direction};
@@ -11,7 +11,7 @@ use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorMotion_Dire
 use crate::time::DeviceTime;
 
 
-pub fn to_motor_space(x: &VectorXf, config: &MotionControllerConfig) -> Vec<f32> {
+pub fn to_motor_space(x: &VectorXd, config: &MotionControllerConfig) -> Vec<f64> {
 
     let mut x_motor = vec![0.0; config.motors_len()];
 
@@ -46,15 +46,16 @@ pub fn to_motor_space(x: &VectorXf, config: &MotionControllerConfig) -> Vec<f32>
 }
 
 
-pub fn from_motor_space(x: &[i32], config: &MotionControllerConfig) -> VectorXf {
+pub fn from_motor_space(x: &[i32], config: &MotionControllerConfig) -> VectorXd {
 
     // Convert from steps to mm.
     let mut x_motor = vec![0.0; config.motors_len()];
     for i in 0..x_motor.len() {
-        x_motor[i] = (x[i] as f32) / config.motors()[i].steps_per_mm();
+// TODO: Verify no loss with large step counts.
+        x_motor[i] = (x[i] as f64) / config.motors()[i].steps_per_mm();
     }
 
-    let mut x_pos = VectorXf::zero_with_shape(config.axes().len(), 1);
+    let mut x_pos = VectorXd::zero_with_shape(config.axes().len(), 1);
 
     for geometry in config.geometry() {
 

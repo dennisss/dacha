@@ -1,24 +1,24 @@
 use alloc::vec::Vec;
-use math::matrix::VectorXf;
+use math::matrix::VectorXd;
 
 use crate::grid::interp;
 
 pub struct RewriteMoveOptions {
-    pub min_move_size: f32,
-    pub step_size: f32,
-    pub max_error: f32,
+    pub min_move_size: f64,
+    pub step_size: f64,
+    pub max_error: f64,
 }
 
 /// Returns the list of all points to visit AFTER start_position.
 /// (will just be a list with 1 element containing just end_position is
 ///  no Z compensation or very little is needed)
-pub fn rewrite_move_z<F: Fn(&VectorXf) -> f32>(
-    start_position: &VectorXf,
-    end_position: &VectorXf,
+pub fn rewrite_move_z<F: Fn(&VectorXd) -> f64>(
+    start_position: &VectorXd,
+    end_position: &VectorXd,
     rapid: bool,
     new_z: F,
     options: &RewriteMoveOptions,
-) -> Vec<VectorXf> {
+) -> Vec<VectorXd> {
     let mut dir = end_position - start_position;
     for i in 2..dir.len() {
         dir[i] = 0.0;

@@ -24,8 +24,8 @@ TODOs:
 // /// Amount of space around the probed grid area that we will still allow movement in using the grid.
 // const ALLOWED_MARGIN: f32 = 0.01;
 
-const MIN_MOVE_SIZE: f32 = 0.1;
-const MAX_ERROR: f32 = 0.02;
+const MIN_MOVE_SIZE: f64 = 0.1;
+const MAX_ERROR: f64 = 0.02;
 
 
 // TODO: This should be more workspace aware and apply to a specific workspace.
@@ -47,8 +47,8 @@ impl ZGridLeveler {
         let origin = (request.x_origin(), request.y_origin());
 
         let grid = Grid::create(
-            (request.grid_min_x(), request.grid_min_y()),
-            (request.grid_max_x(), request.grid_max_y()),
+            (request.grid_min_x() as f64, request.grid_min_y() as f64),
+            (request.grid_max_x() as f64, request.grid_max_y() as f64),
             request.grid_x_count() as usize,
             request.grid_y_count() as usize,
         );
@@ -94,14 +94,14 @@ impl ZGridLeveler {
         let mut z_offsets = vec![];
 
         for (x, y) in grid.scan_order() {
-            serial.goto(x, y, travel_feed_rate).await?;
+            serial.goto(x as f32, y as f32, travel_feed_rate).await?;
 
             // Probe
             serial.send_command("G38.2 Z-200 F80\n", DEFAULT_COMMAND_TIMEOUT).await?;
             serial.wait_for_idle().await?;
 
             let z_offset = serial.get_current_axis_value("Z").await?.data.get().unwrap()[0];
-            z_offsets.push(z_offset);
+            z_offsets.push(z_offset as f64);
 
             // Lift up.
             serial.goto3(None, None, Some(travel_z), travel_feed_rate).await?;
@@ -147,8 +147,8 @@ impl ZGridLeveler {
             self.grid_values.grid().y_interval()) / 2.0;
 
         let points = cnc::rewriting::rewrite_move_z(
-            &start_position,
-            &end_position,
+            &start_position.cast::<f64>(),
+            &end_position.cast::<f64>(),
             rapid,
             |pos| self.grid_values.interpolate_value(pos.x(), pos.y()) + pos.z(),
             &cnc::rewriting::RewriteMoveOptions {

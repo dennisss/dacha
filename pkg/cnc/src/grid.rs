@@ -11,13 +11,13 @@ pub struct Grid {
 
 impl Grid {
     pub fn create(
-        min_pos: (f32, f32),
-        max_pos: (f32, f32),
+        min_pos: (f64, f64),
+        max_pos: (f64, f64),
         x_count: usize,
         y_count: usize    
     ) -> Self {
-        let x_interval = (max_pos.0 - min_pos.0) / ((x_count - 1) as f32);
-        let y_interval = (max_pos.1 - min_pos.1) / ((y_count - 1) as f32);
+        let x_interval = (max_pos.0 - min_pos.0) / ((x_count - 1) as f64);
+        let y_interval = (max_pos.1 - min_pos.1) / ((y_count - 1) as f64);
 
         let mut proto = GridProto::default();
         proto.set_base_point_x(min_pos.0);
@@ -32,11 +32,11 @@ impl Grid {
         }
     }
 
-    pub fn x_interval(&self) -> f32 {
+    pub fn x_interval(&self) -> f64 {
         self.proto.x_interval()
     }
 
-    pub fn y_interval(&self) -> f32 {
+    pub fn y_interval(&self) -> f64 {
         self.proto.y_interval()
     }
 
@@ -49,13 +49,13 @@ impl Grid {
         Self { proto: proto.clone() }
     }
 
-    pub fn scan_order(&self) -> Vec<(f32, f32)> {
+    pub fn scan_order(&self) -> Vec<(f64, f64)> {
         let mut out = vec![];
 
         for (i, j) in self.scan_order_indexes() {
             out.push((
-                self.proto.base_point_x() + (j as f32) * self.proto.x_interval(),
-                self.proto.base_point_y() + (i as f32) * self.proto.y_interval()
+                self.proto.base_point_x() + (j as f64) * self.proto.x_interval(),
+                self.proto.base_point_y() + (i as f64) * self.proto.y_interval()
             ));
         }
 
@@ -79,10 +79,10 @@ impl Grid {
         out
     }
 
-    fn position(&self, i: usize, j: usize) -> (f32, f32) {
+    fn position(&self, i: usize, j: usize) -> (f64, f64) {
         (
-            self.proto.base_point_x() + (j as f32) * self.proto.x_interval(),
-            self.proto.base_point_y() + (i as f32) * self.proto.y_interval()
+            self.proto.base_point_x() + (j as f64) * self.proto.x_interval(),
+            self.proto.base_point_y() + (i as f64) * self.proto.y_interval()
         )
     }
 }
@@ -90,8 +90,8 @@ impl Grid {
 pub struct GridValues {
     grid: Grid,
 
-    // TODO: Just make this a MatrixXf
-    values: Vec<Vec<f32>>,
+    // TODO: Just make this a MatrixXd
+    values: Vec<Vec<f64>>,
 }
 
 impl GridValues {
@@ -100,7 +100,7 @@ impl GridValues {
         &self.grid
     }
 
-    pub fn iter(&self) -> Vec<(f32, f32, f32)> {
+    pub fn iter(&self) -> Vec<(f64, f64, f64)> {
         let mut out = vec![];
         
         for i in 0..self.values.len() {
@@ -137,7 +137,7 @@ impl GridValues {
         }
     }
 
-    pub fn from_scan_values(grid: Grid, raw_values: &[f32]) -> Result<Self> {
+    pub fn from_scan_values(grid: Grid, raw_values: &[f64]) -> Result<Self> {
         let mut values = vec![];
         for _ in 0..grid.proto.y_count() {
             let mut row = vec![];
@@ -166,24 +166,24 @@ impl GridValues {
     ///
     /// NOTE: (x,y) points outside of the grid will linearly interpolate the nearest
     /// 1 or 2 points.
-    pub fn interpolate_value(&self, mut x: f32, mut y: f32) -> f32 {
+    pub fn interpolate_value(&self, mut x: f64, mut y: f64) -> f64 {
         x -= self.grid.proto.base_point_x();
         y -= self.grid.proto.base_point_y();
 
         let grid_cols = self.grid.proto.x_count() as usize;
         let grid_rows = self.grid.proto.y_count() as usize;
-        let grid_width = self.grid.proto.x_interval() * ((grid_cols - 1) as f32);
-        let grid_height = self.grid.proto.y_interval() * ((grid_rows - 1) as f32);
+        let grid_width = self.grid.proto.x_interval() * ((grid_cols - 1) as f64);
+        let grid_height = self.grid.proto.y_interval() * ((grid_rows - 1) as f64);
 
         let x_coord = x / self.grid.proto.x_interval();
         let y_coord = y / self.grid.proto.y_interval();
 
-        let x0 = x_coord.floor().max(0.0).min((grid_cols - 1) as f32);
-        let x1 = x_coord.ceil().max(0.0).min((grid_cols - 1) as f32);
+        let x0 = x_coord.floor().max(0.0).min((grid_cols - 1) as f64);
+        let x1 = x_coord.ceil().max(0.0).min((grid_cols - 1) as f64);
         let x0_alpha = 1.0 - (x_coord - x0);
 
-        let y0 = y_coord.floor().max(0.0).min((grid_rows - 1) as f32);
-        let y1 = y_coord.ceil().max(0.0).min((grid_rows - 1) as f32);
+        let y0 = y_coord.floor().max(0.0).min((grid_rows - 1) as f64);
+        let y1 = y_coord.ceil().max(0.0).min((grid_rows - 1) as f64);
         let y0_alpha = 1.0 - (y_coord - y0);
         
         let a = interp(
@@ -203,7 +203,7 @@ impl GridValues {
     }
 }
 
-pub fn interp(a: f32, b: f32, a_alpha: f32) -> f32 {
+pub fn interp(a: f64, b: f64, a_alpha: f64) -> f64 {
     a * a_alpha + b * (1.0 - a_alpha)
 }
 

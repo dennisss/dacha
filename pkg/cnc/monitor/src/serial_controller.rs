@@ -1320,6 +1320,44 @@ impl SerialController {
         Ok(())
     }
 
+    pub async fn goto3(&self, x: Option<f32>, y: Option<f32>, z: Option<f32>, feed_rate: f32) -> Result<()> {
+        let config = self.shared.config.read().await?;
+
+        // Absolute positioning
+        self.send_command("G90\n", DEFAULT_COMMAND_TIMEOUT).await?;
+
+        // Switch to world coordinate system (temporarily for just this line).
+        let coordinate_system_prefix = {
+            if Self::supports_coordinate_systems(&config) {
+                "G53 "
+            } else {
+                ""
+            }
+        };
+
+        let mut pos_parts = String::new();
+        if let Some(v) = x {
+            pos_parts.push_str(&format!(" X{:.2}", v));
+        }
+        if let Some(v) = y {
+            pos_parts.push_str(&format!(" Y{:.2}", v));
+        }
+        if let Some(v) = z {
+            pos_parts.push_str(&format!(" Z{:.2}", v));
+        }
+
+        self.send_command(
+            format!(
+                "{}G0{} F{}\n",
+                coordinate_system_prefix, pos_parts, feed_rate
+            ),
+            DEFAULT_COMMAND_TIMEOUT,
+        )
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn set_spindle_state(&self, state: &SpindleState) -> Result<()> {
         let config = self.shared.config.read().await?;
 

@@ -232,6 +232,10 @@ impl Decimal {
     pub fn to_f32(&self) -> f32 {
         self.to_string().parse::<f32>().unwrap()
     }
+
+    pub fn to_f64(&self) -> f64 {
+        self.to_string().parse::<f64>().unwrap()
+    }
 }
 
 impl From<i32> for Decimal {
@@ -246,6 +250,16 @@ impl From<f32> for Decimal {
     fn from(value: f32) -> Self {
         let integer = (value as i64) * Self::UNITS_PER_INTEGER;
         let fraction = (value.fract() * (Self::UNITS_PER_INTEGER as f32)) as i64;
+        Self {
+            value: integer + fraction,
+        }
+    }
+}
+
+impl From<f64> for Decimal {
+    fn from(value: f64) -> Self {
+        let integer = (value as i64) * Self::UNITS_PER_INTEGER;
+        let fraction = (value.fract() * (Self::UNITS_PER_INTEGER as f64)) as i64;
         Self {
             value: integer + fraction,
         }
