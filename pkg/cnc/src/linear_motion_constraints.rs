@@ -6,8 +6,14 @@ use math::matrix::VectorXd;
 use crate::displacement::*;
 use crate::linear_motion::LinearMotion;
 
-/// Smallest duration of motion that we will generate.
+/// Smallest duration of motion that we will generate (in seconds).
+///
+/// If a speed ramp up/down takes less time than this, then we will just not
+/// generate a ramp up/down and assume that we can accelerate instantly in the
+/// next motion.
 const MIN_MOTION_TIME: f64 = 0.0001;  // 0.1ms
+
+const MIN_MOTION_DISTANCE: f64 = 1e-6;
 
 /// A non-fully defined LinearMotion(s).
 ///
@@ -46,7 +52,7 @@ impl LinearMotionConstraints {
 
     pub fn is_empty(&self) -> bool {
         let distance_vector = &self.end_position - &self.start_position;
-        distance_vector.norm() <= 1e-6
+        distance_vector.norm() <= MIN_MOTION_DISTANCE
     }
 
     /// Given the motion constraints and the current start_velocity, generates a
@@ -79,7 +85,7 @@ impl LinearMotionConstraints {
         out: &mut Vec<LinearMotion>,
     ) -> VectorXd {
         let distance_vector = &self.end_position - &self.start_position;
-        if distance_vector.norm() <= 1e-6 {
+        if distance_vector.norm() <= MIN_MOTION_DISTANCE {
             return start_velocity;
         }
 

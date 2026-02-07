@@ -60,16 +60,17 @@ const IDLE_START_TIMEOUT: Duration = Duration::from_millis(200);
 ///
 /// This must be larger than the worst case clock drift and request RTT with
 /// the motor MCUs to avoid scheduling a motion in the past.
-const MIN_MOTION_START_DELAY: Duration = Duration::from_millis(100);
+const MIN_MOTION_START_DELAY: Duration = Duration::from_millis(400);
 
 /// Relative to the current point in time, how many seconds of motions in the
 /// LinearMotionPlanner we will consume when in the 'Active' state.
 ///
 /// MUST BE >> MIN_MOTION_START_DELAY
-const PLANNER_LOOK_AHEAD_WINDOW: Duration = Duration::from_millis(2000);
+const PLANNER_LOOK_AHEAD_WINDOW: Duration = Duration::from_millis(4000);
 
-const PLANNER_STEP_SIZE: Duration = Duration::from_millis(1000);
+pub(super) const PLANNER_STEP_SIZE: f64 = 1.0;
 
+/*
 /// Minimum amount of time we will grab from the planner.
 ///
 /// MUST BE < PLANNER_LOOK_AHEAD_WINDOW
@@ -81,6 +82,7 @@ const PLANNER_STEP_SIZE: Duration = Duration::from_millis(1000);
 ///
 /// TODO: Actually if it ends in a small bit left, we may still stop early.
 const PLANNER_MIN_TIME_STEP: Duration = Duration::from_millis(200);
+*/
 
 /// Relative to the current point in time, how many seconds of motions
 /// will be converted to steps and enqueud to run on the motors.
@@ -89,10 +91,10 @@ const PLANNER_MIN_TIME_STEP: Duration = Duration::from_millis(200);
 /// motions from the planner. Otherwise it will plan for empty time. 
 ///
 /// MUST BE >> MIN_MOTION_START_DELAY
-const STEP_GENERATION_WINDOW: Duration = Duration::from_millis(200);
+const STEP_GENERATION_WINDOW: Duration = Duration::from_millis(800);
 
-// TODO: Use me.
-const STEP_GENERATION_STEP: Duration = Duration::from_millis(200);
+// TODO: Maybe switch back to using a Duration for this and only switch to a f64 at the end.
+pub(super) const STEP_GENERATION_STEP: f64 = 0.1;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -131,7 +133,7 @@ struct State {
     desired_mode: Option<MotionControllerMode>,
 
     /// 
-    position_offset: VectorXf,
+    position_offset: VectorXd,
 
     /// If planner is non-empty and we are idle, the time at which
     /// the first motion in planner was added. 
@@ -181,14 +183,12 @@ struct ActiveState {
 
     start_time: Instant,
 
-    /// Start time of the first motion in the planner.
-    planner_start_time: Instant,
+        planner_consumed_time: f64,
 
     /// Up to what point in time in the queue we have consumed commands.
-    queue_consumed_time: Instant,
+    queue_consumed_time: f64,
 
-    /// TODO: This should not be in main mutex guarded state since it is expensive to manipulate.
-    queue: StepperMotionGenerator,
+        queue: StepperMotionGenerator,
 }
 
 struct EnabledState {
@@ -646,12 +646,14 @@ let mut pos = statuses[motor_i].position();
 
                     println!("-> Active : {:?}", remote_start_time);
 
+                    state.planner.set_start_time(0.0);
+
                     // TODO: Need to preserve motor positions across queue initializations.
 state.active = true;
                     enabled_state.active_state = Some(ActiveState {
                         start_time,
-                        planner_start_time: start_time,
-                        queue_consumed_time: start_time,
+                        planner_consumed_time: 0.0,
+                        queue_consumed_time: 0.0,
                         queue: StepperMotionGenerator::new(
                             shared.config.clone(),
                             &state.motor_positions,
@@ -690,25 +692,22 @@ state.active = false;
 
                     // Take from 'planner' and push into the 'queue'
                     {
-                        let next_planner_start_time = now + PLANNER_LOOK_AHEAD_WINDOW;
+                        let max_planner_time = ((now + PLANNER_LOOK_AHEAD_WINDOW) - active_state.start_time).as_secs_f64();
+                        let max_planner_time_step = max_planner_time - active_state.planner_consumed_time;
 
-                        let max_time_step = next_planner_start_time - active_state.planner_start_time;
+                        if max_planner_time_step >= PLANNER_STEP_SIZE {
+active_state.planner_consumed_time += PLANNER_STEP_SIZE;
 
-                        // TODO: always use the exact same time step so that everything can be reproducible.
-
-                        if max_time_step >= PLANNER_STEP_SIZE {
-                            // TODO: Check these comments.
+                                                    // TODO: Check these comments.
                             // NOTE: We only use the end_position and time in each of these objects.
                             let mut motions = vec![];
                             // TODO: Need to use the duration returned by this (yes since we don't know if we fully saturated the time span)
-                            state.planner.next(PLANNER_STEP_SIZE.as_secs_f64(), 10000, &mut motions);
+                            state.planner.next(active_state.planner_consumed_time, &mut motions);
 
                             for motion in motions {
                                 // TODO: Should warn if the motion was delayed relative to the previous one.
                                 active_state.queue.enqueue(motion);
                             }
-
-                            active_state.planner_start_time += PLANNER_STEP_SIZE;
                         }
                     }
 
@@ -724,13 +723,13 @@ state.active = false;
         if let Some(active_state) = &mut enabled_state.active_state {
                         // TODO: Limit the minimum time step for this?
 
-                        let next_queue_consumed_time = now + STEP_GENERATION_WINDOW;
-                        let queue_max_time = next_queue_consumed_time - active_state.start_time;
+                        let max_queue_time = ((now + STEP_GENERATION_WINDOW) - active_state.start_time).as_secs_f64();
+            let max_queue_time_step = max_queue_time - active_state.queue_consumed_time;
 
                         // TODO: Entire alarm mode if this fails.
-                        // TODO: Make this a deterministic step.
-                        let step_motions = active_state.queue.to_commands(queue_max_time.as_secs_f64()).unwrap();
-                        active_state.queue_consumed_time = next_queue_consumed_time;
+                        if max_queue_time_step >= STEP_GENERATION_STEP {
+                active_state.queue_consumed_time += STEP_GENERATION_STEP;
+                let step_motions = active_state.queue.to_commands(active_state.queue_consumed_time).unwrap();
 
                         for (i, step_motion) in step_motions.into_iter().enumerate() {
                             for step_motion in step_motion {
@@ -738,6 +737,7 @@ state.active = false;
 
                                 enabled_state.pending_step_motions[i].push_back(step_motion);
                                 enabled_state.have_pending_motions = true;
+}
                             }
                         }
                     }
@@ -1072,13 +1072,16 @@ impl MotionControllerLinearPlanner {
         }
     }
 
+    pub fn set_start_time(&mut self, v: f64) {
+        self.inner.set_start_time(v);
+    }
+
     pub fn next(
         &mut self,
-        max_duration: f64,
-        max_count: usize,
-        out: &mut Vec<LinearMotion>
+        max_time: f64,
+                out: &mut Vec<LinearMotion>
     ) {
-        self.inner.next(max_duration, max_count, out);
+        self.inner.next(max_time, out);
     }
 
     pub fn set_max_junction_deviation(&mut self, value: f64) {

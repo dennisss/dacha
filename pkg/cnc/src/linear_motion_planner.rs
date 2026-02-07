@@ -11,11 +11,16 @@ use crate::linear_motion::*;
 use crate::linear_motion_constraints::*;
 use crate::constrained_vector::*;
 
+/// When chunking a long motion into smaller ones, this is the smallest chunk we will
+/// allow rather than keeping the chunk merged with the previous chunk.
+const MIN_RESIDUAL_MOTION_DURATION: f64 = 0.001; // 1ms
+
 
 /// Plans a sequence of linear motions that are chained one
 /// immediately after another in time.
 pub struct LinearMotionPlanner  {
     config: LinearMotionPlannerConfig,
+start_time: f64,
     start_position: VectorXd,
     start_velocity: VectorXd,
     queue: VecDeque<LinearMotionQueueEntry>,
@@ -59,6 +64,7 @@ struct LinearMotionQueueEntry {
 impl LinearMotionPlanner {
     pub fn new(start_position: VectorXd, config: LinearMotionPlannerConfig) -> Self {
         Self {
+start_time: 0.0,
             start_position: start_position.clone(),
             start_velocity: VectorXd::zero_with_shape(start_position.rows(), 1),
             queue: VecDeque::new(),
@@ -66,8 +72,13 @@ impl LinearMotionPlanner {
         }
     }
 
+    pub fn set_start_time(&mut self, v: f64) {
+        self.start_time = v;
+    }
+
     pub fn clear(&mut self) {
         self.queue.clear();
+self.start_time = 0.0;
     }
 
 pub fn set_max_junction_deviation(&mut self, value: f64) {
@@ -279,27 +290,20 @@ let cornering_speed_vec = entry_direction * cornering_speed;
         }
     }
 
-    /// Calculates the next 'n' linear motions according to the planned steps so far.
+    /// Calculates all available motions up to max_time.
     ///
-    /// We will stop once we either give back 'max_duration' total of motions or
-    /// 'max_count' total motions.
+    /// This may return slightly more time than requested to avoid making small motions
+    /// (up to MIN_RESIDUAL_MOTION_DURATION more).
     pub fn next(
         &mut self,
-        max_duration: f32,
-        max_count: usize,
+        max_time: f64,
         out: &mut Vec<LinearMotion>
     ) {
-        if max_count == 0 || max_duration <= 0.0001 {
-            return;
-        }
-
-        let mut dur = 0.0;
-        let mut n = 0;
-
-        while n < max_count && dur < max_duration {
+        
+                while self.start_time + MIN_RESIDUAL_MOTION_DURATION < max_time {
             let mut entry = match self.queue.pop_front() {
                 Some(v) => v,
-                None => return
+                None => break
             };
 
             // TODO: FixedVec<3>
@@ -307,40 +311,39 @@ let cornering_speed_vec = entry_direction * cornering_speed;
             let next_velocity = entry.constraints.calculate_motions(self.start_velocity.clone(), &mut motions);
 
             for motion in motions {
-
-                if dur + motion.duration >= max_duration + 0.0001 || n == max_count {
+// Check if the current motion is too
+                if self.start_time + motion.duration >= max_time + MIN_RESIDUAL_MOTION_DURATION {
                  
-                    let mut t = (max_duration - dur).min(motion.duration);
-                    if n == max_count {
-                        t = 0.0;
-                    }
+                    let mut t = (max_time - self.start_time).min(motion.duration);
+                    
+// Worst case we split the motion into two parts each of size
+                    // MIN_RESIDUAL_MOTION_DURATION
+                    let (partial_motion, _) = motion.clone().split_at(t);
 
-                    let (partial_motion, _) = motion.split_at(t);
-
-                    // TODO: Robustify this.
-                    if partial_motion.duration >= 0.0001 {
+                    self.start_time += partial_motion.duration;
                         self.start_position = partial_motion.end_position.clone();
                         self.start_velocity = partial_motion.end_velocity.clone();
                         out.push(partial_motion);
-                    }
-
+                    
+// Push remaining parts of the motion back into the planner.
                     entry.constraints.start_position = self.start_position.clone();
-
-                    // TODO: If it is not pushed, we should do a minor correction next time to 
-                    // correctly align the next motion's start_position.
-                    if !entry.constraints.is_empty() {
                         self.queue.push_front(entry);
-                    }
-
-                    return;
+                                        return;
                 }
 
-                dur += motion.duration;
-                n += 1;
-                self.start_position = motion.end_position.clone();
+                self.start_time += motion.duration;
+                                self.start_position = motion.end_position.clone();
                 self.start_velocity = motion.end_velocity.clone();
                 out.push(motion);
             }
+
+            if self.queue.len() > 0 {
+                self.queue[0].constraints.start_position = self.start_position.clone();
+            }
+        }
+
+        if self.start_time < max_time {
+            self.start_time = max_time;
         }
     }
 }
@@ -427,7 +430,7 @@ mod test {
         planner.move_to(vecxd!(3600.0, 0.0, 0.0), 100.0, 1000.0);
 
         let mut out = vec![];
-        planner.next(1000.0, 100, &mut out);
+        planner.next(1000.0, &mut out);
         println!("{:#?}", out);
 
         // let mut out = vec![];
@@ -454,7 +457,7 @@ mod test {
         planner.move_to(vecxd!(110.0, 0.0, 0.0), 200.0, 1000.0);
 
         let mut out = vec![];
-        planner.next(1000.0, 1000, &mut out);
+        planner.next(1000.0, &mut out);
         println!("{:#?}", out);
     }
 
@@ -465,7 +468,7 @@ mod test {
         planner.move_to(vecxd!(0.0, 0.0, 0.0), 100.0, 1000.0);
 
         let mut out = vec![];
-        planner.next(1000.0, 1000, &mut out);
+        planner.next(1000.0, &mut out);
         println!("{:#?}", out);
     }
 

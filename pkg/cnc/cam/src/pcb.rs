@@ -338,6 +338,7 @@ impl PCBProcessor {
         let via_sizes: Vec<(f32, f32)> = vec![
             (1.1, 2.0),
             (0.9, 1.8),
+            (0.9, 2.0),
 
             // For freestanding vias only
             // (0.9, 2)
@@ -893,7 +894,7 @@ impl PCBProcessor {
             }
 
             // TODO: Must check for invertability and verify we get a resonable mapping 
-            let pinv_x = x.transpose() * (&x * x.transpose()).inverse();
+            let pinv_x = math::matrix::pinv(&x);
 
             // This will be a 2x3 matrix.
             let a = y * pinv_x;

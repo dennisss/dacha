@@ -2,130 +2,129 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use math::matrix::VectorXf;
-use math::vecxf;
+use math::matrix::VectorXd;
+use math::vecxd;
 use cnc_controller_proto::cnc::*;
-use cnc::linear_motion_planner::LinearMotionPlanner;
 use peripherals_proto::peripherals::StepperMotorMotion_Direction;
 use cnc::quadratic_stepper_motion::QuadraticStepperMotion;
 
 use crate::devices::*;
 use crate::config::*;
 use crate::motion_controller::*;
-use crate::gcode::CommandConverter;
 use crate::endstop_controller::*;
 use crate::machine_controller::MachineController;
 use crate::stepper_motion_generator::StepperMotionGenerator;
 use crate::time::DeviceTime;
+use crate::proto_utils::VectorProtoExt;
+use crate::motion_controller::{PLANNER_STEP_SIZE, STEP_GENERATION_STEP};
+
 
 pub struct MotionControllerSimulator {
     config: Arc<MotionControllerConfig>,
     planner: MotionControllerLinearPlanner,
-    position_offset: VectorXf,
+    position_offset: VectorXd,
     total_motions: usize,
     total_steps: usize,
+    motor_positions: Vec<i32>,
+    total_time: f64,
 }
 
 impl MotionControllerSimulator {
 
-    pub fn new(config: Arc<MotionControllerConfig>) -> Self {
+    pub fn new(config: Arc<MotionControllerConfig>, start_position: VectorXd) -> Self {
+        let mut planner = MotionControllerLinearPlanner::new(config.clone());
+        // planner.set_start_position(start_position.clone());
+
         Self {
             config: config.clone(),
-            planner: MotionControllerLinearPlanner::new(config.clone()),
-            position_offset: vecxf!(0.0, 0.0, 0.0, 0.0),
+            planner,
+            position_offset: vecxd!(0.0, 0.0, 0.0, 0.0),
+            motor_positions: vec![0, 0, 0, 0],
             total_motions: 0,
             total_steps: 0,
+            total_time: 0.0,
         }
     }
 
-    pub fn run(&mut self, cmds: &[gcode::Command]) -> Result<()> {
+    pub fn run(&mut self, cmds: &[Command]) -> Result<()> {
 
-        let mut converter = CommandConverter::new();
+        for c in cmds {
+            if c.has_move_to() {
+                // TODO: KEep supproting x,y,z,e, fields
+                let m = c.move_to();
+                assert!(m.has_position());
+                self.planner.move_to(
+                    VectorXd::from_proto(m.position()) - &self.position_offset,
+                    m.feed_rate()
+                )?;
+            }
 
-        for cmd in cmds {
-            let mut out = vec![];
-            converter.next(&cmd, &mut out)?;
+            if c.has_set_position() {
+                // println!("=== SET POSITION FLUSH!!");
+                self.flush()?;
 
-            for c in out {
-                if c.has_move_to() {
-                    let m = c.move_to();
-                    self.planner.move_to(
-                        vecxf!(m.x(), m.y(), m.z(), m.e()) - &self.position_offset,
-                        m.feed_rate()
-                    )?;
-                }
+                let num_axes = 4;
 
-                if c.has_set_position() {
-                    println!("=== SET POSITION FLUSH!!");
-                    self.flush()?;
+                let p = c.set_position();
+                self.position_offset = VectorXd::from_proto(p.position());
 
-                    let num_axes = 4;
+                self.motor_positions.clear();
+                self.motor_positions.resize(4, 0);
 
-                    let p = c.set_position();
-                    self.position_offset = vecxf!(p.x(), p.y(), p.z(), p.e());
-
-                    self.planner.set_start_position(VectorXf::zero_with_shape(num_axes, 1));
-
-                }
+                self.planner.set_start_position(VectorXd::zero_with_shape(num_axes, 1));
 
             }
         }
 
-        println!("Final flush!");
+        // println!("Final flush!");
         self.flush()?;
 
         println!("Total motions: {}", self.total_motions);
         println!("Total Steps: {}", self.total_steps);
+
+        println!("Total Time: {}", self.total_time);
 
         Ok(())
 
     }
 
     // This assumes that it can start at motor position zero.
-    pub fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> Result<()> {
         let mut remote_times = vec![];
         for i in 0..self.config.motors().len() {
-            remote_times.push(DeviceTime::new_test_only(16_000_000));
+            remote_times.push(DeviceTime::new_test_only(0, 16_000_000));
         }
 
-        let mut queue = StepperMotionGenerator::new(self.config.clone(), &[0, 0, 0, 0], &remote_times);
+        let mut queue = StepperMotionGenerator::new(self.config.clone(), &self.motor_positions, &remote_times);
 
         let last_position = self.planner.last_position().clone();
-        println!("Last Pos: {:?}", last_position);
 
-
-        println!("Doing planning!");
+        let mut planner_time = 0.0;
+        self.planner.set_start_time(planner_time);
 
         while !self.planner.is_empty() {
+            planner_time += PLANNER_STEP_SIZE;
+
             let mut out = vec![];
-            self.planner.next(1.0, 10000, &mut out);
+            // TODO: Use the same constants as in the MotionController code.
+            self.planner.next(planner_time, &mut out);
             for motion in out {
                 queue.enqueue(motion);
             }
         }
 
-        println!("Doing steps!");
-
-        // 283421.03
-
-        // queue.motions.truncate(2);
-
-        // println!("Have {} motions", queue.motions.len());
-
-        let step = 10;
-
         let mut motor_position = vec![0i64; 4];
 
-        let mut i = step;
+        let mut i = STEP_GENERATION_STEP;
         while !queue.is_empty() {
-            let commands = queue.to_commands(i as f64)?;
+            let commands = queue.to_commands(i)?;
             let mut n = vec![];
             for j in 0..commands.len() {
                 self.total_motions += commands[j].len();
                 n.push(commands[j].len());
 
-                for cmd in &commands[j] {
-                    let sign = if cmd.num_steps.direction() { -1 } else { 1 };
+                for (_, cmd) in &commands[j] {
+                    let sign = if cmd.num_steps.direction() { 1 } else { -1 };
 
                     motor_position[j] += sign * (cmd.num_steps.count() as i64);
                     self.total_steps += cmd.num_steps.count() as usize;
@@ -133,15 +132,20 @@ impl MotionControllerSimulator {
 
             }
 
+            /*
             println!("{}: {:?}", i, n);
-            i += step;
+            println!("  pos: {:?}", queue.motor_positions());
+            */
+            i += STEP_GENERATION_STEP;
         }
 
+        self.total_time += i;
+
+
+        self.motor_positions.copy_from_slice(queue.motor_positions());
         
 
-        println!("Motor Pos: {:?}", motor_position);
-
-        assert!(((motor_position[3] as f64) / 708.365708) - (last_position[3] as f64) < 0.01);
+        // println!("Motor Pos: {:?}", motor_position);
 
         Ok(())
     }

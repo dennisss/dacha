@@ -1,3 +1,11 @@
+/*
+CLI usage:
+
+--usb_device_id=8888:
+--usb_device_id=8888:0001
+--usb_device_num=<bus_name>.<device_num>
+*/
+
 use alloc::string::String;
 
 use common::args::{ArgFieldType, ArgType, ArgsType, RawArgs};
@@ -45,6 +53,14 @@ impl DeviceSelector {
             }
         }
 
+        // Preventing selection of my keyboard
+        // (mainly so that I don't accidentally re-flash it).
+        if device_desc.idVendor == 0x8888 && device_desc.idProduct = 0x0002 {
+            if self.vendor_id.is_none() || self.product_id.is_none() {
+                return Err(err_msg("Rejecting selection of protected device."));
+            }
+        }
+
         Ok(true)
     }
 }
@@ -78,7 +94,7 @@ impl ArgsType for DeviceSelector {
                 .ok_or_else(|| err_msg("Invalid usb_device_num"))?;
 
             bus_num = Some(m.group_str(1).unwrap()?.parse()?);
-            device_num = Some(m.group_str(1).unwrap()?.parse()?);
+            device_num = Some(m.group_str(2).unwrap()?.parse()?);
         }
 
         Ok(Self {

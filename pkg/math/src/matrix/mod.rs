@@ -19,3 +19,9 @@ pub mod svd;
 pub use self::base::*;
 pub use self::dimension::*;
 pub use self::helpers::*;
+
+
+#[cfg(feature = "alloc")]
+pub fn pinv(x: &MatrixXd) -> MatrixXd {
+    x.transpose() * (x * x.transpose()).inverse()
+}

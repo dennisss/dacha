@@ -1,7 +1,9 @@
 use alloc::string::String;
 use std::time::Duration;
+use std::borrow::ToOwned;
 
 use common::errors::*;
+use file::LocalPathBuf;
 
 use crate::descriptor_iter::*;
 use crate::descriptors::InterfaceClass;
@@ -23,16 +25,22 @@ const MAX_BLOCK_SIZE: u16 = 4096;
 pub struct DFUHost {
     context: Context,
     device_selector: DeviceSelector,
+    sysfs_path: Option<LocalPathBuf>,
 }
 
 impl DFUHost {
     /// Creates a new instance based on a selector for a device.
     /// The given selector must only select a single device.
+    ///
+    /// Once this finds a DFU device, it will bind to that USB port so normally this
+    /// can select the runtime device information and the bootloader can use a separate
+    /// set of USB ids. 
     pub fn create(device_selector: DeviceSelector) -> Result<Self> {
         let context = Context::create()?;
         Ok(Self {
             context,
             device_selector,
+            sysfs_path: None,
         })
     }
 
@@ -128,9 +136,14 @@ impl DFUHost {
             // bootloader.
             println!("Found DFU runtime device. Detaching...");
 
-            let mut device = device_entry.open().await?;
+            // The sysfs_dir typically contains the devpath in it so can be used to identify a specific
+            // USB port on the host.
+            if self.sysfs_path.is_none() {
+                println!("Binding to sysfs path: {}", device_entry.device_entry.sysfs_dir().as_str());
+                self.sysfs_path = Some(device_entry.device_entry.sysfs_dir().to_owned());
+            }
 
-            println!("Opened!");
+            let mut device = device_entry.open().await?;
 
             device.device.write_control(
                 SetupPacket {
@@ -141,7 +154,7 @@ impl DFUHost {
                     wLength: 0,
                 },
                 &[],
-            ).await?;
+            ).await.map_err(|e| format_err!("While issuing detach request: {}", e))?;
 
             if !device
                 .metadata
@@ -149,8 +162,12 @@ impl DFUHost {
                 .bmAttributes
                 .contains(DFUAttributes::bitWillDetach)
             {
-                device.device.reset()?;
+                device.device.reset().map_err(|e| format_err!("While issueing reset: {}", e))?;
             }
+
+            // Wait for the detach to finish.
+            // Immediately retrying will likely find the old device to fail while trying to open it.
+            executor::sleep(Duration::from_millis(500)).await;
         }
 
         Err(err_msg(
@@ -166,7 +183,11 @@ impl DFUHost {
         let mut found_device = None;
 
         for device_entry in devices {
-            if !self.device_selector.matches(&device_entry)? {
+            if let Some(path) = &self.sysfs_path {
+                if path.as_path() != device_entry.sysfs_dir() {
+                    continue;
+                } 
+            } else if !self.device_selector.matches(&device_entry)? {
                 continue;
             }
 
@@ -269,8 +290,6 @@ struct DFUHostDeviceEntry {
 impl DFUHostDeviceEntry {
     async fn open(self) -> Result<DFUHostDevice> {
         let mut device = self.device_entry.open().await?;
-
-        println!("Open!");
 
         // In the case of a keyboard we need to detach all interfaces?
         if device.kernel_driver_active(0)? {

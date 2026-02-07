@@ -10,7 +10,6 @@ use cluster_client::ClusterServer;
 use cnc_controller_proto::cnc::*;
 use rpc_util::NamedPortArg;
 use file::LocalPathBuf;
-use cnc::linear_motion_planner::LinearMotionPlanner;
 
 use crate::devices::*;
 use crate::config::*;

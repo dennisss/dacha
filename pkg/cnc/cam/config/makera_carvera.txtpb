@@ -4,9 +4,9 @@ isolation {
     tool_index: 2
     tool_diameter: 0.2
     tool_v_angle: 30
-    min_cut_depth: 0.1 # TODO
+    min_cut_depth: 0.05 # TODO
     # cut_width: 0.23 # For ~0.05mm cut depth.
-    cut_depth: 0.1
+    cut_depth: 0.05
     num_passes: 4
     overlap_percentage: 0.2
     spindle_speed: 12000
@@ -25,7 +25,7 @@ mask_removal {
     tool_diameter: 0.3
     spindle_speed: 6000
     cut_depth: 0.1
-    cut_compression: 0.3
+    cut_compression: 0.1
     overlap_percentage: 0.5
     travel_z: 1
     clearance_z: 10

@@ -450,6 +450,10 @@ impl DeviceEntry {
     pub async fn serial(&self) -> Result<Option<String>> {
         self.get_sysfs_value("serial").await
     }
+    
+    pub async fn devpath(&self) -> Result<Option<String>> {
+        self.get_sysfs_value("devpath").await
+    }
 
     /// Enumerates well known kernel driver devices which are interfacing with
     /// this USB device.
