@@ -69,7 +69,7 @@ macro_rules! impl_serialize_repeated_packed {
                 wire_type: WireType::LengthDelim,
             }
             .serialize(out)?;
-            serialize_varint(length_counter.total_bytes() as u64, out)?;
+            serialize_varint(length_counter.total_bytes() as WireVarint, out)?;
 
             for value in values {
                 ($serialize_single_value)(*value, out)?;
@@ -234,20 +234,21 @@ define_word_codec!(
     0.0
 );
 
-define_varint_codec!(Int32Codec, i32, |v| Ok(v as i32), |v| v as i64 as u64, 0);
+// TODO: Check if the parsing path needs sign extension.
+define_varint_codec!(Int32Codec, i32, |v| Ok(v as i32), |v| v as SignedWireVarint as WireVarint, 0);
 
 define_varint_codec!(
     Int64Codec,
     i64,
-    |v| Ok(v as i64),
+    |v| Ok(v as SignedWireVarint as i64),
     // TODO: Test if we need to do sign extension
-    |v| v as u64,
+    |v| v as WireVarint,
     0
 );
 
-define_varint_codec!(UInt32Codec, u32, |v| Ok(v as u32), |v| v as u64, 0);
+define_varint_codec!(UInt32Codec, u32, |v| Ok(v as u32), |v| v as WireVarint, 0);
 
-define_varint_codec!(UInt64Codec, u64, |v| Ok(v as u64), |v| v as u64, 0);
+define_varint_codec!(UInt64Codec, u64, |v| Ok(v as u64), |v| v as WireVarint, 0);
 
 define_varint_codec!(SInt32Codec, i32, decode_zigzag32, encode_zigzag32, 0);
 
@@ -298,8 +299,8 @@ define_word_codec!(
 define_varint_codec!(
     BoolCodec,
     bool,
-    |v: u64| -> WireResult<bool> { Ok(v != 0) },
-    |v: bool| -> u64 {
+    |v: WireVarint| -> WireResult<bool> { Ok(v != 0) },
+    |v: bool| -> WireVarint {
         if v {
             1
         } else {
@@ -493,7 +494,7 @@ impl EnumCodec {
             wire_type: WireType::LengthDelim,
         }
         .serialize(out)?;
-        serialize_varint(length_counter.total_bytes() as u64, out)?;
+        serialize_varint(length_counter.total_bytes() as WireVarint, out)?;
 
         for value in values {
             Int32Codec::serialize_single_value(value.value(), out)?;
@@ -529,7 +530,7 @@ impl EnumCodec {
             wire_type: WireType::LengthDelim,
         }
         .serialize(out)?;
-        serialize_varint(length_counter.total_bytes() as u64, out)?;
+        serialize_varint(length_counter.total_bytes() as WireVarint, out)?;
 
         for value in values {
             Int32Codec::serialize_single_value(value.value(), out)?;
@@ -631,7 +632,7 @@ impl<M: Message + Sized> MessageCodec<M> {
             wire_type: WireType::LengthDelim,
         }
         .serialize(out)?;
-        serialize_varint(length_counter.total_bytes() as u64, out)?;
+        serialize_varint(length_counter.total_bytes() as WireVarint, out)?;
         value.serialize_to(options, out)?;
 
         Ok(())

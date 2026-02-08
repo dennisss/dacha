@@ -23,6 +23,10 @@ const MAX_ACTIVE_REQUESTS: usize = 128;
 
 const MAX_PACKET_SIZE: usize = 64;
 
+/// Number of extra bytes required to perform a full 64-byte data transfer over a
+/// USB bulk interface.
+const USB_PACKET_OVERHEAD_SIZE: usize = 10;
+
 /// Timeout on a single USB transaction.
 const USB_TIMEOUT: Duration = Duration::from_millis(10000);
 
@@ -76,6 +80,10 @@ struct State {
     /// Map of sequence number to the channel to use to deliver the response
     /// for an active request.
     active_requests: HashMap<u32, ActiveRequestsEntry, FastHasherBuilder>,
+
+    /// Counter of the total number of estimated bytes that have been transfered to/from
+    /// the device at the current point in time.
+    transfered_bytes: u64,
 }
 
 struct SendQueueEntry {
@@ -141,6 +149,7 @@ impl USBRadio {
                 send_queue: VecDeque::new(),
                 high_priority_send_queue: VecDeque::new(),
                 active_requests: HashMap::default(),
+                transfered_bytes: 0,
             })
         });
 
@@ -206,6 +215,7 @@ impl USBRadio {
 
         loop {
             // Send all available requests of batches of requests of size SEND_BUFFER_SIZE.
+            let mut transfered_bytes = 0;
             loop {
                 send_buffer.clear();
 
@@ -277,6 +287,8 @@ impl USBRadio {
                     .await
                     .map_err(|_| err_msg("Timeout while doing write_bulk"))??;
 
+                    transfered_bytes += (send_buffer.len() + USB_PACKET_OVERHEAD_SIZE) as u64;
+
                     continue;
                 }
 
@@ -285,8 +297,11 @@ impl USBRadio {
 
             // Wait either 10ms or for more requests to be available to send.
             {
-                let state = shared.state.lock().await?.read_exclusive();
+                let mut state = shared.state.lock().await?.enter();
+                state.transfered_bytes += transfered_bytes;
+                
                 if !state.send_queue.is_empty() || !state.high_priority_send_queue.is_empty() {
+                    state.exit();
                     continue;
                 }
 
@@ -375,10 +390,20 @@ impl USBRadio {
                 })?;
             }
 
+            lock!(state <= shared.state.lock().await?, {
+                state.transfered_bytes += (nread + USB_PACKET_OVERHEAD_SIZE) as u64;
+            });
+
             // Clean up read bytes
             // Note that this fairly cheap (bounded by CHUNK_SIZE)
             res_buffer.drain(..i);
         }
+    }
+    
+    pub async fn transfered_bytes(&self) -> Result<u64> {
+        Ok(lock!(state <= self.shared.state.lock().await?, {
+            state.transfered_bytes
+        }))
     }
 
     pub async fn get_clock_time(&self) -> Result<ClockTimeResponse> {

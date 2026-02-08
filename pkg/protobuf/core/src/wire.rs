@@ -4,9 +4,21 @@ use core::intrinsics::unlikely;
 
 use common::list::{ByteCounter, Appendable};
 use common::errors::Result;
+use common::ceil_div;
 
 use crate::types::FieldNumber;
 use crate::{Enum, Message};
+
+#[cfg(target_pointer_width = "64")]
+pub type WireVarint = u64;
+#[cfg(target_pointer_width = "64")]
+pub type SignedWireVarint = i64;
+
+#[cfg(target_pointer_width = "32")]
+pub type WireVarint = u32;
+#[cfg(target_pointer_width = "32")]
+pub type SignedWireVarint = i32;
+
 
 #[derive(Clone, Copy, Debug, Errable)]
 #[cfg_attr(feature = "std", derive(Fail))]
@@ -38,7 +50,7 @@ impl core::fmt::Display for WireError {
 pub type WireResult<T> = core::result::Result<T, WireError>;
 
 pub fn serialize_varint<A: Appendable<Item = u8> + ?Sized>(
-    mut v: u64,
+    mut v: WireVarint,
     out: &mut A,
 ) -> Result<(), A::Error> {
     loop {
@@ -56,13 +68,19 @@ pub fn serialize_varint<A: Appendable<Item = u8> + ?Sized>(
     Ok(())
 }
 
-pub fn parse_varint(input: &[u8]) -> WireResult<(u64, &[u8])> {
+#[cfg(target_pointer_width = "64")]
+const MAX_VARINT_BYTES: usize = ceil_div(64, 7);
+
+#[cfg(target_pointer_width = "32")]
+const MAX_VARINT_BYTES: usize = ceil_div(32, 7);
+
+pub fn parse_varint(input: &[u8]) -> WireResult<(WireVarint, &[u8])> {
     let mut v = 0;
     let mut i = 0;
 
     // Maximum number of bytes to take.
     // Limited by size of input and size of 64bit integer.
-    let max_bytes = core::cmp::min(input.len(), 10 /* ceil_div(64, 7) */);
+    let max_bytes = core::cmp::min(input.len(), MAX_VARINT_BYTES);
 
     loop {
         let overflow = i >= max_bytes;
@@ -70,7 +88,7 @@ pub fn parse_varint(input: &[u8]) -> WireResult<(u64, &[u8])> {
             return Err(WireError::Incomplete);
         }
 
-        let mut b = input[i] as u64;
+        let mut b = input[i] as WireVarint;
         let more = b & 0x80 != 0;
         b = b & 0x7f;
 
@@ -106,13 +124,14 @@ fn parse_word64<'a>(input: &'a [u8]) -> WireResult<(&'a [u8; 8], &'a [u8])> {
     Ok((v, rest))
 }
 
-pub fn encode_zigzag32(n: i32) -> u64 {
-    ((n << 1) ^ (n >> 31)) as i64 as u64
+
+pub fn encode_zigzag32(n: i32) -> WireVarint {
+    ((n << 1) ^ (n >> 31)) as SignedWireVarint as WireVarint
 }
 
-pub fn decode_zigzag32(v: u64) -> WireResult<i32> {
+pub fn decode_zigzag32(v: WireVarint) -> WireResult<i32> {
     let n = v as i32;
-    if (n as i64) != (v as i64) {
+    if (n as SignedWireVarint) != (v as SignedWireVarint) {
         return Err(WireError::IntegerOverflow);
     }
     // TODO: Verify that we didn't lose precision (by casting back)
@@ -120,11 +139,12 @@ pub fn decode_zigzag32(v: u64) -> WireResult<i32> {
     Ok((n >> 1) ^ (-(n & 1)))
 }
 
-pub fn encode_zigzag64(n: i64) -> u64 {
-    ((n << 1) ^ (n >> 63)) as u64
+// TODO: Check these for proper sign extension in 32-bit mode.
+pub fn encode_zigzag64(n: i64) -> WireVarint {
+    ((n << 1) ^ (n >> 63)) as WireVarint
 }
 
-pub fn decode_zigzag64(v: u64) -> i64 {
+pub fn decode_zigzag64(v: WireVarint) -> i64 {
     let n = v as i64;
     (n >> 1) ^ (-(n & 1))
 }
@@ -188,7 +208,7 @@ impl Tag {
         out: &mut A,
     ) -> Result<(), A::Error> {
         let v = (self.field_number << 3) | (self.wire_type as u32);
-        serialize_varint(v as u64, out)
+        serialize_varint(v as WireVarint, out)
     }
 }
 
@@ -394,8 +414,7 @@ macro_rules! wire_enum_accessor {
 
 #[derive(Debug)]
 pub enum WireValue<'a> {
-    // TODO: Use u64 instead of usize
-    Varint(u64),           // sint32, sint64, bool, enum
+    Varint(WireVarint),           // sint32, sint64, bool, enum
     Word64(&'a [u8; 8]),   // fixed64, sfixed64
     LengthDelim(&'a [u8]), // bytes, embedded messages, packed repeated fields
     #[cfg(feature = "alloc")]
@@ -404,7 +423,7 @@ pub enum WireValue<'a> {
 }
 
 impl<'a> WireValue<'a> {
-    wire_enum_accessor!(varint, Varint, u64);
+    wire_enum_accessor!(varint, Varint, WireVarint);
     wire_enum_accessor!(word64, Word64, &[u8; 8]);
     // wire_enum_accessor!(length_delim, LengthDelim, &[u8]);
     wire_enum_accessor!(word32, Word32, &[u8; 4]);
@@ -422,7 +441,7 @@ impl<'a> WireValue<'a> {
     /// TODO: To support backwards compatibility of making a field repeated,
     /// should we also read singular fields this way and drop all but the first
     /// value (using an iterator interface)?
-    pub fn repeated_varint(&self) -> impl Iterator<Item = WireResult<u64>> + 'a {
+    pub fn repeated_varint(&self) -> impl Iterator<Item = WireResult<WireVarint>> + 'a {
         WireValuePackedIterator {
             parser: parse_varint,
             state: match self {
@@ -463,7 +482,7 @@ impl<'a> WireValue<'a> {
             WireValue::Varint(n) => serialize_varint(*n, out)?,
             WireValue::Word64(v) => out.extend_from_slice(&v[..])?,
             WireValue::LengthDelim(v) => {
-                serialize_varint(v.len() as u64, out)?;
+                serialize_varint(v.len() as WireVarint, out)?;
                 out.extend_from_slice(v)?;
             }
             #[cfg(feature = "alloc")]

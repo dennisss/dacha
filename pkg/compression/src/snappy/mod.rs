@@ -7,7 +7,7 @@ pub mod window;
 
 use common::errors::*;
 use parsing::binary::{le_u16, le_u32};
-use protobuf::wire::{parse_varint, serialize_varint};
+use protobuf::wire::{parse_varint, serialize_varint, WireVarint};
 
 use crate::deflate::cyclic_buffer::SliceBuffer;
 use crate::deflate::matching_window::*;
@@ -208,7 +208,7 @@ fn snappy_write_literal(data: &[u8], output: &mut Vec<u8>) {
 
 #[inline(never)]
 pub fn snappy_compress(input: &[u8], output: &mut Vec<u8>) {
-    serialize_varint(input.len() as u64, output);
+    serialize_varint(input.len() as WireVarint, output);
 
     let buffer = SliceBuffer::new(input);
 
