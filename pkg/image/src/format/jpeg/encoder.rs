@@ -4,7 +4,7 @@ use std::ops::IndexMut;
 
 use common::bits::BitOrder;
 use common::bits::BitVector;
-use common::bits::BitWrite;
+use common::bits::{BitWrite, BitWriteExt, BitWriter64};
 use common::bits::BitWriter;
 use common::ceil_div;
 use common::errors::*;
@@ -21,8 +21,13 @@ use crate::format::jpeg::quantization::*;
 use crate::format::jpeg::segments::*;
 use crate::format::jpeg::stuffed::*;
 use crate::format::jpeg::zigzag::*;
+use crate::format::jpeg::default_tables::*;
+use crate::format::jpeg::types::*;
 use crate::Colorspace;
-use crate::Image;
+use crate::{Image, ImageRef};
+
+
+
 
 /// Creator of JPEG images.
 ///
@@ -37,22 +42,24 @@ pub struct JPEGEncoder {
     // computation.
     lumin_quant_table_scaling: [f32; BLOCK_SIZE],
     chroma_quant_table_scaling: [f32; BLOCK_SIZE],
+
+    /// If set, use these tables and don't serialize them in the JPEG.
+    preset_tables: Option<CodeTables>,
 }
+
 
 struct Atom {
     table_class: TableClass,
     table_index: u8,
     code: u8,
-    value: BitVector,
+    value: BitVector16,
 }
 
 struct CodeTables {
-    codes: Vec<BitVector>,
+    codes: Vec<BitVector16>,
 }
 
-// TODO: Only 162 of the AC codes will ever be used.
-// TODO: We can store all codes with just 8 bits + a length specifier since the
-// rest of the bits are always ones.
+// TODO: Only 162 of the AC codes will ever be used (the table is spare near the beginning).
 const NUM_TABLES_PER_CLASS: usize = 2;
 const NUM_DC_CODES: usize = NUM_TABLES_PER_CLASS * 16;
 const NUM_AC_CODES: usize = NUM_TABLES_PER_CLASS * 256;
@@ -61,7 +68,7 @@ impl CodeTables {
     fn new() -> Self {
         // (DC | AC) * (Table index 0 or 1) * (256 u8 values)
         Self {
-            codes: vec![BitVector::new(); NUM_DC_CODES + NUM_AC_CODES],
+            codes: vec![BitVector16::new(); NUM_DC_CODES + NUM_AC_CODES],
         }
     }
 
@@ -74,10 +81,26 @@ impl CodeTables {
         i += index.2 as usize;
         i
     }
+
+    fn default_tables() -> Self {
+        let mut out = Self::new();
+
+        for table_class in [TableClass::DC, TableClass::AC] {
+            for table_index in 0..2 {
+                let symbols = get_default_table(table_class, table_index);
+
+                for (sym, code) in symbols {
+                    out[(table_class, table_index as u8, sym)] = code;
+                }
+            }
+        }
+
+        out
+    }
 }
 
 impl Index<(TableClass, u8, u8)> for CodeTables {
-    type Output = BitVector;
+    type Output = BitVector16;
 
     fn index(&self, index: (TableClass, u8, u8)) -> &Self::Output {
         &self.codes[self.get_index(index)]
@@ -91,15 +114,15 @@ impl IndexMut<(TableClass, u8, u8)> for CodeTables {
     }
 }
 
-struct ImageBlockView {
-    image: Image<u8>,
+struct ImageBlockView<'a> {
+    image: ImageRef<'a>,
     channels: usize,
     x_blocks: usize,
     y_blocks: usize,
 }
 
-impl ImageBlockView {
-    fn new(image: Image<u8>) -> Self {
+impl<'a> ImageBlockView<'a> {
+    fn new(image: &ImageRef<'a>) -> Self {
         let x_blocks = ceil_div(image.width(), BLOCK_DIM);
         let y_blocks = ceil_div(image.height(), BLOCK_DIM);
 
@@ -107,32 +130,46 @@ impl ImageBlockView {
             channels: image.channels(),
             x_blocks,
             y_blocks,
-            image,
+            image: image.clone(),
         }
     }
 
+    #[inline(never)]
     fn get_block(&self, component_i: usize, block_i: usize) -> [u8; BLOCK_SIZE] {
         let mut out = [0u8; BLOCK_SIZE];
 
         let x_start = (block_i % self.x_blocks) * BLOCK_DIM;
         let y_start = (block_i / self.x_blocks) * BLOCK_DIM;
+        let stride = self.image.width(); // 1 channel means stride = width
 
-        for y_rel in 0..BLOCK_DIM {
-            let mut y = y_start + y_rel;
+        // Fast path: Block is fully inside the image
+        if self.channels == 1 && x_start + BLOCK_DIM <= self.image.width() && y_start + BLOCK_DIM <= self.image.height() {
+            let mut offset = y_start * stride + x_start;
 
-            if std::intrinsics::unlikely(y >= self.image.height()) {
-                y = self.image.height() - 1;
+            for row in 0..BLOCK_DIM {
+                // Copy the entire row (8 bytes) at once
+                // This compiles to a highly efficient vector load/store on Pi 5
+                out[row * 8..(row * 8 + 8)].copy_from_slice(
+                    &self.image.data[offset..offset + 8]
+                );
+                offset += stride;
             }
 
-            for x_rel in 0..BLOCK_DIM {
-                let mut x = x_start + x_rel;
+            return out
+        }
 
-                if std::intrinsics::unlikely(x >= self.image.width()) {
-                    x = self.image.width() - 1;
-                }
+
+        let x_limit = self.image.width() - 1;
+        let y_limit = self.image.height() - 1;
+
+        for y_rel in 0..BLOCK_DIM {
+            let y = (y_start + y_rel).min(y_limit);
+
+            for x_rel in 0..BLOCK_DIM {
+                let x = (x_start + x_rel).min(x_limit);
 
                 let i = y * self.channels * self.image.width() + self.channels * x + component_i;
-                out[y_rel * BLOCK_DIM + x_rel] = self.image.array.data[i];
+                out[y_rel * BLOCK_DIM + x_rel] = self.image.data[i];
             }
         }
 
@@ -152,6 +189,7 @@ impl JPEGEncoder {
             chroma_quant_table,
             lumin_quant_table_scaling,
             chroma_quant_table_scaling,
+            preset_tables: None,
         }
     }
 
@@ -166,6 +204,10 @@ impl JPEGEncoder {
         q2
     }
 
+    pub fn use_default_tables(&mut self) {
+        self.preset_tables = Some(CodeTables::default_tables());
+    }
+
     // TODO: NEed to support direct YUV  input and input of 4:2:2 and 4:2:0 YUV
     // formats.
     //
@@ -176,6 +218,26 @@ impl JPEGEncoder {
             return Err(err_msg("Only encoding RGB images is supported"));
         }
 
+        // TODO: Unnecessary copy for graphscale.
+        let mut pixels = image.array.data.clone();
+
+        if image.colorspace == Colorspace::RGB {
+            jpeg_rgb_to_ycbcr(&mut pixels);
+        }
+
+        let image_ref = ImageRef {
+            width: image.width(),
+            height: image.height(),
+            channels: image.channels(),
+            data: &pixels
+        };
+
+        self.encode_raw(&image_ref, out)
+    }
+
+    /// Encodes assuming that the colorspace is already correct (JPEG YUV or grayscale).
+    #[inline(never)]
+    pub fn encode_raw(&self, image: &ImageRef, out: &mut Vec<u8>) -> Result<()> {
         out.extend_from_slice(START_OF_IMAGE);
 
         DefineQuantizationTable {
@@ -192,23 +254,61 @@ impl JPEGEncoder {
             .serialize(out);
         }
 
-        let mut pixels = image.array.data.clone();
+        let start_of_frame = self.make_start_of_frame_segment(image);
+        start_of_frame.serialize(out);
 
-        if image.colorspace == Colorspace::RGB {
-            jpeg_rgb_to_ycbcr(&mut pixels);
+        let blocks = ImageBlockView::new(image);
+
+        if let Some(code_table) = &self.preset_tables {
+            // Optimized code path for when we don't need to generate new huffman tables so
+            // we don't need to store a full 'atoms' vec. Instead we can directly pipe atomc
+            // into the bit serializer.
+
+            self.make_start_of_scan_segment(image)
+            .serialize(&start_of_frame, out);
+
+            // TODO: Dedup with write_scan_atoms
+            {
+                let mut stuffed_writer = StuffedWriter::new(out);
+
+                let mut writer = BitWriter64::new(&mut stuffed_writer);
+
+                // let mut writer = BitWriter::<StuffedWriter<_>>::new_with_order(&mut stuffed_writer, BitOrder::MSBFirst);
+
+                self.build_atoms(&blocks, |atom| {
+                    let code = &code_table[(atom.table_class, atom.table_index, atom.code)];
+                    writer.write_bitvec_generic(code)?;
+                    writer.write_bitvec_generic(&atom.value)
+                })?;
+
+                writer.finish()?;
+
+                // TODO: Pad with 1-bits.
+            }
+            
+        } else {
+
+            let mut atoms = vec![];
+            self.build_atoms(&blocks, |atom| {
+                atoms.push(atom);
+                Ok(())
+            })?;
+
+            let code_table = Self::build_dynamic_code_table(&atoms, image.channels(), out)?;
+
+            self.make_start_of_scan_segment(image)
+            .serialize(&start_of_frame, out);
+
+            Self::write_scan_atoms(&atoms, &code_table, out)?;
         }
 
-        // TODO: Actual colorspace is JPEG YUV if input was RGB.
-        let blocks = ImageBlockView::new(Image {
-            array: Array {
-                shape: image.array.shape.clone(),
-                data: pixels,
-            },
-            colorspace: image.colorspace,
-        });
+        out.push(0xFF);
+        out.push(END_OF_IMAGE);
 
-        let atoms = self.build_atoms(&blocks)?;
+        Ok(())
+    }
 
+    fn make_start_of_frame_segment(&self, image: &ImageRef) -> StartOfFrameSegment {
         let mut frame_components = vec![FrameComponent {
             id: 1,
             h_factor: 1,
@@ -233,18 +333,16 @@ impl JPEGEncoder {
             ]);
         }
 
-        let start_of_frame = StartOfFrameSegment {
+        StartOfFrameSegment {
             mode: DCTMode::Baseline,
             precision: 8,
             y: image.height(),
             x: image.width(),
             components: frame_components,
-        };
-        start_of_frame.serialize(out);
+        }
+    }
 
-        // Calculate the huffman codes.
-        let code_table = Self::build_dynamic_code_table(&atoms, image.channels(), out)?;
-
+    fn make_start_of_scan_segment(&self, image: &ImageRef) -> StartOfScanSegment {
         let mut scan_components = vec![ScanComponent {
             component_index: 0,
             dc_table_selector: 0,
@@ -273,14 +371,6 @@ impl JPEGEncoder {
             approximation_last_bit: 0,
             approximation_cur_bit: 0,
         }
-        .serialize(&start_of_frame, out);
-
-        Self::write_scan_atoms(&atoms, &code_table, out)?;
-
-        out.push(0xFF);
-        out.push(END_OF_IMAGE);
-
-        Ok(())
     }
 
     fn split_to_blocks(blocks: &ImageBlockView) -> Vec<Vec<[u8; 64]>> {
@@ -306,7 +396,7 @@ impl JPEGEncoder {
                     let block_y = y % BLOCK_DIM;
 
                     blocks_per_component[c][block_i][block_y * BLOCK_DIM + block_x] =
-                        blocks.image.array.data
+                        blocks.image.data
                             [channels * (in_y * blocks.image.width() + in_x) + c];
                 }
             }
@@ -315,7 +405,10 @@ impl JPEGEncoder {
         blocks_per_component
     }
 
-    fn build_atoms(&self, blocks: &ImageBlockView) -> Result<Vec<Atom>> {
+    #[inline(never)]
+    fn build_atoms<F: FnMut(Atom) -> Result<()>>(
+        &self, blocks: &ImageBlockView, mut callback: F
+    ) -> Result<()> {
         /*
         For DC coeff:
         - Code is S which is number of bits to encode amplitude
@@ -330,13 +423,13 @@ impl JPEGEncoder {
 
         let channels = blocks.image.channels();
 
-        let mut atoms = vec![];
-
         let mut last_dc = [0i16; 3];
 
         // Iterate over every block (interleaving each component) to construct atoms.
         for block_i in 0..(blocks.x_blocks * blocks.y_blocks) {
             for component in 0..channels {
+                let table_index = if component == 0 { 0 } else { 1 };
+
                 let block = {
                     let original_block = blocks.get_block(component, block_i);
 
@@ -364,12 +457,12 @@ impl JPEGEncoder {
                     last_dc[component] = block[0];
 
                     let (size, diff_value) = encode_zz(diff);
-                    atoms.push(Atom {
+                    callback(Atom {
                         table_class: TableClass::DC,
-                        table_index: if component == 0 { 0 } else { 1 },
+                        table_index,
                         code: size as u8,
-                        value: BitVector::from_lower_msb(diff_value as usize, size as u8),
-                    });
+                        value: BitVector16::from_lower_msb(diff_value as usize, size as u8),
+                    })?;
                 }
 
                 // Encode AC coefficients.
@@ -383,29 +476,29 @@ impl JPEGEncoder {
 
                     if coeff_i == block.len() {
                         // EOB run
-                        atoms.push(Atom {
+                        callback(Atom {
                             table_class: TableClass::AC,
-                            table_index: if component == 0 { 0 } else { 1 },
+                            table_index,
                             code: 0b00000000,
-                            value: BitVector::new(),
-                        });
+                            value: BitVector16::new(),
+                        })?;
                         break;
                     }
 
                     let (coeff_size, coeff_value) = encode_zz(block[coeff_i]);
-                    atoms.push(Atom {
+                    callback(Atom {
                         table_class: TableClass::AC,
-                        table_index: if component == 0 { 0 } else { 1 },
+                        table_index,
                         code: ((zero_run_length as u8) << 4) | (coeff_size as u8),
-                        value: BitVector::from_lower_msb(coeff_value as usize, coeff_size as u8),
-                    });
+                        value: BitVector16::from_lower_msb(coeff_value as usize, coeff_size as u8),
+                    })?;
 
                     coeff_i += 1;
                 }
             }
         }
 
-        Ok(atoms)
+        Ok(())
     }
 
     fn build_dynamic_code_table(
@@ -468,7 +561,7 @@ impl JPEGEncoder {
             segment.serialize(out);
 
             for (code, value) in segment.create_codes().into_iter().zip(segment.values) {
-                code_table[(*table_class, *table_index, *value)] = code;
+                code_table[(*table_class, *table_index, *value)].copy_from(&code);
             }
         }
 
@@ -477,12 +570,15 @@ impl JPEGEncoder {
 
     fn write_scan_atoms(atoms: &[Atom], code_table: &CodeTables, out: &mut Vec<u8>) -> Result<()> {
         let mut stuffed_writer = StuffedWriter::new(out);
-        let mut writer = BitWriter::new_with_order(&mut stuffed_writer, BitOrder::MSBFirst);
+        
+        let mut writer = BitWriter64::new(&mut stuffed_writer);
+        
+        // let mut writer = BitWriter::new_with_order(&mut stuffed_writer, BitOrder::MSBFirst);
 
         for atom in atoms {
             let code = &code_table[(atom.table_class, atom.table_index, atom.code)];
-            writer.write_bitvec(code)?;
-            writer.write_bitvec(&atom.value)?;
+            writer.write_bitvec_generic(code)?;
+            writer.write_bitvec_generic(&atom.value)?;
         }
 
         writer.finish()?;

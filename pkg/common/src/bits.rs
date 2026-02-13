@@ -6,9 +6,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use std::io::{Read, Write};
 use std::string::ToString;
+use std::ops::{Index, IndexMut, Deref, DerefMut};
 
 use crate::ceil_div;
 use crate::errors::*;
+use crate::list::List;
 
 #[derive(Debug, Fail)]
 pub enum BitIoError {
@@ -37,24 +39,67 @@ pub fn bitget(v: u8, bit: u8) -> bool {
     }
 }
 
+pub trait VecLike<T> {
+    fn len(&self) -> usize;
+    
+    fn resize(&mut self, new_len: usize, value: T);
+
+    fn last_mut(&mut self) -> Option<&mut T>;
+}
+
+impl<T: Clone> VecLike<T> for Vec<T> {
+    fn len(&self) -> usize {
+        Vec::<T>::len(self)
+    }
+
+    fn resize(&mut self, new_len: usize, value: T) {
+        Vec::<T>::resize(self, new_len, value)
+    }
+
+    fn last_mut(&mut self) -> Option<&mut T> {
+        self.as_mut_slice().last_mut()
+    }
+}
+
+pub trait BitVectorStorage = VecLike<u8> + List<u8> + Clone + Default + Index<usize, Output = u8> + IndexMut<usize> + for<'a> From<&'a [u8]> + AsRef<[u8]> + AsMut<[u8]>;
+
+use crate::fixed::vec::FixedVec;
+
+impl<T: Clone, const LEN: usize> VecLike<T> for crate::fixed::vec::FixedVec<T, LEN> {
+    fn len(&self) -> usize {
+        FixedVec::len(self)
+    }
+
+    fn resize(&mut self, new_len: usize, value: T) {
+        FixedVec::resize(self, new_len, value)
+    }
+
+    fn last_mut(&mut self) -> Option<&mut T> {
+        self.as_mut().last_mut()
+    }
+} 
+
+
+
 /// Represents a variable length number of ordered bits
 #[derive(PartialEq, Eq, Clone)]
-pub struct BitVector {
+pub struct BitVector<T = Vec<u8>> {
     /// Number of bits stored in 'data'.
     len: usize,
 
-    // TODO: std::mem::size_of::<Vec<u8>>() is 24, so let's inline any usage of up to 192 bits
-    // which is good enough for most compression).
     /// Bits are stored from MSB to LSB in each individual byte.
-    /// (in other words, bit index 0 is sotred in the MSB of data[0])
-    data: Vec<u8>,
+    /// (in other words, bit index 0 is stored in the MSB of data[0])
+    ///
+    /// TODO: std::mem::size_of::<Vec<u8>>() is 24, so let's inline any usage of up to 192 bits
+    /// which is good enough for most compression).
+    data: T,
 }
 
-impl BitVector {
+impl<T: BitVectorStorage> BitVector<T> {
     /// Returns an empty vector.
     pub fn new() -> Self {
-        BitVector {
-            data: vec![],
+        Self {
+            data: T::default(),
             len: 0,
         }
     }
@@ -65,9 +110,15 @@ impl BitVector {
     }
 
     pub fn set_all_zero(&mut self) {
-        for v in &mut self.data {
+        for v in self.data.as_mut() {
             *v = 0;
         }
+    }
+
+    pub fn copy_from<Y: BitVectorStorage>(&mut self, other: &BitVector<Y>) {
+        self.len = other.len();
+        self.data.resize(other.data.len(), 0);
+        self.data.as_mut().copy_from_slice(other.data.as_ref());
     }
 
     /// Appends a single bit to this vector.
@@ -141,7 +192,7 @@ impl BitVector {
     /// MSB 0 0 0 0 0 0 0 0 LSB
     ///          [    <-   ]
     pub fn from_usize(val: usize, width: u8) -> Self {
-        let mut out = BitVector::new();
+        let mut out = Self::new();
         for i in 0..width {
             // NOTE: THis is not reversed!
             out.push(((val >> i) & 0b1) as u8);
@@ -156,7 +207,7 @@ impl BitVector {
     /// MSB 0 0 0 0 0 0 0 0 LSB
     ///          [    ->   ]
     pub fn from_lower_msb(val: usize, width: u8) -> Self {
-        let mut out = BitVector::new();
+        let mut out = Self::new();
         for i in 0..width {
             out.push(((val >> (width - i - 1)) & 0b1) as u8);
         }
@@ -181,7 +232,7 @@ impl BitVector {
     }
 
     pub fn from(data: &[u8], len: usize) -> Self {
-        let mut data = Vec::from(data);
+        let mut data = T::from(data);
         data.resize(ceil_div(len, 8), 0);
 
         // Zero out any bits in the last byte that don't go up to 'len'
@@ -195,7 +246,7 @@ impl BitVector {
         Self { data, len }
     }
 
-    pub fn from_raw_vec(data: Vec<u8>) -> Self {
+    pub fn from_raw_vec(data: T) -> Self {
         let len = 8 * data.len();
         Self { data, len }
     }
@@ -210,7 +261,7 @@ impl BitVector {
     }
 
     /// Concatenates two bitvectors together.
-    pub fn concat(&self, other: &BitVector) -> Self {
+    pub fn concat(&self, other: &Self) -> Self {
         let mut output = self.clone();
         for i in 0..other.len() {
             output.push(other.get(i).unwrap());
@@ -219,7 +270,7 @@ impl BitVector {
         output
     }
 
-    pub fn rotate_left(&self, n: usize) -> BitVector {
+    pub fn rotate_left(&self, n: usize) -> Self {
         let mut output = self.clone();
         for i in 0..self.len() {
             assert!(output.set(i, self.get((i + n) % self.len()).unwrap()));
@@ -228,7 +279,7 @@ impl BitVector {
         output
     }
 
-    pub fn xor(&self, other: &BitVector) -> BitVector {
+    pub fn xor(&self, other: &Self) -> Self {
         assert_eq!(self.len(), other.len());
 
         let mut output = self.clone();
@@ -239,9 +290,9 @@ impl BitVector {
         output
     }
 
-    pub fn split_at(&self, mid: usize) -> (BitVector, BitVector) {
-        let mut left = BitVector::new();
-        let mut right = BitVector::new();
+    pub fn split_at(&self, mid: usize) -> (Self, Self) {
+        let mut left = Self::new();
+        let mut right = Self::new();
 
         for i in 0..mid {
             left.push(self.get(i).unwrap());
@@ -276,20 +327,20 @@ pub enum BitOrder {
 // ^ AKA: '1' should be encoded as '1' instead of as '0x80'
 // NOTE: This should be guranteed to always minimally cover all bits up to the
 // next complete octet.
-impl std::convert::AsRef<[u8]> for BitVector {
+impl<T: BitVectorStorage> std::convert::AsRef<[u8]> for BitVector<T> {
     fn as_ref(&self) -> &[u8] {
-        &self.data
+        self.data.as_ref()
     }
 }
 
-impl std::fmt::Debug for BitVector {
+impl<T: BitVectorStorage> std::fmt::Debug for BitVector<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "'{}'", self.to_string())
     }
 }
 
 /// Any string of '0' and '1' characters can be converted to a BitVector.
-impl std::convert::TryFrom<&'_ str> for BitVector {
+impl<T: BitVectorStorage> std::convert::TryFrom<&'_ str> for BitVector<T> {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<Self> {
@@ -670,6 +721,21 @@ impl<T> BitReader<'_, std::io::Cursor<T>> {
 }
 */
 
+// TODO: Executally merge into 'write_bitvec'
+pub trait BitWriteExt<T: BitVectorStorage>: BitWrite {
+    fn write_bitvec_generic(&mut self, val: &BitVector<T>) -> Result<()> {
+        for i in 0..val.len() {
+            self.write_bits(val.get(i).unwrap() as usize, 1)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<W: Write, T: BitVectorStorage> BitWriteExt<T> for BitWriter<'_, W> {
+
+}
+
 pub trait BitWrite {
     /// Writes the lowest 'len' bits of 'val' to this stream.
     fn write_bits(&mut self, val: usize, len: u8) -> Result<()>;
@@ -690,19 +756,19 @@ pub trait BitWrite {
 }
 
 // TODO: This should also support different LSB or MSB styles.
-pub struct BitWriter<'a> {
+pub struct BitWriter<'a, W: ?Sized = dyn Write> {
     order: BitOrder,
-    writer: &'a mut dyn Write,
+    writer: &'a mut W,
     bit_offset: u8,
     current_byte: u8,
 }
 
-impl<'a> BitWriter<'a> {
-    pub fn new(writer: &'a mut dyn Write) -> Self {
+impl<'a, W: ?Sized + Write> BitWriter<'a, W> {
+    pub fn new(writer: &'a mut W) -> Self {
         Self::new_with_order(writer, BitOrder::LSBFirst)
     }
 
-    pub fn new_with_order(writer: &'a mut dyn Write, order: BitOrder) -> Self {
+    pub fn new_with_order(writer: &'a mut W, order: BitOrder) -> Self {
         Self {
             order,
             writer,
@@ -739,7 +805,7 @@ impl<'a> BitWriter<'a> {
     }
 }
 
-impl BitWrite for BitWriter<'_> {
+impl<W: Write> BitWrite for BitWriter<'_, W> {
     fn write_bits(&mut self, mut val: usize, len: u8) -> Result<()> {
         match self.order {
             BitOrder::LSBFirst => {
@@ -794,6 +860,68 @@ impl BitWrite for BitWriter<'_> {
         }
 
         Ok(())
+    }
+}
+
+
+/// This is an optimized version of BitWriter that only supports
+/// supporting bits in MSB first order.
+///
+/// Internally it buffers up to 64bits at a time and individual write operations
+/// MUST NOT exceed 56 bits in size without there being a risk of overflowing. 
+pub struct BitWriter64<'a, W> {
+    writer: &'a mut W,
+    buffer: u64,
+    bit_offset: usize,
+}
+
+impl<'a, W: Write> BitWriter64<'a, W> {
+    pub fn new(writer: &'a mut W) -> Self {
+        Self {
+            writer,
+            buffer: 0,
+            bit_offset: 0,
+        }
+    }
+
+    pub fn write_bitvec_generic<T: BitVectorStorage>(&mut self, vec: &BitVector<T>) -> Result<()> {
+
+        let final_offset = self.bit_offset + vec.len();
+        for byte in vec.as_ref() {
+            self.buffer |= (*byte as u64) << (56 - self.bit_offset);
+            self.bit_offset += 8;
+        }
+        self.bit_offset = final_offset;
+
+        while self.bit_offset > 8 {
+            let byte = (self.buffer >> 56) as u8;
+            self.writer.write(&[byte])?;
+
+            self.buffer <<= 8;
+            self.bit_offset -= 8;
+        }
+
+        Ok(())
+    }
+
+
+    pub fn finish(&mut self) -> Result<()> {
+        while self.bit_offset > 8 {
+            let byte = (self.buffer >> 56) as u8;
+            self.writer.write(&[byte])?;
+            self.buffer <<= 8;
+            self.bit_offset -= 8;
+        }
+
+        if self.bit_offset != 0 {
+            let byte = (self.buffer >> 56) as u8;
+            self.writer.write(&[byte])?;
+            self.buffer <<= 8;
+            self.bit_offset = 0;
+        }
+
+        Ok(())
+
     }
 }
 

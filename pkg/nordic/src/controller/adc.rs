@@ -206,9 +206,11 @@ impl InternalADCRequest {
 async fn adc_sample_worker_thread(
     controller: &'static PeripheralsController
 ) {
+    executor::interrupts::yield_now().await;
+
     loop {
         // Extract everything from the state needed to fulfill the next request.
-        let request = lock!(state <= controller.state.lock().await.unwrap(), {
+        let request = lock!(state <= controller.state.lock(), {
 
             let req = match state.adc_request_queue.requests.pop_front() {
                 Some(v) => v,
@@ -233,7 +235,7 @@ async fn adc_sample_worker_thread(
         if let Some(mut request) = request {
             let mut res = request.execute().await;
 
-            lock!(state <= controller.state.lock().await.unwrap(), {
+            lock!(state <= controller.state.lock(), {
                 // Return roughly the time of the last sample.
                 match controller.timer.capture() {
                     Some(v) => res.set_time(v),

@@ -22,7 +22,6 @@
 use common::fixed::queue::FixedQueue;
 use common::fixed::vec::FixedVec;
 use executor::cond_value::*;
-use executor::interrupts::wait_for_irq;
 use common::register::RegisterRead;
 use common::register::RegisterWrite;
 use peripherals::raw::EventRegister;
@@ -44,46 +43,23 @@ use crate::controller::{PeripheralsController, PeripheralEntry};
 const MAX_ENQUEUED_MOTIONS: usize = 1024;
 
 /// Minimum time from now to the next step pulse (in 16MHz clock cycles).
-/// Theoretical minimum is around 2, but its good to have a buffer if I estimated wrong.
-const MIN_STEP_TIME: u32 = 20;
+/// This must be safely larger than the amount of time it will take all the code in tick() after ".capture()" to run.
+const MIN_STEP_TIME: u32 = 16;
 
 /// Maximum time from now to the next step pulse (in 16MHz clock cycles).
 ///
 /// Note that this is also used to guard against steps that we missed since these will
 /// appear as times that overflowed and are 'before' the current time (have very large duration)
-const MAX_STEP_TIME: u32 = 4 * 16_000_000;  // 2 seconds
-
-
-// This thread is started when the first stepper is configured is stopped
-// when all the peripherals are unconfigured.
-define_thread!(
-    StepperPeripheralThread,
-    stepper_worker_thread,
-    controller: &'static PeripheralsController
-);
-
-async fn stepper_worker_thread(
-    controller: &'static PeripheralsController,
-) {
-    loop {
-        lock!(state <= controller.state.lock().await.unwrap(), {
-            for entry in &mut state.entries {
-                let stepper = match entry {
-                    PeripheralEntry::Stepper(controller) => controller,
-                    _ => continue
-                };
-
-                stepper.tick(); 
-            }
-        });
-
-        wait_for_irq(Interrupt::TIMER4).await;
-    }
-}
-
+const MAX_STEP_TIME: u32 = 4 * 16_000_000;  // 4 seconds
 
 
 pub struct StepperMotorController {
+    /// If true, then the step timer channel has a 'live' valid step time enqueued.
+    ///
+    /// The liveness of the CC register is controlled by whether or not the PPI channel
+    /// reading from it is enabled.
+    have_enqueued_step: bool,
+
     step_timer_channel: TimerChannel<'static>,
 
     step_ppi_channel: PPIChannel,
@@ -93,12 +69,6 @@ pub struct StepperMotorController {
     dir_pin: GPIOPin,
 
     motion_queue: Box<FixedQueue<QuadraticStepperMotion, MAX_ENQUEUED_MOTIONS>>,
-
-    /// If true, then the step timer channel has a 'live' valid step time enqueued.
-    ///
-    /// The liveness of the CC register is controlled by whether or not the PPI channel
-    /// reading from it is enabled.
-    have_enqueued_step: bool,
 
     enqueued_step_dir: i32,
 
@@ -234,15 +204,13 @@ impl StepperMotorController {
         proto
     }
 
+    // TODO: Verify that the PPI always gets triggered without race conditions (disabling it before it triggers) by forking to a counter mode timer and verifying the count is correct).
+
     /// This needs to be called when:
     ///
     /// - There is a motion plan change.
     /// - There is a TIMER0 interrupt.
-    ///
-    /// Returns true is a interrupt is currently configured to fire for the timer peripheral so the
-    /// caller needs to monitor it (not monitoring it or not calling tick later may keep the interrupt
-    /// permanently firing and may mess up other users of the timer).
-    pub fn tick(&mut self) -> bool {
+    pub fn tick(&mut self) {
         /*
         TMC2209 timing requirements:
         - DIR is set at least 20ns before STEP is triggered
@@ -256,8 +224,9 @@ impl StepperMotorController {
 
         // TIMING: In the case that we are done the step, this should be take at least a
         // few timer cycles so we shouldn't need extra hold time for the previous step. 
+
         if self.have_enqueued_step {
-            if self.step_timer_channel.pending_event() {
+            if self.step_timer_channel.pending_event_no_wait() {
                 self.stats.position += self.enqueued_step_dir;
                 self.have_enqueued_step = false;
                 self.step_timer_channel.disable_interrupt();
@@ -265,7 +234,7 @@ impl StepperMotorController {
                 self.step_ppi_channel.disable();
             } else {
                 // Still waiting for the step.
-                return true;
+                return;
             }
         }
 
@@ -274,7 +243,7 @@ impl StepperMotorController {
         let (next_time, next_direction) = {
             let mut motion = match self.motion_queue.first_mut() {
                 Some(v) => v,
-                None => return false
+                None => return
             };
 
             let next_time = motion.next_step_time;
@@ -303,24 +272,28 @@ impl StepperMotorController {
 
         // Must have a delay between CC setup and triggering of at least ~2 so that 
         // DIR rises/falls early enough before STEP. Also need extra time for CPU processing delay.
-        if delta_time < MIN_STEP_TIME || delta_time >= MAX_STEP_TIME {
+        let too_slow = delta_time < MIN_STEP_TIME || delta_time >= MAX_STEP_TIME;
+        if unsafe { core::intrinsics::unlikely(too_slow) } {
             self.motion_queue.clear();
             self.stats.stopped = StepperMotorStatus_StoppedReason::TIMING_FAULT;
-            return false;
+            return;
         }
 
-        // TIMING: It is undefined whether or not the current_time capture above will
-        // trigger the compare event on the next cycle so just in case, we the above logic should
-        // take at least a cycle and then we clear it again here.
-        let _ = self.step_timer_channel.pending_event();
-
         self.step_timer_channel.set_compare_value(next_time);
+
+        // If the timer channel hasn't been used in a while, it may have a stale event pending so we
+        // need to clear that.
+        //
+        // It's also undefined if the above current_time capture will trigger a new event
+        // immediately.
+        //
+        // TIMING: This must run at least one clock cycle after the capture() to ensure we clear any
+        // event caused by that.
+        let _ = self.step_timer_channel.clear_pending_no_wait();
 
         self.have_enqueued_step = true;
         self.step_ppi_channel.enable();
         self.step_timer_channel.enable_interrupt();
-
-        true
     }
 
 }

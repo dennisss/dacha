@@ -43,8 +43,10 @@ async fn tachometer_worker_thread(
     request_sequence: u32,
     entry: GPIOEntry,
 ) {
+    executor::interrupts::yield_now().await;
+
     // TODO: Handle failure of this on unwrap.
-    let mut int = lock!(state <= controller.state.lock().await.unwrap(), {
+    let mut int = lock!(state <= controller.state.lock(), {
         state.gpiote.new_interrupt_channel(&entry.pin, GPIOInterruptPolarity::FallingEdge)
     }).unwrap();
 
@@ -78,7 +80,7 @@ async fn tachometer_worker_thread(
 
     let result = race!(collector, timeout).await;
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
+    lock!(state <= controller.state.lock(), {
         state.entries[peripheral_index] = PeripheralEntry::GPIO(entry);
 
         let mut res = PeripheralResponse::default();

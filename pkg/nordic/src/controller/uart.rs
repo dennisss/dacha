@@ -32,6 +32,8 @@ async fn uart_transmit_worker_thread(
     data: FixedVec<u8, 8>,
     receive_request: Option<UARTReceiveRequest>
 ) {
+    executor::interrupts::yield_now().await;
+
     if data.len() > 0 {
         uarte.write(&data).await;
     }
@@ -64,7 +66,7 @@ async fn uart_transmit_worker_thread(
     }
 
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
+    lock!(state <= controller.state.lock(), {
         state.entries[peripheral_index] = PeripheralEntry::UARTE(uarte);
 
         controller.write_response(&mut state, &res);

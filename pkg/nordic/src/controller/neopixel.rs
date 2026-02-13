@@ -55,7 +55,7 @@ async fn neopixel_worker_thread(
 ) {
     inst.show().await;
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
+    lock!(state <= controller.state.lock(), {
         state.entries[peripheral_index] = PeripheralEntry::Neopixel(inst);
 
         let mut res = PeripheralResponse::default();

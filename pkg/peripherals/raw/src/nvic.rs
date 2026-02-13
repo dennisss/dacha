@@ -25,9 +25,15 @@ pub struct NVIC {
 
     /// Interrupt Set-Enable Registers
     pub iser: NVIC_ISER,
+
+    /// Interrupt Clear-Enable Registers
     pub icer: NVIC_ICER,
 
+    /// Interrupt Priority Register
     pub ipr: NVIC_IPR,
+
+    /// Interrupt Set-Pending Registers
+    pub ispr: NVIC_ISPR,
 }
 
 impl NVIC {
@@ -37,6 +43,7 @@ impl NVIC {
             iser: NVIC_ISER { hidden: () },
             icer: NVIC_ICER { hidden: () },
             ipr: NVIC_IPR { hidden: () },
+            ispr: NVIC_ISPR { hidden: () },
         }
     }
 }
@@ -70,3 +77,5 @@ macro_rules! define_register_array {
 define_register_array!(NVIC_ISER, 0xE000E100, 8);
 define_register_array!(NVIC_ICER, 0xE000E180, 8);
 define_register_array!(NVIC_IPR, 0xE000E400, 60);
+define_register_array!(NVIC_ISPR, 0xE000E200, 8);
+define_register_array!(NVIC_ICPR, 0xE000E280, 8);

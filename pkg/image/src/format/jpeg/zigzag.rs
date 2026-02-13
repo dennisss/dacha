@@ -11,8 +11,8 @@ const ZIG_ZAG_SEQUENCE: &[u8; BLOCK_SIZE] = &[
     35, 36, 48, 49, 57, 58, 62, 63, //
 ];
 
-pub fn apply_zigzag<T: Copy>(inputs: &[T], outputs: &mut [T]) {
-    for i in 0..inputs.len() {
+pub fn apply_zigzag<T: Copy>(inputs: &[T; BLOCK_SIZE], outputs: &mut [T; BLOCK_SIZE]) {
+    for i in 0..BLOCK_SIZE {
         outputs[ZIG_ZAG_SEQUENCE[i] as usize] = inputs[i];
     }
 }

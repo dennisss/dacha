@@ -5,7 +5,8 @@
     inherent_associated_types,
     alloc_error_handler,
     generic_associated_types,
-    trait_alias
+    trait_alias,
+    core_intrinsics
 )]
 #![no_std]
 

@@ -7,3 +7,4 @@ pub mod plane;
 pub mod leveling;
 pub mod remote;
 pub mod gcode;
+pub mod benchmark;

@@ -19,9 +19,19 @@ const NUM_EXTERNAL_INTERRUPTS: usize = 48; // TODO: Use Interrupt::MAX.
 const NUM_INTERRUPTS: usize = EXTERNAL_INTERRUPT_OFFSET + NUM_EXTERNAL_INTERRUPTS; // TODO: Check this
 static mut INTERRUPT_WAKER_LISTS: [WakerList; NUM_INTERRUPTS] = [WakerList::new(); NUM_INTERRUPTS];
 
+
+#[derive(Clone, Copy)]
+struct InterruptHandlerOverride {
+    data: *const (),
+    func: fn(*const ()),
+}
+
+static mut INTERRUPT_HANDLER_OVERRIDES: [Option<InterruptHandlerOverride>; NUM_INTERRUPTS] = [None; NUM_INTERRUPTS];
+
 static mut DISABLED_INTERRUPTS_NESTING: usize = 0; 
 
 const PENDSV_EXCEPTION_NUM: usize = 14;
+const SYSTICK_EXCEPTION_NUM: usize = 15;
 
 pub type InterruptHandler = unsafe extern "C" fn() -> ();
 
@@ -48,6 +58,34 @@ pub unsafe fn enable_interrupts() {
     };
 }
 
+/// Enables and overrides an interrupt to always immediately call the given function.
+///
+/// This has the benefit of having less overhead to invoke interrupts, but
+/// after this is called, the interrupt can no longer be used in async calls
+/// to 'wait_for_irq'.
+///
+/// NOTE: It is currently unsafe to call this if the given interrupt could interrupt
+/// this function (only safe to call this during program initialization time). 
+///
+/// TODO: Ensure there are no wakers registered initially or after this is called. 
+pub fn override_interrupt_handler(num: Interrupt, func: fn(*const ()), data: *const ()) {
+    let num = num as usize;
+
+    // Enable it and don't disable it.
+    {
+        let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[num + EXTERNAL_INTERRUPT_OFFSET] };
+        let ctx = ExternalInterruptEnabledContext::create(num, waker_list);
+        core::mem::forget(ctx);
+    }
+
+    unsafe {
+
+        INTERRUPT_HANDLER_OVERRIDES[num + EXTERNAL_INTERRUPT_OFFSET] = Some(InterruptHandlerOverride {
+            data,func
+        });
+    }
+}
+
 struct ExternalInterruptEnabledContext<'a> {
     nvic: NVIC,
     register_index: usize,
@@ -56,7 +94,15 @@ struct ExternalInterruptEnabledContext<'a> {
 }
 
 impl<'a> ExternalInterruptEnabledContext<'a> {
-    pub fn new(
+    fn create(num: usize, waker_list: &'a mut WakerList) -> Self {
+        let nvic = unsafe { NVIC::new() };
+        let register_index = num / 32;
+        let register_mask = (1 << (num % 32)) as u32;
+
+        Self::new(nvic, register_index, register_mask, waker_list)
+    }
+
+    fn new(
         mut nvic: NVIC,
         register_index: usize,
         register_mask: u32,
@@ -86,6 +132,19 @@ impl Drop for ExternalInterruptEnabledContext<'_> {
     }
 }
 
+/// Marks a specific interrupt as pending in the NVIC so that its handler will get called soon (depending on interrupt priority and what is running now.
+pub fn trigger_irq(num: Interrupt) {
+    let mut nvic = unsafe { NVIC::new() };
+    let num = num as usize;
+
+    let i = num / 32;
+    let bit = 1 << (num % 32);
+
+    let v = nvic.ispr[i].read();
+
+    nvic.ispr[i].write(v | bit);
+}
+
 /// Waits for the given external interrupt to be triggered.
 ///
 /// When the interrupt is triggered, this function will return while still
@@ -108,11 +167,7 @@ pub async fn wait_for_irq(num: Interrupt) {
 
     let waker = waker_list.insert(waker);
 
-    let nvic = unsafe { NVIC::new() };
-    let register_index = num / 32;
-    let register_mask = (1 << (num % 32)) as u32;
-
-    let ctx = ExternalInterruptEnabledContext::new(nvic, register_index, register_mask, waker_list);
+    let ctx = ExternalInterruptEnabledContext::create(num, waker_list);
 
     drop(cs);
 
@@ -125,6 +180,11 @@ pub async fn wait_for_irq(num: Interrupt) {
 pub fn make_high_priority_irq(num: Interrupt) {
 
     let mut nvic = unsafe { NVIC::new() };
+
+    unsafe {
+        // Default SysTick and PendSV to low priority.
+        write_volatile(0xE000ED20 as *mut u32, 0xffffff);
+    }
 
     for i in 0..(Interrupt::MAX + 1) {
         let register_index = i / 4;
@@ -155,6 +215,18 @@ pub fn trigger_pendsv() {
     unsafe { write_volatile(NVIC_ICSR, 1 << 28) };
 }
 
+pub fn trigger_systick() {
+    let cs = CriticalSection::new();
+
+    let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[SYSTICK_EXCEPTION_NUM] };
+    if waker_list.is_empty() {
+        return;
+    }
+
+    // Set the PENDSVSET bit.
+    unsafe { write_volatile(NVIC_ICSR, 1 << 26) };
+}
+
 // TODO: Verify that this interrupt is at the same priority as all others.
 pub async fn wait_for_pendsv(mut cs: CriticalSection) {
     let mut waker =
@@ -170,6 +242,23 @@ pub async fn wait_for_pendsv(mut cs: CriticalSection) {
 
     waker.await;
 }
+
+// TODO: Verify interrupt priority of this.
+pub async fn wait_for_systick(mut cs: CriticalSection) {
+    let mut waker =
+        crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread(&mut cs));
+
+    let waker = waker.into_pin();
+
+    let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[SYSTICK_EXCEPTION_NUM] };
+
+    let waker = waker_list.insert(waker);
+
+    drop(cs);
+
+    waker.await;
+}
+
 
 pub async fn yield_now() {
     let cs = CriticalSection::new();
@@ -262,6 +351,11 @@ unsafe extern "C" fn default_interrupt() -> () {
         loop {
             asm!("nop");
         }
+    }
+
+    if let Some(handler) = unsafe { &INTERRUPT_HANDLER_OVERRIDES[interrupt_num] } {
+        (handler.func)(handler.data);
+        return;
     }
 
     // TODO: Subtract 1 from this?

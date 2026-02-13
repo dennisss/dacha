@@ -127,8 +127,8 @@ impl<D: ProtocolUSBDescriptorSet> USBDeviceHandler for ProtocolUSBHandler<D> {
         async move {
             // TODO: Decouple the buffer from being 'packet' typed and length.
             let mut raw_proto = self.packet_buf.raw_mut();
-            let n = req.read_aligned(raw_proto).await?;
-            self.process_peripheral_request_data(&self.packet_buf.raw()[0..n]).await;
+            let n = req.read_aligned(raw_proto)?;
+            self.process_peripheral_request_data(&self.packet_buf.raw()[0..n]);
 
             Ok(())
         }
@@ -172,7 +172,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
         }
     }
 
-    async fn process_peripheral_request_data(&self, data: &[u8]) {
+    fn process_peripheral_request_data(&self, data: &[u8]) {
         let n = data.len();
         let mut i = 0;
         // TODO: Send back errors whenever this notices an inconsistency of parse failure.
@@ -194,7 +194,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
             let proto = match PeripheralRequest::parse(s) {
                 Ok(v) => v,
                 Err(e) => {
-                    log!("PARSE FAIL");
+                    // log!("PARSE FAIL");
                     return;
                 }
             };
@@ -202,7 +202,7 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
             // TODO: If we get no sequence, imply that it is the same as the last received request + 1
 
             if let Some(controller) = &self.peripherals_controller {
-                controller.execute(&proto).await;
+                controller.execute(&proto);
             }
         }
 
@@ -359,11 +359,11 @@ impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
         if let Some(controller) = self.peripherals_controller {
             // TODO: We can probably avoid copying and just re-use the same buffer as the controller.
             let mut buf = Aligned::<_, u32>::new([0u8; 64]);
-            let n = controller.read_response(&mut buf[..]).await;
+            let n = controller.read_response(&mut buf[..]);
             let n_padded = fast_next_multiple_of_4(n);
             
             if n > 0 {
-                res.write_aligned(&buf[0..n_padded]).await?;
+                res.write_aligned(&buf[0..n_padded])?;
             }
         }
 

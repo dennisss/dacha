@@ -5,6 +5,7 @@ extern crate image;
 extern crate file;
 
 use std::fs;
+use std::time::Instant;
 
 use common::errors::*;
 use image::format::bitmap::Bitmap;
@@ -16,7 +17,31 @@ use image::{Color, Image};
 use image::format::jpeg::color::jpeg_ycbcr_to_rgb;
 
 fn main() -> Result<()> {
+
+    {
+        let data = fs::read(project_path!("testdata/image/nyhavn.qoi"))?;
+        let mut image = QOIDecoder::new().decode(&data)?;
+
+        let mut encoder = JPEGEncoder::new(80);
+        encoder.use_default_tables();
+
+        let s = Instant::now();
+
+        let mut data = vec![];
+        encoder.encode(&image, &mut data)?;
+        let e = Instant::now();
+
+        println!("Encoding took: {:?}", e - s);
+
+        fs::write(project_path!("test_mjpeg.jpeg"), &data)?;
+    }
+
+    return Ok(());
+
+
     // 800x600-NV12
+
+
 
     let data = fs::read("image.bin")?;
 

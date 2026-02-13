@@ -267,3 +267,11 @@ lto = true
 opt-level = 3 
 panic = 'abort'
 debug = true
+
+[profile.mcu-release]
+inherits = "release"
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+panic = "abort"
+

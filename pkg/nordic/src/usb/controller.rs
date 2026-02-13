@@ -303,11 +303,11 @@ impl USBDeviceController {
                                     Ok(()) => {}
                                     Err(e) => {
                                         if e == USBError::Reset {
-                                            log!("RESET");
+                                            // log!("RESET");
                                             self.configure_endpoints();
                                             handler.handle_reset().await;
                                         } else if e == USBError::NewSetupPacket {
-                                            log!("RE-SETUP");
+                                            // log!("RE-SETUP");
                                             continue;
                                         }
                                     }
@@ -317,7 +317,7 @@ impl USBDeviceController {
                             }
                         }
                         Event::USBReset => {
-                            log!("RESET");
+                            // log!("RESET");
                             self.configure_endpoints();
                             handler.handle_reset().await;
                         }
@@ -374,13 +374,13 @@ impl USBDeviceController {
                                     Ok(()) => {}
                                     Err(e) => {
                                         if e == USBError::Reset {
-                                            log!("RESET");
+                                            // log!("RESET");
                                             self.configure_endpoints();
                                             handler.handle_reset().await;
                                         } else if e == USBError::NewSetupPacket {
                                             // TODO: Must re-enqueue this event in a bit map so that we
                                             // know to process it again.
-                                            log!("TODO RE-SETUP");
+                                            // log!("TODO RE-SETUP");
                                             continue;
                                         }
                                     }
@@ -397,13 +397,13 @@ impl USBDeviceController {
                                 Ok(()) => {}
                                 Err(e) => {
                                     if e == USBError::Reset {
-                                        log!("RESET");
+                                        // log!("RESET");
                                         self.configure_endpoints();
                                         handler.handle_reset().await;
                                     } else if e == USBError::NewSetupPacket {
                                         // TODO: Must re-enqueue this event in a bit map so that we
                                         // know to process it again.
-                                        log!("TODO RE-SETUP");
+                                        // log!("TODO RE-SETUP");
                                         continue;
                                     }
                                 }
@@ -806,7 +806,7 @@ impl<'a> USBDeviceControlResponse<'a> {
                                 return Err(USBError::NewSetupPacket);
                             }
                             e => {
-                                log!("E", e as u32);
+                                // log!("E", e as u32);
                             }
                         }
                     }
@@ -855,7 +855,7 @@ impl<'a> USBDeviceNormalRequest<'a> {
     pub async fn read(&mut self, mut output: &mut [u8]) -> Result<usize, USBError> {
         // TODO: Re-use a global buffer
         let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
-        let packet_len = self.read_aligned(&mut packet_buffer[..]).await?;
+        let packet_len = self.read_aligned(&mut packet_buffer[..])?;
 
         if packet_len > output.len() {
             // Overflow. Panic!
@@ -866,7 +866,7 @@ impl<'a> USBDeviceNormalRequest<'a> {
     }
 
     // TODO: ONly allow calling this once.
-    pub async fn read_aligned(&mut self, output: &mut [u8]) -> Result<usize, USBError> {
+    pub fn read_aligned(&mut self, output: &mut [u8]) -> Result<usize, USBError> {
         // NOTE: We need to read this before the DMA transfer starts since as soon as the DMA
         // transfer ends, the peripheral is allowed to accept another packet.
         //
@@ -940,10 +940,10 @@ impl<'a> USBDeviceNormalResponse<'a> {
 
         packet_buffer[0..data.len()].copy_from_slice(data);
 
-        self.write_aligned(&packet_buffer[0..data.len()]).await
+        self.write_aligned(&packet_buffer[0..data.len()])
     }
 
-    pub async fn write_aligned(&mut self, data: &[u8]) -> Result<(), USBError> {
+    pub fn write_aligned(&mut self, data: &[u8]) -> Result<(), USBError> {
         let ptr: u32 = unsafe { core::mem::transmute(data.as_ptr()) };
         assert!(ptr % 4 == 0);
 

@@ -2,6 +2,7 @@ use core::time::Duration;
 use std::time::SystemTime;
 
 use crate::FileType;
+use crate::local::device_num::DeviceNumber;
 
 /*
 See https://man7.org/linux/man-pages/man7/inode.7.html
@@ -55,6 +56,14 @@ impl Metadata {
         (self.inner.st_mode & sys::bindings::S_IFMT) == sys::bindings::S_IFDIR
     }
 
+    pub fn is_block_dev(&self) -> bool {
+        (self.inner.st_mode & sys::bindings::S_IFMT) == sys::bindings::S_IFBLK
+    }
+
+    pub fn is_character_dev(&self) -> bool {
+        (self.inner.st_mode & sys::bindings::S_IFMT) == sys::bindings::S_IFCHR
+    }
+
     pub fn is_symlink(&self) -> bool {
         (self.inner.st_mode & sys::bindings::S_IFMT) == sys::bindings::S_IFLNK
     }
@@ -71,8 +80,16 @@ impl Metadata {
         self.inner.st_mode
     }
 
+    /// This is the device of the filesystem on which this file is located.
     pub fn st_dev(&self) -> sys::dev_t {
         self.inner.st_dev
+    }
+
+    /// This is the device that this file represents.
+    ///
+    /// NOTE: Only applicable for block and character devices.
+    pub fn represented_device(&self) -> DeviceNumber {
+        DeviceNumber::from_raw(self.inner.st_rdev)
     }
 }
 

@@ -11,6 +11,12 @@
 // Each raw table has the (code_length, code) for each symbol. See
 // tests::check_table for the correspondence of each index to specific symbols.
 
+use std::convert::TryFrom;
+use common::bits::BitVector;
+
+use crate::format::jpeg::TableClass;
+use crate::format::jpeg::types::BitVector16;
+
 #[rustfmt::skip]
 const DEFAULT_LUMINANCE_DC_CODE_LENS: &[(u8, &'static str); 12] = &[
     (2, "00"),
@@ -375,6 +381,66 @@ const DEFAULT_CHROMINANCE_AC_CODE_LENS: &[(u8, &'static str); 162] = &[
     (16, "1111111111111110"),
 ];
 
+/// Returns a list of symbols and their encoded forms.
+pub fn get_default_table(table_class: TableClass, table_index: usize) -> Vec<(u8, BitVector16)> {
+
+    let table: &[(u8, &'static str)] = match (table_class, table_index) {
+        (TableClass::DC, 0) => DEFAULT_LUMINANCE_DC_CODE_LENS,
+        (TableClass::AC, 0) => DEFAULT_LUMINANCE_AC_CODE_LENS,
+        (TableClass::DC, 1) => DEFAULT_CHROMINANCE_DC_CODE_LENS,
+        (TableClass::AC, 1) => DEFAULT_CHROMINANCE_AC_CODE_LENS,        
+        _ => panic!()
+    };
+
+    for (code_length, code_str) in table {
+        assert_eq!(
+            *code_length as usize,
+            code_str.len(),
+            "Inconsistent for {}",
+            *code_str
+        );
+    }
+
+    let mut out = vec![];
+
+    if table_class == TableClass::DC {
+        assert_eq!(table.len(), 12);
+
+        for (i, (code_len, code)) in table.iter().enumerate() {
+            out.push((
+                i as u8,
+                BitVector16::try_from(*code).unwrap()
+            ));
+        }
+    } else if table_class == TableClass::AC {
+        assert_eq!(table.len(), 162);
+
+        for (i, (code_len, code)) in table.iter().enumerate() {
+            let symbol = {
+                if i == 0 {
+                    0x00 // EOB
+                } else if i == 1 {
+                    0xF0 // ZRL
+                } else {
+                    let i = i - 2;
+                    let rrrr = i / 10;
+                    let ssss = (i % 10) + 1;
+
+                    (rrrr << 4) | ssss
+                }
+            };
+
+            out.push((
+                symbol as u8,
+                BitVector16::try_from(*code).unwrap()
+            ));
+        }
+    }
+
+    out
+}
+
+
 #[cfg(test)]
 mod tests {
 
@@ -384,60 +450,23 @@ mod tests {
 
     use super::*;
 
-    fn check_table(table_class: TableClass, table: &[(u8, &'static str)]) {
-        for (code_length, code_str) in table {
-            assert_eq!(
-                *code_length as usize,
-                code_str.len(),
-                "Inconsistent for {}",
-                *code_str
-            );
-        }
+    fn check_table(table_class: TableClass, table_index: usize) {
 
         let mut length_counts = vec![0u8; 16];
-        for (code_length, _) in table {
-            length_counts[(*code_length as usize) - 1] += 1;
-        }
-
         let mut symbols = vec![];
-        if table_class == TableClass::DC {
-            assert_eq!(table.len(), 12);
 
-            for (i, (code_len, code)) in table.iter().enumerate() {
-                symbols.push((
-                    SymbolLength {
-                        symbol: i,
-                        length: (*code_len as usize),
-                    },
-                    code,
-                ));
-            }
-        } else if table_class == TableClass::AC {
-            assert_eq!(table.len(), 162);
+        for (symbol, code) in get_default_table(table_class, table_index) {
+            let code_length = code.len();
+            
+            length_counts[code_length - 1] += 1;
 
-            for (i, (code_len, code)) in table.iter().enumerate() {
-                let symbol = {
-                    if i == 0 {
-                        0x00 // EOB
-                    } else if i == 1 {
-                        0xF0 // ZRL
-                    } else {
-                        let i = i - 2;
-                        let rrrr = i / 10;
-                        let ssss = (i % 10) + 1;
-
-                        (rrrr << 4) | ssss
-                    }
-                };
-
-                symbols.push((
-                    SymbolLength {
-                        symbol,
-                        length: (*code_len as usize),
-                    },
-                    code,
-                ));
-            }
+            symbols.push((
+                SymbolLength {
+                    symbol: symbol as usize,
+                    length: code_length,
+                },
+                code,
+            ));
         }
 
         symbols.sort_by(|a, b| {
@@ -466,15 +495,15 @@ mod tests {
         assert_eq!(regenerated_codes.len(), symbols.len());
 
         for ((_, expected_code), regenerated_code) in symbols.iter().zip(regenerated_codes.iter()) {
-            assert_eq!(*expected_code, &regenerated_code.to_string());
+            assert_eq!(expected_code, regenerated_code);
         }
     }
 
     #[test]
     fn raw_default_tables_consistent() {
-        check_table(TableClass::DC, DEFAULT_LUMINANCE_DC_CODE_LENS);
-        check_table(TableClass::DC, DEFAULT_CHROMINANCE_DC_CODE_LENS);
-        check_table(TableClass::AC, DEFAULT_LUMINANCE_AC_CODE_LENS);
-        check_table(TableClass::AC, DEFAULT_CHROMINANCE_AC_CODE_LENS);
+        check_table(TableClass::DC, 0);
+        check_table(TableClass::DC, 1);
+        check_table(TableClass::AC, 0);
+        check_table(TableClass::AC, 1);
     }
 }

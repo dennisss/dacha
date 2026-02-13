@@ -8,10 +8,10 @@ platform {
 rule_defaults {
     [type.googleapis.com/builder.RustBinaryAttrs] {
         compiler: CARGO
-        profile: "release"
+        profile: "mcu-release"
         no_default_features: true
         target: "thumbv7em-none-eabihf"
-        rustflags: "-C link-arg=-Tpkg/nordic/link.x"
+        rustflags: "-C link-arg=-Tpkg/nordic/link.x -C force-frame-pointers=no -C target-cpu=cortex-m4"
         cfg: ['target_label="nrf52840"', 'target_label="cortex_m"']
     }
 }

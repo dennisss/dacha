@@ -7,3 +7,8 @@ rust_binary(
     name = "media_camera_capture",
     bin = "media_camera_capture"
 )
+
+rust_binary(
+    name = "mjpeg_demo",
+    bin = "mjpeg_demo"
+)

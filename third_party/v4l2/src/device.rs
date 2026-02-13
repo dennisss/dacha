@@ -7,7 +7,7 @@ use executor::lock;
 use executor::sync::AsyncVariable;
 use executor::ExecutorPollingContext;
 use file::LocalPathBuf;
-use file::{LocalFile, LocalFileOpenOptions, LocalPath};
+use file::{LocalFile, LocalFileOpenOptions, LocalPath, DeviceNumber};
 use sys::EpollEvents;
 use sys::Errno;
 
@@ -44,6 +44,8 @@ pub(crate) struct DeviceShared {
     pub path: LocalPathBuf,
 
     pub capability: v4l2_capability,
+
+    device_num: DeviceNumber
 }
 
 impl Device {
@@ -86,10 +88,14 @@ impl Device {
         let mut capability = v4l2_capability::default();
         unsafe { vidioc_querycap(file.as_raw_fd(), &mut capability) }?;
 
+        let meta = file.metadata().await?;
+        let device_num = meta.represented_device();
+
         let shared = Arc::new(DeviceShared {
             file: AsyncVariable::new(file),
             capability,
             path: path.to_owned(),
+            device_num,
         });
 
         Ok(Self {
@@ -104,6 +110,10 @@ impl Device {
 
     pub fn path(&self) -> &LocalPath {
         &self.handle.shared.path
+    }
+
+    pub fn device_num(&self) -> DeviceNumber {
+        self.handle.shared.device_num
     }
 
     pub async fn print_capabiliites(&self) -> Result<()> {

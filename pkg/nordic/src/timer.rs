@@ -6,6 +6,8 @@ use common::register::{RegisterRead, RegisterWrite};
 use executor::critical_mutex::CriticalMutex;
 use executor::lock;
 use peripherals::raw::timer0::{TIMER0, TIMER0_REGISTERS};
+use peripherals::raw::timer0::intenset::INTENSET_WRITE_VALUE;
+use peripherals::raw::timer0::intenclr::INTENCLR_WRITE_VALUE;
 use peripherals::raw::timer1::TIMER1;
 use peripherals::raw::timer2::TIMER2;
 use peripherals::raw::timer3::TIMER3;
@@ -109,7 +111,12 @@ impl Timer {
             None => return None
         };
 
-        Some(TimerChannel { timer: self, periph: unsafe { self.periph.clone() }, index })
+        Some(TimerChannel {
+            timer: self,
+            periph: unsafe { self.periph.clone() },
+            index,
+            interrupt_mask: 1 << (16 + index)
+        })
     }
 
     pub fn capture(&self) -> Option<u32> {
@@ -128,6 +135,7 @@ pub struct TimerChannel<'a> {
     periph: TIMERx,
 
     index: usize,
+    interrupt_mask: u32,
 }
 
 impl<'a> Drop for TimerChannel<'a> {
@@ -144,12 +152,16 @@ impl<'a> TimerChannel<'a> {
     }
 
     pub fn set_compare_value(&mut self, value: u32) {
-        self.periph.cc[self.index].write(value);
+        unsafe {
+            self.periph.cc.get_unchecked_mut(self.index).write(value);
+        }
     }
 
     pub fn capture(&mut self) -> u32 {
-        self.periph.tasks_capture[self.index].write_trigger();
-        self.periph.cc[self.index].read()
+        unsafe {
+            self.periph.tasks_capture.get_unchecked_mut(self.index).write_trigger();
+            self.periph.cc.get_unchecked_mut(self.index).read()
+        }
     }
 
     pub fn pending_event(&mut self) -> bool {
@@ -161,8 +173,29 @@ impl<'a> TimerChannel<'a> {
             pending = true;
         }
 
+        pending
+    }
+
+    pub fn pending_event_no_wait(&mut self) -> bool {
+        let mut pending = false;
+        
+        let event = unsafe { self.periph.events_compare.get_unchecked_mut(self.index) };
+ 
+        if event.read().is_generated() {
+            event.write_notgenerated();
+            pending = true;
+        }
 
         pending
+    }
+
+    /// Clears any pending event on this channel.
+    /// If the caller doesn't run for at least 4 more cycles, it may re-trigger an interrupt.
+    #[inline(always)]
+    pub fn clear_pending_no_wait(&mut self) {
+        unsafe {
+            self.periph.events_compare.get_unchecked_mut(self.index).write_notgenerated();
+        }
     }
 
     pub fn compare_event(&self) -> &EventRegister {
@@ -174,6 +207,9 @@ impl<'a> TimerChannel<'a> {
     }
 
     pub fn enable_interrupt(&mut self) {
+        self.periph.intenset.write(INTENSET_WRITE_VALUE::from_raw(self.interrupt_mask));
+
+        /*
         let i = self.index;
         self.periph.intenset.write_with(|v| {
             match i {
@@ -186,9 +222,13 @@ impl<'a> TimerChannel<'a> {
                 _ => panic!()
             }
         });
+        */
     }
 
     pub fn disable_interrupt(&mut self) {
+        self.periph.intenclr.write(INTENCLR_WRITE_VALUE::from_raw(self.interrupt_mask));
+
+        /*
         let i = self.index;
         self.periph.intenclr.write_with(|v| {
             match i {
@@ -201,7 +241,8 @@ impl<'a> TimerChannel<'a> {
                 _ => panic!()
             }
         });
+        */
 
-        crate::events::flush_events_clear();
+        // crate::events::flush_events_clear();
     }
 }

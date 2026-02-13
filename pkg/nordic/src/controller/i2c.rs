@@ -58,7 +58,7 @@ async fn i2c_worker_thread(
         res.data_val_mut().extend_from_slice(read_buffer);
     }
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
+    lock!(state <= controller.state.lock(), {
         state.entries[peripheral_index] = PeripheralEntry::I2C(inst);
         controller.write_response(&mut state, &res);
     });

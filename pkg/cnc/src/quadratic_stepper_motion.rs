@@ -112,9 +112,12 @@ impl StepCount {
     }
 
     pub fn dec(&mut self) {
-        // TODO: If we don't care about bounds checks, we can
-        // replace this with 'self.value -= 1'.
+        self.value -= 1;
+
+        /*
+        // Safer but less efficient version
         self.value = (self.count() - 1) | self.sign_bit();
+        */
     }
 
     pub fn inc(&mut self) {

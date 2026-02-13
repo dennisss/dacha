@@ -53,9 +53,9 @@ impl DeviceSelector {
             }
         }
 
-        // Preventing selection of my keyboard
+        // Preventing selection of my keyboard within explicit intent.
         // (mainly so that I don't accidentally re-flash it).
-        if device_desc.idVendor == 0x8888 && device_desc.idProduct = 0x0002 {
+        if device_desc.idVendor == 0x8888 && device_desc.idProduct == 0x0002 {
             if self.vendor_id.is_none() || self.product_id.is_none() {
                 return Err(err_msg("Rejecting selection of protected device."));
             }

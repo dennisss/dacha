@@ -26,12 +26,14 @@ async fn spi_worker_thread(
     mut inst: SPIHost,
     data: FixedVec<u8, 8>
 ) {
+    executor::interrupts::yield_now().await;
+
     let mut out = FixedVec::<u8, 8>::new();
     out.resize(data.len(), 0u8);
 
     inst.transfer(&data, &mut out).await;
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
+    lock!(state <= controller.state.lock(), {
         state.entries[peripheral_index] = PeripheralEntry::SPI(inst);
 
         let mut res = PeripheralResponse::default();

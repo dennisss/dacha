@@ -47,7 +47,7 @@ impl<T, const LEN: usize> FixedQueue<T, LEN> {
         }
 
         let mut v = MaybeUninit::uninit();
-        core::mem::swap(&mut v, &mut self.data[self.offset]);
+        core::mem::swap(&mut v, unsafe { self.data.get_unchecked_mut(self.offset) });
         self.offset = (self.offset + 1) % self.data.len();
         self.length -= 1;
         Some(unsafe { v.assume_init() })
@@ -70,7 +70,7 @@ impl<T, const LEN: usize> FixedQueue<T, LEN> {
 
         let idx = self.offset;
 
-        Some(unsafe { self.data[idx].assume_init_mut() })
+        Some(unsafe { self.data.get_unchecked_mut(idx).assume_init_mut() })
     }
 }
 

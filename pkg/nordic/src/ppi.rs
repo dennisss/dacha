@@ -47,7 +47,8 @@ impl PPIChannels {
         });
 
         Some(PPIChannel {
-            index
+            index,
+            mask: 1 << index
         })
     }
 }
@@ -55,6 +56,7 @@ impl PPIChannels {
 
 pub struct PPIChannel {
     index: usize,
+    mask: u32,
 }
 
 impl Drop for PPIChannel {
@@ -71,14 +73,14 @@ impl PPIChannel {
         let mut periph = unsafe { PPI::new() };
         periph
             .chenset
-            .write(CHENSET_WRITE_VALUE::from_raw(1 << self.index));
+            .write(CHENSET_WRITE_VALUE::from_raw(self.mask));
     }
 
     pub fn disable(&mut self) {
         let mut periph = unsafe { PPI::new() };
         periph
             .chenclr
-            .write(CHENCLR_WRITE_VALUE::from_raw(1 << self.index));
+            .write(CHENCLR_WRITE_VALUE::from_raw(self.mask));
     }
 
     pub fn set_fork_task(&mut self, task: &mut TaskRegister) {

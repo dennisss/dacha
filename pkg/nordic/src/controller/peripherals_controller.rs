@@ -50,7 +50,7 @@ use common::cyclic_buffer::CyclicBuffer;
 use common::list::Appendable;
 use executor::sync::AsyncMutex;
 use common::register::RegisterRead;
-use executor::critical_mutex::CriticalMutex;
+use executor::critical_mutex::{CriticalMutex, Interruptable};
 use executor::channel::Channel;
 use peripherals_proto::peripherals::{
     PeripheralRequest, PeripheralRequestCommandCase, PeripheralResponse,
@@ -102,7 +102,7 @@ use super::tachometer::TachometerPeripheralThread;
 use super::temp::TemperaturePeripheralThread;
 use super::timeout::TimeoutPeripheralThread;
 use super::uart::UartTransmitPeripheralThread;
-use super::stepper::{StepperMotorController, StepperPeripheralThread};
+use super::stepper::{StepperMotorController};
 use super::interrupt::InterruptPeripheralThread;
 use super::adc::*;
 use super::spi::SPIPeripheralThread;
@@ -111,6 +111,8 @@ use super::i2c::I2CPeripheralThread;
 use super::buffer::Buffer;
 use super::radio::*;
 use super::allocator::BoxedSlice;
+use super::timer_controller::*;
+use super::spi_timer_controller::*;
 
 const MAX_NUM_PERIPHERALS: usize = 32;
 
@@ -127,12 +129,20 @@ const DEFAULT_ENTRY_VALUE: PeripheralEntry = PeripheralEntry::Unconfigured;
 
 pub struct PeripheralsController {
     pub(super) clock: RTC,
-    pub(super) state: AsyncMutex<PeripheralsControllerState>,
+    
+    /// This state is interruptable since the only higher priority interrupts only access the
+    /// TimerController state which has a separate lock.
+    pub(super) state: CriticalMutex<PeripheralsControllerState, Interruptable>,
+    
+    // TODO: Give this a dedicated interrupt.
     response_buffer_readable: Channel<()>,
+
     pub(super) adc_request_queue_filled: Channel<()>,
 
     // NOTE: Locking the state is still recommended for this to avoid multiple users taking the same channel slot.
     pub(super) timer: Timer,
+
+    pub(super) timer_controller: TimerController,
 }
 
 // TODO: Unconfigure all peripherals when this is dropped.
@@ -215,7 +225,8 @@ pub(super) enum PeripheralEntry {
 
     UARTE(UARTE),
 
-    Stepper(StepperMotorController),
+    /// The value is the index of the entry in the TimerController
+    Stepper(usize),
 
     Neopixel(NeopixelPeripheral),
 
@@ -224,6 +235,8 @@ pub(super) enum PeripheralEntry {
     Buffer(Buffer),
 
     SPI(SPIHost),
+
+    SPITimer(usize),
 
     I2C(TWIM),
 
@@ -351,10 +364,7 @@ impl PeripheralsController {
         let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
         let timer = Timer::new(timer4.into());
 
-        let mut entries = [DEFAULT_ENTRY_VALUE; MAX_NUM_PERIPHERALS];
-        for i in 0..entries.len() {
-            entries[i] = PeripheralEntry::Unconfigured;
-        }
+        let entries = [DEFAULT_ENTRY_VALUE; MAX_NUM_PERIPHERALS];
 
         // TODO: Instead init from a slice.
         let mut spim = FixedVec::new();
@@ -379,7 +389,8 @@ impl PeripheralsController {
         Self {
             clock,
             timer,
-            state: AsyncMutex::new(PeripheralsControllerState {
+            timer_controller: TimerController::new(),
+            state: CriticalMutex::new(PeripheralsControllerState {
                 entries,
                 config_finalized: false,
                 pwms: [
@@ -412,13 +423,22 @@ impl PeripheralsController {
 
     pub fn start(&'static self) {
         TimeoutPeripheralThread::start(self);
+        TimerControllerResponseThread::start(self);
+
+        unsafe {
+            executor::interrupts::override_interrupt_handler(
+                Interrupt::TIMER4,
+                timer_controller_interrupt,
+                core::mem::transmute(&self.timer_controller)
+            );
+        }
     }
 
     /// TODO: This requires that 'self' is pinned.
-    pub async fn execute(&'static self, request: &PeripheralRequest) {
+    pub fn execute(&'static self, request: &PeripheralRequest) {
         let mut res = PeripheralResponse::default();
 
-        lock!(state <= self.state.lock().await.unwrap(), {
+        lock!(state <= self.state.lock(), {
             let response_ready = match self.execute_impl(&mut state, request, &mut res) {
                 Ok(OkResponse) => true,
                 Err(ExecuteError::ErrorCode(code)) => {
@@ -442,7 +462,7 @@ impl PeripheralsController {
         // TODO: Currently this isn't fool proof since if there are since any running
         // requests then they may still append to the buffer shortly after it is cleared
         // with stale request ids.
-        lock!(state <= self.state.lock().await.unwrap(), {
+        lock!(state <= self.state.lock(), {
             state.batch_ack = None;
             state.response_buffer.clear();
             state.response_buffer_overflowed = false;
@@ -453,8 +473,8 @@ impl PeripheralsController {
     /// Each response is prefixed by a 1 byte length field so that
     /// multiple responses can be send back at once. This can also
     /// be safely padded with zeros if needed. 
-    pub async fn read_response(&self, out: &mut [u8]) -> usize {
-        lock!(state <= self.state.lock().await.unwrap(), {
+    pub fn read_response(&self, out: &mut [u8]) -> usize {
+        lock!(state <= self.state.lock(), {
             if state.response_buffer_overflowed && state.response_buffer.is_empty() {
                 state.response_buffer_overflowed = false;
                 out[0] = 0;
@@ -473,7 +493,7 @@ impl PeripheralsController {
 
     pub async fn wait_until_readable(&self) {
         loop {
-            let state = self.state.lock().await.unwrap().read_exclusive();
+            let state = self.state.lock();
 
             if state.response_buffer.len() > 0 || state.batch_ack.is_some() || state.response_buffer_overflowed {
                 return;
@@ -673,11 +693,13 @@ impl PeripheralsController {
                     PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
                 ))?;
 
-                state.entries[peripheral_idx] = PeripheralEntry::Stepper(controller);
+                let i = lock!(state <= self.timer_controller.state.lock(), {
+                    let i = state.entries.len();
+                    state.entries.push(TimerControllerEntry::Stepper(controller));
+                    i
+                });
 
-                if !StepperPeripheralThread::is_running() {
-                    StepperPeripheralThread::start(self);
-                }
+                state.entries[peripheral_idx] = PeripheralEntry::Stepper(i);
 
                 Ok(OkResponse)
             }
@@ -759,7 +781,25 @@ impl PeripheralsController {
                 }
 
                 // let pin = state.gpio.pin(IndexedPin { index: req.pin() });
-                let spi = state.spim.pop().unwrap();
+
+                let mut spi = None;
+                for i in 0..state.spim.len() {
+                    let good = {
+                        if req.timed() {
+                            state.spim[i].all_features_supported()
+                        } else {
+                            // TODO: Allow using this SPI but make it the last option.
+                            !state.spim[i].all_features_supported()
+                        }
+                    };
+                    
+                    if good {
+                        spi = state.spim.swap_remove(i);
+                        break;
+                    }
+                }
+
+                let spi = spi.unwrap();
 
                 // TODO: Need validation of the frequency used.
                 let inst = SPIHost::new(
@@ -772,7 +812,19 @@ impl PeripheralsController {
                     SPIMode::Mode0                
                 );
 
-                state.entries[peripheral_idx] = PeripheralEntry::SPI(inst);
+                if req.timed() {
+                    let c = SPITimerController::new(inst, &mut state.ppi, &self.timer).unwrap();
+
+                    let i = lock!(state <= self.timer_controller.state.lock(), {
+                        let i = state.entries.len();
+                        state.entries.push(TimerControllerEntry::SPITimer(c));
+                        i
+                    });
+                    
+                    state.entries[peripheral_idx] = PeripheralEntry::SPITimer(i);
+                } else {
+                    state.entries[peripheral_idx] = PeripheralEntry::SPI(inst);
+                }
 
                 Ok(OkResponse)
             }
@@ -879,7 +931,6 @@ impl PeripheralsController {
                 // the threads if they are actively being polled but that shouldn't ever
                 // happen since this code should run in a lower priority interrupt that
                 // doesn't interrupt these threads.
-                StepperPeripheralThread::stop();
                 InterruptPeripheralThread::stop();
 
                 // NOTE: Only save to stop this if the ADC is still in the state
@@ -916,7 +967,9 @@ impl PeripheralsController {
                             // Pins get disconnected on drop
                             state.uarte.push(inst.into_inner());
                         }
-                        PeripheralEntry::Stepper(controller) => {} 
+                        PeripheralEntry::Stepper(_) | PeripheralEntry::SPITimer(_) => {
+                            // Handled in the timer controller checks below.
+                        } 
 
                         PeripheralEntry::Neopixel(inst) => {
                             state.spim.push(inst.into_inner().into_inner());
@@ -934,6 +987,21 @@ impl PeripheralsController {
                         }
                     }
                 }
+
+                lock!(timer_state <= self.timer_controller.state.lock(), {
+                    while let Some(entry) = timer_state.entries.pop() {
+                        match entry {
+                            TimerControllerEntry::Stepper(controller) => {},
+                            TimerControllerEntry::SPITimer(controller) => {
+                                // NOTE: If the controller is active, we will be missing a
+                                // buffer entry so the request should fail above.
+                                state.spim.push(controller.into_inner().into_inner());
+                            },
+                        }
+                    }
+
+                    Ok(())
+                })?;
 
                 state.config_finalized = false;
 
@@ -1216,6 +1284,29 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::SpiTransfer(req) => {
                 self.check_fully_configured(state)?;
 
+                if req.transfer_count() != 0 {
+                    let entry_idx = *get_peripheral_mut!(state, peripheral_idx, SPITimer);
+                    
+                    let buffer = borrow_peripheral!(state, req.read_buffer() as usize, Buffer);
+
+                    return lock!(state <= self.timer_controller.state.lock(), {
+                        let spi = match &mut state.entries[entry_idx] {
+                            TimerControllerEntry::SPITimer(v) => v,
+                            _ => panic!()
+                        };
+
+                        if !spi.enqueue_request(request.request_sequence() as u8, &req, buffer) {
+                            return Err(ExecuteError::ErrorCode(
+                                PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                            ));
+                        }
+
+                        spi.tick();
+
+                        Err(ExecuteError::AsyncReply)
+                    });
+                }
+
                 if SPIPeripheralThread::is_running() {
                     return Err(ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_BUSY,
@@ -1260,8 +1351,9 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::EnqueueStepperMotion(req) => {
                 self.check_fully_configured(state)?;
 
-                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
+                let stepper_idx = *get_peripheral_mut!(state, peripheral_idx, Stepper);
 
+                /*
                 // Optional checks if we want to be paranoid.
                 let time = self.timer.capture()
                     .ok_or_else(|| ExecuteError::ErrorCode(
@@ -1274,37 +1366,99 @@ impl PeripheralsController {
                         PeripheralResponse_ErrorCode::TIMEOUT,
                     ));
                 }
+                */
 
-                if !stepper.enqueue_motion(req) {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ));
-                }
+                lock!(state <= self.timer_controller.state.lock(), {
+                    let stepper = match &mut state.entries[stepper_idx] {
+                        TimerControllerEntry::Stepper(s) => s,
+                        _ => {
+                            return Err(ExecuteError::ErrorCode(
+                                PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                            ));
+                        }
+                    };
 
-                stepper.tick();
+                    if !stepper.enqueue_motion(req) {
+                        return Err(ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                        ));
+                    }
 
-                Ok(OkResponse)
+                    stepper.tick();
+
+                    Ok(OkResponse)
+                })
             }
             PeripheralRequestCommandCase::ClearStepperQueue(_) => {
-                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
-                let time = self.timer.capture()
-                    .ok_or_else(|| ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ))?;
+                let stepper_idx = *get_peripheral_mut!(state, peripheral_idx, Stepper);
 
-                stepper.clear_motions(time);
-                stepper.tick();
-                Ok(OkResponse)
+                lock!(state <= self.timer_controller.state.lock(), {
+                    let stepper = match &mut state.entries[stepper_idx] {
+                        TimerControllerEntry::Stepper(s) => s,
+                        _ => {
+                            return Err(ExecuteError::ErrorCode(
+                                PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                            ));
+                        }
+                    };
+
+                    let time = self.timer.capture()
+                        .ok_or_else(|| ExecuteError::ErrorCode(
+                            PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
+                        ))?;
+
+                    stepper.clear_motions(time);
+                    stepper.tick();
+                    Ok(OkResponse)
+
+                })
+
+
             }
             PeripheralRequestCommandCase::ResetStepperMotor(_) => {
+                let stepper_idx = *get_peripheral_mut!(state, peripheral_idx, Stepper);
+
+                lock!(state <= self.timer_controller.state.lock(), {
+                    let stepper = match &mut state.entries[stepper_idx] {
+                        TimerControllerEntry::Stepper(s) => s,
+                        _ => {
+                            return Err(ExecuteError::ErrorCode(
+                                PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                            ));
+                        }
+                    };
+
+                    stepper.reset();
+                    Ok(OkResponse)
+                })
+                
                 // TODO: THis should probably reset an erorr if not stopped or there are entries in the queue.
-                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
-                stepper.reset();
-                Ok(OkResponse)
+                // let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
+
             }
-            PeripheralRequestCommandCase::GetClockTime(_) => {
+
+            PeripheralRequestCommandCase::GetStepperMotorStatus(_) => {
                 self.check_fully_configured(state)?;
 
+                let stepper_idx = *get_peripheral_mut!(state, peripheral_idx, Stepper);
+
+                lock!(state <= self.timer_controller.state.lock(), {
+                    let stepper = match &mut state.entries[stepper_idx] {
+                        TimerControllerEntry::Stepper(s) => s,
+                        _ => {
+                            return Err(ExecuteError::ErrorCode(
+                                PeripheralResponse_ErrorCode::INCOMPATIBLE_COMMAND,
+                            ));
+                        }
+                    };
+
+                    response.set_stepper_status(stepper.status());
+
+                    
+                    Ok(OkResponse)
+                })
+            }
+            PeripheralRequestCommandCase::GetClockTime(_) => {
                 let time = self.timer.capture()
                     .ok_or_else(|| ExecuteError::ErrorCode(
                         PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
@@ -1388,15 +1542,6 @@ impl PeripheralsController {
                 Ok(OkResponse)
             }
 
-            PeripheralRequestCommandCase::GetStepperMotorStatus(_) => {
-                self.check_fully_configured(state)?;
-
-                let stepper = get_peripheral_mut!(state, peripheral_idx, Stepper);
-
-                response.set_stepper_status(stepper.status());
-
-                Ok(OkResponse)
-            }
 
             PeripheralRequestCommandCase::SampleAdc(req) => {
                 self.check_fully_configured(state)?;

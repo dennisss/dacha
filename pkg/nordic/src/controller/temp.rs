@@ -19,9 +19,11 @@ async fn temperature_peripheral_thread_fn(
     request_sequence: u32,
     mut temp: Temp,
 ) {
+    executor::interrupts::yield_now().await;
+
     let value = temp.measure().await;
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
+    lock!(state <= controller.state.lock(), {
         state.temp = Some(temp);
 
         let mut res = PeripheralResponse::default();

@@ -33,13 +33,14 @@ pub mod rewriting;
 
 /// Computes 'next_time - current_time' assuming that that value
 /// should be positive (will account for u32 wrapping).
+#[inline(always)]
 pub fn time_remaining_u32(next_time: u32, current_time: u32) -> u32 {
-    let mut t = next_time.wrapping_sub(current_time);
-    if next_time < current_time {
-        t = t.wrapping_add(u32::max_value());
-    }
+    next_time.wrapping_sub(current_time)
+    // if next_time < current_time {
+    //     t = t.wrapping_add(u32::max_value());
+    // }
 
-    t
+    // t
 }
 
 /// Computes 'next_time - current_time'. This picks the smallest delta that makes

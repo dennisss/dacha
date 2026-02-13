@@ -83,7 +83,11 @@ impl BuildTarget for RustBinary {
                 cmd.arg("--release");
                 effective_profile = "release";
             }
-            profile @ _ => return Err(format_err!("Unsupported rust profile: {}", profile)),
+            profile @ _ => {
+                cmd.arg("--profile");
+                cmd.arg(profile);
+                effective_profile = profile;
+            }
         };
 
         if self.attrs.no_default_features() {

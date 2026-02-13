@@ -346,3 +346,28 @@ impl<'a> ImageIterMut<'a> {
         self.i += self.channels;
     }
 }
+
+
+#[derive(Clone)]
+pub struct ImageRef<'a> {
+    pub width: usize,
+    pub height: usize,
+    pub channels: usize,
+    pub data: &'a [u8]
+}
+
+impl<'a> ImageRef<'a> {
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+}
+

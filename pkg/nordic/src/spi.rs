@@ -8,7 +8,7 @@ use peripherals::raw::spim1::SPIM1;
 use peripherals::raw::spim2::SPIM2;
 use peripherals::raw::spim3::SPIM3;
 use peripherals::raw::PinLevel;
-use peripherals::raw::{Interrupt, InterruptState, PinDirection};
+use peripherals::raw::{Interrupt, InterruptState, PinDirection, TaskRegister};
 
 use crate::gpio::GPIOPin;
 use crate::pins::{connect_pin, connect_optional_pin, PeripheralPin};
@@ -17,6 +17,13 @@ use crate::pins::{connect_pin, connect_optional_pin, PeripheralPin};
 pub struct SPIMx {
     base_address: u32,
     interrupt: Interrupt,
+    all_features: bool,
+}
+
+impl SPIMx {
+    pub fn all_features_supported(&self) -> bool {
+        self.all_features
+    }
 }
 
 impl Deref for SPIMx {
@@ -34,28 +41,31 @@ impl DerefMut for SPIMx {
 }
 
 macro_rules! spimx_from {
-    ($t:ident, $i:ident) => {
+    ($t:ident, $i:ident, $f:expr) => {
         impl From<$t> for SPIMx {
             fn from(mut value: $t) -> Self {
                 SPIMx {
                     base_address: unsafe {
                         core::mem::transmute::<&mut SPIM0_REGISTERS, u32>(value.deref_mut())
                     },
-                    interrupt: Interrupt::$i
+                    interrupt: Interrupt::$i,
+                    all_features: $f
                 }
             }
         }
     };
 }
 
-spimx_from!(SPIM0, SPI0_SPIM0_SPIS0_TWI0_TWIM0_TWIS0);
-spimx_from!(SPIM1, SPI1_SPIM1_SPIS1_TWI1_TWIM1_TWIS1);
-spimx_from!(SPIM2, SPI2_SPIM2_SPIS2);
-spimx_from!(SPIM3, SPIM3);
+spimx_from!(SPIM0, SPI0_SPIM0_SPIS0_TWI0_TWIM0_TWIS0, false);
+spimx_from!(SPIM1, SPI1_SPIM1_SPIS1_TWI1_TWIM1_TWIS1, false);
+spimx_from!(SPIM2, SPI2_SPIM2_SPIS2, false);
+spimx_from!(SPIM3, SPIM3, true);
 
 // Depends on HFCLK for precise clock timing.
 pub struct SPIHost {
     periph: SPIMx,
+
+    /// Present when doing CS toggling in software.
     cs: Option<GPIOPin>,
 }
 
@@ -87,13 +97,13 @@ impl SPIHost {
             _ => panic!(),
         }
 
-        periph.intenset.write_with(|v| v.set_stopped().set_end());
-
         connect_optional_pin(mosi, &mut periph.psel.mosi);
         connect_optional_pin(miso, &mut periph.psel.miso);
         connect_optional_pin(sck, &mut periph.psel.sck);
-        // connect_optional_pin(cs, &mut periph.psel.csn);
-        // periph.csnpol.write_activelow();
+        if periph.all_features {
+            connect_optional_pin(cs.take(), &mut periph.psel.csn);
+            periph.csnpol.write_low();
+        }
 
         if let Some(cs) = &mut cs {
             cs.set_direction(PinDirection::Output).write(PinLevel::High);
@@ -137,35 +147,59 @@ impl SPIHost {
             cs.write(PinLevel::Low);
         }
 
+        self.setup_transfer(write_data, read_data);
+
         let mut transfer = SPIHostTransfer {
             periph: &mut self.periph,
             cs: &mut self.cs,
             running: false,
         };
 
-        transfer
-            .periph
-            .txd
-            .ptr
-            .write(unsafe { transmute::<*const u8, u32>(write_data.as_ptr()) });
-        transfer.periph.txd.maxcnt.write(write_data.len() as u32);
-
-        transfer
-            .periph
-            .rxd
-            .ptr
-            .write(unsafe { transmute::<*const u8, u32>(read_data.as_ptr()) });
-        transfer.periph.rxd.maxcnt.write(read_data.len() as u32);
+        // TODO: Reset the event initially.
 
         transfer.periph.tasks_start.write_trigger();
         transfer.running = true;
 
-        while transfer.periph.events_end.read().is_notgenerated() {
-            wait_for_irq(transfer.periph.interrupt).await;
+        // Wait for EVENTS_END
+        {
+            transfer.periph.intenset.write_with(|v| v.set_end());
+
+            while transfer.periph.events_end.read().is_notgenerated() {
+                wait_for_irq(transfer.periph.interrupt).await;
+            }
+
+            transfer.periph.events_end.write_notgenerated();
+
+            // TODO: Need to ensure this is cleared on future drop.
+            transfer.periph.intenclr.write_with(|v| v.set_end());
         }
 
-        transfer.periph.events_end.write_notgenerated();
+
         transfer.running = false;
+    }
+
+    /// Just sets up the input/output buffers for the next transfer
+    /// This assumes the user separately handles calling start_task
+    /// and ensuring that transfers finish before buffers are deallocated.
+    pub fn setup_transfer(&mut self, write_data: &[u8], read_data: &mut [u8]) {
+        self
+            .periph
+            .txd
+            .ptr
+            .write(unsafe { transmute::<*const u8, u32>(write_data.as_ptr()) });
+        self.periph.txd.maxcnt.write(write_data.len() as u32);
+
+        self
+            .periph
+            .rxd
+            .ptr
+            .write(unsafe { transmute::<*const u8, u32>(read_data.as_ptr()) });
+        self.periph.rxd.maxcnt.write(read_data.len() as u32);
+    }
+
+
+    pub fn start_task(&mut self) -> &mut TaskRegister {
+        &mut self.periph.tasks_start
     }
 
     pub fn into_inner(mut self) -> SPIMx {

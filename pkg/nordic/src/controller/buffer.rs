@@ -59,6 +59,10 @@ impl<'a, T: Primitive> BufferViewMut<'a, T> {
         }
     }
 
+    pub fn used(&self) -> usize {
+        self.buffer.used
+    }
+
     pub fn set_used(&mut self, n: usize) {
         self.buffer.used = n * core::mem::size_of::<T>();
         self.buffer.consumed = 0;

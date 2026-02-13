@@ -9,7 +9,7 @@ use file::{LocalPath, LocalPathBuf, LocalFile};
 use cnc_tools::execute::*;
 use cnc_tools::skew::*;
 use cnc_tools::leveling::*;
-
+use cnc_tools::benchmark::*;
 
 #[derive(Args)]
 struct Args {
@@ -25,7 +25,10 @@ enum Mode {
     SkewCalibration(SkewCalibrationCommand),
 
     #[arg(name = "leveling")]
-    Leveling(LevelingCommand)
+    Leveling(LevelingCommand),
+
+    #[arg(name = "benchmark")]
+    Benchmark(BenchmarkCommand),
 }
 
 impl Mode {
@@ -34,6 +37,7 @@ impl Mode {
             Self::Execute(cmd) => cmd.run().await,
             Self::SkewCalibration(cmd) => cmd.run().await,
             Self::Leveling(cmd) => cmd.run().await,
+            Self::Benchmark(cmd) => cmd.run().await,
         }
     }
 }

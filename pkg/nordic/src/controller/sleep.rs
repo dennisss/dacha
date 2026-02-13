@@ -24,7 +24,7 @@ async fn sleep_peripheral_thread_fn(
     let mut clock = controller.clock.clone();
     clock.wait_ms(1000).await;
 
-    lock!(state <= controller.state.lock().await.unwrap(), {
+    lock!(state <= controller.state.lock(), {
         let mut res = PeripheralResponse::default();
         res.set_request_sequence(request_sequence);
         controller.write_response(&mut state, &res);

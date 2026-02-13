@@ -99,6 +99,28 @@ mod io {
     ior!(vidioc_g_enc_index, b'V', 76, v4l2_enc_idx);
     iowr!(vidioc_encoder_cmd, b'V', 77, v4l2_encoder_cmd);
     iowr!(vidioc_try_encoder_cmd, b'V', 78, v4l2_encoder_cmd);
+
+    // linux/media.h
+    iowr!(media_ioc_device_info,   b'|', 0x00, media_device_info);
+    iowr!(media_ioc_enum_entities, b'|', 0x01, media_entity_desc);
+    iowr!(media_ioc_enum_links,    b'|', 0x02, media_links_enum);
+    iowr!(media_ioc_setup_link,    b'|', 0x03, media_link_desc);
+    iowr!(media_ioc_g_topology,    b'|', 0x04, media_v2_topology);
+    ior!(media_ioc_request_alloc,  b'|', 0x05, c_int);
+
+    // /usr/include/linux/v4l2-subdev.h
+    ior!(vidioc_subdev_querycap,            b'V',  0, v4l2_subdev_capability);
+    iowr!(vidioc_subdev_g_fmt,              b'V',  4, v4l2_subdev_format);
+    iowr!(vidioc_subdev_s_fmt,              b'V',  5, v4l2_subdev_format);
+    iowr!(vidioc_subdev_g_frame_interval,   b'V', 21, v4l2_subdev_frame_interval);
+    iowr!(vidioc_subdev_s_frame_interval,   b'V', 22, v4l2_subdev_frame_interval);
+    iowr!(vidioc_subdev_enum_mbus_code,     b'V',  2, v4l2_subdev_mbus_code_enum);
+    iowr!(vidioc_subdev_enum_frame_size,    b'V', 74, v4l2_subdev_frame_size_enum);
+    iowr!(vidioc_subdev_enum_frame_interval,b'V', 75, v4l2_subdev_frame_interval_enum);
+    iowr!(vidioc_subdev_g_crop,             b'V', 59, v4l2_subdev_crop);
+    iowr!(vidioc_subdev_s_crop,             b'V', 60, v4l2_subdev_crop);
+    iowr!(vidioc_subdev_g_selection,        b'V', 61, v4l2_subdev_selection);
+    iowr!(vidioc_subdev_s_selection,        b'V', 62, v4l2_subdev_selection);
 }
 
 mod buffer;
@@ -106,6 +128,8 @@ mod control;
 mod device;
 mod format;
 mod stream;
+mod sub_device;
+mod media;
 
 pub use bindings::*;
 pub use buffer::*;
@@ -113,3 +137,5 @@ pub use control::*;
 pub use device::*;
 pub use format::*;
 pub use stream::*;
+pub use sub_device::*;
+pub use media::*;

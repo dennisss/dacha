@@ -24,3 +24,4 @@ cnc_controller = { path = "../controller" }
 cnc_controller_proto = { path = "../controller/proto" }
 cluster_client = { path = "../../container/client" }
 container_proto = { path = "../../container/proto" }
+peripherals_service = { path = "../../peripherals/service" }

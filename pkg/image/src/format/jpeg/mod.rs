@@ -9,6 +9,7 @@ mod quantization;
 mod segments;
 mod stuffed;
 mod zigzag;
+mod types;
 
 use std::f32::consts::PI;
 use std::io::{Cursor, Read};

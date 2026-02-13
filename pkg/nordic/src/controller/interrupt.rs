@@ -54,10 +54,12 @@ define_thread!(
 async fn interrupt_worker_thread(
     controller: &'static PeripheralsController
 ) {
+    executor::interrupts::yield_now().await;
+
     let mut waiter = unsafe { GPIOPortWaiter::new() };
 
     loop {
-        lock!(state <= controller.state.lock().await.unwrap(), {
+        lock!(state <= controller.state.lock(), {
             for i in 0..state.entries.len() {
                 let mut entry = match &mut state.entries[i] {
                     PeripheralEntry::GPIO(entry) => entry,

@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2018"
 
 [dependencies]
+base_error = { path = "../../base/error" }
 common = { path = "../../common" }
 compression = { path = "../../compression" }
 math = { path = "../../math" }
@@ -17,6 +18,7 @@ crypto = { path = "../../crypto" }
 web = { path = "../../web" }
 rpc = { path = "../../rpc" }
 http = { path = "../../http" }
+image = { path = "../../image" }
 http_util = { path = "../../http/util" }
 rpc_util = { path = "../../rpc/util" }
 json = { path = "../../format/json" }

@@ -77,7 +77,8 @@ fn print_camera_info(camera: libcamera::AvailableCamera) -> Result<()> {
             sensor_config.outputSize = size;
             sensor_config.bitDepth = libcamera::pixel_format_bit_depth(pixel_format) as u32;
             config2.set_sensor_config(Some(sensor_config));
-            if config2.validate() != libcamera::CameraConfigurationStatus::Valid {
+
+            if config2.validate() == libcamera::CameraConfigurationStatus::Invalid {
                 println!("      => Invalid config");
                 continue;
             }
@@ -182,9 +183,8 @@ fn main() -> Result<()> {
     println!("Size: {:?}", config.stream_config(0).size());
     println!("Pixel Format: {:?}", config.stream_config(0).pixel_format());
 
-    assert_eq!(
-        config.validate(),
-        libcamera::CameraConfigurationStatus::Valid
+    assert!(
+        config.validate() != libcamera::CameraConfigurationStatus::Invalid
     );
 
     let camera = camera.configure(&mut config)?;

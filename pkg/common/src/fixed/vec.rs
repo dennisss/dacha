@@ -3,6 +3,8 @@ use core::iter::Iterator;
 use core::marker::PhantomData;
 use core::mem::zeroed;
 use core::mem::MaybeUninit;
+use core::slice::SliceIndex;
+use core::ops::{Index, IndexMut};
 use core::ops::{Deref, DerefMut};
 
 use crate::const_default::ConstDefault;
@@ -61,13 +63,13 @@ impl<T, const LEN: usize> FixedVec<T, LEN> {
         self.pop();
     }
 
-    pub fn swap_remove(&mut self, index: usize) {
+    pub fn swap_remove(&mut self, index: usize) -> Option<T> {
         let other_index = self.length - 1;
         if index != other_index {
             self.data.swap(index, other_index);
         }
 
-        self.pop();
+        self.pop()
     }
 
     pub fn clear(&mut self) {
@@ -153,13 +155,21 @@ impl<T, const LEN: usize> Deref for FixedVec<T, LEN> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        unsafe { MaybeUninit::slice_assume_init_ref(&self.data[0..self.length]) }
+        unsafe {
+            MaybeUninit::slice_assume_init_ref(
+                self.data.get_unchecked(0..self.length)
+            )
+        }
     }
 }
 
 impl<T, const LEN: usize> DerefMut for FixedVec<T, LEN> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { MaybeUninit::slice_assume_init_mut(&mut self.data[0..self.length]) }
+        unsafe {
+            MaybeUninit::slice_assume_init_mut(
+                self.data.get_unchecked_mut(0..self.length)
+            )
+        }
     }
 }
 
@@ -168,6 +178,27 @@ impl<T, const LEN: usize> AsRef<[T]> for FixedVec<T, LEN> {
         &*self
     }
 }
+
+impl<T, const LEN: usize> AsMut<[T]> for FixedVec<T, LEN> {
+    fn as_mut(&mut self) -> &mut [T] {
+        &mut *self
+    }
+}
+
+impl<T, I: SliceIndex<[T]>, const LEN: usize> Index<I> for FixedVec<T, LEN> {
+    type Output = I::Output;
+
+    fn index(&self, index: I) -> &Self::Output {
+        &self.as_ref()[index]
+    }
+}
+
+impl<T, I: SliceIndex<[T]>, const LEN: usize> IndexMut<I> for FixedVec<T, LEN> {
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        &mut self.as_mut()[index]
+    }
+}
+
 
 impl<T: Clone, const LEN: usize> Clone for FixedVec<T, LEN> {
     fn clone(&self) -> Self {

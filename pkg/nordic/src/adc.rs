@@ -3,7 +3,7 @@ use core::ops::{Deref, DerefMut};
 use common::register::RegisterRead;
 use common::register::RegisterWrite;
 use peripherals::raw::saadc::SAADC;
-use peripherals::raw::saadc::ch::config::{GAIN_FIELD, REFSEL_FIELD};
+use peripherals::raw::saadc::ch::config::{CONFIG_VALUE, GAIN_FIELD, REFSEL_FIELD, RESP_FIELD, RESN_FIELD};
 use peripherals::raw::saadc::ch::limit::LIMIT_VALUE;
 use peripherals::raw::saadc::oversample::OVERSAMPLE_FIELD;
 use peripherals::raw::EventRegister;
@@ -13,7 +13,7 @@ use peripherals::raw::AnalogPinSelect;
 use peripherals::raw::InterruptState;
 use peripherals::raw::timer0::{TIMER0, TIMER0_REGISTERS};
 use peripherals::raw::timer1::TIMER1;
-use peripherals_proto::peripherals::{ConfigureADCRequest, ADCFormat};
+use peripherals_proto::peripherals::{ConfigureADCRequest, ConfigureADCRequest_ResistorLadder, ADCFormat};
 use executor::interrupts::wait_for_irq;
 
 
@@ -75,8 +75,8 @@ pub struct ADC {
 pub struct ADCChannelConfig {
     pin_select: AnalogPinSelect,
     negative_pin_select: AnalogPinSelect,
-    gain_value: GAIN_FIELD,
-    ref_select: REFSEL_FIELD,
+
+    config_value: CONFIG_VALUE,
 
     /// Note that if a limit is disabled, the value is set to the min/max u16 value
     /// which will never be reached by the ADC so is effectively disabled.
@@ -246,12 +246,39 @@ impl ADC {
         limit.set_low((limit_low as u16) as u32);
         limit.set_high((limit_high as u16) as u32);
 
+        let resp = match config.pin_ladder() {
+            ConfigureADCRequest_ResistorLadder::BYPASS => RESP_FIELD::Bypass,
+            ConfigureADCRequest_ResistorLadder::PULL_UP => RESP_FIELD::Pullup,
+            ConfigureADCRequest_ResistorLadder::PULL_DOWN => RESP_FIELD::Pulldown,
+            ConfigureADCRequest_ResistorLadder::CENTERED => RESP_FIELD::VDD1_2,
+        };
+
+        let resn = match config.neg_pin_ladder() {
+            ConfigureADCRequest_ResistorLadder::BYPASS => RESN_FIELD::Bypass,
+            ConfigureADCRequest_ResistorLadder::PULL_UP => RESN_FIELD::Pullup,
+            ConfigureADCRequest_ResistorLadder::PULL_DOWN => RESN_FIELD::Pulldown,
+            ConfigureADCRequest_ResistorLadder::CENTERED => RESN_FIELD::VDD1_2,
+        };
+
+        let mut config_value = CONFIG_VALUE::new();
+        config_value
+        .set_gain(gain_value)
+        .set_refsel(ref_select)
+        .set_tacq_with(|v| v.set_10us())
+        .set_mode_with(|v| {
+            if negative_pin_select != AnalogPinSelect::NC {
+                v.set_diff();
+            }
+
+            v
+        })
+        .set_resp(resp)
+        .set_resn(resn);
 
         Some(ADCChannelConfig {
             pin_select,
             negative_pin_select,
-            gain_value,
-            ref_select,
+            config_value,
             units_per_volt,
             limit,
             stop_on_limit: config.stop_on_trigger(),
@@ -291,19 +318,7 @@ impl ADC {
         self.periph.ch[0].pselp.write(config.pin_select);
         self.periph.ch[0].pseln.write(config.negative_pin_select);
         self.periph.ch[0].limit.write(config.limit);
-        self.periph.ch[0].config.write_with(|v| {
-            v
-            .set_gain(config.gain_value)
-            .set_refsel(config.ref_select)
-            .set_tacq_with(|v| v.set_10us())
-            .set_mode_with(|v| {
-                if config.negative_pin_select != AnalogPinSelect::NC {
-                    v.set_diff();
-                }
-
-                v
-            })
-        });
+        self.periph.ch[0].config.write(config.config_value);
         self.periph.oversample.write(oversampling);
 
         // Setup interrupts and clear initial state of events we will use

@@ -18,7 +18,7 @@ async fn timeout_peripheral_thread_fn(controller: &'static PeripheralsController
     loop {
         rtc.wait_ms(1000).await;
 
-        lock!(state <= controller.state.lock().await.unwrap(), {
+        lock!(state <= controller.state.lock(), {
             let now = rtc.now();
 
             let state = &mut *state;

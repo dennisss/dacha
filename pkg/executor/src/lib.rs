@@ -5,7 +5,8 @@
     impl_trait_in_assoc_type,
     asm,
     waker_getters,
-    thread_local
+    thread_local,
+    core_intrinsics
 )]
 #![no_std]
 
