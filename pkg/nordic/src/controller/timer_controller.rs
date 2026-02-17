@@ -1,6 +1,6 @@
 use common::fixed::vec::FixedVec;
 use executor::critical_mutex::CriticalMutex;
-use executor::interrupts::{enable_interrupt, wait_for_irq};
+use executor::interrupts::wait_for_irq;
 use executor::CriticalSection;
 use peripherals::raw::Interrupt;
 use peripherals_proto::peripherals::PeripheralResponse;

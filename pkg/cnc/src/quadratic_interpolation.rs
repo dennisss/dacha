@@ -2,7 +2,7 @@ use alloc::{collections::VecDeque, vec::Vec};
 
 use crate::quadratic_stepper_motion::QuadraticStepperMotion;
 
-/// NOTE: THis must be much smaller than half the min step duration to ensure that
+/// NOTE: This must be much smaller than half the min step duration to ensure that
 /// steps don't swap ordering in time between two consecutive curves.
 const MAX_ERROR: i32 = 100;
 

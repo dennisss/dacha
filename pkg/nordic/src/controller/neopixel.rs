@@ -53,6 +53,8 @@ async fn neopixel_worker_thread(
     request_sequence: u32,
     mut inst: NeopixelPeripheral
 ) {
+    executor::interrupts::yield_now().await;
+
     inst.show().await;
 
     lock!(state <= controller.state.lock(), {

@@ -1980,6 +1980,11 @@ files: [
         sha256_sum: "0da516dc7fd5df3f7708445731b74c0b478a9cd4b3232168ae252cb86ad06b3e"
     },
     {
+        path: "pkg/things/button/boards/main/r1/plot.zip"
+        size: 73693
+        sha256_sum: "cd213ac5de334e3aae5011cf586090e8a8e3bd4fa5d5045b86dff0d472580174"
+    },
+    {
         path: "pkg/things/fan_controller/parts/fan-controller-hl15-case.stl"
         size: 125884
         sha256_sum: "a2a41f69a9b7954f489e0ba3c2bcde62b1e57a0305536c77a004600ad0ab4a6a"
@@ -2383,6 +2388,16 @@ files: [
         path: "third_party/ultralibrarian/TLP2361_V4_TPL_E/5pin SO6.step"
         size: 256402
         sha256_sum: "1a6ecc79bd68e88bd88ea8b490ee35f84a5e3e389a04bfb1187c3d099a16704c"
+    },
+    {
+        path: "third_party/ultralibrarian/TLV75512PDYDR/DYD0005A.stp"
+        size: 149856
+        sha256_sum: "34e27dca2af4518634a1e6e899fbb6ac07fe42387a5cae845f1d261d8d0d7538"
+    },
+    {
+        path: "third_party/ultralibrarian/TPS922054DMTR/DMT0014D.stp"
+        size: 421089
+        sha256_sum: "9d04f06fa4fb976e9da688775e998b3294770b60051e06547aa6d8f410e44b29"
     },
     {
         path: "third_party/ultralibrarian/molex_microfit_2x2/430450423.stl"

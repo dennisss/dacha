@@ -7,8 +7,6 @@ use math::matrix::{VectorXd, MatrixXd};
 use math::vecxd;
 use cluster_client::ClusterMetaClient;
 use cnc_controller_proto::cnc::*;
-use cnc_controller::motion_controller_sim::MotionControllerSimulator;
-use cnc_controller::motion_controller::MotionController;
 use cnc_controller::config::ControllerConfigRegistry;
 use file::LocalPathBuf;
 use file::project_path;

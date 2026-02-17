@@ -384,10 +384,21 @@ message ConfigureSPIRequest {
     uint32 cs_pin = 4;
 
     uint32 frequency = 5;
+
+    bool timed = 6;
 }
 
 message SPITransferRequest {
     bytes data = 1 [(dacha.max_length) = 8];
+
+    uint32 start_time = 2;
+
+    // If non-zero
+    uint32 transfer_interval = 3;
+
+    uint32 transfer_count = 4;
+
+    uint32 read_buffer = 5;
 }
 
 message ReadTachometer {}
@@ -398,6 +409,8 @@ message ConfigureStepperMotor {
     uint32 step_pin = 1;
 
     uint32 dir_pin = 2;
+
+    uint32 pulse_width = 3;
 }
 
 message ResetStepperMotor {
@@ -505,6 +518,17 @@ message ConfigureADCRequest {
 
     // Number of results to be collected in each window sampling.
     uint32 window_size = 12;
+
+    enum ResistorLadder {
+        BYPASS = 0;
+        PULL_UP = 1;
+        PULL_DOWN = 2;
+        CENTERED = 3;
+    }
+
+    ResistorLadder pin_ladder = 13;
+
+    ResistorLadder neg_pin_ladder = 14;
 }
 
 message AllocateBufferRequest {

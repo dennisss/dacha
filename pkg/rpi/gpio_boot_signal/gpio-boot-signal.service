@@ -1,0 +1,11 @@
+[Unit]
+Description=GPIO Boot Signal
+After=network.target ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pinctrl set 17 op dh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -164,5 +164,14 @@ libraries: [
     {
         name: "MIRA220ReferenceDesign"
         path: "third_party/asm_osram/mira220_reference"
+    },
+    {
+        path: "third_party/ultralibrarian/TPS922054DMTR"
+    },
+    {
+        path: "third_party/onsemi/ar0234"
+    },
+    {
+        path: "third_party/ultralibrarian/TLV75512PDYDR"
     }
 ]

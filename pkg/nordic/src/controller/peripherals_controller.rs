@@ -686,6 +686,7 @@ impl PeripheralsController {
                 let controller = StepperMotorController::new(
                     step_pin,
                     dir_pin,
+                    req.pulse_width(),
                     &mut state.ppi,
                     &mut state.gpiote,
                     &self.timer,

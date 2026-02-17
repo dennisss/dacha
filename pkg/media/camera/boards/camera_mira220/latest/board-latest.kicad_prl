@@ -13,14 +13,14 @@
       "shapes": 1.0,
       "tracks": 1.0,
       "vias": 1.0,
-      "zones": 0.44999998807907104
+      "zones": 0.28999999165534973
     },
     "selection_filter": {
       "dimensions": true,
       "footprints": true,
       "graphics": true,
       "keepouts": true,
-      "lockedItems": false,
+      "lockedItems": true,
       "otherItems": true,
       "pads": true,
       "text": true,
@@ -50,7 +50,7 @@
       "conflict_shadows",
       "shapes"
     ],
-    "visible_layers": "ffffffff_ffffffff_ffffffff_ffff50a5",
+    "visible_layers": "ffffffff_ffffffff_ffffffff_ffff54a5",
     "zone_display_mode": 0
   },
   "git": {

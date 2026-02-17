@@ -124,7 +124,10 @@ enum Command {
     // and hash.
 
     #[arg(name = "list")]
-    List
+    List,
+
+    #[arg(name = "license-check")]
+    LicenseCheck(LicenseCheckCommand),
 }
 
 #[derive(Args)]
@@ -455,6 +458,186 @@ async fn run_list() -> Result<()> {
 
 }
 
+#[derive(Args)]
+pub struct LicenseCheckCommand {
+
+}
+
+impl LicenseCheckCommand {
+    async fn run(self) -> Result<()> {
+
+        // TODO: Better to just list out everything that isn't ignored.
+
+        let mut all_files = vec![];
+
+        {
+            let base_dir = file::project_dir();
+            let mut glob = file::FileIterator::new(&base_dir, Box::new(git::GitFileFilter::create().await?));
+            while let Some(path) = glob.next().await? {
+                let rel_path = match path.strip_prefix(&base_dir) {
+                    Some(v) => v,
+                    None => continue,
+                };
+
+                all_files.push(rel_path.to_owned());
+            }
+        }
+
+
+        let mut licensed_prefixes = HashSet::new();
+
+        for p in &all_files {
+            if p.file_name().unwrap() == "LICENSE" {
+                let parent = p.parent().unwrap();
+                if parent.as_str() == "" {
+                    continue;
+                }
+
+                licensed_prefixes.insert(parent.as_str().to_string());
+                
+                println!("{:?}", p.parent());
+            }
+        }
+
+        // File extensions that are ok to go under any license.
+        let ignore_extensions = [
+            "xml", "csv", "jpg", "png", "svg", "md", "zip", "html",
+        ]
+            .into_iter().cloned().collect::<HashSet<&'static str>>();
+
+        let license_extensions = [
+            "stl", "stp", "step", "kicad_board", "kicad_pcb", "kicad_pro", "ipc", "kicad_sch", "kicad_prl", "dxf", "sch", "kicad_sym", "kicad_mod", "gbr", "drl", "gtl", "g2", "g3", "gbo", "gto", "gts", "scad", "gtp", "gbp", "gbs", "gm1", "pro", "gbl", "3mf",
+            "nc", "gcode", "FlatPrj", "skp"
+        ]
+            .into_iter().cloned().collect::<HashSet<&'static str>>();
+
+
+        for p in &all_files {
+            // TODO: Eventually set up machine readable licenses for all this.
+            if p.starts_with("third_party") {
+                continue;
+            }
+
+            let file_name = p.file_name().unwrap();
+            if file_name == "LICENSE" {
+                continue;
+            }
+
+            let mut explicitly_licensed = false;
+            
+            let mut parent = p.parent();
+            while let Some(p) = parent {
+                // TODO: Error out if there are multiple layers of licensing.
+                if licensed_prefixes.contains(p.as_str()) {
+                    explicitly_licensed = true;
+                    break;
+                }
+                parent = p.parent();
+            }
+
+            let extension = p.extension().unwrap_or("").to_ascii_lowercase();
+
+            if ignore_extensions.contains(extension.as_str()) {
+                continue;
+            }
+
+            let should_be_licensed = license_extensions.contains(extension.as_str()) ||
+                file_name == "sym-lib-table";
+
+            if should_be_licensed != explicitly_licensed {
+                eprintln!("Violation for {}; Currently explicitly licensed: {:?}", p.as_str(), explicitly_licensed);
+            }
+        }
+
+
+
+
+
+        /*
+        {
+            let git_index = git::read_index().await?;
+            for entry in &git_index.entries {
+                all_files.push(entry.name.as_str().to_string());
+            }
+        }
+        {
+            let mut external_files = load_external_files_proto().await?;
+            for file in external_files.files() {
+                all_files.push(file.path().to_string());
+            }
+        }
+
+        all_files.sort();
+        */
+
+        /*
+    let allowlisted_extensions = [
+        "zip", "pdf", "png", "svg", "stl", "stp", "step", "csv", "gbl", "gtp", "gbp", "g2", "g3", "ipc", "dxf",
+        "gcode", "bgcode", "nc", "drl", "gbr", "gto", "gts" , "gbo", "gbs", "gm1", "gtl", "jpg", "jpeg", "webp",
+        "3mf", "woff2", "ttf", 
+    ]
+        .into_iter().cloned().collect::<HashSet<&'static str>>();
+
+    while let Some(path) = glob.next().await? {
+        let rel_path = match path.strip_prefix(&base_dir) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        // Filter to only files that need to use the external file system.
+        // (everything else should use regular git tracking)
+        {
+            let by_ext = allowlisted_extensions.contains(
+                rel_path.extension().unwrap_or("").to_ascii_lowercase().as_str());
+
+            if !path_to_hash.contains_key(rel_path.as_str()) && !by_ext {
+                continue;
+            }
+        }
+        */
+
+
+
+        // for p in &all_files {
+        //     println!("{}", p.as_str());
+        // }
+
+
+
+        /*
+        Step 1: Index which sub-directories have a license file
+
+        Step 2: Scan through all files and based on 
+
+        */
+
+
+        /*
+        let git_index = git::read_index().await?;
+        let git_entries = {
+            let mut m = HashMap::new();
+
+            for entry in &git_index.entries {
+                m.insert(entry.name.as_str(), entry);
+            }
+
+            m
+        };
+
+        /////////////////////////////////////////////
+        // Step 1: Loading our index of files already tracked in the database.
+
+
+
+
+        */
+
+
+        Ok(())
+    }
+}
+
+
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
@@ -464,7 +647,8 @@ async fn main() -> Result<()> {
             run_add_command(cmd).await?;
         }
         Command::Fetch => todo!(),
-        Command::List => run_list().await?
+        Command::List => run_list().await?,
+        Command::LicenseCheck(cmd) => cmd.run().await?,
     }
 
     Ok(())

@@ -75,7 +75,12 @@ pub struct StepperMotorController {
     /// Direction of the last enqueued motion.
     last_direction: bool,
 
-    stats: Stats
+    ///
+    pulse_width: u32,
+
+    pulse_end_time: u32,
+
+    stats: Stats,
 }
 
 #[derive(Default)]
@@ -94,6 +99,7 @@ impl StepperMotorController {
     pub fn new(
         mut step_pin: GPIOPin,
         mut dir_pin: GPIOPin,
+        pulse_width: u32,
         ppi: &mut PPIChannels,
         gpiote: &mut GPIOTEChannels,
         timer: &'static Timer,
@@ -137,6 +143,8 @@ impl StepperMotorController {
             enqueued_step_dir: 1,
             last_direction: false,
             stats: Stats::default(),
+            pulse_width,
+            pulse_end_time: 0,
         })
     }
 
@@ -184,6 +192,7 @@ impl StepperMotorController {
                 self.step_ppi_channel.disable();
                 self.step_timer_channel.disable_interrupt();
                 self.have_enqueued_step = false;
+                self.pulse_end_time = 0;
             }
         }
 
@@ -241,21 +250,31 @@ impl StepperMotorController {
         // Attempt to setup the next step.
 
         let (next_time, next_direction) = {
-            let mut motion = match self.motion_queue.first_mut() {
-                Some(v) => v,
-                None => return
-            };
+            if self.pulse_end_time != 0 {
+                self.pulse_end_time = 0;
+                // TODO: Return a proper direction.
+                (self.pulse_end_time, false)
+            } else {
+                let mut motion = match self.motion_queue.first_mut() {
+                    Some(v) => v,
+                    None => return
+                };
 
-            let next_time = motion.next_step_time;
-            let next_direction = motion.num_steps.direction();
+                let next_time = motion.next_step_time;
+                let next_direction = motion.num_steps.direction();
 
-            motion.next();
+                motion.next();
 
-            if motion.num_steps.count() == 0 {
-                self.motion_queue.pop_front();
+                if motion.num_steps.count() == 0 {
+                    self.motion_queue.pop_front();
+                }
+
+                if self.pulse_width != 0 {
+                    self.pulse_end_time = next_time.wrapping_add(self.pulse_width).max(1);
+                }
+
+                (next_time, next_direction)
             }
-
-            (next_time, next_direction)
         };
 
         // TODO: Optimize this.

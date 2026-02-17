@@ -5,7 +5,7 @@ extern crate common;
 
 use std::sync::Arc;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base_util::InRange;
 use base_error::*;
@@ -37,6 +37,9 @@ struct Args {
 enum Mode {
     #[arg(name = "test-backplane")]
     TestBackplane(TestBackplaneCommand),
+
+    #[arg(name = "test-boot-time")]
+    TestBootTime(TestBootTimeCommand),
 
     #[arg(name = "test-power")]
     TestPower(TestPowerCommand),
@@ -945,12 +948,79 @@ impl TestLEDCommand {
     }
 }
 
+#[derive(Args)]
+pub struct TestBootTimeCommand {
+
+}
+
+impl TestBootTimeCommand {
+
+    pub async fn run(self) -> Result<()> {
+        let tester = BackplaneTester::create().await?;
+
+        // Initialize. Power off.
+        {
+            tester.mcp.set_levels(&[
+                // Off
+                (BackplaneTesterPin::InV2.mcp_ctrl_pin().unwrap(), true),
+                // On
+                (BackplaneTesterPin::InGnd2.mcp_ctrl_pin().unwrap(), true),
+            ]).await?;
+            tester.mcp.set_directions(&[
+                (BackplaneTesterPin::InV2.mcp_ctrl_pin().unwrap(), PinDirection::Output),
+                (BackplaneTesterPin::InGnd2.mcp_ctrl_pin().unwrap(), PinDirection::Output),
+            ]).await?;
+        }
+
+
+        loop {
+            println!("Turn on load. Continue: [y/N]");
+            if !file::read_user_confirmation().await? {
+                return Ok(());
+            }
+
+            println!("Powering on load...");
+            tester.mcp.set_levels(&[
+                (BackplaneTesterPin::InV2.mcp_ctrl_pin().unwrap(), false),
+            ]).await?;
+
+            let start_time = Instant::now();
+
+            println!("Waiting for GPIO boot signal...");
+            loop {
+                let v = tester.device.analog_read(BackplaneTesterPin::SasV2.analog_periph().unwrap()).await?;
+                if v > 2.0 {
+                    break;
+                }
+                executor::sleep(Duration::from_millis(50)).await?;
+            }
+
+            let end_time = Instant::now();
+
+            println!("Boot Took: {:?}", end_time - start_time);
+
+            println!("Power off load. Continue: [y/N]");
+            if !file::read_user_confirmation().await? {
+                return Ok(());
+            }
+
+            tester.mcp.set_levels(&[
+                (BackplaneTesterPin::InV2.mcp_ctrl_pin().unwrap(), true),
+            ]).await?;
+        }
+    }
+
+}
+
+
+
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
     match args.mode {
         Mode::TestBackplane(cmd) => cmd.run().await,
+        Mode::TestBootTime(cmd) => cmd.run().await,
         Mode::TestPower(cmd) => cmd.run().await,
         Mode::TestManagement(cmd) => cmd.run().await,
         Mode::TestLED(cmd) => cmd.run().await,

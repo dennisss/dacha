@@ -4,6 +4,12 @@ This is a monorepo/ecosystem of software/hardware solutions built by [Dennis](ht
 
 To get started using the existing applications in this repo, follow the [user guide](./doc/user_guide.md).
 
+## Licensing
+
+Files in this repository are licensed according to the terms in the `LICENSE` file though sub-directories may contains separate `LICENSE` files that overrule this for all files in that sub-directory.
+
+In short, all the software is licensed under an `Apache 2` license and hardware is licensed with the `CERN OHL v2 Permissive` license.
+
 ## Components
 
 ### Systems

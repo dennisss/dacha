@@ -39,6 +39,23 @@ pub struct UF2Block {
     pub magic_end: u32,
 }
 
+impl core::fmt::Debug for UF2Block {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("UF2Block")
+            // .field("magic_start_0", &self.magic_start_0)
+            // .field("magic_start_1", &self.magic_start_1)
+            .field("flags", &self.flags)
+            .field("target_addr", &self.target_addr)
+            .field("payload_size", &self.payload_size)
+            .field("block_number", &self.block_number)
+            .field("num_blocks", &self.num_blocks)
+            .field("file_size", &self.file_size)
+            // .field("data", &self.data) 
+            // .field("magic_end", &self.magic_end)
+            .finish()
+    }
+}
+
 define_bit_flags!(
     UF2Flags u32 {
         NotMainFlash = 0x00000001,

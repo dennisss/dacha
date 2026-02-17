@@ -16,6 +16,5 @@ mod radio;
 mod time;
 mod timer_controller;
 mod spi_timer_controller;
-mod pulse_timer_controller;
 
 pub use peripherals_controller::*;
