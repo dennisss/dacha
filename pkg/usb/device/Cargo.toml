@@ -1,0 +1,10 @@
+[package]
+name = "usb_device"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+usb = { path = "../" }
+executor = { path = "../../executor" }
+macros = { path = "../../macros" }
