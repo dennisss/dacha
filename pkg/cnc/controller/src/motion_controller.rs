@@ -20,12 +20,14 @@ use cnc_controller_proto::cnc::*;
 use executor::child_task::ChildTask;
 use executor::sync::AsyncVariable;
 use cnc::constrained_vector::constrained_vector;
+use cnc::quadratic_stepper_motion::QuadraticStepperMotion;
 
-use crate::motion_utils::from_motor_space;
+use crate::motion_utils::{from_motor_space, from_motor_space_f64};
 use crate::devices::DevicesController;
 use crate::tmc2209::TMC2209Device;
 use crate::stepper_motion_generator::*;
 use crate::time::DeviceTime;
+use crate::time::DevicesTimeVector;
 
 /*
 
@@ -146,6 +148,9 @@ struct State {
     /// Position of each motor in step units.
     ///
     /// When all motors are at position 0, we are at (0,0,0) in XYZ,etc. space.
+///
+    /// If active_state != None, then this is the position we were at before entering the
+    /// active state.
     ///
     /// TODO: Instead of storing this, just always store a StepperMotionGenerator instance
     /// and rely on that for this data.
@@ -154,6 +159,15 @@ struct State {
     /// When motor_positions[i] is 0, the position recorded
     /// on the MCU is motor_position_offsets[i]
     motor_position_offsets: Vec<i32>,
+
+    /// If the motors were externally stopped, this is the time at which the 'endstop' was hit.
+    ///
+    /// TODO: THis needs to be frequently reset.
+    ///
+    /// TODO: Instead give the caller an API for quering the step history?
+    hit_time: Option<DevicesTimeVector>,
+
+    hit_position: Option<VectorXd>,
 }
 
 enum Action {
@@ -191,22 +205,177 @@ struct ActiveState {
         queue: StepperMotionGenerator,
 }
 
+/// NOTE: This is exclusively owned by the main background thread so that most operations can be
+/// done without locking the shared state. 
 struct EnabledState {
+/// Previously sent motions.
+    past_step_motions: Vec<VecDeque<(DeviceTime, QuadraticStepperMotion)>>,
+
     /// Steps we have prepared but we can't yet enqueue since the motor has no space.
-    pending_step_motions: Vec<VecDeque<StepperMotorMotion>>,
+    pending_step_motions: Vec<VecDeque<(DeviceTime, QuadraticStepperMotion)>>,
 
     /// Whether or not pending_step_motions is empty.
     have_pending_motions: bool,
 
-    last_directions: Vec<StepperMotorMotion_Direction>
+/// Last direction sent to each motor.
+    /// (this is mainly used for compressed unchanged direction commands)
+    last_directions: Vec<StepperMotorMotion_Direction>,
+
+    /// When this is present, 'active_state.queue.motor_positions()' contains the
+    /// motor position after all 'pending_step_motions' have been executed.
+    active_state: Option<ActiveState>,
 }
 
 impl EnabledState {
     fn reset(&mut self) {
+for q in &mut self.past_step_motions {
+            q.clear();
+        }
+
         for q in &mut self.pending_step_motions {
             q.clear();
         }
         self.have_pending_motions = false;
+
+        // TODO: Also reset last_directions?
+    }
+
+    /// Tries to determine where all the motors where located at the given point in time.
+    ///
+    /// The returned motor positions are sub-step interpolated based on how far into the step
+    /// we have gone.
+    ///
+    /// Internally this basically works by rewinding the step motion history until we find the
+    /// steps that were sent closest to the requested time.
+    ///
+    /// - final_inactive_motor_positions: 
+    fn position_at_time(&self, final_inactive_motor_positions: &[i32], target_motor_times: &[DeviceTime]) -> Vec<f64> {
+        // The current motor positions we are looking at. This is initialized
+        // to point to the final 
+        let mut cur_motor_positions = {
+            let mut pos = final_inactive_motor_positions;
+            if let Some(active_state) = &self.active_state {
+                pos = active_state.queue.motor_positions();
+            }
+            
+            pos
+            .iter()
+            .map(|v| *v as f64)
+            .collect::<Vec<f64>>()
+        };
+
+        // TODO: Handle this. this is tecnhically possible if we see multiple hits.
+        // if hit_time > now {
+        //     eprintln!("HIT TIME: {:?}, NOW: {:?}", hit_time, now);
+        // }
+
+        // let hit_delta = now - hit_time;
+        // println!("HIT DELTA: {:?}", hit_delta);
+
+        // TODO: This code would probably be simpler if we stored the original DeviceTimes used to create the motions.
+
+        for motor_i in 0..cur_motor_positions.len() {
+            
+            let motor_target_time = target_motor_times[motor_i];
+
+            // Find the first motion that starts before the motor_target_time.
+
+            let past_motions = self.pending_step_motions[motor_i].iter().rev()
+                .chain(self.past_step_motions[motor_i].iter().rev());
+
+            let mut corrected = false;
+
+            for (motion_start_time, motion) in past_motions {
+                let sign: f64 = if motion.num_steps.direction() { 1.0 } else { -1.0 };
+
+                // Undo the movement of this motion.
+                cur_motor_positions[motor_i] -= sign * (motion.num_steps.count() as f64);
+
+                // Go back further if the hit was before this motion
+                if motor_target_time < *motion_start_time {
+                    continue;
+                }
+
+                // let start_delta = cnc::time_difference_u32(motor_target_time, motion.next_step_time);
+                // if start_delta < 0 {
+                //     continue;
+                // }
+
+                let mut motion = motion.clone();
+
+                let mut found = false;
+
+                let mut step_start_time = motion_start_time.clone();
+
+                while motion.num_steps.count() > 1 {
+                    // let step_start_time = motion.next_step_time;
+                    let step_dur = motion.next_step_duration;
+                    let step_end_time = step_start_time.add_ticks(step_dur);
+                    motion.next();
+                    
+                    // TODO: this is only valid for motions with at least 2 steps.
+                    // let step_end_time = motion.next_step_time;
+
+                    // step_end_time - motor_target_time
+
+
+                    if step_end_time > motor_target_time {
+                        let step_remaining_time = step_end_time.sub(motor_target_time).lower();
+                        
+                        // cnc::time_difference_u32(step_end_time, motor_target_time);
+
+                        // let delta = 1.0 - ((step_remaining_time as f64) / (step_dur as f64));
+
+                        let delta = ((motor_target_time.sub(step_start_time)).lower() as f64) / (step_dur as f64);
+
+                        println!("[][][] Delta: {}", delta);
+                        cur_motor_positions[motor_i] += delta * sign;
+                        
+                        // Partial completion of the step.
+
+                        found = true;
+                        corrected = true;
+                        break;
+                    }
+
+                    step_start_time = step_end_time;
+                    cur_motor_positions[motor_i] += sign;
+                }
+
+                if !found {
+                    // TODO: This seems to happen a lot. (i'm guessing for X and Y which is a false alarm).
+                    eprintln!("STOPPED ON A MOTION BOUNDARY!!");
+                    cur_motor_positions[motor_i] += sign;
+                }
+
+                break;
+            }
+
+            if motor_i == 2 && !corrected {
+                println!("MOTOR 2 NOT CORRECTED");
+            }
+        }
+
+        cur_motor_positions
+    }
+
+    /// Garbage collects any past motion records that are very old.
+    ///
+    /// now_remote_times: Should be the list of the current remote time for each motor.
+    fn cleanup_history(&mut self, now_remote_times: &[DeviceTime]) {
+        for (motor_i, queue) in self.past_step_motions.iter_mut().enumerate() {
+            while !queue.is_empty() {
+                let (motion_start_time, motion) = &queue[0];
+
+                // TODO: Check based on the last step time.
+                if motion_start_time.add_duration(Duration::from_secs(2)) < now_remote_times[motor_i] {
+                    queue.pop_front();
+                } else {
+                    break;
+                }
+            }
+        }
+
     }
 }
 
@@ -305,6 +474,8 @@ impl MotionController {
                 active: false,
                 motor_positions: vec![0; config.motors().len()],
                 motor_position_offsets: vec![0; config.motors().len()],
+hit_time: None,
+                hit_position: None,
             })
         });
 
@@ -398,7 +569,11 @@ impl MotionController {
                             motor.clear_stepper_queue().await?;
                         }
 
-                        // For each motor, these are motions that haven't yet been sent to the MCU.
+                        let mut past_step_motions = vec![];
+                        for _ in shared.config.motors() {
+                            past_step_motions.push(VecDeque::new());
+                        }
+
                         let mut pending_step_motions = vec![];
                         for _ in shared.config.motors() {
                             pending_step_motions.push(VecDeque::new());
@@ -408,6 +583,7 @@ impl MotionController {
                         let mut last_directions = vec![StepperMotorMotion_Direction::UNCHANGED; shared.config.motors().len()];
 
                         enabled_state = Some(EnabledState {
+past_step_motions,
                             pending_step_motions,
                             have_pending_motions,
                             last_directions,
@@ -445,7 +621,7 @@ impl MotionController {
 
             // TODO: Bring back.
             // if sent_something > 0 {
-                println!("Cycle: {:.2?} ; {:?}", cycle_dur, mode);
+                // println!("Cycle: {:.2?} ; {:?}", cycle_dur, mode);
             // }
 
 
@@ -590,6 +766,28 @@ impl MotionController {
             if need_reset {
                 // TODO: Must verify that all motors involved in a move have been stopped.
                 // (if not, then we should enter a fault state).
+
+                if let Some(hit_time) = state.hit_time.take() {
+                    if enabled_state.active_state.is_none() {
+                        eprintln!("NOT MOVING BUT HIT")
+                        // TODO: Return an error since we should always be moving when doing a move.
+                    }
+
+                    let mut hit_motor_times = vec![];
+                    for motor_i in 0..shared.config.motors().len() {
+                        hit_motor_times.push(
+                            hit_time.get(shared.motors[motor_i].device_name()).unwrap().clone()
+                        );
+                    }
+
+                    let hit_motor_positions = enabled_state.position_at_time(
+                        &state.motor_positions, &hit_motor_times
+                    );
+
+                    state.hit_position = Some(from_motor_space_f64(&hit_motor_positions, &shared.config));
+                }
+
+
 
                 enabled_state.reset();
                 state.planner.clear();
@@ -762,22 +960,49 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
                     break;
                 }
 
-                let mut motion = match queue.pop_front() {
+                let (motion_time, motion) = match queue.pop_front() {
                     Some(v) => v,
                     None => break
                 };
 
-                if motion.direction() == enabled_state.last_directions[motor_i] {
-                    motion.clear_direction();
+                let mut proto = StepperMotorMotion::default();
+
+
+                // TODO: I don't understand why this hpapnes.
+                // if motion_time < now_remote_times[motor_i].add_duration(Duration::from_millis(100)) {
+                //     eprintln!("BAD MOTION TIME: {:?} vs {:?}", motion_time, now_remote_times[motor_i]);
+                // }
+
+                // TODO: Compress this to be a delta relative to the last time.
+                proto.set_next_step_time(motion.next_step_time);
+                proto.set_next_step_duration(
+                    if motion.num_steps.count() == 1 { 0 } else { motion.next_step_duration });
+                proto.set_step_duration_increment(motion.step_duration_increment);
+                proto.set_num_steps_minus_one(motion.num_steps.count() - 1);
+
+                let mut dir = motion.num_steps.direction();
+                if shared.config.motors()[motor_i].inverted() {
+                    dir = !dir;
+                }
+
+                let dir_proto = match dir {
+                    true => StepperMotorMotion_Direction::FORWARD,
+                    false => StepperMotorMotion_Direction::BACKWARD
+                };
+                if dir_proto == enabled_state.last_directions[motor_i] {
+                    proto.clear_direction();
                 } else {
-                    enabled_state.last_directions[motor_i] = motion.direction();
+                    proto.set_direction(dir_proto);
+                    enabled_state.last_directions[motor_i] = proto.direction();
                 }
 
                 // TODO: These should be easy to sequence compress and acks should also be compressable.
                 batch.add(
                     shared.motors[motor_i].device_name(),
-                    shared.motors[motor_i].make_enqueue_stepper_motion(motion)?
+                    shared.motors[motor_i].make_enqueue_stepper_motion(proto)?
                 );
+
+                enabled_state.past_step_motions[motor_i].push_back((motion_time, motion));
 
                 empty_slots -= 1;
             }
@@ -809,13 +1034,16 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
             println!("Remote queue full!");
         }
 
+        // Clean up all completed motion from the history.
+        enabled_state.cleanup_history(&now_remote_times);
+
         let cycle_end = Instant::now();
 
         let cycle_dur = cycle_end - cycle_start;
 
-        // if sent_something > 0 {
-        //     println!("Cycle: {:.2?} ; Enqueue {}", cycle_dur, sent_something);
-        // }
+        if sent_something > 0 {
+            println!("Cycle: {:.2?} ; Enqueue {}", cycle_dur, sent_something);
+        }
 
         Ok(true)
     }
@@ -921,7 +1149,27 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
         Ok(())
     }
 
-    pub async fn stop_motors(&self, names: &[String], disable: bool, alarm: bool) -> Result<()> {
+    pub async fn stop_motors(
+        &self,
+        names: &[String],
+        disable: bool,
+        alarm: bool,
+        hit_time: Option<DeviceTime>
+    ) -> Result<()> {
+
+        // TODO: Make sure this never fails.
+        let hit_time = match hit_time {
+            Some(v) => {
+                Some(self.shared.devices.time().all_times_at(v).await?)
+            },
+            None => None
+        };
+
+        lock!(state <= self.shared.state.lock().await?, {
+            state.hit_time = hit_time;
+            state.hit_position = None;
+        });
+
         let mut batch = self.shared.devices.new_batch();
 
         for motor_name in names {
@@ -950,8 +1198,12 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
     }
 
     /// NOTE: The assumption is that the motion controller is idle and all queues are empty.
-    pub async fn set_position(&self, position: VectorXf) -> Result<()> {
+    pub async fn set_position(&self, position: VectorXd) -> Result<()> {
         let num_axes = self.shared.config.axes().len();
+
+        if position.len() != num_axes {
+            return Err(err_msg("Position has wrong number of dimensions."));
+        }
 
         lock!(state <= self.shared.state.lock().await?, {
             self.check_accepting_movements(&state)?;
@@ -972,6 +1224,12 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
     pub async fn last_position(&self) -> Result<VectorXd> {
         lock!(state <= self.shared.state.lock().await?, {
             Ok(state.planner.last_position().clone() + &state.position_offset)
+        })
+    }
+
+    pub async fn hit_position(&self) -> Result<Option<VectorXd>> {
+        lock!(state <= self.shared.state.lock().await?, {
+            Ok(state.hit_position.clone().map(|p| p + &state.position_offset))
         })
     }
 
@@ -1110,9 +1368,6 @@ impl MotionControllerLinearPlanner {
             return Err(err_msg("Wrong size tensor"));
         }
 
-        // TODO: Configify this.
-        feed_rate = feed_rate.min(60.0);
-
         if feed_rate < 1.0 {
             return Err(err_msg("Input feed rate too small"));
         }
@@ -1163,7 +1418,7 @@ impl MotionControllerLinearPlanner {
                 }
             }
 
-            let feed_rate_speed = feed_rate_masked_dir.normalized() * feed_rate;
+            let feed_rate_speed = (feed_rate_masked_dir.normalized() * feed_rate).abs();
             for i in 0..self.config.axes().len() {
                 let axis = &self.config.axes()[i];
 

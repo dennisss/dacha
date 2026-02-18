@@ -1780,6 +1780,11 @@ files: [
         sha256_sum: "23328a708aa85cde9e1ae9ca0c7c8af431ff071b09ef728eb3218add84e87adf"
     },
     {
+        path: "pkg/media/camera/boards/camera_ar0234/r1/plot.zip"
+        size: 93364
+        sha256_sum: "dea779e9cdcf085a5ced3d5b681ba137a3fb5db9e4ec68576b9db45a913205d6"
+    },
+    {
         path: "pkg/media/camera/boards/camera_mira220/r1/plot.zip"
         size: 86932
         sha256_sum: "7a7d72f303b429e487008a9cef5d04497a82647ef1f1b0ff4ee24a65d001fb5a"

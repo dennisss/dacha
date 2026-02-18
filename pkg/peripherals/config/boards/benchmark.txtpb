@@ -1,0 +1,18 @@
+name: "benchmark"
+base_config: "nrf52840_dongle"
+
+# Steppers configured for random unconnected pins on the board.
+peripherals {
+    name: "stepper1_step"
+    stepper {
+        step_pin_name: "0.13"
+        dir_pin_name: "0.15"
+    }
+}
+peripherals {
+    name: "stepper2_step"
+    stepper {
+        step_pin_name: "0.17"
+        dir_pin_name: "0.20"
+    }
+}

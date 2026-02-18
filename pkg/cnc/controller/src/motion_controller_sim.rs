@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::errors::*;
 use math::matrix::VectorXd;
@@ -27,6 +27,8 @@ pub struct MotionControllerSimulator {
     total_steps: usize,
     motor_positions: Vec<i32>,
     total_time: f64,
+    max_cycle_time: Duration,
+    max_cycle_commands: usize,
 }
 
 impl MotionControllerSimulator {
@@ -43,6 +45,8 @@ impl MotionControllerSimulator {
             total_motions: 0,
             total_steps: 0,
             total_time: 0.0,
+            max_cycle_time: Duration::ZERO,
+            max_cycle_commands: 0,
         }
     }
 
@@ -82,7 +86,14 @@ impl MotionControllerSimulator {
         println!("Total motions: {}", self.total_motions);
         println!("Total Steps: {}", self.total_steps);
 
-        println!("Total Time: {}", self.total_time);
+        // TODO: Pretty print.
+        println!("Total Time: {:?}", Duration::from_secs_f64(self.total_time));
+
+        // 'cycle_interval - max_cycle_time' is the amount of time we have for sending commands.
+        println!("Max Cycle Time: {:?}", self.max_cycle_time);
+
+        // This must be smaller than the no-op limit and slammer than the stepper motor queue size (else we need to measure it over a sliding window)
+        println!("Max Cycle Commands: {:?}", self.max_cycle_commands);
 
         Ok(())
 
@@ -106,7 +117,8 @@ impl MotionControllerSimulator {
             planner_time += PLANNER_STEP_SIZE;
 
             let mut out = vec![];
-            // TODO: Use the same constants as in the MotionController code.
+
+            // TODO: Perform test this.
             self.planner.next(planner_time, &mut out);
             for motion in out {
                 queue.enqueue(motion);
@@ -117,11 +129,26 @@ impl MotionControllerSimulator {
 
         let mut i = STEP_GENERATION_STEP;
         while !queue.is_empty() {
+            let s = Instant::now();
+
             let commands = queue.to_commands(i)?;
-            let mut n = vec![];
+
+            let e = Instant::now();
+
+            self.max_cycle_time = self.max_cycle_time.max(e - s);
+
+            {
+                let mut n = 0;
+                for j in 0..commands.len() {
+                    n += commands[j].len();
+                }
+
+                self.max_cycle_commands = self.max_cycle_commands.max(n);
+            }
+
+
             for j in 0..commands.len() {
                 self.total_motions += commands[j].len();
-                n.push(commands[j].len());
 
                 for (_, cmd) in &commands[j] {
                     let sign = if cmd.num_steps.direction() { 1 } else { -1 };

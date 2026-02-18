@@ -4,7 +4,7 @@ use crate::quadratic_stepper_motion::QuadraticStepperMotion;
 
 /// NOTE: This must be much smaller than half the min step duration to ensure that
 /// steps don't swap ordering in time between two consecutive curves.
-const MAX_ERROR: i32 = 100;
+const MAX_ERROR: i32 = 50;
 
 // TODO: Also read https://klipper.discourse.group/t/improved-stepcompress-implementation/3203
 

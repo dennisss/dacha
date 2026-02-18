@@ -816,6 +816,13 @@ impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>
         }
         self
     }
+
+    pub fn abs(mut self) -> Self {
+        for i in 0..(self.rows() * self.cols()) {
+            self[i] = self[i].abs();
+        }
+        self
+    }
 }
 
 impl<

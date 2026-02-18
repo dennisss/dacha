@@ -12,7 +12,26 @@ use crate::motion_utils::to_motor_space;
 
 const MCU_CLOCK_FREQUENCY: usize = 16_000_000;
 
-const TARGET_MIN_STEP_DUR: u32 = 400;
+/// This is the smallest granularity of time we will treat as containing meaningful motion
+/// (>= 1 step of progress). This is used as the f64 epsilon for comparing times.
+///
+/// Should be much smaller than the shortest step time expected but larger enough to avoid
+/// f64 rounding errors.
+const MIN_STEP_SECONDS: f64 = 0.00001;
+
+/// Minimum duration of the first step in each discrete motion in tick units.
+///
+/// (this is for discontinuity compensation between motions. read the code that uses this)
+const FIRST_STEP_MIN_DURATION_TICKS: u32 = 250;
+
+/// Maximum amount of time into the past that we will increase the duration of the first
+/// step in a discrete motion.
+///
+/// If we generate steps 100ms into the future, then this value must be << that to ensure
+/// we don't send the MCU a time that has already elapsed.
+///
+/// (this is for discontinuity compensation between motions. read the code that uses this)
+const FIRST_STEP_MAX_SHIFT_SECONDS: f64 = 0.001; // 1ms
 
 /*
 Prusa XL : 400mm/s => 32000 steps/s
@@ -101,9 +120,11 @@ impl StepperMotionGenerator {
     // TODO: Once we try to get commands beyond the end of the queue time, we should prevent more motions from before adding without a full reset,
 
     /// Gets all commands 
+///
+    /// NOTE: Should always be called with a monotonically increasing max_time value.
     pub fn to_commands(
         &mut self, max_time: f64
-    ) -> Result<Vec<Vec<QuadraticStepperMotion>>> {
+    ) -> Result<Vec<Vec<(DeviceTime, QuadraticStepperMotion)>>> {
 
         let num_motors = self.config.motors().len();
 
@@ -115,11 +136,11 @@ impl StepperMotionGenerator {
         let mut first_used_motion = None;
 
         for (motion_i, motion) in self.motions.iter().enumerate() {
-            if motion_start_time > max_time as f64 {
+            if motion_start_time > max_time {
                 break;
             }
 
-            let motion_end_time = motion_start_time + (motion.duration as f64);
+            let motion_end_time = motion_start_time + motion.duration;
 
             // TODO: Have them preconverted.
             let motion_start_motor_position = to_motor_space(&motion.start_position, &self.config);
@@ -129,7 +150,7 @@ impl StepperMotionGenerator {
 
             for motor_i in 0..num_motors {
                 // Skip if the motor has already fully completed this motion.
-                if self.motor_position_end_time[motor_i] >= motion_end_time - 0.0001 {
+                if self.motor_position_end_time[motor_i] >= motion_end_time - MIN_STEP_SECONDS {
                     continue;
                 }
 
@@ -156,7 +177,9 @@ impl StepperMotionGenerator {
                 loop {
                     let next_step_position = self.motor_position[motor_i] + sign;
 
-                    let delta = (next_step_position as f32) - motion_start_motor_position[motor_i];
+                    let delta = (next_step_position as f64) - motion_start_motor_position[motor_i];
+
+                    let end_delta = (next_step_position as f64) - motion_end_motor_position[motor_i];
 
                     let mut raw_time = None;
 
@@ -166,10 +189,8 @@ impl StepperMotionGenerator {
                     let time = {
                         // TODO: Check all the signs of this stuff.
                         // TODO: The extrusion axis is still a bit lossy. The input linear motions don't perfectly start/end where they need to.
-                        if delta.abs() < 0.01 {
-                            0.0
-                        } else if (delta - motion_delta).abs() < 0.01 {
-                            motion.duration as f64
+                        if end_delta.abs() < 0.01 {
+                                                        motion.duration
                         } else if delta.abs() > motion_delta.abs() {
                             break;
                         } else {
@@ -177,23 +198,23 @@ impl StepperMotionGenerator {
                                 delta,
                                 motion_start_motor_velocity[motor_i],
                                 motion_motor_acceleration[motor_i]
-                            ) as f64;
+                            );
 
                             raw_time = Some(time);
 
                             if time.is_nan() {
-                                // TODO: This currently happens for cases like "-0.3203125 vs 4.0625"
-                                // where the first step is reached before the start.
+                                // This generally means the start or end begin or end at zero velocity and we have negative acceleration compared to the movement direction. Ideally the '< 0.01' checks above catch this.
+
                                 eprintln!("NaN step time: {:?} vs {:?}", delta, motion_delta);
                                 break;
                             }
 
-                            time.min(motion.duration as f64).max(0.0)
+                            time.min(motion.duration).max(0.0)
                         }
                     };
 
                     let step_end_time = motion_start_time + time;
-                    if step_end_time > max_time {
+                    if step_end_time > max_time + MIN_STEP_SECONDS {
                         break;
                     }
 
@@ -201,6 +222,10 @@ impl StepperMotionGenerator {
 
                     // The first step is often really short as we might have been moving very slowly over
                     // several motions and all of a sudden we finally got to the right position.
+//
+                    // This is generally signalled by there being a large gap between motor_position_end_time
+                    // and motor_position_reach_time implying there is some uncertainty about whether we are
+                    // moving very slowly or we just started moving
                     //
                     // TODO: Ideally this would try to look ahead one step and try to match the next steps
                     // velocity if we have time to do that.
@@ -208,9 +233,18 @@ impl StepperMotionGenerator {
                     // NOTE: This trick only works if first_motion_start_time is still behind the motor time by a
                     // little bit.
                     if step_times.len() == 1 {
+// We estimate that that first step should no shorter than 95% of the start velocity.
+                        let first_step_min_dur = (1.0 / motion_start_motor_velocity[motor_i].abs()) * 0.95;
+
+                        // The target minimum size for the first step.
+                        // (clamping instantaneous velocity estimate to reasonable hard limits)
+                        let first_step_dur_target = self.seconds_to_ticks(first_step_min_dur)
+                            .max(FIRST_STEP_MIN_DURATION_TICKS)
+                            .min(self.seconds_to_ticks(FIRST_STEP_MAX_SHIFT_SECONDS));
+
                         // TODO: Error out if we have an overflowing subtract here.
                         let first_step_dur = step_end_ticks - step_times[0];
-                        if first_step_dur < TARGET_MIN_STEP_DUR {
+                        if first_step_dur < first_step_dur_target {
                             let max_shift = step_times[0].min(
                                 self.seconds_to_ticks(
                                     (self.motor_position_end_time[motor_i] - self.motor_position_reach_time[motor_i])
@@ -218,7 +252,7 @@ impl StepperMotionGenerator {
                                 )
                             );
 
-                            let want_shift = 2 * TARGET_MIN_STEP_DUR - first_step_dur;
+                            let want_shift = first_step_dur_target - first_step_dur;
                             step_times[0] -= want_shift.min(max_shift);
                         }
                     }
@@ -291,7 +325,7 @@ impl StepperMotionGenerator {
         motor_i: usize,
         mut dir: bool,
         step_times: &[u32],
-        out: &mut Vec<QuadraticStepperMotion>
+        out: &mut Vec<(DeviceTime, QuadraticStepperMotion)>
     ) -> Result<()> {
         if step_times.len() == 1 {
             return Ok(());
@@ -307,7 +341,7 @@ impl StepperMotionGenerator {
             let step_duration = step_times[i] - step_times[i - 1];
 
             if step_duration < 400 {
-                eprintln!("Short step!! {} ending at index {}", step_times[i] - step_times[i - 1], i);
+                eprintln!("Short step!! (motor {}) {} ending at index {}", motor_i, step_times[i] - step_times[i - 1], i);
             }
 
             if step_duration > 16_000_000 {
@@ -324,35 +358,29 @@ impl StepperMotionGenerator {
         // TODO: Validate that after compression, we still have the same number of steps.
         QuadraticStepperMotion::interpolate_step_times(&step_times, &mut raw_motions);
 
-        let time_offset = self.remote_start_time[motor_i].lower()
-            .wrapping_add(self.seconds_to_ticks(self.first_motion_start_time));
-
-        if self.config.motors()[motor_i].inverted() {
-            dir = !dir;
-        }
+        let time_offset = self.remote_start_time[motor_i]
+            .add_secs(self.first_motion_start_time);
 
         for raw_motion in &mut raw_motions {
-            raw_motion.next_step_time = raw_motion.next_step_time.wrapping_add(time_offset);
+let next_step_time = time_offset.add_ticks(            raw_motion.next_step_time);
+
+raw_motion.next_step_time = next_step_time.lower();
             raw_motion.num_steps.set_direction(dir);
+
+            out.push((next_step_time, raw_motion.clone()));
         }
 
-        let mut skip_first = false;
+        let mut first = true;
 
-        let mut last_time = {
-            // if let Some(t) = self.motor_position_last_step_time[motor_i] {
-            //     t
-            // } else {
-                skip_first = true;
-                raw_motions[0].next_step_time
-            // }
-        };
+        let mut last_time =                 raw_motions[0].next_step_time;
+
 
         for raw_motion in &raw_motions {
             let mut m = raw_motion.clone();
     
-            if skip_first {
+            if first {
                 m.next();
-                skip_first = false;
+                first = false;
             }
 
             while m.num_steps.count() > 0 {
@@ -368,7 +396,7 @@ impl StepperMotionGenerator {
                     return Err(format_err!("Really far out step: {} vs {}", next_time, last_time));
                 }
 
-                if delta_time < 40 {
+                if delta_time < 200 {
                     return Err(format_err!("Really small step: {}", delta_time));
                 }
 

@@ -2,7 +2,10 @@ use math::matrix::VectorXd;
 
 /// Gets the largest magnitude vector pointing in the same direction as
 /// 'direction' which ensuring that no axis exceeds the component wise
-/// magnitude 
+/// magnitude.
+///
+/// Note that axis_limits should just contain zero or positive values since negative
+/// values don't make sense.
 pub fn constrained_vector(direction: &VectorXd, axis_limits: &[f64]) -> VectorXd {
     assert_eq!(axis_limits.len(), direction.len());
 
@@ -12,6 +15,8 @@ pub fn constrained_vector(direction: &VectorXd, axis_limits: &[f64]) -> VectorXd
     let mut limiting_axis = 0;
 
     for (axis_i, axis_limit) in axis_limits.iter().cloned().enumerate() {
+        debug_assert!(axis_limit >= -0.0001);
+
         if direction[axis_i].abs() < 0.0001 {
             continue;
         }

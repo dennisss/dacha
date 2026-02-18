@@ -3,5 +3,9 @@ syntax = "proto3";
 package cnc;
 
 message LinearMotionPlannerConfig {
+
+    // Used for X-Y 
     double max_junction_deviation = 1;
+
+    repeated double max_instant_speed_change = 2;
 }

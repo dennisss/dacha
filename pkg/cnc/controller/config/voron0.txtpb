@@ -101,7 +101,14 @@ motion_controller {
     ]
 
     planner {
-        max_junction_deviation: 0.05
+        max_junction_deviation: 0.1
+
+        max_instant_speed_change: [
+            0,
+            0,
+            1,
+            1
+        ]
     }
 
     # TODO: Need to setup a max jerk for Z and E 

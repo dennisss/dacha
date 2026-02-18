@@ -473,8 +473,11 @@ define_unparsed_command!(
     pub struct SetMaxFeedRate ("M203")
 );
 
-define_unparsed_command!(
-    pub struct SetDefaultAcceleration ("M204")
+define_command!(
+    pub struct SetDefaultAcceleration ("M204") {
+        printing_acceleration ('P'): Option<Decimal>,
+        travel_acceleration ('T'): Option<Decimal>
+    }
 );
 
 define_unparsed_command!(

@@ -51,7 +51,7 @@ pub fn from_motor_space(x: &[i32], config: &MotionControllerConfig) -> VectorXd 
     // Convert from steps to mm.
     let mut x_motor = vec![0.0; config.motors_len()];
     for i in 0..x_motor.len() {
-// TODO: Verify no loss with large step counts.
+        // TODO: Verify no loss with large step counts.
         x_motor[i] = (x[i] as f64) / config.motors()[i].steps_per_mm();
     }
 
@@ -78,4 +78,38 @@ pub fn from_motor_space(x: &[i32], config: &MotionControllerConfig) -> VectorXd 
     }
 
     x_pos
+}
+
+// TODO: Dedup this.
+pub fn from_motor_space_f64(x: &[f64], config: &MotionControllerConfig) -> VectorXd {
+    // Convert from steps to mm.
+    let mut x_motor = vec![0.0; config.motors_len()];
+    for i in 0..x_motor.len() {
+        x_motor[i] = x[i] / (config.motors()[i].steps_per_mm() as f64);
+    }
+
+    let mut x_pos = VectorXd::zero_with_shape(config.axes().len(), 1);
+
+    for geometry in config.geometry() {
+
+        match geometry.geometry_case() {
+            AxisGeometryGeometryCase::Direct(v) => {
+                x_pos[v.axis_index() as usize] = x_motor[v.motor_index() as usize] as f64;
+            }
+            AxisGeometryGeometryCase::CoreXy(v) => {
+                let da = x_motor[v.a_motor_index() as usize];
+                let db = x_motor[v.b_motor_index() as usize];
+                
+                x_pos[v.x_axis_index() as usize] = (0.5 * (da + db)) as f64;
+                x_pos[v.y_axis_index() as usize] = (0.5 * (da - db)) as f64;
+            }
+            AxisGeometryGeometryCase::NOT_SET => {
+                // return 
+            }
+            //
+        }
+    }
+
+    x_pos
+
 }
