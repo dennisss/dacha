@@ -42,6 +42,28 @@ message ControllerConfig {
     repeated FanConfig fans = 10;
 
     repeated ServoConfig servos = 11;
+
+    TimeControllerConfig time = 12;
+
+    repeated DataLoggerConfig loggers = 13;
+}
+
+message TimeControllerConfig {
+
+    // Name of the device to use as the 'primary clock'.
+    // - This clock is what is logged in event logs.
+    // - Conversions from the host's time to all device times is done by first converting
+    //   the time to this device's clock and then converting to all other clocks.
+    //
+    // But note that currently time conversions between different remote devices is always
+    // done in one shot since with trust_usb_sof_timing, there is no quality benefit in
+    // going between multiple devices in this case.
+    string primary_device_name = 1;
+
+    // If true, all remote devices are connected to the same USB 2.0 hub so we can trust that
+    // they are all receiving corresponding USB SOF packets at the same time. 
+    bool trust_usb_sof_timing = 2;
+
 }
 
 message FanConfig {
@@ -218,4 +240,17 @@ message ZGridFadeLevelerProto {
     // TODO: Also include config data.
 }
 
+
+message DataLoggerConfig {
+    string name = 1;
+
+    message MA732LoggerConfig {
+        PeripheralReference spi_peripheral = 1;
+        
+        repeated string buffers = 2;
+    }
+
+    MA732LoggerConfig ma732 = 2;
+
+}
 

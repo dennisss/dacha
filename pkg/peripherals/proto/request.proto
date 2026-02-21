@@ -393,9 +393,10 @@ message SPITransferRequest {
 
     uint32 start_time = 2;
 
-    // If non-zero
     uint32 transfer_interval = 3;
 
+    // When this is non-zero, we will issue one or more transfers starting at 'start_time'.
+    // Else, just a single transfer 
     uint32 transfer_count = 4;
 
     uint32 read_buffer = 5;

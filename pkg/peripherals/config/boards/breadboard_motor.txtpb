@@ -1,5 +1,7 @@
-name: "breadboard_toolhead"
+name: "breadboard_motor"
 base_config: "nrf52840_feather"
+
+product_id: 10
 
 peripherals {
     # Drive low to enable the driver.

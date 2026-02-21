@@ -39,6 +39,9 @@ Prusa XL : 400mm/s => 32000 steps/s
 => so need to support steps that are 500 clock cycles long.
 
 
+// TODO: Eventually also implement stepper motor level acceleration/velocity limits.
+
+
 */
 
 pub struct StepperMotionGenerator {
@@ -205,8 +208,7 @@ impl StepperMotionGenerator {
                             if time.is_nan() {
                                 // This generally means the start or end begin or end at zero velocity and we have negative acceleration compared to the movement direction. Ideally the '< 0.01' checks above catch this.
 
-                                eprintln!("NaN step time: {:?} vs {:?}", delta, motion_delta);
-                                break;
+                                return Err(format_err!("NaN step time: {:?} vs {:?}", delta, motion_delta));
                             }
 
                             time.min(motion.duration).max(0.0)
@@ -362,7 +364,7 @@ impl StepperMotionGenerator {
             .add_secs(self.first_motion_start_time);
 
         for raw_motion in &mut raw_motions {
-let next_step_time = time_offset.add_ticks(            raw_motion.next_step_time);
+            let next_step_time = time_offset.add_ticks(raw_motion.next_step_time);
 
 raw_motion.next_step_time = next_step_time.lower();
             raw_motion.num_steps.set_direction(dir);
@@ -372,7 +374,7 @@ raw_motion.next_step_time = next_step_time.lower();
 
         let mut first = true;
 
-        let mut last_time =                 raw_motions[0].next_step_time;
+        let mut last_time = raw_motions[0].next_step_time;
 
 
         for raw_motion in &raw_motions {

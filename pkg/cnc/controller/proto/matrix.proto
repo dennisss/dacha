@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package cnc;
+
+message VectorProto {
+    repeated double values = 1;
+}
+
+message MatrixProto {
+    repeated double values = 1;
+    uint32 rows = 2;
+    uint32 cols = 3;
+}

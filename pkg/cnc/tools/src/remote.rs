@@ -102,5 +102,17 @@ impl RemoteMachineController {
         Ok(VectorXd::from_proto(res.position()))
     }
 
+    pub async fn read_log(
+        &mut self
+    ) -> Result<rpc::ClientStreamingResponse<ReadLogResponse>> {
+        let request_context = rpc::ClientRequestContext::default();
+        let mut request = ReadLogRequest::default();
+
+        let mut res = self.stub.ReadLog(&request_context, &request).await;
+
+        res.recv_head().await;
+
+        Ok(res)
+    }
 
 }

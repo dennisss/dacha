@@ -620,81 +620,6 @@ files: [
         sha256_sum: "8ef5ec1a249308e1ff83656e8987ec6c4c090ae61eaebb10c4c84cedd68c0ca2"
     },
     {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-B_Cu.gbl"
-        size: 5574
-        sha256_sum: "985d0ea95772d8e09d653df38b1bb0f20bf2ba062046256b06f2c51fd6bf413a"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-B_Mask.gbs"
-        size: 20455
-        sha256_sum: "3238a08c8504844d470876abb8dcd05c846010520e7a5115a33b2aedcf2cd81a"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-B_Paste.gbp"
-        size: 514
-        sha256_sum: "03cd45b0a430d74152016ce872db4fdd0c5074223275709e7833dfb2446c85dc"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-B_SilkS.gbo"
-        size: 2498
-        sha256_sum: "f36662a1e9e5a158c4ef392a858aa9db92e79d980069fae3d55d62a5c21014e7"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-Edge_Cuts.gm1"
-        size: 809
-        sha256_sum: "2709169bcd437f1ed5773be86a3404316d342d70e11c2e1004bd5c1e13fd2936"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-F_Cu.gtl"
-        size: 200834
-        sha256_sum: "19eb0af51df0bd36f8244a0716ec3feaeff5db0fedf96ce7dc9e3a6f8c8e77f3"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-F_Mask.gts"
-        size: 154097
-        sha256_sum: "9499f3d2e59cc7eda2128b3a02071488a1fe647638225010f7d3dc897c35d662"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-F_Paste.gtp"
-        size: 164055
-        sha256_sum: "be45932f326a2d8a7221f84d18cbe92dbcfb6edfbee63b1426499b875460a557"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-F_SilkS.gto"
-        size: 246962
-        sha256_sum: "4f1892892895e3fdf0101f5d7b5ed6302f8e038f7513f5f0453a8a29f8c8c915"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-In1_Cu.g2"
-        size: 120677
-        sha256_sum: "dc77396f66991f538b23058c7a7e13cc1c137198f48f29cb986cf3f7f6d56b25"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-In2_Cu.g3"
-        size: 123432
-        sha256_sum: "9bc92420f2bac5c40881e0ff27eb437787620e979200087d469d783a07fb89ba"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-NPTH-drl_map.gbr"
-        size: 2616
-        sha256_sum: "93dda421461e4b7cf058e09787f49b219a2a109fe92422b1bd67c7462c37b8f5"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-NPTH.drl"
-        size: 307
-        sha256_sum: "2276b341faaa1b144e1d37e1f00c29ecf0906a4463f38fd375a31f4270c1a230"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-PTH-drl_map.gbr"
-        size: 52598
-        sha256_sum: "2f5fae6bcc384fa9d5406434ee05ad89f55579ac03775eb47fe568cf2bcb2366"
-    },
-    {
-        path: "doc/pi_mocap/board-r1/plot/board-latest-PTH.drl"
-        size: 1966
-        sha256_sum: "e35bb18cdefa7cd3f3ece14a4777ea1cb0e52d36782359a7b93d88c40a828429"
-    },
-    {
         path: "doc/pi_rack/board-r0/flatcam/Project_20220115_171317.FlatPrj"
         size: 2472332
         sha256_sum: "42d85377af6c48729feecec2f851b1a579dd26c4c67325abf8e3873812a7ec87"
@@ -1068,31 +993,6 @@ files: [
         path: "doc/rosewill_rail/parts/screw-washer.stl"
         size: 175484
         sha256_sum: "b770c8c6def2ce29da2bdad0772a8e56ee53978d91885a50896d7e148bcb7c49"
-    },
-    {
-        path: "doc/switcher/board-r1/production/board_2024-02-19_18-35-22/board.zip"
-        size: 120717
-        sha256_sum: "96c05ec4df4c076a4562c63159fefea725d1890e9fb61ebb18b60b1deb937b09"
-    },
-    {
-        path: "doc/switcher/board-r1/production/board_2024-02-19_18-35-22/bom.csv"
-        size: 1493
-        sha256_sum: "e7d1650bb270e4d16912e0977f36efc588d89c30ea337320bd2cce3b88fdf38a"
-    },
-    {
-        path: "doc/switcher/board-r1/production/board_2024-02-19_18-35-22/designators.csv"
-        size: 616
-        sha256_sum: "1de9a285c96d0462ca9783eebdd05a5a20edcac9fd7340a0a92b161375e1e9f3"
-    },
-    {
-        path: "doc/switcher/board-r1/production/board_2024-02-19_18-35-22/netlist.ipc"
-        size: 37417
-        sha256_sum: "6be0a4f6a92bff6673ed6d8771624d1722fa89596c579467b5a9a924810d653f"
-    },
-    {
-        path: "doc/switcher/board-r1/production/board_2024-02-19_18-35-22/positions.csv"
-        size: 3371
-        sha256_sum: "e93c1b4432aedeba35c099728e403e41b8901ce05241e3d71a03a516c8942902"
     },
     {
         path: "doc/uplift_desk/board/flatcam/Project_20220205_143158.FlatPrj"
@@ -1993,6 +1893,106 @@ files: [
         path: "pkg/things/fan_controller/parts/fan-controller-hl15-case.stl"
         size: 125884
         sha256_sum: "a2a41f69a9b7954f489e0ba3c2bcde62b1e57a0305536c77a004600ad0ab4a6a"
+    },
+    {
+        path: "pkg/things/switcher/board-r1/production/board_2024-02-19_18-35-22/board.zip"
+        size: 120717
+        sha256_sum: "96c05ec4df4c076a4562c63159fefea725d1890e9fb61ebb18b60b1deb937b09"
+    },
+    {
+        path: "pkg/things/switcher/board-r1/production/board_2024-02-19_18-35-22/bom.csv"
+        size: 1493
+        sha256_sum: "e7d1650bb270e4d16912e0977f36efc588d89c30ea337320bd2cce3b88fdf38a"
+    },
+    {
+        path: "pkg/things/switcher/board-r1/production/board_2024-02-19_18-35-22/designators.csv"
+        size: 616
+        sha256_sum: "1de9a285c96d0462ca9783eebdd05a5a20edcac9fd7340a0a92b161375e1e9f3"
+    },
+    {
+        path: "pkg/things/switcher/board-r1/production/board_2024-02-19_18-35-22/netlist.ipc"
+        size: 37417
+        sha256_sum: "6be0a4f6a92bff6673ed6d8771624d1722fa89596c579467b5a9a924810d653f"
+    },
+    {
+        path: "pkg/things/switcher/board-r1/production/board_2024-02-19_18-35-22/positions.csv"
+        size: 3371
+        sha256_sum: "e93c1b4432aedeba35c099728e403e41b8901ce05241e3d71a03a516c8942902"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-B_Cu.gbl"
+        size: 5574
+        sha256_sum: "985d0ea95772d8e09d653df38b1bb0f20bf2ba062046256b06f2c51fd6bf413a"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-B_Mask.gbs"
+        size: 20455
+        sha256_sum: "3238a08c8504844d470876abb8dcd05c846010520e7a5115a33b2aedcf2cd81a"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-B_Paste.gbp"
+        size: 514
+        sha256_sum: "03cd45b0a430d74152016ce872db4fdd0c5074223275709e7833dfb2446c85dc"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-B_SilkS.gbo"
+        size: 2498
+        sha256_sum: "f36662a1e9e5a158c4ef392a858aa9db92e79d980069fae3d55d62a5c21014e7"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-Edge_Cuts.gm1"
+        size: 809
+        sha256_sum: "2709169bcd437f1ed5773be86a3404316d342d70e11c2e1004bd5c1e13fd2936"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-F_Cu.gtl"
+        size: 200834
+        sha256_sum: "19eb0af51df0bd36f8244a0716ec3feaeff5db0fedf96ce7dc9e3a6f8c8e77f3"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-F_Mask.gts"
+        size: 154097
+        sha256_sum: "9499f3d2e59cc7eda2128b3a02071488a1fe647638225010f7d3dc897c35d662"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-F_Paste.gtp"
+        size: 164055
+        sha256_sum: "be45932f326a2d8a7221f84d18cbe92dbcfb6edfbee63b1426499b875460a557"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-F_SilkS.gto"
+        size: 246962
+        sha256_sum: "4f1892892895e3fdf0101f5d7b5ed6302f8e038f7513f5f0453a8a29f8c8c915"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-In1_Cu.g2"
+        size: 120677
+        sha256_sum: "dc77396f66991f538b23058c7a7e13cc1c137198f48f29cb986cf3f7f6d56b25"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-In2_Cu.g3"
+        size: 123432
+        sha256_sum: "9bc92420f2bac5c40881e0ff27eb437787620e979200087d469d783a07fb89ba"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-NPTH-drl_map.gbr"
+        size: 2616
+        sha256_sum: "93dda421461e4b7cf058e09787f49b219a2a109fe92422b1bd67c7462c37b8f5"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-NPTH.drl"
+        size: 307
+        sha256_sum: "2276b341faaa1b144e1d37e1f00c29ecf0906a4463f38fd375a31f4270c1a230"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-PTH-drl_map.gbr"
+        size: 52598
+        sha256_sum: "2f5fae6bcc384fa9d5406434ee05ad89f55579ac03775eb47fe568cf2bcb2366"
+    },
+    {
+        path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-PTH.drl"
+        size: 1966
+        sha256_sum: "e35bb18cdefa7cd3f3ece14a4777ea1cb0e52d36782359a7b93d88c40a828429"
     },
     {
         path: "testdata/cnc/3DBenchy_0.2mm_PETG_MK3S_1h23m.gcode"

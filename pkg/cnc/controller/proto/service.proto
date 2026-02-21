@@ -4,12 +4,16 @@ package cnc;
 
 import "pkg/peripherals/proto/service.proto";
 import "pkg/cnc/motion/proto/config.proto";
+import "pkg/cnc/controller/proto/log.proto";
+import "pkg/cnc/controller/proto/matrix.proto";
 
 
 service Controller {
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 
     rpc GetPosition (GetPositionRequest) returns (GetPositionResponse);
+
+    rpc ReadLog (ReadLogRequest) returns (stream ReadLogResponse);
 }
 
 message ExecuteRequest {
@@ -87,10 +91,6 @@ message GetPositionResponse {
     VectorProto position = 1;
 }
 
-message VectorProto {
-    repeated double values = 1;
-}
-
 message SkewData {
     message Point {
         uint32 fixed_group = 1;
@@ -106,8 +106,13 @@ message SkewData {
     repeated Point points = 1;
 }
 
-message MatrixProto {
-    repeated double values = 1;
-    uint32 rows = 2;
-    uint32 cols = 3;
+
+
+message ReadLogRequest {
+    
+}
+
+message ReadLogResponse {
+    LogEntry entry = 1;
+
 }

@@ -51,7 +51,7 @@ impl DevicesController {
             state: AsyncRwLock::new(State {
                 entries: HashMap::default()
             }),
-            time: Arc::new(TimeSyncer::create()),
+            time: Arc::new(TimeSyncer::create(config.time())),
             utilization_tracker: Arc::new(RemoteUtilizationTracker::create()),
         });
 

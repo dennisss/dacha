@@ -54,6 +54,11 @@ devices: [
     }
 ]
 
+time {
+    primary_device_name: "mcu"
+    trust_usb_sof_timing: true
+}
+
 motion_controller {
     motors: [
         {

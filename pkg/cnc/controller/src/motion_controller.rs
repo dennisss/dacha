@@ -194,7 +194,6 @@ pub enum MotionControllerMode {
 }
 
 struct ActiveState {
-
     start_time: Instant,
 
         planner_consumed_time: f64,

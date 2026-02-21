@@ -133,6 +133,66 @@ impl PeripheralsDevice {
         Ok(n)
     }
 
+    pub async fn spi_transfer_timed(
+        &self,
+        periph_name: &str,
+        send: &[u8],
+        read_buffer: &str,
+        start_time: u32,
+        transfer_count: usize,
+        transfer_inverval: u32,
+    ) -> Result<Vec<u8>> {
+        let periph_index = self.periph_config(periph_name)?.index();
+        let buffer_idx = self.periph_config(read_buffer)?.index();
+
+        {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(periph_index);
+            req.spi_transfer_mut().data_mut().extend_from_slice(send);
+            req.spi_transfer_mut().set_read_buffer(buffer_idx);
+            req.spi_transfer_mut().set_start_time(start_time);
+            req.spi_transfer_mut().set_transfer_count(transfer_count as u32);
+            req.spi_transfer_mut().set_transfer_interval(transfer_inverval);
+
+            let res = self.usb_device.send_request(&req).await?;
+        }
+
+        let data = self.fetch_buffer_impl(buffer_idx).await?;
+
+        Ok(data)
+    }
+
+    pub async fn enqueue_spi_transfer_timed<'a>(
+        &'a self,
+        periph_name: &str,
+        send: &[u8],
+        read_buffer: &str,
+        start_time: u32,
+        transfer_count: usize,
+        transfer_inverval: u32,
+    ) -> Result<impl Future<Output = Result<()>> + 'a> {
+
+        let periph_index = self.periph_config(periph_name)?.index();
+        let buffer_idx = self.periph_config(read_buffer)?.index();
+
+        let res = {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(periph_index);
+            req.spi_transfer_mut().data_mut().extend_from_slice(send);
+            req.spi_transfer_mut().set_read_buffer(buffer_idx);
+            req.spi_transfer_mut().set_start_time(start_time);
+            req.spi_transfer_mut().set_transfer_count(transfer_count as u32);
+            req.spi_transfer_mut().set_transfer_interval(transfer_inverval);
+
+            self.usb_device.enqueue_request(&req).await?
+        };
+
+        Ok(async move {
+            res.await?;
+            Ok(())
+        })
+    }
+
     pub async fn i2c_transfer(
         &self,
         periph_name: &str,
@@ -435,6 +495,26 @@ impl PeripheralsDevice {
 
         // TODO: I should know the size of the buffer from the config so I should be able to tell how many requests I need.
 
+        let buf = self.fetch_buffer_impl(buffer_index).await?;
+
+        // tODO: verify multiple of 2
+
+        let mut buf_f32 = vec![];
+        for c in buf.chunks(2) {
+            let v_i16 = i16::from_le_bytes(*array_ref![c, 0, 2]);
+            let v = Self::convert_raw_analog_output(v_i16, periph, config_res)?;
+            buf_f32.push(v);
+        }
+
+        Ok(buf_f32)
+    }
+
+    pub async fn fetch_buffer(&self, buffer_name: &str) -> Result<Vec<u8>> {
+        let buffer_index = self.periph_config(buffer_name)?.index();
+        self.fetch_buffer_impl(buffer_index).await
+    }
+
+    async fn fetch_buffer_impl(&self, buffer_index: u32) -> Result<Vec<u8>> {
         let mut request_queue = vec![];
 
         let mut buf = vec![];
@@ -455,16 +535,7 @@ impl PeripheralsDevice {
             buf.extend_from_slice(res.data_val());
         }
 
-        // tODO: verify multiple of 2
-
-        let mut buf_f32 = vec![];
-        for c in buf.chunks(2) {
-            let v_i16 = i16::from_le_bytes(*array_ref![c, 0, 2]);
-            let v = Self::convert_raw_analog_output(v_i16, periph, config_res)?;
-            buf_f32.push(v);
-        }
-
-        Ok(buf_f32)
+        Ok(buf)
     }
 
     fn convert_raw_analog_output(

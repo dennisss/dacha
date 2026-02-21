@@ -1,4 +1,5 @@
 use core::mem::MaybeUninit;
+use core::ops::{Index, IndexMut};
 
 // TODO: Dedup this with the CyclicBuffer code.
 pub struct FixedQueue<T, const LEN: usize> {
@@ -86,6 +87,24 @@ impl<T, const LEN: usize> Drop for FixedQueue<T, LEN> {
             let idx = (self.offset + i) % self.data.len();
             unsafe { self.data[idx].assume_init_drop() };
         }
+    }
+}
+
+impl<T, const LEN: usize> Index<usize> for FixedQueue<T, LEN> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.length);
+        let i = (self.offset + index) % self.data.len();
+        unsafe { self.data[i].assume_init_ref() }
+    }
+}
+
+impl<T, const LEN: usize> IndexMut<usize> for FixedQueue<T, LEN> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        assert!(index < self.length);
+        let i = (self.offset + index) % self.data.len();
+        unsafe { self.data[i].assume_init_mut() }
     }
 }
 

@@ -79,10 +79,11 @@ async fn timer_controller_response_thread(
             }
         });
 
-        if let Some((request_sequence, buffer, buffer_idx)) = completed_request {
+        if let Some((response_code, request_sequence, buffer, buffer_idx)) = completed_request {
 
             let mut res = PeripheralResponse::default();
             res.set_request_sequence(request_sequence as u32);
+            res.set_error_code(response_code);
 
             lock!(state <= periph_controller.state.lock(), {
                 state.entries[buffer_idx] = PeripheralEntry::Buffer(buffer);

@@ -63,6 +63,28 @@ impl ControllerService for ControllerServiceImpl {
         response.value = self.machine.get_position().await?;
         Ok(())
     }
+
+    // TODO: Currently if there are multiple callers to this, they will get
+    // different subsets of the log data.
+    async fn ReadLog(
+        &self,
+        request: rpc::ServerRequest<ReadLogRequest>,
+        response: &mut rpc::ServerStreamResponse<ReadLogResponse>
+    ) -> Result<()> {
+        self.machine.clear_log()?;
+
+        response.send_head().await?;
+
+        loop {
+            let entry = self.machine.recv_log_entry().await?;
+            
+            let mut res = ReadLogResponse::default();
+            res.set_entry(entry);
+            response.send(res).await?;
+        }
+
+        Ok(())
+    }
 }
 
 
