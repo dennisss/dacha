@@ -215,6 +215,11 @@ pub fn trigger_pendsv() {
     unsafe { write_volatile(NVIC_ICSR, 1 << 28) };
 }
 
+fn trigger_pendsv_unconditional() {
+    // Set the PENDSVSET bit.
+    unsafe { write_volatile(NVIC_ICSR, 1 << 28) };
+}
+
 pub fn trigger_systick() {
     let cs = CriticalSection::new();
 
@@ -262,7 +267,11 @@ pub async fn wait_for_systick(mut cs: CriticalSection) {
 
 pub async fn yield_now() {
     let cs = CriticalSection::new();
-    trigger_pendsv();
+    
+    // Note that we have not yet inserted a waker so we need to mark the interrupt
+    // even if the waker list is empty.
+    trigger_pendsv_unconditional();
+
     wait_for_pendsv(cs).await
 }
 

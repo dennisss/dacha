@@ -8,6 +8,7 @@ use common::errors::*;
 use common::hash::FastHasherBuilder;
 use executor::lock;
 use executor::sync::AsyncMutex;
+use executor::channel;
 use cnc::linear_motion_planner::*;
 use math::matrix::VectorXd;
 use math::vecxd;
@@ -28,6 +29,8 @@ use crate::tmc2209::TMC2209Device;
 use crate::stepper_motion_generator::*;
 use crate::time::DeviceTime;
 use crate::time::DevicesTimeVector;
+use crate::proto_utils::{VectorProtoExt, LinearMotionProtoExt};
+use crate::logging::*;
 
 /*
 
@@ -43,6 +46,8 @@ Doing Homing:
 - If we see one, we will stop all motors (clear_motion and disable and re-enable the motors)
     - Then report to the 
 
+
+TODO: Need TMC2209 retries
 */
 
 /// Basically the maximum number of times MotionController::move_to() can
@@ -119,7 +124,9 @@ struct Shared {
 
     motors: Vec<Arc<TMC2209Device>>,
 
-    state: AsyncVariable<State>
+    state: AsyncVariable<State>,
+
+    logging_channel: Arc<LoggingChannel>
 }
 
 struct State {
@@ -148,7 +155,7 @@ struct State {
     /// Position of each motor in step units.
     ///
     /// When all motors are at position 0, we are at (0,0,0) in XYZ,etc. space.
-///
+    ///
     /// If active_state != None, then this is the position we were at before entering the
     /// active state.
     ///
@@ -196,18 +203,20 @@ pub enum MotionControllerMode {
 struct ActiveState {
     start_time: Instant,
 
-        planner_consumed_time: f64,
+    start_primary_time: DeviceTime,
+
+    planner_consumed_time: f64,
 
     /// Up to what point in time in the queue we have consumed commands.
     queue_consumed_time: f64,
 
-        queue: StepperMotionGenerator,
+    queue: StepperMotionGenerator,
 }
 
 /// NOTE: This is exclusively owned by the main background thread so that most operations can be
 /// done without locking the shared state. 
 struct EnabledState {
-/// Previously sent motions.
+    /// Previously sent motions.
     past_step_motions: Vec<VecDeque<(DeviceTime, QuadraticStepperMotion)>>,
 
     /// Steps we have prepared but we can't yet enqueue since the motor has no space.
@@ -216,7 +225,7 @@ struct EnabledState {
     /// Whether or not pending_step_motions is empty.
     have_pending_motions: bool,
 
-/// Last direction sent to each motor.
+    /// Last direction sent to each motor.
     /// (this is mainly used for compressed unchanged direction commands)
     last_directions: Vec<StepperMotorMotion_Direction>,
 
@@ -227,7 +236,7 @@ struct EnabledState {
 
 impl EnabledState {
     fn reset(&mut self) {
-for q in &mut self.past_step_motions {
+        for q in &mut self.past_step_motions {
             q.clear();
         }
 
@@ -319,12 +328,6 @@ for q in &mut self.past_step_motions {
 
 
                     if step_end_time > motor_target_time {
-                        let step_remaining_time = step_end_time.sub(motor_target_time).lower();
-                        
-                        // cnc::time_difference_u32(step_end_time, motor_target_time);
-
-                        // let delta = 1.0 - ((step_remaining_time as f64) / (step_dur as f64));
-
                         let delta = ((motor_target_time.sub(step_start_time)).lower() as f64) / (step_dur as f64);
 
                         println!("[][][] Delta: {}", delta);
@@ -447,7 +450,11 @@ impl MotionController {
         Ok(())
     }
 
-    pub async fn create(mut config: MotionControllerConfig, devices: Arc<DevicesController>) -> Result<Self> {
+    pub async fn create(
+        mut config: MotionControllerConfig,
+        devices: Arc<DevicesController>,
+        logging_channel: Arc<LoggingChannel>,
+    ) -> Result<Self> {
         Self::adjust_config(&mut config)?;
 
         let config = Arc::new(config);
@@ -473,12 +480,16 @@ impl MotionController {
                 active: false,
                 motor_positions: vec![0; config.motors().len()],
                 motor_position_offsets: vec![0; config.motors().len()],
-hit_time: None,
+                hit_time: None,
                 hit_position: None,
-            })
+            }),
+            logging_channel
         });
 
-        let task = TaskResource::spawn_interruptable("MotionController", Self::background_thread(shared.clone()));
+        let task = TaskResource::spawn_interruptable(
+            "MotionController",
+            Self::background_thread(shared.clone())
+        );
 
         Ok(Self {
             task,
@@ -582,7 +593,7 @@ hit_time: None,
                         let mut last_directions = vec![StepperMotorMotion_Direction::UNCHANGED; shared.config.motors().len()];
 
                         enabled_state = Some(EnabledState {
-past_step_motions,
+                            past_step_motions,
                             pending_step_motions,
                             have_pending_motions,
                             last_directions,
@@ -646,7 +657,9 @@ past_step_motions,
     }
 
     /// Returns true if the state has stabilized and the 
-    async fn cycle_enabled(shared: &Shared, enabled_state: &mut EnabledState, cycle_start: Instant) -> Result<bool> {
+    async fn cycle_enabled(
+        shared: &Shared, enabled_state: &mut EnabledState, cycle_start: Instant
+    ) -> Result<bool> {
         
         // TODO: All requests in here need a timeout.
 
@@ -735,6 +748,9 @@ past_step_motions,
 
         let now = Instant::now();
 
+        // TODO: Over the coarse of a print, we need to periodically perform time corrections
+        // and not just at the beginning (when entering the active state).
+        let now_primary_time;
         let now_remote_times = {
             // TODO: Still no guarantee that this will give a monotonic time.
             // TODO: Only pull times for devices used by motors.
@@ -748,6 +764,9 @@ past_step_motions,
                     .clone()
                 );
             }
+
+            now_primary_time = device_times.get(
+                shared.devices.time().primary_device_name()).unwrap().clone();
 
             out
         };
@@ -796,7 +815,7 @@ past_step_motions,
                 if let Some(active_state) = enabled_state.active_state.take() {
                     state.motor_positions.copy_from_slice(active_state.queue.motor_positions());
                 }
-state.active = false;
+                state.active = false;
 
 
                 // TODO: Whenever we do this, pull out the current motor positions before ending?
@@ -806,7 +825,7 @@ state.active = false;
                 // how many of the planned steps were exactly completed.
                 for motor_i in 0..shared.config.motors().len() {
                     if statuses[motor_i].stopped() != StepperMotorStatus_StoppedReason::NONE {
-let mut pos = statuses[motor_i].position();
+                        let mut pos = statuses[motor_i].position();
                         if shared.config.motors()[motor_i].inverted() {
                             pos = -pos;
                         }
@@ -840,15 +859,30 @@ let mut pos = statuses[motor_i].position();
                     for t in &mut remote_start_time {
                         *t = t.add_duration(MIN_MOTION_START_DELAY)
                     }
+                    let start_primary_time = now_primary_time.add_duration(MIN_MOTION_START_DELAY);
 
                     println!("-> Active : {:?}", remote_start_time);
 
                     state.planner.set_start_time(0.0);
 
+                    if shared.logging_channel.active() {
+                        let mut entry = LogEntry::default();
+                        let e = entry.motion_start_mut();
+                        
+                        let position = state.planner.start_position() + &state.position_offset; 
+                        e.set_time(start_primary_time.raw());
+                        e.set_position(position.to_proto());
+                        // TODO: Include the motor_position_offsets?
+                        e.motor_position_mut().extend_from_slice(&state.motor_positions[..]);
+
+                        shared.logging_channel.send(entry);
+                    }
+
                     // TODO: Need to preserve motor positions across queue initializations.
-state.active = true;
+                    state.active = true;
                     enabled_state.active_state = Some(ActiveState {
                         start_time,
+                        start_primary_time,
                         planner_consumed_time: 0.0,
                         queue_consumed_time: 0.0,
                         queue: StepperMotionGenerator::new(
@@ -867,8 +901,23 @@ state.active = true;
                         println!("=> Idle");
 
                         state.motor_positions.copy_from_slice(active_state.queue.motor_positions());
-state.active = false;
+                        state.active = false;
                         enabled_state.active_state = None;
+
+                        if shared.logging_channel.active() {
+                            let mut entry = LogEntry::default();
+                            let e = entry.motion_end_mut();
+                            
+                            let position = state.planner.start_position() + &state.position_offset; 
+                            // TODO: Make this more tight to the time of the final motion?
+                            e.set_time(now_primary_time.raw());
+                            e.set_position(position.to_proto());
+                            // TODO: Include the motor_position_offsets?
+                            e.motor_position_mut().extend_from_slice(&state.motor_positions[..]);
+
+                            shared.logging_channel.send(entry);
+                        }
+
                         // TODO: Have a 'continue' here?
                     }
                     
@@ -890,16 +939,38 @@ state.active = false;
                     // Take from 'planner' and push into the 'queue'
                     {
                         let max_planner_time = ((now + PLANNER_LOOK_AHEAD_WINDOW) - active_state.start_time).as_secs_f64();
+                        // TODO: I don't need planner_consumed_time. I can instead just look at the start_time in the planner.
                         let max_planner_time_step = max_planner_time - active_state.planner_consumed_time;
 
                         if max_planner_time_step >= PLANNER_STEP_SIZE {
-active_state.planner_consumed_time += PLANNER_STEP_SIZE;
+                            active_state.planner_consumed_time += PLANNER_STEP_SIZE;
+                            
+                            let mut base_time = state.planner.start_time();
 
-                                                    // TODO: Check these comments.
+                            // TODO: Check these comments.
                             // NOTE: We only use the end_position and time in each of these objects.
                             let mut motions = vec![];
                             // TODO: Need to use the duration returned by this (yes since we don't know if we fully saturated the time span)
                             state.planner.next(active_state.planner_consumed_time, &mut motions);
+
+                            if motions.len() > 0 && shared.logging_channel.active() {
+                                let mut entry = LogEntry::default();
+
+                                for motion in &motions {
+                                    let m = entry.linear_motions_mut().new_motions();
+                                    m.set_time(
+                                        active_state.start_primary_time
+                                        .add_secs(base_time)
+                                        .raw()
+                                    );
+
+                                    m.set_motion(motion.to_proto());
+
+                                    base_time += motion.duration;
+                                }
+
+                                shared.logging_channel.send(entry);
+                            }
 
                             for motion in motions {
                                 // TODO: Should warn if the motion was delayed relative to the previous one.
@@ -916,28 +987,28 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
             }
         });
 
-                    // Take from the 'queue' and prepare to send to the machine.
+        // Take from the 'queue' and prepare to send to the machine.
         if let Some(active_state) = &mut enabled_state.active_state {
-                        // TODO: Limit the minimum time step for this?
+            // TODO: Limit the minimum time step for this?
 
-                        let max_queue_time = ((now + STEP_GENERATION_WINDOW) - active_state.start_time).as_secs_f64();
+            let max_queue_time = ((now + STEP_GENERATION_WINDOW) - active_state.start_time).as_secs_f64();
             let max_queue_time_step = max_queue_time - active_state.queue_consumed_time;
 
-                        // TODO: Entire alarm mode if this fails.
-                        if max_queue_time_step >= STEP_GENERATION_STEP {
+            // TODO: Entire alarm mode if this fails.
+            if max_queue_time_step >= STEP_GENERATION_STEP {
                 active_state.queue_consumed_time += STEP_GENERATION_STEP;
                 let step_motions = active_state.queue.to_commands(active_state.queue_consumed_time).unwrap();
 
-                        for (i, step_motion) in step_motions.into_iter().enumerate() {
-                            for step_motion in step_motion {
-                                // println!("Enqueue: {:?}", step_motion);
+                for (i, step_motion) in step_motions.into_iter().enumerate() {
+                    for step_motion in step_motion {
+                        // println!("Enqueue: {:?}", step_motion);
 
-                                enabled_state.pending_step_motions[i].push_back(step_motion);
-                                enabled_state.have_pending_motions = true;
-}
-                            }
-                        }
+                        enabled_state.pending_step_motions[i].push_back(step_motion);
+                        enabled_state.have_pending_motions = true;
                     }
+                }
+            }
+        }
 
         // Do enqueues.
 
@@ -950,6 +1021,9 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
         enabled_state.have_pending_motions = false;
         let mut sent_something = 0;
         let mut batch = shared.devices.new_batch();
+
+        let mut log_entry = LogEntry::default();
+        let should_log = shared.logging_channel.active();
 
         for (motor_i, queue) in enabled_state.pending_step_motions.iter_mut().enumerate() {
             let mut empty_slots = statuses[motor_i].empty_queue_slots() as usize;
@@ -995,6 +1069,21 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
                     enabled_state.last_directions[motor_i] = proto.direction();
                 }
 
+                if should_log {
+                    let e = log_entry.stepper_motions_mut().new_motions();
+
+                    let start_time = shared.devices.time().to_primary_clock(motion_time).await?;
+
+                    e.set_motor_index(motor_i as u32);
+                    e.set_start_time(start_time.raw());
+                    e.set_motion(proto.clone());
+
+                    // Never compressed in the log.
+                    e.motion_mut().set_direction(dir_proto);
+
+                    e.motion_mut().clear_next_step_time();
+                }
+
                 // TODO: These should be easy to sequence compress and acks should also be compressable.
                 batch.add(
                     shared.motors[motor_i].device_name(),
@@ -1008,6 +1097,10 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
 
 
             enabled_state.have_pending_motions |= !queue.is_empty();
+        }
+
+        if should_log && batch.len() > 0 {
+            shared.logging_channel.send(log_entry);
         }
 
         // Assumption here is that the stepper queue length is smaller than the max in flight requests we allow.
@@ -1280,7 +1373,7 @@ active_state.planner_consumed_time += PLANNER_STEP_SIZE;
     /// Note that this blocks until the movement is schedules but the actual motion
     /// will happen later.
     pub async fn move_to(&self, pos: VectorXd, feed_rate: f64) -> Result<()> {
-                // TODO: Basically only allow this in the Enabled mode.
+        // TODO: Basically only allow this in the Enabled mode.
 
         // TODO: Quantize to step unit boundaries.
 
@@ -1329,6 +1422,10 @@ impl MotionControllerLinearPlanner {
         }
     }
 
+    pub fn start_time(&self) -> f64 {
+        self.inner.start_time()
+    }
+
     pub fn set_start_time(&mut self, v: f64) {
         self.inner.set_start_time(v);
     }
@@ -1336,7 +1433,7 @@ impl MotionControllerLinearPlanner {
     pub fn next(
         &mut self,
         max_time: f64,
-                out: &mut Vec<LinearMotion>
+        out: &mut Vec<LinearMotion>
     ) {
         self.inner.next(max_time, out);
     }
@@ -1347,6 +1444,10 @@ impl MotionControllerLinearPlanner {
 
     pub fn last_position(&self) -> &VectorXd {
         self.inner.last_position()
+    }
+
+    pub fn start_position(&self) -> &VectorXd {
+        self.inner.start_position()
     }
 
     pub fn set_start_position(&mut self, start_position: VectorXd) {
@@ -1451,6 +1552,8 @@ impl MotionControllerLinearPlanner {
         // println!("Feed Rate : {}", speed);
 
         // TODO: Set a limit on the max feed rate based on configured machine limits.
+
+        // TODO: Warn if we are adding to an empty one while active 
 
         self.inner.move_to(pos, speed, acceleration);
 

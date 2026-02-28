@@ -237,13 +237,8 @@ async fn adc_sample_worker_thread(
 
             lock!(state <= controller.state.lock(), {
                 // Return roughly the time of the last sample.
-                match controller.timer.capture() {
-                    Some(v) => res.set_time(v),
-                    None => {
-                        res.set_error_code(PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED);
-                    }
-                }
-                
+                // TODO: Improve the precision of this time measurement and ideally just record the start time.
+                res.set_time(controller.now());                
                 request.reclaim(&mut state);
                 controller.write_response(&mut state, &res);
             });

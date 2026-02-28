@@ -8,6 +8,7 @@ doctest = false
 
 [dependencies]
 base_util = { path = "../../base/util" }
+base_units = { path = "../../base/units" }
 macros = { path = "../../macros" }
 protobuf = { path = "../../protobuf", default-features = false }
 math = { path = "../../math", default-features = false }

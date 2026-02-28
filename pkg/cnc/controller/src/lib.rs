@@ -26,4 +26,6 @@ pub mod heater_controller;
 pub mod endstop_controller;
 pub mod proto_utils;
 pub mod stats;
+pub mod logging;
 pub mod data_logger;
+pub mod as5047p;

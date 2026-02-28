@@ -71,15 +71,15 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<ReadLogRequest>,
         response: &mut rpc::ServerStreamResponse<ReadLogResponse>
     ) -> Result<()> {
-        self.machine.clear_log()?;
+        let mut subscriber = self.machine.subscribe_to_log();
 
         response.send_head().await?;
 
         loop {
-            let entry = self.machine.recv_log_entry().await?;
+            let entry = subscriber.recv().await?;
             
             let mut res = ReadLogResponse::default();
-            res.set_entry(entry);
+            res.set_entry(entry.as_ref().clone());
             response.send(res).await?;
         }
 

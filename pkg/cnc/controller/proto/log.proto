@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+import "pkg/peripherals/proto/request.proto";
+import "pkg/cnc/controller/proto/matrix.proto";
+
+package cnc;
+
+message LogEntry {
+    string logger_name = 1;
+
+    oneof payload {
+        LogSampledData sampled_data = 2;
+        LogMotionControllerStateTransition motion_start = 3;
+        LogMotionControllerStateTransition motion_end = 4;
+        LogLinearMotions linear_motions = 5;
+        LogStepperMotions stepper_motions = 6;
+    }
+}
+
+message LogMotionControllerStateTransition {
+    uint64 time = 1;
+
+    VectorProto position = 2;
+
+    repeated sint32 motor_position = 3;
+}
+
+message LogSampledData {
+    // Start time of the first sample.
+    uint64 start_time = 1;
+
+    uint64 sample_interval = 2;
+
+    uint64 sample_count = 3;
+
+    bytes data = 4;
+}
+
+message LogLinearMotions {
+    repeated LogLinearMotion motions = 1;
+}
+
+
+message LogLinearMotion {
+    uint64 time = 1;
+    LinearMotionProto motion = 2;
+}
+
+message LinearMotionProto {
+    VectorProto start_position = 2;
+    VectorProto start_velocity = 3;
+    VectorProto acceleration = 4;
+    double duration = 5;
+}
+
+message LogStepperMotions {
+    repeated LogStepperMotion motions = 1;
+}
+
+message LogStepperMotion {
+    uint32 motor_index = 1;
+
+    // 64-bit extended time of the first motion.
+    // 'motion.next_time' is zeroed.
+    uint64 start_time = 2;
+
+    peripherals.StepperMotorMotion motion = 3;
+}

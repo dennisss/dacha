@@ -250,7 +250,32 @@ message DataLoggerConfig {
         repeated string buffers = 2;
     }
 
+    message AS5047PLoggerConfig {
+        PeripheralReference spi_peripheral = 1;
+        
+        repeated string buffers = 2;
+    }
+
     MA732LoggerConfig ma732 = 2;
 
+    AS5047PLoggerConfig as5047p = 3;
+
+
+    message AS5601LoggerConfig {
+        PeripheralReference peripheral = 1;
+    }
+
+    AS5601LoggerConfig as5601 = 4;
+
+
+    message ADCLoggerConfig {
+        PeripheralReference peripheral = 1;
+        repeated string buffers = 2;
+
+        // TODO: Derive this from the peripheral's sample_rate and oversampling config fields.
+        uint32 sample_rate = 3;
+    }
+
+    ADCLoggerConfig adc = 5;
 }
 

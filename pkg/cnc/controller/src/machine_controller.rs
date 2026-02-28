@@ -19,6 +19,7 @@ use crate::heater_controller::*;
 use crate::endstop_controller::*;
 use crate::proto_utils::VectorProtoExt;
 use crate::data_logger::*;
+use crate::logging::*;
 
 
 // TODO: Need to block most commands until we are homed.
@@ -30,7 +31,7 @@ pub struct MachineController {
     endstop_controller: Arc<EndstopController>,
     heater_controllers: Vec<Arc<HeaterController>>,
     loggers: Vec<Arc<DataLogger>>,
-    log_receiver: channel::Receiver<LogEntry>,
+    logging_channel: Arc<LoggingChannel>,
 }
 
 impl MachineController {
@@ -41,10 +42,10 @@ impl MachineController {
         println!("Wait for sync...");
         devices.time().wait_for_sync().await?;
 
-        let (log_sender, log_receiver) = channel::bounded(512);
+        let logging_channel = Arc::new(LoggingChannel::default());
 
         let motion_controller = Arc::new(MotionController::create(
-            config.motion_controller().clone(), devices.clone(), log_sender.clone()).await?);
+            config.motion_controller().clone(), devices.clone(), logging_channel.clone()).await?);
 
         motion_controller.enable(true).await?;
 
@@ -67,7 +68,7 @@ impl MachineController {
 
         let mut loggers = vec![];
         for config in config.loggers() {
-            loggers.push(Arc::new(DataLogger::create(config, devices.clone(), log_sender.clone())?));
+            loggers.push(Arc::new(DataLogger::create(config, devices.clone(), logging_channel.clone())?));
         }
 
         Ok(Self {
@@ -77,7 +78,7 @@ impl MachineController {
             endstop_controller,
             heater_controllers,
             loggers,
-            log_receiver,
+            logging_channel,
         })
     }
 
@@ -391,15 +392,8 @@ impl MachineController {
         Ok(())
     }
 
-
-    pub fn clear_log(&self) -> Result<()> {
-        while let Ok(_) = self.log_receiver.try_recv() {}
-        Ok(())
-    }
-
-    pub async fn recv_log_entry(&self) -> Result<LogEntry> {
-        let entry = self.log_receiver.recv().await?;
-        Ok(entry)
+    pub fn subscribe_to_log(&self) -> LoggingChannelSubscriber {
+        self.logging_channel.subscribe()
     }
 
 }

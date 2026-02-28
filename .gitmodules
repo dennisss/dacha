@@ -46,3 +46,6 @@
 [submodule "third_party/rpi/linux"]
 	path = third_party/rpi/linux
 	url = https://github.com/raspberrypi/linux
+[submodule "third_party/avr/megaTinyCore"]
+	path = third_party/avr/megaTinyCore
+	url = https://github.com/SpenceKonde/megaTinyCore.git

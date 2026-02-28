@@ -118,15 +118,6 @@ impl Timer {
             interrupt_mask: 1 << (16 + index)
         })
     }
-
-    pub fn capture(&self) -> Option<u32> {
-        let mut channel = match self.new_channel() {
-            Some(v) => v,
-            None => return None
-        };
-        
-        Some(channel.capture())
-    }
 }
 
 pub struct TimerChannel<'a> {

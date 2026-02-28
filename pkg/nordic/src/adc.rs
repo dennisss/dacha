@@ -43,6 +43,8 @@ const VDD_VOLTAGE: f32 = 3.3;
 
 const RESOLUTION_NUM_BITS: usize = 14;
 
+const MAX_SAMPLE_RATE: u32 = 200_000;
+
 /// (Port, Pin) mapping for AIN0-7
 const ADC_INPUTS: &'static [(AnalogPinSelect, u8, u8)] = &[
     (AnalogPinSelect::AnalogInput0, 0, 2),
@@ -264,7 +266,26 @@ impl ADC {
         config_value
         .set_gain(gain_value)
         .set_refsel(ref_select)
-        .set_tacq_with(|v| v.set_10us())
+        /*
+        From the datasheet:
+
+        'f_sample < 1 / (t_acq + t_conv)'
+            where t_conv < 2us
+
+        So for
+            t_acq = 10us, limit is 83k
+            t_acq = 5us, limit is 142k
+            t_acq = 3us, limit is 200k
+        */
+        .set_tacq_with(|v| {
+            if config.sample_rate() >= 140_000 {
+                v.set_3us()
+            } else if config.sample_rate() >= 80_000 {
+                v.set_5us()
+            } else {
+                v.set_10us()
+            }        
+        })
         .set_mode_with(|v| {
             if negative_pin_select != AnalogPinSelect::NC {
                 v.set_diff();
@@ -559,9 +580,8 @@ impl WindowADC {
         config: &WindowADCChannelConfig,
         out: &mut [i16]
     ) -> Option<ADCSampleStatus> {
-        // 200kHz is the max but we currently have a 10us hold time so that is the limiting factor.
         if out.len() > 1 || config.oversampling != OVERSAMPLE_FIELD::Bypass {
-            if config.sample_rate < 10 || config.sample_rate > 100_000 {
+            if config.sample_rate < 10 || config.sample_rate > MAX_SAMPLE_RATE {
                 return None;
             }
         }

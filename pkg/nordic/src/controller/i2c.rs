@@ -26,12 +26,17 @@ async fn i2c_worker_thread(
     mut inst: TWIM,
     request: I2CTransfer
 ) {
+    executor::interrupts::yield_now().await;
+
     let mut buf = [0u8; 32];
 
     // TODO: Bounda check this.
     let read_buffer = &mut buf[0..(request.read_count() as usize)];
 
     // TODO: Double check if anything needs to be aligned in memory.
+
+    // TODO: Do in a critical section?
+    let time = controller.now();
 
     let r = inst.write_then_read(
         request.address() as u8,
@@ -51,6 +56,8 @@ async fn i2c_worker_thread(
     let mut res = PeripheralResponse::default();
     res.set_request_sequence(request_sequence);
     
+    res.set_time(time);
+
     if r.is_err() {
         // Probably no acknowledgement was received.
         res.set_error_code(PeripheralResponse_ErrorCode::UNKNOWN);

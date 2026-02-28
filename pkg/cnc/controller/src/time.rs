@@ -533,6 +533,11 @@ impl TimeSyncer {
         self.convert_time(time, primary_dev_id, &state)
     }
 
+    pub fn primary_device_name(&self) -> &str {
+        self.shared.config.primary_device_name()
+    }
+
+
     fn convert_host_to_device_time(
         &self, dev_id: u64, dev: &DeviceEntry, time: Instant, state: &State
     ) -> Result<DeviceTime> {
@@ -633,7 +638,13 @@ impl DeviceTime {
             device_id: self.device_id,
             value: self.value - other.value
         }
+    }
 
+    pub fn sub_ticks_u64(self, ticks: u64) -> Self {
+        Self {
+            device_id: self.device_id,
+            value: self.value - ticks
+        }
     }
 }
 

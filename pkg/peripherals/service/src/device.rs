@@ -27,6 +27,11 @@ pub struct AnalogReadWindowResult {
     pub triggered: bool, 
 }
 
+pub struct I2CTransferResult {
+    pub transfer_time: u32,
+}
+
+
 impl PeripheralsDevice {
 
     pub async fn create(config: &BoardConfig) -> Result<(Self, PeripheralsState)> {
@@ -199,7 +204,7 @@ impl PeripheralsDevice {
         address: u8,
         send: &[u8],
         receive: &mut [u8],
-    ) -> Result<()> {
+    ) -> Result<I2CTransferResult> {
         let periph_index = self.periph_config(periph_name)?.index();
 
         let mut req = PeripheralRequest::default();
@@ -217,7 +222,9 @@ impl PeripheralsDevice {
         }
 
         receive[..n].copy_from_slice(res.data_val());
-        Ok(())
+        Ok(I2CTransferResult {
+            transfer_time: res.time()
+        })
     }
 
     pub async fn neopixel_transfer(

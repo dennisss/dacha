@@ -95,6 +95,10 @@ impl LinearMotionPlanner {
         VectorXd::zero_with_shape(self.start_position.rows(), 1)
     }
 
+    pub fn start_time(&self) -> f64 {
+        self.start_time
+    }
+
     pub fn set_start_time(&mut self, v: f64) {
         self.start_time = v;
     }
@@ -106,6 +110,10 @@ impl LinearMotionPlanner {
 
     pub fn set_max_junction_deviation(&mut self, value: f64) {
         self.config.set_max_junction_deviation(value);
+    }
+
+    pub fn start_position(&self) -> &VectorXd {
+        &self.start_position
     }
 
     pub fn set_start_position(&mut self, start_position: VectorXd) {

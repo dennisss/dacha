@@ -4,7 +4,14 @@ devices: [
     {
         name: "mcu"
         peripheral_config {
-            base_config: "breadboard_toolhead"
+            base_config: "breadboard_motor"
+        }
+    },
+    {
+        name: "encoder"
+        peripheral_config {
+            base_config: "motor_encoder_as5047p"
+            # base_config: "nrf52840_dongle"
         }
     },
     {
@@ -18,6 +25,25 @@ devices: [
         }
     }
 ]
+
+loggers: [
+    {
+        name: "encoder"
+
+        as5047p {
+            spi_peripheral {
+                device_name: "encoder"
+                peripheral_name: "encoder_spi"
+            }
+            buffers: ["buf1", "buf2"]
+        }
+    }
+]
+
+time {
+    primary_device_name: "mcu"
+    trust_usb_sof_timing: true
+}
 
 motion_controller {
     motors: [
@@ -36,22 +62,33 @@ motion_controller {
         }
     ]
 
+    planner {
+        max_junction_deviation: 0
+
+        max_instant_speed_change: [
+            0
+        ]
+    }
+
     axes: [
-        { name: "X" max_speed: 40 max_acceleration: 200 }
+        { name: "X" max_speed: 200 max_acceleration: 200 }
     ]
 }
 
-default_endstops: ["stepper_stall", "user_button"]
+default_endstops: [
+    # "stepper_stall",
+    "user_button"
+]
 
 endstop_controller {
-    endstops {
-        name: "stepper_stall"
-        peripheral {
-            device_name: "mcu"
-            peripheral_name: "stepper_diag"
-        }
-        motors: ["stepper"]
-    }
+    #endstops {
+    #    name: "stepper_stall"
+    #    peripheral {
+    #        device_name: "mcu"
+    #        peripheral_name: "stepper_diag"
+    #    }
+    #    motors: ["stepper"]
+    #}
     endstops {
         name: "user_button"
         peripheral {

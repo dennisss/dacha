@@ -1,5 +1,7 @@
 use math::matrix::{VectorXd, MatrixXd};
-use cnc_controller_proto::cnc::{VectorProto, MatrixProto};
+use math::vecxd;
+use cnc_controller_proto::cnc::{VectorProto, MatrixProto, LinearMotionProto};
+use cnc::linear_motion::LinearMotion;
 
 pub trait VectorProtoExt {
     fn from_proto(p: &VectorProto) -> Self;
@@ -41,6 +43,36 @@ impl MatrixProtoExt for MatrixXd {
         out.set_rows(self.rows() as u32);
         out.set_cols(self.cols() as u32);
 
+        out
+    }
+}
+
+pub trait LinearMotionProtoExt {
+    fn from_proto(p: &LinearMotionProto) -> Self;
+
+    fn to_proto(&self) -> LinearMotionProto;
+}
+
+impl LinearMotionProtoExt for LinearMotion {
+    fn from_proto(p: &LinearMotionProto) -> Self {
+        Self {
+            start_position: VectorXd::from_proto(p.start_position()),
+            start_velocity: VectorXd::from_proto(p.start_velocity()),
+            acceleration: VectorXd::from_proto(p.acceleration()),
+            duration: p.duration(),
+
+            // TODO
+            end_position: vecxd!(),
+            end_velocity: vecxd!(),
+        }
+    }
+    
+    fn to_proto(&self) -> LinearMotionProto {
+        let mut out = LinearMotionProto::default();
+        out.set_start_position(self.start_position.to_proto());
+        out.set_start_velocity(self.start_velocity.to_proto());
+        out.set_acceleration(self.acceleration.to_proto());
+        out.set_duration(self.duration);
         out
     }
 }

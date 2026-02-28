@@ -1,0 +1,37 @@
+name: "motor_encoder_as5047p"
+base_config: "nrf52840"
+
+peripherals {
+    name: "encoder_spi"
+    spi {
+        miso_pin_name: "P0.04"
+        mosi_pin_name: "P0.29"
+        sclk_pin_name: "P0.05"
+        cs_pin_name: "P1.11"
+        config {
+            # Max supported by chip is 10Mhz but this is the closest speed supported by the nRF
+            frequency: 8000000
+            timed: true
+            mode: 1
+        }
+    }
+}
+
+# We will sample at 4kHz so each buffer is good for 1 second of motion.
+peripherals {
+    name: "buf1"
+    buffer {
+        config {
+            size: 16000  # 8000 u16's
+        }
+    }
+}
+
+peripherals {
+    name: "buf2"
+    buffer {
+        config {
+            size: 16000  # 8000 u16's
+        }
+    }
+}

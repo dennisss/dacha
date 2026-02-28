@@ -1051,6 +1051,7 @@ dependencies = [
 name = "cnc_controller"
 version = "0.1.0"
 dependencies = [
+ "base_units",
  "base_util",
  "cluster_client",
  "cnc",
@@ -1190,6 +1191,7 @@ dependencies = [
  "peripherals_service",
  "protobuf",
  "rpc",
+"sstable",
 ]
 
 [[package]]

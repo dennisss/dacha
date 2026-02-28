@@ -781,7 +781,15 @@ impl PeripheralsController {
                     ));
                 }
 
-                // let pin = state.gpio.pin(IndexedPin { index: req.pin() });
+                let mode = match req.mode() {
+                    0 => SPIMode::Mode0,
+                    1 => SPIMode::Mode1,
+                    2 => SPIMode::Mode2,
+                    3 => SPIMode::Mode3,
+                    _ => return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::UNSUPPORTED_CONFIG,
+                    ))
+                };
 
                 let mut spi = None;
                 for i in 0..state.spim.len() {
@@ -810,7 +818,7 @@ impl PeripheralsController {
                     Some(IndexedPin { index: req.miso_pin() }),
                     Some(IndexedPin { index: req.sclk_pin() }),
                     Some(state.gpio.pin(IndexedPin { index: req.cs_pin() })),
-                    SPIMode::Mode0                
+                    mode
                 );
 
                 if req.timed() {

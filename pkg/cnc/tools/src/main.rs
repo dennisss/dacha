@@ -10,6 +10,7 @@ use cnc_tools::execute::*;
 use cnc_tools::skew::*;
 use cnc_tools::leveling::*;
 use cnc_tools::benchmark::*;
+use cnc_tools::motion_analysis::*;
 
 #[derive(Args)]
 struct Args {
@@ -29,6 +30,9 @@ enum Mode {
 
     #[arg(name = "benchmark")]
     Benchmark(BenchmarkCommand),
+
+    #[arg(name = "motion-analysis")]
+    MotionAnalysis(MotionAnalysisCommand)
 }
 
 impl Mode {
@@ -38,6 +42,7 @@ impl Mode {
             Self::SkewCalibration(cmd) => cmd.run().await,
             Self::Leveling(cmd) => cmd.run().await,
             Self::Benchmark(cmd) => cmd.run().await,
+            Self::MotionAnalysis(cmd) => cmd.run().await,
         }
     }
 }
