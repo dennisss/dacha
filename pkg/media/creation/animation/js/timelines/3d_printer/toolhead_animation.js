@@ -1,19 +1,7 @@
-import { Timeline, draw_title, deg2rad, draw_box } from './utils.js';
-import { drawArrow } from './arrow.js';
-import { getRayToRectIntersection } from './box_angle.js';
-import { Gear } from './gear.js';
-
-/*
-cd pkg/cnc/controller/vis/
-python3 -m http.server 9000
-
-- Output: 3840 x 2160
-- Display: 960 x 540
-*/
-
-
-
-
+import { Timeline, draw_title, deg2rad, draw_box } from '../../utils.js';
+import { drawArrow } from '../../arrow.js';
+import { getRayToRectIntersection } from '../../box_angle.js';
+import { Gear } from '../../gear.js';
 
 
 function graph(ctx, color, fx) {

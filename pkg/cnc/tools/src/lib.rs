@@ -11,3 +11,6 @@ pub mod remote;
 pub mod gcode;
 pub mod benchmark;
 pub mod motion_analysis;
+pub mod regression;
+pub mod motion_log;
+pub mod revolution_tracker;

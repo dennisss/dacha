@@ -113,7 +113,7 @@ impl ExecuteCommand {
                 m.set_x(x);
                 m.set_y(y);
                 m.set_z(10.0);
-                m.set_feed_rate(20.0);
+                m.options_mut().set_feed_rate(20.0);
             }
 
             machine.execute(&request).await?;

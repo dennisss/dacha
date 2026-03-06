@@ -8,7 +8,7 @@ use std::process::{Command, Stdio, Child, ChildStdin};
 use std::io::Write;
 
 use common::errors::*;
-
+use base_args::define_arg_command;
 use scpi::*;
 
 
@@ -27,17 +27,11 @@ struct Args {
     command: ArgCommand
 }
 
-#[derive(Args)]
-enum ArgCommand {
-    #[arg(name = "record-screen")]
-    RecordScreen(RecordScreenCommand),
-
-    #[arg(name = "measure-temp")]
-    MeasureTemp(MeasureTempCommand),
-
-    #[arg(name = "measure-voltage")]
-    MeasureVoltage(MeasureVoltageCommand),
-}
+define_arg_command!(ArgCommand {
+    RecordScreenCommand = "record-screen",
+    MeasureTempCommand = "measure-temp",
+    MeasureVoltageCommand = "measure-voltage",
+});
 
 #[derive(Args)]
 struct RecordScreenCommand {
@@ -199,13 +193,8 @@ impl FFMpegInstance {
 
 #[executor_main]
 async fn main() -> Result<()> {
-
     let args = common::args::parse_args::<Args>()?;
-    match args.command {
-        ArgCommand::RecordScreen(cmd) => cmd.run().await,
-        ArgCommand::MeasureTemp(cmd) => cmd.run().await,
-        ArgCommand::MeasureVoltage(cmd) => cmd.run().await,
-    }
+    args.command.run().await
 
     // FETC?
 }

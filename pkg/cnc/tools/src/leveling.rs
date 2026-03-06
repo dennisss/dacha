@@ -430,7 +430,8 @@ mod tests {
         ]).unwrap();
 
         let leveler = ZGridFadeLeveler {
-            z_values: grid_values
+            z_values: grid_values,
+            plane: todo!()
         };
 
         assert_eq!(

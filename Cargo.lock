@@ -814,6 +814,7 @@ name = "cluster_jbod"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_args",
  "base_error",
  "base_radix",
  "base_util",
@@ -4035,6 +4036,7 @@ checksum = "b42e15e59b18a828bbf5c58ea01debb36b9b096346de35d941dcb89009f24a0d"
 name = "scpi"
 version = "0.1.0"
 dependencies = [
+ "base_args",
  "common",
  "executor",
  "file",

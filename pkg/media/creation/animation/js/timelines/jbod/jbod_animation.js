@@ -1,13 +1,13 @@
-import { Timeline, draw_title, deg2rad, draw_box, slide_body_grid, DiagramBox, WireBundle, Wire, shallow_copy, draw_multiline_text, draw_box_text } from './utils.js';
-import { hexToRgba } from './hex_to_rgba.js';
-import { drawArrow } from './arrow.js';
-import { getPointAtY } from './y_point.js';
-import { drawPolyline, drawSequentialChains, drawShearedSquare } from './sheared_square.js';
-import { math_to_img, math_scale } from './mathjax.js';
-import { drawCenteredTable } from './centered_table.js';
-import { draw_graph } from './motion_animation.js';
-import { getInterpolatedY, interpolateValue } from './linear_interp.js';
-import { getObjectAlpha } from './staggered_fade.js';
+import { Timeline, draw_title, deg2rad, draw_box, slide_body_grid, DiagramBox, WireBundle, Wire, shallow_copy, draw_multiline_text, draw_box_text } from '../../utils.js';
+import { hexToRgba } from '../../hex_to_rgba.js';
+import { drawArrow } from '../../arrow.js';
+import { getPointAtY } from '../../y_point.js';
+import { drawPolyline, drawSequentialChains, drawShearedSquare } from '../../sheared_square.js';
+import { math_to_img, math_scale } from '../../mathjax.js';
+import { drawCenteredTable } from '../../centered_table.js';
+import { draw_graph } from '../3d_printer/motion_animation.js';
+import { getInterpolatedY, interpolateValue } from '../../linear_interp.js';
+import { getObjectAlpha } from '../../staggered_fade.js';
 
 export async function configure(canvas) {
     // return part2_nas_video(canvas);

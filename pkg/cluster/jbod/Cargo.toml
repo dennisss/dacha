@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../../common" }
+base_args = { path = "../../base/args" }
 base_util = { path = "../../base/util" }
 base_radix = { path = "../../base/radix" }
 base_error = { path = "../../base/error" }

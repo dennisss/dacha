@@ -142,6 +142,8 @@ pub struct PeripheralsController {
     // NOTE: Locking the state is still recommended for this to avoid multiple users taking the same channel slot.
     pub(super) timer: Timer,
 
+    capture_timer_channel: CriticalMutex<Option<TimerChannel<'static>>>,
+
     pub(super) timer_controller: TimerController,
 }
 
@@ -390,6 +392,7 @@ impl PeripheralsController {
             clock,
             timer,
             timer_controller: TimerController::new(),
+            capture_timer_channel: CriticalMutex::new(None),
             state: CriticalMutex::new(PeripheralsControllerState {
                 entries,
                 config_finalized: false,
@@ -432,6 +435,16 @@ impl PeripheralsController {
                 core::mem::transmute(&self.timer_controller)
             );
         }
+
+        lock!(chan <= self.capture_timer_channel.lock(), {
+            *chan = Some(self.timer.new_channel().unwrap());
+        });
+    }
+
+    pub fn now(&self) -> u32 {
+        lock!(chan <= self.capture_timer_channel.lock(), {
+            chan.as_mut().unwrap().capture()
+        })
     }
 
     /// TODO: This requires that 'self' is pinned.
@@ -1198,11 +1211,7 @@ impl PeripheralsController {
 
                 ppi.enable();
 
-                let time = self.timer.capture()
-                    .ok_or_else(|| ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ))?;
-                
+                let time = self.now();
                 response.set_uint_val(time);
 
                 gpio.tachometer = Some(GPIOTachometerState {
@@ -1231,11 +1240,7 @@ impl PeripheralsController {
                 state.timers.push(tach.timer);
 
 
-                let time = self.timer.capture()
-                    .ok_or_else(|| ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ))?;
-                
+                let time = self.now();
                 response.set_time(time);
 
                 response.set_uint_val(final_count);
@@ -1364,10 +1369,7 @@ impl PeripheralsController {
 
                 /*
                 // Optional checks if we want to be paranoid.
-                let time = self.timer.capture()
-                    .ok_or_else(|| ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ))?;
+                let time = self.now();
 
                 let delta_time = cnc::time_remaining_u32(req.next_step_time(), time);
                 if delta_time < 30 || delta_time > 4*16_000_000 {
@@ -1411,10 +1413,7 @@ impl PeripheralsController {
                         }
                     };
 
-                    let time = self.timer.capture()
-                        .ok_or_else(|| ExecuteError::ErrorCode(
-                            PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                        ))?;
+                    let time = self.now();
 
                     stepper.clear_motions(time);
                     stepper.tick();
@@ -1468,12 +1467,7 @@ impl PeripheralsController {
                 })
             }
             PeripheralRequestCommandCase::GetClockTime(_) => {
-                let time = self.timer.capture()
-                    .ok_or_else(|| ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ))?;
-                
-                response.set_uint_val(time);
+                response.set_uint_val(self.now());
                 Ok(OkResponse)
             }
             PeripheralRequestCommandCase::GetUsbSofTime(_) => {
@@ -1535,10 +1529,7 @@ impl PeripheralsController {
                     ));
                 }
 
-                let now = self.timer.capture()
-                    .ok_or_else(|| ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_EXHAUSTED,
-                    ))?;
+                let now = self.now();
 
                 response.usb_sof_mut().set_frame_start_time(sof_time);
                 response.usb_sof_mut().set_frame_counter(frame_counter);
@@ -1728,7 +1719,7 @@ impl PeripheralsController {
             return;
         }
 
-        let has_response = match res.response_case() {
+        let has_response = res.has_time() || match res.response_case() {
             PeripheralResponseResponseCase::NOT_SET => false,
             _ => true
         };

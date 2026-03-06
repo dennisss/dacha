@@ -1368,11 +1368,15 @@ impl MotionController {
         Ok(())
     }
 
+    pub async fn move_to(&self, pos: VectorXd, feed_rate: f64) -> Result<()> {
+        self.move_to_with_options(pos, &MoveOptions::default_for_feed_rate(feed_rate)).await
+    }
+
     /// Schedules a movement to be performed in the future.
     ///
     /// Note that this blocks until the movement is schedules but the actual motion
     /// will happen later.
-    pub async fn move_to(&self, pos: VectorXd, feed_rate: f64) -> Result<()> {
+    pub async fn move_to_with_options(&self, pos: VectorXd, options: &MoveOptions) -> Result<()> {
         // TODO: Basically only allow this in the Enabled mode.
 
         // TODO: Quantize to step unit boundaries.
@@ -1389,7 +1393,7 @@ impl MotionController {
 
             let next_pos = pos - &state.position_offset;
 
-            state.planner.move_to(next_pos, feed_rate)?;
+            state.planner.move_to_with_options(next_pos, options)?;
 
             Ok(())
         })
@@ -1405,6 +1409,39 @@ impl MotionController {
 
 
 use cnc::linear_motion::LinearMotion;
+
+#[derive(Clone)]
+pub struct MoveOptions {
+    pub feed_rate: f64,
+    pub acceleration: Option<f64>,
+    pub force: bool,
+}
+
+impl MoveOptions {
+    pub fn default_for_feed_rate(feed_rate: f64) -> Self {
+        Self {
+            feed_rate,
+            acceleration: None,
+            force: false
+        }
+    }
+
+    pub fn from_proto(proto: &MoveOptionsProto) -> Self {
+        Self {
+            feed_rate: proto.feed_rate(),
+            acceleration: {
+                if proto.has_acceleration() {
+                    Some(proto.acceleration())
+                } else {
+                    None
+                }
+            },
+            force: proto.force()
+        }
+    }
+
+}
+
 
 pub struct MotionControllerLinearPlanner {
     inner: LinearMotionPlanner,
@@ -1462,13 +1499,20 @@ impl MotionControllerLinearPlanner {
         self.inner.clear();
     }
 
-    // TODO: feed_rate doesn't do anything right now.
-    pub fn move_to(&mut self, pos: VectorXd, mut feed_rate: f64) -> Result<()> {
+    pub fn move_to(&mut self, pos: VectorXd, feed_rate: f64) -> Result<()> {
+        self.move_to_with_options(pos, &MoveOptions::default_for_feed_rate(feed_rate))
+    }
+
+    pub fn move_to_with_options(
+        &mut self,
+        pos: VectorXd,
+        options: &MoveOptions
+    ) -> Result<()> {
         if pos.len() != (self.config.axes().len() as usize) {
             return Err(err_msg("Wrong size tensor"));
         }
 
-        if feed_rate < 1.0 {
+        if options.feed_rate < 1.0 {
             return Err(err_msg("Input feed rate too small"));
         }
 
@@ -1486,52 +1530,29 @@ impl MotionControllerLinearPlanner {
         let acceleration = {
             let mut accel_limits = vec![];
             for axis in self.config.axes() {
-                accel_limits.push(axis.max_acceleration());
+                if options.force && options.acceleration.is_some() {
+                    accel_limits.push(100_000.0);
+                } else {
+                    accel_limits.push(axis.max_acceleration());
+                }
             }
 
-            constrained_vector(&dir, &accel_limits).norm()
+            let accel = options.acceleration.unwrap_or(100000.0);
+
+            self.expand_coordinated_rate(accel, &dir, accel_limits)
         };
 
         let speed = {
             let mut speed_limits = vec![];
             for axis in self.config.axes() {
-                speed_limits.push(axis.max_speed());
-            }
-
-            // https://linuxcnc.org/docs/html/gcode/machining-center.html#sub:feed-rate
-
-            // TODO: Unit test this.
-            let mut coordination_priority = 10000;
-            for i in 0..self.config.axes().len() {
-                let axis = &self.config.axes()[i];
-                let moving = dir[i].abs() > 0.0001;
-                if moving && axis.coordination_priority() < coordination_priority {
-                    coordination_priority = axis.coordination_priority();
+                if options.force {
+                    speed_limits.push(100_000.0);
+                } else {
+                    speed_limits.push(axis.max_speed());
                 }
             }
 
-            let mut feed_rate_masked_dir = dir.clone();
-            for i in 0..self.config.axes().len() {
-                let axis = &self.config.axes()[i];
-                if axis.coordination_priority() != coordination_priority {
-                    feed_rate_masked_dir[i] = 0.0;
-                }
-            }
-
-            let feed_rate_speed = (feed_rate_masked_dir.normalized() * feed_rate).abs();
-            for i in 0..self.config.axes().len() {
-                let axis = &self.config.axes()[i];
-
-                if axis.coordination_priority() == coordination_priority {
-                    speed_limits[i] = speed_limits[i].min(feed_rate_speed[i]);
-                }
-            }
-
-            let v = constrained_vector(&dir, &speed_limits).norm();
-
-            // assert!(v < 100.0, "{:?} : {:?} : {:?}", v, speed_limits, dir);
-
-            v
+            self.expand_coordinated_rate(options.feed_rate, &dir, speed_limits)
         };
 
         // Currently lot's of the internal code doesn't work with zero speeds.
@@ -1539,17 +1560,9 @@ impl MotionControllerLinearPlanner {
             return Err(format_err!("Resolved feedrate is very slow: {} mm/s", speed))
         }
 
-        // if speed < 0.0001 {
-        //     println!("Feed Rate: {}", feed_rate);
-        //     println!("From: {:?}", self.inner.last_position());
-        //     println!("To:   {:?}", pos);
-
-        //     return Err(format_err!("too slow! : {}", speed));
-        // }
-
-        // TODO: Verify no zero speed stuff (probably return an error)
-
-        // println!("Feed Rate : {}", speed);
+        if acceleration < 0.1 {
+            return Err(format_err!("Resolved acceleration is very small: {} mm/s^2", acceleration));
+        }
 
         // TODO: Set a limit on the max feed rate based on configured machine limits.
 
@@ -1558,6 +1571,44 @@ impl MotionControllerLinearPlanner {
         self.inner.move_to(pos, speed, acceleration);
 
         Ok(())
+    }
+
+    fn expand_coordinated_rate(&self, rate: f64, dir: &VectorXd, mut speed_limits: Vec<f64>) -> f64 {
+
+        // https://linuxcnc.org/docs/html/gcode/machining-center.html#sub:feed-rate
+
+        // TODO: Unit test this.
+        let mut coordination_priority = 10000;
+        for i in 0..self.config.axes().len() {
+            let axis = &self.config.axes()[i];
+            let moving = dir[i].abs() > 0.0001;
+            if moving && axis.coordination_priority() < coordination_priority {
+                coordination_priority = axis.coordination_priority();
+            }
+        }
+
+        let mut rate_masked_dir = dir.clone();
+        for i in 0..self.config.axes().len() {
+            let axis = &self.config.axes()[i];
+            if axis.coordination_priority() != coordination_priority {
+                rate_masked_dir[i] = 0.0;
+            }
+        }
+
+        let rate_speed = (rate_masked_dir.normalized() * rate).abs();
+        for i in 0..self.config.axes().len() {
+            let axis = &self.config.axes()[i];
+
+            if axis.coordination_priority() == coordination_priority {
+                speed_limits[i] = speed_limits[i].min(rate_speed[i]);
+            }
+        }
+
+        let v = constrained_vector(&dir, &speed_limits).norm();
+
+        // assert!(v < 100.0, "{:?} : {:?} : {:?}", v, speed_limits, dir);
+
+        v
     }
 }
 

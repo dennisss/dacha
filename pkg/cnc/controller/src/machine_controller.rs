@@ -123,8 +123,20 @@ impl MachineController {
                     }
                 };
 
+                let options = MoveOptions {
+                    feed_rate: cmd.options().feed_rate(),
+                    acceleration: {
+                        if cmd.options().has_acceleration() {
+                            Some(cmd.options().acceleration())
+                        } else {
+                            None
+                        }
+                    },
+                    force: cmd.options().force()
+                };
+
                 if cmd.towards_endstop() {
-                    self.move_towards_endstop(v, cmd.feed_rate()).await?;
+                    self.move_towards_endstop(v, &options).await?;
 
                     // NOTE: Hit position is only available for timed endstops.
                     let hit_position = self.motion_controller.hit_position().await?;
@@ -134,7 +146,7 @@ impl MachineController {
                     }
 
                 } else {
-                    self.motion_controller.move_to(v, cmd.feed_rate()).await?;
+                    self.motion_controller.move_to_with_options(v, &options).await?;
                 }
             }
 
@@ -171,6 +183,9 @@ impl MachineController {
 
                 let feed_rate = 20.0;
 
+                let xy_move_options = MoveOptions::default_for_feed_rate(20.0);
+                let z_move_options = MoveOptions::default_for_feed_rate(10.0);
+
                 let num_axes = self.motion_controller.num_axes();
 
                 // TODO: Make everything zero'ed
@@ -192,7 +207,7 @@ impl MachineController {
                     println!("Raming min {}!", axis_i);
                     {
                         current_pos[axis_i] = -200.0;
-                        self.move_towards_endstop(current_pos.clone(), feed_rate).await?;
+                        self.move_towards_endstop(current_pos.clone(), &xy_move_options).await?;
                     }
 
                     // tODO: Must verify we actually hit the expected endstops (and reset to using all normal endstops.)
@@ -205,7 +220,7 @@ impl MachineController {
                     println!("Backing off");
                     {
                         current_pos[axis_i] = 20.0;
-                        self.motion_controller.move_to(current_pos.clone(), feed_rate).await?;
+                        self.motion_controller.move_to_with_options(current_pos.clone(), &xy_move_options).await?;
                     }
 
                     // TODO: Issue is that after any move we may enter estop mode again so ideally wait_until_idle
@@ -247,14 +262,14 @@ impl MachineController {
                 println!("GO Z!!!");
 
                 current_pos[2] = -200.0;
-                self.move_towards_endstop(current_pos.clone(), 10.0).await?;
+                self.move_towards_endstop(current_pos.clone(), &z_move_options).await?;
 
                 // TODO: Eventually rely on better timing data about hits to improve this.
                 current_pos[2] = 0.0;
                 self.motion_controller.set_position(current_pos.clone()).await?;
 
                 current_pos[2] = 10.0;
-                self.motion_controller.move_to(current_pos.clone(), 10.0).await?;
+                self.motion_controller.move_to_with_options(current_pos.clone(), &z_move_options).await?;
             }
 
             if cmd.has_set_fan_speed() {
@@ -316,7 +331,7 @@ impl MachineController {
     async fn move_towards_endstop(
         &self,
         position: VectorXd,
-        feed_rate: f64,
+        options: &MoveOptions
     ) -> Result<()> {
         if position.len() != self.config.motion_controller().axes().len() {
             return Err(err_msg("Wrong number of dimensions in position"));
@@ -377,7 +392,7 @@ impl MachineController {
             endstop_set.expected_endstops()
         ).await?;
 
-        self.motion_controller.move_to(position, feed_rate).await?;
+        self.motion_controller.move_to_with_options(position, options).await?;
         self.motion_controller.wait_until_idle().await?;
 
         // TODO: This only checks that we hit an endstop but doesn't verify that

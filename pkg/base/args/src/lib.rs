@@ -7,6 +7,7 @@ extern crate std;
 
 pub mod list;
 pub mod duration;
+pub mod macros;
 
 use alloc::string::String;
 use alloc::vec::Vec;

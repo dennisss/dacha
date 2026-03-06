@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+base_args = { path = "../../base/args" }
 common = { path = "../../common" }
 net = { path = "../../net" }
 macros = { path = "../../macros" }

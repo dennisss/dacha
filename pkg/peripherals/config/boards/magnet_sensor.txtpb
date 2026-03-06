@@ -1,4 +1,4 @@
-name: "hall_tile"
+name: "magnet_sensor"
 base_config: "nrf52840"
 
 peripherals {
@@ -6,9 +6,10 @@ peripherals {
     adc {
         pin_name: "P0.29"
         config {
-            max_voltage: 1
-            sample_rate: 16000
+            max_voltage: 3.3
+            sample_rate: 200000
             oversampling: 16
+            vdd_reference: true
         }
     }
 }
@@ -17,7 +18,7 @@ peripherals {
     name: "buf1"
     buffer {
         config {
-            size: 2000  # 1000 u16's
+            size: 12000  # 6000 u16's (~0.5 seconds of samples)
         }
     }
 }

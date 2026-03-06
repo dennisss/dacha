@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
+use base_args::define_arg_command;
 use base_util::InRange;
 use base_error::*;
 use file::LocalPathBuf;
@@ -33,23 +34,13 @@ struct Args {
     mode: Mode,
 }
 
-#[derive(Args)]
-enum Mode {
-    #[arg(name = "test-backplane")]
-    TestBackplane(TestBackplaneCommand),
-
-    #[arg(name = "test-boot-time")]
-    TestBootTime(TestBootTimeCommand),
-
-    #[arg(name = "test-power")]
-    TestPower(TestPowerCommand),
-
-    #[arg(name = "test-management")]
-    TestManagement(TestManagementCommand),
-
-    #[arg(name = "test-leds")]
-    TestLED(TestLEDCommand)
-}
+define_arg_command!(Mode {
+    TestBackplaneCommand = "test-backplane",
+    TestBootTimeCommand = "test-boot-time",
+    TestPowerCommand = "test-power",
+    TestManagementCommand = "test-management",
+    TestLEDCommand = "test-leds",
+});
 
 macro_rules! define_backplane_tester_pins {
     ($( $name:ident ( $mcp_pin:expr , $mcp_ctrl_pin:expr, $analog_periph:expr ) ),* $(,)?) => {
@@ -1017,12 +1008,5 @@ impl TestBootTimeCommand {
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
-
-    match args.mode {
-        Mode::TestBackplane(cmd) => cmd.run().await,
-        Mode::TestBootTime(cmd) => cmd.run().await,
-        Mode::TestPower(cmd) => cmd.run().await,
-        Mode::TestManagement(cmd) => cmd.run().await,
-        Mode::TestLED(cmd) => cmd.run().await,
-    }
+    args.mode.run().await
 }
