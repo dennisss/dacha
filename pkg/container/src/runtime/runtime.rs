@@ -70,6 +70,8 @@ pub struct ContainerRuntime {
     /// TODO: Convert to HashSet based listeners as we never need to deliver a
     /// single container id if there already is an enqueued event for it.
     event_listeners: AsyncMutex<Vec<channel::Sender<String>>>,
+
+    runtime_privileged: bool,
 }
 
 struct Container {
@@ -133,7 +135,11 @@ impl ContainerRuntime {
     ///
     /// NOTE: Only one instance of the ContainerRuntime is allowed to exist in
     /// the same process.
-    pub async fn create<P: AsRef<LocalPath>>(run_dir: P, cgroup_dir: &str) -> Result<Arc<Self>> {
+    pub async fn create<P: AsRef<LocalPath>>(
+        run_dir: P,
+        cgroup_dir: &str,
+        runtime_privileged: bool,
+    ) -> Result<Arc<Self>> {
         if INSTANCE_LOCK.swap(true, Ordering::SeqCst) {
             return Err(err_msg("ContainerRuntime instance already exists"));
         }
@@ -143,6 +149,7 @@ impl ContainerRuntime {
             cgroup_dir: LocalPathBuf::from(cgroup_dir),
             containers: AsyncMutex::new(vec![]),
             event_listeners: AsyncMutex::new(vec![]),
+            runtime_privileged,
         }))
     }
 
@@ -370,14 +377,17 @@ impl ContainerRuntime {
             root_perms.set_mode(0o750 | libc::S_ISGID);
             file::set_permissions(&root_dir, root_perms).await?;
 
-            // TODO: Double check that this preserves the above permissions.
-            nix::mount::mount::<str, str, str, str>(
-                Some("tmpfs"),
-                root_dir.as_str(),
-                Some("tmpfs"),
-                nix::mount::MsFlags::empty(),
-                None,
-            )?;
+            // NOTE: This requires that we own the current mount namespace.
+            if self.runtime_privileged {
+                // TODO: Double check that this preserves the above permissions.
+                nix::mount::mount::<str, str, str, str>(
+                    Some("tmpfs"),
+                    root_dir.as_str(),
+                    Some("tmpfs"),
+                    nix::mount::MsFlags::empty(),
+                    None,
+                )?;
+            }
         }
 
         let cgroup_dir = self.cgroup_dir.join(&container_id);
@@ -485,6 +495,7 @@ impl ContainerRuntime {
                     root_dir.as_ref(),
                     &mut socket_c,
                     &file_mapping,
+                    self.runtime_privileged,
                 )
             })?;
 
@@ -525,8 +536,29 @@ impl ContainerRuntime {
         // initialize to the starter set of groups.
         // Maybe we can just clone into a new PID namespace and then later create a new
         // user namespace?
-        file::copy("/proc/self/uid_map", format!("/proc/{}/uid_map", pid)).await?;
-        file::copy("/proc/self/gid_map", format!("/proc/{}/gid_map", pid)).await?;
+        if self.runtime_privileged {
+            file::copy("/proc/self/uid_map", format!("/proc/{}/uid_map", pid)).await?;
+            file::copy("/proc/self/gid_map", format!("/proc/{}/gid_map", pid)).await?;
+        } else {
+            // Propagating the current user id should
+            // always be allowed.
+
+            use crate::node::shadow::*;
+            
+            let uid = sys::getresuid()?.real.as_raw() as u32;
+            let gid = sys::getresgid()?.real.as_raw() as u32;            
+
+            newuidmap(pid, &[IdMapping {
+                id: uid,
+                new_ids: IdRange { start_id: uid, count: 1 }
+            }])?;
+            newgidmap(pid, &[IdMapping {
+                id: gid,
+                new_ids: IdRange { start_id: gid, count: 1 }
+            }])?;
+        }
+
+
 
         socket_p.notify(USER_NS_SETUP_BYTE)?;
 

@@ -62,14 +62,22 @@ message MoveToCommand {
     // Alternative way to specify the next position
     VectorProto position = 8;
 
-    double feed_rate = 5;
-
-    double max_acceleration = 6;
-
     bool towards_endstop = 7;
+
+    MoveOptionsProto options = 9;
+
+    reserved 5, 6;
 }
 
-message HomeCommand {}
+message MoveOptionsProto {
+    double feed_rate = 1;
+    optional double acceleration = 2;
+    bool force = 3;
+}
+
+message HomeCommand {
+    bool skip_z = 1;
+}
 
 message SetTemperatureCommand {
     float target = 1;

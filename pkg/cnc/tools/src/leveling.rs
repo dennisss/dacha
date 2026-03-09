@@ -1,11 +1,11 @@
 /*
+cargo run --bin cnc_tools -- leveling test-probe
+
 cargo run --bin cnc_tools -- leveling probe-variance
 
 cargo run --bin cnc_tools -- leveling mesh-level --output_path=mesh.txtpb
 
 cargo run --bin cnc_tools -- leveling dump-mesh --input_path=mesh_pretrim.txtpb
-
-
 */
 
 
@@ -29,6 +29,8 @@ use cnc_controller::csv::CSVDataReader;
 use file::project_path;
 use cnc_controller::stats::*;
 use cnc::grid::*;
+use peripherals_service::config::*;
+use peripherals_service::device::*;
 
 use crate::remote::*;
 use crate::plane::*;
@@ -40,6 +42,9 @@ pub struct LevelingCommand {
 
 #[derive(Args)]
 enum Mode {
+    #[arg(name = "test-probe")]
+    TestProbe,
+
     #[arg(name = "probe-variance")]
     ProbeVariance,
 
@@ -66,10 +71,17 @@ struct DumpMeshMode {
 }
 
 
+/*
+            base_config: "voron0_toolhead"
+
+            z_probe
+*/
+
 impl LevelingCommand {
     pub async fn run(self) -> Result<()> {
         
         match self.mode {
+            Mode::TestProbe => Self::run_test_probe().await?,
             Mode::ProbeVariance => Self::run_probe_variance().await?,
             Mode::MeshLevel(mode) => Self::run_mesh_level(mode).await?,
             Mode::DumpMesh(mode) => Self::run_dump_mesh(mode).await?,
@@ -77,6 +89,28 @@ impl LevelingCommand {
         }
 
         Ok(())
+    }
+
+    async fn run_test_probe() -> Result<()> {
+     
+        let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
+
+        let config = configs.remove("voron0_toolhead")
+            .ok_or_else(|| err_msg("No config with the given name"))?;
+
+        let (mut device, _) = PeripheralsDevice::create(&config).await?;
+
+        executor::sleep(Duration::from_millis(1000)).await?;
+
+        println!("Go!");
+
+        loop {
+            let res = device.analog_read_window("probe", "probe_buf1").await?;
+            if res.triggered {
+                println!("Trigger!");
+                // device.analog_fetch_window("value", "buf1").await?;
+            }
+        }
     }
 
     async fn run_probe_variance() -> Result<()> {

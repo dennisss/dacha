@@ -30,6 +30,7 @@ use nix::sys::stat::SFlag;
 use nix::unistd::Gid;
 use nix::unistd::Uid;
 use nix::unistd::{dup2, Pid};
+use file::LocalPath;
 
 use crate::proto::*;
 use crate::runtime::fd::*;
@@ -48,13 +49,14 @@ pub fn run_child_process(
     root_dir: &Path,
     setup_socket: &mut SetupSocketChild,
     file_mapping: &FileMapping,
+    runtime_privileged: bool,
 ) -> sys::ExitCode {
     // TODO: Any failures in this should immediately exit the process.
     // Also how do we stop the normal server stuff from running?
 
     // TODO: Must ensure that all files are closed.
 
-    let result = run_child_process_inner(container_config, root_dir, setup_socket, file_mapping);
+    let result = run_child_process_inner(container_config, root_dir, setup_socket, file_mapping, runtime_privileged);
     let status = {
         if let Err(e) = result {
             eprintln!("Child process wrapper failed: {:?}", e);
@@ -79,7 +81,21 @@ fn run_child_process_inner(
     root_dir: &Path,
     setup_socket: &mut SetupSocketChild,
     file_mapping: &FileMapping,
+    runtime_privileged: bool,
 ) -> Result<()> {
+
+    // If the runtime is privileged, this can be done in the parent process, else we
+    // need to do it here.
+    if !runtime_privileged {
+        nix::mount::mount::<str, Path, str, str>(
+            Some("tmpfs"),
+            root_dir,
+            Some("tmpfs"),
+            nix::mount::MsFlags::empty(),
+            None,
+        )?;
+    }
+
     // Setting up stdin/out/err immediately so that as much as possible gets logged
     // to the container specific logs.
     //
@@ -276,12 +292,13 @@ fn run_child_process_inner(
     mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SHARED | MsFlags::MS_REC, None)
         .map_err(|e| format_err!("MS_SHARED root remount failed: {}", e))?;
 
-    exec_child_process(container_config.process(), setup_socket)
+    exec_child_process(container_config.process(), setup_socket, runtime_privileged)
 }
 
 fn exec_child_process(
     process: &ContainerProcess,
     setup_socket: &mut SetupSocketChild,
+    runtime_privileged: bool,
 ) -> Result<()> {
     ///////////
     // All the post-namespace initialization stuff.
@@ -323,12 +340,15 @@ fn exec_child_process(
         additional_gids.push(Gid::from_raw(*gid));
     }
 
-    nix::unistd::setgroups(&additional_gids)?;
+    // TODO: Instead unconditionally do this but complain if changes are reuqired.
+    if runtime_privileged {
+        nix::unistd::setgroups(&additional_gids)?;
 
-    nix::unistd::setresuid(child_uid, child_uid, child_uid)?;
-    nix::unistd::setresgid(child_gid, child_gid, child_gid)?;
-    let _ = nix::unistd::setfsuid(child_uid);
-    let _ = nix::unistd::setfsgid(child_gid);
+        nix::unistd::setresuid(child_uid, child_uid, child_uid)?;
+        nix::unistd::setresgid(child_gid, child_gid, child_gid)?;
+        let _ = nix::unistd::setfsuid(child_uid);
+        let _ = nix::unistd::setfsgid(child_gid);
+    }
 
     // TODO: Allowlist which are allowed since some like CAP_SETUID may be used to escape the container.
     let mut desired_caps = sys::CapabilitiesSet::empty();

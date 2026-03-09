@@ -39,6 +39,11 @@ proto_data(
 )
 
 proto_data(
+    name = "nrf52840_magnet_sensor",
+    src = "nrf52840_magnet_sensor.textproto"
+)
+
+proto_data(
     name = "nrf52840_jbod_management",
     src = "nrf52840_jbod_management.textproto"
 )

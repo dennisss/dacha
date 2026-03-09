@@ -76,6 +76,10 @@ message TMC2209Config {
     string device_name = 5;
 
     uint32 addr = 6;
+
+    uint32 irun = 7;
+
+    uint32 ihold = 8;
 }
 
 message ADCCalibration {

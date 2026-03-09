@@ -4,6 +4,7 @@ extern crate macros;
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 
+use base_args::define_arg_command;
 use common::errors::*;
 use file::{LocalPath, LocalPathBuf, LocalFile};
 use cnc_tools::execute::*;
@@ -17,35 +18,13 @@ struct Args {
     mode: Mode,
 }
 
-#[derive(Args)]
-enum Mode {
-    #[arg(name = "execute")]
-    Execute(ExecuteCommand),
-
-    #[arg(name = "skew-calibration")]
-    SkewCalibration(SkewCalibrationCommand),
-
-    #[arg(name = "leveling")]
-    Leveling(LevelingCommand),
-
-    #[arg(name = "benchmark")]
-    Benchmark(BenchmarkCommand),
-
-    #[arg(name = "motion-analysis")]
-    MotionAnalysis(MotionAnalysisCommand)
-}
-
-impl Mode {
-    async fn run(self) -> Result<()> {
-        match self {
-            Self::Execute(cmd) => cmd.run().await,
-            Self::SkewCalibration(cmd) => cmd.run().await,
-            Self::Leveling(cmd) => cmd.run().await,
-            Self::Benchmark(cmd) => cmd.run().await,
-            Self::MotionAnalysis(cmd) => cmd.run().await,
-        }
-    }
-}
+define_arg_command!(Mode {
+    ExecuteCommand = "execute",
+    SkewCalibrationCommand = "skew-calibration",
+    LevelingCommand = "leveling",
+    BenchmarkCommand = "benchmark",
+    MotionAnalysisCommand = "motion-analysis"
+});
 
 #[executor_main]
 async fn main() -> Result<()> {

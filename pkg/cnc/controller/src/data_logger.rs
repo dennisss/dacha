@@ -190,7 +190,7 @@ impl DataLogger {
                 let sample_rate = 8000;
 
                 // Note that buffers currently store 8000 entries.
-                let transfer_count = 8000;
+                let transfer_count = 4000; // 8000;
                 let transfer_interval = 16_000_000 / (sample_rate as u32);
 
                 let mut entry = LogEntry::default();
@@ -228,30 +228,26 @@ impl DataLogger {
             // NOTE: We must discard the first sample as it contains data from the previous transfer
             // (basically whenever we send a transfer, that should fill the output register for the next transfer to read.)
             {
-                let mut bad = false;
-
                 for i in 1..(data.len() / 2) {
                     let angle = match crate::as5047p::parse_as5047p_data(array_ref!(data, 2*i, 2)) {
                         Ok(v) => v,
                         Err(e) => {
-                            eprintln!("Bad sample!! {}", e);
-                            bad = true;
-                            break;
+                            entry.sampled_data_mut().bad_indexes_mut().push((i - 1) as u32);
+                            0
                         }
                     };
 
                     // Convert from 14 bit to 16 bit
                     processed_data.extend_from_slice(&(angle << 2).to_be_bytes());
                 }
-
-                if bad {
-                    continue;
-                }
             }
 
             entry.sampled_data_mut().set_sample_count((processed_data.len() / 2) as u64);
             entry.sampled_data_mut().set_data(processed_data);
 
+            if entry.sampled_data().bad_indexes().len() > 0 {
+                eprintln!("Bad samples {}", entry.sampled_data().bad_indexes().len());
+            }
 
             logging_channel.send(entry);
         }

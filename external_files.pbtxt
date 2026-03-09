@@ -2265,6 +2265,11 @@ files: [
         sha256_sum: "8dae5f031ade8aac27b74c1e8632297a41590ce76b5c342d9fe46069f035b5d9"
     },
     {
+        path: "third_party/snapmagic/10018784_10201TLF/10018784-10201TLF.step"
+        size: 6498523
+        sha256_sum: "2f1ed35d7e65b51a44384fdf644944cfb500bb15120f15fa47c0427e4288a311"
+    },
+    {
         path: "third_party/snapmagic/530470210/530470210.step"
         size: 137546
         sha256_sum: "25bed1112e8a686cd580662cec43e43ac7e941210068f3964847e96dd7b71db9"

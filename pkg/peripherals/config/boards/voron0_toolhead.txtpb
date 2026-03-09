@@ -177,6 +177,10 @@ peripherals {
             trigger_above: 0.07
             trigger_below: -0.07
             stop_on_trigger: true
+
+            # TODO: This seems to cause false triggering on the first sample in a chain.
+            # (probably takes some setup time).
+            # neg_pin_ladder: CENTERED
         }
     }
 }

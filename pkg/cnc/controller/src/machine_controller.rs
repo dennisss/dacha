@@ -179,6 +179,12 @@ impl MachineController {
 
             if cmd.has_home() {
 
+                let cmd = cmd.home();
+
+                // TODO: Make this more dynamic based on which endstops are needed.
+                // TODO: Ensure this gets disabled even if homing fails.
+                self.devices.enable_homing_mode(true).await?;
+
                 // TODO: After homing, set the endstops back to their default state.
 
                 let feed_rate = 20.0;
@@ -248,28 +254,32 @@ impl MachineController {
 
                 */
 
-                {
-                    current_pos[0] = 60.0;
-                    current_pos[1] = 60.0;
+                if !cmd.skip_z() {
+                    {
+                        current_pos[0] = 60.0;
+                        current_pos[1] = 60.0;
 
-                    self.motion_controller.move_to(current_pos.clone(), feed_rate).await?;
-                    self.motion_controller.wait_until_idle().await?;
+                        self.motion_controller.move_to(current_pos.clone(), feed_rate).await?;
+                        self.motion_controller.wait_until_idle().await?;
+                    }
+
+                    // Need time for the toolhead to stop shaking.
+                    executor::sleep(Duration::from_millis(500)).await?;
+
+                    println!("GO Z!!!");
+
+                    current_pos[2] = -200.0;
+                    self.move_towards_endstop(current_pos.clone(), &z_move_options).await?;
+
+                    // TODO: Eventually rely on better timing data about hits to improve this.
+                    current_pos[2] = 0.0;
+                    self.motion_controller.set_position(current_pos.clone()).await?;
+
+                    current_pos[2] = 10.0;
+                    self.motion_controller.move_to_with_options(current_pos.clone(), &z_move_options).await?;
                 }
 
-                // Need time for the toolhead to stop shaking.
-                executor::sleep(Duration::from_millis(500)).await?;
-
-                println!("GO Z!!!");
-
-                current_pos[2] = -200.0;
-                self.move_towards_endstop(current_pos.clone(), &z_move_options).await?;
-
-                // TODO: Eventually rely on better timing data about hits to improve this.
-                current_pos[2] = 0.0;
-                self.motion_controller.set_position(current_pos.clone()).await?;
-
-                current_pos[2] = 10.0;
-                self.motion_controller.move_to_with_options(current_pos.clone(), &z_move_options).await?;
+                self.devices.enable_homing_mode(false).await?;
             }
 
             if cmd.has_set_fan_speed() {

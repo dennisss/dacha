@@ -1,0 +1,13 @@
+name: "filament_sensor"
+base_config: "nrf52840"
+
+peripherals {
+    name: "i2c"
+    i2c {
+        sda_pin_name: "P0.03"
+        scl_pin_name: "P0.28"
+        config {
+            frequency: 100000
+        }
+    }
+}

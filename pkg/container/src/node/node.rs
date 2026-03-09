@@ -319,6 +319,7 @@ impl Node {
         let runtime = ContainerRuntime::create(
             LocalPath::new(config.data_dir()).join(NODE_RUN_PATH),
             config.cgroup_dir(),
+            true
         )
         .await?;
         let inst = NodeInner {

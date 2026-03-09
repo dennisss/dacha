@@ -1,6 +1,8 @@
 name: "magnet_sensor"
 base_config: "nrf52840"
 
+product_id: 13
+
 peripherals {
     name: "value"
     adc {

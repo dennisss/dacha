@@ -29,6 +29,8 @@ pub struct MotionControllerSimulator {
     total_time: f64,
     max_cycle_time: Duration,
     max_cycle_commands: usize,
+    max_cycle_commands_per_motor: usize,
+    linear_stats: LinearMotionStats,
 }
 
 impl MotionControllerSimulator {
@@ -47,6 +49,8 @@ impl MotionControllerSimulator {
             total_time: 0.0,
             max_cycle_time: Duration::ZERO,
             max_cycle_commands: 0,
+            max_cycle_commands_per_motor: 0,
+            linear_stats: LinearMotionStats::default(),
         }
     }
 
@@ -57,9 +61,12 @@ impl MotionControllerSimulator {
                 // TODO: KEep supproting x,y,z,e, fields
                 let m = c.move_to();
                 assert!(m.has_position());
-                self.planner.move_to(
+
+                let options = MoveOptions::from_proto(m.options());
+
+                self.planner.move_to_with_options(
                     VectorXd::from_proto(m.position()) - &self.position_offset,
-                    m.feed_rate()
+                    &options
                 )?;
             }
 
@@ -83,17 +90,18 @@ impl MotionControllerSimulator {
         // println!("Final flush!");
         self.flush()?;
 
-        println!("Total motions: {}", self.total_motions);
-        println!("Total Steps: {}", self.total_steps);
-
         // TODO: Pretty print.
-        println!("Total Time: {:?}", Duration::from_secs_f64(self.total_time));
+        println!("Total Time: {}", base_units::format_duration_secs(Duration::from_secs_f64(self.total_time)));
+        println!("Total # Motions: {}", self.total_motions);
+        println!("Total # Steps: {}", self.total_steps);
 
         // 'cycle_interval - max_cycle_time' is the amount of time we have for sending commands.
-        println!("Max Cycle Time: {:?}", self.max_cycle_time);
+        println!("Max Processing Time per Cycle: {:?}", self.max_cycle_time);
 
         // This must be smaller than the no-op limit and slammer than the stepper motor queue size (else we need to measure it over a sliding window)
-        println!("Max Cycle Commands: {:?}", self.max_cycle_commands);
+        println!("Max Commands per Cycle: {:?} ({} per motor)", self.max_cycle_commands, self.max_cycle_commands_per_motor);
+
+        self.linear_stats.print();
 
         Ok(())
 
@@ -121,6 +129,7 @@ impl MotionControllerSimulator {
             // TODO: Perform test this.
             self.planner.next(planner_time, &mut out);
             for motion in out {
+                self.linear_stats.add(&motion);
                 queue.enqueue(motion);
             }
         }
@@ -140,6 +149,8 @@ impl MotionControllerSimulator {
             {
                 let mut n = 0;
                 for j in 0..commands.len() {
+                    self.max_cycle_commands_per_motor = self.max_cycle_commands_per_motor.max(commands[j].len());
+
                     n += commands[j].len();
                 }
 
@@ -177,4 +188,152 @@ impl MotionControllerSimulator {
         Ok(())
     }
 
+}
+
+use std::collections::HashMap;
+
+use cnc::linear_motion::LinearMotion;
+
+
+#[derive(Default)]
+pub struct LinearMotionStats {
+    /// Amount of time spent in each category of 
+    breakdown: HashMap<LinearMotionKey, f64>,
+    limits: HashMap<Vec<usize>, f64>,
+    total_time: f64,
+}
+
+#[derive(PartialEq, Eq, Clone, Hash)]
+struct LinearMotionKey {
+    // Bit map of which axes are moving in this motion.
+    moving_axes: u8,
+    accelerating: bool,
+}
+
+impl LinearMotionStats {
+
+    pub fn add(&mut self, motion: &LinearMotion) {
+
+        self.total_time += motion.duration;
+
+        let dir = &motion.end_position - &motion.start_position;
+
+        let mut moving_axes = 0;
+        for i in 0..dir.len() {
+            let moving = dir[i].abs() > 0.001;
+            if moving {
+                moving_axes |= 1 << i;
+                
+                // Treat x and y as the same group
+                if i == 0 || i == 1 {
+                    moving_axes |= 0b11;
+                }
+            }
+        }
+
+
+        let mut accelerating = false;
+        for i in 0..motion.acceleration.len() {
+            if motion.acceleration[i].abs() > 0.001 {
+                accelerating = true;
+            }
+        }
+
+        let key = LinearMotionKey {
+            moving_axes,
+            accelerating
+        };
+
+        *self.breakdown.entry(key).or_default() += motion.duration;
+
+        if !accelerating {
+            let mut speeds = vec![];
+
+            let xy_speed = (squared(motion.start_velocity[0]) + squared(motion.start_velocity[1])).sqrt();
+            speeds.push(xy_speed);
+
+            for i in 2..motion.start_velocity.len() {
+                speeds.push(motion.start_velocity[i].abs());
+            }
+
+            let mut filtered_speeds = vec![];
+
+            for speed in speeds {
+                let mut s = ((speed / 1.0).round() * 1.0) as usize;
+                if speed > 0.01 && s == 0 {
+                    s = 1;
+                } 
+
+                filtered_speeds.push(s);
+            }
+
+            *self.limits.entry(filtered_speeds).or_default() += motion.duration;
+        }
+
+    }
+
+    pub fn print(&self) {
+
+        println!("");
+        println!("Time breakdown by axes:");
+
+        let mut breakdown_values = self.breakdown.iter().collect::<Vec<_>>();
+        breakdown_values.sort_by(|(_, t1), (_, t2)| t2.partial_cmp(t1).unwrap());
+
+        for (key, time) in breakdown_values {
+
+            let mut axes = String::new();
+
+            for i in 0..4 {
+                let c = {
+                    if key.moving_axes & (1 << i) != 0 {
+                        match i {
+                            0 => 'X',
+                            1 => 'Y',
+                            2 => 'Z',
+                            3 => 'E',
+                            _ => panic!()
+                        }
+                    } else {
+                        ' '
+                    }
+                };
+                axes.push(c);
+            }
+
+            let accel = {
+                if key.accelerating {
+                    "ACCEL"
+                } else {
+                    "CONST"
+                }
+            };
+
+            println!("{} | {} | {:.0} secs ({:.0}%)", axes, accel, time, 100.0 * (time / self.total_time));
+        }
+
+        let mut limit_values = self.limits.iter().collect::<Vec<_>>();
+        limit_values.sort_by(|(_, t1), (_, t2)| t2.partial_cmp(t1).unwrap());
+
+
+
+
+        // TODO: For this to be useful, I also need to know what the feedrate in the gcode is and what the machine limit is in our config 
+        println!("");
+        println!("Breakdown of Constant Speed Segments (by speed) (top 10 of {}):", limit_values.len());
+
+        if limit_values.len() > 10 {
+            limit_values.truncate(10);
+        }
+
+        println!("[XY, Z, E] speed\t|\tTime");
+        for (key, time) in limit_values {
+            println!("{:?}\t|\t{:.1}", key, time);
+        }
+
+    }
+}
+
+fn squared(v: f64) -> f64 {
+    v * v
 }

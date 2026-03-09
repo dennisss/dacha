@@ -34,6 +34,8 @@ message LogSampledData {
     uint64 sample_count = 3;
 
     bytes data = 4;
+
+    repeated uint32 bad_indexes = 5;
 }
 
 message LogLinearMotions {

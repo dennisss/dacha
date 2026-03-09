@@ -53,30 +53,28 @@ impl RemoteMachineController {
         Ok(())        
     }
 
-    pub async fn move_to(&mut self, pos: &VectorXd, feed_rate: f32) -> Result<()> {
-        let request_context = rpc::ClientRequestContext::default();
+    pub async fn move_to(&mut self, pos: &VectorXd, feed_rate: f64) -> Result<()> {
         let mut request = ExecuteRequest::default();
 
         let cmd = request.new_commands();
         let m = cmd.move_to_mut();
         m.set_position(pos.to_proto());
-        m.set_feed_rate(feed_rate);
+        m.options_mut().set_feed_rate(feed_rate);
 
-        self.stub.Execute(&request_context, &request).await.result?;
+        self.execute(&request).await?;
         Ok(())
     }
 
-    pub async fn move_towards_endstop(&mut self, pos: &VectorXd, feed_rate: f32) -> Result<Option<VectorXd>> {
-        let request_context = rpc::ClientRequestContext::default();
+    pub async fn move_towards_endstop(&mut self, pos: &VectorXd, feed_rate: f64) -> Result<Option<VectorXd>> {
         let mut request = ExecuteRequest::default();
 
         let cmd = request.new_commands();
         let m = cmd.move_to_mut();
         m.set_position(pos.to_proto());
-        m.set_feed_rate(feed_rate);
+        m.options_mut().set_feed_rate(feed_rate);
         m.set_towards_endstop(true);
 
-        let res = self.stub.Execute(&request_context, &request).await.result?;
+        let res = self.execute(&request).await?;
         
         let mut out = None;
         if res.has_hit_position() {

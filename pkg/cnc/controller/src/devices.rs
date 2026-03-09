@@ -74,7 +74,8 @@ impl DevicesController {
                     // TODO: Eventually feed an Arc<DevicesController> to the TMC2209 instance.
 
                     let dev = inst.get_peripherals_device(proto.tmc2209().device_name()).await?;
-                    let inst = TMC2209Device::create(proto.tmc2209().clone(), dev).await?;
+                    let inst = TMC2209Device::create(proto.tmc2209().clone(), dev).await
+                        .map_err(|e| format_err!("Failed to init {}: {}", proto.name(), e))?;
 
                     DeviceEntry::TMC2209(Arc::new(inst))
                 } else if proto.has_bed_client() {
@@ -100,6 +101,24 @@ impl DevicesController {
         }
 
         Ok(inst)
+    }
+
+    pub async fn enable_homing_mode(&self, enabled: bool) -> Result<()> {
+        let state = self.state.read().await?;
+
+        for entry in state.entries.values() {
+            match entry {
+                DeviceEntry::TMC2209(d) => {
+                    d.enable_homing_mode(enabled).await?;
+                }
+                _ =>{
+
+                }
+            }
+
+        }
+
+        Ok(())
     }
 
     pub async fn get_peripherals_device(&self, name: &str) -> Result<Arc<PeripheralsDevice>> {

@@ -175,7 +175,7 @@ impl CommandConverter {
                     let mut cmd = Command::default();
                     let move_to = cmd.move_to_mut();
                     move_to.set_position(pos.to_proto());
-                    move_to.set_feed_rate(self.last_feed_rate);
+                    move_to.options_mut().set_feed_rate(self.last_feed_rate);
                     out.push(cmd);
 
                     self.last_machine_position = pos;
