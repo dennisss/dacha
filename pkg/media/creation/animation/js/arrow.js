@@ -1,6 +1,12 @@
 // This is written by Google Gemini.
 // https://gemini.google.com/app/50af03c66cb55e84
 
+export function drawArrowPos(context, from, to, lineWidth, headSize, hasReverseArrow = false) {
+    return drawArrow(
+        context, from.x, from.y, to.x, to.y, lineWidth, headSize, hasReverseArrow
+    );
+}
+
 export function drawArrow(context, fromX, fromY, toX, toY, lineWidth, headSize, hasReverseArrow = false) {
 
     const dx = toX - fromX;

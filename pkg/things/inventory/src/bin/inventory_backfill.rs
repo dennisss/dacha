@@ -3,7 +3,7 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use common::errors::*;
 
@@ -12,6 +12,12 @@ use inventory_proto::inventory::*;
 use db_table::*;
 use cluster_client::ClusterMetaClient;
 use crypto::random::RngExt;
+
+#[derive(Args)]
+struct Args {
+    #[arg(default = false)]
+    write: bool,
+}
 
 async fn get_mcmaster_parts() -> Result<Vec<Part>> {
 
@@ -62,56 +68,47 @@ async fn get_mcmaster_parts() -> Result<Vec<Part>> {
 #[executor_main]
 async fn main() -> Result<()> {
 
+    let args = common::args::parse_args::<Args>()?;
+
     let client = ClusterMetaClient::create_from_environment().await?;
     let mut rng = crypto::random::clocked_rng();
 
-
-    // Don't re-do this until we have support for merging.
-    return Ok(());
-
-    /*
+    let mut existing_part_numbers = HashSet::<String>::default();
     {
         let parts = client.db().list::<PartTable>().await?;
-        let packs = client.db().list::<PackTable>().await?;
-
-        for pack in packs {
-            client.db().remove::<PackTable>(&pack).await?;
-        }
-
-
         for part in parts {
-            let mut pack = Pack::default();
-            pack.set_id(rng.uniform::<u64>());
-            pack.set_part_id(part.id());
-            client.db().insert::<PackTable>(&pack).await?;
+            if !part.source().mcmaster_part_number().is_empty() {
+                existing_part_numbers.insert(part.source().mcmaster_part_number().to_string());
+            }
         }
     }
-    */
-
-
-
-
-
-
 
     let mcmaster_parts = get_mcmaster_parts().await?;
 
-
-
     for mut part in mcmaster_parts {
-        let mut txn = client.db().new_transaction().await?;
 
-        part.set_id(rng.uniform::<u64>());
-        txn.put::<PartTable>(&part).await?;
+        if existing_part_numbers.contains(part.source().mcmaster_part_number()) {
+            continue;
+        }
 
-        let mut pack = Pack::default();
-        pack.set_id(rng.uniform::<u64>());
-        pack.set_part_id(part.id());
-        txn.put::<PackTable>(&pack).await?;
+        println!("NEW PART: {:?}", part);
 
-        println!("{:?}", part);
 
-        txn.commit().await?;
+        if args.write {
+            let mut txn = client.db().new_transaction().await?;
+
+            part.set_id(rng.uniform::<u64>());
+            txn.put::<PartTable>(&part).await?;
+
+            let mut pack = Pack::default();
+            pack.set_id(rng.uniform::<u64>());
+            pack.set_part_id(part.id());
+            txn.put::<PackTable>(&pack).await?;
+
+            println!("{:?}", part);
+
+            txn.commit().await?;
+        }
     }
 
 

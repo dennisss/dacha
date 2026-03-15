@@ -33,6 +33,7 @@ rpc_util = { path = "../../rpc/util" }
 color = { path = "../../image/color" }
 scpi = { path = "../../peripherals/scpi" }
 cnc = { path = ".." }
+terminal = { path = "../../dev/terminal" }
 
 [features]
 default = ["std", "alloc"]

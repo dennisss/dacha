@@ -250,7 +250,7 @@ export class StepperMotor {
     }
 }
 
-class WireGraph {
+export class WireGraph {
     constructor(initial_value, propagation_delay) {
         this._initial_value = initial_value;
         this._propagation_delay = propagation_delay;

@@ -121,6 +121,14 @@ impl SubDevice {
 
         Ok(out)
     }
+    
+    pub fn format(&self, pad: usize) -> Result<v4l2_subdev_format> {
+        let mut fmt = v4l2_subdev_format::default();
+        fmt.pad = pad as u32;
+        fmt.which = v4l2_subdev_format_whence::V4L2_SUBDEV_FORMAT_ACTIVE.0 as u32;
+        unsafe { vidioc_subdev_g_fmt(self.file.as_raw_fd(), &mut fmt) }?;
+        Ok(fmt)
+    }
 
     pub fn set_format(&mut self, pad: usize, format: &v4l2_subdev_format) -> Result<()> {
         let mut fmt = format.clone();

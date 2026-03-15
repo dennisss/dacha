@@ -46,6 +46,17 @@ export class Timeline {
         });
     }
 
+    move_to_top(name) {
+        for (var i = 0; i < this._objects.length; i++) {
+            if (this._objects[i].name == name) {
+                let o = this._objects[i];
+                this._objects.splice(i, 1);
+                this._objects.push(o);
+                break;
+            }
+        }
+    }
+
     add_key_frame(object, time, params) {
         if (object instanceof Array) {
             for (var i = 0; i < object.length; i++) {
@@ -79,7 +90,7 @@ export class Timeline {
         let start_params = {};
         for (const [key, _] of Object.entries(end_params)) {
             if (!all_start_params.hasOwnProperty(key)) {
-                throw new Error("Param has no initial value: " + key);
+                throw new Error("For object '" + object + "' param has no initial value: " + key);
             }
 
             start_params[key] = all_start_params[key];
@@ -259,7 +270,7 @@ export function draw_multiline_text(ctx, params) {
 
     ctx.fillStyle = color;
     ctx.textAlign = text_align;
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = params.text_baseline || 'middle';
 
     let lines = text.split('\n');
 

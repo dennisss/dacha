@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magnet Polarity Illustrations</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f4f8;
+            padding: 2rem;
+            color: #333;
+        }
+
+        .illustration-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        h2 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+
+        svg {
+            width: 450px;
+            height: 250px;
+        }
+
+        .title-text {
+            font-size: 22px;
+            font-weight: 600;
+            fill: #34495e;
+            text-anchor: middle;
+        }
+
+        .pole-text-large {
+            font-size: 64px;
+            font-weight: bold;
+            fill: white;
+            text-anchor: middle;
+            dominant-baseline: central;
+        }
+
+        .pole-text-small {
+            font-size: 36px;
+            font-weight: bold;
+            fill: white;
+            text-anchor: middle;
+            dominant-baseline: central;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="illustration-card">
+        <h2>Axially Magnetized Disc Magnet</h2>
+        <svg viewBox="0 0 450 250">
+            <text x="125" y="40" class="title-text">Front</text>
+            <text x="325" y="40" class="title-text">Back</text>
+
+            <circle cx="125" cy="140" r="90" fill="#3498db" />
+            <text x="125" y="140" class="pole-text-large">N</text>
+
+            <circle cx="325" cy="140" r="90" fill="#e74c3c" />
+            <text x="325" y="140" class="pole-text-large">S</text>
+        </svg>
+    </div>
+
+    <div class="illustration-card">
+        <h2>Diametrically Magnetized Disc Magnet</h2>
+        <svg viewBox="0 0 450 250">
+            <defs>
+                <linearGradient id="diaFront" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="50%" stop-color="#3498db" />
+                    <stop offset="50%" stop-color="#e74c3c" />
+                </linearGradient>
+
+                <linearGradient id="diaBack" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="50%" stop-color="#e74c3c" />
+                    <stop offset="50%" stop-color="#3498db" />
+                </linearGradient>
+            </defs>
+
+            <text x="125" y="40" class="title-text">Front</text>
+            <text x="325" y="40" class="title-text">Back</text>
+
+            <circle cx="125" cy="140" r="90" fill="url(#diaFront)" />
+            <text x="80" y="140" class="pole-text-small">N</text>
+            <text x="170" y="140" class="pole-text-small">S</text>
+
+            <circle cx="325" cy="140" r="90" fill="url(#diaBack)" />
+            <text x="280" y="140" class="pole-text-small">S</text>
+            <text x="370" y="140" class="pole-text-small">N</text>
+        </svg>
+    </div>
+
+</body>
+
+</html>

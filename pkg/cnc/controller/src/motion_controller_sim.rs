@@ -7,6 +7,7 @@ use math::vecxd;
 use cnc_controller_proto::cnc::*;
 use peripherals_proto::peripherals::StepperMotorMotion_Direction;
 use cnc::quadratic_stepper_motion::QuadraticStepperMotion;
+use terminal::TerminalTableBuilder;
 
 use crate::devices::*;
 use crate::config::*;
@@ -280,6 +281,10 @@ impl LinearMotionStats {
         let mut breakdown_values = self.breakdown.iter().collect::<Vec<_>>();
         breakdown_values.sort_by(|(_, t1), (_, t2)| t2.partial_cmp(t1).unwrap());
 
+
+        let mut table1 = TerminalTableBuilder::new();
+        table1.row().col("Axes Moving").col("Acceleration").col("Time Spent");
+
         for (key, time) in breakdown_values {
 
             let mut axes = String::new();
@@ -309,8 +314,13 @@ impl LinearMotionStats {
                 }
             };
 
-            println!("{} | {} | {:.0} secs ({:.0}%)", axes, accel, time, 100.0 * (time / self.total_time));
+            table1.row()
+            .col(axes)
+            .col(accel)
+            .col(format!("{:.0} secs ({:.0}%)", time, 100.0 * (time / self.total_time)));
         }
+
+        table1.print();
 
         let mut limit_values = self.limits.iter().collect::<Vec<_>>();
         limit_values.sort_by(|(_, t1), (_, t2)| t2.partial_cmp(t1).unwrap());
@@ -326,10 +336,13 @@ impl LinearMotionStats {
             limit_values.truncate(10);
         }
 
-        println!("[XY, Z, E] speed\t|\tTime");
+        let mut table2 = TerminalTableBuilder::new();
+        table2.row().col("[XY, Z, E] speed").col("Time Spent");
         for (key, time) in limit_values {
-            println!("{:?}\t|\t{:.1}", key, time);
+            table2.row().col(format!("{:?}", key)).col(format!("{:.1}", time));
         }
+
+        table2.print();
 
     }
 }

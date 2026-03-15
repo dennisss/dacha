@@ -1,4 +1,4 @@
-import { Timeline, draw_title, deg2rad, draw_box } from '../../utils.js';
+import { Timeline, draw_title, deg2rad, draw_box, draw_box_text } from '../../utils.js';
 import { drawArrow } from '../../arrow.js';
 import { getRayToRectIntersection } from '../../box_angle.js';
 import { Gear } from '../../gear.js';
@@ -48,6 +48,8 @@ function graph(ctx, color, fx) {
 }
 
 export const BACKGROUND_MODE = 'background';
+export const BACKGROUND_MODE2 = 'background2';
+export const BACKGROUND_MODE3 = 'background3';
 export const PRESENCE_MODE = 'presence';
 export const CONTROL_MODE = 'control';
 export const MODEL_MODE = 'model';
@@ -617,7 +619,7 @@ function pz_mode(canvas) {
 export function configure(canvas, mode) {
 
     if (!mode) {
-        mode = PZ_MODE;
+        mode = BACKGROUND_MODE3;
     }
 
     let vid = new Timeline();
@@ -625,6 +627,12 @@ export function configure(canvas, mode) {
     let title = '??';
     if (mode == BACKGROUND_MODE) {
         title = 'Tool Head Internals';
+    } else if (mode == BACKGROUND_MODE2) {
+        title = 'Filament Grinding';
+        vid.set_name('filament_grinding1');
+    } else if (mode == BACKGROUND_MODE3) {
+        title = 'Filament Grinding';
+        vid.set_name('filament_grinding2');
     } else if (mode == PRESENCE_MODE) {
         title = 'Filament Presence Sensing'
     } else if (mode == CONTROL_MODE) {
@@ -999,12 +1007,64 @@ export function configure(canvas, mode) {
     });
 
     let gears_y = centerY - 100;
+    let sensor_gears_y = gears_y - 120;
     let lever_length = 80;
 
     // lever_rotation:
     // - 100 when no filament inserted
     // - 90 when filament inserted
     //
+    vid.add_object('bite_marks', { opacity: 0 }, (ctx) => {
+        ctx.translate(0, gears_y);
+        ctx.fillStyle = '#fff';
+        // ctx.globalCompositeOperation = 'destination-out';
+        let bite_radius = 8;
+
+        ctx.beginPath();
+        // Left bite
+        ctx.arc(centerX - (filament_width / 2) - 0.5, 0, bite_radius, -Math.PI / 2, Math.PI / 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        // Right bite
+        ctx.arc(centerX + (filament_width / 2) + 0.5, 0, bite_radius, Math.PI / 2, 3 * Math.PI / 2);
+        ctx.fill();
+
+        // ctx.globalCompositeOperation = 'source-over';
+    });
+
+    vid.add_object('bite_highlight', { opacity: 0 }, (ctx) => {
+        ctx.translate(centerX, gears_y);
+        ctx.fillStyle = 'rgba(0,0,0,0)';
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 4;
+        let w = filament_width + 26;
+        let h = 34;
+        draw_box(ctx, w, h);
+    });
+
+    // Sensor gears
+    vid.add_object('sensor_gears', {
+        gear_rotation: 0,
+        opacity: 0,
+    }, (ctx, params) => {
+        ctx.translate(0, sensor_gears_y);
+
+        // Left gear
+        ctx.save();
+        ctx.translate(centerX - (channel_width / 2) - extruder_gear.outerRadius + extruder_grip, 0);
+        ctx.rotate(params.gear_rotation);
+        extruder_gear.draw(ctx);
+        ctx.restore();
+
+        // Right gear (no lever, just fixed opposite)
+        ctx.save();
+        ctx.translate(centerX + (channel_width / 2) + extruder_gear.outerRadius - extruder_grip, 0);
+        ctx.rotate(-params.gear_rotation);
+        extruder_gear.draw(ctx);
+        ctx.restore();
+    });
+
     vid.add_object('gears', {
         lever_rotation: 100,
         gear_rotation: 0,
@@ -1332,6 +1392,156 @@ export function configure(canvas, mode) {
         }
 
         // Pause
+        t += 1;
+
+        vid.set_duration(t);
+    }
+
+    if (mode == BACKGROUND_MODE2 || mode == BACKGROUND_MODE3) {
+        let t = 0;
+
+        let bg_objs = ['title', 'body', 'center_channel', 'nozzle', 'heater', 'gears'];
+        if (mode == BACKGROUND_MODE3) {
+            vid.add_key_frame(bg_objs.concat(['sensor_gears']), t + 0.5, { opacity: 1 });
+        } else {
+            vid.add_key_frame(bg_objs, t + 0.5, { opacity: 1 });
+        }
+        t += 0.5;
+
+        t += 1;
+
+        let filament_move_rate = 100;
+        let gear_spin_rate = filament_move_rate / (2 * extruder_gear.outerRadius * Math.PI);
+        gear_spin_rate = gear_spin_rate * (2 * Math.PI);
+
+        vid.add_key_frame('filament', t, { opacity: 0 });
+        vid.add_key_frame('filament', t + 0.01, { opacity: 1 });
+
+        let gear_r = 0;
+        let sensor_r = 0;
+
+        {
+            let y = body_top + 26;
+            let dur = y / filament_move_rate;
+            vid.add_key_frame('filament', t, { bottom: 0 });
+            vid.add_key_frame('filament', t + dur, { bottom: y });
+            if (mode == BACKGROUND_MODE3) {
+                let sensor_dr = dur * gear_spin_rate;
+                vid.add_key_frame('sensor_gears', t, { gear_rotation: sensor_r });
+                vid.add_key_frame('sensor_gears', t + dur, { gear_rotation: sensor_r + sensor_dr });
+                sensor_r += sensor_dr;
+            }
+            t += dur;
+        }
+
+        {
+            let y = body_top + 26;
+            let y2 = body_top + 50;
+            let dur = (y2 - y) / filament_move_rate;
+            let gear_dr = dur * gear_spin_rate;
+
+            vid.add_key_frame('filament', t, { bottom: y });
+            vid.add_key_frame('filament', t + dur, { bottom: y2 });
+
+            vid.add_key_frame('gears', t, { lever_rotation: 100, gear_rotation: gear_r });
+            vid.add_key_frame('gears', t + dur, { lever_rotation: 90, gear_rotation: gear_r + gear_dr });
+
+            if (mode == BACKGROUND_MODE3) {
+                vid.add_key_frame('sensor_gears', t, { gear_rotation: sensor_r });
+                vid.add_key_frame('sensor_gears', t + dur, { gear_rotation: sensor_r + gear_dr });
+                sensor_r += gear_dr;
+            }
+
+            gear_r += gear_dr;
+            t += dur;
+        }
+
+        {
+            let y = body_top + 50;
+            let y2 = heater_top;
+            let dur = (y2 - y) / filament_move_rate;
+            let gear_dr = dur * gear_spin_rate;
+
+            vid.add_key_frame('filament', t, { bottom: y });
+            vid.add_key_frame('filament', t + dur, { bottom: y2 });
+
+            vid.add_key_frame('gears', t, { gear_rotation: gear_r });
+            vid.add_key_frame('gears', t + dur, { gear_rotation: gear_r + gear_dr });
+
+            if (mode == BACKGROUND_MODE3) {
+                vid.add_key_frame('sensor_gears', t, { gear_rotation: sensor_r });
+                vid.add_key_frame('sensor_gears', t + dur, { gear_rotation: sensor_r + gear_dr });
+                sensor_r += gear_dr;
+            }
+
+            gear_r += gear_dr;
+            t += dur;
+        }
+
+        {
+            let y = heater_top;
+            let y2 = bed_top;
+            let dur = (y2 - y) / filament_move_rate;
+            let gear_dr = dur * gear_spin_rate;
+
+            // vid.add_key_frame(['nozzle', 'heater', 'heater_labels', 'heatsink', 'fan'], t, { opacity: 0 });
+            // vid.add_key_frame(['nozzle', 'heater', 'heater_labels', 'heatsink', 'fan'], t + 0.5, { opacity: 1 });
+
+            vid.add_key_frame('filament', t, { bottom: y });
+            vid.add_key_frame('filament', t + dur, { bottom: y2 });
+
+            vid.add_key_frame('gears', t, { gear_rotation: gear_r });
+            vid.add_key_frame('gears', t + dur, { gear_rotation: gear_r + gear_dr });
+
+            if (mode == BACKGROUND_MODE3) {
+                vid.add_key_frame('sensor_gears', t, { gear_rotation: sensor_r });
+                vid.add_key_frame('sensor_gears', t + dur, { gear_rotation: sensor_r + gear_dr });
+                sensor_r += gear_dr;
+            }
+
+            gear_r += gear_dr;
+            t += dur;
+        }
+
+        t += 1;
+
+        {
+            let dur = 3;
+            let gear_dr = dur * gear_spin_rate;
+
+            vid.add_key_frame('gears', t, { gear_rotation: gear_r });
+            vid.add_key_frame('gears', t + dur, { gear_rotation: gear_r + gear_dr });
+
+            vid.add_key_frame('bite_marks', t, { opacity: 0 });
+            vid.add_key_frame('bite_marks', t + dur, { opacity: 1 });
+
+            gear_r += gear_dr;
+            t += dur;
+        }
+
+        t += 1;
+
+        {
+            let to_hide = ['body', 'gears', 'center_channel', 'nozzle', 'heater'];
+            if (mode == BACKGROUND_MODE3) {
+                to_hide.push('sensor_gears');
+            }
+            vid.add_key_frame(to_hide, t, { opacity: 1 });
+            vid.add_key_frame(to_hide, t + 1, { opacity: 0 });
+            t += 1;
+        }
+
+        t += 0.5;
+
+        {
+            vid.add_key_frame('bite_highlight', t, { opacity: 0 });
+            vid.add_key_frame('bite_highlight', t + 0.5, { opacity: 1 });
+            t += 2.0;
+            vid.add_key_frame('bite_highlight', t, { opacity: 1 });
+            vid.add_key_frame('bite_highlight', t + 0.5, { opacity: 0 });
+            t += 0.5;
+        }
+
         t += 1;
 
         vid.set_duration(t);

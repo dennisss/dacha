@@ -17,6 +17,9 @@ cargo run --bin builder -- build //pkg/nordic:nordic_radio_dongle --config=//pkg
 cargo run --bin flasher -- built/pkg/nordic/nordic_radio_dongle uf2-dfu --usb_device_id=8888:
 
 cargo run --bin peripheral_tester
+
+cargo run --bin cnc_tools --release -- benchmark noop
+cargo run --bin cnc_tools --release -- benchmark step-width
 */
 
 
@@ -34,7 +37,7 @@ pub enum Mode {
     #[arg(name = "noop")]
     Noop,
 
-    #[arg(name = "one-step-motion")]
+    #[arg(name = "step-width")]
     OneStepMotion
 }
 

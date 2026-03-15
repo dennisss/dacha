@@ -258,7 +258,7 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
     let allowlisted_extensions = [
         "zip", "pdf", "png", "svg", "stl", "stp", "step", "csv", "gbl", "gtp", "gbp", "g2", "g3", "ipc", "dxf",
         "gcode", "bgcode", "nc", "drl", "gbr", "gto", "gts" , "gbo", "gbs", "gm1", "gtl", "jpg", "jpeg", "webp",
-        "3mf", "woff2", "ttf", 
+        "3mf", "woff2", "ttf",  "bin"
     ]
         .into_iter().cloned().collect::<HashSet<&'static str>>();
 

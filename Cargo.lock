@@ -1077,6 +1077,7 @@ dependencies = [
  "rpc",
  "rpc_util",
  "scpi",
+"terminal",
  "usb",
 ]
 

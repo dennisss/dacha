@@ -42,6 +42,20 @@ impl Format {
     accessor!(pixelformat, set_pixelformat, u32, pixelformat);
     accessor!(field, set_field, u32, field);
     accessor!(colorspace, set_colorspace, u32, colorspace);
+    // accessor!(xfer_func, set_xfer_func, u32, xfer_func);
+
+    pub fn set_xfer_func(&mut self, value: u32) {
+            if v4l2_type_is_multiplane(v4l2_buf_type(self.raw.type_)) {
+                unsafe {
+                    self.raw.fmt.pix_mp.xfer_func = value as u8;
+                }
+            } else {
+                unsafe {
+                    self.raw.fmt.pix.xfer_func = value;
+                }
+            }
+
+    }
 
     /// Gets the maximum number of planes that this struct/stream type supports
     /// defining. Does not check if the pixelformat can handle this many planes.
