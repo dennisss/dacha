@@ -13,6 +13,15 @@ devices: [
             base_config: "voron0_toolhead"
         }
     },
+
+    # {
+    #     name: "encoder"
+    #     peripheral_config {
+    #         base_config: "motor_encoder_as5047p"
+    #         # base_config: "filament_sensor"
+    #     }
+    # },
+
     {
         name: "stepper1"
         tmc2209 {
@@ -54,8 +63,33 @@ devices: [
     }
 ]
 
+loggers: [
+    # {
+    #     name: "encoder"
+
+    #     as5047p {
+    #         spi_peripheral {
+    #             device_name: "encoder"
+    #             peripheral_name: "encoder_spi"
+    #         }
+    #         buffers: ["buf1", "buf2"]
+    #     }
+    # }
+
+    # {
+    #     name: "encoder"
+
+    #     as5601 {
+    #         peripheral {
+    #             device_name: "encoder"
+    #             peripheral_name: "i2c"
+    #         }
+    #     }
+    # }
+]
+
 time {
-    primary_device_name: "mcu"
+    primary_device_name: "main"
     trust_usb_sof_timing: true
 }
 
@@ -116,12 +150,11 @@ motion_controller {
         ]
     }
 
-    # TODO: Need to setup a max jerk for Z and E 
     axes: [
-        { name: "X" max_speed: 60 max_acceleration: 200 coordination_priority: 0 },
-        { name: "Y" max_speed: 60 max_acceleration: 200 coordination_priority: 0 },
-        { name: "Z" max_speed: 12 max_acceleration: 20  coordination_priority: 0 },
-        { name: "E" max_speed: 10 max_acceleration: 10  coordination_priority: 1 }
+        { name: "X" max_speed: 400 max_acceleration: 4000 coordination_priority: 0 },
+        { name: "Y" max_speed: 400 max_acceleration: 4000 coordination_priority: 0 },
+        { name: "Z" max_speed: 12 max_acceleration: 200  coordination_priority: 0 },
+        { name: "E" max_speed: 60 max_acceleration: 10000  coordination_priority: 1 }
     ]
 }
 

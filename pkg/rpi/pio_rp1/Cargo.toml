@@ -1,0 +1,21 @@
+[package]
+name = "pio_rp1"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+executor = { path = "../../executor" }
+macros = { path = "../../macros" }
+file = { path = "../../file" }
+sys = { path = "../../sys" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[build-dependencies]
+bindgen = "0.72.1"

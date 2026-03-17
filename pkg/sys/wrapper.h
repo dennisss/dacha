@@ -19,6 +19,7 @@
 #include <linux/netlink.h>
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
+#include <linux/ptp_clock.h>
 #include <netinet/ip.h>
 #include <pthread.h>
 #include <scsi/sg.h>

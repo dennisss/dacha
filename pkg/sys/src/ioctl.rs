@@ -35,6 +35,28 @@ impl Command {
 }
 
 #[macro_export]
+macro_rules! ion {
+    ($name:ident, $major:expr, $num:expr) => {
+        pub unsafe fn $name(
+            fd: $crate::c_int
+        ) -> Result<$crate::c_int, $crate::Errno> {
+            $crate::ioctl(
+                fd,
+                $crate::Command::new(
+                    $crate::CommandDirection::None,
+                    $major,
+                    $num,
+                    0,
+                )
+                .to_raw(),
+                0,
+            )
+        }
+    };
+}
+
+
+#[macro_export]
 macro_rules! ior {
     ($name:ident, $major:expr, $num:expr, $ty:ty) => {
         pub unsafe fn $name(

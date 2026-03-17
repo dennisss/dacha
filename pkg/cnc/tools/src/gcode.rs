@@ -183,6 +183,13 @@ impl CommandConverter {
             }
 
             gcode::Command::SetDefaultAcceleration(_) => {
+                /*
+                TODO
+
+                printing_acceleration ('P'): Option<Decimal>,
+                travel_acceleration ('T'): Option<Decimal>
+                */
+
 
             }
             gcode::Command::SetPosition(v) => {

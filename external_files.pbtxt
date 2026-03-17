@@ -30,6 +30,11 @@ files: [
         sha256_sum: "e86a21f996223930f1551203faf94ee9284d54cafa1e08f406cb8c09dddb4987"
     },
     {
+        path: "doc/carvera/firmware/carvera-firmware-r3.bin"
+        size: 347196
+        sha256_sum: "00cc53470b04ab4225b23fd6b955d594c1b7acaeb95a43f7fb002001dfe6ecba"
+    },
+    {
         path: "doc/carvera/images/board-cover.jpg"
         size: 185365
         sha256_sum: "692266beda951aff99db2c53b31596b06b02572c6583ee633d31aecad959953f"
@@ -1385,6 +1390,16 @@ files: [
         sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
     },
     {
+        path: "pkg/cnc/machines/voron_0/magnetic-tile-holder-horizontal.stl"
+        size: 468684
+        sha256_sum: "97790887726fc0895dc8fb5d36ba12e77165a873ce237527b2e9caf3a13281da"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/magnetic-tile-nozzle-clip.stl"
+        size: 174884
+        sha256_sum: "6398bb95defa668276ed739355f9b297b9759ab194fe2339f77331449cd1ddf1"
+    },
+    {
         path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cable-chain-clip.stl"
         size: 592884
         sha256_sum: "684df1e47a9ae4bcc9285388aa7f3ecbd8330aab1e4d4e0eef83e0fab6820c5f"
@@ -1468,6 +1483,16 @@ files: [
         path: "pkg/cnc/machines/voron_0/mods/matchstick-adapter/matchstick-adapter.stl"
         size: 102284
         sha256_sum: "747e0bfe954144329652301eedc81b85ee46930de3b6c0b6b91ee833e5a24bcd"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/motor-encoder-holder.stl"
+        size: 176284
+        sha256_sum: "ff0ee9ec124e1f349e7006a4db519aef3a350ffca6f3830af15fb0e6570cb86c"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/motor-magnet-aligner.stl"
+        size: 86484
+        sha256_sum: "46fa01ac1a27c89f906583d7369c4839115985df2b08631dd3a67bd8cf033905"
     },
     {
         path: "pkg/cnc/machines/voron_0/rear_ethernet/rear-skirt-ethernet-mesh-top.stl"

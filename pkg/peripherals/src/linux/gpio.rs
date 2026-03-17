@@ -31,7 +31,7 @@ const DEFAULT_CHIP_LABELS: &'static [&'static str] = &[
 ];
 
 pub struct GPIOChip {
-    /// Descritor for the '/dev/gpiochip*' file
+    /// Descriptor for the '/dev/gpiochip*' file
     chip_file: Arc<file::LocalFile>,
 }
 
@@ -102,7 +102,7 @@ impl GPIOChip {
         Ok(GPIOLineInfo {
             name: read_null_terminated_string(&raw.name[..])?,
             consumer: read_null_terminated_string(&raw.consumer[..])?,
-            flags: raw.flags,
+            flags: GPIOLineFlags::from_raw(raw.flags),
             attrs,
         })
     }
@@ -150,6 +150,17 @@ impl GPIOPin {
         Ok(())
     }
 
+    pub fn read(&mut self) -> Result<bool> {
+        let mut raw = gpio_v2_line_values::default();
+        raw.mask = 1;
+        raw.bits = 0;
+        unsafe {
+            gpio_v2_line_get_values(*self.request_fd, &mut raw)?;
+        }
+
+        Ok(raw.bits != 0)
+    }
+
     pub fn write(&mut self, high: bool) -> Result<()> {
         let mut raw = gpio_v2_line_values::default();
         raw.mask = 1;
@@ -164,14 +175,23 @@ impl GPIOPin {
 }
 
 define_bit_flags!(GPIOLineFlags u64 {
+    USED = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_USED as u64),
+    ACTIVE_LOW = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_ACTIVE_LOW as u64),
     INPUT = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_INPUT as u64),
-    OUTPUT = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_OUTPUT as u64)
+    OUTPUT = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_OUTPUT as u64),
+    OPEN_DRAIN = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_OPEN_DRAIN as u64),
+    OPEN_SOURCE = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_OPEN_SOURCE as u64),
+    BIAS_PULL_UP = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_BIAS_PULL_UP as u64),
+    BIAS_PULL_DOWN = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_BIAS_PULL_DOWN as u64),
+    BIAS_DISABLED = (gpio_v2_line_flag::GPIO_V2_LINE_FLAG_BIAS_DISABLED as u64),
 });
 
 #[derive(Clone, Debug)]
 pub struct GPIOChipInfo {
     pub name: String,
     pub label: String,
+
+    /// Total number of lines
     pub lines: u32,
 }
 
@@ -179,7 +199,7 @@ pub struct GPIOChipInfo {
 pub struct GPIOLineInfo {
     pub name: String,
     pub consumer: String,
-    pub flags: u64, // gpio_v2_line_flag,
+    pub flags: GPIOLineFlags,
     pub attrs: Vec<GPIOLineAttribute>,
 }
 

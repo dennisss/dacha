@@ -1,0 +1,11 @@
+[package]
+name = "flasher_swd"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../../common" }
+macros = { path = "../../../macros" }
+executor = { path = "../../../executor" }
+file = { path = "../../../file" }
+peripherals = { path = "../../../peripherals" }
