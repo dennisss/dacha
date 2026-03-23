@@ -44,32 +44,19 @@ pub struct PIO {
 
 impl PIO {
 
-    pub fn create() -> Result<Self> {
+    pub fn create_pin_forwarder(in_pin: u32, out_pin: u32) -> Result<Self> {
+        let mut inst = Self::create()?;
 
-        let mut pio = file::LocalFile::open_with_options(
-            "/dev/pio0",
-            file::LocalFileOpenOptions::new().write(true),
-        )?;
-
-        let mut inst = Self {
-            pio
-        };
-
-        inst.clear_instruction_memory()?;
         let state_machine = inst.claim_unused_state_machine()?;
 
-        println!("Adding program..");
+        // println!("Adding program..");
         let program_offset = inst.add_program(&[
             // "MOV PINS, PINS"
             0b101_00000_000_00_000
         ])?;
-        println!("Program offset: {}", program_offset);
+        // println!("Program offset: {}", program_offset);
 
-
-        println!("claiming gpio..");
-
-        let in_pin = 17;
-        let out_pin = 18;
+        // println!("claiming gpio..");
 
         // IN
         inst.claim_gpio(in_pin)?;
@@ -107,6 +94,23 @@ impl PIO {
         inst.init_state_machine(state_machine, program_offset, &config)?;
     
         inst.enable_state_machine(state_machine)?;
+
+        Ok(inst)
+    }
+
+    pub fn create() -> Result<Self> {
+
+        let mut pio = file::LocalFile::open_with_options(
+            "/dev/pio0",
+            file::LocalFileOpenOptions::new().write(true),
+        )?;
+
+        let mut inst = Self {
+            pio
+        };
+
+        inst.clear_instruction_memory()?;
+
 
         Ok(inst)
     }

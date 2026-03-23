@@ -44,6 +44,7 @@ pub mod fanotify;
 pub mod inotify;
 mod virtual_memory;
 mod wait;
+mod time;
 
 pub mod bindings {
     #![allow(non_upper_case_globals)]
@@ -51,6 +52,23 @@ pub mod bindings {
     #![allow(non_snake_case)]
 
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
+
+    impl core::fmt::Debug for sock_extended_err {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("sock_extended_err")
+            .field("ee_errno", &self.ee_errno)
+            .field("ee_origin", &self.ee_origin)
+            .field("ee_type", &self.ee_type)
+            .field("ee_code", &self.ee_code)
+            .field("ee_pad", &self.ee_pad)
+            .field("ee_info", &self.ee_info)
+            // We ignore the union here because it's unsafe to read 
+            // without knowing which variant is active.
+            .field("ee_data", &"<union>") 
+            .finish()
+    }
+}
 }
 
 pub use capabilities::*;
@@ -80,6 +98,7 @@ pub use std::os::raw::{c_char, c_int, c_short, c_uint, c_ulong, c_ushort};
 pub use device_id::*;
 pub use virtual_memory::*;
 pub use wait::*;
+pub use time::*;
 
 /// Integer of the same width as a 'void *'.
 pub type uintptr_t = c_size_t;
@@ -100,7 +119,7 @@ pub const SEEK_SET: c_uint = 0;
 
 pub use bindings::{
     pollfd, O_APPEND, O_CLOEXEC, O_NOCTTY, O_CREAT, O_EXCL, O_NONBLOCK, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC,
-    O_WRONLY, O_DIRECTORY, __O_DIRECT as O_DIRECT
+    O_WRONLY, O_DIRECTORY, O_DIRECT
 };
 
 pub use bindings::{
@@ -177,8 +196,6 @@ syscall!(perf_event_open, bindings::SYS_perf_event_open,
 //
 // TODO: Use the VDSO version.
 syscall!(getcpu, bindings::SYS_getcpu, cpu: *mut c_uint, node: *mut c_uint => Result<()>);
-
-syscall!(clock_gettime, bindings::SYS_clock_gettime, clockid: bindings::clockid_t, tp: *mut kernel::timespec => Result<()>);
 
 syscall!(getpid, bindings::SYS_getpid => Infallible<pid_t>);
 syscall!(getppid, bindings::SYS_getppid => Infallible<pid_t>);

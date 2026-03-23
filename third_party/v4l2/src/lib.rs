@@ -130,6 +130,7 @@ mod format;
 mod stream;
 mod sub_device;
 mod media;
+mod control_helpers;
 
 pub use bindings::*;
 pub use buffer::*;

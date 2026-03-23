@@ -248,6 +248,8 @@ define_transparent_enum!(SocketOption c_int {
     SO_BROADCAST = bindings::SO_BROADCAST as c_int,
     SO_REUSEADDR = bindings::SO_REUSEADDR as c_int,
     SO_REUSEPORT = bindings::SO_REUSEPORT as c_int,
+    SO_BINDTODEVICE = bindings::SO_BINDTODEVICE as c_int,
+    SO_TIMESTAMPING_NEW = bindings::SO_TIMESTAMPING_NEW as c_int,
     IP_ADD_MEMBERSHIP = bindings::IP_ADD_MEMBERSHIP as c_int,
 
     // Options for IPPROTO_TCP

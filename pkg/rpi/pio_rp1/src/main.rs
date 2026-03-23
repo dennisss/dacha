@@ -16,7 +16,7 @@ use base_error::*;
 async fn main() -> Result<()> {
     println!("Hi!");
 
-    let inst = pio_rp1::PIO::create()?;
+    let inst = pio_rp1::PIO::create_pin_forwarder(17, 18)?;
 
 
     println!("Working..");

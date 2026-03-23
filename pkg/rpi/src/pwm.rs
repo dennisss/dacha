@@ -37,6 +37,7 @@ use std::time::Duration;
 
 use common::errors::*;
 use file::{LocalPath, LocalPathBuf};
+use peripherals::pwm::PWMChannel;
 
 use crate::gpio::*;
 use crate::memory::{MemoryBlock, PWM0_PERIPHERAL_OFFSET};
@@ -44,7 +45,6 @@ use crate::memory::{MemoryBlock, PWM0_PERIPHERAL_OFFSET};
 // Sysfs directory for the driver for PWM channel 0 on the Raspberry Pi.
 const SYS_PWM_DIR: &str = "/sys/class/pwm/pwmchip0";
 
-const NANOS_PER_SECOND: usize = 1000000000;
 
 struct PWMPinSpec {
     number: usize,
@@ -131,7 +131,7 @@ impl DirectPWM {
 }
 
 pub struct SysPWM {
-    channel_dir: LocalPathBuf,
+    channel: PWMChannel,
     pin: GPIOPin,
 }
 
@@ -142,39 +142,11 @@ impl SysPWM {
             .find(|s| s.number == pin.number())
             .ok_or_else(|| format_err!("PWM not supported by pin: {}", pin.number()))?;
 
-        if pin_spec.controller != 0 {
-            return Err(err_msg(
-                "Only PWM controller 0 supported with sys fs driver",
-            ));
-        }
-
-        if !file::exists(LocalPath::new(SYS_PWM_DIR)).await? {
-            return Err(err_msg("PWM sys fs driver not detected."));
-        }
-
-        // Export the channel.
-        // When already exported this will fail with an Os::ResourceBusy error. Instead
-        // of checking the error code, we just verify later that the channel
-        // sub-directory exists.
-        let export_path = LocalPath::new(SYS_PWM_DIR).join("export");
-        file::write(&export_path, format!("{}\n", pin_spec.channel))
-            .await
-            .ok();
-
-        // Wait for exporting to compelte.
-        executor::sleep(Duration::from_millis(100)).await;
-
-        let channel_dir = LocalPath::new(SYS_PWM_DIR).join(format!("pwm{}", pin_spec.channel));
-        if !file::exists(&channel_dir).await? {
-            return Err(format_err!(
-                "Failed to export PWM channel {}",
-                pin_spec.channel
-            ));
-        }
+        let channel = PWMChannel::open(pin_spec.controller, pin_spec.channel).await?;
 
         pin.set_mode(pin_spec.mode);
 
-        Ok(Self { channel_dir, pin })
+        Ok(Self { channel, pin })
     }
 
     /// Configures the current PWM value
@@ -183,17 +155,6 @@ impl SysPWM {
     /// duty_cycle: Percentage of the time the square wave should be up (from
     /// 0.0 to 1.0).
     pub async fn write(&mut self, frequency: f32, duty_cycle: f32) -> Result<()> {
-        // Convert to nanoseconds.
-        let period = ((NANOS_PER_SECOND as f32) / frequency) as usize;
-        let duty_cycle = ((period as f32) * duty_cycle) as usize;
-
-        file::write(self.channel_dir.join("period"), format!("{}\n", period)).await?;
-        file::write(
-            self.channel_dir.join("duty_cycle"),
-            format!("{}\n", duty_cycle),
-        )
-        .await?;
-        file::write(self.channel_dir.join("enable"), "1\n").await?;
-        Ok(())
+        self.channel.write(frequency, duty_cycle).await
     }
 }

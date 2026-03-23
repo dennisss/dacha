@@ -3824,6 +3824,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ptp"
+version = "0.1.0"
+dependencies = [
+ "base_radix",
+ "base_util",
+ "common",
+ "executor",
+ "executor_multitask",
+ "file",
+ "macros",
+ "parsing",
+ "parsing_compiler",
+ "sys",
+]
+
+[[package]]
 name = "public_ip"
 version = "0.0.0"
 dependencies = [
@@ -4009,6 +4025,7 @@ dependencies = [
  "macros",
  "parsing",
  "parsing_compiler",
+ "peripherals",
  "sys",
 ]
 

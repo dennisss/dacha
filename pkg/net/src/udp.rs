@@ -1,33 +1,30 @@
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
 use common::errors::*;
 use executor::ExecutorOperation;
 use executor::RemapErrno;
 use sys::{
     IoSlice, IoSliceMut, IoUringOp, MessageHeader, MessageHeaderMut, MessageHeaderSocketAddrBuffer,
-    OpenFileDescriptor,
+    OpenFileDescriptor, ControlMessage, ControlMessageBuffer
 };
 
 use crate::error::NetworkError;
 use crate::ip::IPAddress;
 use crate::ip::SocketAddr;
-use crate::utils::set_broadcast;
-use crate::utils::set_reuse_addr;
-use crate::utils::set_tcp_nodelay;
+use crate::utils::*;
 
+#[derive(Default)]
 pub struct UdpBindOptions {
     reuse_addr: bool,
     reuse_port: bool,
     broadcast: bool,
+    bind_to_device: Option<String>,
+    enable_hardware_timestamping: bool,
 }
 
 impl UdpBindOptions {
     pub fn new() -> Self {
-        Self {
-            reuse_addr: false,
-            reuse_port: false,
-            broadcast: false,
-        }
+        Self::default()
     }
 
     pub fn reuse_addr(&mut self, value: bool) -> &mut Self {
@@ -42,6 +39,16 @@ impl UdpBindOptions {
 
     pub fn broadcast(&mut self, value: bool) -> &mut Self {
         self.broadcast = value;
+        self
+    }
+
+    pub fn bind_to_device(&mut self, value: &str) -> &mut Self {
+        self.bind_to_device = Some(value.to_string());
+        self
+    }
+
+    pub fn enable_hardware_timestamping(&mut self) -> &mut Self {
+        self.enable_hardware_timestamping = true;
         self
     }
 }
@@ -78,6 +85,19 @@ impl UdpSocket {
                 set_broadcast(&fd, options.broadcast)?;
             }
 
+            if let Some(name) = &options.bind_to_device {
+                set_bind_to_device(&fd, name.as_str())?;
+            }
+
+            if options.enable_hardware_timestamping {
+                // NOTE: It is not a strict requirement to bind to a device but it is good
+                // practice to ensure that our timestamps are well defined.
+                let dev_name = options.bind_to_device.as_ref()
+                    .ok_or_else(|| err_msg("Must bind to a device for hardware timestamping"))?;
+
+                enable_hardware_timestamping(&fd, dev_name.as_str())?;
+            }
+
             sys::bind(&fd, &sys_addr).remap_errno::<NetworkError, _>(|| {
                 format!("sys::bind failed for address: {:?}", addr)
             })?;
@@ -98,6 +118,18 @@ impl UdpSocket {
     pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let (n, addr) = self.inner.recv_from(output).await?;
         Ok((n, addr.into()))
+    }
+
+    pub async fn recv_msg(
+        &self,
+        output: &mut [u8],
+        msgs: &mut [ControlMessage]
+    ) -> Result<(usize, usize, SocketAddr)> {
+        self.inner.recv_msg(output, msgs).await
+    }
+
+    pub async fn recv_error(&self, output: &mut [u8], msgs: &mut [ControlMessage]) -> Result<(usize, usize, Option<SocketAddr>)> {
+        self.inner.recv_error(output, msgs).await
     }
 
     /// NOTE: Both addresses must be IPv4
@@ -172,17 +204,58 @@ impl MessageSocket {
         self.recv_from(output).await.map(|(n, _)| n)
     }
 
-    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, sys::SocketAddr)> {
+    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
+        let (n, _, addr) = self.recv_msg_inner(output, None, false).await?;
+        
+        let addr = addr
+            .ok_or_else(|| err_msg("Received no valid address for received packet"))?;
+
+        Ok((n, addr))
+    }
+
+    pub async fn recv_msg(
+        &self,
+        output: &mut [u8],
+        msgs: &mut [ControlMessage]
+    ) -> Result<(usize, usize, SocketAddr)> {
+        let (i, j, addr) = self.recv_msg_inner(output, Some(msgs), false).await?;
+
+        let addr = addr
+            .ok_or_else(|| err_msg("Received no valid address for received packet"))?;
+
+        Ok((i, j, addr))
+    }
+
+    /// Receives a message from the socket's error queue.
+    ///
+    /// NOTE: The SocketAddr may not be populated for local errors.
+    pub async fn recv_error(
+        &self,
+        output: &mut [u8],
+        msgs: &mut [ControlMessage]
+    ) -> Result<(usize, usize, Option<SocketAddr>)> {
+        self.recv_msg_inner(output, Some(msgs), true).await
+    }
+
+    async fn recv_msg_inner(
+        &self,
+        output: &mut [u8],
+        msgs: Option<&mut [ControlMessage]>,
+        error_queue: bool
+    ) -> Result<(usize, usize, Option<SocketAddr>)> {
         let data_slices = [IoSliceMut::new(output)];
 
         let mut addr_buf = MessageHeaderSocketAddrBuffer::new();
 
-        let mut header = MessageHeaderMut::new(&data_slices, Some(&mut addr_buf), None);
+        let mut control_message_buffer = msgs.as_ref().map(|msgs| ControlMessageBuffer::new(*msgs));
 
+        let mut header = MessageHeaderMut::new(&data_slices, Some(&mut addr_buf), control_message_buffer.as_mut());
+        
         let n = {
             let op = ExecutorOperation::submit(IoUringOp::ReceiveMessage {
                 fd: *self.fd,
                 header: &mut header,
+                error_queue,
             })
             .await?;
             op.wait()
@@ -191,12 +264,20 @@ impl MessageSocket {
                 .remap_errno::<NetworkError, _>(|| String::new())?
         };
 
-        let addr = header
-            .addr()
-            .ok_or_else(|| err_msg("Received no valid address for received packet"))?;
+        let addr = header.addr().map((|addr| addr.into()));
 
-        Ok((n, addr))
+        let mut num_control = 0;
+        if let Some(iter) = header.control_messages() {
+            let msgs = msgs.unwrap();
+            for msg in header.control_messages().unwrap() {
+                msgs[num_control] = msg;
+                num_control += 1;
+            }
+        }
+
+        Ok((n, num_control, addr))
     }
+
 }
 
 

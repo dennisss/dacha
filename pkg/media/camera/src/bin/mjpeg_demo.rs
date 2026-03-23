@@ -20,13 +20,21 @@ cargo run --bin mjpeg_demo
 
 cargo run --bin builder -- build //pkg/media/camera:mjpeg_demo --config=//pkg/builder/config:rpi64
 
-scp -r -i ~/.ssh/id_cluster built/pkg/media/camera/mjpeg_demo cluster-user@10.1.1.3:~/
+scp -r -i ~/.ssh/id_cluster built/pkg/media/camera/mjpeg_demo cluster-user@10.1.1.12:~/
+
+TODO: `sudo apt install v4l-utils`
 
 
+v4l2-ctl -d /dev/v4l-subdev2 --all
 
 v4l2-ctl -d /dev/v4l-subdev2 --set-ctrl test_pattern=1
 
-v4l2-ctl -d /dev/v4l-subdev2 --set-ctrl exposure=100
+v4l2-ctl -d /dev/v4l-subdev2 --set-ctrl exposure=36
+
+v4l2-ctl -d /dev/v4l-subdev2 --set-ctrl analogue_gain=32
+
+
+v4l2-ctl -d /dev/v4l-subdev2 --set-ctrl test_pattern=100
 
 */
 
@@ -42,6 +50,10 @@ analogue_gain 0x009e0903 (int)    : min=16 max=255 step=1 default=16 value=125
 - Verify the camera entity has a link (immutable/enabled) to 'csi2 entity : pad 0'
     - We assume that on the csi2 entity, 'pad 0' is internally wires to 'pad 4'
 - Link 'csi2 entity ; pad 4' => 'rp1-cfe-csi2_ch0'
+
+pinctrl 35 oh dh
+
+pinctrl 35 op dl
 */
 
 
@@ -255,11 +267,18 @@ async fn run_camera_reader(
                 subdev_format_code: v4l2::MEDIA_BUS_FMT_SGRBG8_1X8,
                 video_pixel_format: v4l2::V4L2_PIX_FMT_SGRBG8
             }
-    
+        } else if name.contains("ar0234") {
+            CameraSettings {
+                width: 1920,
+                height: 1200,
+                subdev_format_code: v4l2::MEDIA_BUS_FMT_Y8_1X8,
+                video_pixel_format: v4l2::V4L2_PIX_FMT_GREY
+            }
         } else {
             return Err(err_msg("Unsupported camera"));
         }
     };
+
 
 
     let csi2_id = *entity_names.get("csi2").ok_or_else(|| err_msg("Failed to find the csi2 entity"))?;
@@ -291,23 +310,44 @@ async fn run_camera_reader(
     let csi2_sink_pad = 0;
     let csi2_source_pad = 4;
 
-    // Verify there is a link from the camera to csi2:0
+    // Verify camera pad to csi2:0 connections.
     {
-        if camera_entity.links().len() != 1 {
-            return Err(err_msg("Expected camera to have one link"));
+        if camera_entity.pads().len() == 0 {
+            return Err(err_msg("Expecting at least one camera pad"));
         }
 
-        let l = &camera_entity.links()[0];
+        // Every pad on the camera needs to:
+        // - Map to the next pad on the CSI2 device.
+        // - Be a source
+        // - Have an already enabled/immutable link (since we don't expect to need to enable them).
+        for camera_pad_i in 0..camera_entity.pads().len() {
+            let mut found_link = false;
 
-        if l.source().entity_id() != camera_id ||
-           l.source().index() != camera_source_pad ||
-           l.sink().entity_id() != csi2_id ||
-           l.sink().index() != csi2_sink_pad {
-            return Err(err_msg("Unexpected camera => csi2 link"));
-        }
+            for l in camera_entity.links() {
+                if l.source().entity_id() != camera_id {
+                    return Err(err_msg("Camera should only be the source in links"));
+                }
 
-        if !l.flags().contains(v4l2::MediaLinkFlags::Immutable) || !l.flags().contains(v4l2::MediaLinkFlags::Enabled) {
-            return Err(err_msg("Expected camera link to be enabled/immutable"));
+                if l.sink().entity_id() != csi2_id {
+                    return Err(err_msg("Camera linked to something other than the CSI2 device"));
+                }
+                
+                if l.source().index() != camera_pad_i ||
+                    l.sink().index() != csi2_sink_pad + camera_pad_i {
+                    continue;
+                }
+
+                if !l.flags().contains(v4l2::MediaLinkFlags::Immutable) || !l.flags().contains(v4l2::MediaLinkFlags::Enabled) {
+                    return Err(err_msg("Expected camera link to be enabled/immutable"));
+                }
+                
+                found_link = true;
+                break;
+            }
+
+            if !found_link {
+                return Err(format_err!("Failed to find link between camera pad {} and CSI port", camera_pad_i));
+            }
         }
     }
 
@@ -357,8 +397,15 @@ async fn run_camera_reader(
     };
 
     camera_subdev.set_format(camera_source_pad, &subdev_format)?;
-    csi2_subdev.set_format(csi2_sink_pad, &subdev_format)?;
-    csi2_subdev.set_format(csi2_source_pad, &subdev_format)?;
+
+    // Copy all pad formats froom the camera to connected CSI2 pads.
+    // Usually there will just be one video pad but there may be more which have metadata
+    // (e.g. MEDIA_BUS_FMT_SENSOR_DATA)
+    for i in 0..camera_entity.pads().len() {
+        let fmt = camera_subdev.format(i)?;
+        csi2_subdev.set_format(csi2_sink_pad + i, &fmt)?;
+        csi2_subdev.set_format(csi2_source_pad + i, &fmt)?;
+    }
 
     println!("Capturing a frame...");
 
@@ -370,7 +417,8 @@ async fn run_camera_reader(
         format.set_height(settings.height);
         format.set_pixelformat(settings.video_pixel_format);
         format.set_field(v4l2::v4l2_field::V4L2_FIELD_NONE.0);
-        format.set_colorspace(v4l2::v4l2_colorspace::V4L2_COLORSPACE_DEFAULT.0);
+        // format.set_colorspace(v4l2::v4l2_colorspace::V4L2_COLORSPACE_SRGB.0);
+        // format.set_xfer_func(v4l2::v4l2_xfer_func::V4L2_XFER_FUNC_SRGB.0);
 
         format.set_num_planes(1);
         format.set_plane_format(0, {
@@ -434,9 +482,9 @@ async fn run_camera_reader(
 
         let _ = sender.try_send(data);
 
-        if i % 10 == 0 {
-            println!("Encode in {:?} : Compression {:.2}", e - s, compression_ratio);
-        }
+        // if i % 10 == 0 {
+        println!("Encode {} in {:?} : Compression {:.2}", i, e - s, compression_ratio);
+        // }
 
         i += 1;
 

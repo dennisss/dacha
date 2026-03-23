@@ -76,52 +76,22 @@ impl SubDevice {
         self.device_num
     }
 
-    /// TODO: THis is identical to the 'Device' code.
     pub fn list_controls(&mut self) -> Result<Vec<ControlDefinition>> {
-        let file = &mut self.file;
-
-        let mut out = vec![];
-
-        let mut raw = v4l2_queryctrl::default();
-        raw.id = 0 | V4L2_CTRL_FLAG_NEXT_CTRL;
-
-        loop {
-            match unsafe { vidioc_queryctrl(file.as_raw_fd(), &mut raw) } {
-                Ok(i) => {
-                    assert_eq!(i, 0);
-                }
-                Err(Errno::EINVAL) => break,
-                Err(e) => break,
-            };
-
-            let mut menu_items = vec![];
-            if raw.type_ == v4l2_ctrl_type::V4L2_CTRL_TYPE_MENU.0
-                || raw.type_ == v4l2_ctrl_type::V4L2_CTRL_TYPE_INTEGER_MENU.0
-            {
-                let mut menu_item = v4l2_querymenu::default();
-                menu_item.id = raw.id;
-
-                for index in raw.minimum..(raw.maximum + 1) {
-                    menu_item.index = index as u32;
-                    match unsafe { vidioc_querymenu(file.as_raw_fd(), &mut menu_item) } {
-                        Ok(v) => {}
-                        Err(e) => continue,
-                    }
-
-                    menu_items.push(ControlMenuItem {
-                        control_type: raw.type_,
-                        raw: menu_item.clone(),
-                    });
-                }
-            }
-
-            out.push(ControlDefinition { raw, menu_items });
-            raw.id |= V4L2_CTRL_FLAG_NEXT_CTRL
-        }
-
-        Ok(out)
+        crate::control_helpers::list_controls(&self.file)
     }
-    
+
+    pub fn get_control_value(&mut self, control_definition: &ControlDefinition) -> Result<i32> {
+        crate::control_helpers::get_control_value(&self.file, control_definition)
+    }
+
+    pub fn set_control_value(
+        &mut self,
+        control_definition: &ControlDefinition,
+        value: i32,
+    ) -> Result<()> {
+        crate::control_helpers::set_control_value(&self.file, control_definition, value)
+    }
+
     pub fn format(&self, pad: usize) -> Result<v4l2_subdev_format> {
         let mut fmt = v4l2_subdev_format::default();
         fmt.pad = pad as u32;

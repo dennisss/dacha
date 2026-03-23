@@ -226,6 +226,9 @@ impl ControlMessageBuffer {
 #[derive(Debug)]
 pub enum ControlMessage {
     ScmRights(Vec<c_int>),
+    ScmTimestamping(bindings::scm_timestamping64),
+    IPRecvError(bindings::sock_extended_err),
+    TimestampingOptId(u32),
     Unknown,
 }
 
@@ -244,16 +247,58 @@ impl ControlMessage {
             return Self::ScmRights(fds);
         }
 
+        if hdr.cmsg_level == bindings::SOL_SOCKET as i32
+            && hdr.cmsg_type == bindings::SO_TIMESTAMPING_NEW as i32
+        {
+            assert_eq!(data.len(), core::mem::size_of::<bindings::scm_timestamping64>());
+
+            let mut out = bindings::scm_timestamping64::default();
+            unsafe {
+                parsing::cstruct::parse_cstruct_raw::<bindings::scm_timestamping64>(data, &mut out).unwrap()
+            };
+
+            return Self::ScmTimestamping(out);
+        }
+
+        if hdr.cmsg_level == bindings::IPPROTO_IP as i32
+            && hdr.cmsg_type == bindings::IP_RECVERR as i32
+        {
+            assert!(data.len() >= core::mem::size_of::<bindings::sock_extended_err>());
+
+            let mut out = bindings::sock_extended_err::default();
+            unsafe {
+                parsing::cstruct::parse_cstruct_raw::<bindings::sock_extended_err>(data, &mut out).unwrap()
+            };
+
+            return Self::IPRecvError(out);
+        }
+
+        eprintln!("Unknown control message: {:?}", hdr);
+
         Self::Unknown
     }
 
     fn fill_header(&self, hdr: &mut bindings::cmsghdr) {
         match self {
-            ControlMessage::ScmRights(_) => {
+            Self::ScmRights(_) => {
                 hdr.cmsg_level = bindings::SOL_SOCKET as i32;
                 hdr.cmsg_type = bindings::SCM_RIGHTS as i32;
             }
-            ControlMessage::Unknown => {}
+            Self::ScmTimestamping(_) => {
+                hdr.cmsg_level = bindings::SOL_SOCKET as i32;
+                hdr.cmsg_type = bindings::SO_TIMESTAMPING_NEW as i32;
+            }
+            Self::IPRecvError(_) => {
+                hdr.cmsg_level = bindings::IPPROTO_IP as i32;
+                hdr.cmsg_type = bindings::IP_RECVERR as i32;
+            }
+            Self::TimestampingOptId(_) => {
+                hdr.cmsg_level = bindings::SOL_SOCKET as i32;
+                todo!()
+                // hdr.cmsg_type = bindings::SCM_TS_OPT_ID as i32;
+            }
+
+            Self::Unknown => {}
         }
     }
 
@@ -262,6 +307,9 @@ impl ControlMessage {
     fn raw_data_size(&self) -> usize {
         match self {
             ControlMessage::ScmRights(fds) => core::mem::size_of::<c_int>() * fds.len(),
+            ControlMessage::ScmTimestamping(_) => core::mem::size_of::<bindings::scm_timestamping64>(),
+            ControlMessage::IPRecvError(_) => core::mem::size_of::<bindings::sock_extended_err>(),
+            ControlMessage::TimestampingOptId(_) => 4,
             ControlMessage::Unknown => 0,
         }
     }
@@ -273,11 +321,16 @@ impl ControlMessage {
                     *array_mut_ref![data, i * 4, 4] = fds[i].to_ne_bytes();
                 }
             }
+            ControlMessage::ScmTimestamping(v) => {
+                data.copy_from_slice(unsafe { parsing::cstruct::serialize_cstruct_raw::<bindings::scm_timestamping64>(&v) });
+            }
+            ControlMessage::IPRecvError(_) => todo!(),
+            ControlMessage::TimestampingOptId(v) => {
+                data.copy_from_slice(&v.to_ne_bytes());
+            }
             ControlMessage::Unknown => {}
         }
     }
-
-    // fn
 }
 
 struct ControlMessageIterator<'a> {

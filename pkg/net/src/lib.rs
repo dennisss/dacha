@@ -32,6 +32,7 @@ pub mod udev;
 
 pub use ip_syntax::parse_port;
 pub use netlink::local_ip;
+pub use utils::enable_hardware_timestamp_filters;
 
 #[cfg(test)]
 mod tests {

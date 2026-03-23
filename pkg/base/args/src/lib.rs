@@ -229,7 +229,7 @@ impl ArgType for std::path::PathBuf {
 macro_rules! impl_arg_type_from_str {
     ($name:ty) => {
         impl ArgType for $name {
-            fn parse_raw_arg(raw_arg: RawArgValue) -> Result<$name> {
+            fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
                 let s = match raw_arg {
                     RawArgValue::Bool(_) => {
                         return Err(err_msg("Expected string, got bool"));
@@ -237,7 +237,7 @@ macro_rules! impl_arg_type_from_str {
                     RawArgValue::String(s) => s,
                 };
 
-                Ok(s.parse::<$name>()?)
+                Ok(s.parse::<Self>()?)
             }
         }
     };
@@ -265,4 +265,25 @@ pub fn parse_args<Args: ArgsType + Sized>() -> Result<Args> {
     }
 
     Ok(args)
+}
+
+impl<T: ArgType, Y: ArgType> ArgType for (T, Y) {
+    fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
+        let s = match raw_arg {
+            RawArgValue::Bool(_) => {
+                return Err(err_msg("Expected string, got bool"));
+            }
+            RawArgValue::String(s) => s,
+        };
+
+        let parts = s.split(",").collect::<Vec<&str>>();
+        if parts.len() != 2 {
+            return Err(err_msg("Expected 2 element tuple"));
+        }
+
+        Ok((
+            T::parse_raw_arg(RawArgValue::String(parts[0].to_string()))?,
+            Y::parse_raw_arg(RawArgValue::String(parts[1].to_string()))?,
+        ))
+    }
 }

@@ -1,0 +1,19 @@
+[package]
+name = "ptp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../../common" }
+base_util = { path = "../../base/util" }
+parsing = { path = "../../parsing" }
+sys = { path = "../../sys" }
+net = { path = "../../net" }
+file = { path = "../../file" }
+executor = { path = "../../executor" }
+executor_multitask = { path = "../../executor/multitask" }
+macros = { path = "../../macros" }
+base_radix = { path = "../../base/radix" }
+
+[build-dependencies]
+parsing_compiler = { path = "../../parsing/compiler" }

@@ -9,6 +9,7 @@ members = [
 	"pkg/common",
 	"pkg/net",
 	"pkg/net/router",
+"pkg/net/ptp",
 	"pkg/reflection",
 	"pkg/asn",
 	"pkg/asn/compiler",

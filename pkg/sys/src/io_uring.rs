@@ -249,11 +249,14 @@ impl IoSubmissionUring {
                 entry.fd = fd;
                 entry.set_addr(unsafe { core::mem::transmute(header) });
             }
-            IoUringOp::ReceiveMessage { fd, header } => {
+            IoUringOp::ReceiveMessage { fd, header, error_queue } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_RECVMSG as u8;
                 entry.fd = fd;
                 header.reset();
                 entry.set_addr(unsafe { core::mem::transmute(header) });
+                if error_queue {
+                    entry.set_op_flags(bindings::MSG_ERRQUEUE as u32);
+                }
             }
             IoUringOp::Cancel { user_data } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_ASYNC_CANCEL as u8;
@@ -545,6 +548,7 @@ pub enum IoUringOp<'a, 'b> {
     ReceiveMessage {
         fd: c_int,
         header: &'a mut MessageHeaderMut<'b>,
+        error_queue: bool,
     },
 
     /// Waits until at least the given duration has elapsed on the Linux
