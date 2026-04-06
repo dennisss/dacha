@@ -6,8 +6,23 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
+use std::sync::Arc;
+
 use common::errors::*;
 use executor_multitask::RootResource;
+use cluster_client::{ClusterServer, ClusterMetaClient};
+use nordic_tools_proto::nordic::*;
+
+
+const SERVICE_ACL_PROTO: &'static str = r#"
+    rules: [
+        {
+            path: "/rpc/nordic.RadioBridge"
+            is_directory: true
+            principals: ["group:cluster-owners"]
+        }
+    ]
+"#;
 
 #[derive(Args)]
 struct Args {
@@ -15,27 +30,33 @@ struct Args {
     /// this bridge.
     state_object_name: String,
 
-    rpc_port: rpc_util::NamedPortArg,
-
-    usb: usb::DeviceSelector,
+    port: rpc_util::NamedPortArg,
 }
 
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
-    let bridge =
-        nordic_tools::radio_bridge::RadioBridge::create(&args.state_object_name, &args.usb).await?;
 
     let service = RootResource::new();
 
-    let mut rpc_server = rpc::Http2Server::new(Some(args.rpc_port.value()));
-    rpc_server.set_base_path("/rpc"); // TODO: Standardize.
-    bridge.add_services(&mut rpc_server)?;
-    service.register_dependency(rpc_server.start()).await;
+    let client = ClusterMetaClient::create_from_environment().await?;
+    service.register_dependency(client.clone()).await;
 
-    service
-        .spawn_interruptable("RadioBridge", bridge.run())
-        .await;
+    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
+
+    let mut server = ClusterServer::new(args.port.value(), acl, client.clone())?;
+
+    let bridge =
+        Arc::new(nordic_tools::radio_bridge::RadioBridge::create(
+            client.clone(),
+            &args.state_object_name,
+        ).await?);
+    service.register_dependency(bridge.clone()).await;
+    server.add_service(bridge.clone().into_service())?;
+
+
+    service.register_dependency(server.start()?).await;
 
     service.wait().await
 }

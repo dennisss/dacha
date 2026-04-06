@@ -3,6 +3,7 @@ use executor::interrupts::wait_for_irq;
 use peripherals::raw::Interrupt;
 use peripherals::raw::EventRegister;
 
+// TODO: Better define the uordering of bytes and share this with the nordic_wire package.
 type RadioAddress = [u8; 4];
 
 /// NOTE: This requires that the HFXO is started already before using.
@@ -24,8 +25,8 @@ impl Radio {
         // NOTE: The POWER register is 1 at boot so we shouldn't need to turn on the
         // peripheral.
 
-        periph.frequency.write_with(|v| v.set_frequency(5)); // Exactly (2400 + 5) MHz
-        periph.txpower.write_0dbm(); // TODO: +8 dBm (max power)
+        periph.frequency.write_with(|v| v.set_frequency(80)); // Exactly (2400 + 80) MHz
+        periph.txpower.write_pos8dbm();
         periph.mode.write_nrf_2mbit();
 
         // 1 LENGTH byte (8 bits). 0 S0, S1 bits. 8-bit preamble.
@@ -49,7 +50,7 @@ impl Radio {
         // Copies the 802.15.4 mode.
         periph.crccnf.write_with(|v| {
             v.set_len_with(|v| v.set_two())
-                .set_skipaddr_with(|v| v.set_ieee802154())
+                .set_skipaddr_with(|v| v.set_include())
         });
         periph.crcpoly.write(0x11021);
         periph.crcinit.write(0);
@@ -70,12 +71,12 @@ impl Radio {
         self.periph.base0.write({
             // Copy everything but the prefix byte into the register.
             let mut data = [0u8; 4];
-            data[0..(addr.len() - 1)].copy_from_slice(&addr[0..(addr.len() - 1)]);
+            data[1..].copy_from_slice(&addr[0..3]);
             u32::from_le_bytes(data)
         });
         self.periph
             .prefix0
-            .write_with(|v| v.set_ap0(addr[addr.len() - 1] as u32));
+            .write_with(|v| v.set_ap0(addr[3] as u32));
     }
 
     /// Blocks until a packet is received. Returns the number of bytes received.
@@ -112,7 +113,7 @@ impl Radio {
                 continue;
             }
 
-            log!("RX ", (packet[0] as u32));
+            // log!("RX ", (packet[0] as u32));
 
             break;
         }

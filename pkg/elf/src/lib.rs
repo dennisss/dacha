@@ -204,6 +204,8 @@ impl<T: AsRef<[u8]>> ELF<T> {
 
         let mut all_symbols = vec![];
 
+        let mut symbol_map = HashMap::new();
+
         for (i, section) in self.section_headers.iter().enumerate() {
             if section.typ != SHT_SYMTAB {
                 continue;
@@ -218,6 +220,12 @@ impl<T: AsRef<[u8]>> ELF<T> {
             while !data.is_empty() {
                 let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
                 let sym_name = symbol_strtab.get(sym.name as usize)?;
+
+                if symbol_map.contains_key(&sym.value) {
+                    eprintln!("DUP: {}", sym_name);
+                }
+
+                symbol_map.insert(sym.value, sym_name.to_string());
 
                 all_symbols.push((sym_name.to_string(), sym));
 
@@ -256,7 +264,8 @@ impl<T: AsRef<[u8]>> ELF<T> {
                 }
 
                 println!(
-                    "\t{:?} {} {}",
+                    "\t{:08x} {:?} {} {}",
+                    sym.value,
                     sym.typ(),
                     sym.size,
                     crate::demangle::demangle_name(sym_name)
@@ -274,12 +283,33 @@ impl<T: AsRef<[u8]>> ELF<T> {
                 //     let file_end_offset = file_start_offset + sym.size;
                 // }
             }
+
+            if name == ".stack_sizes" {
+                let mut data = self.section_data(i);
+
+                while !data.is_empty() {
+                    // TODO: Make dymaic based on pointer size.
+                    let addr = parse_next!(data, parsing::binary::le_u32);
+                    let (size, rest) = read_uleb128(data)?;
+                    data = rest;
+
+                    println!("Stack: {:08x} : {}", addr, size);
+
+                    if let Some(sym_name) = symbol_map.get(&((addr + 1) as u64)) {
+                        println!("=> {}", sym_name);
+                    }
+                }
+
+            }
+
+            //
         }
 
         // TODO: Print any usused strings.
 
         Ok(())
     }
+
 
     pub fn function_symbols(&self) -> Result<BTreeMap<u64, FunctionSymbol>> {
         let mut out = BTreeMap::<u64, FunctionSymbol>::new();
@@ -337,6 +367,34 @@ impl<T: AsRef<[u8]>> ELF<T> {
 
         Ok(out)
     }
+}
+
+/// Reads a ULEB128 integer from the start of the slice.
+/// Returns the parsed `u64` and the remainder of the slice.
+fn read_uleb128(data: &[u8]) -> Result<(u64, &[u8])> {
+    let mut result = 0u64;
+    let mut shift = 0;
+    let mut bytes_read = 0;
+
+    for &byte in data {
+        // A u64 can take up to 10 bytes in ULEB128 encoding
+        if bytes_read == 10 {
+            return Err(err_msg("ULEB128 integer too large for u64"));
+        }
+
+        let val = (byte & 0x7f) as u64;
+        result |= val << shift;
+        bytes_read += 1;
+
+        // If the highest bit (0x80) is not set, this is the last byte
+        if byte & 0x80 == 0 {
+            return Ok((result, &data[bytes_read..]));
+        }
+        
+        shift += 7;
+    }
+
+    Err(err_msg("Incomplete ULEB128 sequence encountered"))
 }
 
 #[derive(Clone, Debug)]

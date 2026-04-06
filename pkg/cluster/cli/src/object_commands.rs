@@ -29,8 +29,9 @@ pub struct SetObjectCommand {
     #[arg(positional)]
     object_name: String,
 
-    #[arg(positional)]
-    path: LocalPathBuf,
+    path: Option<LocalPathBuf>,
+
+    value: Option<String>,
 
     /// If true, change the object value even if it is already present.
     #[arg(default = false)]
@@ -80,7 +81,15 @@ pub async fn run_get_object(cmd: GetObjectCommand) -> Result<()> {
 }
 
 pub async fn run_set_object(cmd: SetObjectCommand) -> Result<()> {
-    let data = file::read(&cmd.path).await?;
+    let data = {
+        if let Some(path) = &cmd.path {
+            file::read(path).await?
+        } else if let Some(value) = &cmd.value {
+            value.as_bytes().to_vec()
+        } else {
+            return Err(err_msg("Must specify either --path or --value"));
+        }
+    };
     
     let meta_client = ClusterMetaClient::create_from_environment().await?;
     let db = meta_client.db();

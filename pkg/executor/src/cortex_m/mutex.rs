@@ -46,7 +46,9 @@ impl<T> Mutex<T> {
             wait_for_pendsv(cs).await;
         }
 
-        MutexGuard { inst: self, cs }
+        drop(cs);
+
+        MutexGuard { inst: self }
     }
 }
 
@@ -55,19 +57,19 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 
 pub struct MutexGuard<'a, T> {
     inst: &'a Mutex<T>,
-
-    // TODO: Eventually switch over the PeripheralsController to a CriticalMutex and get rid of this.
-    // (though we still need to be a critical section during drop)
-    cs: CriticalSection,
 }
 
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
+        let cs = CriticalSection::new();
+
         let old_state = self.inst.locked.get();
         self.inst.locked.set(MutexLockState::Unlocked);
         if old_state == MutexLockState::LockedWithWaiters {
             trigger_pendsv();
         }
+
+        drop(cs);
     }
 }
 

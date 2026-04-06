@@ -1,5 +1,6 @@
 use core::arch::asm;
 
+use executor::CriticalSection;
 use peripherals::raw::clock::CLOCK;
 use common::register::RegisterRead;
 
@@ -7,7 +8,40 @@ use common::register::RegisterRead;
 Need a reference counting system for enabling/disabling these clocks.
 */
 
-pub fn init_high_freq_clk(clock: &mut CLOCK) {
+static mut HFCLK_REF_COUNT: usize = 0;
+
+pub fn reference_hfclk() {
+    let cs = CriticalSection::new();
+
+    unsafe {
+        if HFCLK_REF_COUNT == 0 {
+            let mut clock = CLOCK::new();
+            init_high_freq_clk(&mut clock);
+        }
+
+        HFCLK_REF_COUNT += 1;
+    }
+}
+
+pub fn unreference_hfclk() {
+    let cs = CriticalSection::new();
+
+    unsafe {
+        HFCLK_REF_COUNT -= 1;
+
+        if HFCLK_REF_COUNT == 0 {
+            let mut clock = CLOCK::new();
+            stop_high_freq_clk(&mut clock);
+        }
+    }
+}
+
+
+
+
+fn init_high_freq_clk(clock: &mut CLOCK) {
+    // TODO: Appropriately seutp HFXODEBOUNCE.
+
     // Init HFXO (must be started to use RADIO)
     clock.events_hfclkstarted.write_notgenerated();
     clock.tasks_hfclkstart.write_trigger();
@@ -15,6 +49,10 @@ pub fn init_high_freq_clk(clock: &mut CLOCK) {
     while clock.events_hfclkstarted.read().is_notgenerated() {
         unsafe { asm!("nop") };
     }
+}
+
+fn stop_high_freq_clk(clock: &mut CLOCK) {
+    clock.tasks_hfclkstop.write_trigger();
 }
 
 /*
@@ -35,15 +73,27 @@ pub enum LowFrequencyClockSource {
     CrystalOscillator,
 
     /// Internal
-    /// TODO: Support ultra-low power mode?
     RCOscillator,
+
+    /// Internal (low power, low accuracy)
+    ///
+    /// TODO: Figure out why this isn't reducing power usage.
+    RCOscillatorULP,
 }
 
+// TODO: Implement periodic calibration for the RC clock.
 pub fn init_low_freq_clk(source: LowFrequencyClockSource, clock: &mut CLOCK) {
     // NOTE: This must be initialized to use the RTCs.
 
     // TODO: Must unsure the clock is stopped before changing the source.
     // ^ But clock can only be stopped if clock is running.
+
+    if clock.lfclkstat.read().state().is_running() {
+        clock.tasks_lfclkstop.write_trigger();
+        while clock.lfclkstat.read().state().is_running() { 
+            unsafe { asm!("nop") };
+        }
+    }
 
     match source {
         LowFrequencyClockSource::CrystalOscillator => {
@@ -55,11 +105,39 @@ pub fn init_low_freq_clk(source: LowFrequencyClockSource, clock: &mut CLOCK) {
             clock
                 .lfclksrc
                 .write_with(|v| v.set_src_with(|v| v.set_rc()));
+            clock
+                .lfrcmode
+                .write_with(|v| v.set_mode_with(|v| v.set_normal()));
+        }
+        LowFrequencyClockSource::RCOscillatorULP => {
+            clock
+                .lfclksrc
+                .write_with(|v| v.set_src_with(|v| v.set_rc()));            
+            clock
+                .lfrcmode
+                .write_with(|v| v.set_mode_with(|v| v.set_ulp()));
         }
     }
 
+    // Errata 20
+    clock.events_lfclkstarted.write_notgenerated();
+    unsafe { asm!("nop") };
+    unsafe { asm!("nop") };
+    unsafe { asm!("nop") };
+    unsafe { asm!("nop") };
+
+
     // Start the clock.
     clock.tasks_lfclkstart.write_trigger();
+
+    // Errata 20
+    // This also catches configuring the wrong clock.
+    // (e.g. if you configure XTAL and don't have an XTAL, this will not fire, the clock will
+    //  still report as running due to the initial time period using the RC oscillator but this
+    //  results in silent glitching later if you really don't have an XTAL).
+    while clock.events_lfclkstarted.read().is_notgenerated() {
+        unsafe { asm!("nop") };
+    }
 
     while clock.lfclkstat.read().state().is_notrunning() {
         unsafe { asm!("nop") };

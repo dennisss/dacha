@@ -623,7 +623,7 @@ fn main() -> () {
     // TODO: Disable FIQ interrupts?
     unsafe { asm!("cpsid i") }
 
-    nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+    nordic::clock::reference_hfclk();
 
     // TODO: If we are not using an external crystal, this needs to derive from
     // HFCLK.

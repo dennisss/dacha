@@ -13,10 +13,10 @@ use peripherals::raw::Interrupt;
 /// target time while we are setting up the COMPARE registers. If we do run
 /// over, we'd need to wait for a clock overflow.
 ///
-/// Assuming we are running at 32KHz, this value is ~0.5ms.
-const MIN_WAIT_TICKS: u32 = 3;
+/// Assuming we are running at 32KHz, this value is ~0.25ms.
+const MIN_WAIT_TICKS: u32 = 8;
 
-// 3.0601628e-5
+static mut NUM_WAITERS: u32 = 0;
 
 pub struct RTC {
     rtc0: RTC0,
@@ -38,6 +38,12 @@ impl RTC {
 
     /// NOTE: This function assumes that RTC0 is currently stopped.
     pub fn new(mut rtc0: RTC0) -> Self {
+        // Errata 20
+        rtc0.tasks_stop.write(peripherals::raw::TaskTrigger::Unknown(0));
+        for _ in 0..10 {
+            unsafe { asm!("nop") };
+        }
+
         rtc0.prescaler.write(0); // Explictly request a 32.7kHz tick. (so max wait is 512 seconds)
         rtc0.tasks_start.write_trigger();
 
@@ -50,15 +56,6 @@ impl RTC {
         rtc0.cc[0].write_with(|v| v.set_compare(0));
 
         rtc0.events_compare[0].write_notgenerated();
-
-        // Enable interrupt on COMPARE0.
-        // NOTE: We don't need to set EVTEN
-        //
-        // TODO: Consider eventually only doing this if there is at least one instance
-        // of wait_ticks still running (the current implementation has a chance that the
-        // wait_ticks future will be immediately polled as soon as it is created if no
-        // waiting has occured in a while).
-        rtc0.intenset.write_with(|v| v.set_compare0());
 
         Self { rtc0 }
     }
@@ -79,11 +76,24 @@ impl RTC {
         self.wait_ticks((micros * 32768) / 1000000).await
     }
 
-    /*
-    Read
-    */
+    async fn wait_ticks(&mut self, mut ticks: u32) {
+        // TODO: Wrap in a critical section.
+        
+        // Enable interrupt on COMPARE0.
+        // NOTE: We don't need to set EVTEN
+        unsafe { 
+            if NUM_WAITERS == 0 {
+                self.rtc0.intenset.write_with(|v| v.set_compare0());
+            }
 
-    async fn wait_ticks(&mut self, ticks: u32) {
+            NUM_WAITERS += 1;
+        }
+
+
+        if ticks < MIN_WAIT_TICKS {
+            ticks = MIN_WAIT_TICKS;
+        }
+
         // TODO: This is not suitable for high speed operations as it takes ~375.2ns to
         // readthe current counter.
         let start_ticks = self.rtc0.counter.read();
@@ -92,7 +102,7 @@ impl RTC {
         loop {
             let current_ticks = self.rtc0.counter.read();
             let elapsed_ticks = Self::duration(start_ticks, current_ticks);
-            if elapsed_ticks + MIN_WAIT_TICKS > ticks {
+            if elapsed_ticks >= ticks {
                 break;
             }
 
@@ -113,8 +123,20 @@ impl RTC {
             // Clear event so that the interrupt doesn't happen again.
             self.rtc0.events_compare[0].write_notgenerated();
         }
+
+        // NOTE: We disable it mainly because pending events seem to consume power while the
+        // interrupt is enabled.
+        unsafe {
+            NUM_WAITERS -= 1;
+            
+            if NUM_WAITERS == 0 {
+                self.rtc0.intenclr.write_with(|v| v.set_compare0());
+            }
+        }
     }
 
+    // TODO: Check for bugs.
+    /*
     pub async fn wait_until(&mut self, time: RTCInstant) {
         let start_ticks = self.rtc0.counter.read();
         let ticks = if time.ticks > start_ticks {
@@ -150,6 +172,7 @@ impl RTC {
             self.rtc0.events_compare[0].write_notgenerated();
         }
     }
+    */
 
     fn duration(start_ticks: u32, mut end_ticks: u32) -> u32 {
         if end_ticks < start_ticks {

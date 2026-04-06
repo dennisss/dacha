@@ -19,6 +19,7 @@ uf2 = { path = "../peripherals/flasher/uf2", default-features = false }
 math = { path = "../math", default-features = false }
 cnc = { path = "../cnc", default-features = false }
 logging = { path = "../monitoring/logging", default-features = false }
+nordic_bitmaps = { path = "./bitmaps", default-features = false }
 
 [features]
 default = ["std", "alloc"]

@@ -36,3 +36,53 @@ impl Rng {
         self.periph.tasks_stop.write_trigger();
     }
 }
+
+
+pub struct Xoshiro128PlusPlus {
+    state: [u32; 4],
+}
+
+impl Xoshiro128PlusPlus {
+    pub const fn new(seed: [u32; 4]) -> Self {
+        Self { state: seed }
+    }
+
+    pub fn next(&mut self) -> u32 {
+        let result = self.state[0]
+            .wrapping_add(self.state[3])
+            .rotate_left(7)
+            .wrapping_add(self.state[0]);
+
+        let t = self.state[1] << 9;
+
+        self.state[2] ^= self.state[0];
+        self.state[3] ^= self.state[1];
+        self.state[1] ^= self.state[2];
+        self.state[0] ^= self.state[3];
+
+        self.state[2] ^= t;
+        self.state[3] = self.state[3].rotate_left(11);
+
+        result
+    }
+
+    pub fn range(&mut self, min: u32, max: u32) -> u32 {
+        if min >= max {
+            return min;
+        }
+
+        let range = max - min;
+        
+        // Calculate the threshold to avoid modulo bias
+        // This is equivalent to (2^32 % range)
+        let limit = u32::MAX - (u32::MAX % range);
+
+        loop {
+            let r = self.next();
+            if r < limit {
+                return min + (r % range);
+            }
+            // If r >= limit, we reject it and loop again
+        }
+    }
+}

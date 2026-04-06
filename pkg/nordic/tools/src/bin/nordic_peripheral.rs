@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
     selector.vendor_id = Some(0x8888);
     selector.product_id = Some(4);
 
-    let mut dev = nordic_tools::usb_radio::USBRadio::find(&selector).await?;
+    let mut dev = nordic_driver::usb_radio::USBRadio::find(&selector).await?;
 
     let mut last_time = Instant::now();
     let mut last_count = 0;

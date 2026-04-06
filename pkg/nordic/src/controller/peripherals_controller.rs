@@ -82,6 +82,7 @@ use executor::interrupts::make_high_priority_irq;
 use peripherals::raw::Interrupt;
 
 use crate::gpio::*;
+use crate::pins::IndexedPin;
 use crate::gpiote::{GPIOTEChannels, GPIOInterruptChannel, GPIOInterruptPolarity};
 use crate::pins::{PeripheralPin, Port};
 use crate::pwm::{PWMConfig, PWM};
@@ -95,6 +96,7 @@ use crate::neopixel::*;
 use crate::adc::*;
 use crate::twim::*;
 use crate::radio::*;
+use crate::radio_socket::RadioSocket;
 
 use super::time::*;
 use super::neopixel::*;
@@ -145,6 +147,8 @@ pub struct PeripheralsController {
     capture_timer_channel: CriticalMutex<Option<TimerChannel<'static>>>,
 
     pub(super) timer_controller: TimerController,
+
+    pub(super) radio_socket: &'static RadioSocket,
 }
 
 // TODO: Unconfigure all peripherals when this is dropped.
@@ -181,8 +185,6 @@ pub(super) struct PeripheralsControllerState {
     pub adc: Option<WindowADC>,
 
     pub adc_request_queue: ADCRequestQueue,
-
-    pub radio: Option<Radio>,
 
     twim0: Option<TWIM0>,
 
@@ -305,23 +307,6 @@ impl Default for PeripheralEntry {
     }
 }
 
-pub(super) struct IndexedPin {
-    index: u32,
-}
-
-impl PeripheralPin for IndexedPin {
-    fn pin(&self) -> u8 {
-        (self.index % 32) as u8
-    }
-
-    fn port(&self) -> crate::pins::Port {
-        if self.index >= 32 {
-            Port::P1
-        } else {
-            Port::P0
-        }
-    }
-}
 
 enum ExecuteError {
     AsyncReply,
@@ -353,7 +338,7 @@ impl PeripheralsController {
         ppi: PPI,
         saadc: SAADC,
         twim0: TWIM0,
-        radio: Radio,
+        radio_socket: &'static RadioSocket,
     ) -> Self {
 
         // The stepper interrupt.
@@ -393,6 +378,7 @@ impl PeripheralsController {
             timer,
             timer_controller: TimerController::new(),
             capture_timer_channel: CriticalMutex::new(None),
+            radio_socket,
             state: CriticalMutex::new(PeripheralsControllerState {
                 entries,
                 config_finalized: false,
@@ -416,7 +402,6 @@ impl PeripheralsController {
                 batch_ack: None,
                 response_buffer: CyclicBuffer::new([0u8; RESPONSE_BUFFER_SIZE]),
                 response_buffer_overflowed: false,
-                radio: Some(radio),
                 usb_sof_tracker: None,
             }),
             response_buffer_readable: Channel::new(),
@@ -883,24 +868,9 @@ impl PeripheralsController {
             PeripheralRequestCommandCase::ConfigureRadio(req) => {
                 self.check_entry_not_configured(state, peripheral_idx)?;
 
-                if state.radio.is_none() {
-                    return Err(ExecuteError::ErrorCode(
-                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
-                    ));
-                }
+                // TODO: Validate only one instance is ever created of a radio.
 
-                let radio = state.radio.take().unwrap();
-
-                // TODO: There is a risk of losing the radio instance if this fails.
-                let entry = RadioEntry::create(
-                    radio,
-                    &self.timer,
-                    &mut state.ppi
-                ).ok_or_else(|| ExecuteError::ErrorCode(
-                    PeripheralResponse_ErrorCode::RESOURCE_BUSY,
-                ))?;
-
-                state.entries[peripheral_idx] = PeripheralEntry::Radio(entry);
+                state.entries[peripheral_idx] = PeripheralEntry::Radio(RadioEntry::default());
 
                 Ok(OkResponse)
             }
@@ -958,6 +928,8 @@ impl PeripheralsController {
                 // NOTE: Only save to stop this if the ADC is still in the state
                 ADCSamplePeripheralThread::stop();
 
+                // TODO: Stop the radio rx thread.
+
                 // TODO: This will forget requests from the current USB reset session
                 // which is probably not a good thing.
                 state.adc_request_queue.clear();
@@ -970,6 +942,8 @@ impl PeripheralsController {
                         PeripheralEntry::Unconfigured => {}
                         PeripheralEntry::Borrowed => {
                             // TODO: Stuff via GPIO interrupts need to be cancelled.
+
+                            // TODO: We already took out the entry so a figure unconfigure_all call won't notice this.
 
                             return Err(ExecuteError::ErrorCode(
                                 PeripheralResponse_ErrorCode::RESOURCE_BUSY,
@@ -999,9 +973,7 @@ impl PeripheralsController {
                         PeripheralEntry::SPI(inst) => {
                             state.spim.push(inst.into_inner());
                         }
-                        PeripheralEntry::Radio(inst) => {
-                            state.radio = Some(inst.into_inner());
-                        }
+                        PeripheralEntry::Radio(inst) => {}
                         PeripheralEntry::ADC(_) => {}
                         PeripheralEntry::Buffer(_) => {}
                         PeripheralEntry::I2C(inst) => {
@@ -1608,6 +1580,78 @@ impl PeripheralsController {
 
                 buf.read(response);
                 Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::WriteBuffer(data) => {
+                self.check_fully_configured(state)?;
+
+                let buf = get_peripheral_mut!(state, peripheral_idx, Buffer);
+
+                buf.append(&data[..]);
+                Ok(OkResponse)
+            }
+            PeripheralRequestCommandCase::ClearBuffer(_) => {
+                self.check_fully_configured(state)?;
+
+                let buf = get_peripheral_mut!(state, peripheral_idx, Buffer);
+
+                buf.clear();
+                Ok(OkResponse)
+            }
+
+            PeripheralRequestCommandCase::SetNetworkConfig(_) => {
+                return Err(ExecuteError::ErrorCode(
+                    PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                ));
+            }
+
+            PeripheralRequestCommandCase::GetNetworkConfig(_) => {
+                return Err(ExecuteError::ErrorCode(
+                    PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                ));
+            }
+
+            PeripheralRequestCommandCase::SendRadioPacket(_) => {
+                self.check_fully_configured(state)?;
+
+                if RadioSocketSenderThread::is_running() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                let buffer = borrow_peripheral!(state, peripheral_idx, Buffer);
+
+                RadioSocketSenderThread::start(
+                    self,
+                    request.request_sequence(),
+                    buffer,
+                    peripheral_idx
+                );
+
+                Err(ExecuteError::AsyncReply)
+            }
+
+            PeripheralRequestCommandCase::RecvRadioPacket(_) => {
+                self.check_fully_configured(state)?;
+
+                if RadioSocketReceiverThread::is_running() {
+                    return Err(ExecuteError::ErrorCode(
+                        PeripheralResponse_ErrorCode::RESOURCE_BUSY,
+                    ));
+                }
+
+                let buffer = borrow_peripheral!(state, peripheral_idx, Buffer);
+
+                // TODO: Need to ensure this always finishes since it will block the Unconfigure
+
+                RadioSocketReceiverThread::start(
+                    self,
+                    request.request_sequence(),
+                    buffer,
+                    peripheral_idx
+                );
+
+                Err(ExecuteError::AsyncReply)
             }
 
             PeripheralRequestCommandCase::NeopixelTransfer(req) => {

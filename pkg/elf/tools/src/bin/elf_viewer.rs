@@ -10,7 +10,7 @@ use file::project_path;
 
 #[executor_main]
 async fn main() -> Result<()> {
-    let data = file::read(project_path!("built/pkg/nordic/nordic_radio_dongle")).await?;
+    let data = file::read(project_path!("built/pkg/nordic/nordic_button")).await?;
 
     let elf = elf::ELF::parse(&data)?;
 

@@ -256,6 +256,11 @@ fn generate_usb_descriptors() -> Result<()> {
         "blink",
         OUR_BLINK_PRODUCT_ID,
     )?);
+    lines.add(generate_protocol_usb_descriptors(
+        "SensorUSBDescriptors",
+        "sensor",
+        OUR_SENSOR_PRODUCT_ID,
+    )?);
     lines.add(generate_bootloader_usb_descriptors()?);
     lines.add(generate_keyboard_usb_descriptors()?);
 

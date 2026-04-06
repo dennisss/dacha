@@ -22,7 +22,7 @@ macros = { path = "../../macros" }
 http = { path = "../../http" }
 json = { path = "../../format/json" }
 web = { path = "../../web" }
-nordic_tools = { path = "../../nordic/tools" }
+nordic_driver = { path = "../../nordic/driver" }
 parsing = { path = "../../parsing" }
 rpc = { path = "../../rpc" }
 storage = { path = "../../storage" }

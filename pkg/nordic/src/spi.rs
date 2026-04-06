@@ -204,7 +204,12 @@ impl SPIHost {
 
     pub fn into_inner(mut self) -> SPIMx {
         self.periph.enable.write_disabled();
+        // TODO: Also reset the GPIO pin if we used it separately.
         self.periph
+    }
+
+    pub fn disable(&mut self) {
+        self.periph.enable.write_disabled();
     }
 }
 

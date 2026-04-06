@@ -1,6 +1,6 @@
 const { createCanvas, loadImage, registerFont } = require('canvas')
 const { encode_frames } = require('./video_encoder');
-const { configure } = require('./timelines/3d_printer/toolhead_animation');
+const { configure } = require('./timelines/button/animation');
 
 
 

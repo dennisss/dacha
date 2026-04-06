@@ -21,7 +21,7 @@ crypto = { path = "../../crypto" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 usb = { path = "../../usb" }
-nordic_tools = { path = "../../nordic/tools" }
+nordic_driver = { path = "../../nordic/driver" }
 peripherals_service = { path = "../../peripherals/service" }
 peripherals_proto = { path = "../../peripherals/proto" }
 cnc_controller_proto = { path = "./proto" }

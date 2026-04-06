@@ -11,10 +11,11 @@ use crate::bootloader::flash::{
 
 pub const NETWORK_CONFIG_ID: u32 = 0x861C8E73;
 pub const NETWORK_STATE_ID: u32 = 0xB0A4A986;
+pub const SENSOR_CONFIG_ID: u32 = 0xA37E282A;
 
 /// Stores small application parameters robustly in NRF application flash space.
 pub struct AppParamsStorage {
-    params: AsyncMutex<ParamStorage<AppParamsMemoryController, [ParamHandle; 2]>>,
+    params: AsyncMutex<ParamStorage<AppParamsMemoryController, [ParamHandle; 3]>>,
 }
 
 impl AppParamsStorage {
@@ -26,6 +27,7 @@ impl AppParamsStorage {
         let registry = [
             ParamHandle::new(NETWORK_CONFIG_ID),
             ParamHandle::new(NETWORK_STATE_ID),
+            ParamHandle::new(SENSOR_CONFIG_ID),
         ];
 
         let blobs = ParamStorage::create(memory, registry)?;

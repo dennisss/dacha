@@ -4,22 +4,27 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+base_args = { path = "../../base/args" }
 common = { path = "../../common" }
 protobuf = { path = "../../protobuf" }
 macros = { path = "../../macros" }
 usb = { path = "../../usb" }
 crypto = { path = "../../crypto" }
+container_proto = { path = "../../container/proto" }
 cluster_client = { path = "../../container/client" }
 nordic_proto = { path = "../proto" }
 nordic_tools_proto = { path = "./proto" }
 nordic_wire = { path = "../wire" }
 rpc = { path = "../../rpc" }
 http = { path = "../../http" }
+file = { path = "../../file" }
 rpc_util = { path = "../../rpc/util" }
 protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 peripherals_proto = { path = "../../peripherals/proto" }
+peripherals_service = { path = "../../peripherals/service" }
+nordic_driver = { path = "../driver" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../protobuf/compiler" }

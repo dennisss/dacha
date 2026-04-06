@@ -255,6 +255,12 @@ impl ClusterMetaClient {
         }
     }
 
+    pub async fn get_object_data(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        let db = self.db();
+        let obj = query_one!(&db, ObjectMetadataTable, "name = ?", name);
+        Ok(obj.map(|o| o.data().to_vec()))
+    }
+
     pub async fn set_object_proto<M: protobuf::Message>(&self, name: &str, value: &M) -> Result<()> {
         let mut obj = ObjectMetadata::default();
         obj.set_name(name);

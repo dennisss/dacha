@@ -421,18 +421,32 @@ impl CharacterEncodingEntry {
 #[derive(Debug)]
 pub enum CharacterMappingSubTable {
     Segments(CharacterSegmentMapping),
+    SegmentedCoverage(CharacterSegmentedCoverageMapping),
 }
 
 impl CharacterMappingSubTable {
-    fn lookup(&self, code: u16) -> Result<u16> {
+    fn lookup(&self, code: u32) -> Result<u16> {
         match self {
-            CharacterMappingSubTable::Segments(table) => table.lookup(code),
+            CharacterMappingSubTable::Segments(table) => {
+                if code > 0xFFFF {
+                    return Ok(0);
+                }
+                table.lookup(code as u16)
+            }
+            CharacterMappingSubTable::SegmentedCoverage(table) => {
+                table.lookup(code)
+            }
         }
     }
 
-    fn lookup_all(&self) -> Result<Vec<(u16, u16)>> {
+    fn lookup_all(&self) -> Result<Vec<(u32, u16)>> {
         match self {
-            CharacterMappingSubTable::Segments(table) => table.lookup_all(),
+            CharacterMappingSubTable::Segments(table) => {
+                table.lookup_all().map(|v| v.into_iter().map(|(c, g)| (c as u32, g)).collect())
+            }
+            CharacterMappingSubTable::SegmentedCoverage(table) => {
+                table.lookup_all()
+            }
         }
     }
 
@@ -441,9 +455,92 @@ impl CharacterMappingSubTable {
         if format == 4 {
             let table = c.next(CharacterSegmentMapping::parse)?;
             Ok(CharacterMappingSubTable::Segments(table))
+        } else if format == 12 {
+            let table = c.next(CharacterSegmentedCoverageMapping::parse)?;
+            Ok(CharacterMappingSubTable::SegmentedCoverage(table))
         } else {
-            Err(err_msg("Unknown cmap subtable format"))
+            Err(format_err!("Unknown cmap subtable format: {}", format))
         }
+    }));
+}
+
+#[derive(Debug)]
+pub struct CharacterSegmentedCoverageMapping {
+    header: CharacterSegmentedCoverageMappingHeader,
+    groups: Vec<CharacterSegmentedCoverageGroup>,
+}
+
+#[derive(Default, Reflect, Debug)]
+pub struct CharacterSegmentedCoverageMappingHeader {
+    reserved: u16,
+    length: u32,
+    language: u32,
+    num_groups: u32,
+}
+
+impl CharacterSegmentedCoverageMappingHeader {
+    fn parse(input: &[u8]) -> ParseResult<Self, &[u8]> {
+        let mut v = Self::default();
+        let rest = parse_cstruct_be(input, &mut v)?;
+        Ok((v, rest))
+    }
+}
+
+#[derive(Default, Reflect, Debug)]
+pub struct CharacterSegmentedCoverageGroup {
+    start_char_code: u32,
+    end_char_code: u32,
+    start_glyph_id: u32,
+}
+
+impl CharacterSegmentedCoverageGroup {
+    fn parse(input: &[u8]) -> ParseResult<Self, &[u8]> {
+        let mut v = Self::default();
+        let rest = parse_cstruct_be(input, &mut v)?;
+        Ok((v, rest))
+    }
+}
+
+impl CharacterSegmentedCoverageMapping {
+    fn lookup(&self, code: u32) -> Result<u16> {
+        let idx = self.groups.binary_search_by(|g| {
+            if code < g.start_char_code {
+                std::cmp::Ordering::Greater
+            } else if code > g.end_char_code {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+
+        match idx {
+            Ok(i) => {
+                let g = &self.groups[i];
+                let offset = code - g.start_char_code;
+                Ok((g.start_glyph_id + offset) as u16)
+            }
+            Err(_) => Ok(0),
+        }
+    }
+
+    fn lookup_all(&self) -> Result<Vec<(u32, u16)>> {
+        let mut pairs = vec![];
+        for g in &self.groups {
+            for code in g.start_char_code..=g.end_char_code {
+                let offset = code - g.start_char_code;
+                pairs.push((code, (g.start_glyph_id + offset) as u16));
+            }
+        }
+        Ok(pairs)
+    }
+
+    parser!(parse<&[u8], Self> => seq!(c => {
+        let header = c.next(CharacterSegmentedCoverageMappingHeader::parse)?;
+        let mut groups = vec![];
+        for _ in 0..header.num_groups {
+            groups.push(c.next(CharacterSegmentedCoverageGroup::parse)?);
+        }
+        Ok(Self { header, groups })
     }));
 }
 
@@ -836,7 +933,7 @@ impl OpenTypeFont {
     }
 
     // TODO: Precompute paths for all glpyhs.
-    pub fn char_glyph(&self, code: u16) -> Result<(SimpleGlyph, &HorizontalMetricRecord)> {
+    pub fn char_glyph(&self, code: u32) -> Result<(SimpleGlyph, &HorizontalMetricRecord)> {
         let glyph_id = self.cmap.subtables[0].lookup(code)? as usize;
 
         // TODO: Check that index_to_loc[0] is always zero and the last one is

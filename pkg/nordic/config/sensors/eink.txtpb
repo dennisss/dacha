@@ -1,0 +1,15 @@
+# proto-file: pkg/nordic/proto/sensor.proto
+# proto-message: SensorConfig
+
+# heartbeat_ms: 30000
+
+eink {
+    mosi_pin: "P1.09"
+    sclk_pin: "P0.08"
+    cs_pin: "P0.06"
+    on_pin: "P1.12"
+    dc_pin: "P0.05"
+    reset_pin: "P0.27"
+    busy_pin: "P0.26"    
+}
+

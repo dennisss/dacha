@@ -1,0 +1,17 @@
+[package]
+name = "nordic_bitmaps_generator"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../../common" }
+macros = { path = "../../../macros" }
+image = { path = "../../../image" }
+file = { path = "../../../file" }
+graphics = { path = "../../../graphics" }
+executor = { path = "../../../executor" }
+
+[features]
+default = ["std", "alloc"]
+alloc = []
+std = []

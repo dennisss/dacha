@@ -3,7 +3,7 @@ use std::time::{Instant, Duration};
 use std::future::Future;
 
 use common::errors::*;
-use nordic_tools::usb_radio::{USBRadio, ClockTimeResponse, USBSOFResponse};
+use nordic_driver::usb_radio::{USBRadio, ClockTimeResponse, USBSOFResponse};
 use peripherals_proto::peripherals::*;
 
 use crate::config::*;
@@ -586,6 +586,55 @@ impl PeripheralsDevice {
 
         Ok(v)
     }
+
+    pub async fn recv_radio_packet(&self, buffer_name: &str) -> Result<Vec<u8>> {
+        let buffer_index = self.periph_config(buffer_name)?.index();
+
+        let mut req = PeripheralRequest::default();
+        req.set_peripheral_index(buffer_index);
+        req.set_recv_radio_packet(true);
+        let res = self.usb_device.send_request(&req).await?;
+
+        self.fetch_buffer_impl(buffer_index).await
+    }
+
+    pub async fn send_radio_packet(&self, buffer_name: &str, data: &[u8]) -> Result<()> {
+        let buffer_index = self.periph_config(buffer_name)?.index();
+
+        let mut batch = vec![];
+
+        batch.push({
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(buffer_index);
+            req.set_clear_buffer(true);
+            req
+        });
+
+        self.send_request_batch(&batch[..]).await?;
+        batch.clear();
+
+        for chunk in data.chunks(32) {
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(buffer_index);
+            req.set_write_buffer(chunk);
+            batch.push(req);
+        }
+
+        self.send_request_batch(&batch[..]).await?;
+        batch.clear();
+
+        batch.push({
+            let mut req = PeripheralRequest::default();
+            req.set_peripheral_index(buffer_index);
+            req.set_send_radio_packet(true);
+            req
+        });
+
+        self.send_request_batch(&batch[..]).await?;
+       
+        Ok(())
+    }
+
 
     pub async fn enqueue_stepper_motion(
         &self,

@@ -5,7 +5,7 @@
 /*
 cargo run --bin builder -- build //pkg/nordic:nordic_blink --config=//pkg/nordic:nrf52840
 
-cargo run --bin flasher -- built/pkg/nordic/nordic_blink
+cargo run --bin flasher -- built/pkg/nordic/nordic_blink uf2-dfu --usb_device_id=8888:0001
 
 cargo run --bin nordic_log_reader
 */
@@ -28,6 +28,7 @@ extern crate logging;
 
 use core::arch::asm;
 
+use executor::CriticalSection;
 use nordic::gpio::GPIO;
 use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio_socket::RadioSocket;
@@ -37,6 +38,8 @@ use nordic::controller::PeripheralsController;
 use nordic::usb::controller::USBDeviceController;
 use nordic_wire::usb_descriptors::*;
 use peripherals::raw::{PinDirection, PinLevel};
+use nordic::gpiote::GPIOPortWaiter;
+use nordic::gpio::Resistor;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
 
@@ -49,6 +52,7 @@ async fn blinker_thread_fn() {
 
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
+    /*
     // TODO: Make the radio socket optional.
     BlinkUSBThread::start(
         BLINK_USB_DESCRIPTORS,
@@ -59,6 +63,7 @@ async fn blinker_thread_fn() {
     );
 
     log!("Started up!");
+    */
 
     let mut blink_pin = {
         // if USING_DEV_KIT {
@@ -72,19 +77,15 @@ async fn blinker_thread_fn() {
         // }
     };
 
-    blink_pin.set_direction(PinDirection::Output);
-
-    let mut counter: u32 = 0;
+    blink_pin.reset();
 
     loop {
-        blink_pin.write(PinLevel::Low);
-        timer.wait_ms(500).await;
+        blink_pin.reset();
+        blink_pin.set_direction(PinDirection::Output).write(PinLevel::Low);
+        timer.wait_ms(1000).await;
 
-        blink_pin.write(PinLevel::High);
-        timer.wait_ms(500).await;
-
-        log!(counter + 20);
-        counter += 1;
+        blink_pin.reset();
+        timer.wait_ms(1000).await;
     }
 }
 
@@ -98,29 +99,66 @@ define_thread!(
     rtc: RTC
 );
 
+
+const RAM_SIZE: u32 = 32 * 1024;
+
 entry!(main);
 fn main() -> () {
+
+    // TODO: Disable interrupts first.
+
+    reset_stack(nordic::ram::RAM_START_ADDRESS + RAM_SIZE, main_inner);
+}
+
+extern "C" fn main_inner() -> ! {
     // Disable interrupts.
     // TODO: Disable FIQ interrupts?
-    unsafe { asm!("cpsid i") }
-
-    //
+    // TODO: Use standard interrupt system
+    let cs = CriticalSection::new();
 
     let mut peripherals = peripherals::raw::Peripherals::new();
 
-    nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+    nordic::ram::configure_retained_ram(0, RAM_SIZE, &mut peripherals.power);
+
+    // This doesn't seem to help.
+    // peripherals.radio.power.write_disabled();
+
+    // This seems to increase power usage.
+    peripherals.power.dcdcen.write_enabled();
+
+    peripherals.power.tasks_lowpwr.write_trigger();
+
+
+    // nordic::clock::reference_hfclk();
     nordic::clock::init_low_freq_clk(
         // TODO: Default to using the RC
         nordic::clock::LowFrequencyClockSource::CrystalOscillator,
         &mut peripherals.clock,
     );
 
+    // TODO: Do this consistently outside of the bootloader.
+    peripherals.nvmc.icachecnf.write_with(|v| v.set_cacheen_with(|v| v.set_enabled()));
+
     Blinker::start();
 
     // Enable interrupts.
-    unsafe { asm!("cpsie i") };
+    drop(cs);
 
     loop {
-        unsafe { asm!("nop") };
+        unsafe { asm!("wfi") };
     }
 }
+
+/// Sets the stack pointer to new_sp and then jumps to 'f'.
+fn reset_stack(new_sp: u32, f: extern "C" fn() -> !) -> ! {
+    unsafe {
+        asm!(
+            "mov sp, {sp}",
+            "bx {ep}",
+            sp = in(reg) new_sp,
+            ep = in(reg) f,
+            options(noreturn)
+        );
+    }
+}
+

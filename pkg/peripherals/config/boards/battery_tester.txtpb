@@ -1,0 +1,29 @@
+name: "battery_tester"
+base_config: "nrf52840_itsybitsy"
+
+peripherals {
+    name: "sense"
+    adc {
+        pin_name: "A0"
+        config {
+            oversampling: 16
+            sample_rate: 160000
+            max_voltage: 3.3
+        }
+    }
+}
+
+##################
+
+peripherals {
+    name: "load"
+    gpio {
+        pin_name: "A2"
+        config {
+            is_input: false
+            default_value: false
+        }
+    }
+}
+
+

@@ -138,120 +138,6 @@ const USING_DEV_KIT: bool = true;
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
 // static BLOCK_STORAGE: Singleton<BlockStorage<Microchip24XX256>> = Singleton::uninit();
 
-/*
-Given a LinearMotion in step units, execute it.
-- Need to know start position, current position and start time.
-- Use time_to_travel to determine when the next step should be performed
-- Execute this tick
-
-For 100ms/s, I'd need to support 10K steps per second.
-*/
-
-/*
-[
-    LinearMotion {
-        start_position: 0.0
-        start_velocity: 0.0
-        end_position: 10240.0
-        end_velocity: 3200.0
-        acceleration: 500.0
-        duration: 6.4,
-    },
-    LinearMotion {
-        start_position: 10240.0
-        start_velocity: 3200.0
-        end_position: 53760.0
-        end_velocity: 3200.0
-        acceleration: 0.0
-        duration: 13.6,
-    },
-    LinearMotion {
-        start_position: 53760.0
-        start_velocity: 3200.0
-        end_position: 64000.0
-        end_velocity: 0.0
-        acceleration: -500.0
-        duration: 6.4,
-    },
-]
-
-*/
-
-/*
-use cnc::linear_motion::LinearMotion;
-use math::matrix::Vector3f;
-
-async fn run_cnc(mut timer: Timer, mut step_pin: GPIOPin) {
-    let motions = &[
-        LinearMotion {
-            start_position: Vector3f::from_slice(&[0.0, 0.0, 0.0]),
-            start_velocity: Vector3f::from_slice(&[0.0, 0.0, 0.0]),
-            end_position: Vector3f::from_slice(&[10240.0, 0.0, 0.0]),
-            end_velocity: Vector3f::from_slice(&[3200.0, 0.0, 0.0]),
-            acceleration: Vector3f::from_slice(&[500.0, 0.0, 0.0]),
-            duration: 6.4,
-        },
-        LinearMotion {
-            start_position: Vector3f::from_slice(&[10240.0, 0.0, 0.0]),
-            start_velocity: Vector3f::from_slice(&[3200.0, 0.0, 0.0]),
-            end_position: Vector3f::from_slice(&[53760.0, 0.0, 0.0]),
-            end_velocity: Vector3f::from_slice(&[3200.0, 0.0, 0.0]),
-            acceleration: Vector3f::from_slice(&[0.0, 0.0, 0.0]),
-            duration: 13.6,
-        },
-        LinearMotion {
-            start_position: Vector3f::from_slice(&[53760.0, 0.0, 0.0]),
-            start_velocity: Vector3f::from_slice(&[3200.0, 0.0, 0.0]),
-            end_position: Vector3f::from_slice(&[64000.0, 0.0, 0.0]),
-            end_velocity: Vector3f::from_slice(&[0.0, 0.0, 0.0]),
-            acceleration: Vector3f::from_slice(&[-500.0, 0.0, 0.0]),
-            duration: 6.4,
-        },
-    ];
-
-    let mut current_position: i32 = 0;
-
-    for motion in motions {
-        // NOTE: Assume current_position == motion.start_position[0]
-
-        // TODO: Eventually use the absolute start time.
-        let mut current_time = timer.now();
-
-        let start_position = motion.start_position[0] as i32;
-
-        assert_no_debug!(start_position == current_position);
-
-        let end_position = motion.end_position[0] as i32;
-
-        let step_dir = 1; // Forwards
-
-        while current_position != end_position {
-            let next_position = current_position + step_dir;
-
-            let end_time = current_time.add_seconds(cnc::kinematics::time_to_travel(
-                (next_position - start_position) as f32,
-                motion.start_velocity[0],
-                motion.acceleration[0],
-            ));
-
-            step_pin.write(PinLevel::High);
-            for i in 0..10 {
-                unsafe { asm!("nop") };
-            }
-            step_pin.write(PinLevel::Low);
-
-            timer.wait_until(end_time).await;
-
-            current_position = next_position;
-        }
-
-        // log!("Y");
-    }
-
-    log!("Z");
-}
-*/
-
 define_thread!(Blinker, blinker_thread_fn);
 async fn blinker_thread_fn() {
     let mut peripherals = peripherals::raw::Peripherals::new();
@@ -592,7 +478,7 @@ fn main() -> () {
 
     let mut peripherals = peripherals::raw::Peripherals::new();
 
-    nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+    nordic::clock::reference_hfclk();
     nordic::clock::init_low_freq_clk(
         nordic::clock::LowFrequencyClockSource::CrystalOscillator,
         &mut peripherals.clock,

@@ -3,12 +3,13 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
-use std::time::{Instant, Duration};
+use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 use std::process::{Command, Stdio, Child, ChildStdin};
 use std::io::Write;
 
 use common::errors::*;
 use base_args::define_arg_command;
+use file::{LocalPath, LocalPathBuf};
 use scpi::*;
 
 
@@ -20,6 +21,10 @@ cargo run --bin scpi --release -- record-screen --addr=10.1.0.135 --output_path=
 
 
 cargo run --bin scpi -- measure-voltage --addr=10.1.0.135
+
+cargo run --bin scpi -- measure-voltage --addr=10.1.0.135 --interval_secs=5 --output_path=lipo_voltage.csv
+
+
 */
 
 #[derive(Args)]
@@ -123,19 +128,52 @@ impl MeasureTempCommand {
 
 #[derive(Args)]
 struct MeasureVoltageCommand {
-    addr: String
+    addr: String,
+    interval_secs: Option<f64>,
+    output_path: Option<LocalPathBuf>,
 }
 
 impl MeasureVoltageCommand {
 
 
     pub async fn run(self) -> Result<()> {
+
+        if let Some(interval_secs) = self.interval_secs.clone() {
+            let output_path = self.output_path.as_ref().ok_or_else(|| err_msg("No output path specified"))?;
+
+            file::write(&output_path, "time,voltage\n").await?;
+
+            loop {
+                eprintln!("Sampling loop failed: {:?}",
+                    self.run_sampling(Duration::from_secs_f64(interval_secs),  output_path.as_ref()).await);
+                executor::sleep(Duration::from_secs(5)).await?;
+            }
+
+            return Ok(());
+        }
+
         let mut client = SCPIClient::create(&self.addr).await?;
 
         let v = client.measure_voltage().await?;
         println!("{}", v);
 
         Ok(())
+    }
+
+    async fn run_sampling(&self, interval: Duration, output_path: &LocalPath) -> Result<()> {
+        let mut client = SCPIClient::create(&self.addr).await?;
+
+        loop {
+            let v = client.measure_voltage().await?;
+            file::append(output_path, format!("{},{}\n", Self::now(), v).as_bytes()).await?;
+            println!("V: {}", v);
+            executor::sleep(interval).await?;
+        }
+    }
+
+    fn now() -> f64 {
+        let now = SystemTime::now();
+        now.duration_since(UNIX_EPOCH).unwrap().as_secs_f64()
     }
 
 }

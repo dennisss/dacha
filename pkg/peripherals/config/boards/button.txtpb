@@ -1,0 +1,175 @@
+name: "button"
+base_config: "nrf52840"
+
+
+# P0.03 : Magnetic switch
+# DRV5032FBDBZR : Goes low when the magnetic threshold is exceeded.
+peripherals {
+    name: "magnet"
+    gpio {
+        pin_name: "P0.03"
+        config {
+            is_input: true
+        }
+    }
+}
+
+# P0.07 : Button
+peripherals {
+    name: "button"
+    gpio {
+        pin_name: "P0.07"
+        config {
+            is_input: true
+            pull_up: true
+            interrupt: LOW_LEVEL
+        }
+    }
+}
+
+# P0.19 : SCL
+# P0.22 : SDA
+# HDC2080   : (Address: 1000000)
+# OPT3004DNPR
+peripherals {
+    name: "i2c"
+    i2c {
+        sda_pin_name: "P0.22"
+        scl_pin_name: "P0.19"
+        config {
+            frequency: 100000
+        }
+    }
+}
+
+# P0.25 : AMBIENT_INT
+# Open drain
+peripherals {
+    name: "light"
+    gpio {
+        pin_name: "P0.25"
+        config {
+            is_input: true
+            pull_up: true
+            interrupt: LOW_LEVEL
+        }
+    }
+}
+
+# ADXL362BCCZ-RL
+# P0.09 : ACCEL_SCLK
+# P0.10 : ACCEL_MOSI
+# P1.13 : ACCEL_INT (INT1)
+# P1.06 : ACCEL_MISO
+# P1.10 : ACCEL_CS
+peripherals {
+    name: "accel_spi"
+    spi {
+        miso_pin_name: "P1.06"
+        mosi_pin_name: "P0.10"
+        sclk_pin_name: "P0.09"
+        cs_pin_name: "P1.10"
+        config {
+            frequency: 1000000
+            mode: 0
+        }
+    }
+}
+peripherals {
+    name: "accel_int"
+    gpio {
+        pin_name: "P1.13"
+        config {
+            is_input: true
+            interrupt: HIGH_LEVEL
+        }
+    }
+}
+
+# P0.05 : EINK_DC
+# P0.06 : EINK_CS
+# P0.08 : EINK_SCLK
+# P0.26 : EINK_BUSY
+# P0.27 : EINK_RES
+# P1.09 : EINK_SDI
+# P1.12 : EINK_ON
+peripherals {
+    name: "eink_spi"
+    spi {
+        miso_pin_name: "P0.13" # DUMMY PIN
+        mosi_pin_name: "P1.09"
+        sclk_pin_name: "P0.08"
+        cs_pin_name: "P0.06"
+        config {
+            frequency: 1000000
+            mode: 0
+        }
+    }
+}
+peripherals {
+    name: "eink_on"
+    gpio {
+        pin_name: "P1.12"
+        config {
+            is_input: false
+        }
+    }
+}
+peripherals {
+    name: "eink_dc"
+    gpio {
+        pin_name: "P0.05"
+        config {
+            is_input: false
+        }
+    }
+}
+peripherals {
+    name: "eink_reset"
+    gpio {
+        pin_name: "P0.27"
+        config {
+            is_input: false
+        }
+    }
+}
+peripherals {
+    name: "eink_busy"
+    gpio {
+        pin_name: "P0.26"
+        config {
+            is_input: true
+        }
+    }
+}
+
+
+
+# PIR input: B3
+# Encoder (all driven to GND on active)
+# - Button: A1
+# - Terminal A: C1
+# - Terminal B: D1 
+
+
+
+
+# P0.04 : LED
+
+
+# P0.11 : PIN_C2
+# P0.13 : PIN_A3
+# P0.14 : PIN_C1
+# P0.20 : PIN_A2
+# P0.21 : HUMID_INT
+# P0.23 : PIN_B3
+
+
+# P0.28 : PIN_D1
+# P1.00 : PIN_A1
+# P1.03 : PIN_B2
+
+# P1.11 : PIN_B1
+
+
+# P1.15 : PIN_D2

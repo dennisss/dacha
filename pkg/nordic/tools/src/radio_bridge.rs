@@ -7,37 +7,42 @@ use common::errors::*;
 use common::list::Appendable;
 use crypto::random::SharedRng;
 use executor::sync::AsyncMutex;
+use executor_multitask::*;
 use executor::{channel, lock};
 use nordic_tools_proto::nordic::*;
 use nordic_wire::constants::{RadioAddress, LINK_IV_SIZE, LINK_KEY_SIZE};
 use nordic_wire::packet::PacketBuffer;
+use nordic_driver::usb_radio::USBRadio;
+use peripherals_service::device::PeripheralsDevice;
 
 use crate::link_util::generate_radio_address;
-use crate::usb_radio::USBRadio;
 
 const POLLING_INTERVAL: Duration = Duration::from_millis(100);
 
 const PACKET_COUNTER_SAVE_INTERVAL: u32 = 1000;
 
 pub struct RadioBridge {
-    inner: RadioBridgeInner,
-    radio: USBRadio,
-    radio_event_receiver: channel::Receiver<()>,
-}
-
-#[derive(Clone)]
-struct RadioBridgeInner {
+    resources: ServiceResourceGroup,
     shared: Arc<Shared>,
 }
 
+impl_resource_passthrough!(RadioBridge, resources);
+
 struct Shared {
     state: AsyncMutex<State>,
+
+    device: Arc<PeripheralsDevice>,
 
     meta_client: Arc<ClusterMetaClient>,
 
     /// Events an event to the radio thread whenever a new config/queue change
     /// occurs.
     radio_event_sender: channel::Sender<()>,
+}
+
+#[derive(Clone)]
+struct RadioBridgeInner {
+    shared: Arc<Shared>,
 }
 
 struct State {
@@ -58,10 +63,21 @@ struct State {
 }
 
 impl RadioBridge {
-    pub async fn create(state_object_name: &str, usb: &usb::DeviceSelector) -> Result<Self> {
-        let mut radio = USBRadio::find(&usb).await?;
+    pub async fn create(
+        meta_client: Arc<ClusterMetaClient>,
+        state_object_name: &str
+    ) -> Result<Self> {
+        let resources = ServiceResourceGroup::new("RadioBridge");
 
-        let mut meta_client = ClusterMetaClient::create_from_environment().await?;
+        let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
+
+        let config = configs.remove(&"radio_bridge_dongle")
+            .ok_or_else(|| err_msg("No config with the given name"))?;
+
+        let (mut device, _) = PeripheralsDevice::create(&config).await?;
+
+        // TODO: Add as a Resource.
+        let device = Arc::new(device);
 
         // TODO: We should ideally grab a lock on this key to ensure there aren't
         // concurrent mutations. We can cache this in memory so long as we monitor the
@@ -95,72 +111,109 @@ impl RadioBridge {
 
         let (radio_event_sender, radio_event_receiver) = channel::bounded(1);
 
+        let shared = Arc::new(Shared {
+            meta_client,
+            device,
+            state: AsyncMutex::new(State {
+                state_object_name: state_object_name.to_string(),
+                state_data: state_data.clone(),
+                // last_packet_counter: state_data.network().last_packet_counter(),
+                receivers: HashMap::new(),
+                send_queue: vec![],
+                config_changed: true,
+            }),
+            radio_event_sender,
+        });
+
+        // TODO: NEed a periodic request to verify MCU liveness.
+
+        resources.spawn_interruptable("TX", Self::tx_thread(shared.clone(), radio_event_receiver)).await;
+        resources.spawn_interruptable("RX", Self::rx_thread(shared.clone())).await;
+        // resources.spawn_interruptable("Log", Self::log_thread(shared.clone())).await;
+
         Ok(Self {
-            radio,
-            radio_event_receiver,
-            inner: RadioBridgeInner {
-                shared: Arc::new(Shared {
-                    meta_client,
-                    state: AsyncMutex::new(State {
-                        state_object_name: state_object_name.to_string(),
-                        state_data: state_data.clone(),
-                        // last_packet_counter: state_data.network().last_packet_counter(),
-                        receivers: HashMap::new(),
-                        send_queue: vec![],
-                        config_changed: true,
-                    }),
-                    radio_event_sender,
-                }),
-            },
+            resources,
+            shared
         })
     }
 
-    pub fn add_services(&self, rpc_server: &mut rpc::Http2Server) -> Result<()> {
-        rpc_server.add_service(self.inner.clone().into_service())?;
-        Ok(())
-    }
-
-    pub async fn run(mut self) -> Result<()> {
-        self.inner
-            .radio_thread(self.radio, self.radio_event_receiver)
-            .await
-    }
-}
-
-impl RadioBridgeInner {
-    async fn radio_thread(
-        self,
-        mut radio: USBRadio,
-        event_receiver: channel::Receiver<()>,
-    ) -> Result<()> {
+    async fn log_thread(shared: Arc<Shared>) -> Result<()> {
         loop {
-            let mut state = self.shared.state.lock().await?.enter();
 
-            if state.config_changed {
-                radio.set_network_config(state.state_data.network()).await?;
-                state.config_changed = false;
+            let log = shared.device.raw().read_log_entries().await?;
+            if !log.is_empty() {
+                eprintln!("Log: {:?}", log);
             }
 
-            while let Some(packet) = radio.recv_packet().await? {
-                // TODO: Update the last received packet counter (and verify that we haven't
-                // received an old packet).
+            executor::sleep(Duration::from_secs(1)).await?;
+        }
+    }
+
+    async fn rx_thread(shared: Arc<Shared>) -> Result<()> {
+        let mut packet = PacketBuffer::new();
+        
+        // TODO: Update the last received packet counter (and verify that we haven't
+        // received an old packet).
+
+        executor::sleep(Duration::from_secs(1)).await?;
+
+        loop {
+            let data = shared.device.recv_radio_packet("rx_buffer").await?;
+            packet.raw_mut()[0..data.len()].copy_from_slice(&data[..]);
+
+            println!("RX {:?}", packet.remote_address());
+
+            lock!(state <= shared.state.lock().await?, {
 
                 if let Some(receiver) = state.receivers.get(packet.remote_address()) {
                     // TODO: Add the name to these?
                     let mut packet_proto = RadioBridgePacket::default();
                     packet_proto.set_data(packet.data());
 
-                    receiver.send(packet_proto).await?;
+                    // TODO: Issue a warning on overflow.
+                    let _ = receiver.try_send(packet_proto);
                 }
+            });
+        }
+    }
+
+    // NOTE: We only support 1 transmission at a time so this is its own single thread
+    // to limit transmission concurrency.
+    async fn tx_thread(
+        shared: Arc<Shared>,
+        event_receiver: channel::Receiver<()>,
+    ) -> Result<()> {
+
+        loop {
+
+            let mut new_config = None;
+            let mut next_packet = None;
+            
+            lock!(state <= shared.state.lock().await?, {
+                if state.config_changed {
+                    new_config = Some(state.state_data.network().clone());
+                    state.config_changed = false;
+                }
+                
+                if let Some(packet) = state.send_queue.pop() {
+                    let address = Self::name_to_address(packet.device_name(), &state);
+                    next_packet = Some((address, packet));
+                }
+            });
+
+            if let Some(config) = new_config {
+                shared.device.raw().set_network_config(&config).await?;
             }
 
-            while let Some(packet) = state.send_queue.pop() {
-                let address = match self.name_to_address(packet.device_name(), &state) {
+            if let Some((address, packet)) = next_packet {
+                let address = match address {
                     Some(addr) => addr,
                     // NOTE: If a device is removed shortly after a Send RPC, it may not be sent or
                     // return an error to the caller in this case.
                     None => continue,
                 };
+
+                println!("TX: {:?}", address);
 
                 let mut packet_buffer = PacketBuffer::new();
                 // packet_buffer.set_counter(self.next_packet_counter(&mut state).await?);
@@ -168,16 +221,17 @@ impl RadioBridgeInner {
                 packet_buffer.resize_data(packet.data().len());
                 packet_buffer.data_mut().copy_from_slice(packet.data());
 
-                radio.send_packet(&packet_buffer).await?;
+                shared.device.send_radio_packet("tx_buffer", packet_buffer.as_bytes()).await?;
+
+                // Check if there are more packets to send.
+                continue;
             }
 
-            state.exit();
-
-            let _ = executor::timeout(POLLING_INTERVAL, event_receiver.recv()).await;
+            let _ = event_receiver.recv().await;
         }
     }
 
-    fn name_to_address(&self, name: &str, state: &State) -> Option<RadioAddress> {
+    fn name_to_address(name: &str, state: &State) -> Option<RadioAddress> {
         state
             .state_data
             .devices()
@@ -210,7 +264,7 @@ impl RadioBridgeInner {
 }
 
 #[async_trait]
-impl RadioBridgeService for RadioBridgeInner {
+impl RadioBridgeService for RadioBridge {
     async fn ListDevices(
         &self,
         request: rpc::ServerRequest<protobuf_builtins::google::protobuf::Empty>,
@@ -242,8 +296,7 @@ impl RadioBridgeService for RadioBridgeInner {
 
         let mut state = self.shared.state.lock().await?.read_exclusive();
 
-        if self
-            .name_to_address(request.device().name(), &state)
+        if Self::name_to_address(request.device().name(), &state)
             .is_some()
         {
             return Err(rpc::Status::already_exists("Device already exists").into());
@@ -351,8 +404,7 @@ impl RadioBridgeService for RadioBridgeInner {
         response: &mut rpc::ServerResponse<protobuf_builtins::google::protobuf::Empty>,
     ) -> Result<()> {
         lock!(state <= self.shared.state.lock().await?, {
-            if self
-                .name_to_address(request.device_name(), &state)
+            if Self::name_to_address(request.device_name(), &state)
                 .is_none()
             {
                 return Err(rpc::Status::not_found("No such device"));
@@ -374,8 +426,7 @@ impl RadioBridgeService for RadioBridgeInner {
     ) -> Result<()> {
         let reg = lock!(state <= self.shared.state.lock().await?, {
             // Resolve the device name to an address.
-            let address = self
-                .name_to_address(request.device_name(), &state)
+            let address = Self::name_to_address(request.device_name(), &state)
                 .ok_or_else(|| {
                     rpc::Status::not_found(format!(
                         "No registered device named: {}",
@@ -416,15 +467,15 @@ impl RadioBridgeService for RadioBridgeInner {
 struct ReceiverRegistration<'a> {
     address: RadioAddress,
     receiver: channel::Receiver<RadioBridgePacket>,
-    bridge: &'a RadioBridgeInner,
+    bridge: &'a RadioBridge,
 }
 
 impl<'a> Drop for ReceiverRegistration<'a> {
     fn drop(&mut self) {
-        let inst = self.bridge.clone();
+        let shared = self.bridge.shared.clone();
         let address = self.address.clone();
         executor::spawn(async move {
-            lock!(state <= inst.shared.state.lock().await.unwrap(), {
+            lock!(state <= shared.state.lock().await.unwrap(), {
                 state.receivers.remove(&address);
             });
         });

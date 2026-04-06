@@ -200,7 +200,7 @@ impl TextMessageFile {
 // TextMessage = TextField*
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextMessage {
-    fields: Vec<TextField>,
+    pub fields: Vec<TextField>,
 }
 
 impl TextMessage {
@@ -237,7 +237,13 @@ impl TextMessage {
         out
     }
 
-    fn apply(
+    pub fn iter_mut(&mut self, f: &mut dyn FnMut(&mut TextValue)) {
+        for field in &mut self.fields {
+            field.value.iter_mut(f);
+        }
+    }
+
+    pub fn apply(
         &self,
         message: &mut dyn MessageReflection,
         options: &ParseTextProtoOptions,
@@ -296,9 +302,9 @@ impl TextMessage {
 
 // TextField = TextFieldName :?
 #[derive(Debug, Clone, PartialEq)]
-struct TextField {
-    name: TextFieldName,
-    value: TextValue,
+pub struct TextField {
+    pub name: TextFieldName,
+    pub value: TextValue,
 }
 
 impl TextField {
@@ -322,7 +328,7 @@ impl TextField {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum TextFieldName {
+pub enum TextFieldName {
     Regular(String),
     Extension(String),
 }
@@ -347,7 +353,7 @@ impl TextFieldName {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum TextValue {
+pub enum TextValue {
     Bool(bool),
     Integer(i64),
     UnsignedInteger(u64),
@@ -389,6 +395,20 @@ impl TextValue {
             Ok(Self::Array(values))
         })
     ));
+
+    pub fn iter_mut(&mut self, f: &mut dyn FnMut(&mut TextValue)) {
+        f(self);
+        
+        match self {
+            Self::Message(v) => v.iter_mut(f),
+            Self::Array(v) => {
+                for v in v {
+                    v.iter_mut(f);
+                }
+            }
+            _ => {}
+        }
+    }
 
     pub fn to_string(&self) -> String {
         match self {
@@ -566,7 +586,7 @@ pub struct ParseTextProtoOptions<'a> {
 ///
 /// TODO: Long term this should be ideally a streaming interface for more
 /// efficient parsing.
-fn parse_text_syntax(text: &str) -> Result<TextMessage> {
+pub fn parse_text_syntax(text: &str) -> Result<TextMessage> {
     let (v, _) = complete(seq!(c => {
         let v = c.next(TextMessage::parse)?;
         // Can not end with any other meaningful tokens.

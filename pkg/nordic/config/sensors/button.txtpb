@@ -1,0 +1,16 @@
+# proto-file: pkg/nordic/proto/sensor.proto
+# proto-message: SensorConfig
+
+heartbeat_ms: 30000
+
+edge_trigger {
+    pin: "P0.07"
+    pull_up: true
+    falling_trigger: true
+    debounce_rising_ms: 10
+    debounce_falling_ms: 10
+}
+
+
+
+

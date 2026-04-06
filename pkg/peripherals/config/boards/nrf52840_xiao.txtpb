@@ -1,0 +1,10 @@
+# proto-file: pkg/peripherals/proto/service.proto
+# proto-message: BoardConfig
+
+name: "nrf52840_xiao"
+base_config: "nrf52840"
+
+
+# P0.06 : Blue LED (low = on)
+# P0.30 : Green LED (low = on)
+# P0.26 : Red LED

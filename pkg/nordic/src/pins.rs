@@ -146,3 +146,30 @@ impl PeripheralPin for DisconnectedPin {
     fn port(&self) -> Port { panic!() }
     fn pin(&self) -> u8 { panic!() }
 }
+
+
+/// NOTE: It is somewhat unsafe to use this.
+pub struct IndexedPin {
+    pub index: u32,
+}
+
+impl IndexedPin {
+    pub fn new(index: u32) -> Self {
+        Self { index }
+    }
+}
+
+impl PeripheralPin for IndexedPin {
+    fn pin(&self) -> u8 {
+        (self.index % 32) as u8
+    }
+
+    fn port(&self) -> crate::pins::Port {
+        if self.index >= 32 {
+            Port::P1
+        } else {
+            Port::P0
+        }
+    }
+}
+

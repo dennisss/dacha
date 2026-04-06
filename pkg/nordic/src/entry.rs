@@ -92,6 +92,11 @@ extern "C" {
 }
 
 /// Minimal interrupt vector table needed to run entry().
+///
+/// This is just used by the bootloader as the preliminary vector table before
+/// we switch to using the full vector table that has been copied into RAM.
+///
+/// So most applications won't use this.
 #[no_mangle]
 #[link_section = ".entry_vector_table"]
 static ENTRY_RESET_VECTOR: [::executor::interrupts::InterruptHandler; 15] = [

@@ -1,0 +1,14 @@
+# proto-file: pkg/nordic/proto/sensor.proto
+# proto-message: SensorConfig
+
+# This is for use with the nRF52840 USB Dongle (the blue one sold by Nordic)
+
+heartbeat_ms: 30000
+
+edge_trigger {
+    pin: "P1.06"
+    pull_up: true
+    falling_trigger: true
+    debounce_rising_ms: 10
+    debounce_falling_ms: 10
+}

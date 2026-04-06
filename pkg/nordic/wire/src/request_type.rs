@@ -11,9 +11,13 @@ enum_def_with_unknown!(ProtocolRequestType u8 =>
     // device does have its own persistent storage set up, this will fail.
     //
     // [Host -> Device]
+    //
+    // DEPRECATED
     Send = 1,
 
     // [Device -> Host]
+    //
+    // DEPRECATED
     Receive = 2,
 
     // Reads the value of the last packet counter sent by this device.
@@ -37,5 +41,9 @@ enum_def_with_unknown!(ProtocolRequestType u8 =>
     //   [length: u8] [data: LogEntry proto]
     //
     // [Device -> Host]
-    ReadLog = 6
+    ReadLog = 6,
+
+    SetSensorConfig = 7,
+
+    GetSensorConfig = 8
 );

@@ -453,8 +453,22 @@ impl USBRadio {
         Ok(res.uint_val())
     }
 
-    pub async fn set_network_config(&mut self, config: &NetworkConfig) -> Result<()> {
-        let proto = config.serialize()?;
+    fn serialize_proto_packet(proto: &dyn protobuf::Message) -> Result<Vec<u8>> {
+        let data = proto.serialize()?;
+
+        let mut out = vec![];
+        out.push(data.len() as u8);
+        out.extend_from_slice(&data);
+
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+
+        Ok(out)
+    }
+
+    pub async fn set_network_config(&self, config: &NetworkConfig) -> Result<()> {
+        let proto = Self::serialize_proto_packet(config)?;
         Self::control_write(
             &self.shared,
             ProtocolRequestType::SetNetworkConfig,
@@ -463,7 +477,30 @@ impl USBRadio {
         Ok(())
     }
 
-    pub async fn get_network_config(&mut self) -> Result<Option<NetworkConfig>> {
+    pub async fn set_sensor_config(&self, config: &SensorConfig) -> Result<()> {
+        let proto = Self::serialize_proto_packet(config)?;
+        Self::control_write(
+            &self.shared,
+            ProtocolRequestType::SetSensorConfig,
+            &proto
+        ).await?;
+        Ok(())
+    }
+
+    fn parse_proto_packet<M: protobuf::StaticMessage>(data: &[u8]) -> Result<Option<M>> {
+        if data.len() == 0 {
+            return Ok(None);
+        }
+
+        let len = data[0] as usize;
+        if 1 + len > data.len() {
+            return Err(err_msg("Malformed data"));
+        }
+
+        Ok(Some(M::parse(&data[1..(1 + len)])?))
+    }
+
+    pub async fn get_network_config(&self) -> Result<Option<NetworkConfig>> {
         let mut read_buffer = [0u8; 256];
         // TODO: Set a timeout on this and reset the device on failure.
 
@@ -477,67 +514,27 @@ impl USBRadio {
             return Ok(None);
         }
 
-        Ok(Some(NetworkConfig::parse(&read_buffer[0..n])?))
+        Self::parse_proto_packet(&read_buffer[0..n])
     }
 
-    pub async fn send_packet(&mut self, packet: &PacketBuffer) -> Result<()> {
-        // TODO: Support retrying this (must consider the idempotence of actions).
-        Self::control_write(
+    pub async fn get_sensor_config(&self) -> Result<Option<SensorConfig>> {
+        let mut read_buffer = [0u8; 256];
+        // TODO: Set a timeout on this and reset the device on failure.
+
+        let n = Self::control_read(
             &self.shared,
-            ProtocolRequestType::Send,
-            packet.as_bytes()
+            ProtocolRequestType::GetSensorConfig,
+            &mut read_buffer
         ).await?;
-        Ok(())
-    }
 
-    /// NOTE: Does not block if a packet isn't currently available.
-    pub async fn recv_packet(&mut self) -> Result<Option<PacketBuffer>> {
-        let mut packet_buffer = PacketBuffer::new();
-
-        let mut num_bytes = None;
-        for attempt in 0..4 {
-            match executor::timeout(
-                Duration::from_millis(5),
-                self.shared.device.read_control(
-                    SetupPacket {
-                        bmRequestType: 0b11000000,
-                        bRequest: ProtocolRequestType::Receive.to_value(),
-                        wValue: 0,
-                        wIndex: 0,
-                        wLength: packet_buffer.raw_mut().len() as u16,
-                    },
-                    packet_buffer.raw_mut(),
-                ),
-            )
-            .await
-            {
-                Ok(Ok(n)) => {
-                    num_bytes = Some(n);
-                    break;
-                }
-                Err(_) => {
-                    // Timeout
-                    println!("Retrying read_control {}", attempt);
-                    continue;
-                }
-
-                Ok(Err(e)) => {
-                    // Internal USB error
-                    return Err(e);
-                }
-            }
+        if n == 0 {
+            return Ok(None);
         }
 
-        let num_bytes = num_bytes.ok_or_else(|| err_msg("Ran out of USB retries"))?;
-
-        if num_bytes > 0 {
-            Ok(Some(packet_buffer))
-        } else {
-            Ok(None)
-        }
+        Self::parse_proto_packet(&read_buffer[0..n])
     }
 
-    pub async fn read_log_entries(&mut self) -> Result<Vec<LogEntry>> {
+    pub async fn read_log_entries(&self) -> Result<Vec<LogEntry>> {
         let mut buffer = [0u8; 256];
         let n = Self::control_read(
             &self.shared,
@@ -551,6 +548,10 @@ impl USBRadio {
         while i < n {
             let len = buffer[i] as usize;
             i += 1;
+
+            if len == 0 {
+                continue;
+            }
 
             if i + len > n {
                 return Err(err_msg("Log entry larger than buffer length"));

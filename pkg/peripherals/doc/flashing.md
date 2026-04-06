@@ -162,14 +162,14 @@ cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/n
 cargo run --bin flasher -- built/pkg/nordic/nordic_bootloader blackmagic-swd
 ```
 
+If power can't be supplied to the target board easily externally, you can add `--power_device` to the flasher command to power the board at 3.3V via the Black Magic Probe. WARNING: This is more dangerous and may break the board since not all chips are shipped from the factory with registers configured for 3.3V.
+
 Note that once the bootloader is flashed, it can be reflashed using just a USB cable to the target board as described in the `UF2 over USB DFU` method. e.g.
 
 ```
 cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
-cargo run --bin flasher built/pkg/nordic/nordic_bootloader uf2-dfu
+cargo run --bin flasher -- built/pkg/nordic/nordic_bootloader uf2-dfu
 ```
-
-If power can't be supplied to the target board easily externally, you can add `--power_device` to the flasher command to power the board at 3.3V via the Black Magic Probe. WARNING: This is more dangerous and may break the board since not all chips are shipped from the factory with registers configured for 3.3V.
 
 ### UF2 over USB DFU
 

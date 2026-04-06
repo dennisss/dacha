@@ -1,5 +1,5 @@
 extern crate common;
-extern crate nordic_tools;
+extern crate nordic_driver;
 extern crate usb;
 #[macro_use]
 extern crate macros;
@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use common::errors::*;
 use executor::sleep;
-use nordic_tools::usb_radio::USBRadio;
+use nordic_driver::usb_radio::USBRadio;
 
 #[derive(Args)]
 struct Args {

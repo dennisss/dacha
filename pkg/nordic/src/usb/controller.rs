@@ -213,6 +213,7 @@ impl USBDeviceController {
             if self.power.usbregstatus.read().vbusdetect().is_novbus() {
                 self.state = State::Disconnected;
                 self.periph.enable.write_disabled();
+                crate::clock::unreference_hfclk();
                 continue;
             }
             */
@@ -231,6 +232,7 @@ impl USBDeviceController {
                         }
 
                         self.periph.enable.write_enabled();
+                        crate::clock::reference_hfclk();
                         self.state = State::Starting;
                     }
                 }
@@ -238,6 +240,7 @@ impl USBDeviceController {
                     if self.power.usbregstatus.read().vbusdetect().is_novbus() {
                         self.state = State::Disconnected;
                         self.periph.enable.write_disabled();
+                        crate::clock::unreference_hfclk();
                         continue;
                     }
 
@@ -274,6 +277,7 @@ impl USBDeviceController {
                     if self.power.usbregstatus.read().vbusdetect().is_novbus() {
                         self.state = State::Disconnected;
                         self.periph.enable.write_disabled();
+                        crate::clock::unreference_hfclk();
                         continue;
                     }
 
@@ -287,6 +291,7 @@ impl USBDeviceController {
                     if self.power.usbregstatus.read().vbusdetect().is_novbus() {
                         self.state = State::Disconnected;
                         self.periph.enable.write_disabled();
+                        crate::clock::unreference_hfclk();
                         continue;
                     }
 

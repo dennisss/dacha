@@ -1,0 +1,17 @@
+# proto-file: pkg/builder/proto/config.proto
+# proto-message: BuildConfig
+
+platform {
+    os: UNKNOWN
+    architecture: UNKNOWN
+}
+rule_defaults {
+    [type.googleapis.com/builder.RustBinaryAttrs] {
+        compiler: CARGO
+        profile: "mcu-release"
+        no_default_features: true
+        target: "thumbv7em-none-eabi"
+        rustflags: "-C link-arg=-Tpkg/nordic/link.x -C force-frame-pointers=no -C target-feature=-vfp4,-vfp3,-vfp2,-fp16,-d32,-fp64 -Z emit-stack-sizes"
+        cfg: ['target_label="nrf52840"', 'target_label="cortex_m"']
+    }
+}

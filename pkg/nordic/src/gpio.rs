@@ -164,8 +164,9 @@ impl GPIOPin {
         self
     }
 
-    pub fn write(&mut self, level: PinLevel) {
+    pub fn write(&mut self, level: PinLevel) -> &mut Self {
         self.write_bool(level == PinLevel::High);
+        self
     }
 
     pub fn write_bool(&mut self, level: bool) {

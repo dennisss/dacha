@@ -8,7 +8,6 @@ use math::matrix::MatrixXd;
 use math::vecxd;
 use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
-use cluster_client::ClusterServer;
 use cnc_controller_proto::cnc::*;
 use cnc_controller::motion_controller_sim::MotionControllerSimulator;
 use cnc_controller::motion_controller::MotionController;

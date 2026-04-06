@@ -137,7 +137,7 @@ cargo build --bin rpi_imager --release
 
 # TODO: Modify the image and disk path to match your setup. 
 sudo target/release/rpi_imager write \
-    --image=$PWD/third_party/pi-gen/deploy/2025-04-27-Daspbian-lite.img.gz \
+    --image=$PWD/third_party/pi-gen/deploy/2026-01-25-Daspbian-lite.img.gz \
     --disk=/dev/sdc \
     --ssh_public_key=$HOME/.ssh/id_cluster.pub
 ```

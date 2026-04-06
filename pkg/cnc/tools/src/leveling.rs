@@ -20,7 +20,6 @@ use math::matrix::svd::SVD;
 use math::matrix::qr::QR;
 use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
-use cluster_client::ClusterServer;
 use cnc_controller_proto::cnc::*;
 use cnc_controller::config::ControllerConfigRegistry;
 use file::LocalPathBuf;

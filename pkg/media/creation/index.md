@@ -28,13 +28,21 @@ nvm use
 node -r esm pkg/media/creation/animation/js/node.js
 ```
 
+## Davinci Resolve Settings:
+
+- Audio Normalization:
+  - Just select all the dialogue and do `Normalize Audio Levels`, `YouTube`, `Independent`
+- Apply Music:
+  - Volume: -35
+
+
 ## Useful commands:
 
 **Record microphone sound:**
 
 ```
 
-ffmpeg -f pulse -i alsa_input.usb-Shure_Inc_Shure_MV7__MV7__9-b4e25ffce30d955494b292618bd701a7-01.mono-fallback -ac 1 -ar 48000 audio.flac
+ffmpeg -f pulse -i alsa_input.usb-Shure_Inc_Shure_MV7__MV7__9-b4e25ffce30d955494b292618bd701a7-01.mono-fallback -ac 1 -ar 48000 0001_intro.flac
 ```
 
 **Convert WebM to MP4:**

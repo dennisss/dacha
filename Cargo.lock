@@ -498,6 +498,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e8c087f005730276d1096a652e92a8bacee2e2472bcc9715a74d2bec38b5820"
 
 [[package]]
+name = "button"
+version = "0.1.0"
+dependencies = [
+"base_args",
+ "base_error",
+ "base_radix",
+ "cluster_client",
+ "common",
+ "container_proto",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "file",
+ "graphics",
+ "http",
+ "hue",
+ "image",
+ "macros",
+"nordic_bitmaps",
+ "nordic_proto",
+ "nordic_tools_proto",
+ "parsing",
+"peripherals_proto",
+ "peripherals_service",
+ "protobuf",
+ "rpc",
+ "rpc_util",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1094,7 +1124,7 @@ dependencies = [
  "macros",
  "math",
  "math_compute",
- "nordic_tools",
+ "nordic_driver",
  "parsing",
  "peripherals",
  "peripherals_proto",
@@ -3200,12 +3230,58 @@ dependencies = [
  "logging",
  "macros",
  "math",
+ "nordic_bitmaps",
  "nordic_proto",
  "nordic_wire",
  "peripherals",
  "peripherals_proto",
  "protobuf",
  "uf2",
+ "usb",
+]
+
+[[package]]
+name = "nordic_bitmaps"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "macros",
+ "nordic_bitmaps_generator",
+]
+
+[[package]]
+name = "nordic_bitmaps_generator"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "graphics",
+ "image",
+ "macros",
+]
+
+[[package]]
+name = "nordic_driver"
+version = "0.1.0"
+dependencies = [
+ "cluster_client",
+ "common",
+ "crypto",
+ "executor",
+ "executor_multitask",
+ "http",
+ "macros",
+ "nordic_proto",
+ "nordic_wire",
+ "peripherals_proto",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_compiler",
+ "rpc",
+ "rpc_util",
  "usb",
 ]
 
@@ -3224,17 +3300,22 @@ dependencies = [
 name = "nordic_tools"
 version = "0.1.0"
 dependencies = [
+"base_args",
  "cluster_client",
  "common",
+ "container_proto",
  "crypto",
  "executor",
  "executor_multitask",
+"file",
  "http",
  "macros",
+ "nordic_driver",
  "nordic_proto",
  "nordic_tools_proto",
  "nordic_wire",
  "peripherals_proto",
+ "peripherals_service",
  "protobuf",
  "protobuf_builtins",
  "protobuf_compiler",
@@ -3534,7 +3615,7 @@ dependencies = [
  "image",
  "json",
  "macros",
- "nordic_tools",
+ "nordic_driver",
  "parsing",
  "peripherals_proto",
  "protobuf",
@@ -3834,6 +3915,7 @@ dependencies = [
  "executor_multitask",
  "file",
  "macros",
+ "net",
  "parsing",
  "parsing_compiler",
  "sys",
@@ -4444,7 +4526,7 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "base_error",
- "bindgen 0.63.0",
+ "bindgen 0.72.1",
  "common",
  "elf",
  "failure",

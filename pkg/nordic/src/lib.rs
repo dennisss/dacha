@@ -65,5 +65,7 @@ pub mod ppi;
 pub mod adc;
 pub mod neopixel;
 pub mod idle;
+pub mod ram;
+pub mod sensor;
 
 pub use fpu::*;

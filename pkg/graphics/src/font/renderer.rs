@@ -38,7 +38,8 @@ pub struct CanvasFontRenderer {
 
     /// TODO: Eventually delete things from here?
     /// TODO: Do more to ensure this isn't re-used across canvases.
-    glyph_paths: RefCell<HashMap<u16, GlyphPath>>,
+
+    glyph_paths: RefCell<HashMap<u32, GlyphPath>>,
 }
 
 struct GlyphPath {
@@ -87,11 +88,8 @@ impl CanvasFontRenderer {
 
         for c in text.chars() {
             let char_code = c as u32;
-            if char_code > u16::MAX as u32 {
-                return Err(err_msg("Character overflowed supported range"));
-            }
 
-            let glyph_path = self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
+            let glyph_path = self.create_glyph(char_code, &mut glyph_paths_guard)?;
 
             let path_obj = match &mut glyph_path.path_object {
                 Some(v) => v,
@@ -149,11 +147,8 @@ impl CanvasFontRenderer {
 
         for (i, c) in text.char_indices() {
             let char_code = c as u32;
-            if char_code > u16::MAX as u32 {
-                return Err(err_msg("Character overflowed supported range"));
-            }
 
-            let glyph_path = self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
+            let glyph_path = self.create_glyph(char_code, &mut glyph_paths_guard)?;
 
             let increment = (glyph_path.metrics.advance_width as f32) * sizing.scale;
             if let Some(max_width) = max_width.clone() {
@@ -170,8 +165,8 @@ impl CanvasFontRenderer {
 
     fn create_glyph<'a>(
         &self,
-        code: u16,
-        glyph_paths: &'a mut HashMap<u16, GlyphPath>,
+        code: u32,
+        glyph_paths: &'a mut HashMap<u32, GlyphPath>,
     ) -> Result<&'a mut GlyphPath> {
         if !glyph_paths.contains_key(&code) {
             let (g, metrics) = self.font.char_glyph(code)?;
@@ -288,11 +283,8 @@ impl CanvasFontRenderer {
 
         for (idx, c) in text.char_indices() {
             let char_code = c as u32;
-            if char_code > u16::MAX as u32 {
-                return Err(err_msg("Character overflowed supported range"));
-            }
 
-            let glyph_path = self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
+            let glyph_path = self.create_glyph(char_code, &mut glyph_paths_guard)?;
 
             let next_width = width + ((glyph_path.metrics.advance_width as f32) * sizing.scale);
             if next_width > x {

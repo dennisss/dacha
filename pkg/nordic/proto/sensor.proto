@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package nordic;
+
+
+message SensorPacket {
+    // If non-zero, this is an ack packet for the packet with the given counter value.
+    uint32 ack = 1;
+
+    HeartbeatData heartbeat = 2;
+
+    oneof driver_data {
+        EdgeTriggerData edge_trigger = 3;
+        HDC2080Data hdc2080 = 4;
+        EinkData eink = 5;
+    }
+
+    // Encoder
+
+    // Light
+
+}
+
+message HeartbeatData {
+    uint32 battery_voltage = 1;
+}
+
+
+
+
+message HDC2080Data {
+    uint32 temperature_raw = 1;
+
+    uint32 humidity_raw = 2;
+}
+
+
+message SensorConfig {
+    // The sensor will send out a heartbeat packet after this
+    // many milliseconds has elapsed since the last one (or since boot).
+    //
+    // The heartbeat will contains the current sensor driver state and
+    // metadata like battery level. 
+    uint32 heartbeat_ms = 1;
+
+    oneof driver {
+        EdgeTriggerSensorConfig edge_trigger = 2;
+        HDC2080SensorConfig hdc2080 = 3;
+        EinkConfig eink = 4;
+    }
+}
+
+// This is a sensor that is triggered when a pin transitions to a specific high or low level.
+// e.g. detects the press down of a button.
+//
+// This will only send state data when 
+//
+message EdgeTriggerSensorConfig {
+    uint32 pin = 1;
+
+    // False means a Low value is active.
+    // True means a High value is active. 
+    bool rising_trigger = 2;
+
+    bool falling_trigger = 3;
+
+    // If true, the pin needs to be pulled up with a resistor. False will not attach any resistor.
+    bool pull_up = 4;
+
+    // Number of milliseconds after the pin goes high after which it must still be high
+    // for the transition to count.
+    uint32 debounce_rising_ms = 5;
+
+    // Similar to 'debounce_active_ms', except this is for tracking the pin becoming
+    // low.
+    uint32 debounce_falling_ms = 6;
+
+    // Once a trigger fires, ignore everything for this number of milliseconds.
+    uint32 trigger_cooldown_ms = 7;
+}
+
+message EdgeTriggerData {
+    bool triggered = 1;
+
+    // Current level of the pin.
+    bool level = 2;
+
+    uint32 trigger_count = 3;
+}
+
+
+// Periodically samples the temperature and humidity from a HDC2080 sensor attached over I2C.
+message HDC2080SensorConfig {
+    uint32 sda_pin = 1;
+
+    uint32 scl_pin = 2;
+
+    uint32 sample_period_ms = 3;
+}
+
+message EinkData {
+    string text = 1 [(dacha.max_length) = 32];
+}
+
+message EinkConfig {
+    uint32 mosi_pin = 1;
+    uint32 sclk_pin = 2;
+    uint32 cs_pin = 3;
+    uint32 on_pin = 4;
+    uint32 dc_pin = 5;
+    uint32 reset_pin = 6;
+    uint32 busy_pin = 7;
+}
+

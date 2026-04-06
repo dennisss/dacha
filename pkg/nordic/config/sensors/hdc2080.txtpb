@@ -1,0 +1,8 @@
+# proto-file: pkg/nordic/proto/sensor.proto
+# proto-message: SensorConfig
+
+hdc2080 {
+    sda_pin: "P0.22"
+    scl_pin: "P0.19"
+    sample_period_ms: 30000
+}

@@ -15,7 +15,7 @@ cargo run --bin flasher -- built/pkg/nordic/nordic_bootloader blackmagic-swd
 
 cargo run --bin builder -- build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840
 
-cargo run --bin flasher -- built/pkg/nordic/nordic_radio_dongle uf2-dfu --usb_device_id=8888:
+cargo run --bin flasher -- built/pkg/nordic/nordic_radio_dongle uf2-dfu --usb_device_id=8888:0004
 
 
 TODO: Want a unique USB descriptor serial number per device since we will start having many of these.
@@ -68,8 +68,10 @@ use nordic::idle::idle_loop;
 use peripherals_proto::peripherals::PeripheralRequest;
 use nordic_wire::usb_descriptors::*;
 use protobuf::Message;
+use nordic::params::AppParamsStorage;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
+static PARAMS_STORAGE: Singleton<AppParamsStorage> = Singleton::uninit();
 
 static PERIPHERALS_CONTROLLER: Singleton<PeripheralsController> = Singleton::uninit();
 
@@ -82,8 +84,50 @@ async fn main_thread_fn() {
 
     log!("Starting up!");
 
+    let params_storage = {
+        PARAMS_STORAGE
+            .set(AppParamsStorage::create(peripherals.nvmc).unwrap())
+            .await
+    };
+
+    RADIO_SOCKET
+        .configure_storage(params_storage)
+        .await
+        .unwrap();
+
+    let mut radio_controller = RadioController::new(
+        &RADIO_SOCKET,
+        Radio::new(peripherals.radio),
+        ECB::new(peripherals.ecb),
+    );
+
     let mut rtc = RTC::new(peripherals.rtc0);
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
+
+    /*
+    {
+        // TODO: Make this more scalable.
+
+        // TODO: Prevent these from being used by the PeripheralsController?
+        let tx_pin = if false {
+            gpio.pin(pins.P0_13)
+        } else {
+            gpio.pin(pins.P0_12)
+        };
+        let rx_pin = if false {
+            gpio.pin(pins.P0_14)
+        } else {
+            gpio.pin(pins.P1_09)
+        };
+        setup_radio_activity_leds(tx_pin, rx_pin, rtc.clone(), &mut radio_controller);
+    }
+    */
+
+
+    // TODO: Give this unique interrupts
+    RadioControllerThread::start(radio_controller);
+
+
 
     let peripheral_controller = PERIPHERALS_CONTROLLER
         .set(PeripheralsController::new(
@@ -108,7 +152,7 @@ async fn main_thread_fn() {
             peripherals.ppi,
             peripherals.saadc,
             peripherals.twim0,
-            Radio::new(peripherals.radio),
+            &RADIO_SOCKET,
         ))
         .await;
 
@@ -153,35 +197,12 @@ async fn main_thread_fn() {
     }
     */
 
-    // let mut radio_controller = RadioController::new(
-    //     &RADIO_SOCKET,
-    //     Radio::new(peripherals.radio),
-    //     ECB::new(peripherals.ecb),
-    // );
 
-    /*
-    // TODO: Make this more scalable.
-
-    // TODO: Prevent these from being used by the PeripheralsController?
-    let tx_pin = if USING_DEV_KIT {
-        gpio.pin(pins.P0_13)
-    } else {
-        gpio.pin(pins.P0_12)
-    };
-    let rx_pin = if USING_DEV_KIT {
-        gpio.pin(pins.P0_14)
-    } else {
-        gpio.pin(pins.P1_09)
-    };
-    setup_radio_activity_leds(tx_pin, rx_pin, rtc.clone(), &mut radio_controller);
-    */
-
-    // RadioControllerThread::start(radio_controller);
 
     RadioDongleUSBThread::start(
         RADIO_DONGLE_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
-        None, // Some(&RADIO_SOCKET),
+        Some(&RADIO_SOCKET),
         Some(peripheral_controller),
         rtc.clone(),
     );
@@ -205,7 +226,12 @@ fn main() -> () {
 
     let mut peripherals = peripherals::raw::Peripherals::new();
 
-    nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+    // TODO: Do this consistently outside of the bootloader.
+    peripherals.nvmc.icachecnf.write_with(|v| v.set_cacheen_with(|v| v.set_enabled()));
+
+    peripherals.power.tasks_constlat.write_trigger();
+
+    nordic::clock::reference_hfclk();
 
     // TODO: Switch back to external once I get rid of boards that use P0.00/P0.01
     nordic::clock::init_low_freq_clk(

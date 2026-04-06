@@ -1,5 +1,3 @@
-use core::sync::atomic::AtomicUsize;
-
 use common::const_default::ConstDefault;
 use common::errors::*;
 use common::list::Appendable;
@@ -60,6 +58,8 @@ struct RadioSocketState {
     persisted_packet_counter: u32,
 
     params_storage: Option<&'static AppParamsStorage>,
+
+    // TODO: Avoid having these buffers if we don't need to support continous TX/RX.
 
     transmit_buffer: SegmentedBuffer<[u8; BUFFER_SIZE]>,
 
@@ -350,6 +350,10 @@ impl RadioController {
         }
     }
 
+    pub fn socket(&self) -> &RadioSocket {
+        self.socket
+    }
+
     pub fn set_tx_event(&mut self, event: &'static Channel<()>) {
         self.tx_event = Some(event);
     }
@@ -368,13 +372,7 @@ impl RadioController {
         let mut packet_buf = PacketBuffer::new();
 
         loop {
-            let socket_state = self.socket.get_valid_state().await;
-
-            // Prepare for receiving packets addressed to us.
-            self.radio
-                .set_address(array_ref![socket_state.network_config.address(), 0, 4]);
-
-            socket_state.exit();
+            self.prepare_to_receive().await;
 
             // TODO: Implement a more efficient way to cancel the receive future.
             let event = race!(
@@ -387,135 +385,171 @@ impl RadioController {
             )
             .await;
 
-            let mut socket_state = self.socket.get_valid_state().await;
-
-            // TODO: Replace with more proper exit transitions.
-            unsafe { socket_state.unpoison() };
 
             match event {
                 Event::Received => {
                     log!("RADIO RX");
-
-                    // TODO: We need to check for the case that the radio packet gets truncated (the
-                    // first length byte indicates a length that is larger than the buffer size).
-
-                    // for i in 0..packet_buf.as_bytes().len() {
-                    //     log!(crate::log::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
-                    //     log!(b", ");
-                    // }
-
-                    let from_address = *packet_buf.remote_address();
-
-                    let ecb = &mut self.ecb;
-                    let packet_encryptor = match PacketCipher::create(
-                        &mut packet_buf,
-                        &socket_state.network_config,
-                        |key| AES128BlockBuffer::new(key, &mut self.ecb),
-                        &from_address,
-                        &from_address,
-                    ) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            log!("EFAIL1");
-                            continue;
-                        }
-                    };
-
-                    // TODO: Considering dropping the socket_state lock here if decrypt() is ever
-                    // implemented with async.
-
-                    if let Err(_) = packet_encryptor.decrypt() {
-                        log!("EFAIL2");
-                        continue;
-                    }
-
-                    // Find the link state associated with the remove device.
-                    //
-                    // NOTE: We do this after validating that the packet is from a known sender to
-                    // avoid being able to polute the links vector.
-                    let mut link_state = {
-                        match socket_state
-                            .network_state
-                            .links_mut()
-                            .iter_mut()
-                            .find(|v| v.address() == &from_address)
-                        {
-                            Some(v) => v,
-                            None => {
-                                // Create a new entry.
-                                let mut new_state = LinkState::default();
-                                new_state.address_mut().extend_from_slice(&from_address);
-                                socket_state.network_state.add_links(new_state);
-                                socket_state.network_state.links_mut().last_mut().unwrap()
-                            }
-                        }
-                    };
-
-                    // Block receiving old packets.
-                    if link_state.last_packet_counter() >= packet_buf.counter() {
-                        log!("RX: Old packet");
-                        continue;
-                    }
-
-                    link_state.set_last_packet_counter(packet_buf.counter());
-
-                    if let Some(e) = &self.rx_event {
-                        e.try_send(());
-                    }
-
-                    // TODO: Record the newly received packet counter.
-
-                    socket_state.receive_buffer.write(packet_buf.as_bytes());
-                    let _ = self.socket.receive_pending.try_send(());
-
-                    drop(socket_state);
+                    self.process_received_packet(&mut packet_buf).await;
                 }
                 Event::TransmitPending => {
                     log!("RADIO TX");
-
-                    // NOTE: The packet will contain the TO_ADDRESS.
-                    let got_packet = packet_buf.read_from(&mut socket_state.transmit_buffer);
-
-                    if !got_packet {
-                        continue;
-                    }
-
-                    let from_address = array_ref![socket_state.network_config.address(), 0, 4];
-                    let to_address = *packet_buf.remote_address();
-
-                    // Use our local address in the packet so that from the receiving device's
-                    // perspective, the remote_address is correct.
-                    packet_buf
-                        .remote_address_mut()
-                        .copy_from_slice(from_address);
-
-                    let packet_encryptor = match PacketCipher::create(
-                        &mut packet_buf,
-                        &socket_state.network_config,
-                        |key| AES128BlockBuffer::new(key, &mut self.ecb),
-                        &to_address,
-                        from_address,
-                    ) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            continue;
-                        }
-                    };
-
-                    drop(socket_state);
-
-                    if let Err(_) = packet_encryptor.encrypt() {
-                        continue;
-                    }
-
-                    if let Some(e) = &self.tx_event {
-                        e.try_send(());
-                    }
-
-                    self.radio.set_address(&to_address);
-                    self.radio.send_packet(packet_buf.as_bytes()).await;
+                    self.transmit_packet().await;
                 }
             }
         }
+    }
+
+    pub async fn receive_once(&mut self) {
+        // TODO: Move into the instance.
+        let mut packet_buf = PacketBuffer::new();
+
+        self.prepare_to_receive().await;
+
+        self.radio.receive_packet(packet_buf.raw_mut()).await;
+
+        self.process_received_packet(&mut packet_buf).await;
+    }
+
+    async fn prepare_to_receive(&mut self) {
+        let socket_state = self.socket.get_valid_state().await;
+
+        // Prepare for receiving packets addressed to us.
+        self.radio
+            .set_address(array_ref![socket_state.network_config.address(), 0, 4]);
+
+        socket_state.exit();
+    }
+
+    /// After a packet has been received into 'packet_buf', this validates, decrypts,
+    /// and finally places it into the socket's receive_buffer.
+    async fn process_received_packet(&mut self, packet_buf: &mut PacketBuffer) {
+        let mut socket_state = self.socket.get_valid_state().await;
+
+        // TODO: Replace with more proper exit transitions.
+        unsafe { socket_state.unpoison() };
+
+        // TODO: We need to check for the case that the radio packet gets truncated (the
+        // first length byte indicates a length that is larger than the buffer size).
+
+        // for i in 0..packet_buf.as_bytes().len() {
+        //     log!(crate::log::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
+        //     log!(b", ");
+        // }
+
+        let from_address = *packet_buf.remote_address();
+
+        let ecb = &mut self.ecb;
+        let packet_encryptor = match PacketCipher::create(
+            packet_buf,
+            &socket_state.network_config,
+            |key| AES128BlockBuffer::new(key, &mut self.ecb),
+            &from_address,
+            &from_address,
+        ) {
+            Ok(v) => v,
+            Err(_) => {
+                log!("EFAIL1");
+                return;
+            }
+        };
+
+        // TODO: Considering dropping the socket_state lock here if decrypt() is ever
+        // implemented with async.
+
+        if let Err(_) = packet_encryptor.decrypt() {
+            log!("EFAIL2");
+            return;
+        }
+
+        // Find the link state associated with the remove device.
+        //
+        // NOTE: We do this after validating that the packet is from a known sender to
+        // avoid being able to polute the links vector.
+        let mut link_state = {
+            match socket_state
+                .network_state
+                .links_mut()
+                .iter_mut()
+                .find(|v| v.address() == &from_address)
+            {
+                Some(v) => v,
+                None => {
+                    // Create a new entry.
+                    let mut new_state = LinkState::default();
+                    new_state.address_mut().extend_from_slice(&from_address);
+                    socket_state.network_state.add_links(new_state);
+                    socket_state.network_state.links_mut().last_mut().unwrap()
+                }
+            }
+        };
+
+        // Block receiving old packets.
+        if link_state.last_packet_counter() >= packet_buf.counter() {
+            log!("RX: Old packet");
+            return;
+        }
+
+        link_state.set_last_packet_counter(packet_buf.counter());
+
+        if let Some(e) = &self.rx_event {
+            e.try_send(());
+        }
+
+        // TODO: Record the newly received packet counter.
+
+        socket_state.receive_buffer.write(packet_buf.as_bytes());
+        let _ = self.socket.receive_pending.try_send(());
+
+        drop(socket_state);
+    }
+
+    /// Transmits exactly one packet from the transmit_buffer 
+    pub async fn transmit_packet(&mut self) {
+        let mut packet_buf = PacketBuffer::new();
+
+        let mut socket_state = self.socket.get_valid_state().await;
+
+        // TODO: Replace with more proper exit transitions.
+        unsafe { socket_state.unpoison() };
+
+        // NOTE: The packet will contain the TO_ADDRESS.
+        let got_packet = packet_buf.read_from(&mut socket_state.transmit_buffer);
+
+        if !got_packet {
+            return;
+        }
+
+        let from_address = array_ref![socket_state.network_config.address(), 0, 4];
+        let to_address = *packet_buf.remote_address();
+
+        // Use our local address in the packet so that from the receiving device's
+        // perspective, the remote_address is correct.
+        packet_buf
+            .remote_address_mut()
+            .copy_from_slice(from_address);
+
+        let packet_encryptor = match PacketCipher::create(
+            &mut packet_buf,
+            &socket_state.network_config,
+            |key| AES128BlockBuffer::new(key, &mut self.ecb),
+            &to_address,
+            from_address,
+        ) {
+            Ok(v) => v,
+            Err(_) => return
+        };
+
+        drop(socket_state);
+
+        if let Err(_) = packet_encryptor.encrypt() {
+            return;
+        }
+
+        if let Some(e) = &self.tx_event {
+            e.try_send(());
+        }
+
+        self.radio.set_address(&to_address);
+        self.radio.send_packet(packet_buf.as_bytes()).await;
     }
 }

@@ -154,6 +154,19 @@ message PeripheralRequest {
         // Returns the final counter value in the uint_val field.
         // The take at which this value was sampled will be in the 'time' response field.
         bool end_tachometer = 45;
+
+        // Appends data to the end of a buffer.
+        bytes write_buffer = 46 [(dacha.max_length) = 32];
+
+        bool clear_buffer = 47;
+
+        bool set_network_config = 48;
+
+        bool get_network_config = 49;
+
+        bool send_radio_packet = 50;
+
+        bool recv_radio_packet = 51;
     }
 
     reserved 6;

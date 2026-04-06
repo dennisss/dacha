@@ -34,6 +34,17 @@ impl Buffer {
         res.data_val_mut().extend_from_slice(&data[offset..offset_end]);
     }
 
+    pub fn clear(&mut self) {
+        self.used = 0;
+        self.consumed = 0;
+    }
+
+    pub fn append(&mut self, data: &[u8]) {
+        let n = self.used;
+        self.buffer.as_mut()[n..(n + data.len())].copy_from_slice(data);
+        self.used += data.len();
+    }
+
     pub fn view_mut<'a, T: Primitive>(&'a mut self) -> BufferViewMut<'a, T> {
         BufferViewMut {
             buffer: self,
@@ -60,7 +71,7 @@ impl<'a, T: Primitive> BufferViewMut<'a, T> {
     }
 
     pub fn used(&self) -> usize {
-        self.buffer.used
+        self.buffer.used / core::mem::size_of::<T>()
     }
 
     pub fn set_used(&mut self, n: usize) {

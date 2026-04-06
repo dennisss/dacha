@@ -115,7 +115,7 @@ impl UdpSocket {
         self.inner.recv(output).await
     }
 
-    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
+    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, sys::SocketAddr)> {
         let (n, addr) = self.inner.recv_from(output).await?;
         Ok((n, addr.into()))
     }
@@ -124,11 +124,11 @@ impl UdpSocket {
         &self,
         output: &mut [u8],
         msgs: &mut [ControlMessage]
-    ) -> Result<(usize, usize, SocketAddr)> {
+    ) -> Result<(usize, usize, sys::SocketAddr)> {
         self.inner.recv_msg(output, msgs).await
     }
 
-    pub async fn recv_error(&self, output: &mut [u8], msgs: &mut [ControlMessage]) -> Result<(usize, usize, Option<SocketAddr>)> {
+    pub async fn recv_error(&self, output: &mut [u8], msgs: &mut [ControlMessage]) -> Result<(usize, usize, Option<sys::SocketAddr>)> {
         self.inner.recv_error(output, msgs).await
     }
 
@@ -204,7 +204,7 @@ impl MessageSocket {
         self.recv_from(output).await.map(|(n, _)| n)
     }
 
-    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
+    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, sys::SocketAddr)> {
         let (n, _, addr) = self.recv_msg_inner(output, None, false).await?;
         
         let addr = addr
@@ -217,7 +217,7 @@ impl MessageSocket {
         &self,
         output: &mut [u8],
         msgs: &mut [ControlMessage]
-    ) -> Result<(usize, usize, SocketAddr)> {
+    ) -> Result<(usize, usize, sys::SocketAddr)> {
         let (i, j, addr) = self.recv_msg_inner(output, Some(msgs), false).await?;
 
         let addr = addr
@@ -233,7 +233,7 @@ impl MessageSocket {
         &self,
         output: &mut [u8],
         msgs: &mut [ControlMessage]
-    ) -> Result<(usize, usize, Option<SocketAddr>)> {
+    ) -> Result<(usize, usize, Option<sys::SocketAddr>)> {
         self.recv_msg_inner(output, Some(msgs), true).await
     }
 
@@ -242,7 +242,7 @@ impl MessageSocket {
         output: &mut [u8],
         msgs: Option<&mut [ControlMessage]>,
         error_queue: bool
-    ) -> Result<(usize, usize, Option<SocketAddr>)> {
+    ) -> Result<(usize, usize, Option<sys::SocketAddr>)> {
         let data_slices = [IoSliceMut::new(output)];
 
         let mut addr_buf = MessageHeaderSocketAddrBuffer::new();
@@ -264,7 +264,7 @@ impl MessageSocket {
                 .remap_errno::<NetworkError, _>(|| String::new())?
         };
 
-        let addr = header.addr().map((|addr| addr.into()));
+        let addr = header.addr();
 
         let mut num_control = 0;
         if let Some(iter) = header.control_messages() {

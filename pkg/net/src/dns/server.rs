@@ -64,6 +64,8 @@ impl Server {
                 break;
             }
 
+            let peer_addr = SocketAddr::from(peer_addr);
+
             if !shared.handler.handle_connection(&peer_addr) {
                 continue;
             }

@@ -153,7 +153,7 @@ fn main() -> () {
 
     let mut peripherals = peripherals::raw::Peripherals::new();
 
-    nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+    nordic::clock::reference_hfclk();
     nordic::clock::init_low_freq_clk(
         nordic::clock::LowFrequencyClockSource::RCOscillator,
         &mut peripherals.clock,

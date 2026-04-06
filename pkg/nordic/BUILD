@@ -8,6 +8,10 @@ rust_binary(
 )
 
 rust_binary(
+    name = "nordic_sensor"
+)
+
+rust_binary(
     name = "nordic_bootloader"
 )
 
@@ -26,6 +30,11 @@ rust_binary(
 proto_data(
     name = "nrf52840",
     src = "nrf52840.textproto"
+)
+
+proto_data(
+    name = "nrf52840_soft",
+    src = "nrf52840_soft.textproto"
 )
 
 proto_data(

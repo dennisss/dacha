@@ -13,4 +13,5 @@ extern crate alloc;
 
 pub mod link_util;
 pub mod radio_bridge;
-pub mod usb_radio;
+#[cfg(feature = "std")]
+pub mod sensor_config;
