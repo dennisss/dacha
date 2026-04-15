@@ -4,17 +4,11 @@
 // Get rid of the glibc definitions and use the linux ones.
 #define __itimerspec_defined 1
 #define __timeval_defined 1
+#define _SYS_TIME_H 1
 
-#include <sys/epoll.h>
-#include <dirent.h>
-#include <pthread.h>
-#include <signal.h>
-#include <scsi/sg.h>
-#include <net/if.h>
-#include <netinet/ip.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/wait.h>
+#include <asm/stat.h>
+#include <linux/stat.h>
+#include <linux/wait.h>
 #include <linux/fanotify.h>
 #include <linux/inotify.h>
 #include <linux/fcntl.h>
@@ -43,3 +37,13 @@
 #include <linux/net_tstamp.h>
 #include <linux/errqueue.h>
 #include <linux/sockios.h>
+
+#include <sys/epoll.h>
+#include <dirent.h>
+// #include <pthread.h>
+#include <signal.h>
+#include <scsi/sg.h>
+#include <net/if.h>
+#include <netinet/ip.h>
+#include <sys/syscall.h>
+

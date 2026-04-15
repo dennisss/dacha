@@ -23,12 +23,12 @@ impl Metadata {
     }
 
     pub fn modified(&self) -> SystemTime {
-        let t = &self.inner.st_mtim;
-        assert!(t.tv_sec >= 0 && t.tv_nsec >= 0);
+        let t = &self.inner;
+        assert!(t.st_mtime >= 0 && t.st_mtime_nsec >= 0);
 
         SystemTime::UNIX_EPOCH
-            + Duration::from_secs(t.tv_sec as u64)
-            + Duration::from_nanos(t.tv_nsec as u64)
+            + Duration::from_secs(t.st_mtime as u64)
+            + Duration::from_nanos(t.st_mtime_nsec as u64)
     }
 
     pub fn permissions(&self) -> Permissions {

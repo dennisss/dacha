@@ -410,33 +410,11 @@ impl Manager {
 
         // TODO: Filter out any nodes which are not healthy.
 
-        if job.spec().scheduling().specific_nodes_len() > 0 {
-            remaining_nodes.retain(|i| {
-                let current_id = nodes[*i].0.id();
-                job.spec()
-                    .scheduling()
-                    .specific_nodes()
-                    .iter()
-                    .find(|id| **id == current_id)
-                    .is_some()
-            });
-
-            if remaining_nodes.len() != job.spec().scheduling().specific_nodes_len() {
-                return Err(err_msg("Some nodes in specific_nodes weren't found"));
-            }
-        }
-
+        let job_spec_filter = JobSpecNodeFilter::new(job.spec());
         remaining_nodes.retain(|i| {
             let node = &nodes[*i];
-            Self::filter_by_node_labels(&node.0, &node.1, job.spec().scheduling().labels())
+            job_spec_filter.matches(&node.0, &node.1)
         });
-
-        if let Some(supported_platforms) = Self::get_supported_platforms(job.spec().worker()) {
-            remaining_nodes.retain(|i| {
-                let node = &nodes[*i];
-                supported_platforms.contains(&Self::platform_string(node.0.platform()))
-            });
-        }
 
         // TODO: Also limit the max number of workers per node.
 
@@ -706,80 +684,6 @@ impl Manager {
         Ok(())
     }
 
-    /// Returns whether or not to keep a node based on a selector.
-    fn filter_by_node_labels(
-        node_meta: &NodeMetadata,
-        node_scheduling: &NodeSchedulingMetadata,
-        selector: &LabelsSelector,
-    ) -> bool {
-        let mut node_labels: HashMap<&str, &str> = HashMap::default();
-        for label in node_scheduling.labels().label() {
-            node_labels.insert(label.key(), label.value());
-        }
-
-        for label_selector in selector.label() {
-            let value = match node_labels.get(&label_selector.key()) {
-                Some(v) => *v,
-                None => return false,
-            };
-
-            if label_selector.present() {
-                continue;
-            } else if !label_selector.value().is_empty() {
-                if label_selector
-                    .value()
-                    .iter()
-                    .find(|v| v.as_str() == value)
-                    .is_none()
-                {
-                    return false;
-                }
-            } else {
-                // Unknown or new selector.
-                continue;
-            }
-        }
-
-        true
-    }
-
-    fn platform_string(platform: &Platform) -> Vec<u8> {
-        let mut out = vec![];
-        platform.serialize_to(&protobuf::SerializeOptions::default(), &mut out).unwrap();
-        out
-    }
-
-    // Will return None if all platforms are supported.
-    fn get_supported_platforms(job_worker_spec: &WorkerSpec) -> Option<HashSet<Vec<u8>>> {
-        let mut num_bundles = 0;
-        let mut seen_platforms: HashMap<Vec<u8>, usize> = HashMap::new();
-
-        for volume in job_worker_spec.volumes() {
-            if !volume.has_bundle() {
-                continue;
-            }
-
-            num_bundles += 1;
-
-            for variant in volume.bundle().variants() {
-                *seen_platforms.entry(Self::platform_string(&variant.platform())).or_default() += 1;
-            }
-        }
-
-        if num_bundles == 0 {
-            return None;
-        }
-
-        let mut out = HashSet::new();
-        for (key, value) in seen_platforms {
-            if value == num_bundles {
-                out.insert(key);
-            }
-        }
-
-        Some(out)
-    }
-
     /// Given a set of workers that are drained, this will remove the metadata
     /// once the WorkerStateMetadata is marked as DONE (indicating that this
     /// worker will never be started again by the node).
@@ -979,6 +883,11 @@ impl Manager {
             nodes_scheduling_by_id.insert(data.node_id(), data);
         }
 
+        let mut job_node_filter = None;
+        if request.has_job_spec() {
+            job_node_filter = Some(JobSpecNodeFilter::new(request.job_spec()));
+        }
+
         let mut txn = self.db.new_transaction().await?;
 
         for spec in request.blob_specs() {
@@ -993,11 +902,22 @@ impl Manager {
 
             let mut blob_replicas = query!(txn, BundleBlobReplicaTable, "blob_id = ?", spec.id());
 
-            // Ignore cordoned nodes.
             blob_replicas.retain(|blob_replica| {
+                // Ignore cordoned nodes.
                 if let Some(node_scheduling) = nodes_scheduling_by_id.get(&blob_replica.node_id()) {
-                    return !node_scheduling.cordoned();
+                    if !node_scheduling.cordoned() {
+                        return false;
+                    }
                 }
+
+                // TODO: Implement this.
+                /*
+                if let Some(job_filter) = &job_node_filter {
+                    if !job_filter.matches() {
+                        return false;
+                    }
+                }
+                */
 
                 true
             });
@@ -1019,13 +939,26 @@ impl Manager {
 
             // Ensure there are enough replicas defined for the blob. 
             const MIN_REPLICAS: usize = 1;
-            while blob_replicas.len() < 1 {
+            while blob_replicas.len() < MIN_REPLICAS {
                 let mut new_node_id = None;
                 for node in &nodes {
-                    if !existing_node_ids.contains(&node.id()) {
-                        new_node_id = Some(node.id());
-                        break;
+                    if existing_node_ids.contains(&node.id()) {
+                        continue;
                     }
+
+                    if let Some(job_node_filter) = &job_node_filter {
+                        let node_scheduling = match nodes_scheduling_by_id.get(&node.id()) {
+                            Some(v) => v,
+                            None => continue
+                        };
+
+                        if !job_node_filter.matches(node, node_scheduling) {
+                            continue;
+                        }
+                    }
+
+                    new_node_id = Some(node.id());
+                    break;
                 }
 
                 let new_node_id = new_node_id.ok_or_else(|| err_msg("Failed to get a node"))?;
@@ -1099,6 +1032,140 @@ impl Manager {
         Ok(replica)
     }
 }
+
+struct JobSpecNodeFilter<'a> {
+    job_spec: &'a JobSpec,
+    supported_platforms: Option<HashSet<Vec<u8>>>,
+}
+
+impl<'a> JobSpecNodeFilter<'a> {
+    fn new(job_spec: &'a JobSpec) -> Self {
+        let supported_platforms = Self::get_supported_platforms(job_spec.worker());
+        Self {
+            job_spec,
+            supported_platforms
+        }
+    }
+
+    fn matches(
+        &self,
+        node_meta: &NodeMetadata,
+        node_scheduling: &NodeSchedulingMetadata,
+    ) -> bool {
+
+        if self.job_spec.scheduling().specific_nodes_len() > 0 {
+            let current_id = node_meta.id();
+
+            if self.job_spec
+                .scheduling()
+                .specific_nodes()
+                .iter()
+                .find(|id| **id == current_id)
+                .is_none() {
+                return false;
+            }
+
+            // TODO: Validate that all the ids are valid somewhere
+            /*
+            if remaining_nodes.len() != job.spec().scheduling().specific_nodes_len() {
+                return Err(err_msg("Some nodes in specific_nodes weren't found"));
+            }
+            */
+        }
+
+        if !self.filter_by_node_labels(node_meta, node_scheduling) {
+            return false;
+        }
+
+        if let Some(supported_platforms) = &self.supported_platforms {
+            if !supported_platforms.contains(&Self::platform_string(node_meta.platform())) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Returns whether or not to keep a node based on a selector.
+    fn filter_by_node_labels(
+        &self,
+        node_meta: &NodeMetadata,
+        node_scheduling: &NodeSchedulingMetadata,
+    ) -> bool {
+        let selector = self.job_spec.scheduling().labels();
+
+        let mut node_labels: HashMap<&str, &str> = HashMap::default();
+        for label in node_scheduling.labels().label() {
+            node_labels.insert(label.key(), label.value());
+        }
+
+        for label_selector in selector.label() {
+            let value = match node_labels.get(&label_selector.key()) {
+                Some(v) => *v,
+                None => return false,
+            };
+
+            if label_selector.present() {
+                continue;
+            } else if !label_selector.value().is_empty() {
+                if label_selector
+                    .value()
+                    .iter()
+                    .find(|v| v.as_str() == value)
+                    .is_none()
+                {
+                    return false;
+                }
+            } else {
+                // Unknown or new selector.
+                continue;
+            }
+        }
+
+        true
+    }
+
+
+    fn platform_string(platform: &Platform) -> Vec<u8> {
+        let mut out = vec![];
+        platform.serialize_to(&protobuf::SerializeOptions::default(), &mut out).unwrap();
+        out
+    }
+
+    // Will return None if all platforms are supported.
+    fn get_supported_platforms(job_worker_spec: &WorkerSpec) -> Option<HashSet<Vec<u8>>> {
+        let mut num_bundles = 0;
+        let mut seen_platforms: HashMap<Vec<u8>, usize> = HashMap::new();
+
+        for volume in job_worker_spec.volumes() {
+            if !volume.has_bundle() {
+                continue;
+            }
+
+            num_bundles += 1;
+
+            for variant in volume.bundle().variants() {
+                *seen_platforms.entry(Self::platform_string(&variant.platform())).or_default() += 1;
+            }
+        }
+
+        if num_bundles == 0 {
+            return None;
+        }
+
+        let mut out = HashSet::new();
+        for (key, value) in seen_platforms {
+            if value == num_bundles {
+                out.insert(key);
+            }
+        }
+
+        Some(out)
+    }
+
+
+}
+
 
 #[async_trait]
 impl ManagerService for Manager {

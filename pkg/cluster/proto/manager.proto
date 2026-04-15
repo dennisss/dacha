@@ -37,6 +37,10 @@ message StopJobResponse {
 message AllocateBundleBlobsRequest {
     // Metadata for the blobs which the client wants to upload to the cluster.
     repeated builder.BundleBlobSpec blob_specs = 1;
+
+    // Spec of the job which these blobs will be used for.
+    // This will be used to filter which nodes we allocate blobs to.
+    JobSpec job_spec = 2;
 }
 
 message AllocateBundleBlobsResponse {

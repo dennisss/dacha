@@ -785,6 +785,27 @@ async fn bootstrap_system_jobs(
     root_creds: &RootCredentials,
     local_metastore_resource: Arc<dyn ServiceResource>,
 ) -> Result<()> {
+
+    println!("Mark first node as system node...");
+    {
+        let mut txn = db.new_transaction().await?;
+        let mut node_meta = query_one!(txn, NodeSchedulingMetadataTable, "node_id = ?", node_id)
+            .unwrap_or_default();
+        node_meta.set_node_id(node_id);
+
+        node_meta.labels_mut().label_mut().retain(|l| l.key() != "system");
+    
+        let l = node_meta.labels_mut().new_label();
+        l.set_key("system");
+        l.set_value("yes");
+
+        txn.put::<NodeSchedulingMetadataTable>(&node_meta).await?;
+        txn.commit().await?;
+
+        println!("=> Done");
+    }
+
+
     // Start a local manager instance.
     let manager =
         Manager::new(zone, db.clone(), Arc::new(crypto::random::global_rng())).into_service();

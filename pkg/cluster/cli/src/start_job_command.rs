@@ -159,6 +159,7 @@ pub(crate) async fn start_job_impl(
 
     let blob_allocations = {
         let mut req = AllocateBundleBlobsRequest::default();
+        req.set_job_spec(job_spec.clone());
         for blob in &blobs {
             req.add_blob_specs(blob.spec().clone());
         }

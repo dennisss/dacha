@@ -1,5 +1,14 @@
 name: "system.manager"
 replicas: 1
+scheduling {
+    distinct_nodes: true
+    labels {
+        label {
+            key: "system"
+            present: true
+        }
+    }
+}
 worker {
     args: [
         "/volumes/bundle/built/pkg/cluster/manager/cluster_manager",
