@@ -1,0 +1,31 @@
+[package]
+name = "openpnp"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+doctest = false
+
+[dependencies]
+macros = { path = "../../macros" }
+math = { path = "../../math" }
+math_compute = { path = "../../math/compute" }
+common = { path = "../../common" }
+parsing = { path = "../../parsing" }
+reflection = { path = "../../reflection" }
+executor = { path = "../../executor" }
+file = { path = "../../file" }
+xml = { path = "../../format/xml" }
+json = { path = "../../format/json" }
+protobuf = { path = "../../protobuf" }
+gerber = { path = "../gerber" }
+openpnp_proto = { path = "./proto" }
+base_error = { path = "../../base/error" }
+base_radix = { path = "../../base/radix" }
+protobuf_core = { path = "../../protobuf/core" }
+kicad = { path = "../kicad" }
+
+[features]
+default = ["std", "alloc"]
+alloc = []
+std = []

@@ -12,3 +12,4 @@ pub mod h264_buffer_op;
 pub mod libcamera_op;
 pub mod mp4_sink_op;
 pub mod v4l2;
+pub mod rp1_direct;

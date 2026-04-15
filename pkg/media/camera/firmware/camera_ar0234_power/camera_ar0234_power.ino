@@ -1,6 +1,7 @@
-// Written by Google Gemini 3.1
-//
 // Firmware for implementing the power up and down sequence for the AR0234
+//
+// See pkg/media/camera/boards/camera_ar0234/index.md for how to flash this.
+//
 // - LDOs can take up to 1ms to reach full power
 // - The crystal will take up to 5ms to start up.
 // - After the 1ms reset pulse is sent, ~7ms (~160000 EXTCLK cycles) are

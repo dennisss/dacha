@@ -2,8 +2,7 @@ use std::fmt::Debug;
 
 use common::errors::*;
 use file::LocalPath;
-
-use crate::csv::*;
+use math_compute::io::CSVDataReader;
 
 
 #[derive(Clone, Default)]

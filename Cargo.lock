@@ -3405,6 +3405,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 
 [[package]]
+name = "openpnp"
+version = "0.1.0"
+dependencies = [
+ "base_error",
+ "base_radix",
+ "common",
+ "executor",
+ "file",
+ "gerber",
+ "json",
+ "kicad",
+ "macros",
+ "math",
+ "math_compute",
+ "openpnp_proto",
+ "parsing",
+ "protobuf",
+ "protobuf_core",
+ "reflection",
+ "xml",
+]
+
+[[package]]
+name = "openpnp_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+]
+
+[[package]]
 name = "openssl"
 version = "0.1.0"
 

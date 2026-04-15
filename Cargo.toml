@@ -146,6 +146,7 @@ members = [
 	"pkg/cnc/kicad/proto",
 	"pkg/cnc/controller",
 	"pkg/cnc/klipper",
+"pkg/cnc/openpnp",
 	"pkg/testing",
 	"pkg/perf",
 	"pkg/perf/util",

@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use alloc::string::{String, ToString};
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
-use math_compute::io::{CSVReader, CSVParser};
 use file::LocalPath;
+
+use crate::io::csv::{CSVReader, CSVParser};
 
 
 pub struct CSVDataReader {
@@ -48,7 +50,19 @@ pub struct CSVDataRow<'a> {
 }
 
 impl<'a> CSVDataRow<'a> {
+    pub fn str_field(&self, name: &str) -> Result<&str> {
+        let idx = *self.field_indexes.get(name).ok_or_else(|| err_msg("Missing field"))?;        
+        let v = self.row_parser.field(idx)?;
+        Ok(v)
+    }
+
     pub fn f32_field(&self, name: &str) -> Result<f32> {
+        let idx = *self.field_indexes.get(name).ok_or_else(|| err_msg("Missing field"))?;
+        let v = self.row_parser.field(idx)?.parse()?;
+        Ok(v)
+    }
+
+    pub fn f64_field(&self, name: &str) -> Result<f64> {
         let idx = *self.field_indexes.get(name).ok_or_else(|| err_msg("Missing field"))?;
         let v = self.row_parser.field(idx)?.parse()?;
         Ok(v)

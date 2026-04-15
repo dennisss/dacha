@@ -30,6 +30,11 @@ files: [
         sha256_sum: "e86a21f996223930f1551203faf94ee9284d54cafa1e08f406cb8c09dddb4987"
     },
     {
+        path: "doc/badge_holder/parts/badge-insert.svg"
+        size: 7286
+        sha256_sum: "0635c0b7556b827916fc81803fe9811ecf3e8916bf194dd0c49470ddfc580d18"
+    },
+    {
         path: "doc/carvera/firmware/carvera-firmware-r3.bin"
         size: 347196
         sha256_sum: "00cc53470b04ab4225b23fd6b955d594c1b7acaeb95a43f7fb002001dfe6ecba"
@@ -1270,9 +1275,19 @@ files: [
         sha256_sum: "3717233787c8a9e200d10c53f72032f05028fce73e41ee526ecafd4221591122"
     },
     {
+        path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-back-r3.step"
+        size: 4940746
+        sha256_sum: "9773b75b5027feacf439b2ec835e607221ea4ceb74536ec9491da62f36b0cd89"
+    },
+    {
         path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-body-r3.dxf"
         size: 246150
         sha256_sum: "1842e388056de97717aceefb33b967e72b21c0676c59e2edf7c11ff5dacfab31"
+    },
+    {
+        path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-body-r3.step"
+        size: 396689
+        sha256_sum: "adc42e9d870a4277c5c633fb3cda20cce38994cebd0204a93550efa3454d7ada"
     },
     {
         path: "pkg/cluster/machines/jbod/parts/sheet_metal/jbod-45-cover-r3.step"
@@ -1555,6 +1570,16 @@ files: [
         sha256_sum: "3bd1651ba6ba95dec91e6a3e7fd8a6cc3ec9e0abbf859ce69c25810208f4ded7"
     },
     {
+        path: "pkg/cnc/openpnp/parts/lumenpnp-spool-holder.stl"
+        size: 165384
+        sha256_sum: "0a036c23e3eedb08e70baa8faf04b77a7efe1fe297e932114c5adb096cbb6e4f"
+    },
+    {
+        path: "pkg/cnc/openpnp/parts/lumenpnp-thimble-12mm.stl"
+        size: 56884
+        sha256_sum: "030344e298582f3d6677d6a9f7c92deac9232704063eaf3adf4ae87a33db0d34"
+    },
+    {
         path: "pkg/fan_controller/board-r3/plot/board-B_Cu.gbl"
         size: 51227
         sha256_sum: "289d0b48407b3c050b2f7e1f72eebf1605ce67262871c4e35d09ff631a25bf15"
@@ -1708,6 +1733,11 @@ files: [
         path: "pkg/media/camera/boards/camera_ar0234/r1/plot.zip"
         size: 93364
         sha256_sum: "dea779e9cdcf085a5ced3d5b681ba137a3fb5db9e4ec68576b9db45a913205d6"
+    },
+    {
+        path: "pkg/media/camera/boards/camera_ffc/latest/plot.zip"
+        size: 3523
+        sha256_sum: "b8e65d42be942bd0f2cbfd6f380c8f9321452fa855245f79f8fa278f281b1a10"
     },
     {
         path: "pkg/media/camera/boards/camera_mira220/r1/plot.zip"
@@ -1913,6 +1943,81 @@ files: [
         path: "pkg/things/button/boards/main/r1/plot.zip"
         size: 73693
         sha256_sum: "cd213ac5de334e3aae5011cf586090e8a8e3bd4fa5d5045b86dff0d472580174"
+    },
+    {
+        path: "pkg/things/button/parts/board-back-holder.stl"
+        size: 47484
+        sha256_sum: "a45c68b47eae23499f7a89eab46d6d6eb342d9efe67ecd1d002d388d41fd2f71"
+    },
+    {
+        path: "pkg/things/button/parts/button-overlay.stl"
+        size: 31084
+        sha256_sum: "6f667f949e9acd5f271132d7c2e69ed41ca9a1b485ea0898f4ec7bde1d19608e"
+    },
+    {
+        path: "pkg/things/button/parts/case-bottom.stl"
+        size: 290584
+        sha256_sum: "19b3417c6355c5ba33e4c2d84d38c80d253dc2fc8391fc295dc7a24a29cd8d01"
+    },
+    {
+        path: "pkg/things/button/parts/case-top-button.stl"
+        size: 252784
+        sha256_sum: "8ea4a4d8f17821e403deffc7df532a3bb53aa22625424602ec09a9d5d1b94821"
+    },
+    {
+        path: "pkg/things/button/parts/case-top-encoder.stl"
+        size: 243784
+        sha256_sum: "8c4fdeda0ca458038517f9ea4ebee4dd1d74d9a2fc2794768c1cbd6e9f3798f9"
+    },
+    {
+        path: "pkg/things/button/parts/case-top-humidity.stl"
+        size: 221684
+        sha256_sum: "6fe21fc3fc17d0b8a28813c289518b168374e6ff2cb5ff99e991b40d5021e700"
+    },
+    {
+        path: "pkg/things/button/parts/case-top-pir.stl"
+        size: 243784
+        sha256_sum: "17e4db0f663c7f3c754a86359d56cfacf809eb83bc263ce4ee9786f437a97b63"
+    },
+    {
+        path: "pkg/things/button/parts/eink-case-bottom.stl"
+        size: 284284
+        sha256_sum: "eeed1184fb7b96d522e57527ccbc803af7dfa1409836fa4f2f3f592d2344cf3a"
+    },
+    {
+        path: "pkg/things/button/parts/eink-case-top.stl"
+        size: 269184
+        sha256_sum: "4d9c21f4a0362f3e648e018e6639f24d9a15cde16c2e057488f076f920dbf032"
+    },
+    {
+        path: "pkg/things/button/parts/encoder-knob.stl"
+        size: 618484
+        sha256_sum: "e705a5e504487e79cb6b52597a3406ddede8860f7ca80dadb2a9213e75974284"
+    },
+    {
+        path: "pkg/things/button/parts/magnet-case-bottom.stl"
+        size: 238584
+        sha256_sum: "4245584f28f9bb370c3b1e0008aa234d2dc3b4a2075d9016be828d54120ea638"
+    },
+    {
+        path: "pkg/things/button/parts/magnet-case-top.stl"
+        size: 170984
+        sha256_sum: "708dacb0bc9ad7822c8b46244e20bacd0f14c56bbf46178e2d5ffcc1df05440b"
+    },
+    {
+        path: "pkg/things/button/parts/magnet-door-spacer.stl"
+        size: 130684
+        sha256_sum: "3a4cedef2b99874ad9bcdbb5259f1e7e4935a14fbbed5874da880b367c37d823"
+    },
+    {
+        path: "pkg/things/button/parts/magnet-holder.stl"
+        size: 119084
+        sha256_sum: "68cfb80ff4cc57fdff95a9fee799729c08a50ab78b9e5733be126afa4d52a1d2"
+    },
+    {
+        path: "pkg/things/button/parts/pir-spacer.stl"
+        size: 72884
+        sha256_sum: "614de89b8996a563ce148987335670a75098aacc39013cbaa106a0c817f18c5f"
     },
     {
         path: "pkg/things/fan_controller/parts/fan-controller-hl15-case.stl"

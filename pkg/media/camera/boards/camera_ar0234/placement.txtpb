@@ -1,0 +1,94 @@
+
+# Config for OpenPNP Assembly.
+
+parts: [
+    {
+        name: "Fiducial"
+        fiducial: true
+        board_ref {
+            value: "Fiducial"
+            package: "Fiducial_1mm_Mask2mm"
+        }
+    },
+    {
+        name: "Cap_0.1uF_0402"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/GRM155R71C104KA88J/2610892"
+        height: 0.5
+        board_ref {
+            value: "0.1uF"
+            package: "C_0402_1005Metric"
+        }
+    },
+    {
+        name: "Cap_1uF_0402"
+        source: "https://www.digikey.com/en/products/detail/murata-electronics/GCM155C71A105KE38D/6012263"
+        height: 0.5
+        board_ref {
+            value: "1uF"
+            package: "C_0402_1005Metric"
+        }
+    },
+    {
+        name: "Res_1.5K_0402"
+        source: "https://www.digikey.com/en/products/detail/yageo/RC0402FR-071K5L/726519"
+        height: 0.35
+        board_ref {
+            value: "1.5K"
+            package: "R_0402_1005Metric"
+        }
+    },
+    {
+        name: "Res_10K_0402"
+        source: "https://www.digikey.com/en/products/detail/yageo/RC0402JR-0710KL/726418"
+        height: 0.35
+        board_ref {
+            value: "10K"
+            package: "R_0402_1005Metric"
+        }
+    },
+    {
+        name: "Cap_1uF_0603"
+        source: "https://www.digikey.com/en/products/detail/yageo/CC0603KRX7R7BB105/2833611"
+        height: 0.8
+        board_ref {
+            value: "1uF"
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "Cap_10uF_0603"
+        source: "https://www.digikey.com/en/products/detail/samsung-electro-mechanics/CL10A106KP8NNNC/3886850"
+        height: 0.8
+        board_ref {
+            value: "10uF"
+            package: "C_0603_1608Metric"
+        }
+    },
+    {
+        name: "BSS-138"
+        source: "https://www.digikey.com/en/products/detail/onsemi/BSS138/244210"
+        height: 1
+        board_ref {
+            value: "BSS138"
+            package: "SOT-23"
+        }
+    }
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

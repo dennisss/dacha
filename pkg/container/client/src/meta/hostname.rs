@@ -6,6 +6,7 @@ use crate::{id::entity_id_to_string, service::address::ServiceName};
 /// bootstrapping purposes.
 pub const ROOT_SERVER_ID: u64 = 1;
 
+/// A resolver which finds the address of the metastore in a cluster. 
 pub struct ClusterMetaHostnameResolver {
     zone: String,
 }

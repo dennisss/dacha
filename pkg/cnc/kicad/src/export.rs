@@ -15,6 +15,7 @@ pub struct KicadPCBExport {
     pub back_mask: LocalPathBuf,
     pub back_paste: LocalPathBuf,
     pub edge_cuts: LocalPathBuf,
+    pub pos_file: LocalPathBuf,
 }
 
 impl KicadPCBExport {
@@ -72,6 +73,27 @@ impl KicadPCBExport {
             .file_stem()
             .ok_or_else(|| err_msg("Unknown file stem"))?;
 
+
+        let pos_file = output_dir.join(format!("{}.csv", base_name));
+
+        let out = Command::new("kicad-cli")
+            .args([
+                "pcb",
+                "export",
+                "pos",
+                "--format", "csv",
+                "--side", "both",
+                "--output", pos_file.as_str(),
+                "--units", "mm",
+                pcb_path_string.as_str(),
+            ])
+            .output()?;
+
+        if !out.status.success() {
+            return Err(err_msg("Failed to generate pos file."));
+        }
+
+
         Ok(Self {
             drill_file: output_dir.join(format!("{}.drl", base_name)),
             front_copper: output_dir.join(format!("{}-F_Cu.gbr", base_name)),
@@ -81,6 +103,7 @@ impl KicadPCBExport {
             back_mask: output_dir.join(format!("{}-B_Mask.gbr", base_name)),
             back_paste: output_dir.join(format!("{}-B_Paste.gbr", base_name)),
             edge_cuts: output_dir.join(format!("{}-Edge_Cuts.gbr", base_name)),
+            pos_file
         })
     }
 }

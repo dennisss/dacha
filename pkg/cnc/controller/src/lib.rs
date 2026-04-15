@@ -9,7 +9,6 @@ pub mod tmc2209;
 pub mod ma732;
 pub mod thermal_model;
 pub mod optimizer;
-pub mod csv;
 pub mod ptc_heater_model;
 pub mod motion_controller;
 pub mod motion_controller_sim;

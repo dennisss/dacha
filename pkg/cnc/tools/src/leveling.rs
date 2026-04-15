@@ -24,12 +24,12 @@ use cnc_controller_proto::cnc::*;
 use cnc_controller::config::ControllerConfigRegistry;
 use file::LocalPathBuf;
 use media_camera::camera_manager::CameraManager;
-use cnc_controller::csv::CSVDataReader;
 use file::project_path;
 use cnc_controller::stats::*;
 use cnc::grid::*;
 use peripherals_service::config::*;
 use peripherals_service::device::*;
+use math_compute::io::CSVDataReader;
 
 use crate::remote::*;
 use crate::plane::*;

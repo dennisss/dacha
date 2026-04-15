@@ -30,6 +30,7 @@ node -r esm pkg/media/creation/animation/js/node.js
 
 ## Davinci Resolve Settings:
 
+- In Fairlight, pick an audio clip, right click, "Dialogue Leveler" > "Capture Profile". Then apply to the rest.
 - Audio Normalization:
   - Just select all the dialogue and do `Normalize Audio Levels`, `YouTube`, `Independent`
 - Apply Music:

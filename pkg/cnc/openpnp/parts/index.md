@@ -1,0 +1,1 @@
+The parts in this directory prefixed with `lumenpnp-` are derived from the LumenPNP FreeCad sources.

@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package openpnp;
+
+message PlacementConfig {
+    repeated Part parts = 1;
+}
+
+message Part {
+    string name = 1;
+
+    // URL to a site like DigiKey where this component can be bought.
+    string source = 2;
+
+    double height = 3;
+
+    BoardComponentReference board_ref = 4;
+
+    bool fiducial = 5;
+}
+
+message BoardComponentReference {
+    string value = 1;
+    string package = 2;
+}
+

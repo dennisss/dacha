@@ -38,7 +38,7 @@ def calculate_fov(pixel_size_um: float, width_pixels: int, height_pixels: int, f
 # --- Example Usage using your provided numbers ---
 if __name__ == "__main__":
     pixel_size = 3.0      # um
-    resolution_w = 1200   # pixels
+    resolution_w = 1920   # pixels
     resolution_h = 1200   # pixels
     focal_length = 4.35   # mm
 
