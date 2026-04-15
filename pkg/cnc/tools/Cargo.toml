@@ -23,6 +23,6 @@ cnc = { path = "../" }
 sstable = { path = "../../sstable" }
 cnc_controller = { path = "../controller" }
 cnc_controller_proto = { path = "../controller/proto" }
-cluster_client = { path = "../../container/client" }
-container_proto = { path = "../../container/proto" }
+cluster_client = { path = "../../cluster/client" }
+cluster_proto = { path = "../../cluster/proto" }
 peripherals_service = { path = "../../peripherals/service" }

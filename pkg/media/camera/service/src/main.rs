@@ -241,7 +241,7 @@ async fn main() -> Result<()> {
     };
 
 
-    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     let mut server = ClusterServer::new(args.port.value(), acl, client.clone())?;

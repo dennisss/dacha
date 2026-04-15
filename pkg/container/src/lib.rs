@@ -14,7 +14,7 @@ extern crate regexp_macros;
 
 pub mod init;
 pub mod node;
-use container_proto::cluster as proto;
+use cluster_proto::cluster as proto;
 mod runtime;
 mod setup_socket;
 

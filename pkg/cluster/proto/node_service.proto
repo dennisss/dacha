@@ -2,14 +2,14 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/proto/config.proto";
-import "pkg/container/proto/log.proto";
-import "pkg/container/proto/worker.proto";
-import "pkg/container/proto/meta.proto";
-import "pkg/container/proto/worker_event.proto";
-import "pkg/container/proto/labels.proto";
+import "pkg/cluster/proto/config.proto";
+import "pkg/cluster/proto/log.proto";
+import "pkg/cluster/proto/worker.proto";
+import "pkg/cluster/proto/meta.proto";
+import "pkg/cluster/proto/worker_event.proto";
+import "pkg/cluster/proto/labels.proto";
 import "google/protobuf/empty.proto";
-import "pkg/container/proto/certificates.proto";
+import "pkg/cluster/proto/certificates.proto";
 
 message ListWorkersRequest {
     // If present, we will only return data for the container with this id.

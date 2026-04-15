@@ -15,8 +15,8 @@ executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 crypto = { path = "../../crypto" }
 protobuf = { path = "../../protobuf" }
-cluster_client = { path = "../../container/client" }
-container_proto = { path = "../../container/proto" }
+cluster_client = { path = "../../cluster/client" }
+cluster_proto = { path = "../../cluster/proto" }
 macros = { path = "../../macros" }
 http = { path = "../../http" }
 parsing = { path = "../../parsing" }

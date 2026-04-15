@@ -39,7 +39,7 @@ use builder::{BuildConfigTarget, Builder};
 use common::errors::*;
 use cluster_manager::Manager;
 use container::NodeConfig;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use crypto::random::{RngExt, SharedRngExt};
 use crypto::tls::{Credentials, FileCredentialsManager};
 use db_table::db::ProtobufDB;

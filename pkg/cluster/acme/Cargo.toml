@@ -17,7 +17,7 @@ rpc_util = { path = "../../rpc/util" }
 google_auth = { path = "../../api/google/auth" }
 google_dns = { path = "../../api/google/dns" }
 compression = { path = "../../compression" }
-cluster_client = { path = "../../container/client" }
+cluster_client = { path = "../../cluster/client" }
 net = { path = "../../net" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
@@ -25,7 +25,7 @@ sys = { path = "../../sys" }
 acme = { path = "../../api/acme" }
 db_table = { path = "../../db/table" }
 protobuf = { path = "../../protobuf" }
-container_proto = { path = "../../container/proto" }
+cluster_proto = { path = "../../cluster/proto" }
 
 [features]
 default = ["std"]

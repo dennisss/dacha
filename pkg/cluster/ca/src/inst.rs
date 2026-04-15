@@ -10,7 +10,7 @@ use cluster_client::{
     service::address::{ServiceEntity, ServiceName},
 };
 use common::bytes::Bytes;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use crypto::tls::FileCredentialsManager;
 use crypto::x509::Certificate;
 use crypto::bcrypt::*;

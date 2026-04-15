@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use db_table::db::ProtobufDB;
 use executor_multitask::ServiceResource;
 use http::ServerHandler;

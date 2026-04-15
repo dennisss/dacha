@@ -12,7 +12,7 @@ use cluster_client::{
 use cluster_client::acl::checker::check_entity_allowed;
 use cluster_client::throttler::HashedTokenBucketThrottler;
 use common::bytes::Bytes;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use db_table::{query, query_one};
 use file::LocalPath;
 use cluster_client::acl::proxy::{SESSION_ID_HEADER, CLIENT_ID_HEADER};

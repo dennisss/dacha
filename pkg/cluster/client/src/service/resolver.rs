@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use db_table::db::ProtobufDB;
 use db_table::{query, query_one};
 use executor::child_task::ChildTask;

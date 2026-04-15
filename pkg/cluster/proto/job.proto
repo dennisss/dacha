@@ -5,8 +5,8 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/proto/worker.proto";
-import "pkg/container/proto/labels.proto";
+import "pkg/cluster/proto/worker.proto";
+import "pkg/cluster/proto/labels.proto";
 
 message JobSpec {
     // Name of the job. Individual worker names will use this as a prefix.

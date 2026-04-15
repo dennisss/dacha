@@ -21,7 +21,7 @@ pub mod server;
 pub mod service;
 pub mod throttler;
 
-pub use container_proto::cluster::*;
+pub use cluster_proto::cluster::*;
 pub use server::*;
 pub use service::resolver::ServiceResolver;
 pub use meta::client::ClusterMetaClient;

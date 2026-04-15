@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use cluster_client::ClusterMetaClient;
 use common::errors::*;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use grpc_proto::grpc::reflection::v1alpha::*;
 
 /*

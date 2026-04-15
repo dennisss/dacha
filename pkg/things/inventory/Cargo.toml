@@ -17,8 +17,8 @@ crypto = { path = "../../crypto" }
 protobuf = { path = "../../protobuf" }
 db_table = { path = "../../db/table" }
 mcmaster = { path = "../../api/mcmaster" }
-cluster_client = { path = "../../container/client" }
-container_proto = { path = "../../container/proto" }
+cluster_client = { path = "../../cluster/client" }
+cluster_proto = { path = "../../cluster/proto" }
 macros = { path = "../../macros" }
 http = { path = "../../http" }
 json = { path = "../../format/json" }

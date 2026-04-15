@@ -13,7 +13,7 @@ use executor_multitask::{RootResource, ServiceResource, ServiceResourceGroup};
 use file::LocalPathBuf;
 use raft::{log::segmented_log::SegmentedLogOptions, proto::RouteLabel};
 use rpc_util::NamedPortArg;
-use container_proto::cluster::ServiceResolverIntoService;
+use cluster_proto::cluster::ServiceResolverIntoService;
 
 use crate::acl::KeyPrefixACLProcessor;
 use crate::resolver::ServiceResolverImpl;
@@ -95,7 +95,7 @@ pub async fn run(options: ClusterMetastoreOptions) -> Result<Arc<dyn ServiceReso
     let mut state_machine = EmbeddedDBStateMachineOptions::default();
     state_machine.processor = Some(acl_processor.clone());
 
-    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     // TODO: Must limit what percentage of request slots can be used for user facing

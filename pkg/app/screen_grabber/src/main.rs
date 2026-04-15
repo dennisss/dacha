@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     let client = ClusterMetaClient::create_from_environment().await?;
     service.register_dependency(client.clone()).await;
 
-    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     let mut server = ClusterServer::new(args.port.value(), acl, client)?;

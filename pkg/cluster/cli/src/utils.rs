@@ -5,7 +5,7 @@ use cluster_client::{
     service::address::{ServiceEntity, ServiceName},
 };
 use common::errors::*;
-use container_proto::cluster::{BundleBlobStoreStub, ContainerNodeStub, ManagerStub};
+use cluster_proto::cluster::{BundleBlobStoreStub, ContainerNodeStub, ManagerStub};
 use db_table::query_one;
 
 pub struct NodeStubs {

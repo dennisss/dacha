@@ -3,7 +3,7 @@
 
 use builder::proto::BundleBlobSpec;
 use common::errors::*;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use db_table::db::ProtobufDB;
 use db_table::{define_singleton_table, query, query_one, sparse_struct, table::*, table_id};
 use protobuf::{Message, StaticMessage};

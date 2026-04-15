@@ -32,7 +32,7 @@ use http::ClientInterface;
 use cluster_auth::*;
 use executor_multitask::ServiceResource;
 use cluster_client::meta::SessionTable;
-use container_proto::cluster::Session;
+use cluster_proto::cluster::Session;
 
 use crate::handler::*;
 
@@ -101,7 +101,7 @@ async fn works() -> Result<()> {
     let backend_a = TestHttpServer::create("ServerA", 9002);
     let backend_b = TestHttpServer::create("ServerB", 9003);
 
-    let mut config = container_proto::cluster::FrontendConfig::default();
+    let mut config = cluster_proto::cluster::FrontendConfig::default();
     protobuf::text::parse_text_proto(r#"
         backends {
             sub_domain: "auth"

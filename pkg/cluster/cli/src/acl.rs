@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use cluster_client::{acl::principal::Principal, meta::*, service::address::ServiceName};
 use common::errors::*;
-use container_proto::cluster::GroupMembership;
-use container_proto::cluster::KeyPrefixACLProto;
+use cluster_proto::cluster::GroupMembership;
+use cluster_proto::cluster::KeyPrefixACLProto;
 use db_table::{
     db::{ProtobufDB, ProtobufDBTransaction},
     raw_query, primary_key_prefix,

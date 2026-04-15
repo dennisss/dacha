@@ -12,7 +12,7 @@ use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
 use cluster_client::meta::ObjectMetadataTable;
 use cluster_client::ClusterServer;
-use container_proto::cluster::ObjectMetadata;
+use cluster_proto::cluster::ObjectMetadata;
 use rpc_util::NamedPortArg;
 use db_table::query_one;
 use db_table::db::ProtobufDBTransaction;
@@ -32,7 +32,7 @@ struct Args {
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     
-    let mut config = container_proto::cluster::FrontendConfig::default();
+    let mut config = cluster_proto::cluster::FrontendConfig::default();
     protobuf::text::parse_text_proto(&file::read_to_string(args.config).await?, &mut config)?;
 
     let service = RootResource::new();
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
 
     // TODO: Also integrate a regular cluster server for mTLS and health checking.
     /*
-    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     let mut server = ClusterServer::new(args.port.value(), acl, client.clone())?;
     service.register_dependency(server.start()?).await;
     */

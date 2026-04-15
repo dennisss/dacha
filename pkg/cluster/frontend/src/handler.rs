@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use executor::sync::AsyncMutex;
 use executor_multitask::ServiceResource;
 use http::ServerHandler;

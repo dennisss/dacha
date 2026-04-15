@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use file::{LocalPathBuf, LocalPath};
-use container_proto::cluster::{ZoneConfigBackup, ZoneConfigBackupFile};
+use cluster_proto::cluster::{ZoneConfigBackup, ZoneConfigBackupFile};
 use crypto::tls::CertificateRegistrySource;
 use crypto::tls::FileCredentialsManager;
 use cluster_client::ClusterMetaClient;

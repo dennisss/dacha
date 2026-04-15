@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use common::errors::*;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use db_table::table::*;
 use db_table::table_id;
 use db_table::{define_singleton_table, sparse_struct};

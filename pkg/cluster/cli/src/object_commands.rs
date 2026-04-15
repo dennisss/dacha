@@ -2,7 +2,7 @@ use common::errors::*;
 use file::LocalPathBuf;
 use cluster_client::ClusterMetaClient;
 use cluster_client::meta::table::*;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use cluster_client::id::{entity_id_to_string, entity_id_from_string};
 use cluster_client::service::address::ServiceName;
 use base_units::ByteCount;

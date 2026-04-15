@@ -12,7 +12,7 @@ use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
 use cluster_client::meta::ObjectMetadataTable;
 use cluster_client::ClusterServer;
-use container_proto::cluster::ObjectMetadata;
+use cluster_proto::cluster::ObjectMetadata;
 use rpc_util::NamedPortArg;
 use db_table::query_one;
 use db_table::db::ProtobufDBTransaction;
@@ -219,7 +219,7 @@ async fn main() -> Result<()> {
     let client = ClusterMetaClient::create_from_environment().await?;
     service.register_dependency(client.clone()).await;
 
-    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     let mut server = ClusterServer::new(args.port.value(), acl, client.clone())?;

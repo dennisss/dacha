@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/proto/certificates.proto";
+import "pkg/cluster/proto/certificates.proto";
 
 
 // Data stored on a node running a worker to keep track of important internal data for

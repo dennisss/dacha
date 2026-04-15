@@ -5,11 +5,11 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/proto/worker.proto";
-import "pkg/container/proto/job.proto";
-import "pkg/container/proto/blob.proto";
-import "pkg/container/proto/node.proto";
-import "pkg/container/proto/labels.proto";
+import "pkg/cluster/proto/worker.proto";
+import "pkg/cluster/proto/job.proto";
+import "pkg/cluster/proto/blob.proto";
+import "pkg/cluster/proto/node.proto";
+import "pkg/cluster/proto/labels.proto";
 import "google/protobuf/timestamp.proto";
 import "pkg/builder/proto/bundle.proto";
 import "google/protobuf/any.proto";

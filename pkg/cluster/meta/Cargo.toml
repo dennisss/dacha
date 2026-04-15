@@ -16,8 +16,8 @@ macros = { path = "../../macros" }
 db_txn = { path = "../../db/txn" }
 db_txn_proto = { path = "../../db/txn/proto" }
 compression = { path = "../../compression" }
-cluster_client = { path = "../../container/client" }
-container_proto = { path = "../../container/proto" }
+cluster_client = { path = "../../cluster/client" }
+cluster_proto = { path = "../../cluster/proto" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
 net = { path = "../../net" }

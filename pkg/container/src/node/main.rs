@@ -421,7 +421,7 @@ async fn run_inner(
     umask(Mode::from_bits_truncate(0o027));
 
     // TODO: Parse this much earlier.
-    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     let service = RootResource::new();

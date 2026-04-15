@@ -7,7 +7,7 @@ use db_table::db::ProtobufDB;
 use executor::bundle::TaskResultBundle;
 use executor_multitask::RootResource;
 use rpc_util::{AddReflection, NamedPortArg};
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 
 use crate::Manager;
 
@@ -48,7 +48,7 @@ async fn main_with_port(port: u16) -> Result<()> {
         .spawn_interruptable("Manager::run", manager.clone().run())
         .await;
 
-    let mut acl = container_proto::cluster::ServiceACLProto::default();
+    let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
     let mut server = ClusterServer::new(port, acl, client)?;

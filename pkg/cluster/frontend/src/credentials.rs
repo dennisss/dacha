@@ -6,7 +6,7 @@ use db_table::db::{ProtobufDBTransaction, ProtobufDB};
 use db_table::query_one;
 use cluster_client::meta::ObjectMetadataTable;
 use cluster_client::ClusterMetaClient;
-use container_proto::cluster::ObjectMetadata;
+use cluster_proto::cluster::ObjectMetadata;
 use executor_multitask::{TaskResource, impl_resource_passthrough};
 use crypto::tls::{ServerOptionsContainer, ServerOptions, CertificateIdentity};
 use crypto::x509::{PrivateKey, Certificate};

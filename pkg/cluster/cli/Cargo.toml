@@ -18,7 +18,7 @@ protobuf = { path = "../../protobuf" }
 http = { path = "../../http" }
 macros = { path = "../../macros" }
 compression = { path = "../../compression" }
-cluster_client = { path = "../../container/client" }
+cluster_client = { path = "../../cluster/client" }
 cluster_ca = { path = "../ca" }
 cluster_meta = { path = "../meta" }
 cluster_manager = { path = "../manager" }
@@ -32,7 +32,7 @@ executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 sys = { path = "../../sys" }
-container_proto = { path = "../../container/proto" }
+cluster_proto = { path = "../../cluster/proto" }
 container = { path = "../../container" }
 terminal = { path = "../../dev/terminal" }
 grpc_proto = { path = "../../../third_party/grpc_proto" }

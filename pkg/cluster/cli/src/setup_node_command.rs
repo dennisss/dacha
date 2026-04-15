@@ -15,7 +15,7 @@ use builder::{BuildConfigTarget, Builder};
 use common::errors::*;
 use cluster_manager::Manager;
 use container::NodeConfig;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use crypto::random::{RngExt, SharedRngExt};
 use crypto::tls::{Credentials, FileCredentialsManager};
 use db_table::db::ProtobufDB;
@@ -556,7 +556,7 @@ async fn setup_remote_node_server(
 
     println!("Creating node config...");
     let mut node_config = {
-        let s = file::read_to_string(project_path!("pkg/container/config/node.txtpb")).await?;
+        let s = file::read_to_string(project_path!("pkg/cluster/config/node.txtpb")).await?;
         NodeConfig::parse_text(&s)?
     };
 
@@ -734,7 +734,7 @@ async fn setup_remote_node_server(
     }
 
     println!("Installing systemd service...");
-    let service_file = file::read_to_string(project_path!("pkg/container/config/node.service")).await?
+    let service_file = file::read_to_string(project_path!("pkg/cluster/config/node.service")).await?
         .replace("{base_dir}", base_dir.as_str());
     operator.upload(service_file.as_bytes(), "/tmp/cluster-node.service").await?;
     operator.run("sudo cp --no-preserve=all /tmp/cluster-node.service /etc/systemd/system/cluster-node.service").await?;

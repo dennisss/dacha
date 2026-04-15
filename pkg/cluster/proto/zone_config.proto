@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/proto/certificates.proto";
+import "pkg/cluster/proto/certificates.proto";
 import "google/protobuf/any.proto";
 
 message ZoneConfigBackupFile {

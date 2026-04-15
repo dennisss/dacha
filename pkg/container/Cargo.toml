@@ -18,7 +18,7 @@ http = { path = "../http" }
 macros = { path = "../macros" }
 sstable = { path = "../sstable" }
 compression = { path = "../compression" }
-cluster_client = { path = "./client" }
+cluster_client = { path = "../cluster/client" }
 usb = { path = "../usb" }
 rpc = { path = "../rpc" }
 rpc_util = { path = "../rpc/util" }
@@ -30,7 +30,7 @@ executor = { path = "../executor" }
 executor_multitask = { path = "../executor/multitask" }
 file = { path = "../file" }
 sys = { path = "../sys" }
-container_proto = { path = "./proto" }
+cluster_proto = { path = "../cluster/proto" }
 db_txn = { path = "../db/txn" }
 db_txn_client = { path = "../db/txn/client" }
 

@@ -7,7 +7,7 @@ use file::LocalPathBuf;
 use db_table::db::ProtobufDBTransaction;
 use cluster_client::acl::principal::Principal;
 use cluster_client::service::address::ServiceName;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use cluster_client::meta::GroupMembershipTable;
 use cluster_client::service::create_rpc_channel;
 use file::Stdin;

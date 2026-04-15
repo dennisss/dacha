@@ -2,7 +2,7 @@ use std::collections::{HashSet, HashMap};
 
 use cluster_client::meta::{client::ClusterMetaClient, NodeSchedulingMetadataTable};
 use common::errors::*;
-use container_proto::cluster::NodeSetupConfig;
+use cluster_proto::cluster::NodeSetupConfig;
 use db_table::query_one;
 use protobuf::Message;
 use file::{LocalPathBuf, LocalPath};

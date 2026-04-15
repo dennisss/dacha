@@ -26,7 +26,7 @@ executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
 sys = { path = "../../sys" }
-container_proto = { path = "../proto" }
+cluster_proto = { path = "../proto" }
 builder_proto = { path = "../../builder/proto" }
 regexp_macros = { path = "../../automata/regexp_macros" }
 automata = { path = "../../automata" }

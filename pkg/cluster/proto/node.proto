@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/proto/config.proto";
+import "pkg/cluster/proto/config.proto";
 
 // Config parameters used to start up a single Node instance.
 message NodeConfig {

@@ -15,7 +15,7 @@ http_util = { path = "../../http/util" }
 macros = { path = "../../macros" }
 rpc_util = { path = "../../rpc/util" }
 compression = { path = "../../compression" }
-cluster_client = { path = "../../container/client" }
+cluster_client = { path = "../../cluster/client" }
 cluster_auth = { path = "../auth" }
 net = { path = "../../net" }
 file = { path = "../../file" }
@@ -24,7 +24,7 @@ executor_multitask = { path = "../../executor/multitask" }
 sys = { path = "../../sys" }
 db_table = { path = "../../db/table" }
 protobuf = { path = "../../protobuf" }
-container_proto = { path = "../../container/proto" }
+cluster_proto = { path = "../../cluster/proto" }
 
 [features]
 default = ["std"]

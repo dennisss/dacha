@@ -7,7 +7,7 @@ use cluster_client::meta::KeyPrefixACLTable;
 use cluster_client::ClusterServerConnectionData;
 use common::format::format_bytes;
 use common::hash::FastHasherBuilder;
-use container_proto::cluster::KeyPrefixACLProto;
+use cluster_proto::cluster::KeyPrefixACLProto;
 use db_txn::{ACLProcessor, EmbeddedDBStateMachineProcessor};
 use db_txn_proto::db::txn::*;
 use db_table::db::{ProtobufDB, ProtobufDBKeyValueDecoder};

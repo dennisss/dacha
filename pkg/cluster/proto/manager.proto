@@ -2,8 +2,8 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/proto/job.proto";
-import "pkg/container/proto/blob.proto";
+import "pkg/cluster/proto/job.proto";
+import "pkg/cluster/proto/blob.proto";
 import "pkg/builder/proto/bundle.proto";
 
 service Manager {

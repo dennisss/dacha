@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common::errors::*;
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use db_table::db::{ProtobufDB, ProtobufDBTransaction};
 use db_table::{query, query_one};
 use net::ip::SocketAddr;

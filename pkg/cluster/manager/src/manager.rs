@@ -14,7 +14,7 @@ use db_table::db::{ProtobufDB, ProtobufDBTransaction};
 use db_table::{query, query_one, raw_query, primary_key_prefix};
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
-use container_proto::cluster::*;
+use cluster_proto::cluster::*;
 use builder_proto::builder::Platform;
 
 /*

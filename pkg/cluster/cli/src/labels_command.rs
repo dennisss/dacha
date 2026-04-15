@@ -1,6 +1,6 @@
 use cluster_client::meta::{client::ClusterMetaClient, NodeSchedulingMetadataTable};
 use common::errors::*;
-use container_proto::cluster::Labels;
+use cluster_proto::cluster::Labels;
 use db_table::query_one;
 use protobuf::Message;
 use cluster_client::id::entity_id_from_string;

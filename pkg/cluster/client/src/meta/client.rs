@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use common::errors::*;
-use container_proto::cluster::{ObjectMetadata, UserEnvProto};
+use cluster_proto::cluster::{ObjectMetadata, UserEnvProto};
 use db_txn_client::TransactionalDBClient;
 use db_table::db::ProtobufDB;
 use db_table::query_one;

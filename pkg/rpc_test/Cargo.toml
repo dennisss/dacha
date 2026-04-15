@@ -10,7 +10,7 @@ rpc_util = { path = "../rpc/util" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 http = { path = "../http" }
-cluster_client = { path = "../container/client" }
+cluster_client = { path = "../cluster/client" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 executor_multitask = { path = "../executor/multitask" }

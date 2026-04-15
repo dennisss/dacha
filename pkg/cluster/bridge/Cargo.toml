@@ -13,7 +13,7 @@ parsing = { path = "../../parsing" }
 http_util = { path = "../../http/util" }
 macros = { path = "../../macros" }
 compression = { path = "../../compression" }
-cluster_client = { path = "../../container/client" }
+cluster_client = { path = "../../cluster/client" }
 net = { path = "../../net" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
