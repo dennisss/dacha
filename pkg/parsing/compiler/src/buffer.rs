@@ -117,7 +117,9 @@ impl<'a> Type for BufferType<'a> {
 
                     lines.add(format!(
                         r#"
-                        let mut buf: [core::mem::MaybeUninit<{element_ty}>; {len}] = core::mem::MaybeUninit::uninit_array();
+                        let mut buf: [core::mem::MaybeUninit<{element_ty}>; {len}] = [
+                            const {{ core::mem::MaybeUninit::uninit() }}; {len}
+                        ];
 
                         for i in 0..buf.len() {{
                             buf[i].write({element_parser});

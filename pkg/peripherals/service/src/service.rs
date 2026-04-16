@@ -1,4 +1,5 @@
 use std::{sync::Arc, time::Duration};
+use std::time::Instant;
 
 use base_error::*;
 use executor::{
@@ -7,8 +8,9 @@ use executor::{
 };
 use executor_multitask::{impl_resource_passthrough, TaskResource};
 use peripherals_proto::peripherals::*;
-use nordic_tools::usb_radio::USBRadio;
+use nordic_driver::usb_radio::USBRadio;
 
+use crate::device::*;
 use crate::config::*;
 
 

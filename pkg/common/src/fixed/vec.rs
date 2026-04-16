@@ -21,7 +21,7 @@ pub struct FixedVec<T, const LEN: usize> {
 impl<T, const LEN: usize> FixedVec<T, LEN> {
     pub const fn new() -> Self {
         Self {
-            data: MaybeUninit::uninit_array(),
+            data: [const { MaybeUninit::uninit() }; LEN],
             length: 0,
         }
     }
@@ -156,9 +156,7 @@ impl<T, const LEN: usize> Deref for FixedVec<T, LEN> {
 
     fn deref(&self) -> &Self::Target {
         unsafe {
-            MaybeUninit::slice_assume_init_ref(
-                self.data.get_unchecked(0..self.length)
-            )
+            self.data.get_unchecked(0..self.length).assume_init_ref()
         }
     }
 }
@@ -166,9 +164,7 @@ impl<T, const LEN: usize> Deref for FixedVec<T, LEN> {
 impl<T, const LEN: usize> DerefMut for FixedVec<T, LEN> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
-            MaybeUninit::slice_assume_init_mut(
-                self.data.get_unchecked_mut(0..self.length)
-            )
+            self.data.get_unchecked_mut(0..self.length).assume_init_mut()
         }
     }
 }

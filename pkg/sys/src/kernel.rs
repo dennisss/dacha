@@ -34,6 +34,12 @@ impl From<Duration> for timespec {
     }
 }
 
+impl Into<Duration> for timespec {
+    fn into(self) -> Duration {
+        Duration::from_secs(self.tv_nsec) + Duration::from_nanos(self.tv_nsec)
+    }
+}
+
 // TODO: Which file is thie in
 
 #[derive(Clone, Copy, Default, Debug)]

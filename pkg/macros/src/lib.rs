@@ -26,6 +26,7 @@ mod reflect;
 mod testcase;
 mod utils;
 mod command_args;
+mod concat_idents;
 
 #[derive(Debug)]
 struct BlanketInput {
@@ -178,4 +179,9 @@ pub fn executor_main(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn command_args(input: TokenStream) -> TokenStream {
     command_args::command_args(input)
+}
+
+#[proc_macro]
+pub fn concat_idents(input: TokenStream) -> TokenStream {
+    concat_idents::concat_idents(input)
 }

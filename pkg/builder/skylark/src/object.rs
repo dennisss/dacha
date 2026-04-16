@@ -45,6 +45,9 @@ pub struct ObjectPool<O: Object + ?Sized> {
     shared: Arc<ObjectPoolShared<O>>,
 }
 
+// Note: This must be wrapped in a struct to allow this to be unsized.
+struct ObjectPoolData<O: ?Sized>(AtomicUsize, O);
+
 struct ObjectPoolShared<O: Object + ?Sized> {
     /// NOTE: This is always set to true when the state is locked and never
     /// returns to false.
@@ -59,7 +62,7 @@ struct ObjectPoolState<O: Object + ?Sized> {
 }
 
 struct ObjectPoolEntry<O: Object + ?Sized> {
-    object: Arc<(AtomicUsize, O)>,
+    object: Arc<ObjectPoolData<O>>,
     marked: bool,
 }
 
@@ -93,8 +96,8 @@ impl<O: Object + ?Sized> ObjectPool<O> {
 
         let index = state.entries.len();
 
-        let object: Arc<(AtomicUsize, O)> =
-            Arc::<(AtomicUsize, T)>::new((AtomicUsize::new(index), data));
+        let object: Arc<ObjectPoolData<O>> = 
+            Arc::<ObjectPoolData<T>>::new(ObjectPoolData(AtomicUsize::new(index), data));
 
         state.entries.push(ObjectPoolEntry {
             object: object.clone(),
@@ -209,7 +212,7 @@ impl<O: Object + ?Sized> ObjectPool<O> {
 // object to avoid cyclic roots.
 pub struct ObjectStrong<O: Object + ?Sized> {
     pool: Arc<ObjectPoolShared<O>>,
-    object: Arc<(AtomicUsize, O)>,
+    object: Arc<ObjectPoolData<O>>,
 }
 
 impl<O: Object + ?Sized> Clone for ObjectStrong<O> {
@@ -274,7 +277,7 @@ pub struct ObjectWeak<O: ?Sized + Object> {
     /// 2. Ensure that if stray ObjectWeak instances escape, we can be sure that
     /// the id hasn't been re-used by a newer object by checking the state of
     /// the weak pointer.
-    object: Weak<(AtomicUsize, O)>,
+    object: Weak<ObjectPoolData<O>>,
 }
 
 impl<O: ?Sized + Object> Clone for ObjectWeak<O> {

@@ -1,4 +1,4 @@
-#![feature(unsize, unsized_tuple_coercion)]
+#![feature(unsize)]
 
 #[macro_use]
 extern crate common;

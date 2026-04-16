@@ -11,7 +11,7 @@ pub struct FixedQueue<T, const LEN: usize> {
 impl<T, const LEN: usize> FixedQueue<T, LEN> {
     pub const fn new() -> Self {
         Self {
-            data: MaybeUninit::uninit_array(),
+            data: [const { MaybeUninit::uninit() }; LEN],
             offset: 0,
             length: 0,
         }

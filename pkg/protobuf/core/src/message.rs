@@ -41,7 +41,7 @@ impl StaticDefault for SerializeOptions {
     }
 }
 
-pub trait OutputBuffer = Appendable<Item = u8, Error = Infallible> + ?Sized;
+pub trait OutputBuffer = Appendable<Item = u8, Error = Infallible>;
 
 /// Message whose definition is well known to the binary.
 /// Usually these will be declared with code generation.

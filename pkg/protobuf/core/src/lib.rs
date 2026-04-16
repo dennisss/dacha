@@ -1,4 +1,4 @@
-#![feature(core_intrinsics, trait_alias, concat_idents)]
+#![feature(core_intrinsics, trait_alias)]
 #![no_std]
 
 #[cfg(feature = "std")]

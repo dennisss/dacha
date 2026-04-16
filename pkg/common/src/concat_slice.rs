@@ -21,8 +21,7 @@ impl<'a> ConcatSlicePair<'a> {
         (*output)[0..n].copy_from_slice(&(*input)[0..n]);
         *input = &(*input)[n..];
 
-        output.take_mut(..n);
-        // *output = &mut (*output)[n..];
+        output.split_off_mut(..n);
         n
     }
 

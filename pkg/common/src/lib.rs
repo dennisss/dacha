@@ -5,7 +5,6 @@
     const_fn_trait_bound,
     try_trait_v2,
     const_slice_from_raw_parts,
-    maybe_uninit_uninit_array,
     maybe_uninit_slice,
     slice_take,
     allocator_api,

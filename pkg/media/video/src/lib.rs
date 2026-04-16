@@ -1,6 +1,5 @@
 #![feature(
     maybe_uninit_array_assume_init,
-    maybe_uninit_uninit_array,
     let_chains,
     inherent_associated_types
 )]
