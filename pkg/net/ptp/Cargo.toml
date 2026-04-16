@@ -14,6 +14,14 @@ executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 macros = { path = "../../macros" }
 base_radix = { path = "../../base/radix" }
+ptp_proto = { path = "./proto" }
+crypto = { path = "../../crypto" }
+http = { path = "../../http" }
+cluster_client = { path = "../../cluster/client" }
+cluster_proto = { path = "../../cluster/proto" }
+rpc = { path = "../../rpc" }
+rpc_util = { path = "../../rpc/util" }
+protobuf = { path = "../../protobuf" }
 
 [build-dependencies]
 parsing_compiler = { path = "../../parsing/compiler" }

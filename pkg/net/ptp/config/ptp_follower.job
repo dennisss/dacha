@@ -1,0 +1,52 @@
+name: "ptp_follower"
+
+replicas: 1
+
+scheduling {
+    distinct_nodes: true
+    labels {
+        label {
+            key: "name"
+            value: "testpi5"
+        }
+    }
+}
+
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/net/ptp/ptp_service",
+        "--mode=follower",
+        "--iface=eth0",
+        "--rpc_port=rpc",
+        "--ptp_port=ptp"
+    ]
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/net/ptp:ptp_service_bundle"
+        }
+    ]
+
+    ports: [
+        {
+            name: "rpc"
+            type: TCP
+        },
+        {
+            name: "ptp"
+            type: TCP  # TODO: Support UDP
+        }
+    ]
+
+    additional_groups: []
+    devices: [
+        {
+            source {
+                raw: "/dev"
+                limit: 1
+            }
+        }
+    ]
+}

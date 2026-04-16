@@ -36,7 +36,7 @@ impl From<Duration> for timespec {
 
 impl Into<Duration> for timespec {
     fn into(self) -> Duration {
-        Duration::from_secs(self.tv_nsec) + Duration::from_nanos(self.tv_nsec)
+        Duration::from_secs(self.tv_sec) + Duration::from_nanos(self.tv_nsec)
     }
 }
 

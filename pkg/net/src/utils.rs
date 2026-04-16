@@ -85,8 +85,8 @@ pub unsafe fn enable_hardware_timestamping(fd: &OpenFileDescriptor, dev_name: &s
     req.ifr_ifrn.ifrn_name[0..dev_name.as_bytes().len()].copy_from_slice(core::mem::transmute(dev_name.as_bytes()));
 
     // TODO: Pin this.
-    let mut config = sys::bindings::hwtstamp_config::default();
-    req.ifr_ifru.ifru_data = core::mem::transmute(&config);
+    let mut config = alloc::boxed::Box::new(sys::bindings::hwtstamp_config::default());
+    req.ifr_ifru.ifru_data = core::mem::transmute::<&sys::bindings::hwtstamp_config, _>(&config);
 
     sys::ioctl(**fd, sys::bindings::SIOCGHWTSTAMP, core::mem::transmute(&mut req))?;
     
@@ -114,13 +114,13 @@ pub fn enable_hardware_timestamp_filters(dev_name: &str) -> Result<()> {
         req.ifr_ifrn.ifrn_name[0..dev_name.as_bytes().len()].copy_from_slice(core::mem::transmute(dev_name.as_bytes()));
 
         // TODO: Pin this.
-        let mut config = sys::bindings::hwtstamp_config::default();
+        let mut config = alloc::boxed::Box::new(sys::bindings::hwtstamp_config::default());
         config.tx_type = sys::bindings::hwtstamp_tx_types::HWTSTAMP_TX_ON as i32;
         // This is the only one I've been able to get to work on a Raspberry Pi for both RX and
         // TX (others can be configured successfully but don't emit timestamps on RX)
         config.rx_filter = sys::bindings::hwtstamp_rx_filters::HWTSTAMP_FILTER_ALL as i32;
         // config.rx_filter = sys::bindings::hwtstamp_rx_filters::HWTSTAMP_FILTER_PTP_V2_EVENT as i32;
-        req.ifr_ifru.ifru_data = core::mem::transmute(&config);
+        req.ifr_ifru.ifru_data = core::mem::transmute::<&sys::bindings::hwtstamp_config, _>(&config);
 
         sys::ioctl(*fd, sys::bindings::SIOCSHWTSTAMP, core::mem::transmute(&req))?;
 

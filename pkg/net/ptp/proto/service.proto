@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package ptp;
+
+service TimeSync {
+
+    rpc Status (StatusRequest) returns (StatusResponse);
+    
+    // Note that all followers should be configured before the leader to ensure that they are
+    // ready to handle sync messages.
+    rpc Configure (ConfigureRequest) returns (ConfigureResponse);
+
+    // Called by the leader node on every follower node after a full PTPv2 sync round trip
+    // has occured to inform the follower of the timings so that it can sync its local clock
+    // with the leader.
+    rpc Sync (TimeSyncPoint) returns (SyncResponse);
+}
+
+message TimeSyncConfig {
+    TimeSyncRole role = 1;
+
+    LeaderConfig leader = 2;
+
+    FollowerConfig follower = 3;
+}
+
+message LeaderConfig {
+    // Number of seconds in between rounds of syncing the local time with all followers.
+    float sync_interval_seconds = 1;
+
+    // The addresses of servers to send sync messages to.
+    repeated TimeSyncPeerAddr followers = 2;
+
+    float ptp_timeout_seconds = 3;
+
+    float sync_timeout_seconds = 4;
+
+    // Parameters to use for syncing the leaders clock to CLOCK_REALTIME.
+    TimeAdjustmentConfig realtime_clock_sync = 5;
+}
+
+message FollowerConfig {
+    TimeAdjustmentConfig leader_clock_sync = 1;
+
+    // Maximum time spent on the network for a sync offset between the leader and follower to be
+    // considered reliable.
+    float max_network_rtt = 2;
+
+    float max_sample_age = 3;
+}
+
+message TimeSyncPeerAddr {
+    string rpc_addr = 1;
+    string ptp_addr = 2;
+}
+
+message TimeAdjustmentConfig {
+    // The current error in seconds is multiplied by this scaling factor
+    // to produce a frequency correction.
+    //
+    // A p_scale value of 1.0 is scaled such that it would get rid of all the error in 1 second.
+    double p_scale = 1;
+
+    double i_scale = 2;
+
+    // If the error exceeds this number of seconds, we will fully reset the current time via
+    // clock_settime instead of doing gradual adjustments.
+    double max_offset_seconds = 3;
+
+    // Maximum accumulated error in seconds used for calculating the integral term of the PI filter
+    // (this is the limit on the sum before it is multiplied by 'i_scale').
+    double max_error_integral_secs = 4;
+
+    // Maximum PPM of frequency correction we will do relative to the nominal frequency.
+    //
+    // This must be larger than the max expected difference in frequencies between the local
+    // and remote frequencies (else we may drift continously and require an offset reset at
+    // some point)
+    double max_correction_ppm = 5;
+}
+
+
+message StatusRequest {
+
+}
+
+message StatusResponse {
+    TimeSyncConfig config = 1;
+
+    FollowerStatus follower = 2;
+    
+}
+
+message FollowerStatus {
+    bool got_sync = 1;
+
+    // Error between the leader and follower's clocks as predicted by the last PTP round trip.
+    double last_leader_error = 2;
+
+    // RTT time in seconds of the last PTP round.
+    double last_leader_rtt = 3;
+
+    // Number of seconds since the last successful sync of the follower's time to the leader.
+    double last_sync_age = 4;
+}
+
+message ConfigureRequest {
+    TimeSyncConfig config = 1;
+}
+
+message ConfigureResponse {
+
+}
+
+enum TimeSyncRole {
+    UNKNOWN = 0;
+    FOLLOWER = 1;
+    LEADER = 2;
+}
+
+message TimeSyncPoint {
+    bytes tx_id = 1;
+
+    uint64 tx_time = 2;
+
+    bytes rx_id = 3;
+
+    uint64 rx_time = 4;
+}
+
+message SyncResponse {
+
+}

@@ -2,8 +2,7 @@
     proc_macro_hygiene,
     decl_macro,
     trait_alias,
-    core_intrinsics,
-    concat_idents
+    core_intrinsics
 )]
 #![no_std]
 

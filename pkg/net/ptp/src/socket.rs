@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use common::errors::*;
 use common::array_mut_ref;
 use net::udp::*;
@@ -10,8 +12,8 @@ const NANOS_PER_SECOND: u64 = 1_000_000_000;
 
 /// PTP v2 sync packet.
 /// Carefully crafted for Raspberry Pi compatibility.
-const PACKET_TEMPLATE: [u8; 44] = {
-    let mut payload = [0u8; 44];
+const PACKET_TEMPLATE: [u8; 8] = {
+    let mut payload = [0u8; 8];
     payload[0] = 0x00; // MsgType: Sync (0)
     payload[1] = 0x02; // Version: 2
     payload[2] = 0x00; // Length High
@@ -23,6 +25,7 @@ const PACKET_TEMPLATE: [u8; 44] = {
     payload[6] = 0x02; 
     payload[7] = 0x00; 
 
+    /*
     // 8..16 => correction field (used by transparent clocks)
     // 16..20 => reserved
     // 20..30 => source port id
@@ -35,6 +38,7 @@ const PACKET_TEMPLATE: [u8; 44] = {
     payload[33] = 0; // log message interval.
 
     // 34..44 : origin timestamp
+    */
 
     payload
 };
@@ -94,7 +98,14 @@ impl TimestampedUdpSocket {
                 sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
             ];
 
-            let (_, num_msgs, _) = self.sock.recv_error(&mut [], &mut control_msgs).await?;
+            // Usually if the timeout fails, they we sent some packet that isn't being properly
+            // noticed by the ethernet hardware so never got timestamped.
+            let (_, num_msgs, _) = executor::timeout(
+                Duration::from_secs(1),
+                self.sock.recv_error(&mut [], &mut control_msgs)   
+            )
+            .await
+            .map_err(|e| err_msg("Timed out while waiting for TX timeout"))??;
 
             self.get_timestamp(&control_msgs[0..num_msgs])
         })
@@ -139,7 +150,7 @@ impl TimestampedUdpSocket {
         data[0..n].copy_from_slice(&buf[PACKET_TEMPLATE.len()..num_bytes]);
 
         // TODO: Normalize sys::SockAddr into net::ip one in the recv_msg call.
-        Ok((n, timestamp, addr))
+        Ok((n, timestamp, addr.into()))
     }
 
     fn get_timestamp(&self, msgs: &[ControlMessage]) -> Result<u64> {

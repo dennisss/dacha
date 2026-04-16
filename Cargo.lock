@@ -3943,15 +3943,34 @@ version = "0.1.0"
 dependencies = [
  "base_radix",
  "base_util",
+"cluster_client",
+ "cluster_proto",
  "common",
+"crypto",
  "executor",
  "executor_multitask",
  "file",
+"http",
  "macros",
  "net",
  "parsing",
  "parsing_compiler",
+"protobuf",
+ "ptp_proto",
+ "rpc",
+ "rpc_util",
  "sys",
+]
+
+[[package]]
+name = "ptp_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+ "rpc",
 ]
 
 [[package]]

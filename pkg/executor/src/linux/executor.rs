@@ -19,7 +19,6 @@ use crate::linux::options::{ExecutorOptions, ExecutorRunMode};
 use crate::linux::task::{Task, TaskEntry, TaskState};
 use crate::linux::timeout::ExecutorTimeouts;
 use crate::linux::waker::create_waker;
-use crate::stack_pinned::stack_pinned;
 
 use super::thread_local::{CurrentExecutorContext, CurrentTaskContext};
 
