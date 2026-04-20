@@ -217,6 +217,12 @@ fn main_inner() -> Result<()> {
 
     println!("Node Capabilities: {:?}", sys::capget(unsafe { sys::getpid() })?);
 
+    for iface in config.hardware_timestamped_interfaces() {
+        println!("Enabling hardware timestamping on {}", iface);
+        net::enable_hardware_timestamp_filters(iface)
+            .map_err(|e| format_err!("Failed to enable timestamps on {}: {}", iface, e))?;
+    }
+
     let node_context = NodeContext {
         system_groups: all_groups.iter().map(|g| (g.name.clone(), g.id)).collect(),
         sub_uids: uidmap

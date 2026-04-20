@@ -51,7 +51,7 @@ const NODE_USER: &'static str = "cluster-node";
 /// List of all groups which (if they exist on the Linux machine) will be allowed
 /// to be delegated through the container runtime for containers to access.
 const MANAGED_GROUPS: &'static [&'static str] = &[
-    "gpio", "plugdev", "dialout", "i2c", "spi", "video", "audio", "edisk", "disk",
+    "gpio", "plugdev", "dialout", "i2c", "spi", "video", "audio", "edisk", "disk", "ptp",
 ];
 
 // TODO: Support parsing "\\n" in a regexp?
@@ -127,6 +127,9 @@ pub struct SetupNodeCommand {
 
     #[arg(default = false)]
     resetup_node: bool,
+
+    #[arg(default = "")]
+    node_config_patch: String
 }
 
 /// TODO: Improve this so that we can continue running it if a previous run
@@ -314,6 +317,7 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             remote,
             cmd.bootstrap,
             cmd.enable_service,
+            &cmd.node_config_patch
         )
         .await?
     };
@@ -419,6 +423,7 @@ async fn setup_remote_node_server(
     is_remote: bool,
     bootstrap: bool,
     enable_service: bool,
+    node_config_patch: &str,
 ) -> Result<NodeConfig> {
     check_using_cgroup_v2(operator).await?;
 
@@ -564,6 +569,11 @@ async fn setup_remote_node_server(
     node_config.set_zone(zone);
     node_config.set_data_dir(data_dir.as_str());
     node_config.set_secure(true);
+
+    if !node_config_patch.is_empty() {
+        let patch = NodeConfig::parse_text(node_config_patch)?;
+        node_config.merge_from(&patch)?;
+    }
 
     let node_config_data = node_config.serialize()?;
     operator

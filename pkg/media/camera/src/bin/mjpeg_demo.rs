@@ -12,9 +12,12 @@ use file::LocalPath;
 use http::status_code::OK;
 use http::header::CONTENT_TYPE;
 use executor::channel;
+use executor_multitask::BroadcastChannel;
+use common::bytes::Bytes;
 use common::io::Readable;
 use executor::cancellation::CancellationToken;
 use media_camera::rp1_direct::*;
+use media_camera::mjpeg::*;
 
 /*
 cargo run --bin mjpeg_demo
@@ -59,51 +62,6 @@ pinctrl 35 op dl
 
 
 
-
-/// http::Body which streams back MJPEG frames.
-///
-/// See https://en.wikipedia.org/wiki/Motion_JPEG
-struct MJPGCameraStreamBody {
-    subscriber: channel::Receiver<Vec<u8>>,
-
-    /// Pendign data which we haven't yet 
-    data: Vec<u8>,
-    
-    boundary: String,
-}
-
-#[async_trait]
-impl Readable for MJPGCameraStreamBody {
-    async fn read(&mut self, out: &mut [u8]) -> Result<usize> {
-
-        loop {
-            if !self.data.is_empty() {
-                let n = core::cmp::min(out.len(), self.data.len());
-                out[0..n].copy_from_slice(&self.data[0..n]);
-                self.data = self.data.split_off(n);
-                return Ok(n);
-            }
-
-            let frame = self.subscriber.recv().await?;
-
-            self.data.extend_from_slice(format!("\r\n--{}\r\nContent-Type: image/jpeg\r\n\r\n", self.boundary).as_bytes());
-            self.data.extend_from_slice(&frame);
-        }
-    }
-}
-
-#[async_trait]
-impl http::Body for MJPGCameraStreamBody {
-    fn len(&self) -> Option<usize> {
-        None
-    }
-
-    async fn trailers(&mut self) -> Result<Option<http::Headers>> {
-        Ok(None)
-    }
-}
-
-
 /*
 
 
@@ -122,7 +80,7 @@ async fn main() -> Result<()> {
 */
 
 pub struct HttpHandler {
-    frame_subscriber: channel::Receiver<Vec<u8>>
+    subscribers: Arc<BroadcastChannel<Bytes>>
 }
 
 const INDEX_HTML: &'static str = r#"
@@ -160,19 +118,11 @@ impl http::ServerHandler for HttpHandler {
             }
 
             "/camera" => {
-
-                let boundary = "mjpeg-frame-separator".to_string();;
-
-                let typ = format!("multipart/x-mixed-replace;boundary=--{}", boundary);
-                let body = MJPGCameraStreamBody {
-                    subscriber: self.frame_subscriber.clone(),
-                    data: vec![],
-                    boundary
-                };
+                let body = MJPGCameraStreamBody::new(self.subscribers.subscribe(1));
 
                 http::ResponseBuilder::new()
                     .status(http::status_code::OK)
-                    .header(CONTENT_TYPE, typ)
+                    .header(CONTENT_TYPE, body.content_type())
                     .body(Box::new(body))
                     .build().unwrap()
             }
@@ -193,7 +143,7 @@ impl http::ServerHandler for HttpHandler {
 
 
 async fn run_camera_reader(
-    sender: channel::Sender<Vec<u8>>,
+    subscribers: Arc<BroadcastChannel<Bytes>>,
     cancellation_token: Arc<dyn CancellationToken>
 ) -> Result<()> {
 
@@ -252,7 +202,7 @@ async fn run_camera_reader(
 
         let compression_ratio = (data.len() as f32) / (buf.used_memory().len() as f32);
 
-        let _ = sender.try_send(data);
+        subscribers.send(data.into());
 
         // if i % 10 == 0 {
         println!("Encode {} in {:?} : Compression {:.2}", i, e - s, compression_ratio);
@@ -276,12 +226,13 @@ async fn main() -> Result<()> {
 
     let root_resource = executor_multitask::RootResource::new();
 
-    let (sender, receiver) = channel::bounded(1);
+    let subscribers = Arc::new(BroadcastChannel::default());
 
-    root_resource.spawn("CameraReader", |token| run_camera_reader(sender, token)).await;
+    let subs2 = subscribers.clone();
+    root_resource.spawn("CameraReader", |token| run_camera_reader(subs2, token)).await;
 
     {
-        let handler = HttpHandler { frame_subscriber: receiver };
+        let handler = HttpHandler { subscribers };
 
         let mut options = http::ServerOptions::default();
         options.port = Some(8001);

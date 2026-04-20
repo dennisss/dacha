@@ -4807,6 +4807,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "vision"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "executor",
+ "file",
+ "image",
+ "macros",
+ "math",
+]
+
+[[package]]
 name = "void"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

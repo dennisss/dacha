@@ -177,6 +177,7 @@ impl ServiceResolverImpl {
             // TODO: Can I dynamically determine whether to use TLS here?
 
             port = Some(port_spec.number());
+            break;
         }
 
         // TODO: Log an error in this case?

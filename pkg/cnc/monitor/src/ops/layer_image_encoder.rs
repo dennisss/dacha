@@ -7,7 +7,6 @@ use std::{
 
 use base_error::*;
 use cnc_monitor_proto::cnc::*;
-use common::async_std::task::current;
 use common::ceil_div;
 use common::typenum::Pow;
 use common::{bytes::Bytes, io::Readable};

@@ -9,6 +9,7 @@ mod resource_group;
 mod resource_report_tracker;
 mod root_resource;
 mod task_resource;
+mod broadcast;
 
 pub use self::macros::*;
 pub use cancellation_token_set::*;
@@ -18,3 +19,4 @@ pub use resource_group::*;
 pub use resource_report_tracker::*;
 pub use root_resource::*;
 pub use task_resource::*;
+pub use broadcast::*;

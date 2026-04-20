@@ -29,7 +29,7 @@ impl_resource_passthrough!(TimeSyncNode, resources);
 
 struct Shared {
     meta_client: Arc<ClusterMetaClient>,
-    ptp_device: PTPDevice,
+    ptp_device: Arc<PTPDevice>,
     ptp_socket: TimestampedUdpSocket,
     state: AsyncVariable<State>,
 }
@@ -100,7 +100,7 @@ struct LeaderPeer {
 impl TimeSyncNode {
     pub async fn create(
         meta_client: Arc<ClusterMetaClient>,
-        ptp_device: PTPDevice,
+        ptp_device: Arc<PTPDevice>,
         ptp_socket: TimestampedUdpSocket
     ) -> Self {
 

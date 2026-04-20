@@ -167,6 +167,7 @@ message Probe {
 enum PortType {
     UNKNOWN = 0;
     TCP = 1;
+    UDP = 2;
 }
 
 enum PortProtocol {

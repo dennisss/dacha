@@ -189,6 +189,7 @@ members = [
 	"pkg/media/camera/proto",
 	"pkg/media/camera/service",
 	"pkg/media/screen",
+"pkg/vision",
 	# "pkg/app/study",
 	"pkg/api/google/discovery",
 	"pkg/api/google/discovery/generated",

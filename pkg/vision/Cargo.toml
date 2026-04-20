@@ -1,0 +1,12 @@
+[package]
+name = "vision"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+file = { path = "../file" }
+executor = { path = "../executor" }
+macros = { path = "../macros" }
+image = { path = "../image" }
+math = { path = "../math" }

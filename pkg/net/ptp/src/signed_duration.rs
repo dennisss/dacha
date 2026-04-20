@@ -3,7 +3,7 @@ use std::time::Duration;
 use std::convert::From;
 use std::ops::Sub;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct SignedDuration {
     pub sign: i32,
     pub duration: Duration

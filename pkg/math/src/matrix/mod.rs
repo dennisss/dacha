@@ -15,6 +15,7 @@ pub mod qr;
 pub mod storage;
 #[cfg(feature = "alloc")]
 pub mod svd;
+pub mod axis_angle;
 
 pub use self::base::*;
 pub use self::dimension::*;

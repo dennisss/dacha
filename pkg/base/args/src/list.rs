@@ -4,6 +4,8 @@ use alloc::vec::Vec;
 use base_error::*;
 
 use crate::{ArgFieldType, ArgType, ArgsType, RawArgValue, RawArgs};
+
+#[derive(Default)]
 pub struct CommaSeparated<T> {
     pub values: Vec<T>,
     hidden: (),

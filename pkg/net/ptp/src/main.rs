@@ -3,6 +3,7 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
@@ -33,10 +34,18 @@ struct Args {
 #[executor_main]
 async fn main() -> Result<()> {
 
+    let ptp_dev = Arc::new(ptp::PTPDevice::open_default()?);
+
+    let time_syncer = ptp::MonotonicClockTimeSyncer::create(ptp_dev.clone());
+
+    loop {
+        executor::sleep(Duration::from_secs(1)).await?;
+    }
+
+
     let args = common::args::parse_args::<Args>()?;
 
     // TODO: Need to map this to the interface name
-    let ptp_dev = ptp::PTPDevice::open_default()?;
 
     /*
 

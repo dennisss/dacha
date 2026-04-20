@@ -109,4 +109,13 @@ impl<T: FloatElementType> Line2<T> {
         let offset = point - &self.base;
         dir_perp.dot(&offset)
     }
+
+    /// A 't' value of 0 means we are at the start point. 1 means we are at the end point that was originally given
+    /// when constructing the line.
+    pub fn t_at_point(&self, point: &Vector2<T>) -> T {
+        let dir_norm = self.dir.clone().normalized();
+        let dir2 = point - &self.base;
+        dir2.dot(&self.dir) / self.dir.norm()
+    }
+
 }

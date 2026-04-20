@@ -140,7 +140,7 @@ async fn main() -> Result<()> {
     println!("PTP Port: {}", args.ptp_port.value());
 
     // TODO: Need to ensure that the device matches the interface.
-    let ptp_device = ptp::PTPDevice::open_default()?;
+    let ptp_device = Arc::new(ptp::PTPDevice::open_default()?);
     let ptp_socket = ptp::TimestampedUdpSocket::create(
         format!("0.0.0.0:{}", args.ptp_port.value()).parse()?,
         &args.iface

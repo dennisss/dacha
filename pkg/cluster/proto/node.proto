@@ -51,6 +51,14 @@ message NodeConfig {
     // If true, the node will use mTLS for all communications.
     bool secure = 14;
 
+    // List of network interfaces on which we will enable hardware TX/RX timestamping.
+    //
+    // This is setup in the kernel early while the node still has CAP_NET_ADMIN.
+    //
+    // Note that there is currently no way to restrict which workers on a node use this
+    // feature once it is enabled.
+    repeated string hardware_timestamped_interfaces = 15;
+
     reserved 5, 12;
 }
 

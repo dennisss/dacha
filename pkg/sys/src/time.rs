@@ -2,10 +2,12 @@ use crate::{syscall, bindings, kernel, Errno, c_int};
 
 const CLOCKFD: i32 = 3;
 
-pub struct ClockId(bindings::clockid_t);
+pub struct ClockId(pub bindings::clockid_t);
 
 impl ClockId {
     pub const REALTIME: Self = Self(bindings::CLOCK_REALTIME as i32);
+
+    pub const MONOTONIC: Self = Self(bindings::CLOCK_MONOTONIC as i32);
 
     // TODO: Consider making this unsafe as we don't know if the file is still open.
     pub fn from_fd(fd: c_int) -> Self {
@@ -75,7 +77,7 @@ impl ClockAdjustments {
         self.inner.freq
     }
 
-    /// TODO: Check that it is in the range (-32768000, +32768000)
+    /// TODO: Check that it is in the range (-32768000, +32768000) which is ~ +/- 500ppm
     pub fn set_freq(&mut self, v: i64) {
         self.inner.modes |= bindings::ADJ_FREQUENCY;
         self.inner.freq = v;
@@ -86,6 +88,7 @@ impl ClockAdjustments {
 mod raw {
     use super::*;
 
+    // TODO: Need to use the VDSO versions.
     syscall!(clock_gettime, bindings::SYS_clock_gettime, clockid: bindings::clockid_t, tp: *mut kernel::timespec => Result<()>);
 
     syscall!(clock_settime, bindings::SYS_clock_settime, clockid: bindings::clockid_t, tp: *const kernel::timespec => Result<()>);

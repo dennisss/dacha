@@ -19,7 +19,7 @@ impl Image<u8> {
 
         /*
         match ext.as_ref().map(|s| s.as_ref()) {
-            // TODO: Switch this to use async_std.
+            // TODO: Switch this to use async reads.
             Some("jpeg") | Some("jpg") => Ok(JPEG::open(path)?.image),
             Some("qoi") => {
                 let data = file::read(path).await?;

@@ -3,7 +3,6 @@ use core::ffi::CStr;
 use alloc::borrow::ToOwned;
 use alloc::{ffi::CString, string::String, vec::Vec};
 
-use common::async_std::fs::read_link;
 use common::io::Readable;
 use common::{errors::*, io::Writeable};
 use executor::RemapErrno;
