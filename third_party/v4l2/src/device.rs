@@ -15,6 +15,7 @@ use crate::io::*;
 use crate::stream::*;
 use crate::ControlDefinition;
 use crate::{bindings::*, ControlMenuItem};
+use crate::event::*;
 
 pub struct Device {
     handle: Arc<DeviceHandle>,
@@ -301,26 +302,32 @@ impl Device {
         Ok(out)
     }
 
-    // TODO: Also implement ext_ctrl enumeration.
+    // TODO: Figure out how to control the queue size for events.
+    pub async fn subscribe_to_event(&self, typ: EventType) -> Result<()> {
+        let mut sub = v4l2_event_subscription::default();
+        sub.type_ = typ.to_value(); 
 
-    /// See https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/control.html
-    pub async fn list_controls(&self) -> Result<Vec<ControlDefinition>> {
-        let file = self.handle.shared.file.lock().await?.read_exclusive();
-        crate::control_helpers::list_controls(&file)
+        let dev = self.handle.shared.file.lock().await?.read_exclusive();
+        unsafe { vidioc_subscribe_event(dev.as_raw_fd(), &mut sub) }?;
+
+        Ok(())
     }
 
-    pub async fn get_control_value(&self, control_definition: &ControlDefinition) -> Result<i32> {
-        let file = self.handle.shared.file.lock().await?.read_exclusive();
-        crate::control_helpers::get_control_value(&file, control_definition)
-    }
+    pub async fn dequeue_event(&self) -> Result<Event> {
+        let mut raw = v4l2_event::default();
+        loop {
+            let dev = self.handle.shared.file.lock().await?.read_exclusive();
 
-    pub async fn set_control_value(
-        &self,
-        control_definition: &ControlDefinition,
-        value: i32,
-    ) -> Result<()> {
-        let file = self.handle.shared.file.lock().await?.read_exclusive();
-        crate::control_helpers::set_control_value(&file, control_definition, value)
+            match unsafe { vidioc_dqevent(dev.as_raw_fd(), &mut raw) } {
+                Ok(_) => break,
+                Err(Errno::EAGAIN) => {}
+                Err(e) => return Err(e.into()),
+            };
+
+            dev.wait().await;
+        }
+
+        Ok(Event { raw })
     }
 
     // vidioc_enumaudio
@@ -341,7 +348,7 @@ impl Device {
         let mut ctx = {
             let file = shared.file.lock().await?.read_exclusive();
             unsafe {
-                ExecutorPollingContext::create_with_raw_fd(file.as_raw_fd(), EpollEvents::EPOLLIN)
+                ExecutorPollingContext::create_with_raw_fd(file.as_raw_fd(), EpollEvents::EPOLLIN | EpollEvents::EPOLLPRI)
                     .await
             }?
         };
@@ -349,9 +356,16 @@ impl Device {
         loop {
             let mut events = ctx.wait().await?;
 
+            // Ready to dequeue a buffer.
             if events.contains(EpollEvents::EPOLLIN) {
                 events = events.remove(EpollEvents::EPOLLIN);
                 Self::notify_all(shared).await;
+            }
+            
+            // Ready to dequeue an event (VIDIOC_DQEVENT)
+            if events.contains(EpollEvents::EPOLLPRI) {
+                events = events.remove(EpollEvents::EPOLLPRI);
+                Self::notify_all(shared).await;    
             }
 
             // EPOLLHUP implies the device was disconnected probably.
@@ -384,6 +398,45 @@ impl Device {
 
     // pub
 }
+
+#[async_trait]
+pub trait Controllable: Send + Sync {
+    async fn list_controls(&self) -> Result<Vec<ControlDefinition>>;
+
+    async fn get_control_value(&self, control_definition: &ControlDefinition) -> Result<i32>;
+
+    async fn set_control_value(
+        &self,
+        control_definition: &ControlDefinition,
+        value: i32,
+    ) -> Result<()>;
+}
+
+#[async_trait]
+impl Controllable for Device {
+    // TODO: Also implement ext_ctrl enumeration.
+
+    /// See https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/control.html
+    async fn list_controls(&self) -> Result<Vec<ControlDefinition>> {
+        let file = self.handle.shared.file.lock().await?.read_exclusive();
+        crate::control_helpers::list_controls(&file)
+    }
+
+    async fn get_control_value(&self, control_definition: &ControlDefinition) -> Result<i32> {
+        let file = self.handle.shared.file.lock().await?.read_exclusive();
+        crate::control_helpers::get_control_value(&file, control_definition)
+    }
+
+    async fn set_control_value(
+        &self,
+        control_definition: &ControlDefinition,
+        value: i32,
+    ) -> Result<()> {
+        let file = self.handle.shared.file.lock().await?.read_exclusive();
+        crate::control_helpers::set_control_value(&file, control_definition, value)
+    }
+}
+
 
 #[derive(Clone, Debug)]
 pub enum FrameSizeRange {

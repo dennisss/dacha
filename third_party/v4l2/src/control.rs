@@ -8,6 +8,7 @@ use crate::bindings::*;
 
 // TODO: Also port the flags defined in https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/vidioc-queryctrl.html#vidioc-queryctrl. (especially the slider one would be useful for UI rendering).
 
+#[derive(Clone)]
 pub struct ControlDefinition {
     pub(crate) raw: v4l2_queryctrl,
     pub(crate) menu_items: Vec<ControlMenuItem>,
@@ -97,6 +98,7 @@ define_bit_flags!(
     }
 );
 
+#[derive(Clone)]
 pub struct ControlMenuItem {
     pub(crate) control_type: u32,
     pub(crate) raw: v4l2_querymenu,

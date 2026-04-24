@@ -2,6 +2,8 @@
 extern crate sys;
 #[macro_use]
 extern crate base_util;
+#[macro_use]
+extern crate async_trait;
 extern crate alloc;
 
 mod bindings {
@@ -100,6 +102,10 @@ mod io {
     iowr!(vidioc_encoder_cmd, b'V', 77, v4l2_encoder_cmd);
     iowr!(vidioc_try_encoder_cmd, b'V', 78, v4l2_encoder_cmd);
 
+    ior!(vidioc_dqevent, b'V', 89, v4l2_event);
+    iow!(vidioc_subscribe_event, b'V', 90, v4l2_event_subscription);
+    iow!(vidioc_unsubscribe_event, b'V', 91, v4l2_event_subscription);
+
     // linux/media.h
     iowr!(media_ioc_device_info,   b'|', 0x00, media_device_info);
     iowr!(media_ioc_enum_entities, b'|', 0x01, media_entity_desc);
@@ -131,6 +137,7 @@ mod stream;
 mod sub_device;
 mod media;
 mod control_helpers;
+mod event;
 
 pub use bindings::*;
 pub use buffer::*;
@@ -140,3 +147,4 @@ pub use format::*;
 pub use stream::*;
 pub use sub_device::*;
 pub use media::*;
+pub use event::*;

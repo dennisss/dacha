@@ -37,6 +37,8 @@
 #include <linux/net_tstamp.h>
 #include <linux/errqueue.h>
 #include <linux/sockios.h>
+#include <linux/dma-heap.h>
+#include <linux/dma-buf.h>
 
 #include <sys/epoll.h>
 #include <dirent.h>

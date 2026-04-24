@@ -45,6 +45,7 @@ pub mod inotify;
 mod virtual_memory;
 mod wait;
 mod time;
+mod dma;
 
 pub mod bindings {
     #![allow(non_upper_case_globals)]
@@ -99,6 +100,7 @@ pub use device_id::*;
 pub use virtual_memory::*;
 pub use wait::*;
 pub use time::*;
+pub use dma::*;
 
 /// Integer of the same width as a 'void *'.
 pub type uintptr_t = c_size_t;

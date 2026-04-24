@@ -7,9 +7,11 @@ use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor_graph::*;
 use media_camera_proto::media::camera::*;
+use v4l2::Controllable;
 
 use crate::frame::*;
 use crate::v4l2::frame_data::*;
+use crate::v4l2::controls::*;
 
 /*
 
@@ -203,63 +205,13 @@ impl V4L2CaptureOp {
             self.format.frame_rate = 30;
         }
 
-        let mut current_group = &mut group_prop;
-
-        for control in self.device.list_controls().await? {
-            let id = format!("{}:control:{}", &self.property_namespace, control.id());
-
-            match control.typ() {
-                v4l2::ControlType::CLASS => {
-                    drop(current_group);
-
-                    let mut prop = group_prop.new_children();
-                    prop.set_id(id);
-                    prop.spec_mut().set_name(control.name()?);
-                    prop.spec_mut().set_typ(PropertySpec_Type::GROUP);
-
-                    current_group = prop;
-                }
-                v4l2::ControlType::INTEGER => {
-                    let mut prop = current_group.new_children();
-                    prop.set_id(id);
-                    prop.spec_mut().set_name(control.name()?);
-                    prop.spec_mut().set_typ(PropertySpec_Type::INT32);
-                    prop.spec_mut()
-                        .min_value_mut()
-                        .set_int32_value(control.minimum());
-                    prop.spec_mut()
-                        .max_value_mut()
-                        .set_int32_value(control.maximum());
-                    prop.spec_mut()
-                        .default_value_mut()
-                        .set_int32_value(control.default_value());
-                    prop.spec_mut().step_mut().set_int32_value(control.step());
-                }
-                v4l2::ControlType::BOOLEAN => {
-                    let mut prop = current_group.new_children();
-                    prop.set_id(id);
-                    prop.spec_mut().set_name(control.name()?);
-                    prop.spec_mut().set_typ(PropertySpec_Type::BOOL);
-                }
-                v4l2::ControlType::MENU | v4l2::ControlType::INTEGER_MENU => {
-                    let mut prop = current_group.new_children();
-                    prop.set_id(id);
-                    prop.spec_mut().set_name(control.name()?);
-                    prop.spec_mut().set_typ(PropertySpec_Type::ENUM);
-
-                    for item in control.menu_items() {
-                        let mut v = prop.spec_mut().new_values();
-                        v.set_value_name(item.name()?);
-                        v.set_int32_value(item.index() as i32);
-                    }
-                }
-                v4l2::ControlType::Unknown(_) => {
-                    let mut prop = current_group.new_children();
-                    prop.set_id(id);
-                    prop.spec_mut().set_name(control.name()?);
-                }
-            }
-        }
+        let id_prefix = format!("{}:control:", &self.property_namespace);
+        controls_to_proto(
+            &self.device.list_controls().await?,
+            &self.device,
+            &id_prefix,
+            &mut group_prop
+        ).await?;
 
         self.properties = group_prop;
         self.supported_formats = supported_formats;

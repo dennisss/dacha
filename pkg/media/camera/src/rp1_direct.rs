@@ -233,15 +233,15 @@ impl RP1DirectCamera {
             fmt
         };
 
-        camera_subdev.set_format(camera_source_pad, &subdev_format)?;
+        camera_subdev.set_format(camera_source_pad, &subdev_format).await?;
 
         // Copy all pad formats froom the camera to connected CSI2 pads.
         // Usually there will just be one video pad but there may be more which have metadata
         // (e.g. MEDIA_BUS_FMT_SENSOR_DATA)
         for i in 0..camera_entity.pads().len() {
-            let fmt = camera_subdev.format(i)?;
-            csi2_subdev.set_format(csi2_sink_pad + i, &fmt)?;
-            csi2_subdev.set_format(csi2_source_pad + i, &fmt)?;
+            let fmt = camera_subdev.format(i).await?;
+            csi2_subdev.set_format(csi2_sink_pad + i, &fmt).await?;
+            csi2_subdev.set_format(csi2_source_pad + i, &fmt).await?;
         }
 
         let mut capture_stream = cfe_video.new_capture_stream()?;

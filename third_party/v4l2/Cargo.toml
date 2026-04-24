@@ -10,6 +10,7 @@ base_util = { path = "../../pkg/base/util" }
 file = { path = "../../pkg/file" }
 executor = { path = "../../pkg/executor" }
 macros = { path = "../../pkg/macros" }
+async-trait = { version = "0.1.50"}
 
 [build-dependencies]
 bindgen = "0.63.0"

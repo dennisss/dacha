@@ -9,6 +9,7 @@ sys = { path = "../sys" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 parsing = { path = "../parsing" }
+math = { path = "../math" }
 macros = { path = "../macros" }
 peripherals = { path = "../peripherals" }
 

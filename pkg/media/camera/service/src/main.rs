@@ -2,7 +2,7 @@
 
 cargo run --bin builder -- build //pkg/media/camera:app
 
-cargo run --bin media_camera -- --port=8000
+cargo run --bin media_camera_service -- --port=8000
 
 */
 
@@ -231,10 +231,7 @@ async fn main() -> Result<()> {
     let client = ClusterMetaClient::create_from_environment().await?;
     root_resource.register_dependency(client.clone()).await;
 
-    let usb_context = usb::Context::create()?;
-    let libcamera_manager = libcamera::CameraManager::create()?;
-
-    let camera_manager = CameraManager::create(usb_context, libcamera_manager)?;
+    let camera_manager = CameraManager::create()?;
 
     let service_impl = ServiceImpl {
         camera_manager: camera_manager.clone(),

@@ -111,42 +111,58 @@ fn project_point(
 
 
 #[derive(Clone, Debug)]
-pub struct SolvePnPResult {
+pub struct PnPSolution {
     pub translation: Vector3f,
     pub rotation: Vector3f,
     pub total_reprojection_error: f32,
 }
 
 
-/// NOTE: This will always produce a result so the user will need to check the
-/// reprojection error to determine if it is reasonable.  
-pub fn solve_pnp(
-    points_2d: &[Vector2f],
-    points_3d: &[Vector3f],
-    intrinsics: &CameraIntrinsicsModel,
-    initial_rotation: &Vector3f,
-    initial_translation: &Vector3f,
-) -> SolvePnPResult {
-    assert_eq!(points_2d.len(), points_3d.len());
-
-    let problem = ReprojectionProblem {
-        points_2d,
-        points_3d,
-        intrinsics
-    };
-
-    let solution = solve_nonlinear(&[
-        initial_rotation[0], initial_rotation[1], initial_rotation[2],
-        initial_translation[0], initial_translation[1], initial_translation[2]
-    ], &problem);
-
-    let rotation = vec3f(solution.params[0], solution.params[1], solution.params[2]);
-    let translation = vec3f(solution.params[3], solution.params[4], solution.params[5]);
-
-    SolvePnPResult {
-        translation,
-        rotation,
-        total_reprojection_error: solution.error_sum
-    }
+pub struct PnPSolver {
+    inner: NonLinearSolver
 }
 
+impl PnPSolver {
+    pub fn new() -> Self {
+        Self {
+            inner: NonLinearSolver::new()
+        }
+    }
+
+    pub fn set_min_error(&mut self, value: f32) {
+        self.inner.set_min_error(value);
+    }
+
+    /// NOTE: This will always produce a result so the user will need to check the
+    /// reprojection error to determine if it is reasonable.
+    pub fn solve(
+        &self,
+        points_2d: &[Vector2f],
+        points_3d: &[Vector3f],
+        intrinsics: &CameraIntrinsicsModel,
+        initial_rotation: &Vector3f,
+        initial_translation: &Vector3f,
+    ) -> PnPSolution {
+        assert_eq!(points_2d.len(), points_3d.len());
+
+        let problem = ReprojectionProblem {
+            points_2d,
+            points_3d,
+            intrinsics
+        };
+
+        let solution = self.inner.solve(&[
+            initial_rotation[0], initial_rotation[1], initial_rotation[2],
+            initial_translation[0], initial_translation[1], initial_translation[2]
+        ], &problem);
+
+        let rotation = vec3f(solution.params[0], solution.params[1], solution.params[2]);
+        let translation = vec3f(solution.params[3], solution.params[4], solution.params[5]);
+
+        PnPSolution {
+            translation,
+            rotation,
+            total_reprojection_error: solution.error_sum
+        }
+    }
+}

@@ -5,6 +5,7 @@ import { Channel } from "pkg/web/lib/rpc";
 import { VideoPlayer } from "pkg/web/lib/video";
 import { VideoSourceKind } from "pkg/web/lib/video/types";
 import { VideoCrosshair } from "pkg/web/lib/video/crosshair";
+import { render_group_property } from "pkg/media/camera/js/property";
 
 
 class App extends React.Component<{}, {}> {
@@ -47,114 +48,6 @@ class App extends React.Component<{}, {}> {
         this.setState({ _current_camera: camera_id, _properties: res.responses[0].properties.properties, _format: res.responses[0].format });
     }
 
-    _render_property(prop) {
-        if (!prop.spec || prop.spec.type != 'GROUP') {
-            return <div key={prop.id}>Unknown: {prop.id}</div>;
-        }
-
-        return (
-            <div key={prop.id} className="card" style={{ marginBottom: 10 }}>
-                <div className="card-header">
-                    {prop.spec.name || prop.id}
-                </div>
-                <div className="card-body" style={{ padding: 10 }}>
-                    <div style={{ wordBreak: 'break-all' }}>
-                        <table className="table">
-                            <tbody>
-                                {(prop.children || []).map((prop) => {
-                                    if (prop.spec && prop.spec.type == 'GROUP') {
-                                        return null;
-                                    }
-
-                                    return (
-                                        <tr key={prop.id}>
-                                            <td style={{ whiteSpace: 'nowrap', width: 1, verticalAlign: 'baseline' }}>
-                                                {prop.spec.name || prop.id}
-                                            </td>
-                                            <td style={{ verticalAlign: 'baseline' }}>
-                                                <div style={{ width: '100%', overflowX: 'hidden' }}>
-                                                    {this._render_property_value(prop)}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-
-
-                    {(prop.children || []).map((prop) => {
-                        // Rendering nested groups outside of the table.
-
-                        if (prop.spec && prop.spec.type != 'GROUP') {
-                            return null;
-                        }
-
-                        return this._render_property(prop);
-                    })}
-                </div>
-            </div>
-        );
-    }
-
-    _render_property_value(prop) {
-        prop.spec = prop.spec || {};
-
-
-        if (prop.spec.values || prop.spec.type == 'ENUM') {
-
-            return (
-                <select className="form-control" style={{ fontSize: '0.8em' }} value="">
-                    {(prop.spec.values || []).map((value, i) => {
-                        return (
-                            <option key={i}>{value.value_name}</option>
-                        );
-                    })}
-                </select>
-
-            );
-        }
-
-        if (prop.spec.type == 'BOOL') {
-            return (
-                <input type="checkbox" checked={false} />
-            );
-        }
-
-        if (prop.spec.type == 'INT32') {
-            return (
-                <div style={{ display: "flex" }}>
-                    <div style={{ flexGrow: 1 }}>
-                        <input style={{ width: '100%' }} type="range"
-                            min={prop.spec.min_value.int32_value || 0}
-                            max={prop.spec.max_value.int32_value || 0}
-                            step={prop.spec.step.int32_value || 0}
-                            value={prop.spec.default_value.int32_value || 0} />
-                    </div>
-                    <div style={{ width: 100 }}>
-                        <input className="form-control" type="number" value={prop.spec.default_value.int32_value || 0} />
-                    </div>
-                </div>
-            );
-        }
-
-        /*
-        GROUP = 1;
-        BOOL = 2;
-        // For this type of value, the int32_value is used.
-        ENUM = 3;
-        INT32 = 4;
-        FLOAT32 = 5;
-
-        */
-
-
-        return (
-            <div>Unknown {prop.spec.type}</div>
-        )
-    }
-
     _render_video_player() {
         if (!this.state._current_camera) {
             return null;
@@ -190,7 +83,7 @@ class App extends React.Component<{}, {}> {
 
                     <div style={{ paddingTop: 20, fontSize: '0.8em' }}>
                         {this.state._properties.map((prop) => {
-                            return this._render_property(prop);
+                            return render_group_property(prop);
                         })}
                     </div>
 

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use common::errors::*;
+use peripherals::spi::{SPI, SPIDevice};
 
 use crate::clock::*;
 use crate::gpio::*;
@@ -45,7 +46,7 @@ impl WS2812Controller {
     }
 
     pub fn write(&mut self, colors: &[u32]) -> Result<()> {
-        let mut serializer = WS2812ColorSerializer::new();
+        let mut serializer = WS2812ColorSerializer::<u32>::new();
         for c in colors {
             serializer.add_color(*c);
         }
@@ -60,6 +61,61 @@ impl WS2812Controller {
         Ok(())
     }
 }
+
+pub struct WS2812SPIController {
+    spi: SPIDevice,
+}
+
+impl WS2812SPIController {
+    pub fn create(path: &str) -> Result<Self> {
+        let mut spi = SPIDevice::open(path)?;
+        spi.set_speed_hz(TARGET_RATE as u32)?;
+
+        Ok(Self {
+            spi
+        })        
+    }
+
+    pub fn write(&mut self, colors: &[u32]) -> Result<()> {
+        let mut serializer = WS2812ColorSerializer::<u8>::new();
+        for c in colors {
+            serializer.add_color(*c);
+        }
+
+        let data_colors = serializer.finish();
+
+        let mut data = vec![];
+        for i in 0..100 {
+            data.push(0);
+        }
+        data.extend_from_slice(&data_colors);
+        for i in 0..100 {
+            data.push(0);
+        }
+
+        self.spi.transfer(&data, &mut [])?;
+
+        Ok(())
+    }
+
+}
+
+trait NumBits {
+    const NUM_BITS: usize;
+}
+
+impl NumBits for u8 {
+    const NUM_BITS: usize = 8;
+}
+
+impl NumBits for u32 {
+    const NUM_BITS: usize = 32;
+}
+
+use math::number::{Zero, Cast};
+use core::ops::BitOrAssign;
+use core::convert::From;
+
 
 /// Serializes colors to be written via a serial logic pin to a WS2812
 /// compatible LED chain.
@@ -85,23 +141,23 @@ impl WS2812Controller {
 /// if the implementation retains the last bit in the serial bit stream, then
 /// the color bit stream is always guaranteed to end in a low logic level.
 #[derive(Default)]
-struct WS2812ColorSerializer {
-    current_word: u32,
+struct WS2812ColorSerializer<T> {
+    current_word: T,
 
     /// Position of the next bit in 'current_word' to be written.
-    /// This ranges from [0, 31]
+    /// This ranges from [0, num_bits - 1]
     current_bit: usize,
 
     /// TODO: Switch to using a BitVector.
-    words: Vec<u32>,
+    words: Vec<T>,
 }
 
-impl WS2812ColorSerializer {
+impl<T: Copy + NumBits + Zero + BitOrAssign<T>> WS2812ColorSerializer<T> where u32: Cast<T>  {
     /// Creates a new serializer containing no colors.
     pub fn new() -> Self {
         Self {
-            current_word: 0,
-            current_bit: 31,
+            current_word: T::zero(),
+            current_bit: (T::NUM_BITS - 1),
             words: vec![],
         }
     }
@@ -130,21 +186,21 @@ impl WS2812ColorSerializer {
     fn add_bit(&mut self, v: u32) {
         debug_assert!(v & 1 == v); // Just one bit given
 
-        self.current_word |= v << self.current_bit;
+        self.current_word |= (v << self.current_bit).cast();
 
         if self.current_bit == 0 {
             self.words.push(self.current_word);
-            self.current_word = 0;
-            self.current_bit = 31;
+            self.current_word = T::zero();
+            self.current_bit = (T::NUM_BITS - 1);
         } else {
             self.current_bit -= 1;
         }
     }
 
     /// Returns the complete sequence of serial words representing the colors.
-    pub fn finish(mut self) -> Vec<u32> {
+    pub fn finish(mut self) -> Vec<T> {
         // Push the last incomplete word padded with zeros.
-        if self.current_bit != 31 {
+        if self.current_bit != (T::NUM_BITS - 1) {
             self.words.push(self.current_word);
         }
 

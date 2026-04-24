@@ -4761,6 +4761,7 @@ dependencies = [
 name = "v4l2"
 version = "0.0.0"
 dependencies = [
+"async-trait",
  "automata",
  "base_error",
  "base_util",
