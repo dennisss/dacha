@@ -23,7 +23,7 @@ http = { path = "../../http" }
 image = { path = "../../image" }
 graphics = { path = "../../graphics" }
 rpc_util = { path = "../../rpc/util" }
-v4l2 = { path = "../../../third_party/v4l2" }
+v4l2 = { path = "../../media/v4l2" }
 usb = { path = "../../usb" }
 sstable = { path = "../../sstable" }
 media_proto = { path = "../proto" }

@@ -181,7 +181,7 @@ members = [
 	"pkg/base/units",
 	"pkg/crypto/pgp",
 	"pkg/crypto/test",
-	"third_party/v4l2",
+	"pkg/media/v4l2",
 	"pkg/media/video",
 	"pkg/media/downloader",
 	"pkg/media/thermal",

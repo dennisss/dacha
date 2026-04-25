@@ -23,7 +23,7 @@ http_util = { path = "../../http/util" }
 rpc_util = { path = "../../rpc/util" }
 json = { path = "../../format/json" }
 video = { path = "../video" }
-v4l2 = { path = "../../../third_party/v4l2" }
+v4l2 = { path = "../../media/v4l2" }
 usb = { path = "../../usb" }
 protobuf = { path = "../../protobuf" }
 libcamera = { path = "../../../third_party/libcamera", optional = true }

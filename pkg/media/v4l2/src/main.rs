@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use base_error::*;
 use file::LocalPath;
+use v4l2::Controllable;
 
 /*
 cargo run --bin v4l2
@@ -78,7 +79,7 @@ async fn main() -> Result<()> {
         println!("Sub Device: {}", dev.path().as_str());
 
         println!("Controls:");
-        for control in dev.list_controls()? {
+        for control in dev.list_controls().await? {
             // TODO: Also print if it is disabled.
             println!("- {}", control.to_string()?);
         }
