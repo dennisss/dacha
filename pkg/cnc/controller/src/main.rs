@@ -4,6 +4,7 @@ extern crate macros;
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 
+use base_args::define_arg_command;
 use common::errors::*;
 use file::{LocalPath, LocalPathBuf, LocalFile};
 use peripherals_proto::peripherals::*;
@@ -165,52 +166,21 @@ struct Args {
     mode: Mode,
 }
 
-#[derive(Args)]
-enum Mode {
-
-    #[arg(name = "service")]
-    Service(ControllerServiceCommand),
-
-    #[arg(name = "measure-bed")]
-    MeasureBed(MeasureBedCommand),
-
-    #[arg(name = "train-bed-model")]
-    TrainBedModel(TrainBedModelCommand),
-
-    #[arg(name = "control-bed")]
-    ControlBed(ControlBedCommand),
-
-    #[arg(name = "bed-light-show")]
-    BedLightShow(BedLightShowCommand),
-
-    #[arg(name = "bed-fan-test")]
-    BedFanTest(BedFanTestCommand),
-
-    #[arg(name = "bed-heater-test")]
-    BedHeaterTest(BedFanTestCommand),
-
-    #[arg(name = "measure-toolhead")]
-    MeasureToolhead(MeasureToolheadCommand),
-
-    #[arg(name = "train-toolhead-heater-curve")]
-    TrainToolheadHeaterCurve(TrainToolheadHeaterCurveCommand),
-
-    #[arg(name = "train-toolhead-model")]
-    TrainToolheadModel(TrainToolheadModelCommand),
-
-    #[arg(name = "toolhead-pid")]
-    ToolheadPID(ToolheadPIDCommand),
-
-    #[arg(name = "control-toolhead-heater")]
-    ControlToolheadHeater(ControlToolheadHeaterCommand),
-
-    #[arg(name = "toolhead-test")]
-    ToolheadTest,
-
-
-}
-
-
+define_arg_command!(Mode {
+    ControllerServiceCommand = "service",
+    MeasureBedCommand = "measure-bed",
+    TrainBedModelCommand = "train-bed-model",
+    ControlBedCommand = "control-bed",
+    BedLightShowCommand = "bed-light-show",
+    BedFanTestCommand = "bed-fan-test",
+    BedHeaterTestCommand = "bed-heater-test",
+    MeasureToolheadCommand = "measure-toolhead",
+    TrainToolheadHeaterCurveCommand = "train-toolhead-heater-curve",
+    TrainToolheadModelCommand = "train-toolhead-model",
+    ToolheadPIDCommand = "toolhead-pid",
+    ControlToolheadHeaterCommand = "control-toolhead-heater",
+    ToolheadTestCommand = "toolhead-test",
+});
 
 use cnc_controller::tmc2209;
 use cnc_controller::tmc2209::Register;
@@ -332,194 +302,167 @@ i_rms = ((16 + 1) / 32) * (0.325 / (0.11 + 0.02)) * (1 / math.sqrt(2))
 
 TODO: Constantly high DIAG implies there is something messed up with the motor. 
 */
-async fn toolhead_test() -> Result<()> {
-    let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
+#[derive(Args)]
+struct ToolheadTestCommand {
 
-    let config = configs.remove("voron0_toolhead")
-        .ok_or_else(|| err_msg("No config with the given name"))?;
+}
+
+impl ToolheadTestCommand {
+    async fn run(self) -> Result<()> {
+        let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
+
+        let config = configs.remove("voron0_toolhead")
+            .ok_or_else(|| err_msg("No config with the given name"))?;
+
+
+            /*
+        let mut stepper_config = TMC2209Config::default();
+        protobuf::text::parse_text_proto(r#"
+            step_peripheral: "stepper_step"
+            uart_peripheral: "stepper_uart"
+            diag_peripheral: "stepper_diag"
+            enable_peripheral: "stepper_enable"
+        "#, &mut stepper_config)?;
+        */
+
+        let (mut device, _) = PeripheralsDevice::create(&config).await?;
+
+        let device = Arc::new(device);
+
+        // let stepper = TMC2209Device::create(stepper_config, device.clone()).await?;
+        // let mag = MA732::new(device.clone());
+
+        /*
+        SK6812MINI-E : 24-bit
+        - GRB
+
+        IN-PI33QBTPRPGPBPW : 32-bit
+        - GRBW
+
+
+        MA732
+        - 25Mhz SPI max clock speed
+
+        - 14-bit max 
+
+        - Recommended magnet
+            - 5 diameter x 3mm cyliner (N35)
+            - with 1.5mm air gap to the sensor
+            - off camera glued down with silicon glue
+
+        - Package height is 1mm
+        - PCB surface is 3.8mm above motor
+        - Motor cavity is 0.6mm
+
+        - So total available depth of 3.4mm
+
+        Use a 1/16" thick by 1/4" diameter magnet
+
+        The motor cavity outer diameter is 7mm so bascially need to eyeball that there is a small gap on all sides
+
+        All SPI frames are 16-bits (reading and writing at same time)
+
+        */
+
 
 
         /*
-    let mut stepper_config = TMC2209Config::default();
-    protobuf::text::parse_text_proto(r#"
-        step_peripheral: "stepper_step"
-        uart_peripheral: "stepper_uart"
-        diag_peripheral: "stepper_diag"
-        enable_peripheral: "stepper_enable"
-    "#, &mut stepper_config)?;
-    */
+        loop {
+            println!("..");
 
-    let (mut device, _) = PeripheralsDevice::create(&config).await?;
+            stepper.device.neopixel_transfer("leds", &[
+                0xff, 0x00, 0x00,
+                0x00, 0xff, 0x00, 0x00,
+                0x00, 0x00, 0xff, 0x00,
+            ]).await?;
 
-    let device = Arc::new(device);
+            executor::sleep(Duration::from_millis(1000)).await;
 
-    // let stepper = TMC2209Device::create(stepper_config, device.clone()).await?;
-    // let mag = MA732::new(device.clone());
+            // stepper.device.neopixel_transfer("leds", &[
+            //     0x00, 0xff, 0x00, /* 0xff,
+            //     0xff, 0xff, 0xff, 0xff,
+            //     0xff, 0xff, 0xff, 0xff, */
+            // ]).await?;
 
-    /*
-    SK6812MINI-E : 24-bit
-    - GRB
+            // executor::sleep(Duration::from_millis(1000)).await;
 
-    IN-PI33QBTPRPGPBPW : 32-bit
-    - GRBW
+            //         stepper.device.neopixel_transfer("leds", &[
+            //     0x00, 0x00, 0xff, /* 0xff,
+            //     0xff, 0xff, 0xff, 0xff,
+            //     0xff, 0xff, 0xff, 0xff, */
+            // ]).await?;
 
+            // executor::sleep(Duration::from_millis(1000)).await;
 
-    MA732
-    - 25Mhz SPI max clock speed
-
-    - 14-bit max 
-
-    - Recommended magnet
-        - 5 diameter x 3mm cyliner (N35)
-        - with 1.5mm air gap to the sensor
-        - off camera glued down with silicon glue
-
-    - Package height is 1mm
-    - PCB surface is 3.8mm above motor
-    - Motor cavity is 0.6mm
-
-    - So total available depth of 3.4mm
-
-    Use a 1/16" thick by 1/4" diameter magnet
-
-    The motor cavity outer diameter is 7mm so bascially need to eyeball that there is a small gap on all sides
-
-    All SPI frames are 16-bits (reading and writing at same time)
-
-    */
+        }
+        */
 
 
 
-    /*
-    loop {
-        println!("..");
+        /*
+        loop {
+            // println!("{:?}", device.get_clock_time().await?);
+            // println!("{:?}", device.get_idle_counter().await?);
 
-        stepper.device.neopixel_transfer("leds", &[
-            0xff, 0x00, 0x00,
-            0x00, 0xff, 0x00, 0x00,
-            0x00, 0x00, 0xff, 0x00,
-        ]).await?;
+            // executor::sleep(Duration::from_millis(500)).await?;
 
-        executor::sleep(Duration::from_millis(1000)).await;
+            let s = Instant::now();
+            let triggered = device.analog_read_window("probe").await?;
+            let e = Instant::now();
+            println!(".. : {:?} {:?}", triggered, e - s);
 
-        // stepper.device.neopixel_transfer("leds", &[
-        //     0x00, 0xff, 0x00, /* 0xff,
-        //     0xff, 0xff, 0xff, 0xff,
-        //     0xff, 0xff, 0xff, 0xff, */
-        // ]).await?;
+            // if triggered {
+            //     println!("{:?}", device.analog_fetch_window("probe").await?);
+            // }
+        }
+        */
 
-        // executor::sleep(Duration::from_millis(1000)).await;
+        /*
 
-        //         stepper.device.neopixel_transfer("leds", &[
-        //     0x00, 0x00, 0xff, /* 0xff,
-        //     0xff, 0xff, 0xff, 0xff,
-        //     0xff, 0xff, 0xff, 0xff, */
-        // ]).await?;
 
-        // executor::sleep(Duration::from_millis(1000)).await;
+        loop {
+            println!("{:?}", stepper.read_analog().await?);
+            executor::sleep(Duration::from_millis(1000)).await;
+        }
+
+        return Ok(());
+        */
+
+
+        /*
+
+        stepper.enable().await?;
+
+
+        for i in 0..20 {
+
+            step(3200 / 8, &device, &stepper).await?;
+
+            executor::sleep(Duration::from_millis(500)).await;
+
+            // let angle = mag.get_angle().await?;
+            // println!("{:.2?}", angle * 360.0);
+
+            // executor::sleep(Duration::from_millis(500)).await;
+        }
+
+        stepper.disable().await?;
+
+        */
+
+        /*
+        DRV_STATUS  0x6F
+        IFCNT 0x02 (1 byte)
+        */
+
+        Ok(())
 
     }
-    */
-
-
-
-    /*
-    loop {
-        // println!("{:?}", device.get_clock_time().await?);
-        // println!("{:?}", device.get_idle_counter().await?);
-
-        // executor::sleep(Duration::from_millis(500)).await?;
-
-        let s = Instant::now();
-        let triggered = device.analog_read_window("probe").await?;
-        let e = Instant::now();
-        println!(".. : {:?} {:?}", triggered, e - s);
-
-        // if triggered {
-        //     println!("{:?}", device.analog_fetch_window("probe").await?);
-        // }
-    }
-    */
-
-    /*
-
-
-    loop {
-        println!("{:?}", stepper.read_analog().await?);
-        executor::sleep(Duration::from_millis(1000)).await;
-    }
-
-    return Ok(());
-    */
-
-
-    /*
-
-    stepper.enable().await?;
-
-
-    for i in 0..20 {
-
-        step(3200 / 8, &device, &stepper).await?;
-
-        executor::sleep(Duration::from_millis(500)).await;
-
-        // let angle = mag.get_angle().await?;
-        // println!("{:.2?}", angle * 360.0);
-
-        // executor::sleep(Duration::from_millis(500)).await;
-    }
-
-    stepper.disable().await?;
-
-    */
-
-    /*
-    DRV_STATUS  0x6F
-    IFCNT 0x02 (1 byte)
-    */
-
-    Ok(())
 }
 
 
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
-
-    match args.mode {
-        Mode::Service(cmd) => cmd.run().await,
-        Mode::MeasureBed(cmd) => {
-            cmd.run().await
-        }
-        Mode::TrainBedModel(cmd) => {
-            cmd.run().await
-        }
-        Mode::ControlBed(cmd) => {
-            cmd.run().await
-        }
-        Mode::BedLightShow(cmd) => {
-            cmd.run().await
-        }
-        Mode::BedFanTest(cmd) => {
-            cmd.run().await
-        }
-        Mode::BedHeaterTest(cmd) => {
-            cmd.run().await
-        }
-        Mode::MeasureToolhead(cmd) => {
-            cmd.run().await
-        }
-        Mode::TrainToolheadHeaterCurve(cmd) => {
-            cmd.run().await
-        }
-        Mode::TrainToolheadModel(cmd) => {
-            cmd.run().await
-        }
-        Mode::ToolheadPID(cmd) => cmd.run().await,
-        Mode::ControlToolheadHeater(cmd) => cmd.run().await,
-        Mode::ToolheadTest => {
-            return toolhead_test().await;
-        }
-    }
+    args.mode.run().await
 }

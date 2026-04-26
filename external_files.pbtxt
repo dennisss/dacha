@@ -1405,6 +1405,36 @@ files: [
         sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
     },
     {
+        path: "pkg/cnc/machines/voron_0/boards/bed/r2/plot.zip"
+        size: 21434
+        sha256_sum: "055ba8164ea90b60c462562eb35e17dac068d9c3b89dc88bc26edda3c76ac76c"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/boards/toolhead/r1/production/board-latest_2024-12-07_13-44-50/board-latest.zip"
+        size: 117974
+        sha256_sum: "6e24cba7cb3f7de4786358fd82a7167a6ac63e5536cf4e83c90bde156d4b5fd7"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/boards/toolhead/r1/production/board-latest_2024-12-07_13-44-50/bom.csv"
+        size: 1612
+        sha256_sum: "c1f8a3d82585cad065a42d1f04b88406a3a2879b2ef417ffa5b6c00e69b14a68"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/boards/toolhead/r1/production/board-latest_2024-12-07_13-44-50/designators.csv"
+        size: 407
+        sha256_sum: "a9c4adc73e390330a62efe58e42867f7ab7cfeb5dbaeccea4a5031bb011386f8"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/boards/toolhead/r1/production/board-latest_2024-12-07_13-44-50/netlist.ipc"
+        size: 35419
+        sha256_sum: "a00ad5f50442a773239111363d53a89a8e5eddaedf1287fbd6ae06485226e2fa"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/boards/toolhead/r1/production/board-latest_2024-12-07_13-44-50/positions.csv"
+        size: 2578
+        sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
+    },
+    {
         path: "pkg/cnc/machines/voron_0/magnetic-tile-holder-horizontal.stl"
         size: 468684
         sha256_sum: "97790887726fc0895dc8fb5d36ba12e77165a873ce237527b2e9caf3a13281da"
@@ -2443,6 +2473,11 @@ files: [
         path: "third_party/snapmagic/FH34SRJ_24S_0_5SH_50_/FH34SRJ-24S-0.5SH.stp"
         size: 781851
         sha256_sum: "629abaa3451a2d1c97ce932d61733a8a997326e53ce778040e0a6b2ba645d9df"
+    },
+    {
+        path: "third_party/snapmagic/LIS2DH12TR/LIS2DH12TR.step"
+        size: 298373
+        sha256_sum: "b9d9abf4b6f8d3f6d0cf5589c3b715fabb8b4b328edca3a730d55001a8bf3e9c"
     },
     {
         path: "third_party/snapmagic/LPJG0926HENL/LPJG0926HENL--3DModel-STEP-455599.STEP"

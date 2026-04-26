@@ -99,7 +99,8 @@ impl BedClient {
             serialize_cstruct_raw(&request_packet)
         };
         
-        let response_data = executor::timeout(TIMEOUT, self.request_impl(request_data)).await??;
+        let response_data = executor::timeout(TIMEOUT, self.request_impl(request_data)).await
+            .map_err(|_| err_msg("Timed out while sending/receiving request over serial"))??;
         if response_data.len() < 4 {
             return Err(err_msg("Too few response bytes"));
         }
@@ -134,7 +135,7 @@ impl BedClient {
         // println!("Sheet Res: {}", sheet_res);
         
         Ok(Response {
-            chip_temperature: (response_packet.chip_temperature as f32) * self.options.config.chip_temp_calibration() - 273.15,
+            chip_temperature: self.chip_temp(response_packet.chip_temperature),
 
             sheet_temperature: PT1000::default().resistance_to_temperature(sheet_res).unwrap(),
             bed_temperature: PT1000::default().resistance_to_temperature(bed_res).unwrap(),
@@ -143,11 +144,33 @@ impl BedClient {
         })
     }
 
-    fn calibrated_value(&self, raw_value: u16) -> f32 {
-        let adc_max = ((1u32 << 13) - 1) as f32;
-        let v = (raw_value as f32) / adc_max;
+    fn chip_temp(&self, raw_value: u16) -> f32 {
+        match self.options.config.board_revision() {
+            1 => {
+                (raw_value as f32) * self.options.config.chip_temp_calibration() - 273.15
+            }
+            2 => {
+                (raw_value as f32) / 100.0
+            }
+            _ => panic!()
+        }
+    }
 
-        self.options.config.calibration_a() * v + self.options.config.calibration_b()
+    fn calibrated_value(&self, raw_value: u16) -> f32 {
+        match self.options.config.board_revision() {
+            1 => {
+                let adc_max = ((1u32 << 13) - 1) as f32;
+                let v = (raw_value as f32) / adc_max;
+
+                self.options.config.calibration_a() * v + self.options.config.calibration_b()
+            }
+            2 => {
+                let adc_max = 65535 as f32;
+                let v = (raw_value as f32) / adc_max;
+                v
+            }
+            _ => panic!()
+        }
     }
 
     async fn request_impl(&mut self, request_data: &[u8]) -> Result<Vec<u8>> {
@@ -156,11 +179,13 @@ impl BedClient {
         // This is intentionally very big so that we also to consume any stray bytes in case there is corruption.
         let mut response_buffer = vec![0u8; 512];
 
-        // Read the echo'ed bytes.
-        self.port.read_exact(&mut response_buffer[0..request_data.len()]).await?;
+        if self.options.config.half_duplex() {
+            // Read the echo'ed bytes.
+            self.port.read_exact(&mut response_buffer[0..request_data.len()]).await?;
 
-        if &response_buffer[0..request_data.len()] != request_data {
-            return Err(err_msg("Wrong echo'ed bytes"));
+            if &response_buffer[0..request_data.len()] != request_data {
+                return Err(err_msg("Wrong echo'ed bytes"));
+            }
         }
 
         let mut total_received = 0;

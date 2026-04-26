@@ -176,5 +176,8 @@ libraries: [
     },
     {
         path: "third_party/snapmagic/10018784_10201TLF"
+    },
+    {
+        path: "third_party/snapmagic/LIS2DH12TR"
     }
 ]

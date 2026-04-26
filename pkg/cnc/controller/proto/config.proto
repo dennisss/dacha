@@ -123,6 +123,14 @@ message BedClientConfig {
     float chip_temp_calibration = 6;
 
     PeripheralReference serial_peripheral = 7;
+
+    // Revision of the bed board being used.  
+    //
+    // 1 - ATTiny based board.
+    // 2 - STM32C0 based board.
+    uint32 board_revision = 8;
+    
+    bool half_duplex = 9;
 }
 
 
