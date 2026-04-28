@@ -79,3 +79,5 @@ Existing solutiosn:
 - https://partkeepr.org/
 - https://github.com/replaysMike/Binner
 - https://bomist.com/
+- https://docs.inventree.org/en/stable/
+- https://partsbox.com/

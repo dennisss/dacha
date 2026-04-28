@@ -17,8 +17,13 @@ pub struct PasswdEntry {
 ///
 /// Returns all users registered in the system.
 pub fn read_passwd() -> Result<Vec<PasswdEntry>> {
-    let mut out = vec![];
     let data = std::fs::read_to_string("/etc/passwd")?;
+    read_passwd_from_data(&data)
+}
+
+pub fn read_passwd_from_data(data: &str) -> Result<Vec<PasswdEntry>> {
+    let mut out = vec![];
+
     for line in data.lines() {
         let fields = line.split(":").collect::<Vec<_>>();
         if fields.len() != 7 {

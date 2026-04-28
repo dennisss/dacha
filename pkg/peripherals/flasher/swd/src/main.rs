@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
 
     let s = Instant::now();
 
-    swd.flash_chip(McuTarget::STM32F411, &data)?;
+    swd.flash_chip(args.target, &data)?;
 
     let e = Instant::now();
 

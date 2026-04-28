@@ -34,6 +34,9 @@ enum Command {
 
     #[arg(name = "extract")]
     Extract(ExtractCommand),
+
+    #[arg(name = "rewrite-config-txt")]
+    RewriteConfigTxt(RewriteConfigTxtCommand)
 }
 
 #[derive(Args)]
@@ -48,9 +51,62 @@ struct WriteCommand {
     ip_address: Option<net::ip::IPAddress>,
     netmask: Option<net::ip::IPAddress>,
     gateway: Option<net::ip::IPAddress>,
+    network_config_type: Option<NetworkConfigType>,
+
+    hardware_model: Option<HardwareModel>,
 
     #[arg(default = false)]
     no_confirm: bool,
+}
+
+#[derive(Args)]
+enum NetworkConfigType {
+    #[arg(name = "networkd")]
+    Networkd,
+
+    #[arg(name = "ifupdown")]
+    Ifupdown,
+}
+
+#[derive(Args)]
+enum HardwareModel {
+    #[arg(name = "pi4")]
+    Pi4,
+
+    #[arg(name = "pi5")]
+    Pi5,
+
+    #[arg(name = "cm5-regular")]
+    Cm5Regular,
+
+    #[arg(name = "cm5-lite")]
+    Cm5Lite
+}
+
+impl HardwareModel {
+    fn config_txt_filter(&self) -> &'static str {
+        match self {
+            Self::Pi4 => "pi4",
+            Self::Pi5 => "pi5",
+            Self::Cm5Regular | Self::Cm5Lite => "cm5",
+        }
+    }
+
+    fn device_tree(&self) -> &'static str {
+        match self {
+            Self::Pi4 => "bcm2711-rpi-4-b.dtb",
+            Self::Pi5 => "bcm2712-d-rpi-5-b.dtb",
+            Self::Cm5Regular => "bcm2712-rpi-cm5-cm5io.dtb",
+            Self::Cm5Lite => "bcm2712-rpi-cm5l-cm5io.dtb",
+        }
+    }
+
+    fn kernel(&self) -> &'static str {
+        match self {
+            Self::Pi4 => "kernel8.img",
+            Self::Pi5 | Self::Cm5Regular | Self::Cm5Lite => "kernel_2712.img",
+        }
+    }
 }
 
 #[derive(Args)]
@@ -320,6 +376,24 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         }
     }
 
+    println!("Mounting boot filesystem..");
+    let boot_dir = TempDir::create()?;
+    {
+        // TODO: Re-lookup the partitions list from BlockDevices::list()
+        let dev_name = format!("{}1", &cmd.disk.as_str());
+        let dir_name = boot_dir.path().as_str();
+
+        println!("{} => {}", dev_name, dir_name);
+
+        sys::mount(
+            Some(&dev_name),
+            dir_name,
+            Some("vfat"),
+            MountFlags::empty(),
+            None,
+        )?;
+    }
+
     println!("Mounting root filesystem...");
 
     let root_dir = TempDir::create()?;
@@ -351,9 +425,20 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         }
     }
 
+    println!("Reading config.txt...");
+    let mut config_txt = {
+        ConfigTxtFile::parse(
+            &file::read_to_string(boot_dir.path().join("config.txt")).await?
+        )?
+    };
+
+    if let Some(model) = &cmd.hardware_model {
+        config_txt.filter_to_hardware(model);
+    }
+
     println!("Writing /etc/image-id...");
     {
-        let id = format!("sha256:{}\n", base_radix::hex_encode(&hasher.finish()));
+        let id = format!("name:{}\nsha256:{}\n", cmd.image.file_name().unwrap(), base_radix::hex_encode(&hasher.finish()));
         file::write(root_dir.path().join("etc/image-id"), id).await?;
     }
 
@@ -388,6 +473,8 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         let netmask = cmd.netmask.as_ref().unwrap();
         let gateway = cmd.gateway.as_ref().unwrap();
 
+        match cmd.network_config_type.unwrap_or(NetworkConfigType::Networkd) {
+            NetworkConfigType::Ifupdown => {
         let interfaces_file = root_dir.path().join("etc/network/interfaces");
 
         if !file::exists(&interfaces_file).await? {
@@ -410,6 +497,33 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
             ),
         )
         .await?;
+            }
+            NetworkConfigType::Networkd => {
+                // Note that this is the same path as used for the default DHCP config in our custom image so
+                // will override the DHCP config.
+                let path = root_dir.path().join("etc/systemd/network/10-eth0.network");
+
+                file::write(
+                    &path,
+                    format!(
+                        "
+                        [Match]
+                        Name=eth0
+
+                        [Network]
+                        Address={ip_addr}/{netmask}
+                        Gateway={gateway}
+                        DNS={gateway}
+                        ",
+                        ip_addr = ip_addr.to_string(),
+                        netmask = netmask_num_bits(&netmask)?,
+                        gateway = gateway.to_string()
+                    )
+                ).await?;
+            }
+        }
+
+
     }
 
     if cmd.wpa_ssid.is_some() {
@@ -436,12 +550,35 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         .await?;
     }
 
+    println!("Writing config.txt...");
+    {
+        file::write(
+            boot_dir.path().join("config.txt"),
+            config_txt.to_string()
+        ).await?;
+    }
+
+    println!("Unmount boot filesystem...");
+    sys::umount(boot_dir.path().as_str(), UmountFlags::empty())?;
+
     println!("Unmount root filesystem...");
     sys::umount(root_dir.path().as_str(), UmountFlags::empty())?;
 
     println!("Done!");
 
     Ok(())
+}
+
+fn netmask_num_bits(ip: &net::ip::IPAddress) -> Result<usize> {
+    let v = match ip {
+        net::ip::IPAddress::V4(v) => u32::from_be_bytes(*v),
+        _ => return Err(err_msg("Expected netmask to be ipv4"))
+    };
+
+    // TODO: Verify there are no other bits in the address aside from leading ones.
+    let n = v.leading_ones() as usize;
+
+    Ok(n)
 }
 
 async fn run_extract_command(cmd: ExtractCommand) -> Result<()> {
@@ -587,6 +724,97 @@ async fn run_extract_command(cmd: ExtractCommand) -> Result<()> {
     Ok(())
 }
 
+#[derive(Args)]
+struct RewriteConfigTxtCommand {
+    input_path: LocalPathBuf,
+    hardware_model: Option<HardwareModel>
+}
+
+impl RewriteConfigTxtCommand {
+    async fn run(self) -> Result<()> {
+        let data = file::read_to_string(&self.input_path).await?;
+        let mut config = ConfigTxtFile::parse(&data)?;
+
+        if let Some(model) = self.hardware_model {
+            config.filter_to_hardware(&model);
+        }
+
+        println!("{}", config.to_string());
+
+        Ok(())
+    }
+}
+
+struct ConfigTxtFile {
+    lines: Vec<ConfigTxtLine>
+}
+
+enum ConfigTxtLine {
+    Filter(String),
+    KeyValue(String, String)
+}
+
+impl ConfigTxtFile {
+    fn parse(data: &str) -> Result<Self> {
+        let mut lines = vec![];
+
+        for mut line in data.lines() {
+            line = line.trim();
+            if line.starts_with("#") || line.is_empty() {
+                continue;
+            }
+
+            if let Some(rest) = line.strip_prefix("[") {
+                if let Some(rest) = rest.strip_suffix("]") {
+                    lines.push(ConfigTxtLine::Filter(rest.to_string()));
+                    continue;
+                }
+            }
+
+            let (key, value) = line.split_once("=")
+                .ok_or_else(|| format_err!("Invalid config.txt key/value line: {}", line))?;
+
+            lines.push(ConfigTxtLine::KeyValue(key.to_string(), value.to_string()));
+        }
+
+        Ok(Self {
+            lines
+        })
+    }
+
+    // TODO: Support removing the disable-wifi options if wireless is being setup.
+
+    // TODO: Implement deduping (though some things like dtoverlays can't be deduped).
+
+    fn filter_to_hardware(&mut self, model: &HardwareModel) {
+        let mut current_section = "all".to_string();
+    
+        self.lines.retain(|line| {
+            if let ConfigTxtLine::Filter(filter) = line {
+                current_section = filter.clone();
+                return false;
+            } 
+
+            current_section == "all" || current_section == model.config_txt_filter()
+        });
+
+        self.lines.insert(0, ConfigTxtLine::KeyValue("kernel".to_string(), model.kernel().to_string()));
+        self.lines.insert(1, ConfigTxtLine::KeyValue("device_tree".to_string(), model.device_tree().to_string()));
+    }
+
+    fn to_string(&self) -> String {
+        let mut out = String::new();
+        for line in &self.lines {
+            match line {
+                ConfigTxtLine::Filter(v) => out.push_str(&format!("[{}]\n", v)),
+                ConfigTxtLine::KeyValue(k, v) => out.push_str(&format!("{}={}\n", k, v))
+            }
+        }
+
+        out
+    }
+}
+
 #[executor_main]
 async fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
@@ -594,5 +822,6 @@ async fn main() -> Result<()> {
     match args.command {
         Command::Write(cmd) => run_write_command(cmd).await,
         Command::Extract(cmd) => run_extract_command(cmd).await,
+        Command::RewriteConfigTxt(cmd) => cmd.run().await
     }
 }

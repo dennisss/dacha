@@ -11,9 +11,6 @@ class App extends React.Component<{}, { _proto?: any }> {
     _channel: Channel;
     _notifications: NotificationStore;
 
-    _updating: boolean = false;
-    _pending_update: boolean = false;
-
     constructor(props: {}) {
         super(props);
         this.state = {
@@ -34,9 +31,7 @@ class App extends React.Component<{}, { _proto?: any }> {
         // TODO: Track the staleness of the data and display an error about it.
         this._channel.call("cluster.Enclosure", "GetState", {})
             .then((res) => {
-                if (!this._updating) {
-                    this.setState({ _proto: res.responses[0] })
-                }
+                this.setState({ _proto: res.responses[0] })
             })
             .finally(() => {
                 setTimeout(() => this._refresh(), 500);

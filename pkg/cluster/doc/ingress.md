@@ -18,7 +18,7 @@ For this guide, we assume that you already own a public domain (e.g. `example.co
 - Go to the `Service Accounts` page and create/edit a service account which has the the `DNS Administrator` role under permissions.
 - Create a new JSON format key for the service account and download it.
 - Store the key as a key in your cluster's metastore db:
-    - `cargo run --bin cluster_cli -- set_object google_service_account path/to/key.json`
+    - `cargo run --bin cluster_cli -- set_object --path=google_service_account path/to/key.json`
 - Start a job which will generate TLS credentials for your domain:
     - Update the `--dns_name` flag in the `pkg/cluster/acme/config/letsencrypt_prod_refresher.job` file to reference your domain.
         - TODO: Make this file templated.

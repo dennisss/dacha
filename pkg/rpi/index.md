@@ -7,10 +7,10 @@ This directory contains libraries for building Raspberry Pi applications.
 Assuming you don't want to rebuild a Raspberry Pi system image from stratch, download a prebuilt one:
 
 ```
-wget -P third_party/pi-gen/deploy/ https://storage.googleapis.com/da-manual-us/raspbian-builds/2025-04-27/2025-04-27-Daspbian-lite.img.gz
+wget -P third_party/pi-gen/deploy/ https://storage.googleapis.com/da-manual-us/raspbian-builds/2026-04-27/2026-04-27-Daspbian-lite.img.gz
 ```
 
-Then flash to your Pi's SDCards using the instructions in the `Flashing` section.
+Then flash to your Pi's SDCards using the instructions in the [Flashing](#flashing)` section.
 
 If you intent on later recompiling individual cluster binaries for the Pi (currently always needed), also run the commands in steps 1 and 2 of the `Cross Compiling` section.
 
@@ -51,9 +51,31 @@ git rebase upstream/arm64
 
 TLDR: Skip if you already downloaded the aforementioned precompiled `.img.gz` file
 
-NOTE: If you don't want to build an image yourself, you can download the latest prebuilt one here: [2025-04-26-Daspbian-lite.img.gz](https://storage.googleapis.com/da-manual-us/raspbian-builds/2025-04-26/2025-04-26-Daspbian-lite.img.gz) and skip to the `Flashing` section.
+This section describes how to build custom Raspberry Pi image files.
 
-Run the following commands to build a new Raspberry Pi SD Card image. These steps require that you have Docker installed:
+This depends on having pre-built binaries for a few drivers. You can download pre-built binaries like this:
+
+```
+mkdir -p third_party/pi-gen/data/
+wget -P third_party/pi-gen/data/ https://storage.googleapis.com/da-manual-us/rpi-linux-builds/2026-04-27/linux.tar.gz
+wget -P third_party/pi-gen/data/ https://storage.googleapis.com/da-manual-us/rpi-ar0234-builds/2026-04-27/ar0234.tar.gz
+```
+
+Or you can build them yourself using the following instruction pages:
+
+- [//pkg/rpi/doc/custom_kernel.md](/pkg/rpi/doc/custom_kernel.md)
+- [//pkg/rpi/doc/ar0234_driver.md](/pkg/rpi/doc/ar0234_driver.md)
+
+Then run the following commands to build a new Raspberry Pi SD Card image. These steps require that you have Docker installed:
+
+```bash
+PI_GEN_DIR=$PWD/third_party/pi-gen
+cd $PI_GEN_DIR
+docker build --no-cache -t pi-gen-base:latest ./docker-base
+./build-docker.sh
+```
+
+Alternatively the following expanded set of commands can be used to fully store the dependencies of the image for backup:
 
 ```bash
 PI_GEN_DIR=$PWD/third_party/pi-gen
@@ -124,7 +146,7 @@ Extra internal only commands for publishing the image (don't run these):
 gsutil -m cp -r "${PI_GEN_DIR}/deploy/${IMG_DATE}*" "gs://da-manual-us/raspbian-builds/${IMG_DATE}/"
 ```
 
-### Flashing
+### [Flashing](#flashing)
 
 **Writing to SDCard**
 
@@ -137,7 +159,7 @@ cargo build --bin rpi_imager --release
 
 # TODO: Modify the image and disk path to match your setup. 
 sudo target/release/rpi_imager write \
-    --image=$PWD/third_party/pi-gen/deploy/2026-01-25-Daspbian-lite.img.gz \
+    --image=$PWD/third_party/pi-gen/deploy/2026-04-27-Daspbian-lite.img.gz \
     --disk=/dev/sdc \
     --ssh_public_key=$HOME/.ssh/id_cluster.pub
 ```
@@ -156,6 +178,14 @@ If you want to set a static ip address for the ethernet port, modify and append 
     --netmask=255.255.0.0 \
     --gateway=10.1.0.1
 ```
+
+If you care about optimizing boot time, also specify the Pi model that this SDCard will be used for. Note that this will make it not work on other models but will speed up early boot.
+
+```
+	--hardware_model=pi5
+```
+
+If you care about boot time optimization, also update your EEPROM/bootloader according to the guidance on [this page](./doc/boot_time.md) after flashing the SDCard.
 
 After flashing, you can insert the SDCard into your Raspberry Pi and power it on.
 

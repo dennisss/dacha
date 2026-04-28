@@ -116,7 +116,7 @@ cargo run --bin cluster_cli -- \
 Important notes on the flags:
 
 - Only specify `--bootstrap --first_user_name` before the first node is fully set up.
-  - Also bootstraping is successful, future runs (even for the first node) should omit this to perform an inplace upgrade of the binaries without overwriting existing data files.
+  - After bootstraping is successful, future runs (even for the first node) should omit this to perform an inplace upgrade of the binaries without overwriting existing data files.
 - `--first_user_name` : Specifies the name of the first admin user to create on the cluster. You will be automatically signed into this user on the machine running the setup commands.
   - You will also be prompted to enter a password in the terminal for future logging in as this user.
 
@@ -309,12 +309,16 @@ You can specify multiple labels by comma separating them. The `name` label is th
 
 ### System Jobs
 
-The system jobs are the Manager, CA, and Metastore. The cluster framework is designed such that these these jobs can temporarily be offline (for a few minutes) but things will break down if they  aren't available for a prolonged period of time:
+The system jobs are the Manager, CA, and Metastore. The cluster framework is designed such that these these jobs can temporarily be offline (for a few minutes) but things will break down if they aren't available for a prolonged period of time:
 
 - Without the manager, you can't add/remove/update jobs/workers.
 - Without the CA, new workers/nodes can't start, you can't login to the cluster, and workers/nodes/users can't refresh their credentials near expiration.
 - Without the metastore, none of the above is possible and additionally services can't make new 'DNS' queries to discover other services in the cluster.
   - The metastore itself can always be discovered since it broadcasts its location (IP address) to the entire LAN via multi-cast.
+
+A special `system` node label exists which if present, indicates that a specific node/machine is allowed to run these system jobs. This is automatically added to the first node created in a cluster. Since running any of these jobs effectively grants the machine root power over the cluster, ideally only nodes that can be considered most 'secure'  and not running untrusted workloads should be chosen to have this label.
+
+TODO: Require that all jobs be minimally picky in selecting a subset of nodes.
 
 TODO: Document how to replicate system jobs.
 

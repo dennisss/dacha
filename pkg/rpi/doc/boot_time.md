@@ -1,26 +1,32 @@
 # Raspberry Pi Boot Time
 
-This page documents how to measure and improve Raspberry Pi boot times. If you are using the recommended image and installation [instructions](/pkg/rpi/index.md), then these optimizations should already be applied.
-
-TODO: Finish rebuilding the latest image with all these optimizations.
+This page documents how to measure and improve Raspberry Pi boot times. If you are using the recommended image and installation [instructions](/pkg/rpi/index.md), then most of these optimizations should already be applied but you will need to manually apply the [bootloader/eeprom](#bootloader) config changes once you have a bootable system.
 
 ## Current Best Performance
 
 - Raspberry Pi 4B : 8GB
-    - ~12.4 seconds from power to SSH
+    - ~9.5 seconds from power to SSH
 - Raspberry Pi 5 : 8GB
-    - ~10.88 seconds from power to SSH
-        - systemd-analyze says 2.63 seconds (kernel + userspace)
+    - ~8.9 seconds from power to SSH
+        - systemd-analyze says 2.1 seconds (kernel + userspace)
 
 
 ## Measurement Methods
 
-Note that all measurements should be taken on the second boot and afterwards (since the first boot typically is used for expanding the SDCard) (not applicable to SDCards prepared using the recommended method).
+Note that all measurements should be taken on the second boot and afterwards (since the first boot typically is used for expanding the SDCard, generating SSH keys, etc.).
 
 **E2E time**
 
-- backplane-tester board.
-- `cargo run --bin jbod_tester -- test-boot-time`
+Build a microcontroller board with a MOSFET to turn on the Pi and at least one GPIO input to monitor when the Pi is done booting.
+
+- Currently I use this [board](/pkg/cluster/machines/jbod/boards/backplane-tester/) which I already made for my JBOD project
+  - Connect 5V/GND to the test board
+  - Pi power connected to IN_V2 and IN_GND2 pins.
+  - GPIO17 from the Pi is connected to SAS_V2 input on the tester board.
+- Configure the Pi after SDCard flashing with [this service](../gpio_boot_signal/index.md).
+- Connect the test board to your computer and run a test using:
+  - `cargo run --bin jbod_tester -- test-boot-time`
+  - The total boot time will be printed to the CLI.
 
 **Measuring time after the Linux Kernel starts**
 
@@ -28,12 +34,15 @@ Note that all measurements should be taken on the second boot and afterwards (si
 - `systemd-analyze blame`
 - `systemd-analyze critical-chain`
 
+Note that these tools don't measure time spent in the bootloader or PMIC
+
 **Bootloader Console**
 
 - Hook up a serial to the bootloader UART (dedicated port on Pi 5 or UART 14/15 on Pi 4)
 - Enable bootloader stage 1 UART:
   - run `sudo rpi-eeprom-config --edit`
   - set `BOOT_UART=1`
+  - note that this will make bootup slower though.
 
 - Enable bootloader stage 2 logging by adding the following to `/boot/firmware/config.txt`
 
@@ -49,7 +58,7 @@ enable_uart=1
 
 ### Raspberry Pi 4B 8GB : Raspberry Pi OS Lite (2025-12-04)
 
-E2E Time: 28.062393999s
+**E2E Time**: 28.062393999s
 
 Systemd reported times:
 
@@ -232,14 +241,12 @@ MESS:00:00:08.421056:0: arm_loader: Starting ARM with 948MB
                                                                                                                                                                   ^[[37;1R^[[37;163R                                                                                                                                                 ^[[37;18R^[[37;163R
 Debian GNU/Linux 13 testpi ttyAMA0
 
-
-
 ```
 
 
 ### Raspberry Pi 5 8GB : Raspberry Pi OS Lite (2025-12-04)
 
-E2E Time: 19.253104126s
+**E2E Time**: 19.253104126s
 
 Systemd reported times:
 
@@ -298,7 +305,7 @@ multi-user.target @5.844s
 
 ### Raspberry Pi 4B 8GB : Mainsail 
 
-E2E Time:
+**E2E Time**:
 - SSH Ready: 19.39729917s
 - Klipper Socket Ready: 26.306366839s
 
@@ -391,32 +398,49 @@ Note that the cutdown firmware disables boot logging so not generally good.
 
 TODO: Re-test once more stabilized.
 
-### Bootloader
+### [Bootloader](#bootloader)
 
-Run `sudo rpi-eeprom-config --edit`
+Run `sudo rpi-eeprom-config --edit` and edit the file to make sure that the following variables are set:
 
-On a Pi 4, the default config is:
+```
+BOOT_UART=0
+BOOT_ORDER=0xf1
+DISABLE_HDMI=1
+NET_INSTALL_ENABLED=0
+```
+
+Note that `BOOT_UART` defualts to 1 on RPI 5 so needs to be overriden.
+
+A example of a complete config for the Pi 5 / 4B is show below:
 
 ```
 [all]
 BOOT_UART=0
 WAKE_ON_GPIO=1
 POWER_OFF_ON_HALT=0
-```
-
-Add the following so that we just try booting from SDCard / eMMC
-
-```
 BOOT_ORDER=0xf1
 DISABLE_HDMI=1
 NET_INSTALL_ENABLED=0
 ```
 
-Ensure that "BOOT_UART=0" if it isn't (defaults to 1 on Rpi 5)
+For a CM5, a good config is:
 
+```
+[all]
+BOOT_UART=0
+POWER_OFF_ON_HALT=1
+BOOT_ORDER=0xf1
+DISABLE_HDMI=1
+NET_INSTALL_ENABLED=0
+```
 
+For compute modules this will boot from eMMC or SDCard depending on whether or not you have the lite or regular version of the CM.
 
-The bootloader initially waits for 900ms (defined by the `NET_INSTALL_KEYBOARD_WAIT` variable) for a keyboard and 'shift' key press to be present to determine if network install mode should be entered. Both `DISABLE_HDMI=1` and `NET_INSTALL_ENABLED=0` force disabling NET_INSTALL so that has the biggest impact on speeding on boot time.
+**Flags explanation:**
+
+- `BOOT_ORDER=0xf1` only tried the SDCard when booting (no USB / Net / etc. boot).
+- `BOOT_UART=0` disables bootloader logging.
+- The bootloader initially waits for 900ms (defined by the `NET_INSTALL_KEYBOARD_WAIT` variable) for a keyboard and 'shift' key press to be present to determine if network install mode should be entered. Both `DISABLE_HDMI=1` and `NET_INSTALL_ENABLED=0` force disabling NET_INSTALL so that has the biggest impact on speeding on boot time.
 
 **Impact**: ~0.9 seconds
 
@@ -577,7 +601,6 @@ sudo systemctl mask dpkg-db-backup.timer
 
 Set `auto_initramfs=0` in `/boot/firmware/config.txt`.
 
-
 #### Option 2: Optimize Initramfs
 
 The goal here is to minimize the size of the `/boot/firmware/initramfs*` files so that less stuff is loaded before the kernel starts running (this is to reduce the dead time not measured by `systemd-analyze`).
@@ -625,23 +648,40 @@ The operating theory is that reduces the amount of SDCard I/Os that are needed s
 
 **Impact:** ~1 second speed up.
 
+## Journald
 
-## TODOs
+Disk writes are slow and also wear down the SDCard quickly so it is recommended to switch the logging to just store all logs in memory rather than persisting them to disk:
 
-- Try pruning all unused files from `/boot` and degragmenting it.
-- Keep the journal in RAM
-    - `/etc/systemd/journald.conf`
+```
+sudo sed -i 's/^#*Storage=.*/Storage=volatile/' /etc/systemd/journald.conf
+sudo sed -i 's/^#*RuntimeMaxUse=.*/RuntimeMaxUse=50M/' /etc/systemd/journald.conf
+```
 
-        ```
-        [Journal]
-        Storage=volatile
-        ```
-- Recompile kernel without RAID6 boot overhead.
+## Future Improvements
+
+Things already integrated into the custom image but not benchmarked yet:
+
+- Kernel module is trimed of unused modules and RAID6 benchmarking on boot is disabled.
+  - The kernel image is loaded early by the bootloader so having a smaller image should have with boot speeds.
+- Minimal config.txt file containing only necessary lines.
+  - The rpi_imager makes one of these when specifying a '--hardware_model'. This similarly should minimize SDCard I/O and time in the bootloader
+
+Other ideas for improving the boot time:
+
+- Use less RAM
+  - At boot, the bootloader needs to do RAM training which should be faster with less RAM.
+  - This process might be cacheable but unfortunately the bootloader is proprietary so hard to edit.
+- Embed dts / overlay files in the kernel image
+  - Currently they are separate in the /boot/firmware filesystem so will require extra filesystem seeks to find and load.
+- Make the /boot/firmware FAT filesystem more compact
+  - The bootloader probably isn't doing advanced caching of the FAT filesystem so if there are many files to scan through in the file system, load times are likely to be slow.
+  - Ideally we get rid of any unnecessary files and defragment the filesystem.
 
 ## References
 
-- Brainstorming: https://gemini.google.com/app/a4c64d0fd776da45
+- https://www.raspberrypi.com/documentation/computers/configuration.html#bootcode-bin
 - https://github.com/IronOxidizer/instant-pi
-
-
-
+- https://github.com/raspberrypi/firmware/issues/1375
+- https://ohyaan.github.io/tips/raspberry_pi_boot_time_optimization__complete_performance_guide/#specialized-boot-configurations
+- https://kittenlabs.de/blog/2024/09/01/extreme-pi-boot-optimization/
+  - KASLR

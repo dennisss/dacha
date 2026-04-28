@@ -55,3 +55,9 @@
 [submodule "third_party/rpi/pico-sdk"]
 	path = third_party/rpi/pico-sdk
 	url = git@github.com:raspberrypi/pico-sdk.git
+[submodule "third_party/ar0234-v4l2-driver"]
+	path = third_party/ar0234-v4l2-driver
+	url = git@github.com:dennisss/ar0234-v4l2-driver.git
+[submodule "third_party/rpi/usbboot"]
+	path = third_party/rpi/usbboot
+	url = git@github.com:raspberrypi/usbboot.git
