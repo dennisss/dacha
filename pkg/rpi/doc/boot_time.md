@@ -9,6 +9,8 @@ This page documents how to measure and improve Raspberry Pi boot times. If you a
 - Raspberry Pi 5 : 8GB
     - ~8.9 seconds from power to SSH
         - systemd-analyze says 2.1 seconds (kernel + userspace)
+- Raspberry Pi CM5 2GB RAM / 16GB eMMC
+    - ~8 seconds from power to SSH
 
 
 ## Measurement Methods
