@@ -70,6 +70,10 @@ Big picture of what the code looks like:
 
 ![](images/architecture.jpg)
 
+### HTTPS/TLS Requirement
+
+This is mainly because we used several long running requests from the browser to stream live data. Since browsers have a limit of 6 HTTP1 connections per domain, we 
+
 ## References
 
 Similar products:
@@ -92,6 +96,13 @@ Serial protocol documentation:
     - https://github.com/gnea/grbl/blob/master/doc/markdown/interface.md
 - GRBL real time API:
     - https://github.com/gnea/grbl/blob/master/doc/markdown/commands.md#ascii-realtime-command-descriptions
+
+Prusa XL References:
+
+- Tool Change/Park Command Reference:
+    - https://github.com/prusa3d/Prusa-Firmware-Buddy/blob/master/lib/Marlin/Marlin/src/gcode/control/T.cpp#L50
+- 
+
 
 Time lapsing:
 

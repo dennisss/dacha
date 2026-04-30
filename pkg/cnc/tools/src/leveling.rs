@@ -1,13 +1,3 @@
-/*
-cargo run --bin cnc_tools -- leveling test-probe
-
-cargo run --bin cnc_tools -- leveling probe-variance
-
-cargo run --bin cnc_tools -- leveling mesh-level --output_path=mesh.txtpb
-
-cargo run --bin cnc_tools -- leveling dump-mesh --input_path=mesh_pretrim.txtpb
-*/
-
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -68,13 +58,6 @@ struct MeshMode {
 struct DumpMeshMode {
     input_path: LocalPathBuf
 }
-
-
-/*
-            base_config: "voron0_toolhead"
-
-            z_probe
-*/
 
 impl LevelingCommand {
     pub async fn run(self) -> Result<()> {

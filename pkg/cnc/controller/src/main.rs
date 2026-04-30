@@ -18,9 +18,6 @@ use cnc_controller::service::*;
 
 
 /*
-
-TODO: Validate that my 2Hz PWM wave is working as expected on the hardware.
-
 TODO: Need following safety checks:
 - Min/max temperature checks
 - Allow retrying failed bed client calls after a short timeout
@@ -60,102 +57,6 @@ Note that the relays can only switch at zero intersections.
 
 
 -----
-
-
-cargo run --bin cnc_controller -- --mode=measure-bed --log_path=bed_in_frame.csv
-
-cargo run --bin media_thermal --release -- record --output_path=bed_in_frame_thermal.log
-
-
-cargo run --bin cnc_controller --release -- train-bed-model \
-    --log_path=data/bed/bed_in_frame.csv \
-    --step_output_dir=data/bed/in_frame/training_steps \
-    --weights_output_path=data/bed/in_frame/training_weights.csv
-
-cargo run --bin cnc_controller --release -- control-bed \
-    --target_temperature=100 \
-    --step_output_dir=data/bed/in_frame/control_to_100_steps \
-    --results_path=data/bed/in_frame/control_to_100_data.csv
-
-cargo run --bin media_thermal --release -- record --output_path=data/bed/in_frame/control_to_100_thermal.log
-
-
------
-
-cargo run --bin cnc_controller --release -- control-bed \
-    --target_temperature=100 \
-    --results_path=data/bed/in_frame/control_to_100_data_take2.csv
-
-cargo run --bin media_thermal --release -- record --output_path=data/bed/in_frame/control_to_100_thermal_take2.log
-
-cargo run --bin cnc_controller --release -- control-bed \
-    --target_temperature=100 \
-    --results_path=data/bed/in_frame/control_to_100_data_take3.csv
-
---------
-
-cargo run --bin media_thermal --release -- record --output_path=data/bed/in_frame/control_to_100_thermal_take4.log
-
-cargo run --bin cnc_controller --release -- control-bed \
-    --target_temperature=100 \
-    --results_path=data/bed/in_frame/control_to_100_data_take4.csv
-
-
-cargo run --bin media_thermal --release -- \
-    encode-mp4 \
-    --input_path=data/bed/in_frame/control_to_100_thermal_take4.log \
-    --output_path=data/bed/in_frame/control_to_100_thermal_take4.mp4
-
-----
-
-cargo run --bin media_thermal --release -- \
-    encode-mp4 \
-    --input_path=data/bed/bed_in_frame_thermal_compressed.log \
-    --output_path=data/bed/bed_in_frame_thermal.mp4
-
-data/bed/bed_in_frame_thermal_compressed.log
-
-car
-
-
-*/
-
-/*
-All the animations I need to create:
-
-- Measurement (collecting training data):
-    - Single graph with more points being added over time.
-    - Just need 1 CSV
-- Training Bed Model
-    - 1 CSV per epoch
-    - 1 CSV that contains per-epoch weights.
-
-- Controlling Training
-    - 1 CSV per epoch
-    - Frame per epoch
-    - Don't show the weights separately.
-
-- Control real bed (combine heat up and down)
-    - Just 1 CSV
-    - Frame per time step
-    - Inputs will be quantized.
-    - TODO: Also print out an ETA
-
-TODO: Change tool head to use a high temp magnet?
-
-Encoder
-
-3.3V, SCLK, GND, MISO, GND
-
-
-- SCLK
-- MISO
-- MOSI
-- CS (can get rid of it if I dedicate SPI pins)
-- 
-- 
-
-Basically use some ribbon cable.
 
 
 */
@@ -356,7 +257,6 @@ impl ToolheadTestCommand {
 
         - So total available depth of 3.4mm
 
-        Use a 1/16" thick by 1/4" diameter magnet
 
         The motor cavity outer diameter is 7mm so bascially need to eyeball that there is a small gap on all sides
 

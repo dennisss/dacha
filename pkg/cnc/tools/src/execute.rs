@@ -20,12 +20,6 @@ use crate::leveling::*;
 use crate::gcode::CommandConverter;
 use crate::remote::*;
 
-/*
-cargo run --bin cnc_tools --release -- execute \
-    --gcode_file=testdata/cnc/voron0/voron0-benchy.gcode \
-    --simulate
-*/
-
 #[derive(Args)]
 pub struct ExecuteCommand {
     // #[arg(positional)]

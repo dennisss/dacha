@@ -1,19 +1,3 @@
-# Written by Google Gemini
-# https://gemini.google.com/app/6711a6b16286a6b0
-#
-# Actual glass frame size is 179mm x 128mm (slightly over 7 x 5 inches)
-
-# Teslong: 2592 x 1944
-
-# python3 pkg/cnc/scripts/create_charuco_pattern.py
-# convert -density 600 calibration_pattern.png checker_board.png charuco_board.pdf
-# lpr -o scaling=100 charuco_board.pdf -P Brother_HL_L2460DW_USB
-#   TODO: Also need to add high quality settings.
-
-# SCALE_Y = (128.0 / 128.8) # 1.000
-
-# If having issues read
-# https://stackoverflow.com/questions/52998331/imagemagick-security-policy-pdf-blocking-conversion
 
 import cv2
 import numpy as np
@@ -39,8 +23,8 @@ def create_charuco_board():
     # --- SCALING FACTORS ---
     # Adjust these based on your printer's output.
     # Formula: Desired_Length / Measured_Length
-    SCALE_X = (165.0 / 164.5) # 1.0000
-    SCALE_Y = (115.0 / 114.5) * (128.0 / 128.8) # 1.000
+    SCALE_X = 1.0
+    SCALE_Y = 1.0
     
     # --- Helpers ---
     def mm_to_px(mm):

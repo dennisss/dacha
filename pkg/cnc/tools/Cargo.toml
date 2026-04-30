@@ -12,6 +12,7 @@ executor = { path = "../../executor" }
 file = { path = "../../file" }
 gcode = { path = "../gcode" }
 rpc = { path = "../../rpc" }
+usb = { path = "../../usb" }
 math = { path = "../../math" }
 media_camera = { path = "../../media/camera" }
 math_compute = { path = "../../math/compute" }

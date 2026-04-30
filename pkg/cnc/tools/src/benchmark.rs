@@ -12,14 +12,7 @@ use peripherals_proto::peripherals::{StepperMotorMotion, StepperMotorMotion_Dire
 use peripherals_service::utilization_tracker::*;
 
 /*
-cargo run --bin builder -- build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840
 
-cargo run --bin flasher -- built/pkg/nordic/nordic_radio_dongle uf2-dfu --usb_device_id=8888:
-
-cargo run --bin peripheral_tester
-
-cargo run --bin cnc_tools --release -- benchmark noop
-cargo run --bin cnc_tools --release -- benchmark step-width
 */
 
 
@@ -27,7 +20,9 @@ cargo run --bin cnc_tools --release -- benchmark step-width
 #[derive(Args)]
 pub struct BenchmarkCommand {
     #[arg(positional)]
-    mode: Mode
+    mode: Mode,
+
+    usb_selector: usb::DeviceSelector,
 }
 
 #[derive(Args)]
@@ -89,9 +84,17 @@ impl BinarySearch {
 
 impl BenchmarkCommand {
     pub async fn run(self) -> Result<()> {
+        let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
+
+        let config = configs.remove(&"benchmark")
+            .ok_or_else(|| err_msg("No config with the given name"))?;
+        let (mut device, _) = PeripheralsDevice::create_with(&config, self.usb_selector).await?;
+
+        let device = Arc::new(device);
+
         match self.mode {
-            Mode::Noop => Self::run_noop_test().await,
-            Mode::OneStepMotion => Self::run_step_motion_test().await,
+            Mode::Noop => Self::run_noop_test(device).await,
+            Mode::OneStepMotion => Self::run_step_motion_test(device).await,
         }
     }
 
@@ -102,15 +105,7 @@ impl BenchmarkCommand {
     More tuning: 111
     */
 
-    async fn run_step_motion_test() -> Result<()> {
-        let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
-
-        let config = configs.remove(&"benchmark")
-            .ok_or_else(|| err_msg("No config with the given name"))?;
-        let (mut device, _) = PeripheralsDevice::create(&config).await?;
-
-        let device = Arc::new(device);
-
+    async fn run_step_motion_test(device: Arc<PeripheralsDevice>) -> Result<()> {
         let util_tracker = RemoteUtilizationTracker::create();
         util_tracker.add_device("mcu", device.clone()).await?;
 
@@ -192,15 +187,7 @@ impl BenchmarkCommand {
         }
     }
 
-    async fn run_noop_test() -> Result<()> {
-        let mut configs = peripherals_service::config::BoardConfigRegistry::defaults().await?;
-
-        let config = configs.remove(&"benchmark")
-            .ok_or_else(|| err_msg("No config with the given name"))?;
-        let (mut device, _) = PeripheralsDevice::create(&config).await?;
-
-        let device = Arc::new(device);
-
+    async fn run_noop_test(device: Arc<PeripheralsDevice>) -> Result<()> {
         let util_tracker = RemoteUtilizationTracker::create();
         util_tracker.add_device("mcu", device.clone()).await?;
 

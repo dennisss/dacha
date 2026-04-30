@@ -92,36 +92,10 @@ Later
     - Takes heat away from the nozzle
     - For now assume that this dosn't lose heat
 
-cargo build --bin cnc_controller --release
-
-scp target/release/media_thermal dennis@10.1.0.126:~/tests
-
-ssh dennis@10.1.0.126
-
-DISPLAY=:0 ./media_thermal record --output_path=toolhead_dry_ring_sock_thermal.log --min_temp=20 --max_temp=250
-
-DISPLAY=:0 ./media_thermal record --output_path=toolhead_dry_full_sock_thermal.log --min_temp=20 --max_temp=250
-
-
-
-cargo run --bin media_thermal --release -- \
-    encode-mp4 \
-    --min_temp=20 --max_temp=250 \
-    --input_path=dump/toolhead_dry_full_sock_thermal.log \
-    --output_path=dump/oolhead_dry_full_sock_thermal.mp4
 
 
 
 
-
-
-cargo run --bin cnc_controller --release -- measure-toolhead \
-    --log_path=toolhead_dry_full_sock_data.csv \
-    --psu_addr=10.1.0.136 \
-    --multimeter_addr=10.1.0.134
-
-
-scp -r dennis@10.1.0.126:~/tests .
 
 
 
@@ -147,8 +121,7 @@ Results:
 ===========================
 
 
-cargo run --bin cnc_controller --release -- train-toolhead-heater-curve \
-    --log_path=toolhead_dry_full_sock_data.csv 
+
 
 */
 
@@ -156,7 +129,7 @@ cargo run --bin cnc_controller --release -- train-toolhead-heater-curve \
 #[derive(Args)]
 pub struct MeasureToolheadCommand {
     log_path: LocalPathBuf,
-    psu_addr: String,
+    psu_addr: Option<String>,
     multimeter_addr: Option<String>,
 }
 
@@ -165,7 +138,7 @@ impl MeasureToolheadCommand {
     pub async fn run(self) -> Result<()> {
         let mut driver = ToolheadTestDriver::create(
             Some(self.log_path),
-            Some(&self.psu_addr),
+            self.psu_addr.as_ref().map(|s| s.as_str()),
             self.multimeter_addr.as_ref().map(|s| s.as_str())
         ).await?;
 

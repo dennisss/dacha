@@ -1,4 +1,4 @@
-# Carvera
+# Makera Carvera
 
 The [Carvera](https://www.makera.com/products/carvera) is a desktop CNC milling machine machine sold by Makera. 
 
@@ -21,6 +21,7 @@ Under the cover is the main PCB that looks like below:
 Technical details of the board:
 
 - Main Processor: LPC1768FBD100
+    - UART uses a 16 byte TX and 16 byte RX FIFO buffer. 
 - Co-processors
     - ESP M8266 module for WiFI
     - CC2530 module : For wireless probe communication.
@@ -28,6 +29,10 @@ Technical details of the board:
 - USB-C female poart (labeled `USB-UART`)
     - Normally routed to the machine back panel USB-C port
     - On the board, linked to an FTDI 232RL USB-to-Serial IC and then to the main processor
+        - 128 byte buffer from the USB host to the UART
+            - So ideally gcode lines stay below 128 bytes in length.
+        - 256 byte 
+            - So gcode responses should be less that 256 bytes in length.
     - FTDI chip supports up to a 3MHz baud rate. (divides a 48Mhz reference clock)  
 - X,Y,Z axes
     - Main processor connected to external motor drivers via 2 x 74HCT245 logic transceiver ICs
@@ -36,31 +41,13 @@ Technical details of the board:
 
 ## Firmware
 
-The main processor runs Smoothieware with custom patches. Source code is [here](https://github.com/brooklikeme/Smoothieware/tree/makera). Smoothieware documentation can be found [here](https://smoothieware.github.io/Webif-pack/documentation/web/html/index.html).
+The main processor runs Smoothieware with custom patches written by Makera and on top of those, we have additional patches to make it work well with serial monitoring software.
 
-TODO: Maintain a fork repository.
+A prebuilt firmware binary can be find in [./firmware/carvera-firmware-r3.bin](./firmware/carvera-firmware-r3.bin).
 
 ### Compiling
 
-I'd recommend making the following batch to the firmware source before compiling:
-
-```
-diff --git a/src/libs/Kernel.cpp b/src/libs/Kernel.cpp
-index 5b2c9072..82d85946 100644
---- a/src/libs/Kernel.cpp
-+++ b/src/libs/Kernel.cpp
-@@ -127,7 +127,7 @@ Kernel::Kernel()
-     // default
-     if(this->serial == NULL) {
-         // this->serial = new(AHB0) SerialConsole(P2_8, P2_9, this->config->value(uart_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
--       this->serial = new(AHB0) SerialConsole(P2_8, P2_9, 115200);
-+       this->serial = new(AHB0) SerialConsole(P2_8, P2_9, 1000000);
-     }
- 
-     //some boards don't have leds.. TOO BAD!
-```
-
-DO NOT OVERRIDE `DEFAULT_SERIAL_BAUD_RATE` since this is also used for the internal serial connection to the CC2530.
+Clone https://github.com/dennisss/CarveraFirmware
 
 Compiling the firmware can be done with:
 
@@ -70,10 +57,8 @@ Compiling the firmware can be done with:
 
 # Do on every compile
 ./BuildShell
-DEFINES="-DNO_TOOLS_EXTRUDER " make clean all
+CNC=1 AXIS=5 make clean all
 ```
-
-Note that we pick 1MHz as a baud rate since both the LPC and FTDI chips have clocks that are even multiples of 1MHz.
 
 Then the `LPC1768/main.bin` file can be copied to the Carvera's SDCard as `firmware.bin`.
 
@@ -131,7 +116,13 @@ Installing:
 - The `cable-holder.stl` parts can be used for cable routing along the floor of the carvera.
     - The stock floor screws are M4 x 8mm (countersunk - length measured from tip to tip)
     - Re-use the stock screw (might be a tight fit) or replace with non-counter sunk 10mm screws
-
+- Cable management
+    - The cable from the camera can be routed along the left side of the dust bin and up the side of the side wall and then over the main control board towards the right side of the machine.
+    - Then attach a 1ft USB A extension cable.
+    - Then plug into a USB hub side as this [Anker 4-port hub](https://www.amazon.com/gp/product/B07L32B9C2).
+    - Also plug in the control board serial to the hub using a new USB A to C cable.
+    - Connect the USB hub to the rear USB-C port using a [USB C female to female adapter](https://www.amazon.com/gp/product/B0BCFPWQRP).
+    - You can cut re-use one of the zip-tie holes along the rear top gap in the machine to hold the USB hub in place. 
 
 ## Feeds and Speeds
 
@@ -193,6 +184,9 @@ Example command for doing full mesh leveling:
 
 full reference:
 
+- `G38.2 Z-10 F60`
+    - Do leveling
+    - Though I think its actually defaulting to 100mm/min?
 - `G32 R1 X0 Y0 A10 B10 H2` : Grid probing
     - `X/Y` are the start position?? Supposedly these are relative to the current position
 - `M495 X?? Y?? [C?? Y??] [O?? F??] [A?? B?? I?? J?? H??] [P1]` : Scan margin, then do z probe, change probe tool
@@ -214,8 +208,25 @@ full reference:
     - `XX` : Tool diameter. Defaults to `3.175`
     - `YY` : Probe height. Defaults to `9.0`
     - Internally uses standard `G38` style commands.
+    - This compiles to the following GCode:
+        - `M497.5 ; Set ATC Status`
+        - `G38.2 Z%.3f F%.3f`
+            - `Z` can also be 'X' or 'Y'
+            - Feed rate is 100mm/min (slow rate), 500mm/min (fast rate)
 - `M370` : Clear auto bed leveling data set by `M32`
 - `M375.1` : Display bed leveling data.
+
+The leveling data gets rendered as follows:
+
+```
+29.5000| -0.0400 -0.1000 -0.1100 -0.1200 -0.0850
+22.1250| -0.0400 -0.0850 -0.0900 -0.1000 -0.0550
+14.7500| -0.0350 -0.0650 -0.0600 -0.0750 -0.0300
+7.3750| -0.0150 -0.0400 -0.0250 -0.0300 0.0050
+0.0000| 0.0000 -0.0300 0.0200 0.0100 0.0550
+-----+----------+----------+----------+----------+-----
+0.0000 28.6300 57.2600 85.8900 114.5200
+```
 
 
 #### Tool Changer
@@ -317,6 +328,9 @@ Smoothieware Firmware:
     - Subscribes to `ON_CONSOLE_LINE_RECEIVED` and emits additional events to run scripts.
 - `src/modules/communication/SerialConsole2.cpp` : Wireless probe communication logic.
     - Subscribes to `ON_CONSOLE_LINE_RECEIVED`
+- `src/libs/Kernel.cpp`
+    - Contains the code that generates and state and diagnostic report strings send back to the host.
+- DO NOT OVERRIDE `DEFAULT_SERIAL_BAUD_RATE` since this is also used for the internal serial connection to the CC2530.
 
 Carvera Controller
 
@@ -413,3 +427,92 @@ Carvera/Smoothieware specific challenges for supporting monitoring software:
 - Need to detect response lines with 'alarm' in them.
 - Need to figure out when we lose the known position
 
+### Endoscope Mount
+
+This is a mount for attaching an endoscope camera to the Carvera to allow for visual alignment of double sided PCBs. Basically you need to drill at least 3 holes on the top side of your PCB all the way through, measure the centered position with the camera and then flip over the board and measure the wholes again. Then do some linear algebra (solve `A * top_points = bottom_points`) to figure out how to transform your back gcode. I do the alignment immediately after doing all the cutting on the top surface and keep a constant Z for all camera measurements to mitigate issues with the camera shifting around over time.
+
+You should be able to achieve <0.1mm alignment precision with this method. Naturally the closer the camera is to the PCB, the bigger resolution you will get.
+
+The 3d printed parts are made for different diameters of endoscopes. The one I mainly use is the [Teslong 5MP auto-focus camera](https://www.amazon.com/dp/B07HVT2XZL) which is 12.5mm in diameter. But, in hindsight the fixed focus ones would have been easier to use but harder to get in a higher resolution. You don't need the lighting from the endoscope as the light strips in the Carvera are sufficient to illuminate most boards.
+
+Note that not all endoscopes support viewing from Windows/Linux/PCs. Keywords to search for are 'Windows', 'Linux', 'UVC' or presence of a male USB type A connector (the 3 in 1 connector endoscopes). Avoid iPhone endoscopes as they are probably not compatible with your computer.
+
+Instructions:
+
+- Print both parts in a strong filament
+    - I used 100% infill PCCF with 0.95 extrusion multiplier and the 'print external perimeters first' setting to get dimensionally accurate parts
+    - For the body, print with the endoscope hole on the print bed.
+- Cut off the endoscope USB cable and solder on a USB-C breakout or just a USB-C cable.
+- Attach the endoscope to the mount
+    - WARNING: Some of the pictures are from an older version of the mount so the screws are backwards.
+    - Use 2 x M2 16mm screws and corresponding nuts.  
+    - Edge of endoscope should be at least ~22mm below the bottom of the 3d printed part. (Else the view will be obstructed with the laser or spindle)
+- Before tightening the clamp, make sure that the camera is aligned straight with the mount by viewing it on your computer.
+    - It is very annoying to adjust the orientation of the camera later.
+- Attach the mount to your Carvera head by re-using the screw in the same position on the Carvera.
+- Use a generous amount of hot glue for cable management.
+- Re-cover the 
+
+The v4l2 controls exposed by the recomended camera as the following:
+
+```
+The Endoscope
+
+User Controls
+
+                     brightness 0x00980900 (int)    : min=-64 max=64 step=1 default=0 value=0
+                       contrast 0x00980901 (int)    : min=0 max=100 step=1 default=30 value=30
+                     saturation 0x00980902 (int)    : min=0 max=128 step=1 default=54 value=54
+                            hue 0x00980903 (int)    : min=-180 max=180 step=1 default=0 value=0
+        white_balance_automatic 0x0098090c (bool)   : default=1 value=1
+                          gamma 0x00980910 (int)    : min=100 max=500 step=1 default=300 value=300
+                           gain 0x00980913 (int)    : min=0 max=128 step=1 default=70 value=70
+           power_line_frequency 0x00980918 (menu)   : min=0 max=2 default=1 value=1 (50 Hz)
+      white_balance_temperature 0x0098091a (int)    : min=2800 max=6500 step=10 default=4600 value=4600 flags=inactive
+                      sharpness 0x0098091b (int)    : min=0 max=100 step=1 default=90 value=90
+         backlight_compensation 0x0098091c (int)    : min=0 max=2 step=1 default=1 value=1
+
+Camera Controls
+
+                  auto_exposure 0x009a0901 (menu)   : min=0 max=3 default=3 value=3 (Aperture Priority Mode)
+         exposure_time_absolute 0x009a0902 (int)    : min=1 max=10000 step=1 default=166 value=166 flags=inactive
+     exposure_dynamic_framerate 0x009a0903 (bool)   : default=0 value=1
+                   pan_absolute 0x009a0908 (int)    : min=-57600 max=57600 step=3600 default=0 value=0
+                  tilt_absolute 0x009a0909 (int)    : min=-43200 max=43200 step=3600 default=0 value=0
+                 focus_absolute 0x009a090a (int)    : min=0 max=990 step=1 default=68 value=68 flags=inactive
+     focus_automatic_continuous 0x009a090c (bool)   : default=1 value=1
+                  zoom_absolute 0x009a090d (int)    : min=0 max=3 step=1 default=0 value=0
+
+
+```
+
+It is recommended to disable `focus_automatic_continuous` once the camera is initially focused.
+
+
+### Solder Mask
+
+- Mechanic `UVH900-BY` is what the Carvera PCB frab kit comes with.
+- `SUNmini Plus` UVLED Lamp
+    - 24W 5V
+    - 365 + 405nm light
+    - 
+- Solder mMask remover
+    - 0.3mm x 30degree
+    - RPM:6000
+    - Feed:400
+    - PFeed:200
+    - DOC:0.2 (same as in CAM guide)
+    - Should treat as a 0.3mm diameter cutter though
+
+
+PCB recommendations based on https://wiki.makera.com/en/software/MakeraCAM_userguide
+
+- Line width > 0.2mm
+Line spacing > 0.2mm
+Via diameter >= 0.4mm
+Silk screen line width > 0.25mm
+Drill unit to metric mm 3.3 format
+And the smallest flat bottom tip tools that can be used are 0.1mm\60° or 0.2mm\30°
+
+
+- 0.05mm depth for the engraving

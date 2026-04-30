@@ -35,12 +35,16 @@ pub struct I2CTransferResult {
 impl PeripheralsDevice {
 
     pub async fn create(config: &BoardConfig) -> Result<(Self, PeripheralsState)> {
-        // TODO: Think about decoupling the state stuff.
-        let (reqs, peripherals_state) = build_configuration_requests(config)?;
-
         let mut selector = usb::DeviceSelector::default();
         selector.vendor_id = Some(0x8888);
         selector.product_id = Some(if config.product_id() != 0 { config.product_id() as u16 } else { 0x0004 });
+        Self::create_with(config, selector).await
+    }
+
+    pub async fn create_with(config: &BoardConfig, selector: usb::DeviceSelector) -> Result<(Self, PeripheralsState)> {
+        // TODO: Think about decoupling the state stuff.
+        let (reqs, peripherals_state) = build_configuration_requests(config)?;
+
         let mut usb_device = USBRadio::find(&selector).await?;
 
         let mut config_responses = HashMap::default();

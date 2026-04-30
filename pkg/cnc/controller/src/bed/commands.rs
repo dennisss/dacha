@@ -684,9 +684,19 @@ impl BedFanTestCommand {
 
         let mut bed_client = BedTestDriver::create_bed_client()?;
 
+        let res = bed_client.request(0, 0x0000).await?;
+
+        let mut i = 0;
+        let colors = [
+            0, 0xff, 0xff00, 0xff0000, 0xff000000,
+        ];
         loop {
-            let res = bed_client.request(1, 0).await?;
+
+
+            let res = bed_client.request(0, colors[i % colors.len()]).await?;
             println!("{:?}", res);
+
+            i += 1;
 
             executor::sleep(Duration::from_millis(1000)).await;
         }

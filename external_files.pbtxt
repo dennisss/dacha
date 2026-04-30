@@ -35,121 +35,6 @@ files: [
         sha256_sum: "0635c0b7556b827916fc81803fe9811ecf3e8916bf194dd0c49470ddfc580d18"
     },
     {
-        path: "doc/carvera/firmware/carvera-firmware-r3.bin"
-        size: 347196
-        sha256_sum: "00cc53470b04ab4225b23fd6b955d594c1b7acaeb95a43f7fb002001dfe6ecba"
-    },
-    {
-        path: "doc/carvera/images/board-cover.jpg"
-        size: 185365
-        sha256_sum: "692266beda951aff99db2c53b31596b06b02572c6583ee633d31aecad959953f"
-    },
-    {
-        path: "doc/carvera/images/board.jpg"
-        size: 296644
-        sha256_sum: "d299b0572a379b33a2465a5161ef1936c30875ec4ed71875411689674087abc6"
-    },
-    {
-        path: "doc/carvera/images/caddy/inplace.jpg"
-        size: 187923
-        sha256_sum: "4c481e263c5f2bc777804a5e82026dc8c081732b8b1b1b389e1fd9fe1eb3b047"
-    },
-    {
-        path: "doc/carvera/images/caddy/printed.jpg"
-        size: 133651
-        sha256_sum: "9292777f9d8edd6efec2970fb5f3af171b629cec562c897efcb514f73fcc0520"
-    },
-    {
-        path: "doc/carvera/images/camera-cable-routing.jpg"
-        size: 193133
-        sha256_sum: "ae166287fc531e2319748b6bb646de282bbb7b8bb187b5474a9ca005be73e026"
-    },
-    {
-        path: "doc/carvera/images/camera-inside.jpg"
-        size: 164198
-        sha256_sum: "018272867b72229a5ae43015f5a2cfc9f15ba2807ef4796544028032956fc7e5"
-    },
-    {
-        path: "doc/carvera/images/camera-screenshot.jpg"
-        size: 227638
-        sha256_sum: "bc996d9a8a5a1b9dc2857f4a3a24041a01017c42a4439c1a8d3fdbbf240d2413"
-    },
-    {
-        path: "doc/carvera/images/camera-with-cover.jpg"
-        size: 188511
-        sha256_sum: "ec5a07cd549e6dff723368a581b0ce8f32a18c60bafad5fbcf2d92261d6f9e58"
-    },
-    {
-        path: "doc/carvera/images/endoscope/assembled-parts.jpg"
-        size: 1794390
-        sha256_sum: "25a8365aaaf7c90746ddc7f60c58927257bc311581946eda1d002e8e9be03754"
-    },
-    {
-        path: "doc/carvera/images/endoscope/back-alignment-screenshot.png"
-        size: 1949294
-        sha256_sum: "52f7077f8468626dc56fc0de894545263afc4f43d068b7dcab0aaf53338938bb"
-    },
-    {
-        path: "doc/carvera/images/endoscope/cable-management.jpg"
-        size: 2015375
-        sha256_sum: "30bdf93dc5defd02eed3d2fcc5d6ef82980ac6aebc41fe84ef40ce8dd79c19d1"
-    },
-    {
-        path: "doc/carvera/images/endoscope/camera-with-usb.jpg"
-        size: 2030444
-        sha256_sum: "e83a9029e5e051fb56c194e489a268428cda3d74428840f981167cb28f63682a"
-    },
-    {
-        path: "doc/carvera/images/endoscope/enclosed.jpg"
-        size: 431040
-        sha256_sum: "5b8d64b2c59d778d546be0c9a94e6cc6d364b7e2d653624321985baf2303ad9b"
-    },
-    {
-        path: "doc/carvera/images/endoscope/front-alignment-screenshot.png"
-        size: 2116478
-        sha256_sum: "0fcb21f7a654751841839a960b6bdc2ce4545f2147c0a54a92d5485c1e3b5ad6"
-    },
-    {
-        path: "doc/carvera/images/endoscope/installed-view.jpg"
-        size: 1978132
-        sha256_sum: "8c3c398c5bf01a29afb720a1da3d022dc328e07df976b36b9338c4f2d9eb4eac"
-    },
-    {
-        path: "doc/carvera/images/endoscope/usb-wiring.jpg"
-        size: 1584390
-        sha256_sum: "2d80c1bec8bb67cecf71e1ef8fd494dfd31e54805d0dfad66936503857e6bf15"
-    },
-    {
-        path: "doc/carvera/parts/endoscope/body-12.5mm.stl"
-        size: 190884
-        sha256_sum: "8170d90642aded3756d9760f8a367eee1a176a9082757c59aa7dc01b542c4fba"
-    },
-    {
-        path: "doc/carvera/parts/endoscope/body-8mm.stl"
-        size: 183484
-        sha256_sum: "5db3e13ef6646f69e5ec67a8279db387732da28141a6765dd40d642943aa86ae"
-    },
-    {
-        path: "doc/carvera/parts/endoscope/clamp-12.5mm.stl"
-        size: 75884
-        sha256_sum: "aef1b03f0f4e24b268414904b358dfb4fd2c0a4c2135d5e9b28a90d421facd47"
-    },
-    {
-        path: "doc/carvera/parts/endoscope/clamp-8mm.stl"
-        size: 75884
-        sha256_sum: "0a0bee39fed93a5493991fec65c08f376b5b169175babadd8fbbf87cb44d8788"
-    },
-    {
-        path: "doc/carvera/riveter_holder/riveter-a.stl"
-        size: 102884
-        sha256_sum: "6fb1b42579cd5fb50ee89bf36bd0431754e80f3e3c294663db3b2dd190bae040"
-    },
-    {
-        path: "doc/carvera/riveter_holder/riveter-b.stl"
-        size: 164084
-        sha256_sum: "3072aa8a41013b125d283ce74239809bb41e04e366e540b1669d56970515febe"
-    },
-    {
         path: "doc/dwm1000_flexypin/board/plot/board-B_Cu.gbl"
         size: 4428
         sha256_sum: "b306754b08976c788f8dbac740fa43230c2a9f9e741db696399dd0c3ef582f69"
@@ -1405,6 +1290,161 @@ files: [
         sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
     },
     {
+        path: "pkg/cnc/machines/makera_carvera/firmware/carvera-firmware-r3.bin"
+        size: 347196
+        sha256_sum: "00cc53470b04ab4225b23fd6b955d594c1b7acaeb95a43f7fb002001dfe6ecba"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/board-cover.jpg"
+        size: 185365
+        sha256_sum: "692266beda951aff99db2c53b31596b06b02572c6583ee633d31aecad959953f"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/board.jpg"
+        size: 296644
+        sha256_sum: "d299b0572a379b33a2465a5161ef1936c30875ec4ed71875411689674087abc6"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/caddy/inplace.jpg"
+        size: 187923
+        sha256_sum: "4c481e263c5f2bc777804a5e82026dc8c081732b8b1b1b389e1fd9fe1eb3b047"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/caddy/printed.jpg"
+        size: 133651
+        sha256_sum: "9292777f9d8edd6efec2970fb5f3af171b629cec562c897efcb514f73fcc0520"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/camera-cable-routing.jpg"
+        size: 193133
+        sha256_sum: "ae166287fc531e2319748b6bb646de282bbb7b8bb187b5474a9ca005be73e026"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/camera-inside.jpg"
+        size: 164198
+        sha256_sum: "018272867b72229a5ae43015f5a2cfc9f15ba2807ef4796544028032956fc7e5"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/camera-screenshot.jpg"
+        size: 227638
+        sha256_sum: "bc996d9a8a5a1b9dc2857f4a3a24041a01017c42a4439c1a8d3fdbbf240d2413"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/camera-with-cover.jpg"
+        size: 188511
+        sha256_sum: "ec5a07cd549e6dff723368a581b0ce8f32a18c60bafad5fbcf2d92261d6f9e58"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/assembled-parts.jpg"
+        size: 1794390
+        sha256_sum: "25a8365aaaf7c90746ddc7f60c58927257bc311581946eda1d002e8e9be03754"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/back-alignment-screenshot.png"
+        size: 1949294
+        sha256_sum: "52f7077f8468626dc56fc0de894545263afc4f43d068b7dcab0aaf53338938bb"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/cable-management.jpg"
+        size: 2015375
+        sha256_sum: "30bdf93dc5defd02eed3d2fcc5d6ef82980ac6aebc41fe84ef40ce8dd79c19d1"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/camera-with-usb.jpg"
+        size: 2030444
+        sha256_sum: "e83a9029e5e051fb56c194e489a268428cda3d74428840f981167cb28f63682a"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/enclosed.jpg"
+        size: 431040
+        sha256_sum: "5b8d64b2c59d778d546be0c9a94e6cc6d364b7e2d653624321985baf2303ad9b"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/front-alignment-screenshot.png"
+        size: 2116478
+        sha256_sum: "0fcb21f7a654751841839a960b6bdc2ce4545f2147c0a54a92d5485c1e3b5ad6"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/installed-view.jpg"
+        size: 1978132
+        sha256_sum: "8c3c398c5bf01a29afb720a1da3d022dc328e07df976b36b9338c4f2d9eb4eac"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/images/endoscope/usb-wiring.jpg"
+        size: 1584390
+        sha256_sum: "2d80c1bec8bb67cecf71e1ef8fd494dfd31e54805d0dfad66936503857e6bf15"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/arm.stl"
+        size: 87084
+        sha256_sum: "0e8d5135bfe5695a20939c06cbefdade364f6f857c9c201a7434d03c3a605f92"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/cable-holder.stl"
+        size: 73684
+        sha256_sum: "8228bc0ff6a7d612a36eb43888e8b3f4f54be657964b56b2306517df39602f93"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/camera-back-arducam.stl"
+        size: 249984
+        sha256_sum: "ef89acdccc6533a73e83836b651b873cbab8beb801a1c8e09acca43d4c36acf2"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/camera-back.stl"
+        size: 249184
+        sha256_sum: "6e37102e50ad08920473e2b8c791dd7246fda20b367884ba20c7d2245506a24a"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/camera-top-arducam.stl"
+        size: 179584
+        sha256_sum: "372c033daea024f13eb410f233bb65059a73c5680a37a51372180eab1e299d53"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/camera-top.stl"
+        size: 179584
+        sha256_sum: "f880440f9f832d631e0664d3537cd3c58e04556c07efe26dec51e622984e6f50"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/endoscope/body-12.5mm.stl"
+        size: 190884
+        sha256_sum: "8170d90642aded3756d9760f8a367eee1a176a9082757c59aa7dc01b542c4fba"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/endoscope/body-8mm.stl"
+        size: 183484
+        sha256_sum: "5db3e13ef6646f69e5ec67a8279db387732da28141a6765dd40d642943aa86ae"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/endoscope/clamp-12.5mm.stl"
+        size: 75884
+        sha256_sum: "aef1b03f0f4e24b268414904b358dfb4fd2c0a4c2135d5e9b28a90d421facd47"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/endoscope/clamp-8mm.stl"
+        size: 75884
+        sha256_sum: "0a0bee39fed93a5493991fec65c08f376b5b169175babadd8fbbf87cb44d8788"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/floor-bracket.stl"
+        size: 78284
+        sha256_sum: "bd8b26c270ae6b61a1519c5c998286e348454ded9e8095a662b78afc67394c46"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/parts/wall-hinge.stl"
+        size: 172284
+        sha256_sum: "1f0577888483ac552fae30be4ab9d8144fe79016c549faf5f326af645f8ca8b1"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/riveter_holder/riveter-a.stl"
+        size: 102884
+        sha256_sum: "6fb1b42579cd5fb50ee89bf36bd0431754e80f3e3c294663db3b2dd190bae040"
+    },
+    {
+        path: "pkg/cnc/machines/makera_carvera/riveter_holder/riveter-b.stl"
+        size: 164084
+        sha256_sum: "3072aa8a41013b125d283ce74239809bb41e04e366e540b1669d56970515febe"
+    },
+    {
         path: "pkg/cnc/machines/voron_0/boards/bed/r2/plot.zip"
         size: 21434
         sha256_sum: "055ba8164ea90b60c462562eb35e17dac068d9c3b89dc88bc26edda3c76ac76c"
@@ -1435,19 +1475,39 @@ files: [
         sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
     },
     {
-        path: "pkg/cnc/machines/voron_0/magnetic-tile-holder-horizontal.stl"
-        size: 468684
-        sha256_sum: "97790887726fc0895dc8fb5d36ba12e77165a873ce237527b2e9caf3a13281da"
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-board-m3-2mm-spacer.stl"
+        size: 57684
+        sha256_sum: "67d0f79ce36a83810a7b1c8f0cb95fac0b62a9e55eb346063031712a2efd5ffa"
     },
     {
-        path: "pkg/cnc/machines/voron_0/magnetic-tile-nozzle-clip.stl"
-        size: 174884
-        sha256_sum: "6398bb95defa668276ed739355f9b297b9759ab194fe2339f77331449cd1ddf1"
-    },
-    {
-        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cable-chain-clip.stl"
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-cable-chain-clip.stl"
         size: 592884
         sha256_sum: "684df1e47a9ae4bcc9285388aa7f3ecbd8330aab1e4d4e0eef83e0fab6820c5f"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-floor-cover.stl"
+        size: 202884
+        sha256_sum: "3483c7f8894870c05f3866dd6304fb48d8c03d98617e74be347e65887969b341"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-led-holder.stl"
+        size: 145284
+        sha256_sum: "eb9af5649403b0f7e4b3b7f30f7b9bcf9b819b431b1ebafafcfa6b14a53ebe7c"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-r4.step"
+        size: 321767
+        sha256_sum: "2418df715177f0f64c42745844926d1799efbef6f6a3d1e64908caa358b6331e"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-wago-holder.stl"
+        size: 136084
+        sha256_sum: "d1b8e5b6a8d0786eaeb0ffc83c4d02556a68623cf378fc1cff843558e6fab43f"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-z-nut-bracket.stl"
+        size: 231784
+        sha256_sum: "9300f5842a177526c5e24e8dc8efd946b7eb68e6f4bbde426ce115a781f3bb91"
     },
     {
         path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed.step"
@@ -1455,42 +1515,67 @@ files: [
         sha256_sum: "053240f6903a5397a521ff469c910a5be8d4621ca0f2f8f8b8b1b423810aba04"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/floor-cover.stl"
-        size: 202884
-        sha256_sum: "3483c7f8894870c05f3866dd6304fb48d8c03d98617e74be347e65887969b341"
-    },
-    {
-        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/led-holder.stl"
-        size: 145284
-        sha256_sum: "eb9af5649403b0f7e4b3b7f30f7b9bcf9b819b431b1ebafafcfa6b14a53ebe7c"
-    },
-    {
-        path: "pkg/cnc/machines/voron_0/mods/cnc_bed/z-nut-bracket.stl"
-        size: 231784
-        sha256_sum: "9300f5842a177526c5e24e8dc8efd946b7eb68e6f4bbde426ce115a781f3bb91"
-    },
-    {
-        path: "pkg/cnc/machines/voron_0/mods/dual_pane/side-panel-bottom.dxf"
+        path: "pkg/cnc/machines/voron_0/mods/dual_pane/inner-side-panel-bottom.dxf"
         size: 93915
         sha256_sum: "69334ec42e085e21aff964e678987508af2fffb28040f212fa002ff862586bdf"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/dual_pane/side-panel-top.dxf"
+        path: "pkg/cnc/machines/voron_0/mods/dual_pane/inner-side-panel-top.dxf"
         size: 97825
         sha256_sum: "e9d9f1d847f2907ec325cf7cb031b47f8257921901df6c93459dc375c8e85291"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/filter/catridge-body.stl"
+        path: "pkg/cnc/machines/voron_0/mods/duet_filament_sensor/duet_filament_sensor_mount.stl"
+        size: 234284
+        sha256_sum: "4032d754405fab795cbf1dce3375bf7caf11c1867461f068914d814b7cb3ccad"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/dc-dc-buck-holder-2x.stl"
+        size: 387784
+        sha256_sum: "5de1aef504e90e59da27d9ff94e3c4a761937de3ac5c4d777a576ea539fe20a6"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/electronics-tray-40mm-fan-bracket.stl"
+        size: 965984
+        sha256_sum: "a9da4d84423cf71a02b81fde824c78f8fc9542cd8296ce615a872acf4e5b1916"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/electronics-tray-m25-3mm-spacer.stl"
+        size: 57684
+        sha256_sum: "b81b3abae5b281adc2f8c0cf01d4915fa1057f440547c883e577bcb27cfeaba0"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/electronics-tray-r2.dxf"
+        size: 136391
+        sha256_sum: "7965c730d180ffecc0ca8c42924af00f3300b2a8b12a6c82ab480a1452a3f94a"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/electronics-tray-r2.stl"
+        size: 892884
+        sha256_sum: "bc7b5cbef4321cdfdab6a6dcb275a044a2da934d60f9195881001e9178b7fcc3"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/electronics-tray-r2.svg"
+        size: 16210
+        sha256_sum: "e5ab6bf48545918b82ab56325d15d69fdef6c24ca28073791f5910600b9ed98c"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/electronics-tray.dxf"
+        size: 127303
+        sha256_sum: "51b6850866c6b9e3c53faca82581e8a7e346cbaebffcb7cab32f2efc5a8d87f7"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/filter/air-filter-catridge-body.stl"
         size: 2828484
         sha256_sum: "6500bda248f08095245284786e5752ecd2a63da5dba6d2958b3af0daeaca8143"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/filter/fan-body.stl"
+        path: "pkg/cnc/machines/voron_0/mods/filter/air-filter-fan-body.stl"
         size: 583584
         sha256_sum: "1d01edbea9da4b00cbb5279dd5845f0f4b5b2236662657a3148ae48e6ca8c14a"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/filter/magclip.stl"
+        path: "pkg/cnc/machines/voron_0/mods/filter/air-filter-magclip.stl"
         size: 347084
         sha256_sum: "7c4428448a2ede776bf1c23a904510fba6ad0273f0f475101d8c5e1e9aaf5bfa"
     },
@@ -1500,17 +1585,17 @@ files: [
         sha256_sum: "0b8ca91078f1ebdabe895371b723209ec242fa78b3c7b8d8059db800487b264c"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/mag_filament/guidler-solid.stl"
+        path: "pkg/cnc/machines/voron_0/mods/mag_filament/mag-filament-guidler-solid.stl"
         size: 2841384
         sha256_sum: "fdafde7663c273d92c43f20081d887eb83d4ba5397190317c411ad90ae090271"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/mag_filament/guidler.stl"
+        path: "pkg/cnc/machines/voron_0/mods/mag_filament/mag-filament-guidler.stl"
         size: 2913484
         sha256_sum: "72fb175bcec7070a47f6ed6cad2aa93509617373d5cac18778db5fff871e6823"
     },
     {
-        path: "pkg/cnc/machines/voron_0/mods/mag_filament/motorplate.stl"
+        path: "pkg/cnc/machines/voron_0/mods/mag_filament/mag-filament-motorplate.stl"
         size: 875784
         sha256_sum: "0616c5a24ec3533c448964af49a03a678cff8e3ae60a824cf05c05fefd1d22da"
     },
@@ -1530,74 +1615,144 @@ files: [
         sha256_sum: "747e0bfe954144329652301eedc81b85ee46930de3b6c0b6b91ee833e5a24bcd"
     },
     {
-        path: "pkg/cnc/machines/voron_0/motor-encoder-holder.stl"
+        path: "pkg/cnc/machines/voron_0/mods/motor_encoder/motor-encoder-holder.stl"
         size: 176284
         sha256_sum: "ff0ee9ec124e1f349e7006a4db519aef3a350ffca6f3830af15fb0e6570cb86c"
     },
     {
-        path: "pkg/cnc/machines/voron_0/motor-magnet-aligner.stl"
+        path: "pkg/cnc/machines/voron_0/mods/motor_encoder/motor-encoder-magnet-aligner.stl"
         size: 86484
         sha256_sum: "46fa01ac1a27c89f906583d7369c4839115985df2b08631dd3a67bd8cf033905"
     },
     {
-        path: "pkg/cnc/machines/voron_0/rear_ethernet/rear-skirt-ethernet-mesh-top.stl"
+        path: "pkg/cnc/machines/voron_0/mods/panels/mid-panel.dxf"
+        size: 129560
+        sha256_sum: "90aa92458f8bbe9d9ea054db2b78abadf930cde7ce7f80181c64173edec20fb1"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/panels/side-panel.dxf"
+        size: 190080
+        sha256_sum: "e9c43add13efdc9655faf23921a7d1106fc9aa104ac678aab76fbf03415e1c18"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/panels/side-panel.stl"
+        size: 71684
+        sha256_sum: "0352b883dc5ab1fefbceb24849e9191941245cf7845f1dfb8448e3f2e8b31737"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/panels/side-panel.svg"
+        size: 25426
+        sha256_sum: "e825f7d3e5027134b8b1e09e92de57aff73a1a0b63116d4ecc042002bc17cb38"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/rear_ethernet/rear-skirt-ethernet-mesh-top.stl"
         size: 16284
         sha256_sum: "92f20317f3173afdcba95d41b281a7ea1206d48d1dfcccb35d8554c08bb70355"
     },
     {
-        path: "pkg/cnc/machines/voron_0/rear_ethernet/rear-skirt-ethernet-mesh.stl"
+        path: "pkg/cnc/machines/voron_0/mods/rear_ethernet/rear-skirt-ethernet-mesh.stl"
         size: 45884
         sha256_sum: "19c26461e5cd8025875f8250dacd7dbb9c0504b32a8e462a1af555f2e59fe92d"
     },
     {
-        path: "pkg/cnc/machines/voron_0/rear_ethernet/rear-skirt-ethernet.stl"
+        path: "pkg/cnc/machines/voron_0/mods/rear_ethernet/rear-skirt-ethernet.stl"
         size: 3159384
         sha256_sum: "064e682c47c2602de0b07b8bbcbfea90a7503e9922a73169a4c1f3f6d28a9e65"
     },
     {
-        path: "pkg/cnc/machines/voron_0/rear_keystone_skirt_mesh/images/back-raw.jpg"
+        path: "pkg/cnc/machines/voron_0/mods/rear_keystone_skirt_mesh/images/back-raw.jpg"
         size: 256986
         sha256_sum: "3d9e4c2558acc5130a0d8be03150dcb27be2b40c2fc256ddd81298d993b22000"
     },
     {
-        path: "pkg/cnc/machines/voron_0/rear_keystone_skirt_mesh/images/back-with-ethernet.jpg"
+        path: "pkg/cnc/machines/voron_0/mods/rear_keystone_skirt_mesh/images/back-with-ethernet.jpg"
         size: 226437
         sha256_sum: "781cf2491c3221ca6d28dbd5d54a73431bac436c645adc14dc2d472c92fddd83"
     },
     {
-        path: "pkg/cnc/machines/voron_0/rear_keystone_skirt_mesh/images/front.jpg"
+        path: "pkg/cnc/machines/voron_0/mods/rear_keystone_skirt_mesh/images/front.jpg"
         size: 169190
         sha256_sum: "a9bd7811cd7ce0490eb5c1547669d9a1a5f6b818de11e4767fba3b0814bd20c2"
     },
     {
-        path: "pkg/cnc/machines/voron_0/rear_keystone_skirt_mesh/parts/mesh.stl"
+        path: "pkg/cnc/machines/voron_0/mods/rear_keystone_skirt_mesh/parts/mesh.stl"
         size: 64684
         sha256_sum: "a978dd40607a80f7200b57ace2da91519cb3307f4697894a0130ef975eff874b"
     },
     {
-        path: "pkg/cnc/machines/voron_0/servo-pcb-plate.stl"
-        size: 283684
-        sha256_sum: "f3ae358dc7edf82fa67259c1147c9af03de6056227de66fc7a47761f1758ad8a"
-    },
-    {
-        path: "pkg/cnc/machines/voron_0/toolboard/stencil-vacuum/body.stl"
+        path: "pkg/cnc/machines/voron_0/mods/toolboard/stencil-vacuum/body.stl"
         size: 3050084
         sha256_sum: "f34aad2b05fc0dcafdec93351791b361b88fdde6ba533326b6be4c68da8eb6b0"
     },
     {
-        path: "pkg/cnc/machines/voron_0/toolboard/stencil-vacuum/pcb-plate.stl"
+        path: "pkg/cnc/machines/voron_0/mods/toolboard/stencil-vacuum/pcb-plate.stl"
         size: 193884
         sha256_sum: "3dc17791c05eb299c88fa616b9e709b9f6a41161f704cc839bad2555e74b6899"
     },
     {
-        path: "pkg/cnc/machines/voron_0/toolboard/stencil-vacuum/stencil-plate.stl"
+        path: "pkg/cnc/machines/voron_0/mods/toolboard/stencil-vacuum/stencil-plate.stl"
         size: 832184
         sha256_sum: "e40bff9a75c101053423da7080f962fdac2bed244e5c0bb56962345ab873a155"
     },
     {
-        path: "pkg/cnc/machines/voron_0/toolboard/xt30-cable-relief.stl"
+        path: "pkg/cnc/machines/voron_0/mods/toolboard/xt30-cable-relief.stl"
         size: 67584
         sha256_sum: "3bd1651ba6ba95dec91e6a3e7fd8a6cc3ec9e0abbf859ce69c25810208f4ded7"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/toolhead_3do_camera/camera-calibration-angle-block-25mm.stl"
+        size: 118284
+        sha256_sum: "e1691935ade1941217a1e441ecc3e08accdea8f67f7e137011f822486e6fb545"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/toolhead_3do_camera/toolhead-3do-camera-mount-a.stl"
+        size: 240284
+        sha256_sum: "1800a1977005d38debfaa032bd7b54016c3cd70f723b8e3e501852c1b7a74e82"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/toolhead_3do_camera/toolhead-3do-camera-mount-b.stl"
+        size: 57684
+        sha256_sum: "cf6bfb4390cb19e1732ac67fd83535dbdbe6756aabe09e6b096d5b2646ec7f25"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/toolhead_3do_camera/toolhead-3do-camera-mount-c.stl"
+        size: 57684
+        sha256_sum: "413e635a2e53c52df3d2a84e0f8c5bbf4a8c5b2930abf08fae5d98b3f17c2bda"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/toolhead_3do_camera/toolhead-3do-camera-mount-d.stl"
+        size: 167984
+        sha256_sum: "de671bdd302332a538f88d045dcffabb0d38c3668f7d82e8467daa3b06951551"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/wiper_servo/wiper-servo-arm.stl"
+        size: 242184
+        sha256_sum: "11124a079f8720145584b78b1ab898201f21b95745618224ba11da353a19e402"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/wiper_servo/wiper-servo-body.stl"
+        size: 332284
+        sha256_sum: "8fe14d62be067c1d293a184e31e7b47a7c0b366808e3078ae093475ba17a1d03"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/wiper_servo/wiper-servo-cover.stl"
+        size: 88284
+        sha256_sum: "2f679ed11d5a6aa765d75091d6bef2b2eba37a13c59b5c4b597caed73dce50da"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/unsorted/magnetic-tile-holder-horizontal.stl"
+        size: 468684
+        sha256_sum: "97790887726fc0895dc8fb5d36ba12e77165a873ce237527b2e9caf3a13281da"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/unsorted/magnetic-tile-nozzle-clip.stl"
+        size: 174884
+        sha256_sum: "6398bb95defa668276ed739355f9b297b9759ab194fe2339f77331449cd1ddf1"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/unsorted/servo-pcb-plate.stl"
+        size: 283684
+        sha256_sum: "f3ae358dc7edf82fa67259c1147c9af03de6056227de66fc7a47761f1758ad8a"
     },
     {
         path: "pkg/cnc/openpnp/parts/lumenpnp-spool-holder.stl"
@@ -2220,9 +2375,19 @@ files: [
         sha256_sum: "dc3995591e6b0b24b401ca97946f147ca7ec3c6eab5955ff3ce4d4f364cb5cf9"
     },
     {
+        path: "testdata/cnc/voron0/voron0-benchy-fast.3mf"
+        size: 2499276
+        sha256_sum: "be60e9c36bce322776d490cb04d139ebe1195e3fb8a61499669ee6b1cf40db30"
+    },
+    {
+        path: "testdata/cnc/voron0/voron0-benchy-fast.gcode"
+        size: 3434853
+        sha256_sum: "69ef92ee7533cf70a203be601373e224977182f7c5284f26dae9a34c3f5d5d38"
+    },
+    {
         path: "testdata/cnc/voron0/voron0-benchy.3mf"
-        size: 2499208
-        sha256_sum: "e704f6dae6a8c59daa49528b0cfa4bec9b14b9c60793432240dd089f7ae2caed"
+        size: 2498348
+        sha256_sum: "e32b609c822d5c6a0bef7b97c66dceb298173dcfb460383c6d1013a9bf7a9305"
     },
     {
         path: "testdata/cnc/voron0/voron0-benchy.gcode"
