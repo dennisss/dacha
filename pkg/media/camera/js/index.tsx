@@ -6,6 +6,7 @@ import { VideoPlayer } from "pkg/web/lib/video";
 import { VideoSourceKind } from "pkg/web/lib/video/types";
 import { VideoCrosshair } from "pkg/web/lib/video/crosshair";
 import { render_group_property } from "pkg/media/camera/js/property";
+import { deep_copy, shallow_copy } from "pkg/web/lib/utils";
 
 
 class App extends React.Component<{}, {}> {
@@ -15,6 +16,7 @@ class App extends React.Component<{}, {}> {
         _cameras: [],
         _current_camera: '',
         _properties: [],
+        _property_states: {},
         _crosshair_size: 0,
         _format: null
     }
@@ -45,7 +47,19 @@ class App extends React.Component<{}, {}> {
 
         console.log(res.responses);
 
-        this.setState({ _current_camera: camera_id, _properties: res.responses[0].properties.properties, _format: res.responses[0].format });
+        let props = res.responses[0].properties;
+
+        let _property_states = {};
+        (props.state.states || []).map((s) => {
+            _property_states[s.id] = s;
+        })
+
+        this.setState({
+            _current_camera: camera_id,
+            _properties: props.properties,
+            _property_states,
+            _format: res.responses[0].format
+        });
     }
 
     _render_video_player() {
@@ -62,12 +76,57 @@ class App extends React.Component<{}, {}> {
 
         return (
             <VideoPlayer source={{
-                kind: VideoSourceKind.MJPEG,
+                kind,
                 url: `/camera/` + encodeURIComponent(this.state._current_camera)
             }}>
                 <VideoCrosshair size={this.state._crosshair_size} />
             </VideoPlayer>
         );
+    }
+
+    _on_property_change = (prop, value) => {
+        let states = shallow_copy(this.state._property_states);
+        states[prop.id] = {
+            id: prop.id,
+            current_value: value
+        };
+
+        this.setState({ _property_states: states }, () => {
+            this._start_update()
+        });
+    }
+
+    // TODO: Need a visual indicator of updating in progress and when it errors out
+    _pending_update: boolean = false;
+    _start_update = async () => {
+        if (this._pending_update) {
+            return;
+        }
+
+        this._pending_update = true;
+
+        await new Promise((res, rej) => {
+            setTimeout(() => {
+                res()
+            }, 100);
+        });
+
+        let camera_id = this.state._current_camera
+        let states = deep_copy(this.state._property_states);
+
+        try {
+            let res = await this._channel.call('media.camera.CameraInterface', 'SetProperties', { camera_id, state: { states: Object.values(states) } });
+            if (!res.status.ok()) {
+                throw res.status.toString();
+            }
+
+        } finally {
+            this._pending_update = false;
+
+            if (camera_id != this.state._current_camera || JSON.stringify(states) != JSON.stringify(this.state._property_states)) {
+                this._start_update();
+            }
+        }
     }
 
     render() {
@@ -83,7 +142,7 @@ class App extends React.Component<{}, {}> {
 
                     <div style={{ paddingTop: 20, fontSize: '0.8em' }}>
                         {this.state._properties.map((prop) => {
-                            return render_group_property(prop);
+                            return render_group_property(prop, this.state._property_states, this._on_property_change);
                         })}
                     </div>
 

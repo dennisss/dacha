@@ -15,6 +15,7 @@ use media_camera_proto::media::camera::*;
 use parsing::ascii::AsciiString;
 use video::h264::NALUnitHeader;
 use video::h264::NALUnitType;
+use protobuf::Message;
 
 use crate::frame::*;
 use crate::frame_buffer_op::{ImageFrameBufferOp, ImageFrameSubscribers};
@@ -120,7 +121,27 @@ impl CameraSubscriber {
             .get(&self.camera_id)
             .ok_or_else(|| err_msg("Missing camera"))?;
 
-        Ok(entry.props.clone())
+        let mut props = Properties::default();
+        if let Some(capture_op) = &entry.capture_op {
+            props.merge_from(&capture_op.properties().await?);
+        }
+
+        Ok(props)
+    }
+    
+    pub async fn set_properties(&self, states: &PropertiesState) -> Result<()> {
+        let state = self.shared.state.lock().await?.read_exclusive();
+
+        let entry = state
+            .cameras
+            .get(&self.camera_id)
+            .ok_or_else(|| err_msg("Missing camera"))?;
+
+        if let Some(capture_op) = &entry.capture_op {
+            capture_op.set_properties(states).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn format_proto(&self) -> Result<CameraFormat> {
@@ -169,8 +190,8 @@ struct State {
 
 struct OpenCameraEntry {
     subscribers: Arc<ImageFrameSubscribers>,
-    props: Properties,
     format: ImageFormat,
+    capture_op: Option<Arc<V4L2CaptureOp>>,
 }
 
 impl CameraManager {
@@ -298,8 +319,6 @@ impl CameraManager {
     async fn open_libcamera_device(
         camera: libcamera::AvailableCamera,
     ) -> Result<(Graph, Vec<String>, OpenCameraEntry)> {
-        let mut props = Properties::default();
-
         let mut graph = Graph::default();
 
         let capture_op = Arc::new(LibcameraOp::create(camera)?);
@@ -350,8 +369,8 @@ impl CameraManager {
             vec![output_name],
             OpenCameraEntry {
                 subscribers,
-                props,
                 format: encoder_op.output_format(),
+                capture_op: None,
             },
         ));
     }
@@ -359,8 +378,6 @@ impl CameraManager {
     async fn open_usb_device(
         entry: usb::DeviceEntry,
     ) -> Result<(Graph, Vec<String>, OpenCameraEntry)> {
-        let mut props = Properties::default();
-
         let v4l2_drivers = {
             let mut out = vec![];
 
@@ -397,9 +414,7 @@ impl CameraManager {
             }
 
             let group_id = format!("camera:v4l2:{}", i);
-            let capture_op = V4L2CaptureOp::create(dev, &group_id).await?;
-
-            props.add_properties(capture_op.properties().clone());
+            let capture_op = Arc::new(V4L2CaptureOp::create(dev, &group_id).await?);
 
             // Check all supported formats.
 
@@ -412,15 +427,18 @@ impl CameraManager {
                 capture_op.supported_formats().contains(&PixelFormat::MJPG) {
                 // TODO: Configure the pixel format and image size.
 
-                chosen_node_name = Some((group_id.clone(), capture_op.format()));
+                chosen_node_name = Some((group_id.clone(), capture_op.format(), capture_op.clone()));
 
                 eprintln!("Selecting camera V4L2 device: {}; Format: {:?}", device.path.as_str(), capture_op.format().pixel_format);
+                graph.add_node(&group_id, capture_op, &[]);
+
+                break;
             }
 
-            graph.add_node(&group_id, Arc::new(capture_op), &[]);
+
         }
 
-        let (mut node_name, format) =
+        let (mut node_name, format, capture_op) =
             chosen_node_name.ok_or_else(|| err_msg("No output found that provides H264/MJPG data"))?;
 
         if format.pixel_format == PixelFormat::H264 {
@@ -454,8 +472,8 @@ impl CameraManager {
             vec![output_name],
             OpenCameraEntry {
                 subscribers,
-                props,
                 format,
+                capture_op: Some(capture_op)
             },
         ))
     }

@@ -1,6 +1,6 @@
 import React from "react";
 
-export function render_group_property(prop, on_change) {
+export function render_group_property(prop, states, on_change) {
     if (!prop.spec || prop.spec.type != 'GROUP') {
         return <div key={prop.id}>Unknown: {prop.id}</div>;
     }
@@ -15,14 +15,14 @@ export function render_group_property(prop, on_change) {
                 {prop.spec.name || prop.id}
             </div>
             <div className="card-body" style={{ padding: 10 }}>
-                {render_property_list(prop.children, on_change)}
+                {render_property_list(prop.children, states, on_change)}
             </div>
         </div>
     );
 }
 
 
-export function render_property_list(props, on_change) {
+export function render_property_list(props, states, on_change) {
     return (
         <div>
             <div style={{ wordBreak: 'break-all' }}>
@@ -33,6 +33,8 @@ export function render_property_list(props, on_change) {
                                 return null;
                             }
 
+                            let state = states[prop.id];
+
                             return (
                                 <tr key={prop.id}>
                                     <td style={{ whiteSpace: 'nowrap', width: 1, verticalAlign: 'middle' }}>
@@ -40,7 +42,7 @@ export function render_property_list(props, on_change) {
                                     </td>
                                     <td style={{ verticalAlign: 'middle' }}>
                                         <div style={{ width: '100%', overflowX: 'hidden' }}>
-                                            {render_property_value(prop, on_change)}
+                                            {render_property_value(prop, state, on_change)}
                                         </div>
                                     </td>
                                 </tr>
@@ -56,7 +58,7 @@ export function render_property_list(props, on_change) {
                     return null;
                 }
 
-                return render_group_property(prop, on_change);
+                return render_group_property(prop, states, on_change);
             })}
         </div>
 
@@ -64,23 +66,33 @@ export function render_property_list(props, on_change) {
     );
 }
 
-export function render_property_value(prop, on_change) {
+export function render_property_value(prop, state, on_change) {
     prop.spec = prop.spec || {};
 
     if (prop.spec.values || prop.spec.type == 'ENUM') {
-
-        /*
-        TODO: Currently enums can either be strings or int32s.
-
-        int32 int32_value = 2;
-        string string_value = 4;
-        */
+        let int_based = state.current_value.hasOwnProperty('int32_value');
+        if (!int_based) {
+            if (!state.current_value.hasOwnProperty('string_value')) {
+                throw "Invalid enum property";
+            }
+        }
 
         return (
-            <select className="form-control" style={{ fontSize: '0.8em' }} value="">
+            <select className="form-control" style={{ fontSize: '0.8em' }}
+                value={
+                    int_based ? (state.current_value.int32_value + '') : state.current_value.string_value
+                }
+                onChange={(e) => {
+                    let raw = e.target.value;
+                    let v = int_based ? { int32_value: raw * 1 } : { string_value: raw };
+                    on_change(prop, v);
+                }}
+            >
                 {(prop.spec.values || []).map((value, i) => {
                     return (
-                        <option key={i}>{value.value_name}</option>
+                        <option key={i} value={
+                            int_based ? (value.int32_value + '') : value.string_value
+                        }>{value.value_name}</option>
                     );
                 })}
             </select>
@@ -90,7 +102,10 @@ export function render_property_value(prop, on_change) {
 
     if (prop.spec.type == 'BOOL') {
         return (
-            <input type="checkbox" checked={false} />
+            <input type="checkbox" checked={state.current_value.int32_value != 0} onChange={(e) => {
+                let v = { int32_value: e.target.checked ? 1 : 0 };
+                on_change(prop, v);
+            }} />
         );
     }
 
@@ -102,7 +117,7 @@ export function render_property_value(prop, on_change) {
                         min={prop.spec.min_value.int32_value || 0}
                         max={prop.spec.max_value.int32_value || 0}
                         step={prop.spec.step.int32_value || 0}
-                        value={prop.current_value.int32_value || 0}
+                        value={state.current_value.int32_value || 0}
 
                         onChange={(e) => {
                             let v = { int32_value: e.target.valueAsNumber };
@@ -112,7 +127,7 @@ export function render_property_value(prop, on_change) {
                 </div>
                 <div style={{ width: 100, marginLeft: 15 }}>
                     <input className="form-control" type="number"
-                        value={prop.current_value.int32_value || 0}
+                        value={state.current_value.int32_value || 0}
                         onChange={(e) => {
                             let v = { int32_value: e.target.valueAsNumber };
                             on_change(prop, v);

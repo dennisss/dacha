@@ -51,9 +51,7 @@ message CameraFormat {
 message SetPropertiesRequest {
     string camera_id = 1;
 
-    // Note that only the values in these properties are read.
-    // Attempts to change the property specs are ignored.
-    Properties properties = 2;
+    PropertiesState state = 2; 
 }
 
 message SetPropertiesResponse {

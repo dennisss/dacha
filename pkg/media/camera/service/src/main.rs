@@ -1,10 +1,3 @@
-/*
-
-cargo run --bin builder -- build //pkg/media/camera:app
-
-cargo run --bin media_camera_service -- --port=8000
-
-*/
 
 /*
 
@@ -190,6 +183,24 @@ impl ServiceImpl {
 
         Ok(out)
     }
+
+    async fn set_properties_impl(
+        &self,
+        request: &SetPropertiesRequest,
+    ) -> Result<()> {
+        let mut entries = self.camera_manager.list().await?;
+
+        let entry = entries
+            .remove(request.camera_id())
+            .ok_or_else(|| rpc::Status::not_found("No camera with given id"))?;
+
+        let camera = self.camera_manager.open(entry).await?;
+
+        camera.set_properties(request.state()).await?;
+
+        Ok(())
+    }
+
 }
 
 #[async_trait]
@@ -217,7 +228,7 @@ impl CameraInterfaceService for ServiceImpl {
         request: rpc::ServerRequest<SetPropertiesRequest>,
         response: &mut rpc::ServerResponse<SetPropertiesResponse>,
     ) -> Result<()> {
-        todo!();
+        self.set_properties_impl(&request.value).await?;
         Ok(())
     }
 }

@@ -4,8 +4,10 @@ use std::sync::Arc;
 use common::bytes::Bytes;
 use common::errors::*;
 use executor::bundle::TaskResultBundle;
+use executor::sync::AsyncMutex;
 use executor::channel;
 use executor_graph::*;
+use executor::{lock, lock_async};
 use media_camera_proto::media::camera::*;
 use v4l2::Controllable;
 
@@ -48,7 +50,7 @@ pub struct V4L2CaptureOp {
     device: v4l2::Device,
 
     property_namespace: String,
-    properties: Property,
+    properties: AsyncMutex<Properties>,
 
     format: ImageFormat,
     supported_formats: Vec<PixelFormat>,
@@ -64,7 +66,7 @@ impl V4L2CaptureOp {
         let mut inst = Self {
             device,
             property_namespace: property_namespace.to_string(),
-            properties: Property::default(),
+            properties: AsyncMutex::default(),
             supported_formats: vec![],
             format: ImageFormat {
                 width: 0,
@@ -82,8 +84,33 @@ impl V4L2CaptureOp {
         Ok(inst)
     }
 
-    pub fn properties(&self) -> &Property {
-        &self.properties
+    pub async fn properties(&self) -> Result<Properties> {
+        lock!(props <= self.properties.lock().await?, {
+            Ok(props.clone())
+        })
+    }
+
+    // TODO: Make this cancel safe
+    pub async fn set_properties(&self, states: &PropertiesState) -> Result<()> {
+
+        let controls = self.device.list_controls().await?;
+
+        let id_prefix = format!("{}:control:", &self.property_namespace);
+
+        lock_async!(props <= self.properties.lock().await?, {
+
+            let new_states = set_controls_from_proto(
+                &self.device,
+                &controls,
+                &id_prefix,
+                props.state(),
+                states
+            ).await?;
+
+            props.set_state(new_states);
+
+            Ok(())
+        })
     }
 
     pub fn format(&self) -> ImageFormat {
@@ -115,6 +142,8 @@ impl V4L2CaptureOp {
 
         // let group_id = format!("camera:v4l2:{}", i);
 
+        let mut props = Properties::default();
+
         let mut group_prop = Property::default(); // props.new_properties();
         group_prop.set_id(self.property_namespace.clone());
         group_prop.spec_mut().set_typ(PropertySpec_Type::GROUP);
@@ -136,13 +165,16 @@ impl V4L2CaptureOp {
             }
         }
 
+        let mut format_prop_state = props.state_mut().new_states();
+        format_prop_state.set_id(format_prop.id());
+
         // Some cameras seem to have metadata capture devices that report capture
         // capabilities get report EINVAL on get_format(). This detects and skips those
         // devices.
         if formats.len() > 0 {
             let mut format = capture_stream.get_format().await?;
 
-            format_prop
+            format_prop_state
                 .current_value_mut()
                 .set_string_value(v4l2::PixelFormat(format.pixelformat()).to_string());
 
@@ -210,10 +242,13 @@ impl V4L2CaptureOp {
             &self.device.list_controls().await?,
             &self.device,
             &id_prefix,
-            &mut group_prop
+            &mut group_prop,
+            props.state_mut()
         ).await?;
 
-        self.properties = group_prop;
+        props.add_properties(group_prop);
+        self.properties = AsyncMutex::new(props);
+
         self.supported_formats = supported_formats;
 
         Ok(())
