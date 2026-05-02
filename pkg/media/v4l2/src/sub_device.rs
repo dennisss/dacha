@@ -5,7 +5,6 @@ use base_util::null_terminated::read_null_terminated_string;
 use executor::child_task::ChildTask;
 use executor::lock;
 use executor::sync::AsyncMutex;
-use executor::ExecutorPollingContext;
 use file::LocalPathBuf;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, DeviceNumber};
 use sys::EpollEvents;

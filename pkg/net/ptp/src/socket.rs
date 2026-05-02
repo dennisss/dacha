@@ -6,14 +6,28 @@ use net::udp::*;
 use net::ip::SocketAddr;
 use executor::sync::AsyncMutex;
 use executor::lock_async;
-use sys::ControlMessage;
+use executor::ExecutorPollingContext;
+use sys::{ControlMessage, EpollEvents};
+
 
 const NANOS_PER_SECOND: u64 = 1_000_000_000;
 
+/// Number of bytes at the start of PACKET_TEMPLATE that we
+/// should expect to be stable and not mutated by hardware.
+const STABLE_PREFIX_LENGTH: usize = 34; 
+
 /// PTP v2 sync packet.
 /// Carefully crafted for Raspberry Pi compatibility.
-const PACKET_TEMPLATE: [u8; 8] = {
-    let mut payload = [0u8; 8];
+///
+/// The Broadcom PHY on the CM5 will not timestamp any packets that:
+/// - Are < 34 bytes in length
+/// - Not sent/received on port 319
+/// - Some of the bytes in the first 34 bytes aren't set to the
+///   below values (not sure which ones matter most)
+/// - It seems to modify the bytes in 34..44 (origin timestamp) even
+///   if you don't explicitly requiest it.
+const PACKET_TEMPLATE: [u8; 44] = {
+    let mut payload = [0u8; 44];
     payload[0] = 0x00; // MsgType: Sync (0)
     payload[1] = 0x02; // Version: 2
     payload[2] = 0x00; // Length High
@@ -25,7 +39,6 @@ const PACKET_TEMPLATE: [u8; 8] = {
     payload[6] = 0x02; 
     payload[7] = 0x00; 
 
-    /*
     // 8..16 => correction field (used by transparent clocks)
     // 16..20 => reserved
     // 20..30 => source port id
@@ -38,7 +51,7 @@ const PACKET_TEMPLATE: [u8; 8] = {
     payload[33] = 0; // log message interval.
 
     // 34..44 : origin timestamp
-    */
+
 
     payload
 };
@@ -51,7 +64,11 @@ const PACKET_TEMPLATE: [u8; 8] = {
 /// packets that are in this specific form.
 pub struct TimestampedUdpSocket {
     sock: UdpSocket,
-    sender_lock: AsyncMutex<()>
+    sender_lock: AsyncMutex<SenderState>
+}
+
+struct SenderState {
+    error_poller: ExecutorPollingContext<'static>,
 }
 
 impl TimestampedUdpSocket {
@@ -67,7 +84,14 @@ impl TimestampedUdpSocket {
             &sock_opts
         ).await?;
 
-        Ok(Self { sock, sender_lock: AsyncMutex::new(()) })
+        let error_poller = unsafe {
+            ExecutorPollingContext::create_with_raw_fd(**sock.raw(), EpollEvents::EPOLLERR)
+                    .await?
+        };
+
+        Ok(Self { sock, sender_lock: AsyncMutex::new(SenderState {
+            error_poller
+        }) })
     }
 
     pub async fn send_to(&self, data: &[u8], addr: &SocketAddr) -> Result<u64> {
@@ -98,16 +122,42 @@ impl TimestampedUdpSocket {
                 sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
             ];
 
-            // Usually if the timeout fails, they we sent some packet that isn't being properly
-            // noticed by the ethernet hardware so never got timestamped.
-            let (_, num_msgs, _) = executor::timeout(
-                Duration::from_secs(1),
-                self.sock.recv_error(&mut [], &mut control_msgs)   
-            )
-            .await
-            .map_err(|e| err_msg("Timed out while waiting for TX timeout"))??;
+            // Note that recvmsg when querying the error queue will return immediately.
+            // ideally we instead check for POLLERR (and retry recv_error since our epoll
+            // implementation is currently edge trigger based).
+            //
+            // TODO: Double check this (I know for sure that if normal data is in the queue, the error queue response will return immediately)
+            for _ in 0..3 {
+                lock.error_poller.wait().await?;
 
-            self.get_timestamp(&control_msgs[0..num_msgs])
+                let res = executor::timeout(
+                    Duration::from_secs(1),
+                    self.sock.recv_error(&mut [], &mut control_msgs)   
+                )
+                .await
+                .map_err(|e| err_msg("Timed out while waiting for TX timeout"))?;
+
+                let res = match res {
+                    Ok(v) => v,
+                    Err(e) => {
+                        if let Some(e) = e.downcast_ref::<sys::Errno>() {
+                            if *e == sys::Errno::EAGAIN {
+                                continue;
+                            }
+                        }
+
+                        return Err(e);
+                    }
+                };
+
+                // Usually if the timeout fails, they we sent some packet that isn't being properly
+                // noticed by the ethernet hardware so never got timestamped.
+                let (_, num_msgs, _) = res;
+
+                return self.get_timestamp(&control_msgs[0..num_msgs]);
+            }
+
+            Err(err_msg("Failed to get the timestamp for the transmitted packet"))
         })
     }
 
@@ -135,8 +185,7 @@ impl TimestampedUdpSocket {
         let mut expected_header = PACKET_TEMPLATE.clone();
         *array_mut_ref![expected_header, 2, 2] = (num_bytes as u16).to_be_bytes();
 
-        // TODO: Need to adjust the length field.
-        if &buf[0..PACKET_TEMPLATE.len()] != &expected_header {
+        if &buf[0..STABLE_PREFIX_LENGTH] != &expected_header[0..STABLE_PREFIX_LENGTH] {
             return Err(err_msg("Beginning of the received message does not follow the PTP template"))
         }
 

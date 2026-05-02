@@ -1,26 +1,3 @@
-/*
-cargo run --bin cnc_controller -- service     --config_name=voron0     --port=8000
-
-cargo run --bin cnc_tools -- execute --proto="commands: [{ home {} }]"
-
-cargo run --bin cnc_tools -- execute --proto="commands: [{ move_to { x: 60 y: 60 z: 30 feed_rate: 40 } }]"
-
-cargo run --bin cnc_tools -- skew-calibration scan
-
-python3 pkg/cnc/scripts/recognize_charuco_pattern.py
-
-
-Generating a video with all the recognized images:
-    cargo run --bin cnc_tools -- skew-calibration dump-video
-
-    ffmpeg -f concat -safe 0 -i skew_video_stamps.txt -vsync vfr -pix_fmt yuv420p skew_camera_video.mp4
-        Suggested by https://gemini.google.com/app/c1820cca3230e635
-
-
-cargo run --bin cnc_tools -- skew-calibration calculate --output_path=skew.txtpb
-
-
-*/
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

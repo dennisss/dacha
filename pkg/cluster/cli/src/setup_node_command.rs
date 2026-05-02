@@ -129,7 +129,10 @@ pub struct SetupNodeCommand {
     resetup_node: bool,
 
     #[arg(default = "")]
-    node_config_patch: String
+    node_config_patch: String,
+
+    #[arg(default = "")]
+    sysctl_patch: String,
 }
 
 /// TODO: Improve this so that we can continue running it if a previous run
@@ -317,7 +320,8 @@ pub async fn run_setup_node(cmd: SetupNodeCommand) -> Result<()> {
             remote,
             cmd.bootstrap,
             cmd.enable_service,
-            &cmd.node_config_patch
+            &cmd.node_config_patch,
+            &cmd.sysctl_patch
         )
         .await?
     };
@@ -424,6 +428,7 @@ async fn setup_remote_node_server(
     bootstrap: bool,
     enable_service: bool,
     node_config_patch: &str,
+    sysctl_patch: &str,
 ) -> Result<NodeConfig> {
     check_using_cgroup_v2(operator).await?;
 
@@ -681,6 +686,17 @@ async fn setup_remote_node_server(
         // }
 
         println!("Node Data Directory Already Exists! Not re-initializing.");
+    }
+
+    println!("Setting up /etc/sysctl.d/88-dacha.conf");
+    {
+        operator
+            .upload(sysctl_patch.as_bytes(), "/tmp/sysctl_patch")
+            .await?;
+        operator.run("sudo cp /tmp/sysctl_patch /etc/sysctl.d/88-dacha.conf").await?;
+
+        // Mainly so that re-boot is not required.
+        operator.run("sudo sysctl -p /etc/sysctl.d/88-dacha.conf").await?;
     }
 
     // TODO: Don't do this twice if the current file already has the data.

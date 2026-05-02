@@ -15,13 +15,16 @@ sudo target/debug/ptp
 
 
 cargo run --bin builder -- build //pkg/net/ptp:ptp --config=//pkg/builder/config:rpi64
-scp -i ~/.ssh/id_cluster built/pkg/net/ptp/ptp cluster-user@10.1.1.3:~/
+scp -i ~/.ssh/id_cluster built/pkg/net/ptp/ptp cluster-user@10.1.1.14:~/
 
-ssh -i ~/.ssh/id_cluster cluster-user@10.1.1.3
-./ptp --iface=eth0
+ssh -i ~/.ssh/id_cluster cluster-user@10.1.1.14
+./ptp --iface=eth0 --send_to=10.1.0.43:319
 
 
-cargo run --bin ptp -- --iface=enp5s0 --send_to=10.1.1.3:9000
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0
+cargo run --bin ptp -- --iface=enp5s0 --send_to=10.1.1.14:319
+
+
 
 */
 
@@ -63,7 +66,7 @@ async fn main() -> Result<()> {
 
     // net::enable_hardware_timestamp_filters(&args.iface)?;
 
-    let sock = ptp::TimestampedUdpSocket::create("0.0.0.0:9000".parse()?, &args.iface).await?;
+    let sock = ptp::TimestampedUdpSocket::create("0.0.0.0:319".parse()?, &args.iface).await?;
 
     if let Some(send_to) = args.send_to {
         loop {
@@ -82,6 +85,9 @@ async fn main() -> Result<()> {
 
         loop {
             let (n, time, addr) = sock.recv_from(&mut buf).await?;
+            
+            // executor::sleep(Duration::from_millis(100)).await?;
+            
             let time2 = sock.send_to(&[], &addr).await?;
             println!("Local time spent: {:?}", Duration::from_nanos(time2 - time));
 

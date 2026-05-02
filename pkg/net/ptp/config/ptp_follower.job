@@ -37,6 +37,7 @@ worker {
         {
             name: "ptp"
             type: TCP  # TODO: Support UDP
+            node_port: 319
         }
     ]
 

@@ -44,36 +44,6 @@ const SERVICE_ACL_PROTO: &'static str = r#"
     ]
 "#;
 
-const DEFAULT_CONFIG_PROTO: &'static str = r#"
-    leader {
-        sync_interval_seconds: 0.25
-        followers: []
-        ptp_timeout_seconds: 0.01
-        sync_timeout_seconds: 0.01
-        realtime_clock_sync {
-            p_scale: 0.01
-            i_scale: 0.0001
-            max_offset_seconds: 1
-            max_error_integral_secs: 0.05
-            max_correction_ppm: 50
-        }
-    }
-
-    follower {
-        leader_clock_sync {
-            p_scale: 0.5
-            i_scale: 0.05
-            max_offset_seconds: 0.0001 # 100us
-            max_error_integral_secs: 0.05
-
-            # Must be larger than the leader -> ntp one
-            max_correction_ppm: 100
-        }
-        max_network_rtt: 0.00001 # 10us
-        max_sample_age: 0.1
-    }
-
-"#;
 
 
 #[derive(Args)]
@@ -104,8 +74,7 @@ async fn main() -> Result<()> {
 
     let args = common::args::parse_args::<Args>()?;
 
-    let mut ptp_config = TimeSyncConfig::default();
-    protobuf::text::parse_text_proto(DEFAULT_CONFIG_PROTO, &mut ptp_config)?;
+    let mut ptp_config = ptp::TimeSyncNode::default_config()?;
 
     match args.mode {
         Mode::Leader => {

@@ -126,18 +126,19 @@ pub fn enable_hardware_timestamp_filters(dev_name: &str) -> Result<()> {
 
         let mut last_error = Ok(0);
 
-        for filter in [
+        for (name, filter) in [
             // Works on most computers and Pi 5 (using RP1 PTP clock)
-            sys::bindings::hwtstamp_rx_filters::HWTSTAMP_FILTER_ALL as i32,
+            ("ALL", sys::bindings::hwtstamp_rx_filters::HWTSTAMP_FILTER_ALL as i32),
 
             // Works on the CM5 using the Broadcom PHY
-            sys::bindings::hwtstamp_rx_filters::HWTSTAMP_FILTER_PTP_V2_EVENT as i32,
+            ("PTP_V2_EVENT", sys::bindings::hwtstamp_rx_filters::HWTSTAMP_FILTER_PTP_V2_EVENT as i32),
         ] {
             config.rx_filter = filter;
 
             last_error = sys::ioctl(*fd, sys::bindings::SIOCSHWTSTAMP, core::mem::transmute::<&sys::bindings::ifreq, _>(&req));
 
             if last_error.is_ok() {
+                eprintln!("Successfully configured packet filter: {}", name);
                 break;
             }
         }

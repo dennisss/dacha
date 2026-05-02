@@ -171,6 +171,10 @@ impl UdpSocket {
     pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
         unsafe { set_tcp_nodelay(&self.inner.fd, on) }
     }
+
+    pub unsafe fn raw(&self) -> &OpenFileDescriptor {
+        &self.inner.fd
+    }
 }
 
 pub struct MessageSocket {

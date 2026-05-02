@@ -46,6 +46,26 @@ impl ClockId {
             raw::clock_adjtime(self.0, &mut buf)
         }
     }
+
+    pub fn set_offset_secs_f64(&self, offset: f64) -> Result<(), Errno> {
+        let mut adj = bindings::__kernel_timex::default();
+        adj.modes |= bindings::ADJ_SETOFFSET | bindings::ADJ_NANO;
+
+        let offset_ns = (offset * 1_000_000_000.0).round() as i64;
+        let mut sec = offset_ns / 1_000_000_000;
+        let mut nsec = offset_ns % 1_000_000_000;
+        while nsec < 0 {
+            sec -= 1;
+            nsec += 1_000_000_000;
+        }
+
+        adj.time.tv_sec = sec as _;
+        adj.time.tv_usec = nsec as _;
+
+        unsafe {
+            raw::clock_adjtime(self.0, &mut adj)
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -53,25 +73,7 @@ pub struct ClockAdjustments {
     inner: bindings::__kernel_timex
 }
 
-impl ClockAdjustments {
-    // TODO: Need signed durations for this.
-    /*
-    pub fn offset(&self) -> Duration {
-        if self.inner.status & bindigns::STA_NANO != 0 {
-            Duration::from_nanos(self.inner.offset)
-        } else {
-            Duration::from_micros(self.inner.offset)
-        }
-    }
-
-    /// TODO: Complain if >0.5 seconds
-    pub fn set_offset(&mut self, v: Duration) {
-        self.inner.modes |= bindings::ADJ_OFFSET | bindings::ADJ_NANO;
-        self.inner.status |= bindings::STA_NANO;
-        self.inner.offset = v.as_nanos();
-    }
-    */
-    
+impl ClockAdjustments {    
     /// 2^16 = 1ppm
     pub fn freq(&self) -> i64 {
         self.inner.freq

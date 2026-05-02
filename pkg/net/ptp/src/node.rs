@@ -20,6 +20,40 @@ use crate::device::*;
 
 const ID_SIZE: usize = 8;
 
+const DEFAULT_CONFIG_PROTO: &'static str = r#"
+    leader {
+        sync_interval_seconds: 0.25
+        followers: []
+        ptp_timeout_seconds: 0.01
+        sync_timeout_seconds: 0.1
+        realtime_clock_sync {
+            p_scale: 0 # 0.01
+            i_scale: 0 # 0.0001
+            max_offset_seconds: 1
+            max_error_integral_secs: 0.05
+            max_correction_ppm: 50
+        }
+    }
+
+    follower {
+        leader_clock_sync {
+            p_scale: 0.5
+            i_scale: 0.05
+
+            # The set_offset feature of the BCM chip is not good and only gets us within 5ms of the right time.
+            max_offset_seconds: 0.01 # 0.0001 # 100us
+            max_error_integral_secs: 0.05
+
+            # Must be larger than the leader -> ntp one
+            max_correction_ppm: 100
+        }
+        max_network_rtt: 0.00001 # 10us
+        max_sample_age: 0.1
+    }
+
+"#;
+
+
 pub struct TimeSyncNode {
     resources: ServiceResourceGroup,
     shared: Arc<Shared>
@@ -98,6 +132,12 @@ struct LeaderPeer {
 }
 
 impl TimeSyncNode {
+    pub fn default_config() -> Result<TimeSyncConfig> {
+        let mut ptp_config = TimeSyncConfig::default();
+        protobuf::text::parse_text_proto(DEFAULT_CONFIG_PROTO, &mut ptp_config)?;
+        Ok(ptp_config)
+    }
+
     pub async fn create(
         meta_client: Arc<ClusterMetaClient>,
         ptp_device: Arc<PTPDevice>,
@@ -212,8 +252,8 @@ impl TimeSyncNode {
                     return Err(format_err!("Sync sample age ({:?}) is too old", elapsed_time));
                 }
 
-                local_time += elapsed_time;
-                remote_time += elapsed_time;
+                // local_time += elapsed_time;
+                // remote_time += elapsed_time;
             }
 
             let error = SignedDuration::from(remote_time) - SignedDuration::from(local_time);
@@ -331,10 +371,11 @@ impl TimeSyncNode {
         state: &mut PIFilterState,
     ) -> Result<()> {
         if error.abs() > config.max_offset_seconds() {
-            shared.ptp_device.clock().set_time(&remote_time.into())?;
+            shared.ptp_device.clock().set_offset_secs_f64(error)?;
+            println!("=> time shifted!");
+
             *state = PIFilterState::default();
             error = 0.0;
-            println!("=> set_time!");
         }
 
         let now = Instant::now();
@@ -533,7 +574,6 @@ impl TimeSyncNode {
         loop {
             // TODO: Don't error out if an invalid packet type is received
             let (n_received, rx_time, peer_addr) = shared.ptp_socket.recv_from(&mut buf).await?;
-            println!("RX: {:?}", peer_addr);
             if n_received != ID_SIZE {
                 continue;
             }
@@ -544,6 +584,8 @@ impl TimeSyncNode {
             // TODO: Reject if not received from the leader address.
 
             let rx_id = buf[0..n_received].to_vec();
+
+            // println!("RX: {:?}: {:?}", peer_addr, rx_id);
 
             // Locking before the transfer to ensure that the last_rx state is updated before the state
             // is visible to sync().
