@@ -46,6 +46,15 @@ impl ControllerServiceImpl {
 
 #[async_trait]
 impl ControllerService for ControllerServiceImpl {
+    async fn GetState(
+        &self,
+        request: rpc::ServerRequest<GetStateRequest>,
+        response: &mut rpc::ServerResponse<GetStateResponse>,
+    ) -> Result<()> {
+        response.value = self.machine.get_state().await?;
+        Ok(())
+    }
+
     async fn Execute(
         &self,
         request: rpc::ServerRequest<ExecuteRequest>,
@@ -55,12 +64,12 @@ impl ControllerService for ControllerServiceImpl {
         Ok(())
     }
 
-    async fn GetPosition(
+    async fn GetLastPosition(
         &self,
-        request: rpc::ServerRequest<GetPositionRequest>,
-        response: &mut rpc::ServerResponse<GetPositionResponse>,
+        request: rpc::ServerRequest<GetLastPositionRequest>,
+        response: &mut rpc::ServerResponse<GetLastPositionResponse>,
     ) -> Result<()> {
-        response.value = self.machine.get_position().await?;
+        response.value = self.machine.get_last_position().await?;
         Ok(())
     }
 

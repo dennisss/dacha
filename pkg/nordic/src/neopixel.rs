@@ -64,7 +64,7 @@ pub struct Neopixel {
 }
 
 impl Neopixel {
-    pub fn new(periph: SPIMx, mut pin: GPIOPin, inverted: bool) -> Self {
+    pub fn new(periph: SPIMx, mut pin: GPIOPin, dummy_clk_pin: GPIOPin, inverted: bool) -> Self {
         // Note that for inverted mode, there is no 'simple' way to keep this
         // pin high when the SPI peripheral is inactive so we rely on creating
         // a reset period during the SPI transfer for inverted mode in 'write'.
@@ -73,12 +73,14 @@ impl Neopixel {
         .set_direction(PinDirection::Output)
         .write(PinLevel::Low);
 
-        let spi = SPIHost::new::<_, DisconnectedPin, DisconnectedPin>(
+        // TODO: Switch this to using sequenced PWM output to avoid needing a dummy SPI pin and
+        // an extra large buffer for expanding bits. 
+        let spi = SPIHost::new::<_, DisconnectedPin, _>(
             periph,
             SPI_FREQUENCY,
             Some(pin),
             None,
-            None,
+            Some(dummy_clk_pin),
             None,
             SPIMode::Mode0,
         );

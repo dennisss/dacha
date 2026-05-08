@@ -16,7 +16,7 @@ use peripherals_service::utilization_tracker::*;
 
 use crate::tmc2209::TMC2209Device;
 use crate::time::*;
-use crate::bed::client::BedClient;
+use crate::bed::client::*;
 
 
 /// TODO: Think of a better name for this.
@@ -39,7 +39,7 @@ struct State {
 enum DeviceEntry {
     PeripheralsDevice(Arc<PeripheralsDevice>),
     TMC2209(Arc<TMC2209Device>),
-    BedClient(Arc<BedClient>),
+    BedClient(Arc<AsyncMutex<BedClient>>),
 }
 
 impl DevicesController {
@@ -80,12 +80,21 @@ impl DevicesController {
                     DeviceEntry::TMC2209(Arc::new(inst))
                 } else if proto.has_bed_client() {
                     
-                    let dev = inst.get_peripherals_device(proto.bed_client().serial_peripheral().device_name()).await?;
+                    let device = inst.get_peripherals_device(proto.bed_client().serial_peripheral().device_name()).await?;
 
-                    // serial_peripheral
+                    let serial = RemoteSerialPort {
+                        device,
+                        peripheral_name: proto.bed_client().serial_peripheral().peripheral_name().into()
+                    };
 
-                    todo!()
+                    let inst = BedClient::create(
+                        Box::new(serial),
+                        BedClientOptions {
+                            config: proto.bed_client().clone()
+                        }
+                    )?;
 
+                    DeviceEntry::BedClient(Arc::new(AsyncMutex::new(inst)))
                 } else {
                     return Err(err_msg("Unknown type of device entry"));
                 }
@@ -130,7 +139,7 @@ impl DevicesController {
         }
     }
 
-    pub async fn get_bed_client(&self, name: &str) -> Result<Arc<BedClient>> {
+    pub async fn get_bed_client(&self, name: &str) -> Result<Arc<AsyncMutex<BedClient>>> {
         let state = self.state.read().await?;
         match state.entries.get(name) {
             Some(DeviceEntry::BedClient(d)) => Ok(d.clone()),

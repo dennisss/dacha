@@ -7,7 +7,6 @@ use math::matrix::{VectorXd, MatrixXd};
 use math::vecxd;
 use cluster_client::ClusterMetaClient;
 use cnc_controller_proto::cnc::*;
-use cnc_controller::config::ControllerConfigRegistry;
 use file::LocalPathBuf;
 use file::project_path;
 use cnc_controller::proto_utils::*;
@@ -106,9 +105,9 @@ impl RemoteMachineController {
 
     pub async fn last_position(&mut self) -> Result<VectorXd> {
         let request_context = rpc::ClientRequestContext::default();
-        let mut request = GetPositionRequest::default();
+        let mut request = GetLastPositionRequest::default();
 
-        let res = self.stub.GetPosition(&request_context, &request).await.result?;
+        let res = self.stub.GetLastPosition(&request_context, &request).await.result?;
 
         Ok(VectorXd::from_proto(res.position()))
     }

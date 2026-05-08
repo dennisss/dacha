@@ -217,6 +217,7 @@ The umbilical board sits between the AB motors and combines power+USB connection
 To make the cable, you want to use cables that are rated for many flexes over time at the 3d printer's chamber temperature.
 
 - Recommended cable is the Igus `CFBUS.065` model (comes with all 4 wires in one)
+    - Cut off a 240mm piece of cable.
 - Print 4 of the [xt30-cable-relief.stl](./toolboard/xt30-cable-relief.stl) parts and hotglue them around the cable ends after soldering on the connectors.
 
 ### Bed Board
@@ -396,6 +397,7 @@ The [front-camera-mount.stl](./mods/front_camera/front-camera-mount.stl) mounts 
 - 2 x M3 nuts must be pre-inserted into the front-left aluminum extrusion (at the same time as inserting the nuts for the door magnet holder).
 - 2 x M3 6mm button head screws secure the 3d printed mount to the extrusion.
 - Get the 25cm FPC extension cable for the camera
+    - Currently this is the longest cable 3DO sells. The spacing is a bit tight as is and how high up you can mount the camera is limited by the cable length.
 
 Route the cable through the channels made for the LED strips.
 
@@ -408,6 +410,7 @@ This is a custom mod that allows mounting RGBW LED strips to the dual pane mods 
 - Print 2 x [matchstick-adapter-sliced-9mm.stl](./mods/matchstick-adapter/matchstick-adapter-sliced-9mm.stl) for the left side (this has the slot for routing the camera cable)
 - Insert 8 x M3 short heatset inserts (CNC Kitchen style) into the adapters.
 - Secure everything together using 8 x M3 6mm nylon screws
+    - Replace 2 of these with M3 4 - 4.5mm screws (you can cut down 6mm ones) for mounting the left strip to the L shaped adapter clip to allow sliding the camera cable into the adapter
 
 For cable routing, the mid panel (behind the Z axis linear rails), should be drilled per [mid-panel.dxf](./mods/panels/mid-panel.dxf). The larger hole is for the left side (with the camera cable). If you want to drill them out manually, you can cut out multiple side by side holes with a 3mm drill bit.
 
@@ -415,10 +418,33 @@ For cable routing, the mid panel (behind the Z axis linear rails), should be dri
 
 Side panels with hexagonal air holes.
 
+### Rear Panel Magnetic Hinge
+
+This mod adds a magnetic hinges rear panel to the printer. Note that the stock rear panel is 212mm wide. This needs to be re-cut to 207mm wide.
+
+For the right side, use this [hinge mod](https://www.printables.com/model/548771-voron-0-hinged-back-panel-w-hinged-filament-spool) (see also the Third Party Mods section).
+
+For the left side, print:
+
+- [rear-panel-magnets-top.stl](./mods/rear_panel_magnets/rear-panel-magnets-top.stl)
+    - Print 2 of these (lay the flat side on the bed).
+    - Midway through the print, insert a 6mm x 3mm N52 magnet into each piece (try to keep the orientations the same)
+    - The slightly lower surface on the non-flat side of these parts is where the VHD tape goes to attach the piece to the rear panel.
+- [rear-panel-magnets-bottom.stl](./mods/rear_panel_magnets/rear-panel-magnets-bottom.stl)
+    - Print 2 of these
+    - Insert 6mm x 3mm N52 magnets (make sure they are oriented to attract to the magnets in the top pieces).
+    - These attach to the rear extrusion using 4 x M3 6mm button head screws
+
+
 ### Third Party Mods
 
 Main third party mods used are:
 
+- [Rear Panel Hinge](https://www.printables.com/model/548771-voron-0-hinged-back-panel-w-hinged-filament-spool)
+    - Use 4 x M3 6mm screws to attach the hinges to the back aluminum panel
+    - Use 2 x M3 40mm screws to attach the hinge halves
+    - After printing, sand down the hinges until the two halves fit smoothly together
+    - Also, you probably want to drill out the hinge pieces with a 3mm drill so that the hinge screws fit with only a little bit of  force.
 - [Skirt Mesh](https://www.printables.com/model/369688-voron-02-v02-skirt-set-mesh-only)
     - These are the meshes only. Superglue to the base skirt pieces.
     - Part files mirrored in [//third_party/voron_0/skirt_mesh_only](//third_party/voron_0/skirt_mesh_only)
@@ -476,6 +502,13 @@ Then plug in the toolhead board:
 
 ```
 cargo run --bin builder -- build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840_voron0_tool
+cargo run --bin flasher -- built/pkg/nordic/nordic_radio_dongle uf2-dfu --usb_device_id=8888:0001
+```
+
+If you also made the aux board that controls the LED strips:
+
+```
+cargo run --bin builder -- build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840_voron0_aux
 cargo run --bin flasher -- built/pkg/nordic/nordic_radio_dongle uf2-dfu --usb_device_id=8888:0001
 ```
 

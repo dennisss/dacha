@@ -76,6 +76,36 @@ impl BedClient {
     // TODO: If we ever need to retry, do tcflush(TCIOFLUSH)
     // Read also https://stackoverflow.com/questions/13013387/clearing-the-serial-ports-buffer
 
+    pub async fn request_no_reply(&mut self, desired_fan_speed: u8, desired_led_color: u32) -> Result<()> {
+        // TODO: Dedup this a bit.
+
+        let sequence = self.last_sequence.wrapping_add(1);
+        self.last_sequence = sequence;
+
+        let mut request_packet = RequestPacket {
+            length: 0,
+            address: ADDRESS,
+            sequence,
+            desired_fan_speed,
+            desired_led_color,
+            checksum: 0
+        };
+
+        let length = unsafe { serialize_cstruct_raw(&request_packet) }.len();
+        request_packet.length = length as u8;
+
+        let sum = crypto::checksum::crc8::crc8(&unsafe { serialize_cstruct_raw(&request_packet) }[0..(length - 1)]);
+        request_packet.checksum = sum;
+
+        let request_data = unsafe {
+            serialize_cstruct_raw(&request_packet)
+        };
+
+        self.port.write_all(request_data).await?;
+
+        Ok(())
+    }
+
     pub async fn request(&mut self, desired_fan_speed: u8, desired_led_color: u32) -> Result<Response> {
         let sequence = self.last_sequence.wrapping_add(1);
         self.last_sequence = sequence;

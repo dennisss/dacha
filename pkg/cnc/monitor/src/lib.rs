@@ -31,6 +31,8 @@ pub mod syslog_parser;
 mod tables;
 mod timestamped_value;
 mod leveling;
+mod connection_controller;
+mod rpc_controller;
 
 use std::time::Duration;
 

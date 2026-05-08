@@ -20,6 +20,7 @@ use file::{LocalPath, LocalPathBuf};
 use media_camera::camera_manager::CameraManager;
 use media_camera::camera_manager::CameraSubscriber;
 use protobuf::Message;
+use cluster_client::ClusterMetaClient;
 
 use crate::camera_controller::CameraController;
 use crate::change::{ChangeDistributer, ChangeEvent};
@@ -34,6 +35,8 @@ use crate::tables::{FileTable, MachineTable, MediaFragmentTable, ProgramRunTable
 use crate::devices::*;
 use crate::{presets::get_machine_presets, serial_controller::SerialController};
 use crate::leveling::*;
+use crate::connection_controller::*;
+use crate::rpc_controller::*;
 
 const RETRY_BACKOFF: Duration = Duration::from_secs(10);
 
@@ -69,6 +72,7 @@ struct Shared {
     force_reconcile: channel::Sender<()>,
     make_fake_machines: bool,
     program_preview_manager: ProgramPreviewManager,
+    meta_client: Arc<ClusterMetaClient>,
 }
 
 #[derive(Default)]
@@ -86,7 +90,7 @@ struct MachineEntry {
 
     // TODO: Dynamically add these to the resource group.
     /// If not None,
-    serial: SerialEntry,
+    serial: ConnectionEntry,
 
     loaded_file: Option<FileReference>,
 
@@ -108,7 +112,7 @@ impl MachineEntry {
         Self {
             id,
             config: Arc::new(AsyncRwLock::new(config)),
-            serial: SerialEntry::default(),
+            serial: ConnectionEntry::default(),
             loaded_file: None,
             player: None,
             cameras: HashMap::new(),
@@ -119,7 +123,7 @@ impl MachineEntry {
     /// NOTE: This should mainly be used for errors that don't require backoff.
     fn set_role_error(&mut self, role: DeviceRole, error: String) {
         match role {
-            DeviceRole::SerialInterface => {
+            DeviceRole::ConnectionInterface => {
                 self.serial.last_error.get_or_insert(error);
             }
             DeviceRole::Camera(camera_id) => {
@@ -141,10 +145,10 @@ struct DeviceEntry {
 }
 
 #[derive(Default)]
-struct SerialEntry {
+struct ConnectionEntry {
     device: Option<AvailableDevice>,
 
-    controller: Option<Arc<SerialController>>,
+    controller: Option<Arc<dyn ConnectionController>>,
 
     // TODO: Need better propagation of this to the UI. There may be multiple errors if there is a
     // camera and serial device on one machine.
@@ -207,14 +211,18 @@ struct CameraEntry {
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 enum DeviceRole {
-    SerialInterface,
+    ConnectionInterface,
     Camera(u64),
 }
 
 impl MonitorImpl {
     // TODO: Eliminate possibly slow init logic like this that blocks the rest of
     // main() to run.
-    pub async fn create(local_data_dir: &LocalPath, make_fake_machines: bool) -> Result<Self> {
+    pub async fn create(
+        local_data_dir: &LocalPath,
+        make_fake_machines: bool,
+        meta_client: Arc<ClusterMetaClient>
+    ) -> Result<Self> {
         let changes = ChangeDistributer::create();
 
         let resources = ServiceResourceGroup::new("MonitorImpl");
@@ -298,6 +306,7 @@ impl MonitorImpl {
             camera_manager,
             make_fake_machines,
             program_preview_manager,
+            meta_client,
         });
 
         resources.spawn_interruptable(
@@ -431,7 +440,7 @@ impl MonitorImpl {
             for (machine_id, machine) in &state.machines {
                 let config = machine.config.read().await?;
 
-                let serial_role = (*machine_id, DeviceRole::SerialInterface);
+                let serial_role = (*machine_id, DeviceRole::ConnectionInterface);
                 let serial_devices = role_to_device.entry(serial_role).or_default();
 
                 if config.has_device() {
@@ -443,6 +452,19 @@ impl MonitorImpl {
                     }
                 }
 
+                // Assuming that network addresses always exist.
+                if config.firmware() == MachineConfig_Firmware::CNC_CONTROLLER {
+                    if !config.device().address().is_empty() {
+                        let dev = AvailableDevice::NetworkAddress(config.device().address().to_string());
+                        // TODO: Ensure they are deduplicated.
+                        devices.push(dev);
+
+                        let i = devices.len() - 1;
+                        serial_devices.push(i);
+                        device_to_role.entry(i).or_default().push(serial_role);
+                    }
+                }
+                
                 for camera_config in config.cameras() {
                     let camera_role = (*machine_id, DeviceRole::Camera(camera_config.id()));
                     let camera_devices = role_to_device.entry(camera_role).or_default();
@@ -515,7 +537,7 @@ impl MonitorImpl {
 
                 // Apply the effects.
                 match *role {
-                    DeviceRole::SerialInterface => {
+                    DeviceRole::ConnectionInterface => {
                         if let Err(e) = Self::open_serial_controller(&shared, device, machine).await
                         {
                             eprintln!("Serial Open Error: {}", e);
@@ -602,6 +624,7 @@ impl MonitorImpl {
     }
 
     // TODO: Make this function fast and not blocking on any I/O.
+    // TODO: Generalize naming to all connections.
     async fn open_serial_controller(
         shared: &Arc<Shared>,
         device: Option<&AvailableDevice>,
@@ -675,21 +698,40 @@ impl MonitorImpl {
 
         machine.serial.start_after = None;
 
-        let (reader, writer) = device
-            .open_as_serial_port(machine.config.read().await?.value().baud_rate() as usize)
-            .await?;
+        let controller: Arc<dyn ConnectionController> = {
+            if let AvailableDevice::NetworkAddress(addr) = &device {
+                // NOTE: Passing in the addr from the AvailableDevice instead of having it internally
+                // read the config since we need to ensure that changes to the config are properly
+                // handled and tracked.
+                Arc::new(
+                    RpcConnectionController::create(
+                        machine.id,
+                        machine.config.clone(),
+                        shared.changes.publisher(),
+                        &shared.metric_store,
+                        shared.meta_client.clone(),
+                        &addr
+                    ).await?
+                )
+            } else {
+                let (reader, writer) = device
+                    .open_as_serial_port(machine.config.read().await?.value().baud_rate() as usize)
+                    .await?;
 
-        let controller = Arc::new(
-            SerialController::create(
-                machine.id,
-                machine.config.clone(),
-                reader,
-                writer,
-                shared.changes.publisher(),
-                &shared.metric_store,
-            )
-            .await?,
-        );
+                Arc::new(
+                    SerialController::create(
+                        machine.id,
+                        machine.config.clone(),
+                        reader,
+                        writer,
+                        shared.changes.publisher(),
+                        &shared.metric_store,
+                    )
+                    .await?,
+                )
+            }
+        };
+
 
         machine.serial.watcher_task = Some(ChildTask::spawn(Self::watch_serial_port(
             Arc::downgrade(shared),
@@ -706,10 +748,11 @@ impl MonitorImpl {
     // TODO: Consider moving most of part of this and the retry loop for the
     // connection into the SerialController class (will require us to be able to
     // fully re-index driver paths based on one sysfs path).
+    // TODO: Use for ConnectionController
     async fn watch_serial_port(
         shared: Weak<Shared>,
         machine_id: u64,
-        controller: Arc<SerialController>,
+        controller: Arc<dyn ConnectionController>,
     ) {
         // NOTE: If there was no error, then we assume there was a successful disconnect
         // requested by a user.
@@ -1513,7 +1556,7 @@ impl MonitorImpl {
     }
 
     // TODO: This should hold a guard that prevents it from being pulled twice.
-    async fn acquire_machine_control(&self, machine_id: u64) -> Result<Arc<SerialController>> {
+    async fn acquire_machine_control(&self, machine_id: u64) -> Result<Arc<dyn ConnectionController>> {
         lock!(state <= self.shared.state.lock().await?, {
             let entry = state
                 .machines

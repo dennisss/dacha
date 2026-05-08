@@ -30,6 +30,7 @@ use crate::serial_receiver_buffer::SerialReceiverBuffer;
 use crate::serial_send_buffer::SerialSendBuffer;
 use crate::syslog_parser::{parse_prusa_metrics_packet, InfluxDBValue};
 use crate::timestamped_value::*;
+use crate::connection_controller::*;
 
 /// Maximum number of commands which can be locally enqueued which haven't been
 /// sent yet. Note that sending a message is blocked on getting an 'ok' for the
@@ -44,7 +45,9 @@ const READ_BUFFER_SIZE: usize = 1024;
 
 /// If we don't receive a status line with the current position of the machine
 /// for this amount of time, we will assume that it is dead.
-const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
+///
+/// TODO: Make this much lower (20 seconds) for non-Carvera machines.
+const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// Max age of state data which we don't reliably get at a high frequently. In
 /// gRBL this is stuff that requires calling '$G' and '$#' since these block on
@@ -66,7 +69,7 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Maximum amount of time we will wait for commands issued while the machine is
 /// idle and don't trigger any physical actuation should take.
-const IDLE_COMMAND_TIMEOUT: Duration = Duration::from_millis(200);
+pub const IDLE_COMMAND_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// This mainly needs to be fairly long since commands like tool changes and
 /// mesh leveling can take a while.
@@ -101,36 +104,6 @@ Resetting immediately:
 - Then pull it low
 
 */
-
-#[derive(Clone, Debug, Fail)]
-pub enum SendCommandError {
-    ReceivedError(String),
-    DeadlineExceeded,
-    AbruptCancellation,
-}
-
-impl std::fmt::Display for SendCommandError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        std::fmt::Debug::fmt(self, f)
-    }
-}
-
-pub struct PendingCommand {
-    receiver: oneshot::Receiver<Result<(), SendCommandError>>,
-}
-
-impl PendingCommand {
-    pub async fn wait(self) -> Result<(), SendCommandError> {
-        self.receiver
-            .recv()
-            .await
-            .map_err(|_| SendCommandError::AbruptCancellation)?
-    }
-
-    pub async fn ready(&self) -> bool {
-        self.receiver.can_recv().await
-    }
-}
 
 pub struct SerialController {
     resources: ServiceResourceGroup,
@@ -257,12 +230,6 @@ struct PendingSend {
     deadline: Instant,
 
     no_reply: bool,
-}
-
-#[derive(Clone)]
-pub struct AxisData {
-    /// Will be empty if no data has been collected yet.
-    pub data: TimestampedValue<FixedVec<f32, 2>>,
 }
 
 #[derive(Default)]
@@ -508,7 +475,7 @@ impl SerialController {
             // this.
             let res = Self::send_command_inner(
                 &shared,
-                "G21\n",
+                "G21\n".into(),
                 IDLE_COMMAND_TIMEOUT,
                 SendCommandFlags::empty(),
             )
@@ -572,7 +539,7 @@ impl SerialController {
         // Poll capabilities.
         Self::send_command_inner(
             &shared,
-            "M115\n",
+            "M115\n".into(),
             IDLE_COMMAND_TIMEOUT,
             SendCommandFlags::empty(),
         )
@@ -622,7 +589,7 @@ impl SerialController {
             // TODO: Check result.
             Self::send_command_inner(
                 &shared,
-                format!("M155 S1 C7\n"),
+                format!("M155 S1 C7\n").into(),
                 IDLE_COMMAND_TIMEOUT,
                 SendCommandFlags::empty(),
             )
@@ -635,7 +602,7 @@ impl SerialController {
 
             Self::send_command_inner(
                 &shared,
-                cmd,
+                cmd.into(),
                 IDLE_COMMAND_TIMEOUT,
                 SendCommandFlags::empty(),
             )
@@ -644,7 +611,7 @@ impl SerialController {
             for metric in ["pos_x", "pos_y", "pos_z"] {
                 Self::send_command_inner(
                     &shared,
-                    format!("M331 {}\n", metric),
+                    format!("M331 {}\n", metric).into(),
                     IDLE_COMMAND_TIMEOUT,
                     SendCommandFlags::empty(),
                 )
@@ -677,7 +644,7 @@ impl SerialController {
         for line in ["G54 G17 G21\n", "G90 G92.1 M5\n"] {
             Self::send_command_inner(
                 &shared,
-                line,
+                line.into(),
                 IDLE_COMMAND_TIMEOUT,
                 SendCommandFlags::empty(),
             )
@@ -871,6 +838,7 @@ impl SerialController {
 
         loop {
             let (n, addr) = socket.recv_from(&mut buf[..]).await?;
+            let addr = SocketAddr::from(addr);
             let data = &buf[0..n];
 
             let config = shared.config.read().await?;
@@ -989,7 +957,7 @@ impl SerialController {
             for metric in &metrics_to_disable {
                 Self::send_command_inner(
                     &shared,
-                    format!("M332 {}\n", metric),
+                    format!("M332 {}\n", metric).into(),
                     DEFAULT_COMMAND_TIMEOUT,
                     SendCommandFlags::empty(),
                 )
@@ -1007,144 +975,6 @@ impl SerialController {
         }
     }
 
-    /// Checks if the controller is fully setup and ready to accept user
-    /// commands.
-    pub async fn connected(&self) -> Result<bool> {
-        let state = self.shared.state.lock().await?.read_exclusive();
-        Ok(state.connected)
-    }
-
-    pub async fn state_proto(&self, proto: &mut MachineStateProto) -> Result<()> {
-        let state = self.shared.state.lock().await?.read_exclusive();
-        if !state.connected {
-            proto.set_connection_state(MachineStateProto_ConnectionState::CONNECTING);
-            return Ok(());
-        }
-
-        proto.set_connection_state(MachineStateProto_ConnectionState::CONNECTED);
-
-        if let Some(state) = state.firmware_state.get() {
-            proto.set_firmware_state(state);
-        }
-
-        for (axis_id, axis) in &state.axes {
-            let proto = proto.new_axis_values();
-            proto.set_id(axis_id);
-            if let Some(value) = axis.data.get() {
-                proto.value_mut().extend_from_slice(&value[..]);
-            }
-        }
-
-        if !state.coordinate_systems.is_empty() {
-            for i in 0..gcode::STANDARD_COORDINATE_SYSTEMS.len() {
-                let proto = proto.new_coordinate_systems();
-                proto.set_gcode(gcode::STANDARD_COORDINATE_SYSTEMS[i]);
-                if let Some(v) = state.current_coordinate_system.get() {
-                    proto.set_current(*v == i as u32 + 1);
-                }
-
-                for (axis_id, axis) in &state
-                    .coordinate_systems
-                    .get(&(i as u32 + 1))
-                    .unwrap()
-                    .offset
-                {
-                    let proto = proto.new_offset();
-                    proto.set_id(axis_id);
-                    if let Some(value) = axis.data.get() {
-                        proto.value_mut().extend_from_slice(&value);
-                    }
-                }
-            }
-        }
-
-        if let Some(v) = state.spindle.mode.get() {
-            proto.spindle_mut().set_mode(*v);
-        }
-
-        if let Some(v) = state.spindle.current_rpm.get() {
-            proto.spindle_mut().set_current_speed_rpm(*v);
-        }
-
-        if let Some(v) = state.spindle.target_rpm.get() {
-            proto.spindle_mut().set_target_speed_rpm(*v);
-        }
-
-        if let Some(id) = state.active_tool.get() {
-            proto.tools_mut().set_active_tool(*id);
-        }
-
-        Ok(())
-    }
-
-    /// NOTE: This will get the most recently measured value of the axis. It may
-    /// be several seconds stale if an update hasn't been received in a while.
-    pub async fn axis_value(&self, axis_name: &str) -> Result<AxisData> {
-        let state = self.shared.state.lock().await?.read_exclusive();
-
-        state
-            .axes
-            .get(axis_name)
-            .cloned()
-            .ok_or_else(|| err_msg("Missing axis"))
-    }
-
-    /// TODO: Make this independent of the SerialController
-    ///
-    /// CANCEL SAFE
-    pub async fn read_serial_log(
-        &self,
-        response: &mut rpc::ServerStreamResponse<'_, ReadSerialLogResponse>,
-    ) -> Result<()> {
-        let mut next_line_offset = self.shared.receiver_buffer.first_line_offset().await?;
-
-        loop {
-            let mut last_line_offset = {
-                let waterline = self
-                    .shared
-                    .processed_line_waterline
-                    .lock()
-                    .await?
-                    .read_exclusive();
-                if *waterline == next_line_offset {
-                    waterline.wait().await;
-                    continue;
-                }
-
-                *waterline
-            };
-
-            let mut batch = ReadSerialLogResponse::default();
-
-            while next_line_offset < last_line_offset {
-                let mut offset = next_line_offset;
-                next_line_offset += 1;
-                let line = match self.shared.receiver_buffer.get_line(offset).await {
-                    Ok(v) => v,
-                    // May have been truncated while we were reading
-                    Err(e) => continue,
-                };
-
-                let mut proto = batch.new_lines();
-                proto.set_value(format_bytes(&line.data));
-                proto.set_number(offset);
-                proto.set_kind(line.kind);
-            }
-
-            response.send(batch).await?;
-        }
-    }
-
-    /// Explicitly requests state reports from the machine (ignoring if
-    /// autoreporting is supported).
-    pub async fn request_state_update(&self) -> Result<()> {
-        self.check_clear_to_send().await?;
-
-        // TODO: ALso need grbl support here. Want an immediate update.
-
-        Self::request_state_report_marlin(&self.shared, &AutoReportSupport::default()).await
-    }
-
     async fn request_state_report_marlin(
         shared: &Shared,
         autoreport_support: &AutoReportSupport,
@@ -1153,7 +983,7 @@ impl SerialController {
         if !autoreport_support.position && !shared.syslog_handler_addr.is_some() {
             Self::send_command_inner(
                 &shared,
-                "M114\n",
+                "M114\n".into(),
                 DEFAULT_COMMAND_TIMEOUT,
                 SendCommandFlags::SKIP_LINE,
             )
@@ -1164,7 +994,7 @@ impl SerialController {
         if !autoreport_support.temps {
             Self::send_command_inner(
                 &shared,
-                "M105\n",
+                "M105\n".into(),
                 DEFAULT_COMMAND_TIMEOUT,
                 SendCommandFlags::SKIP_LINE,
             )
@@ -1176,7 +1006,7 @@ impl SerialController {
         if shared.has_fan_axes && !autoreport_support.fans {
             Self::send_command_inner(
                 &shared,
-                "M123\n",
+                "M123\n".into(),
                 DEFAULT_COMMAND_TIMEOUT,
                 SendCommandFlags::SKIP_LINE,
             )
@@ -1195,7 +1025,7 @@ impl SerialController {
         if rate_limits.should_allow(RateLimitedEvent::StateUpdate) {
             Self::send_command_inner(
                 &shared,
-                "?",
+                "?".into(),
                 DEFAULT_COMMAND_TIMEOUT,
                 SendCommandFlags::SKIP_LINE | SendCommandFlags::NO_REPLY,
             )
@@ -1209,7 +1039,7 @@ impl SerialController {
         if rate_limits.should_allow(RateLimitedEvent::DiagnosticString) {
             Self::send_command_inner(
                 &shared,
-                "*",
+                "*".into(),
                 DEFAULT_COMMAND_TIMEOUT,
                 SendCommandFlags::SKIP_LINE | SendCommandFlags::NO_REPLY,
             )
@@ -1228,7 +1058,7 @@ impl SerialController {
 
         let _ = Self::send_command_inner(
             &shared,
-            "$G\n",
+            "$G\n".into(),
             DEFAULT_COMMAND_TIMEOUT,
             SendCommandFlags::SKIP_LINE,
         )
@@ -1238,293 +1068,11 @@ impl SerialController {
 
         let _ = Self::send_command_inner(
             &shared,
-            "$#\n",
+            "$#\n".into(),
             DEFAULT_COMMAND_TIMEOUT,
             SendCommandFlags::SKIP_LINE,
         )
         .await;
-
-        Ok(())
-    }
-
-    pub async fn set_temperature(&self, axis_id: &str, target: f32) -> Result<()> {
-        let config = self.shared.config.read().await?;
-        let axis = config.axes_map().get(axis_id).ok_or_else(|| {
-            rpc::Status::invalid_argument(format!("No axis with id: {}", axis_id))
-        })?;
-
-        if axis.typ() != AxisType::HEATER {
-            return Err(
-                rpc::Status::invalid_argument(format!("Axis {} is not a heater", axis_id)).into(),
-            );
-        }
-
-        let command = {
-            if axis_id == "B" {
-                format!("M140 S{:.2}\n", target)
-            } else if axis_id == "T" {
-                format!("M104 S{:.2}\n", target)
-            } else if let Some(num) = axis_id.strip_prefix("T") {
-                format!("M104 T{} S{:.2}\n", num, target)
-            } else {
-                return Err(err_msg("Unsupported heater id"));
-            }
-        };
-
-        self.send_command(command, DEFAULT_COMMAND_TIMEOUT).await?;
-
-        Ok(())
-    }
-
-    pub async fn home_x(&self) -> Result<()> {
-        self.send_command("G28 X\n", DEFAULT_COMMAND_TIMEOUT).await
-    }
-
-    pub async fn home_y(&self) -> Result<()> {
-        self.send_command("G28 Y\n", DEFAULT_COMMAND_TIMEOUT).await
-    }
-
-    pub async fn home_all(&self) -> Result<()> {
-        self.send_command("G28 W\n", DEFAULT_COMMAND_TIMEOUT).await
-    }
-
-    pub async fn mesh_level(&self) -> Result<()> {
-        self.send_command("G28\n", DEFAULT_COMMAND_TIMEOUT).await
-    }
-
-    /// Goes to a 2d position in world coordinates.
-    pub async fn goto(&self, x: f32, y: f32, feed_rate: f32) -> Result<()> {
-        let config = self.shared.config.read().await?;
-
-        // Absolute positioning
-        self.send_command("G90\n", DEFAULT_COMMAND_TIMEOUT).await?;
-
-        // Switch to world coordinate system (temporarily for just this line).
-        let coordinate_system_prefix = {
-            if Self::supports_coordinate_systems(&config) {
-                "G53 "
-            } else {
-                ""
-            }
-        };
-
-        self.send_command(
-            format!(
-                "{}G0 X{:.2} Y{:.2} F{}\n",
-                coordinate_system_prefix, x, y, feed_rate
-            ),
-            DEFAULT_COMMAND_TIMEOUT,
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn goto3(&self, x: Option<f32>, y: Option<f32>, z: Option<f32>, feed_rate: f32) -> Result<()> {
-        let config = self.shared.config.read().await?;
-
-        // Absolute positioning
-        self.send_command("G90\n", DEFAULT_COMMAND_TIMEOUT).await?;
-
-        // Switch to world coordinate system (temporarily for just this line).
-        let coordinate_system_prefix = {
-            if Self::supports_coordinate_systems(&config) {
-                "G53 "
-            } else {
-                ""
-            }
-        };
-
-        let mut pos_parts = String::new();
-        if let Some(v) = x {
-            pos_parts.push_str(&format!(" X{:.2}", v));
-        }
-        if let Some(v) = y {
-            pos_parts.push_str(&format!(" Y{:.2}", v));
-        }
-        if let Some(v) = z {
-            pos_parts.push_str(&format!(" Z{:.2}", v));
-        }
-
-        self.send_command(
-            format!(
-                "{}G0{} F{}\n",
-                coordinate_system_prefix, pos_parts, feed_rate
-            ),
-            DEFAULT_COMMAND_TIMEOUT,
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn set_spindle_state(&self, state: &SpindleState) -> Result<()> {
-        let config = self.shared.config.read().await?;
-
-        if !config.has_spindle() {
-            return Err(
-                rpc::Status::invalid_argument("Machine not configured to have a spindle").into(),
-            );
-        }
-
-        if state.target_speed_rpm() > config.spindle().max_speed_rpm() {
-            return Err(
-                rpc::Status::invalid_argument("Target spindle RPM higher than max limit").into(),
-            );
-        }
-
-        let cmd = {
-            match state.mode() {
-                SpindleState_Mode::OFF => {
-                    format!("M5\n")
-                }
-                SpindleState_Mode::ON_CLOCKWISE | SpindleState_Mode::ON_COUNTERCLOCKWISE => {
-                    let code = if state.mode() == SpindleState_Mode::ON_CLOCKWISE {
-                        "M3"
-                    } else {
-                        "M4"
-                    };
-                    format!("{} S{}\n", code, state.target_speed_rpm())
-                }
-                _ => return Err(rpc::Status::invalid_argument("Unsupported spindle mode").into()),
-            }
-        };
-
-        self.send_command(cmd, DEFAULT_COMMAND_TIMEOUT).await?;
-
-        Ok(())
-    }
-
-    pub async fn tool_change(&self, tool_index: i32) -> Result<()> {
-        // TODO: Lock the state to prevent concurrent toolchange attempts and wait for
-        // dwells to complete successfully before we consider the tool change to
-        // be complete.
-
-        let config = self.shared.config.read().await?;
-
-        if !Self::supports_tool_changer(&config) {
-            return Err(rpc::Status::invalid_argument(
-                "Machine not configured to support tool changing",
-            )
-            .into());
-        }
-
-        self.wait_for_idle().await?;
-
-        // TODO: Wait for any ongoing tool change to finish.
-
-        // TODO: Validate the index.
-
-        let command = {
-            if config.firmware() == MachineConfig_Firmware::MARLIN {
-                format!("T{}\n", tool_index)
-            } else if config.firmware() == MachineConfig_Firmware::PRUSA {
-                let mut tool_index = tool_index;
-
-                // Park index
-                if tool_index < 0 {
-                    tool_index = config.tools().num_slots() as i32;
-                }
-
-                // M0: Don't use the tool mapping (always do global operations).
-                format!("T{} M0\n", tool_index)
-            } else {
-                // NOTE: The space is important and Carvera firmware don't seem to work without
-                // it.
-                format!("M6 T{}\n", tool_index)
-            }
-        };
-
-        self.send_command(command, DEFAULT_COMMAND_TIMEOUT).await?;
-
-        // On Carvera, we need to wait for the atc state to become ATC_NONE since the
-        // tool change command executes many sub-commands.
-        if config.firmware() == MachineConfig_Firmware::CARVERA {
-            // TODO: Bound this loop's time
-            loop {
-                let state = self.get_current_axis_value("ATC_STATE").await?;
-                let data = state.data.get().ok_or_else(|| err_msg("Missing data"))?;
-
-                if data[0] == 0.0 {
-                    break;
-                }
-
-                executor::sleep(Duration::from_millis(100)).await?;
-            }
-
-            // Wait for firmware to stabilize. Sometimes we see the firmware in the wrong state (e.g. relative instead of absolute positioning mode after a tool change).
-            executor::sleep(Duration::from_millis(100)).await?;
-        }
-
-        self.wait_for_idle().await
-    }
-
-    /// This function basically waits until we have received a state update from
-    /// the machine after the start of when the function has been called to
-    /// guarantee that the data is consistent relative to any past commands.
-    ///
-    /// NOTE: THis will eventually terminate since the ReceiverGuard will
-    /// eventually disconnect the machine when the receiver thread times out if
-    /// new data isn't received for a while.
-    pub async fn get_current_axis_value(&self, axis_id: &str) -> Result<AxisData> {
-        let now = Instant::now();
-
-        loop {
-            let state = self.shared.state.lock().await?.read_exclusive();
-            if !state.connected {
-                return Err(rpc::Status::failed_precondition("Machine not connected").into());
-            }
-
-            let data = state
-                .axes
-                .get(axis_id)
-                .ok_or_else(|| err_msg("Missing axis data"))?;
-            let last_updated = data
-                .data
-                .last_updated()
-                .ok_or_else(|| err_msg("Data missing last update time"))?;
-
-            if last_updated < now {
-                drop(state);
-                executor::sleep(Duration::from_millis(500)).await?;
-                continue;
-            }
-
-            return Ok(data.clone());
-        }
-    }
-
-    pub async fn wait_for_idle(&self) -> Result<()> {
-        let config = self.shared.config.read().await?;
-
-        // TODO: On gRBL style systems, we should just check the machine state and
-        // verify it is 'idle'
-
-        // TODO: Send 'M400\n' to wait for all moves to finish
-        // (GRBL doesn't support this though and will return ok once commands
-        // are completed).
-
-        // ^ May need 2 commands: https://groups.google.com/g/openpnp/c/X3tj8LStGvU
-
-        // Or use 'G4P0' command: https://groups.google.com/g/openpnp/c/EcA5NqzT9BI
-
-        match config.firmware() {
-            MachineConfig_Firmware::UNKNOWN
-            | MachineConfig_Firmware::GENERIC
-            | MachineConfig_Firmware::GRBL => {
-                for i in 0..2 {
-                    self.send_command("G4 P0\n", DEFAULT_COMMAND_TIMEOUT)
-                        .await?;
-                }
-            }
-            MachineConfig_Firmware::MARLIN
-            | MachineConfig_Firmware::PRUSA
-            | MachineConfig_Firmware::SMOOTHIEWARE
-            | MachineConfig_Firmware::CARVERA
-            | MachineConfig_Firmware::KLIPPER => {
-                self.send_command("M400\n", DEFAULT_COMMAND_TIMEOUT).await?;
-            }
-        }
 
         Ok(())
     }
@@ -1545,15 +1093,6 @@ impl SerialController {
         config.tools().num_slots() > 0
     }
 
-    pub async fn send_command<D: Into<Bytes>>(&self, line: D, timeout: Duration) -> Result<()> {
-        self.check_clear_to_send().await?;
-
-        // TODO: Need to verify that the line ends in a '\n' and has only one of them.
-
-        Self::send_command_inner(&self.shared, line, timeout, SendCommandFlags::empty()).await?;
-        Ok(())
-    }
-
     async fn check_clear_to_send(&self) -> Result<()> {
         let state = self.shared.state.lock().await?.read_exclusive();
         if !state.connected {
@@ -1568,34 +1107,21 @@ impl SerialController {
     /// Blocks until we have recieved an ok/error response for the command.
     ///
     /// - timeouts are measured from the time send_command() is called.
-    async fn send_command_inner<D: Into<Bytes>>(
+    async fn send_command_inner(
         shared: &Shared,
-        line: D,
+        line: Bytes,
         timeout: Duration,
         flags: SendCommandFlags,
     ) -> Result<(), SendCommandError> {
-        Self::enqueue_command_impl(shared, line, timeout, flags)
+        Self::enqueue_command_inner(shared, line, timeout, flags)
             .await?
             .wait()
             .await
     }
 
-    pub async fn enqueue_command<D: Into<Bytes>>(
-        &self,
-        line: D,
-        timeout: Duration,
-    ) -> Result<PendingCommand> {
-        self.check_clear_to_send().await?;
-
-        let cmd =
-            Self::enqueue_command_impl(&self.shared, line, timeout, SendCommandFlags::empty())
-                .await?;
-        Ok(cmd)
-    }
-
-    async fn enqueue_command_impl<D: Into<Bytes>>(
+    async fn enqueue_command_inner(
         shared: &Shared,
-        line: D,
+        line: Bytes,
         timeout: Duration,
         flags: SendCommandFlags,
     ) -> Result<PendingCommand, SendCommandError> {
@@ -1606,7 +1132,7 @@ impl SerialController {
         let deadline = Instant::now() + timeout;
 
         let entry = PendingSend {
-            line: line.into(),
+            line,
             callback: sender,
             deadline,
             no_reply: flags.contains(SendCommandFlags::NO_REPLY),
@@ -1640,45 +1166,9 @@ impl SerialController {
             Ok::<_, SendCommandError>(())
         })?;
 
-        Ok(PendingCommand { receiver })
+        Ok(PendingCommand::new(receiver))
     }
 
-    pub async fn full_stop(&self) -> Result<()> {
-        // TODO: Also implement reset_using_dtr in parallel to this (wait for both
-        // futures to complete regardless of success).
-
-        let config = self.shared.config.read().await?;
-
-        // "Soft-Reset" GRBL realtime command.
-        if config.firmware() == MachineConfig_Firmware::GRBL
-            || config.firmware() == MachineConfig_Firmware::SMOOTHIEWARE
-            || config.firmware() == MachineConfig_Firmware::CARVERA
-        {
-            Self::send_command_inner(
-                &self.shared,
-                &b"\x18"[..],
-                Duration::from_secs(120),
-                SendCommandFlags::SKIP_LINE
-                    | SendCommandFlags::STOP_AFTER
-                    | SendCommandFlags::NO_REPLY,
-            )
-            .await?;
-
-            return Ok(());
-        }
-
-        // Skips all other entries in line and after stops any command from running
-        // after this one.
-        Self::send_command_inner(
-            &self.shared,
-            "M112\n",
-            Duration::from_secs(120),
-            SendCommandFlags::SKIP_LINE | SendCommandFlags::STOP_AFTER,
-        )
-        .await?;
-
-        Ok(())
-    }
 
     async fn serial_writer_thread(
         shared: Arc<Shared>,
@@ -1712,6 +1202,7 @@ impl SerialController {
         let mut just_sent_no_reply_command = false;
 
         loop {
+            /*
             // Some firmwares (at least confirmed on Carvera firmware) seem to be
             // susceptible to memory corruption if we send UART commands too fast. So this
             // mitigates this issue by ensuring that there is a minimum quiet period between
@@ -1724,11 +1215,13 @@ impl SerialController {
                 if just_sent_no_reply_command {
                     executor::sleep(Duration::from_millis(100)).await?;
                     just_sent_no_reply_command = false;
-                } else {
-                    executor::sleep(Duration::from_millis(20)).await?;
                 }
+                // else {
+                //     executor::sleep(Duration::from_millis(20)).await?;
+                // }
             }
-
+            */
+            
             let mut queue = shared.sender_pending_buffer.lock().await?.enter();
 
             Self::cancel_exceeded_deadline(&mut queue);
@@ -2093,4 +1586,489 @@ impl SerialController {
 
         drop(receiver_guard);
     }
+}
+
+#[async_trait]
+impl ConnectionController for SerialController {
+
+    /// Checks if the controller is fully setup and ready to accept user
+    /// commands.
+    async fn connected(&self) -> Result<bool> {
+        let state = self.shared.state.lock().await?.read_exclusive();
+        Ok(state.connected)
+    }
+
+    async fn state_proto(&self, proto: &mut MachineStateProto) -> Result<()> {
+        let state = self.shared.state.lock().await?.read_exclusive();
+        if !state.connected {
+            proto.set_connection_state(MachineStateProto_ConnectionState::CONNECTING);
+            return Ok(());
+        }
+
+        proto.set_connection_state(MachineStateProto_ConnectionState::CONNECTED);
+
+        if let Some(state) = state.firmware_state.get() {
+            proto.set_firmware_state(state);
+        }
+
+        for (axis_id, axis) in &state.axes {
+            let proto = proto.new_axis_values();
+            proto.set_id(axis_id);
+            if let Some(value) = axis.data.get() {
+                proto.value_mut().extend_from_slice(&value[..]);
+            }
+        }
+
+        if !state.coordinate_systems.is_empty() {
+            for i in 0..gcode::STANDARD_COORDINATE_SYSTEMS.len() {
+                let proto = proto.new_coordinate_systems();
+                proto.set_gcode(gcode::STANDARD_COORDINATE_SYSTEMS[i]);
+                if let Some(v) = state.current_coordinate_system.get() {
+                    proto.set_current(*v == i as u32 + 1);
+                }
+
+                for (axis_id, axis) in &state
+                    .coordinate_systems
+                    .get(&(i as u32 + 1))
+                    .unwrap()
+                    .offset
+                {
+                    let proto = proto.new_offset();
+                    proto.set_id(axis_id);
+                    if let Some(value) = axis.data.get() {
+                        proto.value_mut().extend_from_slice(&value);
+                    }
+                }
+            }
+        }
+
+        if let Some(v) = state.spindle.mode.get() {
+            proto.spindle_mut().set_mode(*v);
+        }
+
+        if let Some(v) = state.spindle.current_rpm.get() {
+            proto.spindle_mut().set_current_speed_rpm(*v);
+        }
+
+        if let Some(v) = state.spindle.target_rpm.get() {
+            proto.spindle_mut().set_target_speed_rpm(*v);
+        }
+
+        if let Some(id) = state.active_tool.get() {
+            proto.tools_mut().set_active_tool(*id);
+        }
+
+        Ok(())
+    }
+
+    /// NOTE: This will get the most recently measured value of the axis. It may
+    /// be several seconds stale if an update hasn't been received in a while.
+    async fn axis_value(&self, axis_name: &str) -> Result<AxisData> {
+        let state = self.shared.state.lock().await?.read_exclusive();
+
+        state
+            .axes
+            .get(axis_name)
+            .cloned()
+            .ok_or_else(|| err_msg("Missing axis"))
+    }
+
+    /// TODO: Make this independent of the SerialController
+    ///
+    /// CANCEL SAFE
+    async fn read_serial_log(
+        &self,
+        response: &mut rpc::ServerStreamResponse<'_, ReadSerialLogResponse>,
+    ) -> Result<()> {
+        let mut next_line_offset = self.shared.receiver_buffer.first_line_offset().await?;
+
+        loop {
+            let mut last_line_offset = {
+                let waterline = self
+                    .shared
+                    .processed_line_waterline
+                    .lock()
+                    .await?
+                    .read_exclusive();
+                if *waterline == next_line_offset {
+                    waterline.wait().await;
+                    continue;
+                }
+
+                *waterline
+            };
+
+            let mut batch = ReadSerialLogResponse::default();
+
+            while next_line_offset < last_line_offset {
+                let mut offset = next_line_offset;
+                next_line_offset += 1;
+                let line = match self.shared.receiver_buffer.get_line(offset).await {
+                    Ok(v) => v,
+                    // May have been truncated while we were reading
+                    Err(e) => continue,
+                };
+
+                let mut proto = batch.new_lines();
+                proto.set_value(format_bytes(&line.data));
+                proto.set_number(offset);
+                proto.set_kind(line.kind);
+            }
+
+            response.send(batch).await?;
+        }
+    }
+
+    /// Explicitly requests state reports from the machine (ignoring if
+    /// autoreporting is supported).
+    async fn request_state_update(&self) -> Result<()> {
+        self.check_clear_to_send().await?;
+
+        // TODO: ALso need grbl support here. Want an immediate update.
+
+        Self::request_state_report_marlin(&self.shared, &AutoReportSupport::default()).await
+    }
+
+    async fn set_temperature(&self, axis_id: &str, target: f32) -> Result<()> {
+        let config = self.shared.config.read().await?;
+        let axis = config.axes_map().get(axis_id).ok_or_else(|| {
+            rpc::Status::invalid_argument(format!("No axis with id: {}", axis_id))
+        })?;
+
+        if axis.typ() != AxisType::HEATER {
+            return Err(
+                rpc::Status::invalid_argument(format!("Axis {} is not a heater", axis_id)).into(),
+            );
+        }
+
+        let command = {
+            if axis_id == "B" {
+                format!("M140 S{:.2}\n", target)
+            } else if axis_id == "T" {
+                format!("M104 S{:.2}\n", target)
+            } else if let Some(num) = axis_id.strip_prefix("T") {
+                format!("M104 T{} S{:.2}\n", num, target)
+            } else {
+                return Err(err_msg("Unsupported heater id"));
+            }
+        };
+
+        self.send_command(command, DEFAULT_COMMAND_TIMEOUT).await?;
+
+        Ok(())
+    }
+
+    async fn home_x(&self) -> Result<()> {
+        self.send_command("G28 X\n", DEFAULT_COMMAND_TIMEOUT).await
+    }
+
+    async fn home_y(&self) -> Result<()> {
+        self.send_command("G28 Y\n", DEFAULT_COMMAND_TIMEOUT).await
+    }
+
+    async fn home_all(&self) -> Result<()> {
+        self.send_command("G28 W\n", DEFAULT_COMMAND_TIMEOUT).await
+    }
+
+    async fn mesh_level(&self) -> Result<()> {
+        self.send_command("G28\n", DEFAULT_COMMAND_TIMEOUT).await
+    }
+
+    /// Goes to a 2d position in world coordinates.
+    async fn goto(&self, x: f32, y: f32, feed_rate: f32) -> Result<()> {
+        let config = self.shared.config.read().await?;
+
+        // Absolute positioning
+        self.send_command("G90\n", DEFAULT_COMMAND_TIMEOUT).await?;
+
+        // Switch to world coordinate system (temporarily for just this line).
+        let coordinate_system_prefix = {
+            if Self::supports_coordinate_systems(&config) {
+                "G53 "
+            } else {
+                ""
+            }
+        };
+
+        self.send_command(
+            format!(
+                "{}G0 X{:.2} Y{:.2} F{}\n",
+                coordinate_system_prefix, x, y, feed_rate
+            ),
+            DEFAULT_COMMAND_TIMEOUT,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn goto3(&self, x: Option<f32>, y: Option<f32>, z: Option<f32>, feed_rate: f32) -> Result<()> {
+        let config = self.shared.config.read().await?;
+
+        // Absolute positioning
+        self.send_command("G90\n", DEFAULT_COMMAND_TIMEOUT).await?;
+
+        // Switch to world coordinate system (temporarily for just this line).
+        let coordinate_system_prefix = {
+            if Self::supports_coordinate_systems(&config) {
+                "G53 "
+            } else {
+                ""
+            }
+        };
+
+        let mut pos_parts = String::new();
+        if let Some(v) = x {
+            pos_parts.push_str(&format!(" X{:.2}", v));
+        }
+        if let Some(v) = y {
+            pos_parts.push_str(&format!(" Y{:.2}", v));
+        }
+        if let Some(v) = z {
+            pos_parts.push_str(&format!(" Z{:.2}", v));
+        }
+
+        self.send_command(
+            format!(
+                "{}G0{} F{}\n",
+                coordinate_system_prefix, pos_parts, feed_rate
+            ),
+            DEFAULT_COMMAND_TIMEOUT,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn set_spindle_state(&self, state: &SpindleState) -> Result<()> {
+        let config = self.shared.config.read().await?;
+
+        if !config.has_spindle() {
+            return Err(
+                rpc::Status::invalid_argument("Machine not configured to have a spindle").into(),
+            );
+        }
+
+        if state.target_speed_rpm() > config.spindle().max_speed_rpm() {
+            return Err(
+                rpc::Status::invalid_argument("Target spindle RPM higher than max limit").into(),
+            );
+        }
+
+        let cmd = {
+            match state.mode() {
+                SpindleState_Mode::OFF => {
+                    format!("M5\n")
+                }
+                SpindleState_Mode::ON_CLOCKWISE | SpindleState_Mode::ON_COUNTERCLOCKWISE => {
+                    let code = if state.mode() == SpindleState_Mode::ON_CLOCKWISE {
+                        "M3"
+                    } else {
+                        "M4"
+                    };
+                    format!("{} S{}\n", code, state.target_speed_rpm())
+                }
+                _ => return Err(rpc::Status::invalid_argument("Unsupported spindle mode").into()),
+            }
+        };
+
+        self.send_command(cmd, DEFAULT_COMMAND_TIMEOUT).await?;
+
+        Ok(())
+    }
+
+    async fn tool_change(&self, tool_index: i32) -> Result<()> {
+        // TODO: Lock the state to prevent concurrent toolchange attempts and wait for
+        // dwells to complete successfully before we consider the tool change to
+        // be complete.
+
+        let config = self.shared.config.read().await?;
+
+        if !Self::supports_tool_changer(&config) {
+            return Err(rpc::Status::invalid_argument(
+                "Machine not configured to support tool changing",
+            )
+            .into());
+        }
+
+        self.wait_for_idle().await?;
+
+        // TODO: Wait for any ongoing tool change to finish.
+
+        // TODO: Validate the index.
+
+        let command = {
+            if config.firmware() == MachineConfig_Firmware::MARLIN {
+                format!("T{}\n", tool_index)
+            } else if config.firmware() == MachineConfig_Firmware::PRUSA {
+                let mut tool_index = tool_index;
+
+                // Park index
+                if tool_index < 0 {
+                    tool_index = config.tools().num_slots() as i32;
+                }
+
+                // M0: Don't use the tool mapping (always do global operations).
+                format!("T{} M0\n", tool_index)
+            } else {
+                // NOTE: The space is important and Carvera firmware don't seem to work without
+                // it.
+                format!("M6 T{}\n", tool_index)
+            }
+        };
+
+        self.send_command(command, DEFAULT_COMMAND_TIMEOUT).await?;
+
+        // On Carvera, we need to wait for the atc state to become ATC_NONE since the
+        // tool change command executes many sub-commands.
+        if config.firmware() == MachineConfig_Firmware::CARVERA {
+            // TODO: Bound this loop's time
+            loop {
+                let state = self.get_current_axis_value("ATC_STATE").await?;
+                let data = state.data.get().ok_or_else(|| err_msg("Missing data"))?;
+
+                if data[0] == 0.0 {
+                    break;
+                }
+
+                executor::sleep(Duration::from_millis(100)).await?;
+            }
+
+            // Wait for firmware to stabilize. Sometimes we see the firmware in the wrong state (e.g. relative instead of absolute positioning mode after a tool change).
+            executor::sleep(Duration::from_millis(100)).await?;
+        }
+
+        self.wait_for_idle().await
+    }
+
+    /// This function basically waits until we have received a state update from
+    /// the machine after the start of when the function has been called to
+    /// guarantee that the data is consistent relative to any past commands.
+    ///
+    /// NOTE: THis will eventually terminate since the ReceiverGuard will
+    /// eventually disconnect the machine when the receiver thread times out if
+    /// new data isn't received for a while.
+    async fn get_current_axis_value(&self, axis_id: &str) -> Result<AxisData> {
+        let now = Instant::now();
+
+        loop {
+            let state = self.shared.state.lock().await?.read_exclusive();
+            if !state.connected {
+                return Err(rpc::Status::failed_precondition("Machine not connected").into());
+            }
+
+            let data = state
+                .axes
+                .get(axis_id)
+                .ok_or_else(|| err_msg("Missing axis data"))?;
+            let last_updated = data
+                .data
+                .last_updated()
+                .ok_or_else(|| err_msg("Data missing last update time"))?;
+
+            if last_updated < now {
+                drop(state);
+                executor::sleep(Duration::from_millis(500)).await?;
+                continue;
+            }
+
+            return Ok(data.clone());
+        }
+    }
+
+    async fn wait_for_idle(&self) -> Result<()> {
+        let config = self.shared.config.read().await?;
+
+        // TODO: On gRBL style systems, we should just check the machine state and
+        // verify it is 'idle'
+
+        // TODO: Send 'M400\n' to wait for all moves to finish
+        // (GRBL doesn't support this though and will return ok once commands
+        // are completed).
+
+        // ^ May need 2 commands: https://groups.google.com/g/openpnp/c/X3tj8LStGvU
+
+        // Or use 'G4P0' command: https://groups.google.com/g/openpnp/c/EcA5NqzT9BI
+
+        match config.firmware() {
+            MachineConfig_Firmware::UNKNOWN
+            | MachineConfig_Firmware::GENERIC
+            | MachineConfig_Firmware::GRBL => {
+                for i in 0..2 {
+                    self.send_command("G4 P0\n", DEFAULT_COMMAND_TIMEOUT)
+                        .await?;
+                }
+            }
+            MachineConfig_Firmware::MARLIN
+            | MachineConfig_Firmware::PRUSA
+            | MachineConfig_Firmware::SMOOTHIEWARE
+            | MachineConfig_Firmware::CARVERA
+            | MachineConfig_Firmware::KLIPPER => {
+                self.send_command("M400\n", DEFAULT_COMMAND_TIMEOUT).await?;
+            }
+            MachineConfig_Firmware::CNC_CONTROLLER => return Err(err_msg("Firmware doesn't support serial"))
+        }
+
+        Ok(())
+    }
+
+    async fn send_command_impl(&self, line: Bytes, timeout: Duration) -> Result<()> {
+        self.check_clear_to_send().await?;
+
+        // TODO: Need to verify that the line ends in a '\n' and has only one of them.
+
+        Self::send_command_inner(&self.shared, line, timeout, SendCommandFlags::empty()).await?;
+        Ok(())
+    }
+
+    async fn enqueue_command_impl(
+        &self,
+        line: Bytes,
+        timeout: Duration,
+    ) -> Result<PendingCommand> {
+        self.check_clear_to_send().await?;
+
+        let cmd =
+            Self::enqueue_command_inner(&self.shared, line, timeout, SendCommandFlags::empty())
+                .await?;
+        Ok(cmd)
+    }
+
+    async fn full_stop(&self) -> Result<()> {
+        // TODO: Also implement reset_using_dtr in parallel to this (wait for both
+        // futures to complete regardless of success).
+
+        let config = self.shared.config.read().await?;
+
+        // "Soft-Reset" GRBL realtime command.
+        if config.firmware() == MachineConfig_Firmware::GRBL
+            || config.firmware() == MachineConfig_Firmware::SMOOTHIEWARE
+            || config.firmware() == MachineConfig_Firmware::CARVERA
+        {
+            Self::send_command_inner(
+                &self.shared,
+                (&b"\x18"[..]).into(),
+                Duration::from_secs(120),
+                SendCommandFlags::SKIP_LINE
+                    | SendCommandFlags::STOP_AFTER
+                    | SendCommandFlags::NO_REPLY,
+            )
+            .await?;
+
+            return Ok(());
+        }
+
+        // Skips all other entries in line and after stops any command from running
+        // after this one.
+        Self::send_command_inner(
+            &self.shared,
+            "M112\n".into(),
+            Duration::from_secs(120),
+            SendCommandFlags::SKIP_LINE | SendCommandFlags::STOP_AFTER,
+        )
+        .await?;
+
+        Ok(())
+    }
+
 }

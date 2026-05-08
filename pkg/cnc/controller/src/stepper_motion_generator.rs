@@ -78,6 +78,8 @@ pub struct StepperMotionGenerator {
     //
     // TODO: Need to keep this low so that it doesn't overflow when converted to a remote tick.
     motor_position_end_time: Vec<f64>,
+
+    // motor_last_sent_times: Vec<DeviceTime>
 }
 
 impl StepperMotionGenerator {
@@ -115,7 +117,7 @@ impl StepperMotionGenerator {
         self.motions.push_back(motion);        
     }
 
-    
+
     // TODO: Need to periodically adjust the device time to account for clock skew and drift
 
     // TODO: Guarantee never sending times earlier than previously sent.
@@ -123,7 +125,7 @@ impl StepperMotionGenerator {
     // TODO: Once we try to get commands beyond the end of the queue time, we should prevent more motions from before adding without a full reset,
 
     /// Gets all commands 
-///
+    ///
     /// NOTE: Should always be called with a monotonically increasing max_time value.
     pub fn to_commands(
         &mut self, max_time: f64
@@ -193,7 +195,7 @@ impl StepperMotionGenerator {
                         // TODO: Check all the signs of this stuff.
                         // TODO: The extrusion axis is still a bit lossy. The input linear motions don't perfectly start/end where they need to.
                         if end_delta.abs() < 0.01 {
-                                                        motion.duration
+                            motion.duration
                         } else if delta.abs() > motion_delta.abs() {
                             break;
                         } else {
@@ -224,7 +226,7 @@ impl StepperMotionGenerator {
 
                     // The first step is often really short as we might have been moving very slowly over
                     // several motions and all of a sudden we finally got to the right position.
-//
+                    //
                     // This is generally signalled by there being a large gap between motor_position_end_time
                     // and motor_position_reach_time implying there is some uncertainty about whether we are
                     // moving very slowly or we just started moving
@@ -235,7 +237,7 @@ impl StepperMotionGenerator {
                     // NOTE: This trick only works if first_motion_start_time is still behind the motor time by a
                     // little bit.
                     if step_times.len() == 1 {
-// We estimate that that first step should no shorter than 95% of the start velocity.
+                        // We estimate that that first step should no shorter than 95% of the start velocity.
                         let first_step_min_dur = (1.0 / motion_start_motor_velocity[motor_i].abs()) * 0.95;
 
                         // The target minimum size for the first step.
@@ -279,6 +281,9 @@ impl StepperMotionGenerator {
                 //    - TODO: Allow this time to be slightly in the past as long as it doesn't risk our
                 //      scheduling buffer for steps. 
                 if step_times.len() == 1 {
+
+                    // TODO: Must ensure this is comparible with " if step_end_time > max_time + MIN_STEP_SECONDS {" above
+
                     // Alternative is to mark the end as motion_end_time.min(max_time);
 
                     // Motor did not move for this motion.
@@ -292,6 +297,8 @@ impl StepperMotionGenerator {
 
             motion_start_time = motion_end_time;
         }
+
+        // TOOD: Should always leave at least 100ms in the queue so that first_motion_start_time can we can go 'negative' for the first motion. (basically limited by reah_time)
 
         // NOTE: The else case of this should be handled by the next if statement
         // TODO: Maybe base everything in whether the motions are used?
@@ -335,14 +342,14 @@ impl StepperMotionGenerator {
 
         // TODO: Also need to check against the last step before all of these.
         for i in 1..step_times.len() {            
-            if step_times[i] <= step_times[i - 1] {
+            if step_times[i] <= step_times[i - 1] {                
                 return Err(format_err!("Non-monotonic step times : step_times[{}] = {}; step_times[{}] = {}",
                     i, step_times[i], i - 1, step_times[i - 1]));
             }
 
             let step_duration = step_times[i] - step_times[i - 1];
 
-            if step_duration < 400 {
+            if step_duration < 140 {
                 eprintln!("Short step!! (motor {}) {} ending at index {}", motor_i, step_times[i] - step_times[i - 1], i);
             }
 
@@ -366,7 +373,7 @@ impl StepperMotionGenerator {
         for raw_motion in &mut raw_motions {
             let next_step_time = time_offset.add_ticks(raw_motion.next_step_time);
 
-raw_motion.next_step_time = next_step_time.lower();
+            raw_motion.next_step_time = next_step_time.lower();
             raw_motion.num_steps.set_direction(dir);
 
             out.push((next_step_time, raw_motion.clone()));
@@ -398,7 +405,7 @@ raw_motion.next_step_time = next_step_time.lower();
                     return Err(format_err!("Really far out step: {} vs {}", next_time, last_time));
                 }
 
-                if delta_time < 200 {
+                if delta_time < 120 {
                     return Err(format_err!("Really small step: {}", delta_time));
                 }
 

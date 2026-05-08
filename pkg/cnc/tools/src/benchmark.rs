@@ -3,6 +3,7 @@ use std::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use base_error::*;
+use base_algorithms::binary_search::*;
 use executor_multitask::RootResource;
 use file::LocalPathBuf;
 use peripherals_service::config::*;
@@ -35,52 +36,6 @@ pub enum Mode {
     #[arg(name = "step-width")]
     OneStepMotion
 }
-
-struct BinarySearch {
-    min: u32,
-    max: u32,
-    current: u32,
-}
-
-impl BinarySearch {
-    pub fn new(min: u32, max: u32) -> Self {
-        Self {
-            min,
-            max,
-            current: (min + max) / 2
-        }
-    }
-
-    pub fn done(&self) -> bool {
-        self.min == self.max
-    }
-
-    pub fn current(&self) -> u32 {
-        self.current
-    }
-
-    pub fn greater_eq_current(&mut self) {
-        self.min = self.current;
-        self.current = (self.min + self.max) / 2;
-    }
-
-    pub fn greater_than_current(&mut self) {
-        self.min = self.current + 1;
-        self.current = (self.min + self.max) / 2;
-    }
-
-    pub fn less_than_current(&mut self) {
-        self.max = self.current - 1;
-        self.current = (self.min + self.max) / 2;
-    }
-
-    pub fn less_eq_current(&mut self) {
-        self.max = self.current;
-        self.current = (self.min + self.max) / 2;
-    }
-}
-
-
 
 impl BenchmarkCommand {
     pub async fn run(self) -> Result<()> {
@@ -115,7 +70,7 @@ impl BenchmarkCommand {
         while !search.done() {
             println!("########");
             println!("Try {}", search.current());
-            let pass = Self::run_single_step_motion_round(&device, search.current()).await?;
+            let pass = Self::run_single_step_motion_round(&device, search.current() as u32).await?;
             println!("=> Pass: {}", pass);
 
             if pass {
@@ -126,7 +81,7 @@ impl BenchmarkCommand {
         }
 
         println!("########");
-        println!("Min Stable Step Duration: {}", search.current());
+        println!("Min Stable Step Duration: {:?}", search.best());
 
 
         Ok(())

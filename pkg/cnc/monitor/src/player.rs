@@ -27,10 +27,11 @@ use crate::change::{ChangeEvent, ChangePublisher};
 use crate::config::MachineConfigContainer;
 use crate::files::FileReference;
 use crate::program::*;
-use crate::serial_controller::{PendingCommand, SerialController, DEFAULT_COMMAND_TIMEOUT};
+use crate::serial_controller::DEFAULT_COMMAND_TIMEOUT;
 use crate::tables::ProgramRunTable;
 use crate::player_preprocessor::*;
 use crate::leveling::ZGridLeveler;
+use crate::connection_controller::*;
 
 const MIN_DB_FLUSH_RATE: Duration = Duration::from_secs(30);
 
@@ -92,7 +93,7 @@ impl Player {
         machine_id: u64,
         machine_config: Arc<AsyncRwLock<MachineConfigContainer>>,
         file: FileReference,
-        serial_interface: Arc<SerialController>,
+        serial_interface: Arc<dyn ConnectionController>,
         change_publisher: ChangePublisher,
         db: Arc<ProtobufDB>,
         leveler: Option<Arc<ZGridLeveler>>,
@@ -260,7 +261,7 @@ impl Player {
 
     async fn run(
         shared: Arc<Shared>,
-        serial_interface: Arc<SerialController>,
+        serial_interface: Arc<dyn ConnectionController>,
         leveler: Option<Arc<ZGridLeveler>>,
     ) -> Result<()> {
         let mut bundle = TaskResultBundle::new();
@@ -338,7 +339,7 @@ impl Player {
     async fn run_command_loop(
         shared: Arc<Shared>,
         lines: channel::Receiver<Option<ParsedLine>>,
-        serial_interface: Arc<SerialController>,
+        serial_interface: Arc<dyn ConnectionController>,
     ) -> Result<()> {
         /*
         In grbl, jog cancels would also be helpful.

@@ -4,6 +4,11 @@
 name: "nrf52840_itsybitsy"
 base_config: "nrf52840"
 
+# Completely unused pins:
+# - P1.01
+# - P1.03
+# - P1.05
+
 pins {
     name: "D5"
     alias: "P0.27"

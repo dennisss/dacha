@@ -8,6 +8,8 @@ use executor::channel::error::SendError;
 use cnc_controller_proto::cnc::LogEntry;
 
 
+// TODO: replace with the BroadcastChannel
+
 #[derive(Default)]
 pub struct LoggingChannel {
     shared: Arc<Shared>

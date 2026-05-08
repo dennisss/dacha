@@ -24,6 +24,9 @@ fn peripheral_pins_mut<F: FnMut(&str, &mut u32) -> Result<()>>(
         BoardConfig_PeripheralConfigCase::Neopixel(config) => {
             let name = config.pin_name().to_string();
             callback(&name, config.config_mut().pin_mut())?;
+
+            let name = config.dummy_clk_pin_name().to_string();
+            callback(&name, config.config_mut().dummy_clk_pin_mut())?;
         }
         BoardConfig_PeripheralConfigCase::Uart(config) => {
             let name = config.tx_pin_name().to_string();

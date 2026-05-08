@@ -224,3 +224,46 @@ impl CommandConverter {
     }
 
 }
+
+pub fn parse_gcode_string(data: &[u8]) -> Result<Vec<gcode::Command>> {
+    let mut parser = gcode::ProgramParser::default();
+    let mut remaining = &data[..];
+
+    let mut commands = vec![];
+
+    let mut els = vec![];
+    while !remaining.is_empty() {
+        els.clear();
+        let nread = parser.parse_line(remaining, true, &mut els);
+        remaining = &remaining[nread..];
+
+        let mut command = None;
+
+        for el in els.drain(..) {
+            match el {
+                gcode::ProgramElement::Command(c) => {
+                    if command.is_some() {
+                        return Err(err_msg("Multi-command line"));
+                    }
+
+                    command = Some(c);
+                }
+                gcode::ProgramElement::Error(e) => {
+                    return Err(format_err!("Error while parsing gcode line: {}", e));
+                }
+                gcode::ProgramElement::EndOfLine |
+                gcode::ProgramElement::Thumbnail(_) |
+                gcode::ProgramElement::Metadata { .. } => {},
+            }
+        }
+
+        if let Some(command) = command {
+            commands.push(command);
+            
+            // println!("{:?}", command);
+        }
+    }
+
+    Ok(commands)
+
+}

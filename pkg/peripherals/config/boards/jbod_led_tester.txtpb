@@ -7,6 +7,7 @@ peripherals {
 
     neopixel {
         pin_name: "D5"
+        dummy_clk_pin_name: "P1.01"
         config {
             inverted: false
             num_bytes: 180 # 15 cols * 4 rows * 3 (RGB)

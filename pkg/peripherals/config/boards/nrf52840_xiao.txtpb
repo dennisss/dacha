@@ -1,6 +1,11 @@
 # proto-file: pkg/peripherals/proto/service.proto
 # proto-message: BoardConfig
 
+# NOTE: This board has a 32khz crystal on P0.00 / P0.01
+# Unused pins:
+# - P0.08
+# - P1.09
+
 name: "nrf52840_xiao"
 base_config: "nrf52840"
 

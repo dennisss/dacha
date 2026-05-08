@@ -247,10 +247,10 @@ async fn main() -> Result<()> {
     let mut acl = cluster_proto::cluster::ServiceACLProto::default();
     protobuf::text::parse_text_proto(SERVICE_ACL_PROTO, &mut acl)?;
 
-    let mut server = cluster_client::ClusterServer::new(args.port.value(), acl, client)?;
+    let mut server = cluster_client::ClusterServer::new(args.port.value(), acl, client.clone())?;
 
     let monitor =
-        Arc::new(MonitorImpl::create(&args.local_data_dir, args.make_fake_machines).await?);
+        Arc::new(MonitorImpl::create(&args.local_data_dir, args.make_fake_machines, client.clone()).await?);
     service.register_dependency(monitor.clone()).await;
     server.add_service(monitor.clone().into_service())?;
 

@@ -14,3 +14,4 @@ pub mod motion_analysis;
 pub mod regression;
 pub mod motion_log;
 pub mod revolution_tracker;
+pub mod hardware_testing;

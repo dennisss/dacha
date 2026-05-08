@@ -8,7 +8,7 @@ use executor::lock;
 use executor::sync::AsyncMutex;
 use executor_multitask::{TaskResource, impl_resource_passthrough};
 use peripherals_service::device::PeripheralsDevice;
-use cnc_controller_proto::cnc::HeaterControllerConfig;
+use cnc_controller_proto::cnc::{HeaterControllerConfig, GetStateResponse};
 
 use crate::devices::*;
 use crate::pid::*;
@@ -38,6 +38,7 @@ struct State {
 
 struct ActiveState {
     target_temp: f32,
+    last_temp: f32,
     pid: PIDController,
     first_met: Option<Instant>,
     stable: bool,
@@ -60,6 +61,17 @@ impl HeaterController {
         }
     }
 
+    pub async fn get_state(&self, out: &mut GetStateResponse) -> Result<()> {
+        lock!(state <= self.shared.state.lock().await?, {
+            if let Some(active) = &state.active {
+                out.set_heater_target(active.target_temp);
+                out.set_heater_temp(active.last_temp);
+            }
+        });
+
+        Ok(())
+    }
+
     pub async fn set_target_temperature(&self, target_temp: f32) -> Result<()> {
         lock!(state <= self.shared.state.lock().await?, {
             // TODO: If already nearly correct, just update the target temp?
@@ -72,6 +84,7 @@ impl HeaterController {
 
             state.active = Some(ActiveState {
                 target_temp,
+                last_temp: 0.0, // TODO: Better init.
                 pid: PIDController::new(),
                 first_met: None,
                 stable: false
@@ -119,6 +132,7 @@ impl HeaterController {
                 lock!(state <= shared.state.lock().await?, {
                     if let Some(active_state) = &mut state.active {
                         println!("[Temp: {:.2} / {:.2}]", current_temp, active_state.target_temp);
+                        active_state.last_temp = current_temp;
 
                         let error = active_state.target_temp - current_temp;
 

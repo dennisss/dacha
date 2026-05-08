@@ -37,6 +37,9 @@ message MachineConfig {
         KLIPPER = 6;
         // The 32-bit 'Prusa Firmware Buddy'. Mostly the same behavior as Marlin aside from tool changing and metrics.
         PRUSA = 7;
+
+        // RPC based firmware implemented in this repository.
+        CNC_CONTROLLER = 8;
     }
     Firmware firmware = 8;
 
@@ -224,6 +227,9 @@ message DeviceSelector {
     string path = 5;
 
     LibcameraSelector libcamera = 6;
+
+    // URL/IP address for RPC communication.
+    string address = 7;
 }
 
 message USBSelector {

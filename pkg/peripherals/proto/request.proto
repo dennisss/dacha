@@ -360,7 +360,7 @@ message ConfigureUARTRequest {
 }
 
 message UARTTransmitRequest {
-    bytes data = 1 [(dacha.max_length) = 8];
+    bytes data = 1 [(dacha.max_length) = 16];
 
     // After all of this data is sent, immediately turn on the receiver and wait for this number of 
     UARTReceiveRequest rx_after_tx = 2;
@@ -566,6 +566,8 @@ message SampleADCRequest {
 
 message ConfigureNeopixelRequest {
     uint32 pin = 1;
+
+    uint32 dummy_clk_pin = 4;
 
     bool inverted = 2;
 

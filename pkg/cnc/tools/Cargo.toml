@@ -6,6 +6,7 @@ edition = "2018"
 [dependencies]
 macros = { path = "../../macros" }
 base_args = { path = "../../base/args" }
+base_algorithms = { path = "../../base/algorithms" }
 base_error = { path = "../../base/error" }
 common = { path = "../../common" }
 executor = { path = "../../executor" }

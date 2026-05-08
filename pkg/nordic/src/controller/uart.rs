@@ -20,7 +20,7 @@ define_thread!(
     peripheral_index: usize,
     request_sequence: u32,
     uarte: UARTE,
-    data: FixedVec<u8, 8>,
+    data: FixedVec<u8, 16>,
     receive_request: Option<UARTReceiveRequest>
 );
 
@@ -29,7 +29,7 @@ async fn uart_transmit_worker_thread(
     peripheral_index: usize,
     request_sequence: u32,
     mut uarte: UARTE,
-    data: FixedVec<u8, 8>,
+    data: FixedVec<u8, 16>,
     receive_request: Option<UARTReceiveRequest>
 ) {
     executor::interrupts::yield_now().await;

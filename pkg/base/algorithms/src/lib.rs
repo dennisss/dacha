@@ -10,3 +10,5 @@ extern crate alloc;
 
 #[cfg(feature = "std")]
 pub mod token_bucket;
+
+pub mod binary_search;

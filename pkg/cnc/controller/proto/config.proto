@@ -46,6 +46,8 @@ message ControllerConfig {
     TimeControllerConfig time = 12;
 
     repeated DataLoggerConfig loggers = 13;
+
+    repeated LEDStripConfig led_strips = 14;
 }
 
 message TimeControllerConfig {
@@ -82,6 +84,19 @@ message ServoConfig {
     string name = 1;
 
     PeripheralReference pwm = 2;
+}
+
+message LEDStripConfig {
+    string name = 1;
+
+    PeripheralReference peripheral = 2;
+
+    // TODO: Derive this from the peripheral config.
+    uint32 num_bytes = 3;
+
+    // Default color to show when the printer first turns on.
+    // TODO: Implement this.
+    bytes default_color = 4;
 }
 
 

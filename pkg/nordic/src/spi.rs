@@ -75,6 +75,8 @@ impl SPIHost {
     //
     // TODO: All callers are expected to configure the GPIO pins in the GPIO peripheral as described in
     // https://docs.nordicsemi.com/bundle/ps_nrf52840/page/spim.html#ariaid-title4
+    //
+    // TODO: The SPIM peripheral doesn't work correctly if no SCK is connected (SPIM3 sort of works?).
     pub fn new<MOSI: PeripheralPin, MISO: PeripheralPin, SCK: PeripheralPin>(
         mut periph: SPIMx,
         frequency: usize,

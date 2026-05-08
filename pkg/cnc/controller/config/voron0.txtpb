@@ -13,6 +13,30 @@ devices: [
             base_config: "voron0_toolhead"
         }
     },
+    {
+        name: "aux"
+        peripheral_config {
+            base_config: "voron0_aux"
+        }
+    },
+    {
+        name: "bed"
+        bed_client {
+            serial_peripheral {
+                device_name: "main"
+                peripheral_name: "bed_serial"
+            }
+
+            bed_temp_resistor: 999.3,
+            sheet_temp_resistor: 998.0,
+            aux_temp_resistor: 997.0,
+            calibration_a: 0.9963536962,
+            calibration_b: -0.0008514803899,
+            chip_temp_calibration: 0.955696203
+            board_revision: 1
+            half_duplex: true
+        }
+    },
 
     # {
     #     name: "encoder"
@@ -59,6 +83,40 @@ devices: [
             step_peripheral: "stepper_step"
             uart_peripheral: "stepper_uart"
             enable_peripheral: "stepper_enable"
+        }
+    }
+]
+
+led_strips: [
+    {
+        name: "left"
+        num_bytes: 44        
+        peripheral {
+            device_name: "aux"
+            peripheral_name: "leds_left"
+        }
+    },
+    {
+        name: "right"
+        num_bytes: 44        
+        peripheral {
+            device_name: "aux"
+            peripheral_name: "leds_right"
+        }
+    },
+    {
+        name: "bed"
+        num_bytes: 4
+        peripheral {
+            device_name: "bed"
+        }
+    },
+    {
+        name: "toolhead"
+        num_bytes: 11
+        peripheral {
+            device_name: "toolhead"
+            peripheral_name: "leds"
         }
     }
 ]

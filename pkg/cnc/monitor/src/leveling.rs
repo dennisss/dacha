@@ -7,6 +7,7 @@ use cnc_monitor_proto::cnc::ZGridLevelingRequest;
 use cnc::grid::*;
 
 use crate::serial_controller::{SerialController, IDLE_COMMAND_TIMEOUT, DEFAULT_COMMAND_TIMEOUT};
+use crate::connection_controller::*;
 
 
 
@@ -36,7 +37,7 @@ pub struct ZGridLeveler {
 
 impl ZGridLeveler {
     pub async fn probe(
-        serial: Arc<SerialController>,
+        serial: Arc<dyn ConnectionController>,
         request: &ZGridLevelingRequest,
     ) -> Result<Self> {
 

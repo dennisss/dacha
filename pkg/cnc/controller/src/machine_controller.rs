@@ -11,6 +11,7 @@ use cnc_controller_proto::cnc::*;
 use rpc_util::NamedPortArg;
 use file::LocalPathBuf;
 use executor::channel;
+use executor::lock_async;
 
 use crate::devices::*;
 use crate::config::*;
@@ -82,8 +83,21 @@ impl MachineController {
         })
     }
 
-    pub async fn get_position(&self) -> Result<GetPositionResponse> {
-        let mut res = GetPositionResponse::default();
+    pub async fn get_state(&self) -> Result<GetStateResponse> {
+        let mut out = GetStateResponse::default();
+
+        // TODO: Get a real time position.
+        out.set_position(self.get_last_position().await?.position().clone());
+
+        if self.heater_controllers.len() > 0 {
+            self.heater_controllers[9].get_state(&mut out).await?;
+        }
+        
+        Ok(out)
+    }
+
+    pub async fn get_last_position(&self) -> Result<GetLastPositionResponse> {
+        let mut res = GetLastPositionResponse::default();
         res.set_position(self.motion_controller.last_position().await?.to_proto());
         Ok(res)
     }
@@ -330,6 +344,38 @@ impl MachineController {
                         servo.pwm().peripheral_name(),
                         duty_cycle
                     ).await?;
+                }
+            }
+
+            if cmd.has_set_led_strip() {
+                let cmd = cmd.set_led_strip();
+
+                let config = self.config.led_strips().iter()
+                    .find(|c| c.name() == cmd.name())
+                    .ok_or_else(|| err_msg("No led strip with the requested name"))?;
+                
+                if cmd.data().len() != (config.num_bytes() as usize) {
+                    return Err(err_msg("Wrong number of color bytes"));
+                }
+
+                if !config.peripheral().peripheral_name().is_empty() {
+                    let device = self.devices.get_peripherals_device(
+                        config.peripheral().device_name()).await?;
+
+                    let periph = config.peripheral().peripheral_name();
+                    device.neopixel_transfer(periph, 0, cmd.data()).await?;
+                    device.neopixel_show(periph).await?;
+                } else {
+                    let bed_client = self.devices.get_bed_client(
+                        config.peripheral().device_name()).await?;
+
+                    let color = u32::from_le_bytes(*array_ref![cmd.data(), 0, 4]);
+
+                    // TODO: Make this cancel safe.
+                    // TODO: Support different fan speeds.
+                    lock_async!(bed_client <= bed_client.lock().await?, {
+                        bed_client.request_no_reply(0, color).await                        
+                    })?;
                 }
             }
         }

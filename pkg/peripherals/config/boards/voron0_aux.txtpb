@@ -1,0 +1,42 @@
+name: "voron0_aux"
+base_config: "nrf52840_xiao"
+
+product_id: 12
+
+peripherals {
+    name: "i2c"
+    i2c {
+        sda_pin_name: "P0.03"
+        scl_pin_name: "P0.28"
+        config {
+            frequency: 100000
+        }
+    }
+}
+
+peripherals {
+    name: "leds_left"
+    neopixel {
+        pin_name: "P1.11"
+        dummy_clk_pin_name: "P1.09"
+        config {
+            inverted: true
+            num_bytes: 44 # 4 (RGBW) * 11 LEDs
+        }
+    }
+}
+
+peripherals {
+    name: "leds_right"
+    neopixel {
+        pin_name: "P0.29"
+        dummy_clk_pin_name: "P0.08"
+        config {
+            inverted: true
+            num_bytes: 44 # 4 (RGBW) * 11 LEDs
+        }
+    }
+}
+
+
+

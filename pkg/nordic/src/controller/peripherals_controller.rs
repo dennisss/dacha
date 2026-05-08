@@ -751,9 +751,10 @@ impl PeripheralsController {
                 }
 
                 let pin = state.gpio.pin(IndexedPin { index: req.pin() });
+                let dummy_clk_pin = state.gpio.pin(IndexedPin { index: req.dummy_clk_pin() });
                 let spi = state.spim.pop().unwrap();
 
-                let inst = Neopixel::new(spi, pin, req.inverted());
+                let inst = Neopixel::new(spi, pin, dummy_clk_pin, req.inverted());
                 
                 let buf = NeopixelDataBuffer::new(
                    BoxedSlice::<u8>::new_zeroed(NeopixelDataBuffer::<[u8; 1]>::size_for(req.num_bytes() as usize)),

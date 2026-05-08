@@ -355,6 +355,7 @@ peripherals {
     name: "leds"
     neopixel {
         pin_name: "LED_SERIAL"
+        dummy_clk_pin_name: "P1.15"
         config {
             inverted: true
             num_bytes: 11 # 4 + 4 + 3

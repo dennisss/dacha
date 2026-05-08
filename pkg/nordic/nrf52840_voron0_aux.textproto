@@ -1,0 +1,20 @@
+# proto-file: pkg/builder/proto/config.proto
+# proto-message: BuildConfig
+
+# TODO: Dedup this with nrf52840.textproto
+
+platform {
+    os: UNKNOWN
+    architecture: UNKNOWN
+}
+rule_defaults {
+    [type.googleapis.com/builder.RustBinaryAttrs] {
+        compiler: CARGO
+        profile: "release"
+        no_default_features: true
+        target: "thumbv7em-none-eabihf"
+        rustflags: "-C link-arg=-Tpkg/nordic/link.x"
+        cfg: ['target_label="nrf52840"', 'target_label="cortex_m"']
+        env: [{ key: "USB_PRODUCT_ID" value: "12" }, { key: "USB_PRODUCT_NAME" value: "Voron 0 Aux Board" }]
+    }
+}

@@ -1182,7 +1182,10 @@ dependencies = [
  "cluster_client",
 "cluster_proto",
  "cnc",
+"cnc_controller",
+ "cnc_controller_proto",
  "cnc_monitor_proto",
+"cnc_tools",
  "common",
  "compression",
   "crypto",
@@ -1244,6 +1247,7 @@ dependencies = [
 name = "cnc_tools"
 version = "0.1.0"
 dependencies = [
+ "base_algorithms",
  "base_args",
  "base_error",
  "cluster_client",

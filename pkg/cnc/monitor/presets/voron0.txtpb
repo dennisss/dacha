@@ -1,0 +1,32 @@
+# proto-file: pkg/cnc/monitor/proto/machine_config.proto
+# proto-message: MachineConfig
+
+# TODO: Have this machine type auto-generate when running on the dedicated voron 0 machine.
+
+model_name: "Voron 0 (RPC)"
+auto_connect: false
+
+work_area {
+    # Z max is 120
+    x_range { min: 0 max: 120 }
+    y_range { min: 0 max: 120 }
+}
+
+firmware: CNC_CONTROLLER
+
+device {
+    address: "localhost:8000"
+}
+
+serial {
+    max_player_in_flight_commands: 1000
+}
+
+axes: [
+    { id: "X" type: POSITION range { min: 0 max: 120 } },
+    { id: "Y" type: POSITION range { min: 0 max: 120 } },
+    { id: "Z" type: POSITION range { min: 0 max: 120 } },
+    { id: "E" type: POSITION },
+
+    { id: "T" type: HEATER name: "Hotend" collect { min_value: 30 } }
+]

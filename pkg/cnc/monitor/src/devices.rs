@@ -15,6 +15,7 @@ pub enum AvailableDevice {
     Fake(usize),
     #[cfg(feature = "libcamera")]
     Libcamera(libcamera::AvailableCamera),
+    NetworkAddress(String),
 }
 
 #[derive(Clone)]
@@ -105,6 +106,9 @@ impl AvailableDevice {
             Self::Libcamera(dev) => {
                 format!("libcamera:{}", dev.id())
             }
+            Self::NetworkAddress(addr) => {
+                format!("addr:{}", addr)
+            }
         }
     }
 
@@ -123,6 +127,9 @@ impl AvailableDevice {
             #[cfg(feature = "libcamera")]
             Self::Libcamera(dev) => {
                 format!("Libcamera: {}", dev.id())
+            }
+            Self::NetworkAddress(addr) => {
+                format!("Address: {}", addr)
             }
         }
     }
@@ -175,6 +182,17 @@ impl AvailableDevice {
             }
         }
 
+        if !selector.address().is_empty() {
+            let addr = match self {
+                Self::NetworkAddress(addr) => addr,
+                _ => return false
+            };
+
+            if addr != selector.address() {
+                return false;
+            }
+        }
+
         true
     }
 
@@ -195,6 +213,9 @@ impl AvailableDevice {
             #[cfg(feature = "libcamera")]
             Self::Libcamera(dev) => {
                 sel.libcamera_mut().set_id(dev.id());
+            }
+            Self::NetworkAddress(addr) => {
+                sel.set_address(addr);
             }
         }
 
@@ -246,6 +267,9 @@ impl AvailableDevice {
                     sel.libcamera_mut().set_model(model);
                 }
             }
+            Self::NetworkAddress(addr) => {
+                sel.set_address(addr);
+            }
         };
 
         sel
@@ -280,6 +304,9 @@ impl AvailableDevice {
             Self::Fake(i) => FakeMachine::create().await,
             #[cfg(feature = "libcamera")]
             Self::Libcamera(device) => {
+                return Err(err_msg("Can't be opened as a serial port"));
+            }
+            Self::NetworkAddress(addr) => {
                 return Err(err_msg("Can't be opened as a serial port"));
             }
         }

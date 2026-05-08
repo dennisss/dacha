@@ -1475,6 +1475,46 @@ files: [
         sha256_sum: "fd6a7aa4ae08058d8d7b57b57e4e8bd34513c4a88712f7ce12b9df05df96808a"
     },
     {
+        path: "pkg/cnc/machines/voron_0/images/bed.jpg"
+        size: 1349756
+        sha256_sum: "df0b670309ac28393837efee6a851c6871cf17b37c77d13e1ebc046c42931ad9"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/images/camera.jpg"
+        size: 1209687
+        sha256_sum: "2d8889796a67735722c47f8c727cd1b504959d468b215f20700a33c6c2bbbcf8"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/images/corner-view.jpg"
+        size: 1336336
+        sha256_sum: "2cf849a242d3d00ccd924b86dc8fe2da8b73caab1b3d7fc70f4bce52bdb2978c"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/images/front-view.jpg"
+        size: 1565312
+        sha256_sum: "a1916433c21188fbe4d304dcb988c0a07df6277429521f02acef4821c449ba71"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/images/side-panel.jpg"
+        size: 1639774
+        sha256_sum: "3a3f7fd6c8039a1698b46769f3216a871becfe53f4db0a03a463180efc08919d"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/images/skew-calibration-camera.png"
+        size: 7612094
+        sha256_sum: "354b1136e7318dfe793cc5b2a299076eb91a19179f03d77c9873a24c8ead4880"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/images/umbilical.jpg"
+        size: 1662284
+        sha256_sum: "64864149ad9815996c55fa460b22e1cdadeb562f9fa91617c42f83b365501300"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/images/wiper.jpg"
+        size: 1422286
+        sha256_sum: "e0a1b8a47b37a9dbc3647254e4515ebad0d2e495e8a8adceab533f429449a558"
+    },
+    {
         path: "pkg/cnc/machines/voron_0/mods/cnc_bed/cnc-bed-board-m3-2mm-spacer.stl"
         size: 57684
         sha256_sum: "67d0f79ce36a83810a7b1c8f0cb95fac0b62a9e55eb346063031712a2efd5ffa"
@@ -1530,6 +1570,11 @@ files: [
         sha256_sum: "4032d754405fab795cbf1dce3375bf7caf11c1867461f068914d814b7cb3ccad"
     },
     {
+        path: "pkg/cnc/machines/voron_0/mods/electronics_tray/aux-board-holder.stl"
+        size: 370084
+        sha256_sum: "3b8535cbd19a2e431165e25276525a35821105ab82f7619d85f37d7236446bd8"
+    },
+    {
         path: "pkg/cnc/machines/voron_0/mods/electronics_tray/dc-dc-buck-holder-2x.stl"
         size: 387784
         sha256_sum: "5de1aef504e90e59da27d9ff94e3c4a761937de3ac5c4d777a576ea539fe20a6"
@@ -1578,6 +1623,11 @@ files: [
         path: "pkg/cnc/machines/voron_0/mods/filter/air-filter-magclip.stl"
         size: 347084
         sha256_sum: "7c4428448a2ede776bf1c23a904510fba6ad0273f0f475101d8c5e1e9aaf5bfa"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/front_camera/front-camera-mount-r2.stl"
+        size: 138284
+        sha256_sum: "6aea77f2a93bcbc4934c2e243ddfb30814e76bd4d48a3d32dc672e4d17ec964e"
     },
     {
         path: "pkg/cnc/machines/voron_0/mods/front_camera/front-camera-mount.stl"
@@ -1678,6 +1728,16 @@ files: [
         path: "pkg/cnc/machines/voron_0/mods/rear_keystone_skirt_mesh/parts/mesh.stl"
         size: 64684
         sha256_sum: "a978dd40607a80f7200b57ace2da91519cb3307f4697894a0130ef975eff874b"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/rear_panel_magnets/rear-panel-magnets-bottom.stl"
+        size: 203584
+        sha256_sum: "9ca6b6b9a0408cfcd48c5caf3f7de8381387db5701784cdf88e56435d91ec2f1"
+    },
+    {
+        path: "pkg/cnc/machines/voron_0/mods/rear_panel_magnets/rear-panel-magnets-top.stl"
+        size: 73484
+        sha256_sum: "3931a77a5643d20ce54121480b13e93cf1703abaeb52af2a260ca23b294034f1"
     },
     {
         path: "pkg/cnc/machines/voron_0/mods/toolboard/stencil-vacuum/body.stl"

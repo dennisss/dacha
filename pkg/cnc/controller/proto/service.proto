@@ -9,12 +9,27 @@ import "pkg/cnc/controller/proto/matrix.proto";
 
 
 service Controller {
+    rpc GetState (GetStateRequest) returns (GetStateResponse);
+
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 
-    rpc GetPosition (GetPositionRequest) returns (GetPositionResponse);
+    rpc GetLastPosition (GetLastPositionRequest) returns (GetLastPositionResponse);
 
     rpc ReadLog (ReadLogRequest) returns (stream ReadLogResponse);
 }
+
+message GetStateRequest {
+
+}
+
+message GetStateResponse {
+    VectorProto position = 1;
+
+    float heater_temp = 2;
+
+    float heater_target = 3;
+}
+
 
 message ExecuteRequest {
     repeated Command commands = 1;
@@ -39,6 +54,7 @@ message Command {
         bool wait_until_idle = 7;
         SetFanSpeed set_fan_speed = 8;
         SetServoPosition set_servo_position = 9;
+        SetLedStripColors set_led_strip = 10;
     }
 }
 
@@ -51,6 +67,11 @@ message SetFanSpeed {
 message SetServoPosition {
     // Position in microseconds.
     float position = 1;
+}
+
+message SetLedStripColors {
+    string name = 1;
+    bytes data = 2;
 }
 
 message MoveToCommand {
@@ -91,11 +112,11 @@ message ConfigureCommand {
     double max_junction_deviation = 1;
 }
 
-message GetPositionRequest {
+message GetLastPositionRequest {
 
 }
 
-message GetPositionResponse {
+message GetLastPositionResponse {
     VectorProto position = 1;
 }
 

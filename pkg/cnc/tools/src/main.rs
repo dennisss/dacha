@@ -12,6 +12,7 @@ use cnc_tools::skew::*;
 use cnc_tools::leveling::*;
 use cnc_tools::benchmark::*;
 use cnc_tools::motion_analysis::*;
+use cnc_tools::hardware_testing::*;
 
 #[derive(Args)]
 struct Args {
@@ -23,7 +24,8 @@ define_arg_command!(Mode {
     SkewCalibrationCommand = "skew-calibration",
     LevelingCommand = "leveling",
     BenchmarkCommand = "benchmark",
-    MotionAnalysisCommand = "motion-analysis"
+    MotionAnalysisCommand = "motion-analysis",
+    TestLedStripsCommand = "test-led-strips"
 });
 
 #[executor_main]
