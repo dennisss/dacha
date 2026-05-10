@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use std::collections::HashMap;
+use std::collections::VecDeque;
 
 use base_error::*;
 use common::bytes::Bytes;
@@ -8,6 +9,7 @@ use common::hash::FastHasherBuilder;
 use executor::channel::oneshot;
 use executor::sync::{AsyncMutex, AsyncRwLock, AsyncVariable, SyncMutex};
 use executor_multitask::{impl_resource_passthrough, ServiceResourceGroup};
+use executor::bundle::TaskResultBundle;
 use cnc_monitor_proto::cnc::*;
 use executor::lock;
 use cluster_client::ClusterMetaClient;
@@ -38,15 +40,28 @@ struct Shared {
     change_publisher: ChangePublisher,
     stub: ControllerStub,
     axis_metrics: HashMap<String, Vec<MetricStream>, FastHasherBuilder>,
+
+    /// TODO: Eventually everything should ideally go through here rather than directly using the stub.
+    request_queue: AsyncVariable<RequestQueue>
 }
 
+#[derive(Default)]
 struct State {
     connected: bool,
     axes: HashMap<String, AxisData, FastHasherBuilder>,
 
     // TODO: We need to update the position stored in here if it is changed by other stuff.
     // TODO: Move stuff that we need out of the 'cnc_tools' crate so that we don't have a dependency on 'cnc_controller'
-    gcode_state: cnc_tools::gcode::CommandConverter,
+    gcode_state: Option<cnc_tools::gcode::CommandConverter>,
+}
+
+#[derive(Default)]
+struct RequestQueue {
+    last_id: u64,
+    queue: VecDeque<ExecuteRequest>,
+
+    // TODO: Must clear all of these and prevent new entries if the background threads fail.
+    callbacks: HashMap<u64, oneshot::Sender<Result<(), SendCommandError>>, FastHasherBuilder>
 }
 
 impl RpcConnectionController {
@@ -67,12 +82,7 @@ impl RpcConnectionController {
 
         let stub = ControllerStub::new(channel);
 
-        let mut state = State {
-            connected: false,
-            axes: HashMap::default(),
-            // TODO: Make this more dynamic.
-            gcode_state: cnc_tools::gcode::CommandConverter::new(vecxd!(0., 0., 0., 0.))
-        };
+        let mut state = State::default();
 
         let mut axis_metrics = HashMap::default();
 
@@ -124,9 +134,11 @@ impl RpcConnectionController {
             change_publisher,
             stub,
             axis_metrics,
+            request_queue: AsyncVariable::default()
         });
 
         resources.spawn_interruptable("RpcPoller", Self::state_poller(shared.clone())).await;
+        resources.spawn_interruptable("RpcStreamer", Self::request_streamer(shared.clone())).await;
 
         Ok(Self {
             resources,
@@ -255,6 +267,65 @@ impl RpcConnectionController {
         Ok(())
     }
 
+    async fn request_streamer(shared: Arc<Shared>) -> Result<()> {
+        let request_context = rpc::ClientRequestContext::default();
+
+        let (req, res) = shared.stub.ExecuteStream(&request_context).await;
+
+        let mut bundle = TaskResultBundle::new();
+        bundle.add("sender", Self::request_sender(shared.clone(), req));
+        bundle.add("receiver", Self::response_receiver(shared.clone(), res));
+
+        bundle.join().await
+    }
+
+    async fn request_sender(
+        shared: Arc<Shared>,
+        mut req_stream: rpc::ClientStreamingRequest<ExecuteRequest>
+    ) -> Result<()> {
+
+        loop {
+            let req = {
+                let mut queue = shared.request_queue.lock().await?.enter();
+                if let Some(req) = queue.queue.pop_front() {
+                    queue.exit();
+                    req
+                } else {
+                    queue.wait().await;
+                    continue;
+                }
+            };
+
+            if !req_stream.send(&req).await {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn response_receiver(
+        shared: Arc<Shared>,
+        mut res_stream: rpc::ClientStreamingResponse<ExecuteResponse>
+    ) -> Result<()> {
+
+        while let Some(res) = res_stream.recv().await {
+
+            lock!(queue <= shared.request_queue.lock().await?, {
+
+                let callback = queue.callbacks
+                    .remove(&res.request_id())
+                    .ok_or_else(|| err_msg("No request waiting for a callback"))?;
+
+                callback.send(Ok(()));
+
+                Result::<_, Error>::Ok(())
+            })?;
+        }
+
+        res_stream.finish().await
+    }
+
 
 }
 
@@ -336,30 +407,11 @@ impl ConnectionController for RpcConnectionController {
     // TODO: Implement the timeout.
     // tODO: Get rid of this and only use the enqueue version?
     async fn send_command_impl(&self, line: Bytes, timeout: Duration) -> Result<()> {
-        let mut gcode_commands = cnc_tools::gcode::parse_gcode_string(&line)?;
-
-        let mut commands = vec![];
-
-        lock!(state <= self.shared.state.lock().await?, {
-            for cmd in gcode_commands {
-                state.gcode_state.next(&cmd, &mut commands)?;
-            }
-
-            Result::<_, Error>::Ok(())
-        })?;
-
-        if !commands.is_empty() {
-            let mut request = ExecuteRequest::default();
-            for cmd in commands {
-                request.add_commands(cmd);
-            }
-
-            self.execute(&request).await?;
-        }
-
+        self.enqueue_command_impl(line, timeout).await?.wait().await?;
         Ok(())
     }
 
+    // TODO: Request timeouts.
     async fn enqueue_command_impl(
         &self,
         line: Bytes,
@@ -367,11 +419,62 @@ impl ConnectionController for RpcConnectionController {
     ) -> Result<PendingCommand> {
         // TODO: Have a proper enqueue (probably need to wait for the heeader from the server).
 
-        self.send_command_impl(line, timeout).await?;
+        // self.send_command_impl(line, timeout).await?;
+
+        let mut gcode_commands = cnc_tools::gcode::parse_gcode_string(&line)?;
+
+        let last_position = self.last_position().await?;
+
+        let mut commands = vec![];
+
+        lock!(state <= self.shared.state.lock().await?, {
+            
+            let gcode_state = match &mut state.gcode_state {
+                Some(v) => v,
+                None => state.gcode_state.insert(
+                    cnc_tools::gcode::CommandConverter::new(last_position)
+                )
+            };
+            
+            for cmd in gcode_commands {
+                gcode_state.next(&cmd, &mut commands)?;
+            }
+
+            Result::<_, Error>::Ok(())
+        })?;
 
         let (sender, receiver) = oneshot::channel();
-        sender.send(Ok(()));
-        Ok(PendingCommand::new(receiver))
+
+        let res = PendingCommand::new(receiver);
+
+        if commands.is_empty() {
+            // TODO: Should this wait for all previous commands to finish?
+            sender.send(Ok(()));
+            return Ok(res);
+        }
+
+        let mut request = ExecuteRequest::default();
+        for mut cmd in commands {
+            if cmd.has_move_to() {
+                cmd.move_to_mut().set_wait_for_completion(true);
+            }
+            
+            request.add_commands(cmd);
+        }
+
+        lock!(queue <= self.shared.request_queue.lock().await?, {
+
+            let id = queue.last_id + 1;
+            queue.last_id = id;
+
+            request.set_request_id(id);
+
+            queue.queue.push_back(request);
+            queue.callbacks.insert(id, sender);
+            queue.notify_all();
+        });
+
+        Ok(res)
     }
 
     async fn full_stop(&self) -> Result<()> {

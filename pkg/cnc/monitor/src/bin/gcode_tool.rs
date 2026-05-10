@@ -1,5 +1,10 @@
 /*
 
+cargo run --bin gcode_tool -- \
+    testdata/cnc/voron0/voron0-benchy-fast.gcode \
+    --preset=voron0 \
+    --output_dir=data/layers
+
 cargo run --bin gcode_tool --release -- \
     usb_power_switch.gcode \
     --preset=makera_carvera \
@@ -117,6 +122,13 @@ async fn main() -> Result<()> {
     for (i, data) in vis.layer_jpegs.iter().enumerate() {
         file::write(args.output_dir.join(format!("{:08}.jpg", i)), data).await?;
     }
+
+    println!("Player preprocessor:");
+    cnc_monitor::player_preprocessor::PlayerProgramPreprocessor::run_standalone(
+        &args.path,
+        Some(vis.proto),
+    ).await?;
+
 
     Ok(())
 }

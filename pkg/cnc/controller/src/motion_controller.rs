@@ -20,6 +20,7 @@ use executor_multitask::{TaskResource, impl_resource_passthrough};
 use cnc_controller_proto::cnc::*;
 use executor::child_task::ChildTask;
 use executor::sync::AsyncVariable;
+use executor::channel::oneshot;
 use cnc::constrained_vector::constrained_vector;
 use cnc::quadratic_stepper_motion::QuadraticStepperMotion;
 
@@ -175,6 +176,9 @@ struct State {
     hit_time: Option<DevicesTimeVector>,
 
     hit_position: Option<VectorXd>,
+
+    /// TODO: Clear this when active is set to false.
+    completion_callbacks: VecDeque<(u64, oneshot::Sender<Instant>)>
 }
 
 enum Action {
@@ -211,6 +215,9 @@ struct ActiveState {
     queue_consumed_time: f64,
 
     queue: StepperMotionGenerator,
+
+    /// Times at which the motions with the given ids will finish.
+    completion_times: VecDeque<(u64, Instant)>,
 }
 
 /// NOTE: This is exclusively owned by the main background thread so that most operations can be
@@ -482,6 +489,7 @@ impl MotionController {
                 motor_position_offsets: vec![0; config.motors().len()],
                 hit_time: None,
                 hit_position: None,
+                completion_callbacks: VecDeque::new(),
             }),
             logging_channel
         });
@@ -889,7 +897,8 @@ impl MotionController {
                             shared.config.clone(),
                             &state.motor_positions,
                             &remote_start_time
-                        )
+                        ),
+                        completion_times: VecDeque::new(),
                     });
                 }
             }
@@ -945,7 +954,7 @@ impl MotionController {
                         if max_planner_time_step >= PLANNER_STEP_SIZE {
                             active_state.planner_consumed_time += PLANNER_STEP_SIZE;
                             
-                            let mut base_time = state.planner.start_time();
+                            let base_time = state.planner.start_time();
 
                             // TODO: Check these comments.
                             // NOTE: We only use the end_position and time in each of these objects.
@@ -954,27 +963,40 @@ impl MotionController {
                             state.planner.next(active_state.planner_consumed_time, &mut motions);
 
                             if motions.len() > 0 && shared.logging_channel.active() {
+                                let mut cur_time = base_time;
+
                                 let mut entry = LogEntry::default();
 
-                                for motion in &motions {
+                                for (motion, _) in &motions {
                                     let m = entry.linear_motions_mut().new_motions();
                                     m.set_time(
                                         active_state.start_primary_time
-                                        .add_secs(base_time)
+                                        .add_secs(cur_time)
                                         .raw()
                                     );
 
                                     m.set_motion(motion.to_proto());
 
-                                    base_time += motion.duration;
+                                    cur_time += motion.duration;
                                 }
 
                                 shared.logging_channel.send(entry);
                             }
 
+
+                            let mut cur_time = base_time;
                             for motion in motions {
+                                // TODO: Use the start_primary_time.
+                                if motion.1.done {
+                                    cur_time += motion.0.duration;
+
+                                    let completion_time = active_state.start_time + Duration::from_secs_f64(cur_time);
+                                    active_state.completion_times.push_back((motion.1.motion_id, completion_time));
+                                }
+
+                                // TODO: Eventually pass through the ids and do done state tracking at the step level.
                                 // TODO: Should warn if the motion was delayed relative to the previous one.
-                                active_state.queue.enqueue(motion);
+                                active_state.queue.enqueue(motion.0);
                             }
                         }
                     }
@@ -983,7 +1005,33 @@ impl MotionController {
                     // start_position to account for drift due to step quantization.
 
                 }
+             
                 
+
+
+            }
+
+            // NOTE: 
+            // TODO: Once it is available, send a completion 
+            if let Some(active_state) = &mut enabled_state.active_state {
+                while let Some((id, completion_time)) = active_state.completion_times.pop_front() {
+                    // if *completion_time < now {
+                    //     break;
+                    // }
+
+                    while let Some((pending_id, _)) = state.completion_callbacks.front() {
+                        if *pending_id > id {
+                            break;
+                        }
+
+                        let (_, callback) = state.completion_callbacks.pop_front().unwrap();
+                        callback.send(completion_time);
+                    }
+
+                    // active_state.completion_times.pop_front();
+                }
+
+            
             }
         });
 
@@ -1368,7 +1416,8 @@ impl MotionController {
         Ok(())
     }
 
-    pub async fn move_to(&self, pos: VectorXd, feed_rate: f64) -> Result<()> {
+    // TODO: Always return a receiver.
+    pub async fn move_to(&self, pos: VectorXd, feed_rate: f64) -> Result<Option<oneshot::Receiver<Instant>>> {
         self.move_to_with_options(pos, &MoveOptions::default_for_feed_rate(feed_rate)).await
     }
 
@@ -1376,7 +1425,7 @@ impl MotionController {
     ///
     /// Note that this blocks until the movement is schedules but the actual motion
     /// will happen later.
-    pub async fn move_to_with_options(&self, pos: VectorXd, options: &MoveOptions) -> Result<()> {
+    pub async fn move_to_with_options(&self, pos: VectorXd, options: &MoveOptions) -> Result<Option<oneshot::Receiver<Instant>>> {
         // TODO: Basically only allow this in the Enabled mode.
 
         // TODO: Quantize to step unit boundaries.
@@ -1393,9 +1442,15 @@ impl MotionController {
 
             let next_pos = pos - &state.position_offset;
 
-            state.planner.move_to_with_options(next_pos, options)?;
+            let id = state.planner.move_to_with_options(next_pos, options)?;
 
-            Ok(())
+            if let Some(id) = id {
+                let (sender, receiver) = oneshot::channel();
+                state.completion_callbacks.push_back((id, sender));
+                return Ok(Some(receiver));
+            }
+
+            Ok(None)
         })
     }
 
@@ -1470,7 +1525,7 @@ impl MotionControllerLinearPlanner {
     pub fn next(
         &mut self,
         max_time: f64,
-        out: &mut Vec<LinearMotion>
+        out: &mut Vec<(LinearMotion, LinearMotionId)>
     ) {
         self.inner.next(max_time, out);
     }
@@ -1499,7 +1554,7 @@ impl MotionControllerLinearPlanner {
         self.inner.clear();
     }
 
-    pub fn move_to(&mut self, pos: VectorXd, feed_rate: f64) -> Result<()> {
+    pub fn move_to(&mut self, pos: VectorXd, feed_rate: f64) -> Result<Option<u64>> {
         self.move_to_with_options(pos, &MoveOptions::default_for_feed_rate(feed_rate))
     }
 
@@ -1507,7 +1562,7 @@ impl MotionControllerLinearPlanner {
         &mut self,
         pos: VectorXd,
         options: &MoveOptions
-    ) -> Result<()> {
+    ) -> Result<Option<u64>> {
         if pos.len() != (self.config.axes().len() as usize) {
             return Err(err_msg("Wrong size tensor"));
         }
@@ -1522,7 +1577,7 @@ impl MotionControllerLinearPlanner {
         let dir = &pos - last_pos;
 
         if dir.norm() < 0.001 {
-            return Ok(());
+            return Ok(None);
         }
 
 
@@ -1568,9 +1623,9 @@ impl MotionControllerLinearPlanner {
 
         // TODO: Warn if we are adding to an empty one while active 
 
-        self.inner.move_to(pos, speed, acceleration);
+        let id = self.inner.move_to(pos, speed, acceleration);
 
-        Ok(())
+        Ok(Some(id))
     }
 
     fn expand_coordinated_rate(&self, rate: f64, dir: &VectorXd, mut speed_limits: Vec<f64>) -> f64 {

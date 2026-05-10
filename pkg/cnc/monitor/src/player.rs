@@ -67,6 +67,7 @@ struct Shared {
     machine_id: u64,
     machine_config: Arc<AsyncRwLock<MachineConfigContainer>>,
     file: FileReference,
+    file_preview: Option<ProgramPreviewProto>,
     state: AsyncVariable<State>,
     change_publisher: ChangePublisher,
     db: Arc<ProtobufDB>,
@@ -79,6 +80,8 @@ struct Shared {
     // This is equivalent to checking if state.state is a terminal state, but doesn't require
     // locking a mutex.
     terminated: AtomicBool,
+
+    capture_event_receiver: channel::Receiver<()>,
 }
 
 struct State {
@@ -87,12 +90,18 @@ struct State {
     // ETA information and elapsed time.
 }
 
+struct EnqueuedCommand {
+    command: PendingCommand,
+    capture_frame_after_line: bool,
+}
+
 impl Player {
     /// Creates a new player instance which is initially paused.
     pub async fn create(
         machine_id: u64,
         machine_config: Arc<AsyncRwLock<MachineConfigContainer>>,
         file: FileReference,
+        file_preview: Option<ProgramPreviewProto>,
         serial_interface: Arc<dyn ConnectionController>,
         change_publisher: ChangePublisher,
         db: Arc<ProtobufDB>,
@@ -163,10 +172,13 @@ impl Player {
             out.set_index(obj.index());
         }
 
+        let (capture_event_sender, capture_event_receiver) = channel::bounded(1);
+
         let shared = Arc::new(Shared {
             machine_id,
             machine_config,
             file,
+            file_preview,
             use_silent_mode,
             use_compact_lines,
             must_keep_alive,
@@ -178,11 +190,12 @@ impl Player {
             }),
             terminated: AtomicBool::new(false),
             change_publisher,
+            capture_event_receiver
         });
 
         let task = TaskResource::spawn_interruptable(
             "cnc::Player",
-            Self::run(shared.clone(), serial_interface, leveler),
+            Self::run(shared.clone(), serial_interface, leveler, capture_event_sender),
         );
 
         Ok(Self { shared, task })
@@ -263,6 +276,7 @@ impl Player {
         shared: Arc<Shared>,
         serial_interface: Arc<dyn ConnectionController>,
         leveler: Option<Arc<ZGridLeveler>>,
+        capture_event_sender: channel::Sender<()>,
     ) -> Result<()> {
         let mut bundle = TaskResultBundle::new();
 
@@ -284,6 +298,7 @@ impl Player {
         let (processor, lines) = PlayerProgramPreprocessor::new(
             shared.use_silent_mode,
             shared.use_compact_lines,
+            shared.file_preview.clone(),
             elements,
             current_position,
             leveler,
@@ -292,7 +307,7 @@ impl Player {
 
         bundle.add(
             "CommandLoop",
-            Self::run_command_loop(shared.clone(), lines, serial_interface),
+            Self::run_command_loop(shared.clone(), lines, serial_interface, capture_event_sender),
         );
 
         let result = bundle.join().await;
@@ -340,6 +355,7 @@ impl Player {
         shared: Arc<Shared>,
         lines: channel::Receiver<Option<ParsedLine>>,
         serial_interface: Arc<dyn ConnectionController>,
+        capture_event_sender: channel::Sender<()>,
     ) -> Result<()> {
         /*
         In grbl, jog cancels would also be helpful.
@@ -367,7 +383,7 @@ impl Player {
         let mut received_all_lines = false;
         let mut newly_enqueued_lines = vec![];
 
-        let mut enqueued_commands = VecDeque::<PendingCommand>::new();
+        let mut enqueued_commands = VecDeque::<EnqueuedCommand>::new();
 
         // TODO: Throttle this loop
         while enqueued_commands.len() > 0 || current_action.is_some() || !received_all_lines {
@@ -473,7 +489,7 @@ impl Player {
                 // - we have no more lines to enqueue
                 // - we are about to run an action that depends on these commands being executed
                 //   first.
-                if !cmd.ready().await
+                if !cmd.command.ready().await
                     && enqueued_commands.len() + 1 < shared.max_enqueued_commands
                     && !received_all_lines
                     && current_action.is_none()
@@ -482,7 +498,13 @@ impl Player {
                     break;
                 }
 
-                cmd.wait().await?;
+                cmd.command.wait().await?;
+
+                // TODO: Maybe make command waiting asyncronous so that this always happens immediately after
+                // the command resolves.
+                if cmd.capture_frame_after_line {
+                    let _ = capture_event_sender.try_send(());
+                }
             }
 
             if let Some(action) = &current_action {
@@ -693,11 +715,13 @@ impl Player {
 
                 // TODO: Respect max_enqueued_commands?
                 for cmd in parsed_line.commands_to_send.drain(..) {
-                    enqueued_commands.push_back(
-                        serial_interface
+                    enqueued_commands.push_back(EnqueuedCommand {
+                        command: serial_interface
                             .enqueue_command(cmd, DEFAULT_COMMAND_TIMEOUT)
                             .await?,
-                    );
+                        // TODO: Only set on the last command in the line
+                        capture_frame_after_line: parsed_line.capture_frame_after_line
+                    });
                 }
 
                 if parsed_line.progress_updated {
@@ -715,6 +739,7 @@ impl Player {
                 }
             }
 
+            // TODO: Probably do this once we get a response to a line.
             lock!(state <= shared.state.lock().await?, {
                 let num = state.proto.line_number() + (newly_enqueued_lines.len() as u32);
                 state.proto.set_line_number(num);
@@ -835,6 +860,10 @@ impl Player {
         Self::publish_change(&self.shared);
 
         Ok(())
+    }
+
+    pub fn capture_events(&self) -> channel::Receiver<()> {
+        self.shared.capture_event_receiver.clone()
     }
 
     /// CANCEL SAFE

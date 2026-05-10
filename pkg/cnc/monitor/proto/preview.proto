@@ -46,6 +46,15 @@ message ProgramLayer {
     optional uint32 tool_index = 5;
 
     ProgramLayerImage image = 6;
+
+    repeated Point2f convex_hull = 7;
+
+    Point2f camera_capture_point = 8;
+}
+
+message Point2f {
+    float x = 1;
+    float y = 2;
 }
 
 message ProgramLayerImage {

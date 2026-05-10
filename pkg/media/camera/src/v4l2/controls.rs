@@ -46,7 +46,11 @@ pub async fn controls_to_proto(
 
                 let state = state.new_states();
                 state.set_id(id);
-                state.current_value_mut().set_int32_value(device.get_control_value(&control).await?);
+
+                // Control: Exposure, Dynamic Framerate (BOOLEAN; min: 0, max: 1, )
+                // Error: [EIO] I/O error
+
+                state.current_value_mut().set_int32_value(device.get_control_value(&control).await.unwrap_or(0));
             }
             v4l2::ControlType::BOOLEAN => {
                 let mut prop = current_group.new_children();
@@ -57,7 +61,7 @@ pub async fn controls_to_proto(
                 // TODO: Convert to a bool
                 let state = state.new_states();
                 state.set_id(id);
-                state.current_value_mut().set_int32_value(device.get_control_value(&control).await?);
+                state.current_value_mut().set_int32_value(device.get_control_value(&control).await.unwrap_or(0));
             }
             v4l2::ControlType::MENU | v4l2::ControlType::INTEGER_MENU => {
                 let mut prop = current_group.new_children();

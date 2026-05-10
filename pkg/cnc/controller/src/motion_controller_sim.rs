@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::collections::HashSet;
 
 use common::errors::*;
+use common::hash::FastHasherBuilder;
 use math::matrix::VectorXd;
 use math::vecxd;
 use cnc_controller_proto::cnc::*;
@@ -32,6 +34,7 @@ pub struct MotionControllerSimulator {
     max_cycle_commands: usize,
     max_cycle_commands_per_motor: usize,
     linear_stats: LinearMotionStats,
+    pending_ids: HashSet<u64, FastHasherBuilder>
 }
 
 impl MotionControllerSimulator {
@@ -52,6 +55,7 @@ impl MotionControllerSimulator {
             max_cycle_commands: 0,
             max_cycle_commands_per_motor: 0,
             linear_stats: LinearMotionStats::default(),
+            pending_ids: HashSet::default(),
         }
     }
 
@@ -65,10 +69,20 @@ impl MotionControllerSimulator {
 
                 let options = MoveOptions::from_proto(m.options());
 
-                self.planner.move_to_with_options(
+                let id = self.planner.move_to_with_options(
                     VectorXd::from_proto(m.position()) - &self.position_offset,
                     &options
                 )?;
+
+                if let Some(id) = id {
+                    if self.pending_ids.contains(&id) {
+                        return Err(err_msg("Duplicate motion id"));
+                    }
+                    self.pending_ids.insert(id);
+                } else {
+                    println!("<missing id>");
+                }
+
             }
 
             if c.has_set_position() {
@@ -104,6 +118,10 @@ impl MotionControllerSimulator {
 
         self.linear_stats.print();
 
+        if !self.pending_ids.is_empty() {
+            return Err(format_err!("Not all motions finished: {:?}", self.pending_ids));
+        }
+
         Ok(())
 
     }
@@ -129,8 +147,17 @@ impl MotionControllerSimulator {
 
             // TODO: Perform test this.
             self.planner.next(planner_time, &mut out);
-            for motion in out {
+            for (motion, motion_id) in out {
                 self.linear_stats.add(&motion);
+
+                if motion_id.done {
+                    if !self.pending_ids.contains(&motion_id.motion_id) {
+                        return Err(err_msg("Duplicate completion event?"));
+                    }
+
+                    self.pending_ids.remove(&motion_id.motion_id);
+                }
+
                 queue.enqueue(motion);
             }
         }

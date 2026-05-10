@@ -264,6 +264,9 @@ message CameraConfig {
 
     // If true, we will record video from this camera when the player is in a paused state.
     bool record_while_paused = 4;
+    
+    // If true, record a timelapse using key events emitted by the program player.
+    bool record_timelapse = 5;
 }
 
 message SyslogHandlerConfig {

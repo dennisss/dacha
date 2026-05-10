@@ -30,3 +30,17 @@ axes: [
 
     { id: "T" type: HEATER name: "Hotend" collect { min_value: 30 } }
 ]
+
+tools {
+    num_slots: 0
+    loaded_tools: [
+        {
+            index: 0
+            name: "Extruder (0.4mm)"
+            extruder {
+                nozzle_diameter: 0.4
+                filament_diameter: 1.75
+            }
+        }
+    ]
+}

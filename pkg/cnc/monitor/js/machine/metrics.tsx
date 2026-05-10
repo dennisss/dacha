@@ -330,6 +330,8 @@ export class MetricsBox extends React.Component<MetricsBoxProps, MetricsBoxState
 
         // TODO: Need a loading spinner.
 
+        // TODO: Sometimes this requires a page refresh to get the latest data (it seems to still scroll but not always get the data.)
+
         return (
             <Card id="metrics" header="Metrics">
                 <CardBody>

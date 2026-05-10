@@ -1,8 +1,10 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::errors::*;
 use math::vecxd;
+use executor::child_task::ChildTask;
+use executor::channel;
 use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
 use cluster_client::ClusterServer;
@@ -34,14 +36,49 @@ const SERVICE_ACL_PROTO: &'static str = r#"
 
 
 struct ControllerServiceImpl {
-    machine: MachineController,
+    shared: Arc<Shared>
+}
+
+struct Shared {
+    machine: MachineController
 }
 
 impl ControllerServiceImpl {
     async fn create(config: ControllerConfig) -> Result<Self> {
         let machine = MachineController::create(config).await?;
-        Ok(Self { machine })
+        Ok(Self { shared: Arc::new(Shared { machine }) })
     }
+
+    async fn execute_reader(
+        shared: Arc<Shared>,
+        mut req_stream: rpc::ServerStreamRequest<ExecuteRequest>,
+        responses: channel::Sender<Result<ExecuteResponse>>,
+    ) -> Result<()> {
+        while let Some(req) = req_stream.recv().await? {
+            let (res, waiter) = shared.machine.execute(&req).await?;
+
+            let responses = responses.clone();
+
+            executor::spawn(async move {
+
+                // TODO: Error handling and ensure this eventually terminates.
+                if let Some(waiter) = waiter {
+                    if let Ok(finish_time) = waiter.recv().await {
+                        let now = Instant::now();
+                        if now < finish_time {
+                            executor::sleep(finish_time - now).await;
+                        }
+                    }
+                }
+
+                let _ = responses.send(Ok(res)).await;
+
+            });
+        }
+
+        Ok(())
+    }
+
 }
 
 #[async_trait]
@@ -51,7 +88,7 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<GetStateRequest>,
         response: &mut rpc::ServerResponse<GetStateResponse>,
     ) -> Result<()> {
-        response.value = self.machine.get_state().await?;
+        response.value = self.shared.machine.get_state().await?;
         Ok(())
     }
 
@@ -60,8 +97,29 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<ExecuteRequest>,
         response: &mut rpc::ServerResponse<ExecuteResponse>,
     ) -> Result<()> {
-        response.value = self.machine.execute(&request).await?;
+        response.value = self.shared.machine.execute(&request).await?.0;
         Ok(())
+    }
+
+    async fn ExecuteStream(
+        &self,
+        request: rpc::ServerStreamRequest<ExecuteRequest>,
+        response: &mut rpc::ServerStreamResponse<ExecuteResponse>,
+    ) -> Result<()> {
+
+        let (sender, receiver) = channel::unbounded();
+
+        let shared = self.shared.clone();
+        let thread = ChildTask::spawn(async move {
+            if let Err(e) = Self::execute_reader(shared, request, sender.clone()).await {
+                let _ = sender.send(Err(e)).await;
+            }
+        });
+
+        loop {
+            let res = receiver.recv().await??;
+            response.send(res).await?;
+        }
     }
 
     async fn GetLastPosition(
@@ -69,7 +127,7 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<GetLastPositionRequest>,
         response: &mut rpc::ServerResponse<GetLastPositionResponse>,
     ) -> Result<()> {
-        response.value = self.machine.get_last_position().await?;
+        response.value = self.shared.machine.get_last_position().await?;
         Ok(())
     }
 
@@ -80,7 +138,7 @@ impl ControllerService for ControllerServiceImpl {
         request: rpc::ServerRequest<ReadLogRequest>,
         response: &mut rpc::ServerStreamResponse<ReadLogResponse>
     ) -> Result<()> {
-        let mut subscriber = self.machine.subscribe_to_log();
+        let mut subscriber = self.shared.machine.subscribe_to_log();
 
         response.send_head().await?;
 

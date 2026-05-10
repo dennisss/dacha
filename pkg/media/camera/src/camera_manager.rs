@@ -429,7 +429,7 @@ impl CameraManager {
 
                 chosen_node_name = Some((group_id.clone(), capture_op.format(), capture_op.clone()));
 
-                eprintln!("Selecting camera V4L2 device: {}; Format: {:?}", device.path.as_str(), capture_op.format().pixel_format);
+                eprintln!("Selecting camera V4L2 device: {}; Format: {:?}", device.path.as_str(), capture_op.format());
                 graph.add_node(&group_id, capture_op, &[]);
 
                 break;

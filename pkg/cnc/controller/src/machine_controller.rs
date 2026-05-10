@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::errors::*;
 use math::matrix::VectorXd;
@@ -12,6 +12,7 @@ use rpc_util::NamedPortArg;
 use file::LocalPathBuf;
 use executor::channel;
 use executor::lock_async;
+use executor::channel::oneshot;
 
 use crate::devices::*;
 use crate::config::*;
@@ -90,7 +91,7 @@ impl MachineController {
         out.set_position(self.get_last_position().await?.position().clone());
 
         if self.heater_controllers.len() > 0 {
-            self.heater_controllers[9].get_state(&mut out).await?;
+            self.heater_controllers[0].get_state(&mut out).await?;
         }
         
         Ok(out)
@@ -102,8 +103,15 @@ impl MachineController {
         Ok(res)
     }
 
-    pub async fn execute(&self, request: &ExecuteRequest) -> Result<ExecuteResponse> {
+    // TODO: AS much as possible, we want to adjust the behavior of this such that all commands
+    // are enqueued (or executed) immediately and any long running delay 
+    // (so that a sequence of execute() commands can be chained to safely enqueue a bunch of stuff
+    //  one after another)
+    pub async fn execute(&self, request: &ExecuteRequest) -> Result<(ExecuteResponse, Option<oneshot::Receiver<Instant>>)> {
         let mut res = ExecuteResponse::default();
+        res.set_request_id(request.request_id());
+
+        let mut completion_event = None;
 
         /*
         // TODO: At most one execute request should be allowed to run at a time.
@@ -160,7 +168,15 @@ impl MachineController {
                     }
 
                 } else {
-                    self.motion_controller.move_to_with_options(v, &options).await?;
+                    let waiter = self.motion_controller.move_to_with_options(v, &options).await?;
+
+                    // TODO: Need error detection and guarantees that this eventually finishes.
+                    if cmd.wait_for_completion() {
+                        if let Some(waiter) = waiter {
+                            completion_event = Some(waiter);
+                        }
+                    }
+
                 }
             }
 
@@ -380,7 +396,7 @@ impl MachineController {
             }
         }
 
-        Ok(res)
+        Ok((res, completion_event))
     }
 
     // TODO: Failure of this should trigger an alarm (even if done by a remote script).

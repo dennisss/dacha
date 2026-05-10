@@ -1621,11 +1621,18 @@ impl MonitorImpl {
                 .into());
             }
 
+            // TODO: If we need t o do a timelapse, verify this is actually finished processing before we start.
+            let machine_config = entry.config.read().await?.value().clone();
+            let preview = shared.program_preview_manager
+                .get(file_ref.clone(), &machine_config, false).await?;
+
             let player = Arc::new(
                 Player::create(
                     machine_id,
                     entry.config.clone(),
                     file_ref.clone(),
+                    // TODO: Passthrough the whole ProgramPreviewReference?
+                    Some(preview.proto().clone()),
                     serial_controller.clone(),
                     shared.changes.publisher(),
                     shared.db.clone(),

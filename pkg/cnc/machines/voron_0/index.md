@@ -300,13 +300,14 @@ Fasteners:
     - 2 x M3 6mm button head screws
     - 2 x M3 3mm short standard heatset inserts (not the voron type, but the CNC kitchen sized ones)
 - Attaching a fan to the aluminum bed
-    - 4 x M3 16mm screws for the fan
+    - 4 x M3 12mm screws for the fan
     - Make sure that air is blowing up (towards the heated bed) to avoid hot air overheating the fan.
 
 Fasteners for the heated bed (bottom to top):
 
 - 3 x M3 4mm screws going up into the standoffs
 - 3 x M3 4.5mm hex; 8mm height stainless steel standoff
+    - Both sides of the standoffs should be threaded to accept M3 screws. 
     - Maybe include some washers if the bed doesn't end up level.
 - 3 x M3 10mm button head screws going down into the standoffs (through the heated bed aluminum block)
 

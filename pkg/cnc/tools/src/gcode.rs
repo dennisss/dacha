@@ -118,8 +118,10 @@ impl CommandConverter {
                 out.push(cmd);
             }
             // LinearMove(LinearMove { inner: Move { x: Some(51.312), y: Some(57.403), z: None, e: Some(0.29417), feed_rate: None } })
-            gcode::Command::LinearMove(cmd) => {
+            gcode::Command::RapidMove(gcode::RapidMove { inner }) |
+            gcode::Command::LinearMove(gcode::LinearMove { inner }) => {
 
+                // TODO: Supporting this is necessary for the UI to work.
                 if !self.absolute_mode_set {
                     return Err(err_msg("Only absolute moves supported"));
                 }
@@ -128,23 +130,23 @@ impl CommandConverter {
                 let start_machine_position = &self.last_machine_position;
 
                 // TODO: Use deref and get rid of the inners.
-                if let Some(v) = cmd.inner.x {
+                if let Some(v) = inner.x {
                     self.last_position[0] = v;
                 }
-                if let Some(v) = cmd.inner.y {
+                if let Some(v) = inner.y {
                     self.last_position[1] = v;
                 }
-                if let Some(v) = cmd.inner.z {
+                if let Some(v) = inner.z {
                     self.last_position[2] = v;
                 }
-                if let Some(v) = cmd.inner.e {
+                if let Some(v) = inner.e {
                     if self.extruder_relative_mode {
                         self.last_position[3] += v;
                     } else {
                         self.last_position[3] = v;
                     }
                 }
-                if let Some(v) = cmd.inner.feed_rate {
+                if let Some(v) = inner.feed_rate {
                     // The value is in mm/min
                     self.last_feed_rate = (v.to_f64() / 60.0);
                 }

@@ -13,6 +13,10 @@ service Controller {
 
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 
+    // Use this if you need to enqueue many requests with some total ordering between requests.
+    // TODO: Think about whether or not we should decouple errors between stream items.
+    rpc ExecuteStream (stream ExecuteRequest) returns (stream ExecuteResponse);
+
     rpc GetLastPosition (GetLastPositionRequest) returns (GetLastPositionResponse);
 
     rpc ReadLog (ReadLogRequest) returns (stream ReadLogResponse);
@@ -33,6 +37,9 @@ message GetStateResponse {
 
 message ExecuteRequest {
     repeated Command commands = 1;
+
+    // Used in ExecuteStream to correlate responses with requests.
+    uint64 request_id = 2;
 }
 
 message ExecuteResponse {
@@ -41,6 +48,7 @@ message ExecuteResponse {
 
     VectorProto hit_position = 2;
 
+    uint64 request_id = 3;
 }
 
 message Command {
@@ -86,6 +94,8 @@ message MoveToCommand {
     bool towards_endstop = 7;
 
     MoveOptionsProto options = 9;
+
+    bool wait_for_completion = 10;
 
     reserved 5, 6;
 }

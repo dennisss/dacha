@@ -17,6 +17,15 @@ use crate::constrained_vector::*;
 const MIN_RESIDUAL_MOTION_DURATION: f64 = 0.001; // 1ms
 
 
+
+#[derive(Clone, Debug)]
+pub struct LinearMotionId {
+    pub motion_id: u64,
+
+    /// If true, then this is the final LinearMotion to be produced with the given id.
+    pub done: bool,
+}
+
 /// Plans a sequence of linear motions that are chained one
 /// immediately after another in time.
 ///
@@ -41,9 +50,12 @@ pub struct LinearMotionPlanner  {
     start_position: VectorXd,
     start_velocity: VectorXd,
     queue: VecDeque<LinearMotionQueueEntry>,
+    last_id: u64,
 }
 
 struct LinearMotionQueueEntry {
+    id: u64,
+
     constraints: LinearMotionConstraints,
  
     /// Maximum velocity magnitude at which we can start this motion such the
@@ -88,6 +100,7 @@ impl LinearMotionPlanner {
             start_velocity: VectorXd::zero_with_shape(start_position.rows(), 1),
             queue: VecDeque::new(),
             config,
+            last_id: 0,
         }
     }
 
@@ -152,7 +165,7 @@ impl LinearMotionPlanner {
     // TODO: If there are extremely long linear motions, split them into pieces so
     // that te planner can emit partial results quickly (similarly combine many
     // short movements in the same direction).
-    pub fn move_to(&mut self, end_position: VectorXd, max_speed: f64, max_acceleration: f64) {
+    pub fn move_to(&mut self, end_position: VectorXd, max_speed: f64, max_acceleration: f64) -> u64 {
         let start_position = {
             if let Some(last_motion) = self.queue.back() {
                 last_motion.constraints.end_position.clone()
@@ -184,8 +197,12 @@ impl LinearMotionPlanner {
                 .min(last_motion.constraints.max_speed);
         }
 
+        let id = self.last_id + 1;
+        self.last_id = id;
+
         // Append to queue.
         self.queue.push_back(LinearMotionQueueEntry {
+            id,
             constraints: LinearMotionConstraints {
                 start_position,
                 end_position,
@@ -199,6 +216,8 @@ impl LinearMotionPlanner {
         });
 
         self.backpropagate_speed_limits();
+
+        id
     }
 
     fn compute_max_cornering_speed(
@@ -370,7 +389,7 @@ impl LinearMotionPlanner {
     pub fn next(
         &mut self,
         max_time: f64,
-        out: &mut Vec<LinearMotion>
+        out: &mut Vec<(LinearMotion, LinearMotionId)>
     ) {
         while self.start_time + MIN_RESIDUAL_MOTION_DURATION < max_time {
             let mut entry = match self.queue.pop_front() {
@@ -390,6 +409,11 @@ impl LinearMotionPlanner {
             let mut motions = vec![];
             let next_velocity = entry.constraints.calculate_motions(cur_velocity, &mut motions);
 
+            // if motions.len() == 0 {
+            //     eprintln!("ZERO MOTIONS GENERATED FOR: {}", entry.id);
+            // }
+
+            let mut added_one = false;
             for motion in motions {
                 // Check if the current motion is too long to fit in the requested time window.
                 // (in this case we need to put the overflowing time back in the queue).
@@ -404,7 +428,10 @@ impl LinearMotionPlanner {
                     self.start_time += partial_motion.duration;
                     self.start_position = partial_motion.end_position.clone();
                     self.start_velocity = partial_motion.end_velocity.clone();
-                    out.push(partial_motion);
+                    out.push((partial_motion, LinearMotionId {
+                        motion_id: entry.id,
+                        done: false,
+                    }));
 
                     // Push remaining parts of the motion back into the planner.
                     entry.constraints.start_position = self.start_position.clone();
@@ -415,7 +442,15 @@ impl LinearMotionPlanner {
                 self.start_time += motion.duration;
                 self.start_position = motion.end_position.clone();
                 self.start_velocity = motion.end_velocity.clone();
-                out.push(motion);
+                out.push((motion, LinearMotionId {
+                    motion_id: entry.id,
+                    done: false,
+                }));
+                added_one = true;
+            }
+
+            if added_one {
+                out.last_mut().unwrap().1.done = true;
             }
             
             if self.queue.len() > 0 {

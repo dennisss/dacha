@@ -11,6 +11,7 @@ use media_camera::camera_manager::CameraManager;
 use db_table::ProtobufDB;
 
 use crate::camera_recorder::CameraRecorder;
+use crate::camera_timelapse_recorder::*;
 use crate::devices::AvailableDevice;
 use crate::{config::MachineConfigContainer, player::Player};
 
@@ -74,6 +75,8 @@ struct State {
     /// If set, the user has requested that we record until at least this time
     /// (regardless of whether or not the player is active).
     record_until: Option<Instant>,
+
+    timelapse_recorder: Option<CameraTimelapseRecorder>
 }
 
 impl CameraController {
@@ -126,7 +129,8 @@ impl CameraController {
     /// be initialized so that it is ready before playing starts.
     pub async fn pre_play(&self) -> Result<()> {
         // Don't do anything if the camera isn't configured to record while playing.
-        {
+        
+        let camera_config = {
             let config = self.shared.machine_config.read().await?;
 
             let camera_config = match config
@@ -138,14 +142,40 @@ impl CameraController {
                 None => return Ok(()),
             };
 
-            if !camera_config.record_while_playing() {
-                return Ok(());
-            }
+            camera_config.clone()
+        };
+
+        if camera_config.record_timelapse() {
+
+            let camera_subscriber = self.shared
+                .camera_device
+                .open_as_camera(&self.shared.camera_manager)
+                .await?;
+
+            lock!(state <= self.shared.state.lock().await?, {
+                let capture_event_receiver = state.player.as_ref().unwrap().capture_events();
+
+                // TODO: Eventually clean this up and have active monitoring of it for failures.
+                state.timelapse_recorder = Some(CameraTimelapseRecorder::create(
+                    self.shared.camera_id,
+                    camera_subscriber,
+                    capture_event_receiver
+                ).unwrap());
+            });
+
+            println!("Started timelapse");
         }
 
-        self.start_recording(Instant::now() + Duration::from_secs(30))
-            .await
+        if camera_config.record_while_playing() {
+            self.start_recording(Instant::now() + Duration::from_secs(30))
+                .await?;
+        }
+
+
+        Ok(())
     }
+
+    // async fn start_timelapse()
 
     /// If not already recording, request that the recorder start playing.
     ///

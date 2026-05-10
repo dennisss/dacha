@@ -9,6 +9,7 @@ extern crate regexp_macros;
 
 mod camera_controller;
 mod camera_recorder;
+mod camera_timelapse_recorder;
 mod change;
 mod config;
 mod devices;

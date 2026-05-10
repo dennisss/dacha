@@ -164,6 +164,7 @@ export class PositionBox extends React.Component<PositionBoxProps> {
         }
 
         this._add_layer_image(options, legend);
+        this._add_capture_point(options, legend);
 
         this._add_object_regions(options, legend);
 
@@ -499,9 +500,71 @@ export class PositionBox extends React.Component<PositionBoxProps> {
                 }
             })
         }
-
-
     }
+
+    _add_capture_point(options: FigureOptions, legend: FigureLegendEntry[]) {
+        let ui_state = this.props.ui_state;
+        let machine = this.props.machine;
+        if (!machine.state.loaded_program) {
+            return;
+        }
+
+        let preview = machine.state.loaded_program.preview;
+        if (!preview || !preview.state.ready) {
+            return;
+        }
+
+        let layers_data = this._get_layer_data();
+        if (!layers_data) {
+            return;
+        }
+
+        let preview_data = ui_state.program_preview();
+        if (!preview_data || !preview_data.data || preview_data.config_key != preview.config_hash || preview_data.file_id != preview.file_id) {
+            return;
+        }
+
+        if (preview_data.data.layer_images.length == 0) {
+            return;
+        }
+
+        console.log(layers_data);
+        console.log(preview);
+
+        let legend_entry = this.props.ui_state.position_legend().get_or_insert({
+            id: 'capture',
+            name: 'Camera Point',
+            color: '#0bf',
+            visible: true,
+            focused: false
+        });
+        legend.push(legend_entry);
+
+        if (!legend_entry.visible) {
+            return;
+        }
+
+        let layer_group = layers_data.layer_groups[layers_data.current_index];
+        for (var layer_i = layer_group.start_index; layer_i < layer_group.end_index; layer_i++) {
+
+            let layer = preview.layers[layer_i];
+
+            if (!layer.camera_capture_point) {
+                continue;
+            }
+
+            let pt = layer.camera_capture_point;
+
+            options.entities.push({
+                kind: EntityKind.Circle,
+                center: { x: pt.x || 0, y: pt.y || 0 },
+                color: '#0bf',
+                radius: 5
+            });
+        }
+    }
+
+
 
     _add_object_regions(options: FigureOptions, legend: FigureLegendEntry[]) {
         let ui_state = this.props.ui_state;

@@ -85,7 +85,8 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
             _active_page: null,
             _config: deep_copy(props.camera || {
                 record_while_playing: true,
-                record_while_paused: false
+                record_while_paused: false,
+                record_timelapse: false,
             }),
             _editing: props.camera ? false : true
         };
@@ -123,7 +124,8 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
             _editing: this.props.camera ? false : true,
             _config: deep_copy(this.props.camera || {
                 record_while_playing: true,
-                record_while_paused: false
+                record_while_paused: false,
+                record_timelapse: false,
             }),
             _selected_device: null,
         });
@@ -191,7 +193,20 @@ class CameraBox extends React.Component<CameraBoxProps, CameraBoxState> {
                             this.setState({ _config: config, _editing: true });
                         }} />
                 )
-            }
+            },
+            {
+                name: 'Record Timelapse',
+                value: (
+                    <input className="form-check-input" type="checkbox"
+                        checked={camera.record_timelapse || false} onChange={(e) => {
+                            let checked = e.target.checked;
+
+                            let config = deep_copy(camera);
+                            config.record_timelapse = checked;
+                            this.setState({ _config: config, _editing: true });
+                        }} />
+                )
+            },
         ]
 
         if (camera_state) {

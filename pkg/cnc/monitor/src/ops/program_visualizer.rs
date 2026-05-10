@@ -22,7 +22,7 @@ use graphics::transforms::transform2f;
 use image::Color;
 use image::{format::jpeg::encoder::JPEGEncoder, types::ImageType, Image};
 use math::matrix::cwise_binary_ops::{CwiseMax, CwiseMin};
-use math::matrix::{Vector2f, Vector3f};
+use math::matrix::{Vector2f, Vector3f, vec2f};
 
 use crate::{round_number, round_number_ref};
 
@@ -59,7 +59,7 @@ pub struct ProgramVisualizer {
     current_line: usize,
     current_layer: Option<CurrentLayer>,
 
-    complete_layers: Vec<ProgramLayer>,
+    complete_layers: Vec<CompletedLayer>,
 }
 
 struct CurrentLayer {
@@ -67,6 +67,12 @@ struct CurrentLayer {
     canvas: graphics::raster::canvas::RasterCanvas,
     min_position: Option<Vector3f>,
     max_position: Option<Vector3f>,
+    points: Vec<Vector2f>
+}
+
+struct CompletedLayer {
+    proto: ProgramLayer,
+    convex_hull: Vec<Vector2f>
 }
 
 /*
@@ -193,10 +199,19 @@ impl ProgramVisualizer {
 
         self.finalize_layer().await?;
 
+        /*
+        println!("Hull: {}", hull.len());
+        for pt in hull {
+            let proto = current_layer.proto.new_convex_hull();
+            proto.set_x(pt[0]);
+            proto.set_y(pt[1]);
+        }
+        */
+
         let mut proto = ProgramPreviewProto::default();
 
         for layer in self.complete_layers {
-            proto.add_layers(layer);
+            proto.add_layers(layer.proto);
         }
 
         let _ = self.output.send(proto);
@@ -341,6 +356,8 @@ impl ProgramVisualizer {
             p.draw(&paint, &mut layer.canvas)?;
         }
 
+        layer.points.push(vec2f(end_position[0], end_position[1]));
+
         for pos in &[start_position, end_position] {
             let mut min_pos = pos.clone();
             min_pos[0] -= diameter / 2.0 + REFINED_MARGIN_MM;
@@ -362,6 +379,7 @@ impl ProgramVisualizer {
                     .cwise_max(layer.max_position.clone().unwrap_or(max_pos.clone())),
             );
         }
+
 
         Ok(())
     }
@@ -432,6 +450,7 @@ impl ProgramVisualizer {
             canvas,
             min_position: None,
             max_position: None,
+            points: vec![]
         });
 
         Ok(())
@@ -442,7 +461,7 @@ impl ProgramVisualizer {
         // always cut down from 0.0.
         self.complete_layers
             .last()
-            .map(|layer| layer.z())
+            .map(|layer| layer.proto.z())
             .unwrap_or(0.0)
     }
 
@@ -455,6 +474,48 @@ impl ProgramVisualizer {
         if self.complete_layers.len() > MAX_NUM_LAYERS {
             return Err(err_msg("Too many layers"));
         }
+
+        {
+            let mut best_point = None;
+            let mut best_error = 1_000_000.0;
+
+            for pt in &current_layer.points {
+                let mut pt2 = pt.clone();
+                // Capturing toolhead geometry.
+                pt2[1] *= 2.0;
+                
+                let error = -pt2.norm_squared();
+                if error < best_error {
+                    best_point = Some(pt);
+                    best_error = error;
+                }
+            }
+
+            if let Some(pt) = best_point {
+                /*
+                let paint = Paint::color(Color::hex(0xff0000));            
+
+                let mut path = PathBuilder::new();
+
+                let r = Vector2f::from_slice(&[1.0, 1.0]);
+
+                path.ellipse(
+                    pt.clone(),
+                    r.clone(),
+                    0.0,
+                    2.0 * PI,
+                );
+
+                let mut p = current_layer.canvas.create_path_fill(&path.build())?;
+                p.draw(&paint, &mut current_layer.canvas)?;
+                */
+
+                let proto = current_layer.proto.camera_capture_point_mut();
+                proto.set_x(pt.x());
+                proto.set_y(pt.y());
+            }
+        }
+
 
         // A bunch of logic to crop the image to the exact bounding box used by this
         // specific layer.
@@ -537,8 +598,15 @@ impl ProgramVisualizer {
 
         self.image_output.send(image).await?;
 
-        self.complete_layers.push(current_layer.proto);
+        // let hull = math::geometry::convex_hull::convex_hull(&current_layer.points)?;
+
+        self.complete_layers.push(CompletedLayer {
+            proto: current_layer.proto,
+            convex_hull: vec![], // hull
+        });
 
         Ok(())
     }
 }
+
+
