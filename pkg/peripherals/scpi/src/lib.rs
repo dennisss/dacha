@@ -184,5 +184,10 @@ impl SCPIClient {
         Ok(data.parse::<f32>()?)
     }
 
+    // TODO: Verify with "SYSTem:STATus?" that the channels are done switching.
+    pub async fn toggle_psu_channel(&mut self, num: usize, on: bool) -> Result<()> {
+        self.run_command_noreply(&format!("OUTP CH{},{}", num, if on { "ON" } else { "OFF" })).await?;
+        Ok(())
+    }
 }
 

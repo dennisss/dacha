@@ -140,6 +140,22 @@ impl<D> DMABuffer<D> {
     pub fn set_data(&mut self, data: D) {
         self.data = Some(data);
     }
+
+    pub fn sequence(&self) -> u32 {
+        self.raw.buffer.sequence
+    }
+
+    /// Monotonic timestamp at which which the frame was recorded.
+    /// This uses the same clock as clock_gettime(CLOCK_MONOTONIC).
+    pub fn monotonic_timestamp(&self) -> Option<Duration> {
+        if self.raw.buffer.flags & crate::V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC == 0 {
+            return None;
+        }
+
+        let t = self.raw.buffer.timestamp;
+        Some(Duration::from_secs(t.tv_sec as u64) + Duration::from_micros(t.tv_usec as u64))
+    }
+
 }
 
 impl<D: DMABufferData> Buffer for DMABuffer<D> {

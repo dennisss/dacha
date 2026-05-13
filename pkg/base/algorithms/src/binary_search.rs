@@ -40,7 +40,7 @@ impl BinarySearch {
     }
 
     pub fn greater_than_current(&mut self) {
-        if self.min == self.max {
+        if self.current == self.max {
             self.done = true;
             return;
         }
@@ -55,7 +55,7 @@ impl BinarySearch {
     }
 
     pub fn less_than_current(&mut self) {
-        if self.min == self.max {
+        if self.current == self.min {
             self.done = true;
             return;
         }
@@ -63,4 +63,41 @@ impl BinarySearch {
         self.max = self.current - 1;
         self.current = (self.min + self.max) / 2;
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn works() {
+        for i in 0..11 {
+            let mut s = BinarySearch::new(0, 10);
+
+            while !s.done() {
+                if i >= s.current() {
+                    s.greater_eq_current();
+                } else {
+                    s.less_than_current();
+                }
+            }
+
+            assert_eq!(s.best().unwrap(), i);
+        }
+
+        for i in 0..11 {
+            let mut s = BinarySearch::new(0, 10);
+
+            while !s.done() {
+                if i <= s.current() {
+                    s.less_eq_current();
+                } else {
+                    s.greater_than_current();
+                }
+            }
+
+            assert_eq!(s.best().unwrap(), i);
+        }
+    }
+
 }

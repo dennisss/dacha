@@ -386,9 +386,10 @@ fn test_scm_rights() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let mut time = sys::kernel::timespec::default();
-    unsafe { sys::clock_gettime(sys::bindings::CLOCK_REALTIME as i32, &mut time)? };
-    println!("{:?}", time);
+    // let mut time = sys::kernel::timespec::default();
+    // // unsafe { sys::clock_gettime(sys::bindings::CLOCK_REALTIME as i32, &mut time)? };
+    // println!("{:?}", time);
+
     return Ok(());
 
     // test_scm_rights()?;

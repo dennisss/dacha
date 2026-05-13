@@ -49,3 +49,8 @@
 #include <netinet/ip.h>
 #include <sys/syscall.h>
 
+struct dma_buf_sync_partial {
+	__u64 flags;
+	__u64 offset;
+	__u64 length;
+};

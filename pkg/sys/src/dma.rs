@@ -1,3 +1,5 @@
+use std::ffi::CString;
+
 use base_error::*;
 
 use crate::file::OpenFileDescriptor;
@@ -24,6 +26,8 @@ impl DMAHeap {
             return Err(err_msg("Not a DMA heap device"));
         }
 
+        let path = CString::new(path).unwrap();
+
         let fd = OpenFileDescriptor::new(unsafe { open(core::mem::transmute(path.as_ptr()), O_RDONLY | O_CLOEXEC, 0) }?);
         Ok(Self { fd })
     }
@@ -49,12 +53,29 @@ pub struct DMABuffer {
 }
 
 impl DMABuffer {
+    pub fn len(&self) -> usize {
+        self.size
+    }
+
     pub fn sync_read_start(&mut self) -> Result<()> {
         let mut sync = bindings::dma_buf_sync::default();
         sync.flags = (bindings::DMA_BUF_SYNC_START | bindings::DMA_BUF_SYNC_READ) as u64;
 
         unsafe {
             raw::dma_buf_sync(*self.fd, &sync)
+        }?;
+
+        Ok(())
+    }
+
+    pub fn sync_read_start_partial(&mut self, offset: u64, len: u64) -> Result<()> {
+        let mut sync = bindings::dma_buf_sync_partial::default();
+        sync.flags = (bindings::DMA_BUF_SYNC_START | bindings::DMA_BUF_SYNC_READ) as u64;
+        sync.offset = offset;
+        sync.length = len;
+
+        unsafe {
+            raw::dma_buf_sync_partial(*self.fd, &sync)
         }?;
 
         Ok(())
@@ -96,5 +117,7 @@ mod raw {
     iowr!(dma_heap_alloc, bindings::DMA_HEAP_IOC_MAGIC, 0x00, bindings::dma_heap_allocation_data);
 
     iow!(dma_buf_sync, bindings::DMA_BUF_BASE, 0x00, bindings::dma_buf_sync);
+
+    iow!(dma_buf_sync_partial, bindings::DMA_BUF_BASE, 100, bindings::dma_buf_sync_partial);
 }
 
