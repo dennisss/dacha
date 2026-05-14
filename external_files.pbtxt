@@ -2700,6 +2700,11 @@ files: [
         sha256_sum: "629abaa3451a2d1c97ce932d61733a8a997326e53ce778040e0a6b2ba645d9df"
     },
     {
+        path: "third_party/snapmagic/GSB11111ALF/GSB11111ALF.step"
+        size: 406457
+        sha256_sum: "e786ec9054afa72dd19399f2ee69c76817ec89c6e13e4c5d746943946992d77c"
+    },
+    {
         path: "third_party/snapmagic/LIS2DH12TR/LIS2DH12TR.step"
         size: 298373
         sha256_sum: "b9d9abf4b6f8d3f6d0cf5589c3b715fabb8b4b328edca3a730d55001a8bf3e9c"
@@ -2713,6 +2718,11 @@ files: [
         path: "third_party/snapmagic/LPJG0926HENL/LPJG0926HENL.step"
         size: 1056640
         sha256_sum: "a88bb5e84cf0d0621da2e22fd41a742d800fe1cd14a14b32cdb73a955f517313"
+    },
+    {
+        path: "third_party/snapmagic/MSD_1_A/MSD-1-A.step"
+        size: 3906248
+        sha256_sum: "e8fc6a59655e4fb471f728624bb2738f158c11753542e848f075115fc9fce8f6"
     },
     {
         path: "third_party/snapmagic/MSS1210-153MED/IND_MSS1210_COC.step"
@@ -2748,6 +2758,11 @@ files: [
         path: "third_party/snapmagic/TPS922055DRRR/TPS922055DRRR.step"
         size: 366225
         sha256_sum: "6d7f156bc0528c8a6a3157009543798779427d4e5194b741361c70fa69322d61"
+    },
+    {
+        path: "third_party/ultralibrarian/475710001/475710001.stp"
+        size: 1023564
+        sha256_sum: "e9c19c831326878f5c0965cbaf1a1341b769cd9129e96767b738b22e4571cacf"
     },
     {
         path: "third_party/ultralibrarian/ADXL362BCCZ_RL/ADXL362BCCZ-RL.step"

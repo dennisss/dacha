@@ -179,5 +179,17 @@ libraries: [
     },
     {
         path: "third_party/snapmagic/LIS2DH12TR"
+    },
+    {
+        path: "third_party/snapmagic/MSD_1_A"
+    },
+    {
+        path: "third_party/snapmagic/GSB11111ALF"
+    },
+    {
+        path: "third_party/ultralibrarian/475710001"
+    },
+    {
+        path: "third_party/snapmagic/10067099_200LF"
     }
 ]
