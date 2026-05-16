@@ -36,6 +36,8 @@ pub struct RP1DirectCamera {
     /// Use this for configuring controls.
     pub camera_subdev: v4l2::SubDevice,
 
+    pub capture_device: v4l2::Device,
+
     pub capture_stream: v4l2::UnconfiguredStream,
 
     pub width: u32,
@@ -269,6 +271,7 @@ impl RP1DirectCamera {
         Ok(Self {
             model_name: settings.model_name.to_string(),
             camera_subdev,
+            capture_device: cfe_video,
             capture_stream,
             width: settings.width,
             height: settings.height

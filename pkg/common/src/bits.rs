@@ -217,6 +217,16 @@ impl<T: BitVectorStorage> BitVector<T> {
         out
     }
 
+    pub fn from_lower_msb_u16(val: u16, width: usize) -> Self {
+        let mut out = Self::new();
+        out.len = width;
+
+        let bytes = (val << (16 - width)).to_be_bytes();
+        out.data.push(bytes[0]);
+        out.data.push(bytes[1]);
+        out
+    }
+
     pub fn to_lower_msb(&self) -> usize {
         let mut out = 0;
 

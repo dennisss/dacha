@@ -17,6 +17,7 @@ file = { path = "../../file" }
 crypto = { path = "../../crypto" }
 web = { path = "../../web" }
 rpc = { path = "../../rpc" }
+sys = { path = "../../sys" }
 http = { path = "../../http" }
 image = { path = "../../image" }
 http_util = { path = "../../http/util" }

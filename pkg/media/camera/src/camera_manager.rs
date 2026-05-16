@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 use std::{collections::HashMap, sync::Arc};
 
-use common::async_std::task::current;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::hash::FastHasherBuilder;

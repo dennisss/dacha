@@ -13,21 +13,20 @@ use crate::solver::*;
 /// This optimizes 6 parameters:
 /// - 3d rotation axis-angle vector
 /// - 3d translation vector.
-struct ReprojectionProblem<'a> {
+struct ReprojectionResidual<'a> {
     intrinsics: &'a CameraIntrinsicsModel,
-    points_3d: &'a [Vector3f],
-    points_2d: &'a [Vector2f],
+    point_3d: &'a Vector3f,
+    point_2d: &'a Vector2f,
 }
 
-impl<'a> ReprojectionProblem<'a> {
-
-    fn calc_error(&self, point_idx: usize, params: &[f32]) -> f32 {
+impl<'a> ReprojectionResidual<'a> {
+    fn calc_error(&self, params: &[f32]) -> f32 {
         let small_axis_angle = vec3f(params[0], params[1], params[2]);
         let translation = vec3f(params[3], params[4], params[5]);
         let axis_angle = vec3f(params[6], params[7], params[8]);
 
-        let pt3 = &self.points_3d[point_idx];
-        let pt2 = &self.points_2d[point_idx];
+        let pt3 = self.point_3d;
+        let pt2 = self.point_2d;
 
         let projected = project_point(pt3, &self.intrinsics, &axis_angle, &small_axis_angle, &translation);
 
@@ -36,58 +35,40 @@ impl<'a> ReprojectionProblem<'a> {
     }
 }
 
-impl<'a> NonLinearProblem for ReprojectionProblem<'a> {
-    fn num_points(&self) -> usize {
-        self.points_3d.len()
+impl<'a> ResidualBlockFunction for ReprojectionResidual<'a> {
+    fn len(&self) -> usize {
+        1
     }
 
-    fn error(&self, point_idx: usize, params: &[f32], gradient: &mut [f32]) -> f32 {
-
-        let expanded_params = vec![
+    fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]) {
+        let mut expanded_params = vec![
             0., 0., 0.,
             params[3], params[4], params[5],
             params[0], params[1], params[2],
         ];
 
-        let error = self.calc_error(point_idx, &expanded_params);
+        out[0] = self.calc_error(&expanded_params);
  
         let step = 0.0001;
         for i in 0..params.len() {
-            let mut params2 = expanded_params.clone();
-            params2[i]  = expanded_params[i] + step;
+            let v = expanded_params[i];
+            expanded_params[i]  = v + step;
 
-            let error1 = self.calc_error(point_idx, &params2);
+            let error1 = self.calc_error(&expanded_params);
 
-            params2[i]  = expanded_params[i] - step;
-            let error2 = self.calc_error(point_idx, &params2);
+            expanded_params[i]  = v - step;
+            let error2 = self.calc_error(&expanded_params);
+
+            expanded_params[i] = v;
 
             // negative since we want the gradient of project_point not the error function.
             gradient[i] = -(error1 - error2) / (2.0 * step);
-        }
-
-
-        error
-    }
-
-    fn update(&self, step: &VectorXf, params: &mut VectorXf) {
-        let increment_axis_angle = vec3f(step[0], step[1], step[2]);
-        let cur_axis_angle = vec3f(params[0], params[1], params[2]);
-
-        let new_axis_angle = to_axis_angle(&(
-            from_axis_angle(&increment_axis_angle) * from_axis_angle(&cur_axis_angle)));
-        for i in 0..3 {
-            params[i] = new_axis_angle[i];
-        }
-
-        for i in 3..6 {
-            params[i] += step[i];
         }
     }
 }
 
 
-
-fn project_point(
+pub(crate) fn project_point(
     point: &Vector3f,
     intrinsics: &CameraIntrinsicsModel,
     axis_angle: &Vector3f,
@@ -101,12 +82,7 @@ fn project_point(
 
     point += translation;
 
-    let mut point_2d = vec2f(point[0] / point[2], point[1] / point[2]);
-
-    point_2d *= intrinsics.focal_length;
-    point_2d += &intrinsics.center;
-
-    point_2d
+    intrinsics.project_point(&point)
 }
 
 
@@ -119,19 +95,20 @@ pub struct PnPSolution {
 
 
 pub struct PnPSolver {
-    inner: NonLinearSolver
+    _hidden: ()
 }
 
 impl PnPSolver {
     pub fn new() -> Self {
         Self {
-            inner: NonLinearSolver::new()
+            _hidden: ()
         }
     }
 
-    pub fn set_min_error(&mut self, value: f32) {
-        self.inner.set_min_error(value);
-    }
+    // pub fn set_min_error(&mut self, value: f32) {
+    //     // self.inner.set_min_error(value);
+    //     // todo!()
+    // }
 
     /// NOTE: This will always produce a result so the user will need to check the
     /// reprojection error to determine if it is reasonable.
@@ -145,16 +122,26 @@ impl PnPSolver {
     ) -> PnPSolution {
         assert_eq!(points_2d.len(), points_3d.len());
 
-        let problem = ReprojectionProblem {
-            points_2d,
-            points_3d,
-            intrinsics
-        };
+        let mut solver = NonLinearSolver::new();
 
-        let solution = self.inner.solve(&[
+        let r_param = solver.add_parameter_block(&[
             initial_rotation[0], initial_rotation[1], initial_rotation[2],
+        ], AxisAngleParameterBlock::default());
+
+        let t_param = solver.add_parameter_block(&[
             initial_translation[0], initial_translation[1], initial_translation[2]
-        ], &problem);
+        ], LinearParameterBlock::default());
+
+        for i in 0..points_2d.len() {
+            solver.add_residual_block(&[ r_param, t_param ], ReprojectionResidual {
+                intrinsics,
+                point_2d: &points_2d[i],
+                point_3d: &points_3d[i],
+            });
+        }
+
+
+        let solution = solver.solve();
 
         let rotation = vec3f(solution.params[0], solution.params[1], solution.params[2]);
         let translation = vec3f(solution.params[3], solution.params[4], solution.params[5]);
