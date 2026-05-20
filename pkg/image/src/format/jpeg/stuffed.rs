@@ -42,30 +42,22 @@ impl<'a, T: Read> Read for StuffedReader<'a, T> {
     }
 }
 
-pub struct StuffedWriter<'a, T: Write> {
-    inner: &'a mut T,
+pub struct StuffedWriter<'a> {
+    inner: &'a mut Vec<u8>,
 }
 
-impl<'a, T: Write> StuffedWriter<'a, T> {
-    pub fn new(inner: &'a mut T) -> Self {
+impl<'a> StuffedWriter<'a> {
+    pub fn new(inner: &'a mut Vec<u8>) -> Self {
         Self { inner }
     }
-}
 
-impl<'a, T: Write> Write for StuffedWriter<'a, T> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        for v in buf.iter().cloned() {
-            self.inner.write(&[v])?;
+    pub fn write(&mut self, buf: &[u8]) {
+        for v in buf {
+            self.inner.push(*v);
 
-            if std::intrinsics::unlikely(v == 0xff) {
-                self.inner.write(&[0])?;
+            if std::intrinsics::unlikely(*v == 0xff) {
+                self.inner.push(0);
             }
         }
-
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.inner.flush()
     }
 }

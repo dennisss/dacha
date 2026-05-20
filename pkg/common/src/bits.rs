@@ -61,7 +61,7 @@ impl<T: Clone> VecLike<T> for Vec<T> {
     }
 }
 
-pub trait BitVectorStorage = VecLike<u8> + List<u8> + Clone + Default + Index<usize, Output = u8> + IndexMut<usize> + for<'a> From<&'a [u8]> + AsRef<[u8]> + AsMut<[u8]>;
+// pub trait BitVectorStorage = VecLike<u8> + List<u8> + Clone + Default + Index<usize, Output = u8> + IndexMut<usize> + for<'a> From<&'a [u8]> + AsRef<[u8]> + AsMut<[u8]>;
 
 use crate::fixed::vec::FixedVec;
 
@@ -77,7 +77,43 @@ impl<T: Clone, const LEN: usize> VecLike<T> for crate::fixed::vec::FixedVec<T, L
     fn last_mut(&mut self) -> Option<&mut T> {
         self.as_mut().last_mut()
     }
-} 
+}
+
+
+pub trait BitVectorStorage:
+    Index<usize, Output = u8> + IndexMut<usize> +
+    AsRef<[u8]> + AsMut<[u8]> +
+    for<'a> From<&'a [u8]> +
+    Clone + Default
+{
+    fn clear(&mut self);
+
+    fn resize(&mut self, new_size: usize, value: u8);
+
+    fn push(&mut self, index: usize, value: u8);
+
+    fn len(&self) -> usize;
+}
+
+impl BitVectorStorage for Vec<u8> {
+    fn clear(&mut self) {
+        Vec::<u8>::clear(self)
+    }
+
+    fn resize(&mut self, new_size: usize, value: u8) {
+        Vec::<u8>::resize(self, new_size, value)
+    }
+
+    #[inline(always)]
+    fn push(&mut self, index: usize, value: u8) {
+        Vec::<u8>::push(self, value)
+    }
+
+    fn len(&self) -> usize {
+        Vec::<u8>::len(self)
+    }
+}
+
 
 
 
@@ -126,19 +162,19 @@ impl<T: BitVectorStorage> BitVector<T> {
     pub fn push(&mut self, bit: u8) {
         assert!(bit <= 1);
 
+        let idx = self.len / 8;
         if self.len % 8 == 0 {
-            self.data.push(0);
+            self.data.push(idx, 0);
         }
 
         // NOTE: This assumes that all unused bits are 0.
-        let last = self.data.last_mut().unwrap();
-        *last |= bit << 7 - (self.len % 8);
+        self.data[idx] |= bit << 7 - (self.len % 8);
         self.len += 1;
     }
 
     pub fn push_full_msb(&mut self, byte: u8) {
         assert!(self.len % 8 == 0);
-        self.data.push(byte);
+        self.data.push(self.len / 8, byte);
         self.len += 8;
     }
 
@@ -221,9 +257,13 @@ impl<T: BitVectorStorage> BitVector<T> {
         let mut out = Self::new();
         out.len = width;
 
-        let bytes = (val << (16 - width)).to_be_bytes();
-        out.data.push(bytes[0]);
-        out.data.push(bytes[1]);
+        // NOTE: '0 << 16' will panic in debug mode.
+        if width > 0 {
+            let bytes = (val << (16 - width)).to_be_bytes();
+            out.data.push(0, bytes[0]);
+            out.data.push(1, bytes[1]);
+        }
+
         out
     }
 
@@ -873,20 +913,19 @@ impl<W: Write> BitWrite for BitWriter<'_, W> {
     }
 }
 
-
 /// This is an optimized version of BitWriter that only supports
 /// supporting bits in MSB first order.
 ///
 /// Internally it buffers up to 64bits at a time and individual write operations
 /// MUST NOT exceed 56 bits in size without there being a risk of overflowing. 
-pub struct BitWriter64<'a, W> {
-    writer: &'a mut W,
+pub struct BitWriter64<W> {
+    writer: W,
     buffer: u64,
     bit_offset: usize,
 }
 
-impl<'a, W: Write> BitWriter64<'a, W> {
-    pub fn new(writer: &'a mut W) -> Self {
+impl<W: FnMut(&[u8])> BitWriter64<W> {
+    pub fn new(writer: W) -> Self {
         Self {
             writer,
             buffer: 0,
@@ -894,7 +933,7 @@ impl<'a, W: Write> BitWriter64<'a, W> {
         }
     }
 
-    pub fn write_bitvec_generic<T: BitVectorStorage>(&mut self, vec: &BitVector<T>) -> Result<()> {
+    pub fn write_bitvec_generic<T: BitVectorStorage>(&mut self, vec: &BitVector<T>) {
 
         let final_offset = self.bit_offset + vec.len();
         for byte in vec.as_ref() {
@@ -905,33 +944,56 @@ impl<'a, W: Write> BitWriter64<'a, W> {
 
         while self.bit_offset > 8 {
             let byte = (self.buffer >> 56) as u8;
-            self.writer.write(&[byte])?;
+            (self.writer)(&[byte]);
 
             self.buffer <<= 8;
             self.bit_offset -= 8;
         }
-
-        Ok(())
     }
 
+    /// Optimized version of write_bitvec_generic for writing up to 16 bits at a time.
+    ///
+    /// This assumes that you will never only ever call this function and not write_bitvec_generic.
+    pub fn write_bitvec_max16<T: BitVectorStorage>(&mut self, vec: &BitVector<T>) {
+        let slice = vec.as_ref();
+        
+        let val = if slice.len() >= 2 {
+            ((slice[0] as u64) << 8) | (slice[1] as u64)
+        } else if slice.len() == 1 {
+            (slice[0] as u64) << 8
+        } else {
+            return;
+        };
 
-    pub fn finish(&mut self) -> Result<()> {
+        // NOTE: This subtraction will overflow if we have less than 16 bits of space left in
+        // our buffer.
+        self.buffer |= val << (48 - self.bit_offset);
+        self.bit_offset += vec.len();
+
+        let num_bytes = self.bit_offset / 8;
+        if num_bytes >= 6 {
+            let out = self.buffer.to_be_bytes();
+            (self.writer)(&out[..num_bytes]);
+
+            self.buffer <<= num_bytes * 8;
+            self.bit_offset %= 8;
+        }
+    }
+
+    pub fn finish(&mut self) {
         while self.bit_offset > 8 {
             let byte = (self.buffer >> 56) as u8;
-            self.writer.write(&[byte])?;
+            (self.writer)(&[byte]);
             self.buffer <<= 8;
             self.bit_offset -= 8;
         }
 
         if self.bit_offset != 0 {
             let byte = (self.buffer >> 56) as u8;
-            self.writer.write(&[byte])?;
+            (self.writer)(&[byte]);
             self.buffer <<= 8;
             self.bit_offset = 0;
         }
-
-        Ok(())
-
     }
 }
 

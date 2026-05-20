@@ -271,17 +271,17 @@ impl JPEGEncoder {
             {
                 let mut stuffed_writer = StuffedWriter::new(out);
 
-                let mut writer = BitWriter64::new(&mut stuffed_writer);
+                let mut writer = BitWriter64::new(|data| stuffed_writer.write(data));
 
                 // let mut writer = BitWriter::<StuffedWriter<_>>::new_with_order(&mut stuffed_writer, BitOrder::MSBFirst);
 
                 self.build_atoms(&blocks, |atom| {
                     let code = &code_table[(atom.table_class, atom.table_index, atom.code)];
-                    writer.write_bitvec_generic(code)?;
-                    writer.write_bitvec_generic(&atom.value)
-                })?;
+                    writer.write_bitvec_max16(code);
+                    writer.write_bitvec_max16(&atom.value);
+                });
 
-                writer.finish()?;
+                writer.finish();
 
                 // TODO: Pad with 1-bits.
             }
@@ -291,15 +291,14 @@ impl JPEGEncoder {
             let mut atoms = vec![];
             self.build_atoms(&blocks, |atom| {
                 atoms.push(atom);
-                Ok(())
-            })?;
+            });
 
             let code_table = Self::build_dynamic_code_table(&atoms, image.channels(), out)?;
 
             self.make_start_of_scan_segment(image)
             .serialize(&start_of_frame, out);
 
-            Self::write_scan_atoms(&atoms, &code_table, out)?;
+            Self::write_scan_atoms(&atoms, &code_table, out);
         }
 
         out.push(0xFF);
@@ -406,9 +405,9 @@ impl JPEGEncoder {
     }
 
     #[inline(never)]
-    fn build_atoms<F: FnMut(Atom) -> Result<()>>(
+    fn build_atoms<F: FnMut(Atom)>(
         &self, blocks: &ImageBlockView, mut callback: F
-    ) -> Result<()> {
+    ) {
         /*
         For DC coeff:
         - Code is S which is number of bits to encode amplitude
@@ -461,8 +460,8 @@ impl JPEGEncoder {
                         table_class: TableClass::DC,
                         table_index,
                         code: size as u8,
-                        value: BitVector16::from_lower_msb(diff_value as usize, size as u8),
-                    })?;
+                        value: BitVector16::from_lower_msb_u16(diff_value, size),
+                    });
                 }
 
                 // Encode AC coefficients.
@@ -481,7 +480,7 @@ impl JPEGEncoder {
                             table_index,
                             code: 0b00000000,
                             value: BitVector16::new(),
-                        })?;
+                        });
                         break;
                     }
 
@@ -490,15 +489,13 @@ impl JPEGEncoder {
                         table_class: TableClass::AC,
                         table_index,
                         code: ((zero_run_length as u8) << 4) | (coeff_size as u8),
-                        value: BitVector16::from_lower_msb(coeff_value as usize, coeff_size as u8),
-                    })?;
+                        value: BitVector16::from_lower_msb_u16(coeff_value, coeff_size),
+                    });
 
                     coeff_i += 1;
                 }
             }
         }
-
-        Ok(())
     }
 
     fn build_dynamic_code_table(
@@ -568,23 +565,22 @@ impl JPEGEncoder {
         Ok(code_table)
     }
 
-    fn write_scan_atoms(atoms: &[Atom], code_table: &CodeTables, out: &mut Vec<u8>) -> Result<()> {
+    fn write_scan_atoms(atoms: &[Atom], code_table: &CodeTables, out: &mut Vec<u8>) {
         let mut stuffed_writer = StuffedWriter::new(out);
         
-        let mut writer = BitWriter64::new(&mut stuffed_writer);
+        let mut writer = BitWriter64::new(|data| stuffed_writer.write(data));
         
         // let mut writer = BitWriter::new_with_order(&mut stuffed_writer, BitOrder::MSBFirst);
 
         for atom in atoms {
             let code = &code_table[(atom.table_class, atom.table_index, atom.code)];
-            writer.write_bitvec_generic(code)?;
-            writer.write_bitvec_generic(&atom.value)?;
+            writer.write_bitvec_max16(code);
+            writer.write_bitvec_max16(&atom.value);
         }
 
-        writer.finish()?;
+        writer.finish();
 
         // TODO: Pad with 1-bits.
 
-        Ok(())
     }
 }
