@@ -44,4 +44,4 @@ _autosave*.sch
 /pkg/haystack/bindings/node/native/artifacts.json
 /pkg/usvg/out
 /pkg/cnc/machines/voron_0/firmware/bed/r2/build
-
+/pkg/vision/mocap/pps_divider/build
