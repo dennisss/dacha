@@ -30,7 +30,7 @@ where
     pub values: MatrixNew<T, N, N>,
 }
 
-impl<T: FloatElementType + From<u32> + From<f32> + From<i32>, N: Dimension> EigenStructure<T, N>
+impl<T: FloatElementType + From<f32>, N: Dimension> EigenStructure<T, N>
 where
     MatrixNewStorage: NewStorage<T, N, N> + NewStorage<T, N, U1> + NewStorage<T, U1, N>,
 {
@@ -48,8 +48,8 @@ where
         let mut a_i = a.to_owned();
         let mut u_i = MatrixNew::<T, N, N>::identity_with_shape(a.rows(), a.cols());
 
-        #[cfg(feature = "std")]
-        println!("INPUT MATRIX: {:?}", a);
+        // #[cfg(feature = "std")]
+        // println!("INPUT MATRIX: {:?}", a);
 
         // TODO: Check for error bound convergence.
         for i in 0..30 {
@@ -128,8 +128,8 @@ where
 
         // TODO: Sort eigenvalues in descending order. (also sorting the cols)
 
-        #[cfg(feature = "std")]
-        println!("{:?}", u_i);
+        // #[cfg(feature = "std")]
+        // println!("{:?}", u_i);
 
         Self {
             values: a_i,

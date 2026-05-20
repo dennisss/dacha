@@ -1,5 +1,5 @@
 use math::matrix::{Vector2f, Vector3f, vec2f};
-use math::matrix::cwise_binary_ops::CwiseMulAssign;
+use math::matrix::cwise_binary_ops::{CwiseMulAssign, CwiseDivAssign};
 
 use crate::solver::ParameterBlockOperator;
 
@@ -38,15 +38,37 @@ impl CameraIntrinsicsModel {
     pub fn project_point(&self, point: &Vector3f) -> Vector2f {
         let mut point_2d = vec2f(point[0] / point[2], point[1] / point[2]);
 
-        let r2 = point_2d.norm_squared();
-        let r4 = r2*r2;
-        let distortion = 1.0 + self.k1 * r2 + self.k2 * r4;
-        point_2d *= distortion;
+        point_2d *= self.calculate_distortion(&point_2d);
 
         point_2d.cwise_mul_assign(&self.focal_length);
         point_2d += &self.center;
 
         point_2d
+    }
+
+    fn calculate_distortion(&self, point: &Vector2f) -> f32 {
+        let r2 = point.norm_squared();
+        let r4 = r2*r2;
+        1.0 + self.k1 * r2 + self.k2 * r4
+    }
+
+    pub fn unproject_point(&self, point: &Vector2f) -> Vector2f {
+        let mut point = point.clone();
+        point -= &self.center;
+        point.cwise_div_assign(&self.focal_length);
+        point = self.undistort(&point);
+        point
+    }
+
+    fn undistort(&self, point: &Vector2f) -> Vector2f {
+        let mut pt = point.clone();
+
+        // TODO: Provide better convergence guarantees.
+        for _ in 0..5 {
+            pt = point.clone() / self.calculate_distortion(&pt);
+        }
+
+        pt
     }
 
     pub fn parse(values: &[f32]) -> Self {

@@ -57,7 +57,7 @@ impl DMABuffer {
         self.size
     }
 
-    pub fn sync_read_start(&mut self) -> Result<()> {
+    pub fn sync_read_start(&self) -> Result<()> {
         let mut sync = bindings::dma_buf_sync::default();
         sync.flags = (bindings::DMA_BUF_SYNC_START | bindings::DMA_BUF_SYNC_READ) as u64;
 
@@ -68,7 +68,7 @@ impl DMABuffer {
         Ok(())
     }
 
-    pub fn sync_read_start_partial(&mut self, offset: u64, len: u64) -> Result<()> {
+    pub fn sync_read_start_partial(&self, offset: u64, len: u64) -> Result<()> {
         let mut sync = bindings::dma_buf_sync_partial::default();
         sync.flags = (bindings::DMA_BUF_SYNC_START | bindings::DMA_BUF_SYNC_READ) as u64;
         sync.offset = offset;
@@ -81,7 +81,7 @@ impl DMABuffer {
         Ok(())
     }
 
-    pub fn sync_read_end(&mut self) -> Result<()> {
+    pub fn sync_read_end(&self) -> Result<()> {
         let mut sync = bindings::dma_buf_sync::default();
         sync.flags = (bindings::DMA_BUF_SYNC_END | bindings::DMA_BUF_SYNC_READ) as u64;
 

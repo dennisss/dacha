@@ -320,7 +320,7 @@ impl Device {
 
             match unsafe { vidioc_dqevent(dev.as_raw_fd(), &mut raw) } {
                 Ok(_) => break,
-                Err(Errno::EAGAIN) => {}
+                Err(Errno::EAGAIN) | Err(Errno::ENOENT) => {}
                 Err(e) => return Err(e.into()),
             };
 

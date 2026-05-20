@@ -2959,6 +2959,7 @@ dependencies = [
  "protobuf",
  "rpc",
  "rpc_util",
+ "sys",
  "usb",
  "v4l2",
  "video",

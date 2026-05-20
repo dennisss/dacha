@@ -60,6 +60,9 @@ pub type Matrix8f = MatrixStatic<f32, U8, U8>;
 #[cfg(feature = "alloc")]
 pub type MatrixXf = Matrix<f32, Dynamic, Dynamic>;
 #[cfg(feature = "alloc")]
+pub type MatrixX4f = Matrix<f32, Dynamic, U4>;
+
+#[cfg(feature = "alloc")]
 pub type MatrixXd = Matrix<f64, Dynamic, Dynamic>;
 
 #[cfg(feature = "alloc")]
@@ -321,6 +324,10 @@ impl<
 
     pub fn col_mut(&mut self, col: usize) -> MatrixBlockMut<T, R, U1, C> {
         self.block_with_shape_mut(0, col, self.rows(), 1)
+    }
+
+    pub fn row_mut(&mut self, row: usize) -> MatrixBlockMut<T, U1, C, C> {
+        self.block_with_shape_mut(row, 0, 1, self.cols())
     }
 }
 

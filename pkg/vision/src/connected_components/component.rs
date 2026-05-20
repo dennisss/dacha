@@ -38,20 +38,23 @@ impl ComponentData {
         self.moment_y += (y as u64) * intensity;
     }
 
-    pub fn add_row_pixel(&mut self, x: usize, y: usize, intensity: u64) {
-        if self.area == 0 {
-            self.min_x = x as u16;
-            self.max_x = x as u16;
-            self.min_y = y as u16;
-            self.max_y = y as u16;
-        } else {
-            self.max_x = x as u16;
-        }
+    pub fn start_pixel_row(&mut self, x: usize, y: usize) {
+        self.area = 1; // Just so that other logic believes this isn't an empty data structure.
+        self.min_x = x as u16;
+        self.max_x = x as u16;
+        self.min_y = y as u16;
+        self.max_y = y as u16;
+    }
 
-        self.area += 1;
+    pub fn add_row_pixel(&mut self, x: usize, y: usize, intensity: u64) {
+        self.max_x = x as u16;
         self.mass += intensity;
         self.moment_x += (x as u64) * intensity;
-        self.moment_y += (y as u64) * intensity;
+    }
+
+    pub fn finish_pixel_row(&mut self) {
+        self.area = (self.max_x - self.min_x) as u32;
+        self.moment_y = self.mass * (self.min_y as u64) ;
     }
 
     pub fn add(&mut self, other: &Self) {

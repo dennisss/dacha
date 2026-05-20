@@ -133,6 +133,10 @@ pub struct DMABuffer<D> {
 }
 
 impl<D> DMABuffer<D> {
+    pub fn data(&self) -> Option<&D> {
+        self.data.as_ref()
+    }
+    
     pub fn take_data(&mut self) -> Option<D> {
         self.data.take()
     }

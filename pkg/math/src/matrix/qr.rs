@@ -21,7 +21,7 @@ where
     pub r: MatrixNew<T, M, N>,
 }
 
-impl<T: FloatElementType + From<f32> + From<u32> + From<i32>, M: Dimension, N: Dimension>
+impl<T: FloatElementType + From<f32>, M: Dimension, N: Dimension>
     QR<T, M, N>
 where
     MatrixNewStorage: NewStorage<T, M, M>
@@ -87,7 +87,7 @@ where
             // TODO: Should have the opposite sign as the entry.
             let mut e = col.norm();
             if col[(0, 0)] > T::zero() {
-                e *= (-1).into()
+                e *= (-1i16).into()
             }
 
             col[(0, 0)] -= e;

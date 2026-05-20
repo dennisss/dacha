@@ -118,30 +118,29 @@ impl RLEConnectedComponentsProcessor {
             while x < self.image_width {
                 let chunk = array_ref![frame, offset, SIMD_THRESHOLDING_CHUNK_SIZE];
                 if !is_any_greater_than_threshold(chunk, threshold) {
-                    x += 16;
-                    offset += 16;
+                    x += SIMD_THRESHOLDING_CHUNK_SIZE;
+                    offset += SIMD_THRESHOLDING_CHUNK_SIZE;
                     continue;
                 }
 
-                for _ in 0..16 {
-                    let v = frame[offset];
+                for chunk_i in 0..SIMD_THRESHOLDING_CHUNK_SIZE {
+                    let v = unsafe  { *chunk.get_unchecked(chunk_i) };
 
                     if v <= threshold {
-                        offset += 1;
                         x += 1;
                         continue;
                     }
 
-                    self.advance_current_run(x);
+                    self.advance_current_run(x, y);
 
                     let intensity = (v - threshold) as u64;
 
-                    // TODO: Eventually figure out if we can make add_row_pixel faster than this.  
-                    self.current_run_component.add_pixel(x, y, intensity);
+                    // self.current_run_component.add_pixel(x, y, intensity);
+                    self.current_run_component.add_row_pixel(x, y, intensity);
 
-                    offset += 1;
                     x += 1;
                 }
+                offset += SIMD_THRESHOLDING_CHUNK_SIZE;
             }
 
             if self.current_run_component.area != 0 {
@@ -170,19 +169,24 @@ impl RLEConnectedComponentsProcessor {
     }
 
     #[inline(always)]
-    fn advance_current_run(&mut self, x: usize) {
+    fn advance_current_run(&mut self, x: usize, y: usize) {
         if self.current_run_component.area != 0 {
             // Continue the current run.
             if self.current_run_component.max_x + 1 == (x as u16) {
                 return;
             }
             
+            self.current_run_component.finish_pixel_row();
+
             // Finalize the current run
             self.finalize_run();
         }
 
+        self.current_run_component.start_pixel_row(x, y);
     }
 
+    // TODO: Consider allowing skipping of 1-pixel wide runs since they aren't very useful and would halve the
+    // worse case computation per pixel.
     fn finalize_run(&mut self) {
         let mut run = PixelRun {
             x_offset: self.current_run_component.min_x,
@@ -226,9 +230,13 @@ impl RLEConnectedComponentsProcessor {
             let last_component_i = self.component_sets.find(last_line_run.component_id as usize);
 
             if !have_component {
+                // Copy the component from the last line's run since we don't have a real
+                // component for the current run yet.
                 self.components[last_component_i].add(&self.current_run_component);
                 run.component_id = last_component_i as u32;
                 have_component = true;
+                cur_last_line_run_i += 1;
+                continue;
             }
 
             let cur_component_i = self.component_sets.find(run.component_id as usize);

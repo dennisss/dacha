@@ -22,7 +22,7 @@ where
     pub v: MatrixNew<T, N, N>,
 }
 
-impl<T: FloatElementType + From<i32> + From<f32> + From<u32>, M: Dimension, N: Dimension>
+impl<T: FloatElementType + From<f32>, M: Dimension, N: Dimension>
     SVD<T, M, N>
 where
     MatrixNewStorage: NewStorage<T, M, M>
@@ -74,7 +74,7 @@ where
             if (thin_right.col(i) - eig_right.vectors.col(i)).norm()
                 > eig_right.vectors.col(i).norm()
             {
-                eig_right.vectors.col_mut(i).cwise_mul_assign(-1);
+                eig_right.vectors.col_mut(i).cwise_mul_assign(-1i16);
             }
         }
 
