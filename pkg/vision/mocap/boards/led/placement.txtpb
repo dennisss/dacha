@@ -1,0 +1,33 @@
+
+# Config for OpenPNP Assembly.
+
+parts: [
+    {
+        name: "Fiducial"
+        fiducial: true
+        board_ref {
+            value: "Fiducial"
+            package: "Fiducial_1mm_Mask2mm"
+        }
+    },
+    {
+        name: "WS2812B-2020"
+        source: ""
+        height: 0.84
+        board_ref {
+            value: "WS2812B-2020"
+            package: "LED_WS2812B-2020_PLCC4_2.0x2.0mm"
+        }
+    },
+
+    # 12mm tape, 8mm part pitch 
+    {
+        name: "LED_SFH_4715AS_A01"
+        source: ""
+        height: 2.29
+        board_ref {
+            value: "SFH_4715AS_A01"
+            package: "LED_SFH_4715AS_A01"
+        }
+    }
+]
