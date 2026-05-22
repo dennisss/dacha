@@ -10,3 +10,4 @@ executor = { path = "../executor" }
 macros = { path = "../macros" }
 image = { path = "../image" }
 math = { path = "../math" }
+typenum = "1.10.0"

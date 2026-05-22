@@ -52,6 +52,16 @@ async fn main() -> Result<()> {
     swd.init_debug()?;
     println!("=> Done!");
 
+    println!("Halting core...");
+    swd.halt_core()?;
+
+    // Release reset to let the chip exit hardware reset, but it will 
+    // remain halted because we just set the C_HALT flag via SWD!
+    if let Some(pin) = &mut reset_pin {
+        pin.write(true)?;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
     println!("Flashing...");
 
     let s = Instant::now();
@@ -62,12 +72,23 @@ async fn main() -> Result<()> {
 
     println!("Flash {} bytes in {:?}", data.len(), e - s);
 
+    println!("Verifying...");
+
+    let s_verify = Instant::now();
+    swd.verify_flash(&data)?;
+    let e_verify = Instant::now();
+
+    println!("Verified {} bytes in {:?}", data.len(), e_verify - s_verify);
+
     println!("Resetting...");
 
     swd.reset_core()?;
-
+    
+    println!("Releasing pins...");
+    swd.release_pins()?;
+    
     if let Some(pin) = &mut reset_pin {
-        pin.write(true)?;
+        pin.configure(GPIOLineFlags::INPUT)?;
     }
 
     println!("Done!");

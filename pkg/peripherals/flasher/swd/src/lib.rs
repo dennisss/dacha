@@ -10,9 +10,10 @@ use common::errors::*;
 use peripherals::gpio::*;
 
 
-const CLOCK_FREQUENCY: u64 = 1_000_000;
-
-const HALF_CYCLE_DURATION: Duration = Duration::from_nanos(1000000000 / CLOCK_FREQUENCY / 2);
+// NOTE: We don't currently do any explicit sleeping since the
+// delay from gpiochip syscalls is sufficient.
+// const CLOCK_FREQUENCY: u64 = 1_000_000;
+// const HALF_CYCLE_DURATION: Duration = Duration::from_nanos(1000000000 / CLOCK_FREQUENCY / 2);
 
 #[derive(Args, Copy, Clone, PartialEq)]
 pub enum McuTarget {
@@ -36,39 +37,45 @@ impl SWDProgrammer {
         Ok(Self { clk_pin, io_pin })
     }
 
+    pub fn release_pins(&mut self) -> Result<()> {
+        self.clk_pin.configure(GPIOLineFlags::INPUT)?;
+        self.io_pin.configure(GPIOLineFlags::INPUT)?;
+        Ok(())
+    }
+
     fn write_bit(&mut self, bit: bool) -> Result<()> {
         self.clk_pin.write(false)?;
         self.io_pin.write(bit)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         self.clk_pin.write(true)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         Ok(())
     }
 
     fn read_bit(&mut self) -> Result<bool> {
         self.clk_pin.write(false)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         let bit = self.io_pin.read()?;
         self.clk_pin.write(true)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         Ok(bit)
     }
 
     fn trn_in(&mut self) -> Result<()> {
         self.clk_pin.write(false)?;
         self.io_pin.configure(GPIOLineFlags::INPUT | GPIOLineFlags::BIAS_PULL_UP)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         self.clk_pin.write(true)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         Ok(())
     }
 
     fn trn_out(&mut self) -> Result<()> {
         self.clk_pin.write(false)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         self.io_pin.configure(GPIOLineFlags::OUTPUT | GPIOLineFlags::BIAS_PULL_UP)?;
         self.clk_pin.write(true)?;
-        sleep(HALF_CYCLE_DURATION);
+        // sleep(HALF_CYCLE_DURATION);
         Ok(())
     }
 
@@ -130,8 +137,13 @@ impl SWDProgrammer {
         let pwr_req = 0x50000000; // CSYSPWRUPREQ | CDBGPWRUPREQ
         self.transfer(false, false, 0x04, pwr_req)?;
         
-        // Note: In a robust implementation, you would repeatedly read DP CTRL/STAT
-        // here until the acknowledge bits (CSYSPWRUPACK | CDBGPWRUPACK) go high.
+        // Wait for power-up to complete
+        for _ in 0..1000 {
+            let stat = self.transfer(false, true, 0x04, 0)?;
+            if (stat & 0xA0000000) == 0xA0000000 {
+                break;
+            }
+        }
         
         // Select AP Bank 0 (Write to DP SELECT register 0x08)
         // This ensures subsequent AP accesses go to the AHB-AP control registers
@@ -187,6 +199,12 @@ impl SWDProgrammer {
                     self.write_mem32(start_addr + (i as u32 * 4), word)?;
                     self.wait_for_flash_ready(flash_sr, 16)?;
                 }
+
+                // 5. Clear PG bit and lock flash
+                let cr = self.read_mem32(flash_cr)?;
+                self.write_mem32(flash_cr, cr & !(1 << 0))?;
+                let cr2 = self.read_mem32(flash_cr)?;
+                self.write_mem32(flash_cr, cr2 | (1 << 31))?;
             }
             McuTarget::STM32G031 => {
                 let flash_keyr = 0x40022008;
@@ -219,9 +237,47 @@ impl SWDProgrammer {
                     
                     self.wait_for_flash_ready(flash_sr, 16)?;
                 }
+
+                // 5. Clear PG bit and lock flash
+                let cr = self.read_mem32(flash_cr)?;
+                self.write_mem32(flash_cr, cr & !(1 << 0))?;
+                let cr2 = self.read_mem32(flash_cr)?;
+                self.write_mem32(flash_cr, cr2 | (1 << 31))?;
             }
         }
 
+        Ok(())
+    }
+
+    /// Verifies the flashed data by reading back memory and comparing
+    pub fn verify_flash(&mut self, binary: &[u8]) -> Result<()> {
+        // Clear sticky errors (Write to DP ABORT register 0x00)
+        self.transfer(false, false, 0x00, 0x0000001E)?;
+        
+        let start_addr = 0x08000000;
+        
+        for (i, chunk) in binary.chunks(4).enumerate() {
+            let addr = start_addr + (i as u32 * 4);
+            let val = self.read_mem32(addr)?;
+            
+            let mut expected = 0u32;
+            for (j, &byte) in chunk.iter().enumerate() {
+                expected |= (byte as u32) << (j * 8);
+            }
+            
+            // Mask out padding bytes if chunk is less than 4 bytes
+            let mask = match chunk.len() {
+                1 => 0x000000FF,
+                2 => 0x0000FFFF,
+                3 => 0x00FFFFFF,
+                _ => 0xFFFFFFFF,
+            };
+            
+            if (val & mask) != (expected & mask) {
+                return Err(err_msg(format!("Verification failed at 0x{:08X}: expected 0x{:08X}, got 0x{:08X}", addr, expected, val)));
+            }
+        }
+        
         Ok(())
     }
 
@@ -258,6 +314,10 @@ impl SWDProgrammer {
                         self.wait_for_flash_ready(flash_sr, 16)?;
                     }
                 }
+                
+                // Clear any erase flags (SER, MER)
+                let cr = self.read_mem32(flash_cr)?;
+                self.write_mem32(flash_cr, cr & !((1 << 1) | (1 << 2)))?;
             }
             McuTarget::STM32G031 => {
                 let flash_cr = 0x40022014;
@@ -283,12 +343,22 @@ impl SWDProgrammer {
                         self.wait_for_flash_ready(flash_sr, 16)?;
                     }
                 }
+
+                // Clear any erase flags (PER, MER1)
+                let cr = self.read_mem32(flash_cr)?;
+                self.write_mem32(flash_cr, cr & !((1 << 1) | (1 << 2)))?;
             }
         }
         Ok(())
     }
 
     pub fn reset_core(&mut self) -> Result<()> {
+        let dhcsr_addr = 0xE000EDF0;
+        let dbgkey = 0xA05F0000;
+        
+        // Clear C_HALT and C_DEBUGEN to fully detach the debugger
+        self.write_mem32(dhcsr_addr, dbgkey)?;
+
         let aircr_addr = 0xE000ED0C;
         
         // VECTKEY (0x05FA) in the upper 16 bits to unlock the register
@@ -297,10 +367,15 @@ impl SWDProgrammer {
         
         self.write_mem32(aircr_addr, reset_cmd)?;
         
-        // Give the chip a moment to actually process the reset and reboot
-        // TODO: Tune this.
+        // Flush the AP write by reading the DP
+        let _ = self.transfer(false, true, 0x0C, 0);
+
+        // Power down DP
+        let _ = self.transfer(false, false, 0x04, 0x00000000);
+
+        // Give the chip a moment to process the reset
         for _ in 0..100 {
-            sleep(HALF_CYCLE_DURATION);
+            let _ = self.write_bit(false);
         }
         
         Ok(())

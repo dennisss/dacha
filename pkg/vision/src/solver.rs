@@ -140,6 +140,7 @@ impl<'a> NonLinearSolver<'a> {
         self.gradient_descent = true;
     }
 
+    #[inline(never)]
     pub fn solve(&self) -> NonLinearProblemSolution {
         // Current value of each parameter in the model that we are estimating.
         let mut params = VectorXf::from_slice_with_shape(self.initial_params.len(), 1, &self.initial_params);

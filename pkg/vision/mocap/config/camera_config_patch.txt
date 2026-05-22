@@ -1,0 +1,29 @@
+[all]
+
+# MCU Serial interface on /dev/ttyAMA2
+dtoverlay=uart2-pi5
+
+# WS2812 LED serial on /dev/spidev0.0 
+dtoverlay=spi0-0cs,no_miso
+
+# Drive MCU NRST high (turn on the MCU) 
+gpio=26=op,dh
+
+# High-Z for MCU SWD pins
+gpio=17,27=ip,pn
+
+# High-Z for the regular CAM_GPIO1 pin
+gpio=35=ip,pn
+
+# Camera EN and frame trigger. Keep low to avoid accidental triggers.
+gpio=34,22=op,dl
+
+# Strobe dimming output
+# TODO: Simplify this and just leave as a low signal initially (software can setup PWM later)
+dtoverlay=pwm,pin=12,func=4
+
+# Configure the camera
+# Note: We don't use the flash output but it is useful for debugging.
+camera_auto_detect=0
+dtoverlay=ar0234,cam0,4lane,link-frequency=360000000,sync-sink,flash
+# dtoverlay=ov9281,cam0

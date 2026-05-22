@@ -1,0 +1,97 @@
+name: "mocap_led_tester"
+# base_config: "nrf52840_itsybitsy"
+base_config: "nrf52840_xiao"
+
+peripherals {
+    name: "leds"
+    neopixel {
+        #pin_name: "D5"
+        #dummy_clk_pin_name: "P1.01"
+        pin_name: "P0.04"
+        dummy_clk_pin_name: "P0.08"
+        config {
+            inverted: false
+            num_bytes: 36 # 12 * 3
+        }
+    }
+}
+
+peripherals {
+    name: "v_poe_good"
+    gpio {
+        # pin_name: "P0.14"
+        pin_name: "P1.13"
+        config {
+            is_input: false
+            default_value: false
+        }
+    }
+}
+
+peripherals {
+    name: "current_sense"
+    adc {
+        #pin_name: "P0.03"
+        pin_name: "P0.02"
+        config {
+            # 200mOhm resistor (0.2V per amp)
+            # - 48V power is max 0.2A so 0.04V
+            max_voltage: 0.1
+            sample_rate: 200000  # 200K sample rate
+            oversampling: 1
+        }
+    }
+}
+
+peripherals {
+    name: "buf1"
+    buffer {
+        config {
+            size: 65534  # 32K samples (~0.16 seconds) 
+        }
+    }
+}
+peripherals {
+    name: "buf2"
+    buffer {
+        config {
+            size: 65534  # 32K samples (~0.16 seconds) 
+        }
+    }
+}
+peripherals {
+    name: "buf3"
+    buffer {
+        config {
+            size: 65534  # 32K samples (~0.16 seconds) 
+        }
+    }
+}
+
+
+peripherals {
+    name: "strobe_en"
+    pwm {
+        #pin_name: "P0.07"
+        pin_name: "P1.11"
+        config {
+            # TODO: Default to on with a timeout.
+            default_value: 0
+            frequency: 120
+        }
+    }
+}
+
+peripherals {
+    name: "strobe_dimming"
+    pwm {
+        # TODO: Fix in CAD for the footprint text for D7
+        #pin_name: "P1.08"
+        pin_name: "P0.05"
+        config {
+            # TODO: Default to on with a timeout.
+            default_value: 0
+            frequency: 10000
+        }
+    }
+}

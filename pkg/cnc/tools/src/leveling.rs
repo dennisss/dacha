@@ -6,7 +6,6 @@ use std::f64::consts::PI;
 use common::errors::*;
 use math::matrix::{VectorXd, MatrixXd};
 use math::vecxd;
-use math::matrix::svd::SVD;
 use math::matrix::qr::QR;
 use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;

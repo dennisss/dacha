@@ -55,6 +55,9 @@ struct WriteCommand {
 
     hardware_model: Option<HardwareModel>,
 
+    /// Extra lines to append to the end of the config.txt file.
+    config_txt_patch_file: Option<LocalPathBuf>,
+
     #[arg(default = false)]
     no_confirm: bool,
 }
@@ -435,6 +438,14 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     if let Some(model) = &cmd.hardware_model {
         config_txt.filter_to_hardware(model);
     }
+
+    if let Some(path) = cmd.config_txt_patch_file {
+        let patch = ConfigTxtFile::parse(
+            &file::read_to_string(path).await?
+        )?;
+
+        config_txt.lines.extend(patch.lines);
+    } 
 
     println!("Writing /etc/image-id...");
     {

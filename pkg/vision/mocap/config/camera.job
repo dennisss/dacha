@@ -1,0 +1,58 @@
+name: "mocap_camera"
+
+replicas: 100
+
+scheduling {
+    distinct_nodes: true
+    labels {
+        label {
+            key: "mocap_camera"
+            present: true
+        }
+    }
+}
+
+worker {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/vision/mocap/camera/mocap_camera",
+        "--ptp_iface=eth0",
+        "--rpc_port=rpc",
+        "--ptp_port=ptp"
+    ]
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/vision/mocap/camera:mocap_camera_bundle"
+        }
+    ]
+
+    ports: [
+        {
+            name: "rpc"
+            type: TCP
+        },
+        {
+            name: "ptp"
+            type: TCP  # TODO: Support UDP
+            node_port: 319
+        }
+    ]
+
+    additional_groups: ["ptp", "video", "dialout", "spi", "gpio", "i2c"]
+    devices: [
+        {
+            source {
+                raw: "/dev"
+                limit: 1
+            }
+        },
+        {
+            source {
+                raw: "/sys"
+                limit: 1
+            }
+        }
+    ]
+}

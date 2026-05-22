@@ -1,0 +1,41 @@
+[package]
+name = "mocap_camera"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../../../common" }
+base_args = { path = "../../../base/args" }
+base_algorithms = { path = "../../../base/algorithms" }
+sys = { path = "../../../sys" }
+file = { path = "../../../file" }
+crypto = { path = "../../../crypto" }
+cluster_client = { path = "../../../cluster/client" }
+cluster_proto = { path = "../../../cluster/proto" }
+peripherals = { path = "../../../peripherals" }
+executor = { path = "../../../executor" }
+executor_multitask = { path = "../../../executor/multitask" }
+parsing = { path = "../../../parsing" }
+macros = { path = "../../../macros" }
+image = { path = "../../../image" }
+math = { path = "../../../math" }
+media_camera = { path = "../../../media/camera" }
+media_camera_proto = { path = "../../../media/camera/proto" }
+protobuf = { path = "../../../protobuf" }
+protobuf_json = { path = "../../../protobuf/json" }
+rpc = { path = "../../../rpc" }
+rpi = { path = "../../../rpi" }
+pio_rp1 = { path = "../../../rpi/pio_rp1" }
+ptp = { path = "../../../net/ptp" }
+ptp_proto = { path = "../../../net/ptp/proto" }
+http = { path = "../../../http" }
+http_util = { path = "../../../http/util" }
+web = { path = "../../../web" }
+rpc_util = { path = "../../../rpc/util" }
+protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
+v4l2 = { path = "../../../media/v4l2" }
+mocap_proto = { path = "../proto" }
+electronics = { path = "../../../peripherals/electronics" }
+scpi = { path = "../../../peripherals/scpi" }
+vision = { path = "../../" }
+flasher_swd = { path = "../../../peripherals/flasher/swd" }

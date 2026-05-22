@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package mocap;
+
+// Final set of blobs generated after processing an image.
+message BlobResults {
+    repeated Blob blobs = 1;
+
+    // Number of blobs detected in the frame which didn't meet the BlobFilterConfig
+    // requirements
+    uint32 num_rejected_blobs = 2;
+
+    // Total number of pixels across all the blobs in num_rejected_blobs 
+    uint32 num_rejected_pixels = 3;
+
+    // Number of blobs that passed the BlobFilterConfig but have to be truncated
+    // since too many blobs were deemed good.
+    uint32 num_truncated_blobs = 4;
+
+    // We were unable to fully process the image frame due to time constraints and the
+    // image likely being too complex or noisy to quickly process.
+    bool early_terminated = 5;
+}
+
+message Blob {
+    float x = 1;
+    float y = 2;
+    float radius = 3;
+}
+
+message BlobFilterConfig {
+    // Minimum number of pixels in a blob for it to be accepted.
+    uint32 min_area = 1;
+
+    // Maximum number of pixels in a blob for it to be accepted
+    uint32 max_area = 2;
+
+    // If true, rejects any blobs that touch the edge of the image since these
+    // may have been clipped so the center point may be skewed.
+    bool reject_edge = 3;
+
+    // Number >=1 representing the maximum pixel aspect ratio allowed.
+    // This is just calculated based on the axis aligned bounding box width/height.
+    float max_aspect_ratio = 4;
+
+    // Maximum error percentage (e.g. 0.1 is 10%) of the area of the blob compared to
+    // a perfect ellipsis fitting inside the same bounding box.
+    float circular_area_error = 5;
+
+    // TODO: Configure processing deadline.
+
+    // TODO: Closeness of center of mass to center of bbox?
+
+    // TODO: Image mask (If a scene has other known light sources in frame, don't count them)
+
+    // TODO: Top-k for limiting how many blobs can be returned.
+}

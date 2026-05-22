@@ -176,8 +176,6 @@ impl RLEConnectedComponentsProcessor {
                 return;
             }
             
-            self.current_run_component.finish_pixel_row();
-
             // Finalize the current run
             self.finalize_run();
         }
@@ -188,6 +186,8 @@ impl RLEConnectedComponentsProcessor {
     // TODO: Consider allowing skipping of 1-pixel wide runs since they aren't very useful and would halve the
     // worse case computation per pixel.
     fn finalize_run(&mut self) {
+        self.current_run_component.finish_pixel_row();
+        
         let mut run = PixelRun {
             x_offset: self.current_run_component.min_x,
             x_last: self.current_run_component.max_x,

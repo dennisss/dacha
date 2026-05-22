@@ -13,6 +13,7 @@ impl CameraExtrinsics {
         let mut out = Matrix4f::zero();
         out.block_mut(0, 0).copy_from(&from_axis_angle(&self.rotation));
         out.block_mut(0, 3).copy_from(&self.translation);
+        out[(3, 3)] = 1.0;
         out
     }
 

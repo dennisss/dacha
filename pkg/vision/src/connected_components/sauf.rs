@@ -17,6 +17,8 @@ pub struct SAUFConnectedComponentsProcessor {
     labels: Vec<u32>,
 
     label_sets: DisjointSets,
+
+    components: Vec<ComponentData>,
 }
 
 impl SAUFConnectedComponentsProcessor {
@@ -29,12 +31,23 @@ impl SAUFConnectedComponentsProcessor {
             image_height,
             labels: vec![0; image_width * image_height],
             label_sets: DisjointSets::default(),
+            components: vec![],
         }
     }
 
     // TODO: Consider returning a reference to internal memory.
     #[inline(never)]
-    pub fn process(&mut self, frame: &[u8], threshold: u8) -> Vec<ComponentData> {
+    pub fn process<'a>(&'a mut self, frame: &[u8], threshold: u8) -> &'a [ComponentData] {
+        self.reset();
+        self.process_lines(frame, threshold);
+        self.finish()
+    }
+
+    pub fn reset(&mut self) {
+
+    }
+
+    pub fn process_lines(&mut self, frame: &[u8], threshold: u8) {
         assert_eq!(frame.len(), self.image_height * self.image_width);
 
         self.label_sets.clear();
@@ -118,7 +131,8 @@ impl SAUFConnectedComponentsProcessor {
 
         let num_components = self.label_sets.flatten_and_relabel();
 
-        let mut components = vec![ComponentData::empty(); num_components];
+        self.components.clear();
+        self.components.resize(num_components, ComponentData::empty());
 
         // Second pass: extract components with metrics.
         Self::iter_pixels_thresholded(frame, threshold, |i| {
@@ -127,11 +141,13 @@ impl SAUFConnectedComponentsProcessor {
             let y = i / self.image_width;
 
             let component_i = self.label_sets.parents[self.labels[i] as usize] as usize;
-            let component = &mut components[component_i];
+            let component = &mut self.components[component_i];
             component.add_pixel(x, y, intensity);
         });
+    }
 
-        components
+    pub fn finish<'a>(&'a mut self) -> &'a [ComponentData] {
+        &self.components
     }
 
 

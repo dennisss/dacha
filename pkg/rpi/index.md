@@ -7,7 +7,7 @@ This directory contains libraries for building Raspberry Pi applications.
 Assuming you don't want to rebuild a Raspberry Pi system image from stratch, download a prebuilt one:
 
 ```
-wget -P third_party/pi-gen/deploy/ https://storage.googleapis.com/da-manual-us/raspbian-builds/2026-04-27/2026-04-27-Daspbian-lite.img.gz
+wget -P third_party/pi-gen/deploy/ https://storage.googleapis.com/da-manual-us/raspbian-builds/2026-05-20/2026-05-20-Daspbian-lite.img.gz
 ```
 
 Then flash to your Pi's SDCards using the instructions in the [Flashing](#flashing)` section.
@@ -57,8 +57,8 @@ This depends on having pre-built binaries for a few drivers. You can download pr
 
 ```
 mkdir -p third_party/pi-gen/data/
-wget -P third_party/pi-gen/data/ https://storage.googleapis.com/da-manual-us/rpi-linux-builds/2026-04-27/linux.tar.gz
-wget -P third_party/pi-gen/data/ https://storage.googleapis.com/da-manual-us/rpi-ar0234-builds/2026-04-27/ar0234.tar.gz
+wget -P third_party/pi-gen/data/ https://storage.googleapis.com/da-manual-us/rpi-linux-builds/2026-05-15/linux.tar.gz
+wget -P third_party/pi-gen/data/ https://storage.googleapis.com/da-manual-us/rpi-ar0234-builds/2026-05-15/ar0234.tar.gz
 ```
 
 Or you can build them yourself using the following instruction pages:
@@ -159,7 +159,7 @@ cargo build --bin rpi_imager --release
 
 # TODO: Modify the image and disk path to match your setup. 
 sudo target/release/rpi_imager write \
-    --image=$PWD/third_party/pi-gen/deploy/2026-04-27-Daspbian-lite.img.gz \
+    --image=$PWD/third_party/pi-gen/deploy/2026-05-20-Daspbian-lite.img.gz \
     --disk=/dev/sdc \
     --ssh_public_key=$HOME/.ssh/id_cluster.pub
 ```
@@ -215,7 +215,7 @@ cargo build --bin rpi_imager --release
 sudo rm -rf /opt/dacha/pi/rootfs
 
 sudo ./target/release/rpi_imager extract \
-	--image=$PWD/third_party/pi-gen/deploy/2025-04-27-Daspbian-lite.img.gz \
+	--image=$PWD/third_party/pi-gen/deploy/2026-05-20-Daspbian-lite.img.gz \
 	--output_dir=/opt/dacha/pi/rootfs
 ```
 

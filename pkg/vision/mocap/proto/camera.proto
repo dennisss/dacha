@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package mocap;
+
+import "pkg/vision/mocap/proto/processor.proto";
+import "pkg/media/camera/proto/property.proto";
+
+service MocapCamera {
+    rpc Status (StatusRequest) returns (MocapCameraStatus);
+
+    rpc Configure (ConfigureRequest) returns (ConfigureResponse);
+
+    // Receives the per-frame stream of detected circular blob data.
+    rpc ReadBlobs (ReadBlobsRequest) returns (stream ReadBlobsResponse);
+
+    rpc ReadFrames (ReadFramesRequest) returns (stream ReadFramesResponse);
+
+    rpc FlashMCU (FlashMCURequest) returns (FlashMCUResponse);
+}
+
+message ConfigureRequest {
+    uint32 frame_rate = 1;
+
+    uint32 exposure_micros = 2;
+
+    // All pixels with value < this value are ignored as background space.
+    // Value from 1 to 255
+    uint32 pixel_threshold = 3;
+
+    // 0-1 percentage of power to use for the strobes.
+    // Note that depending on frame_rate and exposure_micros,
+    // 100% may not be achievable.
+    float strobe_power = 4;
+
+    BlobFilterConfig blob_filter = 5;
+
+    repeated uint32 rgb_led_colors = 6;
+
+    media.camera.PropertiesState camera_controls = 7;
+}
+
+message ConfigureResponse {
+
+}
+
+message StatusRequest {
+
+}
+
+// Return metadata like the temperature, clock sync (cross node, with MCU), voltages,
+// - whether or not we are getting responses from the MCU recently
+// - connected camera (will list out frame rate limits and size)
+// - min/max exposure limits
+// - min/max led power (0.2A continous. 4A pulsed)
+message MocapCameraStatus {
+    float cpu_temperature = 1;
+
+    float cpu_utilization = 2;
+
+    // Information about the connected sensor.
+    // This data shouldn't change over time since we don't support camera hotswap.
+    MocapCameraSensor sensor = 3;
+
+    PPSDividerHeartbeat pps_divider_heartbeat = 4;
+
+    // PTP lock status?
+    PPSDividerTelemetry pps_divider_telemetry = 5;
+
+    ConfigureRequest config = 6;
+
+    // Note that the acceleration vector will be already normalized such that the axes
+    // are aligned with the camera though there may be some skew due to assembly error.
+    AccelerometerStatus accelerometer = 7;
+
+    media.camera.Property camera_controls = 8;
+}
+
+message PPSDividerHeartbeat {
+    // 3.3V rail.
+    // (only available if the PPS divider is healthy)
+    float vcc_voltage_min = 1;
+
+    // (only available if the PPS divider is healthy)
+    float vcc_voltage_max = 2;
+
+    // (only available if the PPS divider is healthy)
+    float poe_voltage_min = 3;
+
+    // (only available if the PPS divider is healthy)
+    float poe_voltage_max = 4;
+
+    float mcu_temperature = 5;
+
+    // TODO: Time since last heartbeat packet.
+}
+
+message PPSDividerTelemetry {
+    bool locked = 1;
+
+    // Measured width of 1 PPS pulse in seconds.
+    double pps_width = 2;
+
+    // Error between the PPS divider's lock on to the PPS pulse and
+    // the last seen pulse.
+    double prediction_error = 3;
+
+    uint32 output_errors = 4;
+
+    // TODO: Time since last telemtry packet.
+}
+
+message MocapCameraSensor {
+    string model_name = 1;
+
+    uint32 max_frame_rate = 2;
+
+    uint32 frame_width = 3;
+
+    uint32 frame_height = 4;
+
+    // NOTE: For now, this is independent of frame rate and based on the max speed.
+    uint32 max_exposure_micros = 5;
+
+    uint32 min_exposure_micros = 6; 
+}
+
+message AccelerometerStatus {
+    VectorProto value = 1;
+}
+
+message VectorProto {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+}
+
+message ReadBlobsRequest {
+    // Maximum number of frames to receive per second.
+    // You'd mainly want to use this if you are just using the information for
+    // something like displaying in a UI.
+    uint32 max_rate = 1;
+}
+
+message ReadBlobsResponse {
+    // Take at which the exposure of this frame started.
+    // Note that this is a 'round' number that should match across all
+    // cameras running at the same frame rate.
+    uint64 frame_timestamp = 1;
+
+    // Note that individual cameras will always return a single entry here
+    // while the manager will return responses with multiple.
+    repeated CameraBlobResults cameras = 2;
+}
+
+message CameraBlobResults {
+    fixed64 camera_id = 1;
+
+    // Amount of wall time taken from the frame_timestamp to the final blobs
+    // list being available (includes exposure + processing) 
+    uint64 latency = 2;
+
+    BlobResults results = 3;
+}
+
+message ReadFramesRequest {
+
+}
+
+message ReadFramesResponse {
+    bytes mjpeg = 1;
+
+    uint64 frame_timestamp = 2;
+}
+
+
+message FlashMCURequest {
+    bytes firmware = 1;
+}
+
+message FlashMCUResponse {
+
+}

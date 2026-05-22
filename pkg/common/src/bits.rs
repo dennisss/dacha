@@ -153,8 +153,9 @@ impl<T: BitVectorStorage> BitVector<T> {
 
     pub fn copy_from<Y: BitVectorStorage>(&mut self, other: &BitVector<Y>) {
         self.len = other.len();
-        self.data.resize(other.data.len(), 0);
-        self.data.as_mut().copy_from_slice(other.data.as_ref());
+        let num_bytes = other.data.len();
+        self.data.resize(num_bytes, 0);
+        self.data.as_mut()[0..num_bytes].copy_from_slice(other.data.as_ref());
     }
 
     /// Appends a single bit to this vector.

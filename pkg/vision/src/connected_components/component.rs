@@ -54,7 +54,7 @@ impl ComponentData {
 
     pub fn finish_pixel_row(&mut self) {
         self.area = (self.max_x - self.min_x) as u32;
-        self.moment_y = self.mass * (self.min_y as u64) ;
+        self.moment_y = self.mass * (self.min_y as u64);
     }
 
     pub fn add(&mut self, other: &Self) {

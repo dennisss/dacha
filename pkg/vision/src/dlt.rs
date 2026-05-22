@@ -1,5 +1,6 @@
 use math::matrix::{MatrixX4f, Vector2f, Vector3f, vec3f};
 use math::matrix::svd::SVD;
+use typenum::{U1, U3, U4};
 
 use crate::extrinsics::*;
 
@@ -30,8 +31,22 @@ impl DLTSolver {
         self.i += 1;
     }
 
+    #[inline(never)]
     pub fn solve(&self) -> Vector3f {
         assert_eq!(2 * self.i, self.mat.rows());
+
+        // Fast 2 view case.
+        if self.i == 2 {
+            let m = self.mat.block::<U4, U3>(0, 0).to_owned();
+            let b = self.mat.block::<U4, U1>(0, 3);
+
+            let x = (m.transpose() * &m).inverse();
+            let x = x * m.transpose();
+
+            let x = x * b;
+            return x * -1.0;
+        }
+
 
         let mut svd = SVD::eigen_svd(&self.mat);
 
