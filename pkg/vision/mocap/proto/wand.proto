@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package mocap;
+
+
+message WandPatternFinderConfig {
+    // Maximum distance in pixels between two blobs in the pattern.
+    float max_blob_center_pixel_distance = 1;
+
+    // Maximum percentage difference between the radius of the smallest
+    // and largest blob in the pattern.
+    float max_radius_ratio = 2;
+
+    float left_arm_length = 3;
+
+    float right_arm_length = 4;
+
+    float bottom_length = 5;
+
+    float max_projection_stretch = 6;
+
+    float max_reprojection_error = 7;
+}

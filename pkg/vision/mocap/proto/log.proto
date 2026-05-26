@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package mocap;
+
+import "pkg/vision/mocap/proto/manager.proto";
+import "pkg/vision/mocap/proto/camera.proto";
+
+message MocapLogEntry {
+    // Included in the first log entry to record the set of cameras involved.
+    MocapManagerStatus system_state = 1;
+
+    // Included in all the but the first entry to record one frame of calibration data.
+    ReadBlobsResponse blobs = 2;
+}

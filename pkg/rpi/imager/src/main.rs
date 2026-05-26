@@ -42,7 +42,7 @@ enum Command {
 #[derive(Args)]
 struct WriteCommand {
     image: LocalPathBuf,
-    disk: LocalPathBuf,
+    disk: String,
     ssh_public_key: Option<LocalPathBuf>,
     wpa_ssid: Option<String>,
     wpa_password: Option<String>,
@@ -187,15 +187,59 @@ async fn open_image_file(path: &LocalPath) -> Result<(Box<dyn Readable>, usize)>
     }
 }
 
+async fn find_usb_mass_storage_gadget() -> Result<LocalPathBuf> {
+    println!("Looking for attached Pi in USB mass storage gadget mode...");
+
+    let usb_device = {
+        let ctx = usb::Context::create()?;
+
+        let mut out = None;
+
+        for dev in ctx.enumerate_devices().await? {
+            let desc = dev.device_descriptor()?;
+            if desc.idVendor == 0x0a5c && desc.idProduct == 0x0104 {
+                println!("  => Found USB device");
+                out = Some(dev);
+                break;
+            }
+        }
+
+        out.ok_or_else(|| err_msg("Couldn't find USB device"))?
+    };
+
+    let usb_real_path = file::realpath(usb_device.sysfs_dir()).await?;
+
+    let block_devs = storage::devices::BlockDevice::list().await?;
+
+    for block_dev in block_devs {
+        if let Some(block_dev_path) = &block_dev.device_path {
+            if block_dev_path.starts_with(&usb_real_path) {
+                let p = LocalPath::new("/dev").join(&block_dev.name);
+                println!("  => Found block device: {}", p.as_str());
+                return Ok(p);
+            }
+        }
+    }
+
+    Err(err_msg("No block device attached to the USB device"))
+}
+
 async fn run_write_command(cmd: WriteCommand) -> Result<()> {
+
+    let mut disk_path: LocalPathBuf = cmd.disk.as_str().into();
+
+    if cmd.disk == "mass-storage-gadget" {
+        disk_path = find_usb_mass_storage_gadget().await?;
+    }
+
     // Command validation (goal is to error out early)
     {
         if !file::exists(&cmd.image).await? {
             return Err(format_err!("No image found at \"{:?}\"", cmd.image));
         }
 
-        if !file::exists(&cmd.disk).await? {
-            return Err(format_err!("No disk found at \"{:?}\"", cmd.disk));
+        if !file::exists(&disk_path).await? {
+            return Err(format_err!("No disk found at \"{:?}\"", disk_path));
         }
 
         if cmd.wpa_password.is_some() != cmd.wpa_ssid.is_some() {
@@ -234,8 +278,8 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     let disk_entry = BlockDevice::list()
         .await?
         .into_iter()
-        .find(|disk| &format!("/dev/{}", disk.name) == cmd.disk.as_str())
-        .ok_or_else(|| format_err!("Disk \"{:?}\" is not a block device", cmd.disk))?;
+        .find(|disk| &format!("/dev/{}", disk.name) == disk_path.as_str())
+        .ok_or_else(|| format_err!("Disk \"{:?}\" is not a block device", disk_path))?;
 
     if !disk_entry.removable {
         return Err(err_msg("Attempting to write to a non-removable disk?"));
@@ -279,7 +323,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     println!("Opening disk...");
 
     let mut disk_file = file::LocalFile::open_with_options(
-        &cmd.disk,
+        &disk_path,
         &LocalFileOpenOptions::new()
             .write(true)
             .direct(true)
@@ -344,7 +388,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     // Example command: sudo parted -s /dev/sdb "resizepart 2 -1" quit
     {
         let status = std::process::Command::new("parted")
-            .args(&["-s", cmd.disk.as_str(), "resizepart 2 -1", "quit"])
+            .args(&["-s", disk_path.as_str(), "resizepart 2 -1", "quit"])
             .status()?;
         if !status.success() {
             return Err(err_msg("Failed to resize root partition"));
@@ -369,7 +413,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     // cmdline.txt files.
     println!("Randomize BTRFS UUID...");
     {
-        let dev_name = format!("{}2", &cmd.disk.as_str());
+        let dev_name = format!("{}2", &disk_path.as_str());
 
         let status = std::process::Command::new("btrfstune")
             .args(&["-f", "-u", &dev_name])
@@ -383,7 +427,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     let boot_dir = TempDir::create()?;
     {
         // TODO: Re-lookup the partitions list from BlockDevices::list()
-        let dev_name = format!("{}1", &cmd.disk.as_str());
+        let dev_name = format!("{}1", &disk_path.as_str());
         let dir_name = boot_dir.path().as_str();
 
         println!("{} => {}", dev_name, dir_name);
@@ -402,7 +446,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     let root_dir = TempDir::create()?;
     {
         // TODO: Re-lookup the partitions list from BlockDevices::list()
-        let dev_name = format!("{}2", &cmd.disk.as_str());
+        let dev_name = format!("{}2", &disk_path.as_str());
         let dir_name = root_dir.path().as_str();
 
         println!("{} => {}", dev_name, dir_name);

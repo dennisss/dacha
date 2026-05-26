@@ -56,7 +56,7 @@ pub struct MocapCameraCaptureProcessor {
 impl_resource_passthrough!(MocapCameraCaptureProcessor, resources);
 
 struct Shared {
-    config: Arc<AsyncMutex<Arc<ConfigureRequest>>>,
+    config: Arc<AsyncMutex<Arc<MocapCameraConfigureRequest>>>,
     camera_sensor: CameraSensorData,
     mono_time_sync: Arc<MonotonicClockTimeSyncer>,
     blob_subscribers: BroadcastChannel<ReadBlobsResponse>,
@@ -150,7 +150,7 @@ impl WallTimeTracker {
 
 impl MocapCameraCaptureProcessor {
     pub async fn create(
-        config: Arc<AsyncMutex<Arc<ConfigureRequest>>>,
+        config: Arc<AsyncMutex<Arc<MocapCameraConfigureRequest>>>,
         camera_sensor: CameraSensorData,
         capture_device: v4l2::Device,
         capture_stream: v4l2::UnconfiguredStream,
@@ -355,7 +355,7 @@ impl MocapCameraCaptureProcessor {
                     state.blob_processing_queue.push_back(frame_sync.frame_sequence);
                     processing_sender.try_send((event, enqueued_buffer)); 
                 } else {
-                    eprintln!("Hit processing concurrency limit");
+                    eprintln!("Hit blob processing concurrency limit");
                 }
             });
         }
@@ -382,10 +382,12 @@ impl MocapCameraCaptureProcessor {
 
         let chunk_time = FRAME_TRANSFER_TIME / (NUM_FRAME_CHUNKS as u32);
 
+        let mut last_log_time: Duration = sys::ClockId::MONOTONIC.get_time()?.into();
+
         loop {
             let (event, enqueued_buffer) = receiver.recv().await?;
 
-            let config: Arc<ConfigureRequest> = lock!(config <= shared.config.lock().await?, {
+            let config: Arc<MocapCameraConfigureRequest> = lock!(config <= shared.config.lock().await?, {
                 config.clone()
             });
 
@@ -490,13 +492,14 @@ impl MocapCameraCaptureProcessor {
                 res.new_cameras().set_results(results);
 
                 let now: Duration = sys::ClockId::MONOTONIC.get_time()?.into();
-                if event.sequence() % 30 == 0 {
-
-                    let latency = now - dequeued_buffer.dequeued_time;
+                
+                let overhead = now - dequeued_buffer.dequeued_time;
+                if now - last_log_time >= Duration::from_secs(2) || overhead > Duration::from_millis(6) {
+                    last_log_time = now;
 
                     println!(
                         "Blobs: [Overhead: {:?}] [Compute: {:?}] [Frame Transfer: {:?}] [Exposure: {:?}]",
-                        latency,
+                        overhead,
                         processing_time.total,
                         actual_frame_transfer_time,
                         exposure_time
@@ -554,6 +557,8 @@ impl MocapCameraCaptureProcessor {
 
         let mut last_mjpeg_frame = Instant::now();
 
+        let mut last_log_time = Instant::now();
+
         let mut i = 0; 
         loop {
             let buffer = receiver.recv().await?;
@@ -590,7 +595,8 @@ impl MocapCameraCaptureProcessor {
 
                     output_data = Some(data.into());
 
-                    if i % 10 == 0 {
+                    if now - last_log_time >= Duration::from_secs(2) {
+                        last_log_time = now;
                         println!("Encode {} in {:?} : Compression {:.2}", frame_sequence, e - s, compression_ratio);
                     }
 

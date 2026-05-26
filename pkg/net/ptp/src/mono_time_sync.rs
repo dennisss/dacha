@@ -58,6 +58,7 @@ impl MonotonicClockTimeSyncer {
     }
 
     fn collect_sample(shared: &Shared, ptp_device: &PTPDevice) -> Result<()> {
+        // TODO: Sometimes this gets "[ETIMEDOUT] Connection timed out"
         let offset = ptp_device.offset_to(ClockId::MONOTONIC)?;
 
         if offset.rtt > Duration::from_millis(1) {
@@ -81,11 +82,14 @@ impl MonotonicClockTimeSyncer {
 
     async fn background_thread(shared: Arc<Shared>, ptp_device: Arc<PTPDevice>) -> Result<()> {
         loop {
-            Self::collect_sample(&shared, &ptp_device)?;
+            if let Err(e) = Self::collect_sample(&shared, &ptp_device) {
+                eprintln!("[MonotonicClockTimeSyncer] Error: {}", e);
+            }
             executor::sleep(SAMPLE_INTERVAL).await?;
         }
     }
 
+    // TODO: Need to return None if we don't have any recent data.
     // TODO: This may produce errors due to some times being near zero if we use it before PTP is fully initialized to a non-zero time. 
     pub fn monotonic_to_ptp_time(&self, time: Duration) -> Duration {
         let nearest = self.shared.state.apply(|state| {

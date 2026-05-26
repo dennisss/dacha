@@ -1,0 +1,173 @@
+syntax = "proto3";
+
+package mocap;
+
+import "pkg/vision/mocap/proto/camera.proto";
+import "pkg/net/ptp/proto/service.proto";
+import "pkg/media/camera/proto/property.proto";
+import "pkg/vision/mocap/proto/matching.proto";
+import "pkg/vision/mocap/proto/wand.proto";
+
+service MocapManager {
+    rpc Status (MocapManagerStatusRequest) returns (MocapManagerStatus);
+
+    // This reads a syncronized set of blobs from all cameras.
+    rpc ReadBlobs (ReadBlobsRequest) returns (stream ReadBlobsResponse);
+
+    rpc Execute (ExecuteRequest) returns (ExecuteResponse);
+}
+
+message MocapManagerConfig {
+    // Address of the job that contains all of the individual camera workers.
+    string camera_service = 1;
+
+    // Default config to send to all cameras (currently we assume that all cameras are similar)
+    MocapCameraConfigureRequest initial_camera_config = 2;
+    
+    // Number of seconds since the first camera finishes processing a frame until we consider the
+    // frame completed with all frames received so far.
+    float frame_aggregation_timeout = 3;
+
+    uint32 num_dummy_cameras = 4;
+
+    repeated MocapPerCameraConfig per_camera = 5;
+
+    BlobMatchingConfig matching = 6;
+
+    WandPatternFinderConfig wand = 7;
+}
+
+
+message MocapPerCameraConfig {
+    string camera_id_str = 1;
+
+    fixed64 camera_id = 2;
+
+    CameraIntrinsicsModelProto intrinsics = 3;
+
+    CameraExtrinsicsProto extrinsics = 4;
+}
+
+
+message CameraIntrinsicsModelProto {
+    repeated float focal_length = 1;
+    repeated float center = 2;
+    float k1 = 3;
+    float k2 = 4;
+}
+
+message CameraExtrinsicsProto {
+    repeated float rotation = 1;
+    repeated float translation = 2;
+}
+
+message MocapManagerStatusRequest {
+
+}
+
+message MocapManagerStatus {
+    repeated MocapManagerCameraStatus cameras = 1;
+
+    repeated MocapCameraGroup groups = 2;
+
+    // If present, then we will currnetly
+    MocapCalibrationStatus calibration = 3;
+
+    // TODO: Eventually support differnt configs for different camera subsets.
+    
+}
+
+message MocapCameraGroup {
+    MocapCameraConfigureRequest config = 1;
+
+    // Information about the connected sensor.
+    // This data shouldn't change over time since we don't support camera hotswap.
+    MocapCameraSensor sensor = 2;
+
+    media.camera.Property camera_controls = 3;
+}
+
+message MocapManagerCameraStatus {
+    fixed64 id = 1;
+
+    // NOTE: To avoid excessive duplication, the configs are cleared in this
+    MocapCameraStatus camera_status = 2;
+
+    ptp.StatusResponse ptp_status = 3;
+
+    // If true, this camera is being highlighted (with full blue LEDs).
+    bool active = 4;
+
+    // If true, we have goten at least one full camera_status and ptp_status.
+    bool synced = 5;
+
+    double last_sync_age = 6;
+
+    // TODO: Metrics and health. Last heartbeat age 
+}
+
+
+message MocapManagerCameraMetrics {
+    // Things like dropped frame count.
+
+}
+
+message MocapCalibrationStatus {
+
+
+}
+
+message ExecuteRequest {
+    oneof command {
+        MocapCameraConfigureRequest configure_cameras = 1;
+
+        // 
+        bool start_calibration = 2;
+
+        bool stop_calibration = 3;
+
+        fixed64 select_camera = 4;
+    }
+}
+
+
+message ExecuteResponse {
+
+}
+
+
+message MocapTrackingLog {
+    repeated MocapTrackingState entries = 1;
+}
+
+message MocapTrackingState {
+    // TODO: This doesn't really change so better to move somewhere else?
+    repeated MocapTrackedCamera cameras = 1;
+
+    repeated MocapTrackedPoint points = 2;
+
+    repeated MocapTrackedLink links = 3;
+}
+
+message MocapTrackedCamera {
+    fixed64 id = 1;
+
+    repeated float position = 2;
+
+    repeated float rotation = 3;
+}
+
+message MocapTrackedPoint {
+    fixed64 id = 1;
+
+    repeated fixed64 camera_ids = 2;
+
+    float radius = 3;
+
+    repeated float position = 4;
+}
+
+message MocapTrackedLink {
+    fixed64 point1_id = 1;
+    fixed64 point2_id = 2;
+}

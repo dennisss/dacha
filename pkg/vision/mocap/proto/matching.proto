@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package mocap;
+
+message BlobMatchingConfig {
+
+    // Number of 2d observations of a single 3d point for it to accepted.
+    //
+    // MUST be at least 2.
+    uint32 min_num_matches = 1;
+
+    float max_reprojection_error = 2;
+
+    // If we previously detected a 3d point, this is the minimum number of 2d
+    // observations around the expected location of that 3d point for it to be
+    // re-accepted.  
+    //
+    // MUST be at least 2 and MUST be <= min_num_matches
+    uint32 min_num_rematches = 3;
+}

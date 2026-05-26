@@ -6,6 +6,8 @@ import { Button } from "pkg/web/lib/button";
 import { Card, CardBody } from "pkg/cnc/monitor/js/card";
 import { render_property_list } from "pkg/media/camera/js/property";
 import { Blob2dViewer } from "./blob_viewer";
+import { MocapCameraControls } from "./controls";
+import { camera_orientation } from "./orientation";
 
 
 interface AppState {
@@ -84,44 +86,6 @@ class App extends React.Component<{}, AppState> {
 
     }
 
-    _control_changed = (prop, new_value) => {
-        let config = this.state.pending_config;
-        if (!config) {
-            config = this.state.status.config;
-        }
-
-        config = shallow_copy(config);
-
-        config[prop.id] = new_value.int32_value;
-
-        if (prop.id == 'strobe_power') {
-            config[prop.id] /= 100.0;
-        }
-
-        this.setState({ pending_config: config }, () => {
-            this._start_update();
-        });
-    }
-
-    _on_camera_control_changed = (prop, new_value) => {
-        let config = this.state.pending_config;
-        if (!config) {
-            config = this.state.status.config;
-        }
-
-        config = deep_copy(config);
-
-        config.camera_controls.states.map((c) => {
-            if (c.id == prop.id) {
-                c.current_value = new_value;
-            }
-        });
-
-        this.setState({ pending_config: config }, () => {
-            this._start_update();
-        });
-    }
-
     _set_led_color = (color) => {
         let config = this.state.pending_config;
         if (!config) {
@@ -135,24 +99,26 @@ class App extends React.Component<{}, AppState> {
         }
 
         this.setState({ pending_config: config }, () => {
-            this._start_update();
+            this._start_update(true);
         });
     }
 
     // TODO: Need a visual indicator of updating in progress and when it errors out
     _pending_update: boolean = false;
-    _start_update = async () => {
+    _start_update = async (immediate = false) => {
         if (this._pending_update) {
             return;
         }
 
         this._pending_update = true;
 
-        await new Promise((res, rej) => {
-            setTimeout(() => {
-                res()
-            }, 500);
-        });
+        if (!immediate) {
+            await new Promise((res, rej) => {
+                setTimeout(() => {
+                    res()
+                }, 500);
+            });
+        }
 
         let data = deep_copy(this.state.pending_config);
 
@@ -175,6 +141,8 @@ class App extends React.Component<{}, AppState> {
         }
     }
 
+    // TODO: The more ideal situation is that we use a smart viewer that reads the MJPEG data stream
+    // and can pull out the individual frames without re-encoding.
     _save_frame = (done) => {
         const img = this._mjpeg_img.current;
 
@@ -205,12 +173,44 @@ class App extends React.Component<{}, AppState> {
         done();
     }
 
+    _render_live_col() {
+        let status = this.state.status;
 
+        let orientation = camera_orientation(status);
 
-    render() {
-        if (!this.state.status) {
-            return <div>Loading...</div>;
-        }
+        // 
+
+        // TODO: max-height: 500 of both of them.
+        return (
+            <div className="col col-md-8">
+                <Card header="Live View (MJPEG)" style={{ marginBottom: 10 }}>
+                    <CardBody>
+                        <img ref={this._mjpeg_img} src="/camera" style={{
+                            maxWidth: 1000,
+                            transform: (orientation.upside_down ? 'scaleY(-1)' : 'scaleX(-1)')
+                        }} />
+                        <Button preset="secondary" onClick={this._save_frame}
+                            style={{ display: 'block', marginTop: 10 }}
+                        >
+                            Save Frame
+                        </Button>
+                    </CardBody>
+                </Card>
+
+                <Card header="Blob view" style={{ marginBottom: 10 }}>
+                    <CardBody>
+                        <div style={{ maxWidth: 1000 }}>
+                            <Blob2dViewer status={status} results={this.state.blobs} upsideDown={orientation.upside_down} />
+                        </div>
+
+                    </CardBody>
+                </Card>
+            </div>
+        );
+
+    }
+
+    _render_controls_col() {
 
         let status = this.state.status;
 
@@ -218,69 +218,6 @@ class App extends React.Component<{}, AppState> {
         if (!config) {
             config = this.state.status.config;
         }
-
-        let props = [
-            {
-                id: "frame_rate",
-                spec: {
-                    name: "Frame Rate",
-                    type: "INT32",
-                    // TODO: Limit to 119
-                    min_value: { int32_value: 0 },
-                    max_value: { int32_value: 255 },
-                    step: { int32_value: 5 },
-                    default_value: { int32_value: 0 }
-                },
-            },
-            {
-                id: "exposure_micros",
-                spec: {
-                    name: "Exposure (us)",
-                    type: "INT32",
-                    min_value: { int32_value: 20 },
-                    max_value: { int32_value: 6000 },
-                    step: { int32_value: 1 },
-                    default_value: { int32_value: 20 }
-                },
-
-            },
-            {
-                id: "pixel_threshold",
-                spec: {
-                    name: "Threshold",
-                    type: "INT32",
-                    min_value: { int32_value: 1 },
-                    max_value: { int32_value: 255 },
-                    step: { int32_value: 1 },
-                    default_value: { int32_value: 80 }
-                },
-
-            },
-            {
-                id: "strobe_power",
-                spec: {
-                    name: "Strobe %",
-                    type: "INT32",
-                    min_value: { int32_value: 0 },
-                    max_value: { int32_value: 100 },
-                    step: { int32_value: 5 },
-                    default_value: { int32_value: 10 }
-                },
-            },
-        ];
-
-        let prop_states = {
-            "frame_rate": { current_value: { int32_value: config.frame_rate } },
-            "exposure_micros": { current_value: { int32_value: config.exposure_micros } },
-            "pixel_threshold": { current_value: { int32_value: config.pixel_threshold } },
-            "strobe_power": { current_value: { int32_value: Math.round(config.strobe_power * 100) } }
-        };
-
-
-        let camera_states = {};
-        config.camera_controls.states.map((s) => {
-            camera_states[s.id] = s;
-        });
 
         let led_intensity = Math.round(0.5 * 255);
         let led_colors = [
@@ -302,59 +239,59 @@ class App extends React.Component<{}, AppState> {
             },
         ];
 
+        let status_friendly = deep_copy(status);
+        delete status_friendly['camera_controls'];
+
+        return (
+            <div className="col col-md-4">
+                <Card header="LEDs" style={{ marginBottom: 10 }}>
+                    <CardBody>
+                        <div className="btn-group me-2" role="group">
+                            {led_colors.map((v, i) => {
+                                // TODO: Check that all the leds are the same color.
+                                let value = v.value;
+                                let active = config.rgb_led_colors[0] == value;
+
+                                return (
+                                    <button key={i} onClick={() => this._set_led_color(value)} type="button" className={"btn " + (active ? 'btn-outline-dark active' : 'btn-outline-secondary')}>{v.name}</button>
+                                );
+                            })}
+                        </div>
+                    </CardBody>
+                </Card>
+
+                <Card header="Controls" style={{ marginBottom: 10 }}>
+                    <CardBody>
+                        <MocapCameraControls config={config} camera_controls={status.camera_controls} onChange={(config) => {
+                            this.setState({ pending_config: config }, () => {
+                                this._start_update();
+                            });
+                        }} />
+                    </CardBody>
+                </Card>
+
+                <Card header="Raw Status" style={{ marginBottom: 10 }}>
+                    <CardBody>
+                        <textarea className="form-control" disabled={true} style={{ minHeight: 150, fontFamily: "Noto Sans Mono" }} value={JSON.stringify(status_friendly, null, 2)}></textarea>
+                    </CardBody>
+                </Card>
+
+            </div>
+        );
+    }
+
+    render() {
+        if (!this.state.status) {
+            return <div>Loading...</div>;
+        }
+
         return (
             <div className="app-outer">
-                <div className="container" style={{ paddingTop: 20, paddingBottom: 20 }}>
-
-                    <div style={{ display: 'flex' }}>
-                        <Card header="Live View (MJPEG)" style={{ marginBottom: 10, marginRight: 5, flexGrow: 1, width: '50%' }}>
-                            <CardBody>
-                                <img ref={this._mjpeg_img} src="/camera" style={{ maxWidth: "100%", maxHeight: 500 }} />
-                                <Button preset="secondary" onClick={this._save_frame}
-                                    style={{ display: 'block', marginTop: 10 }}
-                                >
-                                    Save Frame
-                                </Button>
-                            </CardBody>
-                        </Card>
-
-                        <Card header="Blob view" style={{ marginBottom: 10, marginLeft: 5, flexGrow: 1, width: '50%' }}>
-                            <CardBody>
-                                <Blob2dViewer status={status} results={this.state.blobs} />
-                            </CardBody>
-                        </Card>
-
+                <div className="container-fluid" style={{ paddingTop: 20, paddingBottom: 20 }}>
+                    <div className="row">
+                        {this._render_live_col()}
+                        {this._render_controls_col()}
                     </div>
-
-                    <Card header="LEDs" style={{ marginBottom: 10 }}>
-                        <CardBody>
-                            <div className="btn-group me-2" role="group">
-                                {led_colors.map((v, i) => {
-                                    // TODO: Check that all the leds are the same color.
-                                    let value = v.value;
-                                    let active = config.rgb_led_colors[0] == value;
-
-                                    return (
-                                        <button key={i} onClick={() => this._set_led_color(value)} type="button" className={"btn " + (active ? 'btn-outline-dark active' : 'btn-outline-secondary')}>{v.name}</button>
-                                    );
-                                })}
-                            </div>
-                        </CardBody>
-                    </Card>
-
-
-                    <Card header="Controls" style={{ marginBottom: 10 }}>
-                        <CardBody>
-                            {render_property_list(props, prop_states, this._control_changed)}
-                            {render_property_list(status.camera_controls.children || [], camera_states, this._on_camera_control_changed)}
-                        </CardBody>
-                    </Card>
-
-                    <Card header="Raw Status" style={{ marginBottom: 10 }}>
-                        <CardBody>
-                            <textarea className="form-control" disabled={true} style={{ minHeight: 150, fontFamily: "Noto Sans Mono" }} value={JSON.stringify(status, null, 2)}></textarea>
-                        </CardBody>
-                    </Card>
                 </div>
             </div>
         );

@@ -17,7 +17,7 @@ use db_txn_proto::db::txn::*;
 
 use crate::state_machine::EmbeddedDBStateMachine;
 
-const MAX_READ_RANGES_PER_TRANSACTION: usize = 10;
+const MAX_READ_RANGES_PER_TRANSACTION: usize = 100;
 
 const MAX_KEYS_WRITTEN_PER_TRANSACTION: usize = 100;
 

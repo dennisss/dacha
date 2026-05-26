@@ -68,7 +68,7 @@ struct Shared {
 
     /// NOTE: This should never be locked for more than a short period of time to prevent blocking
     /// frame processing.
-    config: Arc<AsyncMutex<Arc<ConfigureRequest>>>,
+    config: Arc<AsyncMutex<Arc<MocapCameraConfigureRequest>>>,
 
     // state: AsyncMutex<State>,
 
@@ -106,7 +106,7 @@ struct ConfigureState {
 }
 
 struct State {
-    config: Arc<ConfigureRequest>,
+    config: Arc<MocapCameraConfigureRequest>,
 }
 
 impl MocapCamera {
@@ -147,7 +147,7 @@ impl MocapCamera {
 
         let mut user_controls_prop = media_camera_proto::media::camera::Property::default();
 
-        let mut initial_config = ConfigureRequest::default();
+        let mut initial_config = MocapCameraConfigureRequest::default();
         initial_config.set_pixel_threshold(255u32);
 
         initial_config.set_blob_filter(FrameProcessor::default_blob_filter_config()?);
@@ -204,7 +204,7 @@ impl MocapCamera {
         })
     }
 
-    pub async fn configure(&self, config: &ConfigureRequest) -> Result<()> {
+    pub async fn configure(&self, config: &MocapCameraConfigureRequest) -> Result<()> {
         let mut config = config.clone();
         Self::validate_config(&mut config)?;
 
@@ -218,13 +218,13 @@ impl MocapCamera {
     // NOT CANCEL SAFE
     async fn configure_inner(
         shared: Arc<Shared>,
-        mut config: ConfigureRequest
+        mut config: MocapCameraConfigureRequest
     ) -> Result<()> {
         // TODO: Have a concept of twhether or not the old config is dirty (must be re-synced)
         
         // TODO: Use a try_lock?
         lock_async!(configure_state <= shared.configure_state.lock().await?, {
-            let old_config: Arc<ConfigureRequest> = lock!(config <= shared.config.lock().await?, {
+            let old_config: Arc<MocapCameraConfigureRequest> = lock!(config <= shared.config.lock().await?, {
                 config.clone()
             });
 
@@ -318,7 +318,7 @@ impl MocapCamera {
         })
     }
 
-    fn validate_config(config: &mut ConfigureRequest) -> Result<()> {
+    fn validate_config(config: &mut MocapCameraConfigureRequest) -> Result<()> {
 
         if config.frame_rate() == 0 {
             // config.set_strobe_power(0.0);
@@ -474,13 +474,15 @@ impl MocapCameraService for MocapCamera {
 
     async fn Configure(
         &self,
-        request: rpc::ServerRequest<ConfigureRequest>,
+        request: rpc::ServerRequest<MocapCameraConfigureRequest>,
         response: &mut rpc::ServerResponse<ConfigureResponse>
     ) -> Result<()> {
         self.configure(&request.value).await?;
         Ok(())
     }
 
+    // TODO: Ensure that this RPC is prioritized for network bandwidth relative to everything else
+    // on the HTTP server (mainly need to ensure that all MJPEG carrying requests are low priority)
     async fn ReadBlobs(
         &self,
         request: rpc::ServerRequest<ReadBlobsRequest>,
@@ -552,7 +554,7 @@ mod tests {
 
     #[test]
     fn validate_config() {
-        let mut initial_config = ConfigureRequest::default();
+        let mut initial_config = MocapCameraConfigureRequest::default();
         MocapCamera::validate_config(&mut initial_config).unwrap();
     }
 

@@ -1,0 +1,11 @@
+[package]
+name = "mikrotik"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+macros = { path = "../../macros" }
+executor = { path = "../../executor" }
+net = { path = "../../net" }
+crypto = { path = "../../crypto" }

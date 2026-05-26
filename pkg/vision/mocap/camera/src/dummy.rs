@@ -75,11 +75,16 @@ impl MocapCameraService for DummyMocapCamera {
 
     async fn Configure(
         &self,
-        request: rpc::ServerRequest<ConfigureRequest>,
+        request: rpc::ServerRequest<MocapCameraConfigureRequest>,
         response: &mut rpc::ServerResponse<ConfigureResponse>
     ) -> Result<()> {
         lock!(status <= self.status.lock().await?, {
-            status.set_config(request.value.clone());
+            
+            let mut config = request.value.clone();
+            // TODO: Merge with the new ones.
+            config.set_camera_controls(status.config().camera_controls().clone());
+
+            status.set_config(config);
         });
         Ok(())
     }

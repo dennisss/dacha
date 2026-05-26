@@ -20,49 +20,49 @@ struct ReprojectionResidual<'a> {
 }
 
 impl<'a> ReprojectionResidual<'a> {
-    fn calc_error(&self, params: &[f32]) -> f32 {
+    fn calc_error(&self, params: &[f32], axis_angle: &Vector3f) -> Vector2f {
         let small_axis_angle = vec3f(params[0], params[1], params[2]);
         let translation = vec3f(params[3], params[4], params[5]);
-        let axis_angle = vec3f(params[6], params[7], params[8]);
 
         let pt3 = self.point_3d;
         let pt2 = self.point_2d;
 
-        let projected = project_point(pt3, &self.intrinsics, &axis_angle, &small_axis_angle, &translation);
+        let projected = project_point(pt3, &self.intrinsics, axis_angle, &small_axis_angle, &translation);
 
         // TODO: technically here we are outputting two residuals and not 1
-        (projected - pt2).norm()
+        pt2 - projected
     }
 }
 
 impl<'a> ResidualBlockFunction for ReprojectionResidual<'a> {
     fn len(&self) -> usize {
-        1
+        2
     }
 
     fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]) {
-        let mut expanded_params = vec![
-            0., 0., 0.,
-            params[3], params[4], params[5],
-            params[0], params[1], params[2],
-        ];
+        let axis_angle = vec3f(params[0], params[1], params[2]);
 
-        out[0] = self.calc_error(&expanded_params);
+        let mut expanded_params = params.to_vec();
+        expanded_params[0..3].fill(0.0);
+
+        out.copy_from_slice(self.calc_error(&expanded_params, &axis_angle).as_ref());
  
         let step = 0.0001;
         for i in 0..params.len() {
             let v = expanded_params[i];
             expanded_params[i]  = v + step;
 
-            let error1 = self.calc_error(&expanded_params);
+            let error1 = self.calc_error(&expanded_params, &axis_angle);
 
             expanded_params[i]  = v - step;
-            let error2 = self.calc_error(&expanded_params);
+            let error2 = self.calc_error(&expanded_params, &axis_angle);
 
             expanded_params[i] = v;
 
             // negative since we want the gradient of project_point not the error function.
-            gradient[i] = -(error1 - error2) / (2.0 * step);
+            let grad = (error1 - error2) / (-2.0 * step);
+            gradient[i] = grad[0];
+            gradient[params.len() + i] = grad[1];
         }
     }
 }

@@ -50,11 +50,31 @@ impl ParameterBlockOperator for AxisAngleParameterBlock {
 
 
 
-#[derive(Clone, Debug)]
-pub struct NonLinearProblemSolution {
+#[derive(Clone)]
+pub struct NonLinearProblemSolution<'a, 'b> {
+    solver: &'a NonLinearSolver<'b>,
     pub params: Vec<f32>,
     pub error_sum: f32    
 }
+
+impl<'a, 'b> std::fmt::Debug for NonLinearProblemSolution<'a, 'b> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NonLinearProblemSolution")
+            .field("params", &self.params)
+            .field("error_sum", &self.error_sum)
+            .finish()
+    }
+}
+
+impl<'a, 'b> NonLinearProblemSolution<'a, 'b> {
+
+    pub fn param_block(&self, idx: usize) -> &[f32] {
+        let spec = &self.solver.param_blocks[idx];
+        &self.params[spec.offset..(spec.offset + spec.len)]
+    }
+
+}
+
 
 /// Levenberg-Marquardt non-linear least squares solver
 pub struct NonLinearSolver<'a> {
@@ -141,7 +161,7 @@ impl<'a> NonLinearSolver<'a> {
     }
 
     #[inline(never)]
-    pub fn solve(&self) -> NonLinearProblemSolution {
+    pub fn solve<'b>(&'b self) -> NonLinearProblemSolution<'b, 'a> {
         // Current value of each parameter in the model that we are estimating.
         let mut params = VectorXf::from_slice_with_shape(self.initial_params.len(), 1, &self.initial_params);
         
@@ -165,6 +185,10 @@ impl<'a> NonLinearSolver<'a> {
         let mut current_params = vec![];
         let mut current_errors = vec![];
         let mut current_gradients = vec![];
+
+        // if params.len() > 20 {
+        //     println!("JACOBIAN SIZE: {} x {}", self.num_residuals, self.initial_params.len());
+        // }
 
         // Normally this will terminate by:
         // - First there will likely be many rounds of last_made_progress=true
@@ -195,7 +219,7 @@ impl<'a> NonLinearSolver<'a> {
 
                 let mut j = 0;
                 for i in 0..current_errors.len() {
-                    error_sum += current_errors[i];
+                    error_sum += current_errors[i].abs();
                     error[residual_block.offset + i] = current_errors[i];
 
                     for param_block_idx in &residual_block.param_blocks {
@@ -212,7 +236,7 @@ impl<'a> NonLinearSolver<'a> {
             if params.len() > 20 {
                 println!("- Error: {}", error_sum);
 
-                println!("{:?}", params);
+                // println!("{:?}", params);
             }
 
             if error_sum <= self.min_error {
@@ -259,7 +283,7 @@ impl<'a> NonLinearSolver<'a> {
                     // step * dampening * (1.0 / (jacobian.rows() as f32))
 
                 } else {
-                    let jacobian_square = jacobian.transpose() * &jacobian;
+                    let jacobian_square = jacobian.as_transpose() * &jacobian;
 
                     let dampening_mat = diag(&jacobian_square) * dampening;
 
@@ -267,7 +291,7 @@ impl<'a> NonLinearSolver<'a> {
 
                     let a_inv = a.inverse();
 
-                    a_inv * jacobian.transpose() * &error
+                    a_inv * jacobian.as_transpose() * &error
                 }
             };
 
@@ -291,6 +315,7 @@ impl<'a> NonLinearSolver<'a> {
         }
 
         NonLinearProblemSolution {
+            solver: self,
             params: params.as_ref().to_vec(),
             error_sum
         }    

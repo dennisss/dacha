@@ -258,7 +258,7 @@ impl TimeSyncNode {
 
             let error = SignedDuration::from(remote_time) - SignedDuration::from(local_time);
 
-            println!("Sync Error: {:?}; RTT: {:?}", error, rtt);
+            // println!("Sync Error: {:?}; RTT: {:?}", error, rtt);
 
             Self::run_time_adjustment(
                 shared,
@@ -350,7 +350,7 @@ impl TimeSyncNode {
 
         let error = SignedDuration::from(real_time) - SignedDuration::from(ptp_time);
 
-        println!("NTP Error: {:?}", error);
+        // println!("NTP Error: {:?}", error);
 
         Self::run_time_adjustment(
             shared,
@@ -372,7 +372,7 @@ impl TimeSyncNode {
     ) -> Result<()> {
         if error.abs() > config.max_offset_seconds() {
             shared.ptp_device.clock().set_offset_secs_f64(error)?;
-            println!("=> time shifted!");
+            // println!("=> time shifted!");
 
             *state = PIFilterState::default();
             error = 0.0;
@@ -394,7 +394,7 @@ impl TimeSyncNode {
 
         out = clamp_magnitude(out, config.max_correction_ppm());
 
-        println!("=> freq: {:.2}ppm", out);
+        // println!("=> freq: {:.2}ppm", out);
 
         out *= (1 << 16) as f64;
 
@@ -506,7 +506,7 @@ impl TimeSyncNode {
 
         let ptp_addr = &ptp_endpoints[0].address;
 
-        println!("Sending to: {:?}", ptp_addr);
+        // println!("Sending to: {:?}", ptp_addr);
 
         // Clear any old data so that 'Self::get_received_packet' only notices newly
         // received data.

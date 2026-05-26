@@ -11,6 +11,7 @@ executor = { path = "../../executor" }
 parsing = { path = "../../parsing" }
 macros = { path = "../../macros" }
 storage = { path = "../../storage" }
+usb = { path = "../../usb" }
 crypto = { path = "../../crypto" }
 compression = { path = "../../compression" }
 base_units = { path = "../../base/units" }

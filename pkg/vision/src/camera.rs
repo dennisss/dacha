@@ -1,4 +1,4 @@
-use math::matrix::{Vector2f, Vector3f, vec2f};
+use math::matrix::{Vector2f, Vector3f, vec2f, Matrix3f};
 use math::matrix::cwise_binary_ops::{CwiseMulAssign, CwiseDivAssign};
 
 use crate::solver::ParameterBlockOperator;
@@ -31,6 +31,17 @@ impl CameraIntrinsicsModel {
             k1: 0.,
             k2: 0.,
         }
+    }
+
+    /// Gets the matrix for the focal lengths and camera center
+    pub fn mat3(&self) -> Matrix3f {
+        let mut out = Matrix3f::default();
+        out[(0, 0)] = self.focal_length[0];
+        out[(1, 1)] = self.focal_length[1];
+        out[(2, 0)] = self.center[0];
+        out[(2, 1)] = self.center[1];
+        out[(2, 2)] = 1.0;
+        out
     }
 
     /// Projects a 3d point (which is already translated so that camera is at 0,0,0)

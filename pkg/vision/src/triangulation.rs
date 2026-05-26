@@ -26,56 +26,63 @@ impl<'a> TriangulationNonLinearSolver<'a> {
         }
     }
 
-    pub fn add_normalized_view(
+    pub fn add_view(
         &mut self,
+        intrinsics: &'a CameraIntrinsicsModel,
         extrinsics: &'a CameraExtrinsics,
         point: &'a Vector2f,
     ) {
-        self.solver.add_residual_block(&[self.param], NormalizedReprojectionResidual {
+        self.solver.add_residual_block(&[self.param], ReprojectionResidual {
+            intrinsics,
             extrinsics,
             point
         });
     }
 
-    pub fn solve(&self) -> Vector3f {
+    pub fn solve(&self) -> (Vector3f, f32) {
         let solution = self.solver.solve();
 
-        vec3f(solution.params[0], solution.params[1], solution.params[2])
+        (
+            vec3f(solution.params[0], solution.params[1], solution.params[2]),
+            solution.error_sum,
+        )
     }
 
 }
 
-struct NormalizedReprojectionResidual<'a> {
+struct ReprojectionResidual<'a> {
+    intrinsics: &'a CameraIntrinsicsModel,
     extrinsics: &'a CameraExtrinsics,
     point: &'a Vector2f,
 }
 
-impl<'a> NormalizedReprojectionResidual<'a> {
-    fn calc_error(&self, params: &[f32]) -> f32 {
+impl<'a> ReprojectionResidual<'a> {
+    fn calc_error(&self, params: &[f32]) -> Vector2f {
         let pt3 = vec3f(params[0], params[1], params[2]);
         
         let projected = {
             let mut pt = rotate_by_axis_angle(&pt3, &self.extrinsics.rotation);
             pt += &self.extrinsics.translation;
-            vec2f(pt[0] / pt[2], pt[1] / pt[2])
+
+            self.intrinsics.project_point(&pt)
         };
 
         let pt2 = self.point;
 
         // TODO: technically here we are outputting two residuals and not 1
-        (projected - pt2).norm()
+        pt2 - projected
     }
 }
 
-impl<'a> ResidualBlockFunction for NormalizedReprojectionResidual<'a> {
+impl<'a> ResidualBlockFunction for ReprojectionResidual<'a> {
     fn len(&self) -> usize {
-        1
+        2
     }
 
     fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]) {
         let mut params = params.to_vec();
 
-        out[0] = self.calc_error(&params);
+        out.copy_from_slice(self.calc_error(&params).as_ref());
  
         let step = 0.0001;
         for i in 0..params.len() {
@@ -90,7 +97,9 @@ impl<'a> ResidualBlockFunction for NormalizedReprojectionResidual<'a> {
             params[i] = v;
 
             // negative since we want the gradient of project_point not the error function.
-            gradient[i] = -(error1 - error2) / (2.0 * step);
+            let grad = (error1 - error2) / (-2.0 * step);
+            gradient[i] = grad[0];
+            gradient[params.len() + i] = grad[1];
         }
     }
 }

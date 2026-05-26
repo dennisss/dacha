@@ -8,7 +8,7 @@ import "pkg/media/camera/proto/property.proto";
 service MocapCamera {
     rpc Status (StatusRequest) returns (MocapCameraStatus);
 
-    rpc Configure (ConfigureRequest) returns (ConfigureResponse);
+    rpc Configure (MocapCameraConfigureRequest) returns (ConfigureResponse);
 
     // Receives the per-frame stream of detected circular blob data.
     rpc ReadBlobs (ReadBlobsRequest) returns (stream ReadBlobsResponse);
@@ -18,7 +18,7 @@ service MocapCamera {
     rpc FlashMCU (FlashMCURequest) returns (FlashMCUResponse);
 }
 
-message ConfigureRequest {
+message MocapCameraConfigureRequest {
     uint32 frame_rate = 1;
 
     uint32 exposure_micros = 2;
@@ -66,7 +66,7 @@ message MocapCameraStatus {
     // PTP lock status?
     PPSDividerTelemetry pps_divider_telemetry = 5;
 
-    ConfigureRequest config = 6;
+    MocapCameraConfigureRequest config = 6;
 
     // Note that the acceleration vector will be already normalized such that the axes
     // are aligned with the camera though there may be some skew due to assembly error.
@@ -156,7 +156,11 @@ message CameraBlobResults {
     fixed64 camera_id = 1;
 
     // Amount of wall time taken from the frame_timestamp to the final blobs
-    // list being available (includes exposure + processing) 
+    // list being available (includes exposure + processing)
+    //
+    // When returned by the manager, this also adds in latency to transmit the
+    // blobs from the camera to the manager (so records
+    // manager_recv_time - frame_timestamp).
     uint64 latency = 2;
 
     BlobResults results = 3;

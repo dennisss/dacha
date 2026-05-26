@@ -3114,6 +3114,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mikrotik"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
+ "executor",
+ "macros",
+ "net",
+]
+
+[[package]]
 name = "mime_types"
 version = "0.1.0"
 
@@ -3130,6 +3141,137 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b275950c28b37e794e8c55d88aeb5e139d0ce23fdbbeda68f8d7174abdf9e8fa"
 dependencies = [
  "adler",
+]
+
+[[package]]
+name = "mocap_camera"
+version = "0.1.0"
+dependencies = [
+ "base_algorithms",
+ "base_args",
+ "cluster_client",
+ "cluster_proto",
+ "common",
+ "crypto",
+ "electronics",
+ "executor",
+ "executor_multitask",
+ "file",
+ "flasher_swd",
+ "http",
+ "http_util",
+ "image",
+ "macros",
+ "math",
+ "media_camera",
+ "media_camera_proto",
+ "mocap_proto",
+ "parsing",
+ "peripherals",
+ "pio_rp1",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_json",
+ "ptp",
+ "ptp_proto",
+ "rpc",
+ "rpc_util",
+ "rpi",
+ "scpi",
+ "sys",
+ "v4l2",
+ "vision",
+ "web",
+]
+
+[[package]]
+name = "mocap_manager"
+version = "0.1.0"
+dependencies = [
+ "base_args",
+ "cluster_client",
+ "cluster_proto",
+ "common",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "http_util",
+ "image",
+ "macros",
+ "math",
+ "mocap_camera",
+ "mocap_proto",
+ "parsing",
+ "perf",
+ "peripherals",
+ "peripherals_devices",
+ "peripherals_service",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_json",
+ "ptp",
+ "ptp_proto",
+ "rpc",
+ "rpc_util",
+ "sstable",
+ "sys",
+ "vision",
+ "web",
+]
+
+[[package]]
+name = "mocap_proto"
+version = "0.0.0"
+dependencies = [
+ "common",
+ "macros",
+ "media_camera_proto",
+ "protobuf",
+ "protobuf_compiler",
+ "ptp_proto",
+ "rpc",
+]
+
+[[package]]
+name = "mocap_tools"
+version = "0.1.0"
+dependencies = [
+ "base_args",
+ "cluster_client",
+ "cluster_proto",
+ "common",
+ "executor",
+ "executor_multitask",
+ "file",
+ "http",
+ "http_util",
+ "image",
+ "macros",
+ "math",
+ "mocap_camera",
+ "mocap_manager",
+ "mocap_proto",
+ "net",
+ "parsing",
+ "perf",
+ "peripherals",
+ "peripherals_devices",
+ "peripherals_service",
+ "pio_rp1",
+ "protobuf",
+ "protobuf_builtins",
+ "protobuf_json",
+ "ptp",
+ "ptp_proto",
+ "rpc",
+ "rpc_util",
+ "rpi",
+ "scpi",
+ "sstable",
+ "sys",
+ "vision",
+ "web",
 ]
 
 [[package]]
@@ -4228,6 +4370,7 @@ dependencies = [
  "parsing",
  "storage",
  "sys",
+ "usb",
 ]
 
 [[package]]
@@ -4826,6 +4969,7 @@ dependencies = [
  "image",
  "macros",
  "math",
+ "typenum",
 ]
 
 [[package]]

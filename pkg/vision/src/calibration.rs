@@ -78,7 +78,7 @@ impl ReprojectionResidual {
         &self,
         params: &[f32],
         axis_angle: &Vector3f,
-    ) -> f32 {
+    ) -> Vector2f {
         let small_axis_angle = vec3f(params[0], params[1], params[2]);
         let translation = vec3f(params[3], params[4], params[5]);
         let intrinsics = CameraIntrinsicsModel::parse(&params[6..(6 + 6)]);
@@ -88,15 +88,13 @@ impl ReprojectionResidual {
 
         let projected = project_point(pt3, &intrinsics, axis_angle, &small_axis_angle, &translation);
 
-        // TODO: technically here we are outputting two residuals and not 1
-        // TODO: Check if norm or norm_squared is better.
-        (projected - pt2).norm_squared()
+        pt2 - projected
     }
 }
 
 impl ResidualBlockFunction for ReprojectionResidual {
     fn len(&self) -> usize {
-        1
+        2
     }
 
     fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]) {
@@ -105,7 +103,7 @@ impl ResidualBlockFunction for ReprojectionResidual {
         let mut expanded_params = params.to_vec();
         expanded_params[0..3].fill(0.0);
 
-        out[0] = self.calc_error(&expanded_params, &axis_angle);
+        out.copy_from_slice(self.calc_error(&expanded_params, &axis_angle).as_ref());
  
         let step = 0.0001;
         for i in 0..params.len() {
@@ -120,7 +118,9 @@ impl ResidualBlockFunction for ReprojectionResidual {
             expanded_params[i] = v;
 
             // negative since we want the gradient of project_point not the error function.
-            gradient[i] = -(error1 - error2) / (2.0 * step);
+            let grad = (error1 - error2) / (-2.0 * step);
+            gradient[i] = grad[0];
+            gradient[params.len() + i] = grad[1];
         }
     }
 }
