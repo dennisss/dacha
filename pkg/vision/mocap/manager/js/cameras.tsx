@@ -70,6 +70,10 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
     }
 
     _get_status = async () => {
+        if (this.props.context.channel.aborted()) {
+            return;
+        }
+
         try {
             await this._get_status_once();
         } catch (e) {

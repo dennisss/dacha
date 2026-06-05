@@ -63,8 +63,13 @@ const PACKET_TEMPLATE: [u8; 44] = {
 /// since certain ethernet peripherals (e.g. Raspberry Pi) will only timestamp
 /// packets that are in this specific form.
 pub struct TimestampedUdpSocket {
+    // NOTE: This is currently the first field in this struct since it must be dropped
+    // before 'sock' since it internally references thee socket.
+    //
+    // TODO: Eventually make that a bit cleaner.
+    sender_lock: AsyncMutex<SenderState>,
+    
     sock: UdpSocket,
-    sender_lock: AsyncMutex<SenderState>
 }
 
 struct SenderState {
@@ -109,56 +114,71 @@ impl TimestampedUdpSocket {
         // TODO: If any part of this fails, they we may get out of sync with the error queue.
         lock_async!(lock <= self.sender_lock.lock().await?, {
 
+            // TODO: Before sending, maybe call recv_error to see if we can
+            // immediately clear the queue without blocking.
+
             let n_sent = self.sock.send_to(&buf[0..n], addr).await?;
             if n_sent != n {
                 return Err(err_msg("Wrong number of bytes sent"));
             }
 
-            // TODO: Replace with a simpler fixed size buffer.
-            let mut control_msgs = [
-                sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
-                sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
-                sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
-                sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
-            ];
+            // TODO: Need to check the id that is returned.
 
-            // Note that recvmsg when querying the error queue will return immediately.
-            // ideally we instead check for POLLERR (and retry recv_error since our epoll
-            // implementation is currently edge trigger based).
-            //
-            // TODO: Double check this (I know for sure that if normal data is in the queue, the error queue response will return immediately)
-            for _ in 0..3 {
-                lock.error_poller.wait().await?;
+            // The expectation is that 150ms is long enough that the kernel would have given up on the
+            // timestamp for this packet by then so we won't ever get a timestamp in the future if it
+            // is delayed.
+            let timestamp = executor::timeout(
+                Duration::from_millis(150),
+                self.read_tx_timestamp(&mut lock)
+            )
+            .await
+            .map_err(|e| err_msg("Timed out while waiting for TX timeout"))??;
 
-                let res = executor::timeout(
-                    Duration::from_secs(1),
-                    self.sock.recv_error(&mut [], &mut control_msgs)   
-                )
-                .await
-                .map_err(|e| err_msg("Timed out while waiting for TX timeout"))?;
-
-                let res = match res {
-                    Ok(v) => v,
-                    Err(e) => {
-                        if let Some(e) = e.downcast_ref::<sys::Errno>() {
-                            if *e == sys::Errno::EAGAIN {
-                                continue;
-                            }
-                        }
-
-                        return Err(e);
-                    }
-                };
-
-                // Usually if the timeout fails, they we sent some packet that isn't being properly
-                // noticed by the ethernet hardware so never got timestamped.
-                let (_, num_msgs, _) = res;
-
-                return self.get_timestamp(&control_msgs[0..num_msgs]);
-            }
-
-            Err(err_msg("Failed to get the timestamp for the transmitted packet"))
+            Ok(timestamp)
         })
+    }
+
+    async fn read_tx_timestamp(&self, lock: &mut SenderState) -> Result<u64> {
+        // TODO: Replace with a simpler fixed size buffer.
+        let mut control_msgs = [
+            sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
+            sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
+            sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
+            sys::ControlMessage::ScmTimestamping(sys::bindings::scm_timestamping64::default()),
+            // sys::ControlMessage::IPRecvError(sys::bindings::sock_extended_err::default()),
+        ];
+        
+        // Note that recvmsg when querying the error queue will return immediately.
+        // ideally we instead check for POLLERR (and retry recv_error since our epoll
+        // implementation is currently edge trigger based).
+        //
+        // TODO: Double check this (I know for sure that if normal data is in the queue, the error queue response will return immediately)
+        for _ in 0..3 {
+            lock.error_poller.wait().await?;
+
+            let res = self.sock.recv_error(&mut [], &mut control_msgs).await;
+
+            let res = match res {
+                Ok(v) => v,
+                Err(e) => {
+                    if let Some(e) = e.downcast_ref::<sys::Errno>() {
+                        if *e == sys::Errno::EAGAIN {
+                            continue;
+                        }
+                    }
+
+                    return Err(e);
+                }
+            };
+
+            // Usually if the timeout fails, they we sent some packet that isn't being properly
+            // noticed by the ethernet hardware so never got timestamped.
+            let (_, num_msgs, _) = res;
+
+            return self.get_timestamp(&control_msgs[0..num_msgs]);
+        }
+
+        Err(err_msg("Failed to get the timestamp for the transmitted packet"))
     }
 
     pub async fn recv_from(&self, data: &mut [u8]) -> Result<(usize, u64, SocketAddr)> {
@@ -200,6 +220,19 @@ impl TimestampedUdpSocket {
 
         // TODO: Normalize sys::SockAddr into net::ip one in the recv_msg call.
         Ok((n, timestamp, addr.into()))
+    }
+
+    fn get_tx_id(&self, msgs: &[ControlMessage]) -> Result<u32> {
+        let mut id = None;
+
+        for msg in msgs {
+            if let sys::ControlMessage::IPRecvError(v) = msg {
+                id = Some(unsafe { v.__bindgen_anon_1.ee_data });
+                break;
+            }
+        }
+
+        id.ok_or_else(|| err_msg("No error message found for id"))
     }
 
     fn get_timestamp(&self, msgs: &[ControlMessage]) -> Result<u64> {

@@ -21,6 +21,23 @@ TODOs:
 - If we previously triangulated a points with 3 cameras, allow it to be triangulated with fewer cameras if we still see it nearby
 - After performing all triangulations, throw out any 2d points that might be confused between 2 3d points and then re-apply triangulation gradient descent of effected points.
 
+TODO:
+- The order in which we try cameras matters
+- If two cameras are close to each other, then when triangulating a point between them, a small error in pixel positions will amplify into a large error in distance to the camera. 
+    - If validating with a third camera, then that camera also needs to be relatively far away to get a good confirmation
+    - But rotation also needs to be considered since two cameras opposite each other (at 180) are also low confidence.
+- Ideally based on the angle between cameras (or covariance matrix), we filter matches based on confidence directly.
+
+Some ideas for speeding up:
+- Early reject 2 or 3 point tracks if they have low confidence.
+- Sort the camera list by distance to each other (greedily try distant cams first)
+- Once we have 3 points, re-triangulate to get a better fit.
+- Need to sort tracked point proposals based on confidence.
+    - (better to have 3 diverse views with high error than three close views with very low error)
+
+TODO: At the end of triangulation, need automatic merging of any points that are <1cm apart from each other.
+
+
 */
 
 
@@ -98,6 +115,31 @@ pub struct TrackedPoint {
     last_observed_time: u64,
 }
 
+
+impl TrackedPoint {
+    pub fn to_proto(&self) -> TrackedPointProto {
+        let mut proto = TrackedPointProto::default(); // proto.new_points();
+        proto.set_id(self.id);
+
+        // TODO: Perform real radius estimation and account for it in triangulation.
+        proto.set_radius(0.02);
+
+        for v in self.position.as_ref() {
+            proto.add_position(*v);
+        }
+
+        for id in &self.camera_ids {
+            proto.add_camera_ids(*id);
+        }
+
+        proto
+    }
+}
+
+struct TrackedPointProposal {
+    observations: Vec<(usize, usize)>,
+    position: Vector3f,
+}
 
 struct Point2dEntry {
     raw_point: Vector2f,

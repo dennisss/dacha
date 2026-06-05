@@ -22,7 +22,10 @@ use cluster_client::service::create_rpc_channel;
 use sstable::record_log::*;
 use file::project_path;
 use protobuf::Message;
+use vision::{CameraIntrinsicsModel, CameraExtrinsics};
 
+use crate::matching::*;
+use crate::proto_utils::*;
 
 // TODO: Need camera list sorting everywhere (mainly in status output protos)
 
@@ -39,11 +42,15 @@ struct Shared {
     state: AsyncVariable<State>,
     camera_config_state: AsyncVariable<CameraConfigState>,
     merged_blobs: BroadcastChannel<Arc<ReadBlobsResponse>>,
+    tracked_points: BroadcastChannel<Arc<ReadTrackedPointsResponse>>,
 }
 
 #[derive(Default)]
 struct State {
     cameras: HashMap<u64, CameraEntry, FastHasherBuilder>,
+
+    camera_intrinsics: HashMap<u64, CameraIntrinsicsModel, FastHasherBuilder>,
+    camera_extrinsics: HashMap<u64, CameraExtrinsics, FastHasherBuilder>,
 
     /// Sorted by 'timestamp' (first_received time will also end up being sorted)
     frames: VecDeque<FrameEntry>,
@@ -119,45 +126,65 @@ impl MocapManager {
                 active_camera_id: None,
             }),
             merged_blobs: BroadcastChannel::default(),
+            tracked_points: BroadcastChannel::default(),
         });
 
         resources.spawn_interruptable("resolver", Self::service_resolver_thread(shared.clone())).await;
         resources.spawn_interruptable("merger", Self::frame_merger_thread(shared.clone())).await;
 
-        for i in 0..shared.config.num_dummy_cameras() {
-            let camera_id = (i + 1) as u64;
+        if shared.config.make_dummy_cameras() {
+            assert!(shared.config.camera_service().is_empty());
+        }
 
-            let camera_stub = Arc::new(MocapCameraStub::new(
-                Arc::new(rpc::LocalChannel::new(
-                    Arc::new(mocap_camera::DummyMocapCamera::create(2).await?).into_service()
-                ))
-            ));
-
-            let ptp_stub = Arc::new(TimeSyncStub::new(
-                Arc::new(rpc::LocalChannel::new(
-                    Arc::new(ptp::DummyTimeSyncNode::create()).into_service()
-                ))
-            ));
+        for per_cam in config.per_camera() {
+            let camera_id = entity_id_from_string(per_cam.camera_id_str()).unwrap();
 
             lock!(state <= shared.state.lock().await?, {
-                let task = ChildTask::spawn(Self::camera_thread(
-                    shared.clone(),
-                    camera_id,
-                    ptp_stub.clone(),
-                    camera_stub.clone()
+                if per_cam.has_intrinsics() {
+                    state.camera_intrinsics.insert(camera_id, intrinsics_from_proto(per_cam.intrinsics()));
+                }
+
+                if per_cam.has_extrinsics() {
+                    state.camera_extrinsics.insert(camera_id, extrinsics_from_proto(per_cam.extrinsics()));
+                }
+            });
+
+            if shared.config.make_dummy_cameras() {
+                let camera_stub = Arc::new(MocapCameraStub::new(
+                    Arc::new(rpc::LocalChannel::new(
+                        Arc::new(mocap_camera::DummyMocapCamera::create(2).await?).into_service()
+                    ))
                 ));
 
-                state.cameras.insert(camera_id, CameraEntry {
-                    worker_address: String::new(),
-                    camera_stub,
-                    ptp_stub,
-                    ptp_leader: false,
-                    task: Some(task),
-                    status: None,
-                    camera_config_epoch: 0,
+                let ptp_stub = Arc::new(TimeSyncStub::new(
+                    Arc::new(rpc::LocalChannel::new(
+                        Arc::new(ptp::DummyTimeSyncNode::create()).into_service()
+                    ))
+                ));
+
+                lock!(state <= shared.state.lock().await?, {
+                    let task = ChildTask::spawn(Self::camera_thread(
+                        shared.clone(),
+                        camera_id,
+                        ptp_stub.clone(),
+                        camera_stub.clone()
+                    ));
+
+                    state.cameras.insert(camera_id, CameraEntry {
+                        worker_address: String::new(),
+                        camera_stub,
+                        ptp_stub,
+                        ptp_leader: false,
+                        task: Some(task),
+                        status: None,
+                        camera_config_epoch: 0,
+                    });
                 });
-            });
+            }
         }
+
+        // NOTE: Should be done after the extrinsics/intrinscs are setup.
+        resources.spawn_interruptable("matcher", Self::matching_task(shared.clone())).await;
 
         Ok(Self {
             resources,
@@ -193,6 +220,10 @@ impl MocapManager {
 
                     proto.set_synced(true);
                     proto.set_last_sync_age((now - s.check_time).as_secs_f64());
+                }
+
+                if let Some(extrinsics) = &state.camera_extrinsics.get(camera_id) {
+                    proto.set_extrinsics(extrinsics_to_proto(extrinsics));
                 }
 
                 proto.set_active(camera_config_state.active_camera_id == Some(*camera_id));
@@ -765,6 +796,48 @@ impl MocapManager {
 
         Ok(())
     }
+
+    async fn matching_task(shared: Arc<Shared>) -> Result<()> {
+
+        let mut params = vec![];
+
+        lock!(state <= shared.state.lock().await?, {
+            for (cam_id, extrinsics) in &state.camera_extrinsics {
+                let intrinsics = match state.camera_intrinsics.get(cam_id) {
+                    Some(v) => v,
+                    None => continue
+                };
+
+                params.push(CameraParameters {
+                    id: *cam_id,
+                    extrinsics: extrinsics.clone(),
+                    intrinsics: intrinsics.clone()
+                });
+            }
+        });
+
+        let mut matcher = BlobMatcher::new(shared.config.matching(), &params);
+
+        let mut subscriber = shared.merged_blobs.subscribe(8);
+
+        loop {
+            let blobs_res = subscriber.recv().await?;
+
+            let points = matcher.run(&blobs_res);
+
+            let mut res = ReadTrackedPointsResponse::default();
+            res.set_frame_timestamp(blobs_res.frame_timestamp());
+            for pt in points {
+                res.add_points(pt.to_proto());
+            }
+
+            shared.tracked_points.send(Arc::new(res));
+        }
+
+
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -795,6 +868,37 @@ impl MocapManagerService for MocapManager {
     ) -> Result<()> {        
         // TODO: Need some logging if we ever drop frames
         let mut subscriber = self.shared.merged_blobs.subscribe(1024);
+
+        response.send_head().await?;
+
+        let mut last_response = Instant::now();
+
+        let mut min_interval = Duration::ZERO;
+        if request.max_rate() != 0 {
+            min_interval = Duration::from_secs_f32(1.0 / (request.max_rate() as f32));
+        }
+
+        loop {
+            let res = subscriber.recv().await?;
+            
+            let now = Instant::now();
+            if now - last_response >= min_interval {
+                response.send(res.as_ref().clone()).await?;
+                last_response = now;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn ReadTrackedPoints(
+        &self,
+        request: rpc::ServerRequest<ReadTrackedPointsRequest>,
+        response: &mut rpc::ServerStreamResponse<ReadTrackedPointsResponse>
+    ) -> Result<()> {        
+
+        // TODO: Need some logging if we ever drop frames
+        let mut subscriber = self.shared.tracked_points.subscribe(1024);
 
         response.send_head().await?;
 

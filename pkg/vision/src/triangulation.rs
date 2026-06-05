@@ -1,6 +1,9 @@
 
-use math::matrix::{VectorXf, MatrixXf, Vector3f, Matrix3f, Vector2f, vec2f, vec3f};
+use math::matrix::{MatrixStatic, VectorXf, MatrixXf, Vector3f, Matrix3f, Vector2f, vec2f, vec3f};
 use math::matrix::axis_angle::*;
+use typenum::{U2, U3};
+
+type Matrix2x3f = MatrixStatic<f32, U2, U3>;
 
 use crate::camera::*;
 use crate::solver::*;
@@ -34,7 +37,8 @@ impl<'a> TriangulationNonLinearSolver<'a> {
     ) {
         self.solver.add_residual_block(&[self.param], ReprojectionResidual {
             intrinsics,
-            extrinsics,
+            translation: extrinsics.translation.clone(),
+            rotation: from_axis_angle(&extrinsics.rotation),
             point
         });
     }
@@ -52,25 +56,83 @@ impl<'a> TriangulationNonLinearSolver<'a> {
 
 struct ReprojectionResidual<'a> {
     intrinsics: &'a CameraIntrinsicsModel,
-    extrinsics: &'a CameraExtrinsics,
+    rotation: Matrix3f,
+    translation: Vector3f,
     point: &'a Vector2f,
 }
 
 impl<'a> ReprojectionResidual<'a> {
-    fn calc_error(&self, params: &[f32]) -> Vector2f {
-        let pt3 = vec3f(params[0], params[1], params[2]);
+    /*
+    This basically does the following:
+
+    - Parameter is a 3d point in world space
+    - Transform into camera space.
+    - Project to a 2d point using the camera intrinsics.
+    - Calculate the gradients of that.
+    */
+    fn calc_error(&self, params: &[f32]) -> (Vector2f, Matrix2x3f) {
+        // Point in world space.
+        let pt_w = vec3f(params[0], params[1], params[2]);
+
+        // Point in camera space
+        let mut pt_c = &self.rotation * pt_w;
+        pt_c += &self.translation;
+        let x_c = pt_c[0];
+        let y_c = pt_c[1];
+        let z_c = pt_c[2];
+
+        // Perspective
+        let z_inv = 1.0 / z_c;
+        let x = x_c * z_inv;
+        let y = y_c * z_inv;
+
+        // Distortion
+        let x2 = x * x;
+        let y2 = y * y;
+        let r2 = x2 + y2;
+        let r4 = r2 * r2;
+        let k1 = self.intrinsics.k1;
+        let k2 = self.intrinsics.k2;
         
-        let projected = {
-            let mut pt = rotate_by_axis_angle(&pt3, &self.extrinsics.rotation);
-            pt += &self.extrinsics.translation;
+        let d = 1.0 + k1 * r2 + k2 * r4;
 
-            self.intrinsics.project_point(&pt)
-        };
+        // Calculate final projected point for the residual
+        let fx = self.intrinsics.focal_length[0];
+        let fy = self.intrinsics.focal_length[1];
+        
+        let mut projected = vec2f(x * d, y * d);
+        projected[0] = projected[0] * fx + self.intrinsics.center[0];
+        projected[1] = projected[1] * fy + self.intrinsics.center[1];
 
-        let pt2 = self.point;
+        let residual = self.point - projected;
 
-        // TODO: technically here we are outputting two residuals and not 1
-        pt2 - projected
+        // 4. Analytical Jacobian Calculation
+        // D = 2 * d(d)/d(r^2) = 2 * (k1 + 2 * k2 * r2)
+        let d_factor = 2.0 * (k1 + 2.0 * k2 * r2);
+        
+        // Precompute shared terms for the Jacobian
+        let d_plus_dfactor_x2 = d + d_factor * x2;
+        let d_plus_dfactor_y2 = d + d_factor * y2;
+        let dfactor_xy = d_factor * x * y;
+        
+        let k = d + d_factor * r2;
+
+        let fx_z_inv = fx * z_inv;
+        let fy_z_inv = fy * z_inv;
+
+        let j_cam = Matrix2x3f::from_slice(&[
+            fx_z_inv * d_plus_dfactor_x2, 
+            fx_z_inv * dfactor_xy,        
+            fx_z_inv * (-x * k),
+            //
+            fy_z_inv * dfactor_xy,        
+            fy_z_inv * d_plus_dfactor_y2, 
+            fy_z_inv * (-y * k)           
+        ]);
+        
+        let j_total = j_cam * &self.rotation;
+
+        (residual, j_total)
     }
 }
 
@@ -80,27 +142,9 @@ impl<'a> ResidualBlockFunction for ReprojectionResidual<'a> {
     }
 
     fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]) {
-        let mut params = params.to_vec();
-
-        out.copy_from_slice(self.calc_error(&params).as_ref());
- 
-        let step = 0.0001;
-        for i in 0..params.len() {
-            let v = params[i];
-            params[i]  = v + step;
-
-            let error1 = self.calc_error(&params);
-
-            params[i]  = v - step;
-            let error2 = self.calc_error(&params);
-
-            params[i] = v;
-
-            // negative since we want the gradient of project_point not the error function.
-            let grad = (error1 - error2) / (-2.0 * step);
-            gradient[i] = grad[0];
-            gradient[params.len() + i] = grad[1];
-        }
+        let (res, grad) = self.calc_error(params);
+        out.copy_from_slice(res.as_ref());
+        gradient.copy_from_slice(grad.as_ref());
     }
 }
 

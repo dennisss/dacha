@@ -3073,6 +3073,7 @@ dependencies = [
 name = "media_thermal"
 version = "0.0.0"
 dependencies = [
+"base_args",
  "base_error",
  "base_units",
  "common",

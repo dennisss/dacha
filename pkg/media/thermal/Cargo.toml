@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2018"
 
 [dependencies]
+base_args = { path = "../../base/args" }
 base_error = { path = "../../base/error" }
 base_units = { path = "../../base/units" }
 common = { path = "../../common" }

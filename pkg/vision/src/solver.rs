@@ -183,12 +183,11 @@ impl<'a> NonLinearSolver<'a> {
 
         // Temporary variables used when computing residual blocks.
         let mut current_params = vec![];
-        let mut current_errors = vec![];
-        let mut current_gradients = vec![];
+                let mut current_gradients = vec![];
 
-        // if params.len() > 20 {
-        //     println!("JACOBIAN SIZE: {} x {}", self.num_residuals, self.initial_params.len());
-        // }
+        if params.len() > 20 {
+            println!("JACOBIAN SIZE: {} x {}", self.num_residuals, self.initial_params.len());
+        }
 
         // Normally this will terminate by:
         // - First there will likely be many rounds of last_made_progress=true
@@ -204,6 +203,26 @@ impl<'a> NonLinearSolver<'a> {
             // Calculating the current values for 'error' and 'jacobian' based on
             // the current 'params'.
             for residual_block in &self.residual_blocks {
+
+                let errors_slice = &mut error.as_mut()[residual_block.offset..(residual_block.offset + residual_block.len)];
+
+                if residual_block.param_blocks.len() == 1 {
+                    let param_block_idx = residual_block.param_blocks[0];
+                    let params_spec = &self.param_blocks[param_block_idx];
+                    let params_slice = &params.as_ref()[
+                        params_spec.offset..(params_spec.offset + params_spec.len)
+                    ];
+
+                    let gradients_offset = residual_block.offset * self.initial_params.len();
+                    let gradients_size = residual_block.len * params_spec.len;
+
+                    let gradients_slice = &mut jacobian.as_mut()[gradients_offset..(gradients_offset + gradients_size)];
+
+                    residual_block.f.calculate(params_slice, errors_slice, gradients_slice);
+
+                } else {
+                    // Scatter / gather multiple parameters.
+
                 current_params.clear();
                 for param_block_idx in &residual_block.param_blocks {
                     let params_spec = &self.param_blocks[*param_block_idx];
@@ -212,16 +231,12 @@ impl<'a> NonLinearSolver<'a> {
                     ]);
                 }
 
-                current_errors.resize(residual_block.len, 0.0);
-                current_gradients.resize(residual_block.len * current_params.len(), 0.0);
+                                current_gradients.resize(residual_block.len * current_params.len(), 0.0);
 
-                residual_block.f.calculate(&current_params, &mut current_errors, &mut current_gradients);
+                residual_block.f.calculate(&current_params, errors_slice, &mut current_gradients);
 
                 let mut j = 0;
-                for i in 0..current_errors.len() {
-                    error_sum += current_errors[i].abs();
-                    error[residual_block.offset + i] = current_errors[i];
-
+                for i in 0..residual_block.len {
                     for param_block_idx in &residual_block.param_blocks {
                         let params_spec = &self.param_blocks[*param_block_idx];
 
@@ -231,6 +246,12 @@ impl<'a> NonLinearSolver<'a> {
                         }
                     }
                 }
+}
+
+                for e in errors_slice {
+                    error_sum += e.abs();
+                }
+
             }
 
             if params.len() > 20 {
@@ -291,7 +312,8 @@ impl<'a> NonLinearSolver<'a> {
 
                     let a_inv = a.inverse();
 
-                    a_inv * jacobian.as_transpose() * &error
+                    // NOTE: Multiplication ordering here is optimized for performance.
+                    a_inv * (jacobian.as_transpose() * &error)
                 }
             };
 

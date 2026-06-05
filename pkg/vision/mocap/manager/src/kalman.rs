@@ -2,7 +2,7 @@ use math::matrix::{vec2f, Vector2f, Matrix2f, Vector2ft, Vector3f};
 
 const PROCESS_NOISE: f32 = 0.1; // 100mm
 
-const OBSERVATION_NOISE: f32 = 0.0005; // 0.5mm
+const OBSERVATION_NOISE: f32 = 0.001; // 1mm
 
 
 pub struct KalmanPointFilter3D {

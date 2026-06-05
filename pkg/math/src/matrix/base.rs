@@ -723,6 +723,7 @@ impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: Storage
     }
 
     // TODO: Must optionally return if it doesn't have an inverse
+    #[inline(never)]
     pub fn inverse(&self) -> MatrixNew<T, R, C>
     where
         C: MulDims<U2>,

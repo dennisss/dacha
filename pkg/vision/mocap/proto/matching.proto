@@ -17,4 +17,18 @@ message BlobMatchingConfig {
     //
     // MUST be at least 2 and MUST be <= min_num_matches
     uint32 min_num_rematches = 3;
+
+    // Minimum distance between two distinct markers.
+    float min_marker_distance = 4;
+}
+
+message TrackedPointProto {
+    fixed64 id = 1;
+
+    repeated fixed64 camera_ids = 2;
+
+    float radius = 3;
+
+    // Always in [x,y,z] format.
+    repeated float position = 4;
 }

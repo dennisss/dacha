@@ -55,43 +55,57 @@ impl VideoWriter {
 
 pub struct VideoReader {
     reader: RecordReader,
-    buf: Vec<u8>
+    buf: Vec<u8>,
+    i: usize,
+    interval: usize,
 }
 
 impl VideoReader {
     pub async fn open(path: &LocalPath) -> Result<Self> {
         let mut reader = RecordReader::open(path).await?;
-        Ok(Self { reader, buf: vec![] })
+        Ok(Self { reader, buf: vec![], i: 0, interval: 1 })
     }
 
     pub fn offset(&self) -> u64 {
         self.reader.offset()
     }
 
+    pub fn set_frame_interval(&mut self, n: usize) {
+        self.interval = n;
+    }
+
     // TODO: Parallelize the inflation across many frames.
     pub async fn next(&mut self) -> Result<Option<ImageFrameProto>> {
-        let data = match self.reader.read().await? {
-            Some(v) => v,
-            None => return Ok(None)
-        };
+        loop {
+            let data = match self.reader.read().await? {
+                Some(v) => v,
+                None => return Ok(None)
+            };
 
-        let mut out = ImageFrameProto::default();
-        out.parse_merge(&data)?;
+            let cur_i = self.i;
+            self.i += 1;
+            if cur_i % self.interval != 0 {
+                continue;
+            }
 
-        if out.deflated() {
-            self.buf.clear();
+            let mut out = ImageFrameProto::default();
+            out.parse_merge(&data)?;
 
-            compression::transform::transform_to_vec(
-                Inflater::new(),
-                out.data(),
-                &mut self.buf
-            )?;
-            out.set_data(&self.buf[..]);
+            if out.deflated() {
+                self.buf.clear();
 
-            out.set_deflated(false);
+                compression::transform::transform_to_vec(
+                    Inflater::new(),
+                    out.data(),
+                    &mut self.buf
+                )?;
+                out.set_data(&self.buf[..]);
+
+                out.set_deflated(false);
+            }
+
+            return Ok(Some(out));
         }
-
-        Ok(Some(out))
     }
 
 }

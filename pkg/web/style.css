@@ -211,3 +211,17 @@ a.nostyle:visited {
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
+
+
+.selection-box {
+    position: absolute;
+    border: 1px solid rgba(0, 120, 215, 0.8);
+    background-color: rgba(0, 120, 215, 0.2);
+    /* Let mouse events pass through to canvas */
+    pointer-events: none;
+    z-index: 10;
+}
+
+.selection-box.hidden {
+    display: none !important;
+}

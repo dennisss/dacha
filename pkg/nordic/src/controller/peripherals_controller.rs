@@ -855,10 +855,21 @@ impl PeripheralsController {
 
                 let twim0 = state.twim0.take().unwrap();
 
+                let mut scl = state.gpio.pin(IndexedPin { index: req.scl_pin() });
+                let mut sda = state.gpio.pin(IndexedPin { index: req.sda_pin() });
+
+                scl.reset().set_direction(PinDirection::Input).set_open_drain();
+                sda.reset().set_direction(PinDirection::Input).set_open_drain();
+
+                if req.internal_pull_up() {
+                    scl.set_resistor(Resistor::PullUp);
+                    sda.set_resistor(Resistor::PullUp);
+                }
+
                 let inst = TWIM::new(
                     twim0,
-                    IndexedPin { index: req.scl_pin() },
-                    IndexedPin { index: req.sda_pin() },
+                    scl,
+                    sda,
                     config,
                 );
 

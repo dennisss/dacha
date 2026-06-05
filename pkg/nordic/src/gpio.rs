@@ -151,6 +151,14 @@ impl GPIOPin {
         self
     }
 
+    // TODO: Not compatible with high drive
+    pub fn set_open_drain(&mut self) -> &mut Self {
+        let mut pin_cnf = self.port.pin_cnf[self.pin_index].read();
+        pin_cnf.set_drive(DRIVE_FIELD::S0D1);
+        self.port.pin_cnf[self.pin_index].write(pin_cnf);
+        self
+    }
+
     pub fn set_sense(&mut self, level: Option<PinLevel>) -> &mut Self {
         let mut pin_cnf = self.port.pin_cnf[self.pin_index].read();
 

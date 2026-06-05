@@ -6,6 +6,7 @@ extern crate macros;
 mod inst;
 pub mod calibration;
 pub mod matching;
+mod alpha_beta;
 mod kalman;
 pub mod wand;
 mod util;

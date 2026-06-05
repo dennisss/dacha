@@ -14,6 +14,8 @@ service MocapManager {
     // This reads a syncronized set of blobs from all cameras.
     rpc ReadBlobs (ReadBlobsRequest) returns (stream ReadBlobsResponse);
 
+    rpc ReadTrackedPoints (ReadTrackedPointsRequest) returns (stream ReadTrackedPointsResponse);
+
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 }
 
@@ -28,7 +30,7 @@ message MocapManagerConfig {
     // frame completed with all frames received so far.
     float frame_aggregation_timeout = 3;
 
-    uint32 num_dummy_cameras = 4;
+    bool make_dummy_cameras = 4;
 
     repeated MocapPerCameraConfig per_camera = 5;
 
@@ -103,7 +105,19 @@ message MocapManagerCameraStatus {
 
     double last_sync_age = 6;
 
+    CameraExtrinsicsProto extrinsics = 7;
+
     // TODO: Metrics and health. Last heartbeat age 
+}
+
+message ReadTrackedPointsRequest {
+    uint32 max_rate = 1;
+}
+
+message ReadTrackedPointsResponse {
+    uint64 frame_timestamp = 1;
+
+    repeated TrackedPointProto points = 2;
 }
 
 
@@ -144,7 +158,7 @@ message MocapTrackingState {
     // TODO: This doesn't really change so better to move somewhere else?
     repeated MocapTrackedCamera cameras = 1;
 
-    repeated MocapTrackedPoint points = 2;
+    repeated TrackedPointProto points = 2;
 
     repeated MocapTrackedLink links = 3;
 }
@@ -152,20 +166,12 @@ message MocapTrackingState {
 message MocapTrackedCamera {
     fixed64 id = 1;
 
-    repeated float position = 2;
+    repeated float translation = 2;
 
     repeated float rotation = 3;
 }
 
-message MocapTrackedPoint {
-    fixed64 id = 1;
 
-    repeated fixed64 camera_ids = 2;
-
-    float radius = 3;
-
-    repeated float position = 4;
-}
 
 message MocapTrackedLink {
     fixed64 point1_id = 1;

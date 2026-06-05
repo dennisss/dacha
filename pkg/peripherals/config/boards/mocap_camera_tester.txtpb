@@ -1,0 +1,25 @@
+name: "mocap_camera_tester"
+base_config: "nrf52840_xiao"
+
+peripherals {
+    name: "enable_drive_high"
+    gpio {
+        pin_name: "P1.13"
+        config {
+            is_input: false
+            default_value: true
+        }
+    }
+}
+
+peripherals {
+    name: "i2c"
+    i2c {
+        sda_pin_name: "P0.05"
+        scl_pin_name: "P1.11"
+        config {
+            frequency: 100000
+            internal_pull_up: true
+        }
+    }
+}

@@ -374,6 +374,7 @@ message ConfigureI2CRequest {
     uint32 sda_pin = 1;
     uint32 scl_pin = 2;
     uint32 frequency = 3;
+    bool internal_pull_up = 4;
 }
 
 message I2CTransfer {

@@ -5,7 +5,7 @@ export class Navbar extends React.Component<{ extraLink?: NavbarLinkOptions }> {
     render() {
         let links: NavbarLinkOptions[] = [
             { name: "Cameras", to: "/ui/cameras" },
-            { name: "Space", to: "/ui/space" },
+            { name: "World", to: "/ui/world" },
 
         ];
 
