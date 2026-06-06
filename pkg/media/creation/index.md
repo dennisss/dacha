@@ -81,6 +81,12 @@ wmctrl -i -r 0x01400103 -e 0,0,0,1920,1080
 ```
 
 
+**Images To MP4**
+
+```
+ffmpeg -framerate 2 -pattern_type glob -i "*.jpg" -c:v libx264 -crf 18 -pix_fmt yuv420p output.mp4
+```
+
 
 ## Misc
 

@@ -13,25 +13,24 @@ git submodule update --init
 make
 ```
 
-**Flashing Image**
+**EEPROM Setup / Mounting**
 
 Bridge the nRPIBOOT pin on your compute module board to GND and then connect the board to your computer via USB.
 
-Then run the following to mount the Pi as a USB drive:
+Run the following script which will configure the EEPROM to optimize eMMC boot and will then mount the CM5 as a mass storage device on your computer:
 
 ```
-cd third_party/rpi/usbboot
-sudo ./rpiboot -d mass-storage-gadget
+pkg/rpi/scripts/provision_cm5.sh
 ```
 
-And flash an image by modifying the below command (most likely the disk argument will be different):
+And flash an image by modifying the below command (The special `disk` argument below allows auto-selecting the CM5's bootloader device):
 
 ```
 cargo build --bin rpi_imager --release
 
 sudo target/release/rpi_imager write \
-    --image=$PWD/third_party/pi-gen/deploy/2026-04-27-Daspbian-lite.img.gz \
-    --disk=/dev/sde \
+    --image=$PWD/third_party/pi-gen/deploy/2026-05-20-Daspbian-lite.img.gz \
+    --disk=mass-storage-gadget \
     --ssh_public_key=$HOME/.ssh/id_cluster.pub \
 	--ip_address=10.1.1.9 \
     --netmask=255.255.0.0 \

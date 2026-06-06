@@ -2,6 +2,9 @@
 
 This is a board for attaching an AR0234 camera sensor to a Raspberry Pi 22-pin connector (2 or 4-lane MIPI).
 
+- PCB Stackup: 6-layer; `JLC06161H-3313`
+- Need to use via-in-pad processing (capped/plated over vias)
+
 ## BOM
 
 - Sensor

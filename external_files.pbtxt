@@ -2430,6 +2430,11 @@ files: [
         sha256_sum: "baea6ac05a49b1657fbd373cc06e74bea26ff10a407b886afa6403965a8484a6"
     },
     {
+        path: "pkg/vision/mocap/parts/camera-tester-holder.stl"
+        size: 8684
+        sha256_sum: "0addb7302491752f79be482e68925f611e0c909d0dd88a982da54d8b7378e099"
+    },
+    {
         path: "pkg/vision/mocap/parts/case-bottom.stl"
         size: 1943784
         sha256_sum: "9b5c0bd76ebe138850e4b7362efc828f882a01f66a8bfa88ff2bdd4e150a8462"
@@ -2446,8 +2451,8 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/case-hinge-vertical.stl"
-        size: 299084
-        sha256_sum: "f764dd1a681949b3311a02304e3bf22e99204ca9d1fb679f4a80c048af7ab92e"
+        size: 317284
+        sha256_sum: "2afb841840d99eff4951196570739087431b82c0c9a67543c6db5c68107bbae0"
     },
     {
         path: "pkg/vision/mocap/parts/case-hinge.3mf"
@@ -2563,6 +2568,11 @@ files: [
         path: "pkg/vision/mocap/parts/screw-holder.stl"
         size: 406684
         sha256_sum: "649cc2f7413c48104cf13a3dd4bfcf413413fe484ebb459ac31c13ce53fa7046"
+    },
+    {
+        path: "pkg/vision/mocap/parts/tripod-holder.stl"
+        size: 31284
+        sha256_sum: "53abfd98fbdf237dc2476361025f474b9bf90d3ebc52a5d736aca3f2a1d7c016"
     },
     {
         path: "pkg/vision/mocap/parts/wall-clip-alignment-helper.dxf"
