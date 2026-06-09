@@ -1,5 +1,7 @@
 # Optical IR Motion Capture System 
 
+TLDR: Watch this video: https://www.youtube.com/watch?v=kYVqL_DqBis
+
 This project is an optical motion tracking system similar to those provided by companies like OptiTrack / Vicon.
 
 The objective is to track the precise 3d position of objects in a room. This is achieved by attaching distinctive markers to the objects and then triangulating those points in space using multiple cameras looking at the same markers.
@@ -79,9 +81,10 @@ This section explains the design of the mocap cameras. Features:
     - External Trigger Support
         - <50ns error between two cameras on the same network.
 - Ethernet PoE+ with PTP support
-- IR + RGB LED Ring
+- High Power IR LED Ring
     - IR LED intensity is fully programmable
     - Syncronized LED pulsing with camera triggering (no camera strobe pin required)
+- RGB Status LEDs
 - Accelerometer for vibration monitoring and ground plane calibration
 - Support for camera filter switches (`SW` connector)
 
@@ -213,6 +216,7 @@ This as a converter from the PoE DC voltage to 5V 3A (mainly used by the CM5 CPU
 
 - Inductor
     - Recommended Part: https://www.digikey.com/en/products/detail/coilcraft/mss1210-153med/21381203
+    - Cheaper Part: https://www.digikey.com/en/products/detail/pulse-electronics/PA4320-153NLT/6555163
     - Bigger (needs board change) but cheaper : https://www.digikey.com/en/products/detail/bourns-inc/SRP1770TA-150M/5429636
 
 
@@ -357,15 +361,16 @@ Connection notes:
     - 20% quantum efficiency at 850nm (NIR version is ~30%)
     - Very big sensor and >200 FPS but most expensive.
 - Omnivision stuff
-    - OG02C10
+    - OG02C1B
         - 1/2.53"
         - 4-lane CSI
         - 1632 x 1264 : 8-bit 300 FPS!!!!
+    - OG05C1B
 - Sony Stuff (https://www.sony-semicon.com/en/products/is/industry/global-shutter.html)
     - IMX273LLR-C
     - IMX392
-    - IMX900 (https://www.sony-semicon.com/en/products/is/industry/gs/imx900.html)
-        - 1/3.1"
+    - IMX900-AMR (https://www.sony-semicon.com/en/products/is/industry/gs/imx900.html)
+        - 1/3.1" (5.81mm image circle)
         - 4-lane CSI
         - 2048 x 1636 ; 8-bit 125.1 FPS
         - (2x2 pinned 8-bit) : 396.5 FPS
@@ -375,12 +380,12 @@ Connection notes:
 
 Recommended M12 Lens (buy with builtin 850nm IR bandpass filter):
 
-- [3.6mm Focal Length](https://www.aliexpress.us/item/2251832686546887.html) (recommended)
-    - Wider than average FOV
-    - 1/2.5" image circle
-- [4.35mm Focal Length](https://www.aliexpress.us/item/3256804658808702.html)
+- [4.35mm Focal Length](https://www.aliexpress.us/item/3256804658808702.html) (recommended)
     - Narrower FOV better for long range.
     - 1/2.3" image circle
+- [3.6mm Focal Length](https://www.aliexpress.us/item/2251832686546887.html) 
+    - Wider than average FOV
+    - 1/2.5" image circle
 
 Make sure to apply `Nyogel 767A` damping grease to the lens thread to minimize motion over time.
 
@@ -541,7 +546,7 @@ Kiri Moto 6061 Aluminum settings:
     - Helical
 
 
-#### Visible LED Ring
+#### RGB Status LEDs
 
 - WS2812B-2020
 - Buy from https://www.lcsc.com/product-detail/C965555.html
@@ -568,16 +573,6 @@ i2cdetect 1
 => Should see address 0x19 respond
 ```
 
-#### IR Cut Switcher
-
-Typical ones use 230mA at 5V
-
-Will use a [DRV8837CDSGR](https://www.digikey.com/en/products/detail/texas-instruments/DRV8837CDSGR/6193615)
-
-Also need a fuse
-
-- https://www.digikey.com/en/products/detail/eaton-electronics-division/PTS08059V020/5420345
-
 #### PCB Specifications
 
 Stackup:
@@ -589,10 +584,6 @@ Stackup:
         - 90 Ohm
             - DP Width: 0.2337 mm
             - GP Gap: 0.15 mm
-    - Min via size:
-        - 0.15mm / 0.25mm
-    - Min 0.1mm clearance
-    - Min 0.1mm track width
 - NextPCB
     - 04161H03-7628 on NextPCB
         - 100 Ohm
@@ -613,13 +604,6 @@ Traces:
     - 0.3mm track width
 
 - Both MIPS and ethernet needs to be 100 ohm differential impedance
-    - CM5IO uses a 0.127mm trace width, 0.253 mm DP gap
-    - Overall clearnce is 0.13mm
-    - We will use
-        - 0.2mm trace spacing
-        - 0.2126 trace width
-
-    - Or 0.15mm spacing, 0.1732mm width 
 
 #### Mechanical Assembly
 
@@ -636,6 +620,7 @@ Board Spacing (between compute and LED boards):
 - Female 0.1" header has 8.5mm of insulation
 - Bridging using this extension header:
     - https://www.digikey.com/en/products/detail/samtec-inc/SSQ-108-03-G-S/1111553
+    - Cheaper tin plated ones: https://www.digikey.com/en/products/detail/samtec-inc/SSQ-108-03-F-S/6692119
     - DO NOT TRY BUYING ON ALIEXPRESS / AMAZON. The cheap ones are typically thinner and don't fit well.
 
 #### Testing
@@ -662,9 +647,6 @@ TODO: Document flashing and testing the camera boards.
 #### 3D Printing Parts
 
 All 3d printed parts should be made of black ASA and scaled to be dimensionally accurate (typically scale X/Y by 100.5%).
-
-LED ring printing
-- random seam location
 
 
 #### Fasteners
