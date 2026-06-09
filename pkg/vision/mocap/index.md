@@ -260,9 +260,9 @@ Considerations for camera selection:
     - Note that there will still be artifacts if exposure time is too high.
     - There are software mechanisms for compensating for rolling shutter effects but are relatively expensive and tricky to integrate into multi-camera systems.
 - Must have an external trigger input pin(s).
-- Monochrome
+- Monochrome Preferred (RGB/Color sensors will work)
     - We only care about the brightness of pixels so if the camera separates out RGB colors, then extra work is required to re-merge them.
-    - RGB/color sensors have a Bayer filter that splits the light into the three R-G-B wavelength bands. Most of the IR light will go down the 'R' path, but the filter is not perfect so will decrease the intensity of the light (which we don't want given we are operating in a low light situation).
+    - RGB/color sensors have a Bayer filter that splits the light into the three R-G-B wavelength bands. Most IR light will pass straight through the Bayer filter but some small amount (maybe 5% in some sensor datasheets) will be blocked or imperfections in the filter may result in additional distortions so it is optimal to avoid cameras with this filter installed.
         - Note that there are techniques on the internet for removing the Bayer filter but it is requires a lot of tooling and is risky to the camera sensor.
 - Raw output
     - Ideally we just get a raw 8-bit list of pixel values out of the camera
