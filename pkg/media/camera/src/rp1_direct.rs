@@ -30,6 +30,8 @@ const SETTINGS: &'static [CameraSettings] = &[
 /// Direct camera access on Raspberry Pis that use the RP1 chip.
 ///
 /// Currently this hardcodes configuring monochrome cameras at max resolution. 
+///
+/// TODO: Rename this since we now support 
 pub struct RP1DirectCamera {
     pub model_name: String,
 
@@ -54,7 +56,6 @@ struct CameraSettings {
 }
 
 impl RP1DirectCamera {
-
     pub async fn open() -> Result<Self> {
         let mut video_devs = {
             let mut out = HashMap::new();
@@ -74,6 +75,7 @@ impl RP1DirectCamera {
             out
         };
 
+        // Find a media device which contains a camera subdev attached to one of the entities.
         let mut selected = None;
         for mut media_dev in v4l2::MediaDevice::list().await? {
 
@@ -103,6 +105,9 @@ impl RP1DirectCamera {
         }
 
         let camera_entity = entities_by_id.get(&camera_id).unwrap();
+        // TODO: Remove the unwrap. 
+        let mut camera_subdev = sub_devs.remove(&camera_entity.device_num().unwrap())
+            .ok_or_else(|| err_msg("Missing camera subdev"))?;
 
         let settings = {
             let name = camera_entity.name()?;
@@ -118,113 +123,7 @@ impl RP1DirectCamera {
             found_settings.ok_or_else(|| err_msg("Unsupported camera"))?
         };
 
-
-
-        let csi2_id = *entity_names.get("csi2").ok_or_else(|| err_msg("Failed to find the csi2 entity"))?;
-        println!("CSI2 Entity Id: {}", csi2_id);
-
-        let cfe_id = *entity_names.get("rp1-cfe-csi2_ch0").ok_or_else(|| err_msg("Failed to find the RP1 CFE entity"))?;
-        println!("CFE ID: {}", cfe_id);
-
-        // Reset all links
-        for entity in entities_by_id.values() {
-            println!("{}", entity.name()?);
-
-            for link in entity.links() {
-                if link.flags().contains(v4l2::MediaLinkFlags::Immutable) {
-                    continue;
-                }
-
-                if link.flags().contains(v4l2::MediaLinkFlags::Enabled) {
-                    println!("TODO: Disable enabled link!");;
-
-                    // TODO: Disable me.
-                }
-            }
-        }
-
-        let camera_source_pad = 0;
-
-        // NOTE: We are assuming that internally the CSI2 device wires up pad 0 to 4
-        let csi2_sink_pad = 0;
-        let csi2_source_pad = 4;
-
-        // Verify camera pad to csi2:0 connections.
-        {
-            if camera_entity.pads().len() == 0 {
-                return Err(err_msg("Expecting at least one camera pad"));
-            }
-
-            // Every pad on the camera needs to:
-            // - Map to the next pad on the CSI2 device.
-            // - Be a source
-            // - Have an already enabled/immutable link (since we don't expect to need to enable them).
-            for camera_pad_i in 0..camera_entity.pads().len() {
-                let mut found_link = false;
-
-                for l in camera_entity.links() {
-                    if l.source().entity_id() != camera_id {
-                        return Err(err_msg("Camera should only be the source in links"));
-                    }
-
-                    if l.sink().entity_id() != csi2_id {
-                        return Err(err_msg("Camera linked to something other than the CSI2 device"));
-                    }
-                    
-                    if l.source().index() != camera_pad_i ||
-                        l.sink().index() != csi2_sink_pad + camera_pad_i {
-                        continue;
-                    }
-
-                    if !l.flags().contains(v4l2::MediaLinkFlags::Immutable) || !l.flags().contains(v4l2::MediaLinkFlags::Enabled) {
-                        return Err(err_msg("Expected camera link to be enabled/immutable"));
-                    }
-                    
-                    found_link = true;
-                    break;
-                }
-
-                if !found_link {
-                    return Err(format_err!("Failed to find link between camera pad {} and CSI port", camera_pad_i));
-                }
-            }
-        }
-
-        // The CFE device should just have a single pad.
-        let cfe_pad = 0;
-
-        println!("Linking csi2 -> cfe...");
-        let csi2_entity = entities_by_id.get(&csi2_id).unwrap();
-        {
-            let mut found = false; 
-            for l in csi2_entity.links() {
-                if l.source().entity_id() == csi2_id && l.source().index() == csi2_source_pad &&
-                l.sink().entity_id() == cfe_id && l.sink().index() == cfe_pad {
-
-                    media_dev.enable_link(l)?;
-                    println!("=> Enabled");
-
-                    found = true;
-                    break;
-                }
-            }
-
-            if !found {
-                return Err(err_msg("Failed to find suitable link"));
-            }
-        }
-
-        let cfe_entity = entities_by_id.get(&cfe_id).unwrap();
-
-        // TODO: Remove the unwraps.
-        let mut camera_subdev = sub_devs.remove(&camera_entity.device_num().unwrap())
-            .ok_or_else(|| err_msg("Missing camera subdev"))?;
-        let mut csi2_subdev = sub_devs.remove(&csi2_entity.device_num().unwrap())
-            .ok_or_else(|| err_msg("Missing csi2 subdev"))?;
-        let mut cfe_video = video_devs.remove(&cfe_entity.device_num().unwrap())
-            .ok_or_else(|| err_msg("Missing video device"))?;
-
-        println!("Configuring formats...");
+        let media_driver = media_dev.driver()?;
 
         let subdev_format = {
             let mut fmt = v4l2::v4l2_subdev_format::default();
@@ -235,18 +134,149 @@ impl RP1DirectCamera {
             fmt
         };
 
-        camera_subdev.set_format(camera_source_pad, &subdev_format).await?;
+        let mut capture_device = {
+            if media_driver == "rp1-cfe" {
+                let csi2_id = *entity_names.get("csi2").ok_or_else(|| err_msg("Failed to find the csi2 entity"))?;
+                println!("CSI2 Entity Id: {}", csi2_id);
 
-        // Copy all pad formats froom the camera to connected CSI2 pads.
-        // Usually there will just be one video pad but there may be more which have metadata
-        // (e.g. MEDIA_BUS_FMT_SENSOR_DATA)
-        for i in 0..camera_entity.pads().len() {
-            let fmt = camera_subdev.format(i).await?;
-            csi2_subdev.set_format(csi2_sink_pad + i, &fmt).await?;
-            csi2_subdev.set_format(csi2_source_pad + i, &fmt).await?;
-        }
+                let cfe_id = *entity_names.get("rp1-cfe-csi2_ch0").ok_or_else(|| err_msg("Failed to find the RP1 CFE entity"))?;
+                println!("CFE ID: {}", cfe_id);
 
-        let mut capture_stream = cfe_video.new_capture_stream()?;
+                // Reset all links
+                for entity in entities_by_id.values() {
+                    println!("{}", entity.name()?);
+
+                    for link in entity.links() {
+                        if link.flags().contains(v4l2::MediaLinkFlags::Immutable) {
+                            continue;
+                        }
+
+                        if link.flags().contains(v4l2::MediaLinkFlags::Enabled) {
+                            println!("TODO: Disable enabled link!");;
+
+                            // TODO: Disable me.
+                        }
+                    }
+                }
+
+                let camera_source_pad = 0;
+
+                // NOTE: We are assuming that internally the CSI2 device wires up pad 0 to 4
+                let csi2_sink_pad = 0;
+                let csi2_source_pad = 4;
+
+                // Verify camera pad to csi2:0 connections.
+                {
+                    if camera_entity.pads().len() == 0 {
+                        return Err(err_msg("Expecting at least one camera pad"));
+                    }
+
+                    // Every pad on the camera needs to:
+                    // - Map to the next pad on the CSI2 device.
+                    // - Be a source
+                    // - Have an already enabled/immutable link (since we don't expect to need to enable them).
+                    for camera_pad_i in 0..camera_entity.pads().len() {
+                        let mut found_link = false;
+
+                        for l in camera_entity.links() {
+                            if l.source().entity_id() != camera_id {
+                                return Err(err_msg("Camera should only be the source in links"));
+                            }
+
+                            if l.sink().entity_id() != csi2_id {
+                                return Err(err_msg("Camera linked to something other than the CSI2 device"));
+                            }
+                            
+                            if l.source().index() != camera_pad_i ||
+                                l.sink().index() != csi2_sink_pad + camera_pad_i {
+                                continue;
+                            }
+
+                            if !l.flags().contains(v4l2::MediaLinkFlags::Immutable) || !l.flags().contains(v4l2::MediaLinkFlags::Enabled) {
+                                return Err(err_msg("Expected camera link to be enabled/immutable"));
+                            }
+                            
+                            found_link = true;
+                            break;
+                        }
+
+                        if !found_link {
+                            return Err(format_err!("Failed to find link between camera pad {} and CSI port", camera_pad_i));
+                        }
+                    }
+                }
+
+                // The CFE device should just have a single pad.
+                let cfe_pad = 0;
+
+                println!("Linking csi2 -> cfe...");
+                let csi2_entity = entities_by_id.get(&csi2_id).unwrap();
+                {
+                    let mut found = false; 
+                    for l in csi2_entity.links() {
+                        if l.source().entity_id() == csi2_id && l.source().index() == csi2_source_pad &&
+                        l.sink().entity_id() == cfe_id && l.sink().index() == cfe_pad {
+
+                            media_dev.enable_link(l)?;
+                            println!("=> Enabled");
+
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if !found {
+                        return Err(err_msg("Failed to find suitable link"));
+                    }
+                }
+
+                let cfe_entity = entities_by_id.get(&cfe_id).unwrap();
+
+                // TODO: Remove the unwraps.
+                let mut csi2_subdev = sub_devs.remove(&csi2_entity.device_num().unwrap())
+                    .ok_or_else(|| err_msg("Missing csi2 subdev"))?;
+                let mut cfe_video = video_devs.remove(&cfe_entity.device_num().unwrap())
+                    .ok_or_else(|| err_msg("Missing video device"))?;
+
+                println!("Configuring formats...");
+
+                camera_subdev.set_format(camera_source_pad, &subdev_format).await?;
+
+                // Copy all pad formats froom the camera to connected CSI2 pads.
+                // Usually there will just be one video pad but there may be more which have metadata
+                // (e.g. MEDIA_BUS_FMT_SENSOR_DATA)
+                for i in 0..camera_entity.pads().len() {
+                    let fmt = camera_subdev.format(i).await?;
+                    csi2_subdev.set_format(csi2_sink_pad + i, &fmt).await?;
+                    csi2_subdev.set_format(csi2_source_pad + i, &fmt).await?;
+                }
+
+                cfe_video
+            } else if media_driver == "unicam" {
+                // Older Pis with camera directly wires to the Broadcom chip.
+
+                // This will be a 'V4L2_VIDEO' entity type attached to the video device that
+                // outputs the frames.
+                let output_id = *entity_names.get("unicam-image").ok_or_else(|| err_msg("Failed to find the unicam-image entity"))?;
+                println!("Output Entity Id: {}", output_id);
+
+                let output_entity = entities_by_id.get(&output_id).unwrap();
+
+                println!("Configuring formats...");
+
+                let camera_source_pad = 0;
+                camera_subdev.set_format(camera_source_pad, &subdev_format).await?;
+
+                let mut output_video = video_devs.remove(&output_entity.device_num().unwrap())
+                    .ok_or_else(|| err_msg("Missing video device"))?;
+
+                output_video
+            } else {
+                return Err(format_err!("Unsupported camera media driver: {}", media_driver))
+            }
+        };
+
+        let mut capture_stream = capture_device.new_capture_stream()?;
         {
             let mut format = capture_stream.get_format().await?;
 
@@ -271,7 +301,7 @@ impl RP1DirectCamera {
         Ok(Self {
             model_name: settings.model_name.to_string(),
             camera_subdev,
-            capture_device: cfe_video,
+            capture_device,
             capture_stream,
             width: settings.width,
             height: settings.height

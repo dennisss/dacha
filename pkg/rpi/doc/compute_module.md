@@ -23,6 +23,14 @@ Run the following script which will configure the EEPROM to optimize eMMC boot a
 pkg/rpi/scripts/provision_cm5.sh
 ```
 
+Or the following script for the CM4:
+
+```
+pkg/rpi/scripts/provision_cm4.sh
+```
+
+**Flashing**
+
 And flash an image by modifying the below command (The special `disk` argument below allows auto-selecting the CM5's bootloader device):
 
 ```
@@ -36,16 +44,4 @@ sudo target/release/rpi_imager write \
     --netmask=255.255.0.0 \
     --gateway=10.1.0.1 \
 	--hardware_model=cm5-regular
-```
-
-**Configure EEPROM**
-
-If you just flashed the image, unplug and plug back in the pi into your computer and then run:
-
-```
-cp pkg/rpi/config/eeprom_cm5.txt third_party/rpi/usbboot/recovery5/boot.conf
-
-cd third_party/rpi/usbboot/recovery5
-./update-pieeprom.sh
-sudo ../rpiboot -d .
 ```

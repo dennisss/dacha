@@ -13,6 +13,7 @@ use executor_multitask::{impl_resource_passthrough, TaskResource};
 use executor::{lock, lock_async};
 use ptp::SignedDuration;
 use flasher_swd::*;
+use rpi::model::Model;
 
 use crate::pps_divider_protocol::*;
 
@@ -60,7 +61,7 @@ struct State {
 
 impl PPSDividerClient {
 
-    pub async fn create() -> Result<Self> {
+    pub async fn create(pi_model: Model) -> Result<Self> {
         let gpio = GPIOChip::default_chip()?;
 
         // Perform an initial reset of the MCU.
@@ -77,7 +78,11 @@ impl PPSDividerClient {
         // NOTE: This is intentionally fairly slow since the MCU gets interrupted on every single byte
         // so we don't want to disrupt the timing critical pulse work or get serial overruns if we
         // are currently running the pulse logic.
-        let mut serial = SerialPort::open("/dev/ttyAMA2", 115_200)?;
+        let mut serial = SerialPort::open(match pi_model {
+            Model::CM4 => "/dev/ttyAMA3",
+            Model::CM5 => "/dev/ttyAMA2",
+            _ => panic!()
+        }, 115_200)?;
 
         let (reader, writer) = serial.split();
 

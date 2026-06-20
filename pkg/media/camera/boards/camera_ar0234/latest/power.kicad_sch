@@ -3093,7 +3093,7 @@
 				)
 			)
 		)
-		(property "Value" "LP5907MFX-2.8"
+		(property "Value" "NCP163ASN280T1G"
 			(at 82.55 35.56 0)
 			(effects
 				(font
@@ -3110,7 +3110,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "http://www.ti.com/lit/ds/symlink/lp5907.pdf"
+		(property "Datasheet" ""
 			(at 82.55 30.48 0)
 			(effects
 				(font
@@ -3119,7 +3119,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "250-mA Ultra-Low-Noise Low-IQ LDO, 2.8V, SOT-23"
+		(property "Description" ""
 			(at 82.55 43.18 0)
 			(effects
 				(font

@@ -85,16 +85,17 @@ struct Args {
 
 
 define_arg_command!(Command {
-BenchmarkFrameProcessorCommand = "benchmark_frame_processor",
+    BenchmarkFrameProcessorCommand = "benchmark_frame_processor",
     TestCameraBoardCommand = "test_camera_board",
     TestLEDBoardCommand = "test_led_board",
     TestLEDBoardFullPower = "test_led_board_full_power",
     PowerOffCommand = "power_off",
-UpdateImageCommand = "update_image",
+    UpdateImageCommand = "update_image",
     FlashMCUCommand = "flash_mcu",
     GrabFramesCommand = "grab_frames",
     CalibrateExtrinsicsCommand = "calibrate_extrinsics",
     DumpMatchesCommand = "dump_matches",
+    SetRGBCommand = "set_rgb"
 });
 
 /*
@@ -551,7 +552,7 @@ impl PowerOffCommand {
             ips.push(addr.ip().to_string());
         }
 
-Ok(ips)
+        Ok(ips)
     }
 
     async fn run(self) -> Result<()> {
@@ -749,6 +750,48 @@ impl GrabFramesCommand {
     }
 }
 
+/*
+cargo run --bin mocap_cli -- set_rgb --camera_addr=jg30xx5m7wcky.mocap_camera.worker.home.cluster.internal
+*/
+
+#[derive(Args)]
+struct SetRGBCommand {
+    camera_addr: String,
+}
+
+impl SetRGBCommand {
+    async fn run(self) -> Result<()> {
+        let meta_client = ClusterMetaClient::create_from_environment().await?;
+        
+        let channel = create_rpc_channel(
+            &self.camera_addr,
+            meta_client.clone()
+        ).await?;
+
+        let stub = Arc::new(MocapCameraStub::new(channel.clone()));
+
+        let req = ReadFramesRequest::default();
+        let ctx = rpc::ClientRequestContext::default();
+
+        let status = stub.Status(&ctx, &StatusRequest::default()).await.result?;
+
+        let mut config: MocapCameraConfigureRequest = status.config().clone();
+
+        for (i, c) in config.rgb_led_colors_mut().iter_mut().enumerate() {
+            if i == 4 || i == 4 + 6 {
+                *c = 0xff;
+            } else {
+                *c = 0;
+            }
+        
+        }
+
+        stub.Configure(&ctx, &config).await.result?;        
+        Ok(())
+    }
+}
+
+
 
 /*
 cargo run --bin mocap_cli --release -- calibrate_extrinsics --log_path=data/mocap/calibration10_wanding.log
@@ -857,8 +900,8 @@ impl DumpMatchesCommand {
             }
 
             for p in points {
-                    proto.add_points(p.to_proto());
-                            }
+                proto.add_points(p.to_proto());
+            }
         }
 
         let end = Instant::now();

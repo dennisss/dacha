@@ -371,6 +371,8 @@ impl<B: Buffer> Stream<B> {
 
     /// TODO: Consider making this return a different 'Stream' type.
     pub async fn turn_on(&self) -> Result<()> {
+        self.device.start_polling().await?;
+
         let dev = self.device.shared.file.lock().await?.read_exclusive();
         unsafe { vidioc_streamon(dev.as_raw_fd(), &self.typ.0) }?;
         Ok(())

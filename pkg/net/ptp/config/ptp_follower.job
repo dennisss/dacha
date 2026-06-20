@@ -1,13 +1,13 @@
 name: "ptp_follower"
 
-replicas: 1
+replicas: 2
 
 scheduling {
     distinct_nodes: true
     labels {
         label {
-            key: "name"
-            value: "testpi5"
+            key: "testcam"
+            value: "yes"
         }
     }
 }
@@ -41,7 +41,7 @@ worker {
         }
     ]
 
-    additional_groups: []
+    additional_groups: ["ptp"]
     devices: [
         {
             source {

@@ -66,8 +66,12 @@ impl MediaDevice {
         &self.path
     }
 
+    pub fn driver(&self) -> Result<String> {
+        read_null_terminated_string(&self.device_info.driver)
+    }
+
     pub fn print_device_info(&self) -> Result<()> {
-        println!("Driver: {}", read_null_terminated_string(&self.device_info.driver)?);
+        println!("Driver: {}", self.driver()?);
         println!("Model: {}", read_null_terminated_string(&self.device_info.model)?);
         println!("Serial: {}", read_null_terminated_string(&self.device_info.serial)?);
         println!("Bus Info: {}", read_null_terminated_string(&self.device_info.bus_info)?);

@@ -127,6 +127,15 @@ async fn main() -> Result<()> {
         server.add_service(time_sync.clone().into_service())?;
 
     } else {
+
+        let pi_model = rpi::model::Model::get().await?; 
+
+        match pi_model {
+            rpi::model::Model::CM4 => {},
+            rpi::model::Model::CM5 => {},
+            _ => return Err(format_err!("Unsupported pi model: {:?}", pi_model)) 
+        };
+
         // TODO: Need to ensure that the device matches the interface.
         let mut ptp_device = Arc::new(ptp::PTPDevice::open_default()?);
         ptp_device.configure_pps_output()
@@ -142,7 +151,7 @@ async fn main() -> Result<()> {
         service.register_dependency(time_sync.clone()).await;
         server.add_service(time_sync.clone().into_service())?;
 
-        let cam = Arc::new(MocapCamera::create(ptp_device.clone()).await?);
+        let cam = Arc::new(MocapCamera::create(pi_model.clone(), ptp_device.clone()).await?);
         service.register_dependency(cam.clone()).await;
         server.add_service(cam.clone().into_service())?;
         

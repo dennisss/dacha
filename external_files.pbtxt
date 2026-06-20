@@ -2320,6 +2320,11 @@ files: [
         sha256_sum: "b5571ecc9389c87084555e95626f384c4ae10ee097e13d69f69bb9f740caf198"
     },
     {
+        path: "pkg/vision/mocap/boards/compute/r4/plot.zip"
+        size: 199302
+        sha256_sum: "a42928c0bb175d63a7847200ffdd2fd92ce9e13a394f3c6f7925e2112001bcb9"
+    },
+    {
         path: "pkg/vision/mocap/boards/led/r1/plot.zip"
         size: 133226
         sha256_sum: "84e1fa6fa2459810e178a7e01e267fc41bc77c0352dd76cee1e8b9148698e824"
@@ -2333,6 +2338,11 @@ files: [
         path: "pkg/vision/mocap/boards/led/r3/plot.zip"
         size: 154713
         sha256_sum: "3e4e3a06f91b2b38df166ebbe5c7d6b3f0c52bfb85bd035239d086f1ec0e8541"
+    },
+    {
+        path: "pkg/vision/mocap/boards/led/r4/plot.zip"
+        size: 151336
+        sha256_sum: "7cb182dce48f8335ad5573338ae0ee9b8f288856d536c101658355c4bccb778d"
     },
     {
         path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-B_Cu.gbl"
@@ -2436,8 +2446,8 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/case-bottom.stl"
-        size: 1943784
-        sha256_sum: "9b5c0bd76ebe138850e4b7362efc828f882a01f66a8bfa88ff2bdd4e150a8462"
+        size: 1944484
+        sha256_sum: "6d53605d801b957405f8d0ddafee2f78574a4af522167a4b4e481a6bfe60343e"
     },
     {
         path: "pkg/vision/mocap/parts/case-hinge-screw.stl"
@@ -2466,13 +2476,13 @@ files: [
     },
     {
         path: "pkg/vision/mocap/parts/case-top.stl"
-        size: 1577684
-        sha256_sum: "4c51fcb091c9f6e7f391e6bc4387d17f6f60762fefc3c22fa4cef8f6e0ac665d"
+        size: 1577784
+        sha256_sum: "ae5a203b70b1d87bca79ffa32c1d08598be77faa5715557d2d2809cf8e750c7d"
     },
     {
         path: "pkg/vision/mocap/parts/case.3mf"
-        size: 765642
-        sha256_sum: "f1b8e90f3717135089febffad866225f8cdb961a5aca21781638a88c5dc1056c"
+        size: 764555
+        sha256_sum: "06d3e1286a5844aa929b82171d06fa004a50c4262eb07a7fd259728de398b1c3"
     },
     {
         path: "pkg/vision/mocap/parts/ceiling-clip.stl"
@@ -2548,6 +2558,11 @@ files: [
         path: "pkg/vision/mocap/parts/lens-holder-holder.stl"
         size: 476484
         sha256_sum: "4e74cf6c8bbd93df0e8084808af510c44b32b290a76f3f5e64c242a9dacf0ef9"
+    },
+    {
+        path: "pkg/vision/mocap/parts/lens-ring-r2.stl"
+        size: 144084
+        sha256_sum: "73de133cb4bb977913ab3fa7db3596a1b6803e29738e666b15d89618852fa03c"
     },
     {
         path: "pkg/vision/mocap/parts/lens-ring.stl"

@@ -10,7 +10,7 @@ SUBMODULE_DIR="$WORKSPACE_DIR/third_party/rpi/usbboot"
 PAYLOAD_DIR="/tmp/dacha/rpi_eeprom_payload"
 
 BASE_EEPROM="$SUBMODULE_DIR/recovery5/pieeprom.original.bin"
-EEPROM_CONFIG="$WORKSPACE_DIR/pkg/rpi/config/eeprom_cm5.txt"
+EEPROM_CONFIG="$WORKSPACE_DIR/pkg/rpi/config/eeprom_cm.txt"
 
 echo "Staging EEPROM payload..."
 rm -rf "$PAYLOAD_DIR"

@@ -6,7 +6,7 @@ This project is an optical motion tracking system similar to those provided by c
 
 The objective is to track the precise 3d position of objects in a room. This is achieved by attaching distinctive markers to the objects and then triangulating those points in space using multiple cameras looking at the same markers.
 
-Note that the primary goal of this is not to make a "toy" (cost optimized). The goal is to make a "tool" with very good 
+Note that the primary goal of this is not to make a "toy" (cost optimized). The goal is to make a "tool" with very good precision so that it can be used outside of purely visual use-cases like animation (e.g. for robotics, research, ground truth for other systems, etc.).
 
 ## Hardware
 
@@ -102,15 +102,18 @@ The camera electronics are divided into the following boards found in:
 For doing marker recognition in camera images, we will use a Raspberry Pi CM5 (or CM4). Any of them should work but the recommended specs are:
 
 - no-Wifi
-- 2GB (as low as it can go so 1GB for the CM4)
-- 16GB EMMC (or minimally the lite version)
+- 1GB (CM4) or 2GB (CM5) (as low as it can go)
+- 16GB EMMC (or a lite version with external SDCard)
 
 Specific Models:
 
-- What I currently use: CM5002016
+- What I currently use: CM5002016 / SC1558 (cheapest CM5 with eMMC)
+    - Cheapest CM5 Lite (no eMMC): CM5002000 / SC1556
 - Cheapest CM4: CM4001000
 
-Note that we will use the Ethernet PTP feature of the CM5 so clone boards will not work well without significant modifications.
+Any CM4/5 will work but note that CM5s are generally more desirable for future upgradeability since the MIPI camera interface is 2.5x the speed of the CM4 (you will only notice this difference if you go above 2 megapixel sensors. The AR0234 can do full bandwidth on both versions).
+
+Note that we will use the Ethernet PTP feature of the CM4/CM5 so clone boards will not work well without significant modifications.
 
 - [CM5 Datasheet](https://pip-assets.raspberrypi.com/categories/944-raspberry-pi-compute-module-5/documents/RP-008180-DS-6-cm5-datasheet.pdf?disposition=inline)
 
@@ -160,6 +163,13 @@ The connector we are using on the camera and carrier boards:
 Recommend getting the standard Pi CM5 passive heatsink (or [Edatec heatsink](https://www.digikey.com/en/products/detail/edatec/ED-CM4COOLER-B/16683008) for CM4).
 
 There is a fan connector on the board (compatible with 4-pin Raspberry Pi 5 fans) just in case but it is recommended to not use a fan since you don't want any unnecessary vibrations.
+
+**SDCard Slot**
+
+The SDCard slot on the compute board is only supported when using a lite compute module version (without eMMC). The compatible parts for the slot connector are:
+
+- https://www.digikey.com/en/products/detail/amphenol-cs-fci/10067099-200LF/4238739
+- https://www.digikey.com/en/products/detail/molex/0475710001/3262277
 
 #### Power Input
 
@@ -215,10 +225,8 @@ This as a converter from the PoE DC voltage to 5V 3A (mainly used by the CM5 CPU
     - [Datasheet](https://www.ti.com/lit/ds/symlink/lm65645.pdf?ts=1754925441963&ref_url=https%253A%252F%252Fwww.ti.com%252Fpower-management%252Facdc-dcdc-converters%252Fproducts.html)
 
 - Inductor
-    - Recommended Part: https://www.digikey.com/en/products/detail/coilcraft/mss1210-153med/21381203
-    - Cheaper Part: https://www.digikey.com/en/products/detail/pulse-electronics/PA4320-153NLT/6555163
-    - Bigger (needs board change) but cheaper : https://www.digikey.com/en/products/detail/bourns-inc/SRP1770TA-150M/5429636
-
+    - Recommended Part: https://www.digikey.com/en/products/detail/pulse-electronics/PA4320-153NLT/6555163
+    - Premium Option: https://www.digikey.com/en/products/detail/coilcraft/mss1210-153med/21381203
 
 #### PPS Divider
 
@@ -245,6 +253,28 @@ The carrier board has an STM32 based MCU that acts like a fancy software defined
 - [ASTX-H11-24.000MHZ-T](https://www.digikey.com/en/products/detail/abracon-llc/ASTX-H11-24-000MHZ-T/3641101?s=N4IgTCBcDaIIIGUAqANAtACQIxbWALAHQAMpAshgFppIgC6AvkA)
     - Cheaper drop-in: https://www.digikey.com/en/products/detail/ecs-inc/ECS-TXO-3225MV-240-TR/10478746
 - Isolator: ISO7720FDR
+
+#### Optional Carrier Board Features
+
+The 'compute' module carrier board has a few extra features on the PCB that are not strictly required so can be left unpopulated if you want to save cost:
+
+- SDCard Slot (recommended)
+    - Symbols: `J9`, `C14`, `R12`, `U9`
+    - Can be excluded if you intend on only using compute modules with embedded eMMC.
+- RGB / IR Strobe Support (recommended)
+    - Symbols: `R6`, `Q2`, `R3`, `C9`, `U8`, `C10`, `R7`
+    - These are needed if you want to connect the 'led' board for night vision or tracking passive markers
+- Accelerometer (recommended)
+    - Symbols: `U4`, `C11`, `C12`
+    - This is a quality of life chip to make calibration slightly easier and adds some extra features like automatically flipping the camera view and detecting camera shifts.
+- Fan
+    - Symbols: `J14`, `R11`
+- Lens Filter Switcher Driver
+    - Symbols: `U10`, `C25`, `C26`, `F1`, `J5` 
+- All the other 2 pin Molex Picoblade connectors
+    - You only need these if you want to support custom camera boards.
+    - These are easy to solder in by hand later on.
+
 
 
 #### Sensor Camera
@@ -340,7 +370,7 @@ Connection notes:
 - Best NIR quantum efficiency of any of these sensors (56% at 850nm).
 - 2-lane MIPI
 - 90fps @ 1600 x 1400 12-bit
-- 110fps @ 1280 x 1120 12-bit
+- 110fps @ 1280 x 1120 12-bit (cropped)
 - https://ams-osram.com/products/sensor-solutions/cmos-image-sensors/ams-mira220
 - Best part is the Mira220-2QM1WA
     - Full res with 4.35mm focal length lens
@@ -453,7 +483,10 @@ The premium options are the "OSLON® Black" style LEDs
     - https://look.ams-osram.com/m/597061415877617c/original/SFH-4715AS-A01.pdf
     - 70% dimness at 30 degrees off center.
 
-- `SFH 4716AS A01` (Wide angle option)
+- `SFH 4770S A01`
+    - 60 degree half angle / 120 deg overall
+
+- `SFH 4716AS A01` (Very vide angle option)
     - (half angle is 75 deg from center / 150deg overall)
         - Stable power (>90%) through 120deg FOV
 
@@ -465,23 +498,48 @@ To drive the LEDs, they will be wires in series and driven by a single dimmable 
 
 **Components**:
 
-- [TPS922055](https://www.digikey.com/en/products/detail/texas-instruments/tps922054dmtr/22106925)
+WARNING: It's very important to carefully choose good capacitors and inductors for this driver since we are strobing in audible frequencies (120 - 240 FPS) so you will hear some buzzing unless you are careful.
+
+- Driver: [TPS922055](https://www.digikey.com/en/products/detail/texas-instruments/tps922054dmtr/22106925)
     - [Datasheet](https://www.ti.com/lit/ds/symlink/tps922052.pdf?ts=1704307356845&ref_url=https%253A%252F%252Fwww.ti.com%252Fsitesearch%252Fen-us%252Fdocs%252Funiversalsearch.tsp%253FlangPref%253Den-US%2526searchTerm%253DTPS922052DMTR%2526nr%253D5)
 - Diode `D`
     - [V8PM10S-M3/I](https://www.digikey.com/en/products/detail/vishay-general-semiconductor-diodes-division/V8PM10S-M3-I/7427124)
     - Needs to be 6A 100V rated
+    - Premium [option](https://www.digikey.com/en/products/detail/vishay-general-semiconductor-diodes-division/SS10PH10-M3-86A/2152233) used on the TI eval board.
 - Inductor `L`
-    - Note that this needs to be a low magnetoresistance part to minimize the risk of audible noise since out switching frequency (120 - 240 Hz is in the audible range).
-    - Best: [Wurth 7447709220](https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/7447709220/1638648)
+    - The best type in terms of low acoustic noise are the ones labeled as "Molded" "Metal Composite" on DigiKey.
+        - Should be shielded.
+        - Ideally want at least a 6A+ saturation current. 8A+ is ideal. Ripple may be 1-2 amps in the inductor and we
+          don't want to get close to the limit for best acoustic performance.
+    - 22uF : [Wurth 74439369220](https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/c/25588540)
+        - Best efficiency. Modest speed: ~8us LED rise time.
+        - Used on the official TI eval board.
+        - Use with a >= 400kHz driver frequency.
+        - Size: 1090
+    - 15uF : [Wurth 74439358150](https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/74439358150/16370231):
+        - (only supported on LED board revision >= 4)
+        - Good efficiency. Faster ~5us LED rise time. A bit cheaper.
+        - Use with a >= 600kHz driver frequency.
+        - Size: 8080
     - Cheaper but more likely to coil whine: [SRP1265A-220M](https://www.digikey.com/en/products/detail/bourns-inc/SRP1265A-220M/4876624)
-    - Premium option used on the TI eval boards: https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/74439369220/25588540
+        - (supported on board revision <= 3)
 - R_SENSE:
     - For 4A max, 50mOhm (at least 1/4 or 1/2 watt)
+        - We use 2 x 100mOhm resistors in parallel
     - Note that all LED current does through this.
-- R_FLT: 100 ohm, 0603
-- C_COMP: 1nF, 10V X7R
-    - R_COMP
-    - R_DAMP
+- Vcc Cap
+    - 1uF 50V X7R soft terminated
+        - Heavily over-rated to use larger dielectric material to dampen vibrations. 
+        - https://www.digikey.com/en/products/detail/samsung-electro-mechanics/CL10B105KB9VPJC/20498526
+- 1nF caps for filters:
+    - https://www.digikey.com/en/products/detail/murata-electronics/GRM1885C1H102JA01D/586943
+- Input/Output 2.2uF Capacitor
+    - KRM31KR72A225KH01K
+- 0.01uF input filter
+    - https://www.digikey.com/en/products/detail/murata-electronics/GCM1885C2A103JE02J/27381955
+- R_Fset
+    - 59kOhm for 400kHz
+    - [39kOhm](https://www.digikey.com/en/products/detail/yageo/RC0603FR-0739KL/727195) for ~600KHz
 
 **Dimming**
 
@@ -545,6 +603,7 @@ Kiri Moto 6061 Aluminum settings:
     - Rough
     - Helical
 
+The heatsinks are attached to the LED PCB using 0.5mm thick thermal pads.
 
 #### RGB Status LEDs
 
@@ -575,7 +634,50 @@ i2cdetect 1
 
 #### PCB Specifications
 
-Stackup:
+**Compute Board**
+
+Should use FR4, 1oz outer / 0.5oz inner copper weight, 4 layer, ENIG plating.
+
+There are several impedance controlled traces on the board (all non-coplanar) so you also need to make sure that you specify a specific stackup with your PCB manufacturer and make sure that the traces in Kicad have the current width and gap. To modify the spacings:
+
+- Use the online impedance calculator available with your manufacturer to find the 100 ohm, 90 ohm, 50 ohm trace sizes (see example results below).
+- In the Kicad board editor:
+- Click `File` -> `Board Setup...` -> `Net Classes`
+- Add new `Netclasses` with your manufacturer's `_MANUFACTER_NAME` suffix.
+    - These are predefined for JLCPCB and NextPCB
+- Update the `Netclass Assignments` to point to these.
+- Hit Ok to exit out of this.
+- Click `Edit` -> `Edit Track and Via Properties`
+    - Filter items by one of the net classes
+    - Use `Set to net class / custom rule values`
+    - Hit `Apply`
+    - Repeat for all the netclasses.
+- Save and export the gerber files for production.
+
+Recommended Stackup (`>= R4` board revision):
+- JLCPCB
+    - JLC04161H-3313
+        - 100 Ohm (differential pair) (Net Class: `DP_100_JLC`)
+            - DP Width: 0.1143 mm
+            - DP Gap: 0.2 mm
+        - 90 Ohm (differential pair) (Net Class: `DP_90_JLC`)
+            - DP Width: 0.1460 mm
+            - DP Gap: 0.2mm
+        - 50 Ohm (single ended) (Net Class: `SE_100_JLC`)
+            - Width: 0.1425 mm
+- NextPCB
+    - 04161H01-2116
+        - 100 Ohm (differential pair) (Net Class: `DP_100_NEXT`)
+            - DP Width: 0.1491 mm
+            - DP Gap: 0.1651 mm
+        - 90 Ohm (differential pair) (Net Class: `DP_90_NEXT`)
+            - DP Width: 0.1757 mm
+            - DP Gap: 0.1384 mm
+        - 50 Ohm (single ended) (Net Class: `SE_100_NEXT`)
+            - Width: 0.20828 mm
+
+
+Recommended Stackup (`<= R3` board revisions):
 - JLCPCB
     - JLC041611-7628
         - 100 Ohm
@@ -585,7 +687,7 @@ Stackup:
             - DP Width: 0.2337 mm
             - GP Gap: 0.15 mm
 - NextPCB
-    - 04161H03-7628 on NextPCB
+    - 04161H03-7628
         - 100 Ohm
             - DP Width: 0.18542 mm
             - DP Spacing: 0.137922 mm
@@ -593,17 +695,16 @@ Stackup:
             - DP Width: 0.24511 mm
             - DP Spacing: 0.138684 mm
 
-PCBs are 48 x 80mm
+**LED Board**
 
-Recommend getting 2 140x140mm stencils (one for each side of the PCB)
+Basically any stackup with FR4, 4 layer, ENIG plating will work. All the high current traces are really wide and the expectation is that a heatsink will be mounted to deal with the thermals.
 
-Traces:
+**Stencils**
 
-- POE Taps
-    - 1mm clearance
-    - 0.3mm track width
+Per-board recommend getting 2 140x140mm stencils (one for each side of the PCB).
 
-- Both MIPS and ethernet needs to be 100 ohm differential impedance
+- Get them 'electropolished' since some of the pitches are very small.
+
 
 #### Mechanical Assembly
 
@@ -611,10 +712,25 @@ Traces:
 - CM5 sits 0.5mm above the carrier board
 - The CM5 passive heatsink can have a max of 3.5mm of screw inserted
     - Recommended minimum screw insertion is ~1.35mm (M2.5's 0.45 pitch x 3) to get a few threads of grip
+- The main compute/led PCB boards are 80mm tall by 48mm wide
+- All camera boards are 32 x 32 mm with 28 x 28 mm M2 hole spacing.
+
+Sandwich spacing:
+
+- Space between Compute and Camera Board: 4mm
+- Standoff Height: 17mm
+- LED Heatsink Height
+    - (around screw holes): 1.6mm
+    - (max): 12mm
+- LED Heatsink Washer Height: 0.4mm
+- PCB thicknesses: 1.6mm
+- Lens TTL: ~22.5mm
+    - This is the distance from the image sensor to the farthest tip of the Lens when focused.
+    - The board spacing and LED positioning are tuned to work well for roughly this value (+/- 1mm).
 
 Board Spacing (between compute and LED boards):
 
-- Exactly 28mm from top of compute board to bottom of the LED board
+- Exactly 23mm from top of compute board to bottom of the LED board
 - Male 0.1" header has ~2.5mm of insulation.
     - Male header insertion distance is ~6.5mm into the female header
 - Female 0.1" header has 8.5mm of insulation
@@ -683,7 +799,9 @@ Plug in the camera into the USB port of your computer, then run the following to
 pkg/rpi/scripts/provision_cm5.sh
 ```
 
-And flash a Linux image by modifying the below command (most likely the disk argument will be different):
+And flash a Linux image by modifying the below command:
+
+(change preferred static IP and change `hardware_model` to one of `cm4`, `cm5-regular`, `cm5-lite`)
 
 ```
 cargo build --bin rpi_imager --release

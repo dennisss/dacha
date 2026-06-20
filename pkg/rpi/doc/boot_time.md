@@ -440,7 +440,7 @@ For compute modules this will boot from eMMC or SDCard depending on whether or n
 
 **Flags explanation:**
 
-- `BOOT_ORDER=0xf1` only tried the SDCard when booting (no USB / Net / etc. boot).
+- `BOOT_ORDER=0xf1` only try the SDCard (or eMMC) when booting (no USB / Net / etc. boot).
 - `BOOT_UART=0` disables bootloader logging.
 - The bootloader initially waits for 900ms (defined by the `NET_INSTALL_KEYBOARD_WAIT` variable) for a keyboard and 'shift' key press to be present to determine if network install mode should be entered. Both `DISABLE_HDMI=1` and `NET_INSTALL_ENABLED=0` force disabling NET_INSTALL so that has the biggest impact on speeding on boot time.
 

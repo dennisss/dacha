@@ -1,6 +1,6 @@
 """
 Run as:
-python3 pkg/robotics/mocap/boards/led/ring_script.py
+python3 pkg/vision/mocap/boards/led/ring_script.py
 
 
 146.25
@@ -13,7 +13,7 @@ import os
 import math
 import pcbnew
 
-BOARD_PATH = 'pkg/robotics/mocap/boards/led/latest/board-latest.kicad_pcb'
+BOARD_PATH = 'pkg/vision/mocap/boards/led/latest/board-latest.kicad_pcb'
 
 def place_components_external(start_index, radius_mm, start_orientation, start_angle = 90, angle_sign = 1):
     # --- Configuration ---
@@ -229,12 +229,12 @@ def remove_silkscreen():
     board.Save(BOARD_PATH)
 
 if __name__ == "__main__":
-    # place_components_external(
-    #     start_index = 1, radius_mm = 10,
-    #     start_orientation = -90 - (360 / 12),
-    #     start_angle = 90 + (360 / 12),
-    #     angle_sign = -1
-    # )
+    place_components_external(
+        start_index = 1, radius_mm = 10,
+        start_orientation = -90 - (360 / 12),
+        start_angle = 90 + (360 / 12),
+        angle_sign = -1
+    )
     # place_components_external(
     #     start_index = 13,
     #     radius_mm = 16,

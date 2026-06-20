@@ -191,5 +191,11 @@ libraries: [
     },
     {
         path: "third_party/snapmagic/10067099_200LF"
+    },
+    {
+        path: "third_party/snapmagic/SFH_4770S_A01"
+    },
+    {
+        path: "third_party/ultralibrarian/wurth_we_xhmi"
     }
 ]

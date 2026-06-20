@@ -4,7 +4,7 @@ use base_error::*;
 use base_util::null_terminated::read_null_terminated_string;
 use executor::child_task::ChildTask;
 use executor::lock;
-use executor::sync::AsyncVariable;
+use executor::sync::{AsyncVariable, AsyncMutex};
 use executor::ExecutorPollingContext;
 use file::LocalPathBuf;
 use file::{LocalFile, LocalFileOpenOptions, LocalPath, DeviceNumber};
@@ -28,9 +28,25 @@ pub struct Device {
 
 pub(crate) struct DeviceHandle {
     /// Task used to poll for events on the file.
-    polling_task: ChildTask,
+    polling_task: AsyncMutex<Option<ChildTask>>,
 
     pub shared: Arc<DeviceShared>,
+}
+
+impl DeviceHandle {
+    // NOTE: This needs to be started immediately before we turn on
+    // the capture stream since some drivers will complain if we
+    // try to change the device format while we are polling the device.
+    pub(super) async fn start_polling(&self) -> Result<()> {
+        lock!(polling_task <= self.polling_task.lock().await?, {
+            if polling_task.is_none() {
+                *polling_task = Some(ChildTask::spawn(Device::polling_thread(self.shared.clone())));
+            }
+
+            Ok(())
+        })
+    }
+
 }
 
 pub(crate) struct DeviceShared {
@@ -101,8 +117,7 @@ impl Device {
 
         Ok(Self {
             handle: Arc::new(DeviceHandle {
-                // TODO: We don't need to start polling until we have at least one stream open.
-                polling_task: ChildTask::spawn(Self::polling_thread(shared.clone())),
+                polling_task: AsyncMutex::new(None),
                 shared,
             }),
             streams: HashSet::new(),

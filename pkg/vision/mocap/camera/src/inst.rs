@@ -23,6 +23,7 @@ use v4l2::Controllable;
 use media_camera::v4l2::controls::*;
 use media_camera::v4l2::capture_buffer::*;
 use ptp::SignedDuration;
+use rpi::model::Model;
 
 use crate::sensors::*;
 use crate::pps_divider_client::*;
@@ -41,7 +42,7 @@ const NUM_RGB_LEDS: usize = 12;
 pub struct MocapCamera {
     resources: ServiceResourceGroup,
 
-    pio_forwarder: PIO,
+    pio_forwarder: Option<PIO>,
 
     shared: Arc<Shared>,
 }
@@ -111,15 +112,18 @@ struct State {
 
 impl MocapCamera {
 
-    pub async fn create(ptp_device: Arc<ptp::PTPDevice>) -> Result<Self> {
+    pub async fn create(pi_model: Model, ptp_device: Arc<ptp::PTPDevice>) -> Result<Self> {
         // Note that will reset the MCU immediately so it will be back in sync with the default
         // config on the host side.
-        let pps_divider_client = PPSDividerClient::create().await?;
+        let pps_divider_client = PPSDividerClient::create(pi_model.clone()).await?;
 
         let mut strobe_dimming = PWMChannel::open(0, 0).await?;
         strobe_dimming.write(STROBE_DIMMING_FREQUENCY, 0.0).await?;
 
-        let pio_forwarder = PIO::create_pin_forwarder(16, 22)?;
+        let mut pio_forwarder = None;
+        if pi_model == Model::CM5 {
+pio_forwarder = Some(PIO::create_pin_forwarder(16, 22)?);
+        }
         
         let mut rgb_leds = WS2812SPIController::create("/dev/spidev0.0")?;
 

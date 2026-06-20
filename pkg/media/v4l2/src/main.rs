@@ -11,9 +11,9 @@ use v4l2::Controllable;
 /*
 cargo run --bin v4l2
 
-cargo run --bin builder -- build //third_party/v4l2:v4l2 --config=//pkg/builder/config:rpi64
+cargo run --bin builder -- build //pkg/media/v4l2:v4l2 --config=//pkg/builder/config:rpi64
 
-scp -r -i ~/.ssh/id_cluster built/third_party/v4l2/v4l2 cluster-user@10.1.1.3:~/
+scp -r -i ~/.ssh/id_cluster built/pkg/media/v4l2/v4l2 cluster-user@10.1.1.29:~/
 */
 
 
@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
         dev.print_device_info()?;
 
         for entity in dev.list_entities()? {
-            println!("- Entity: {} : {:?}", entity.name()?, entity.typ());
+            println!("- Entity: {} (id: {}) : {:?}", entity.name()?, entity.id(), entity.typ());
 
             if let Some(dev_num) = entity.device_num() {
                 println!("  - dev num: {:?}", dev_num);
@@ -111,6 +111,16 @@ async fn main() -> Result<()> {
 
             for pad in entity.pads() {
                 println!(" - pad: {} : {:?}", pad.index(), pad.flags());
+            }
+
+            for link in entity.links() {
+                println!("- link: {}:{} => {}:{} ({:?})",
+                    link.source().entity_id(),
+                    link.source().index(),
+                    link.sink().entity_id(),
+                    link.sink().index(),
+                    link.flags()
+                );
             }
 
         }

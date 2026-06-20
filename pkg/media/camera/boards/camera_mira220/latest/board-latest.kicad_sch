@@ -31070,7 +31070,7 @@
 				(justify left bottom)
 			)
 		)
-		(property "Value" "TCR3DF25LM"
+		(property "Value" "NCP163ASN250T1G"
 			(at 105.41 50.6222 0)
 			(effects
 				(font

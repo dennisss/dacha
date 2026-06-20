@@ -1,7 +1,38 @@
-[all]
+[cm4]
+
+# MCU serial interface on /dev/ttyAMA3
+dtoverlay=uart3,txd3_pin=4,rxd3_pin=5
+
+# Camera EN keep low initially to avoid early triggering.
+gpio=105=op,dl
+
+# Lock GPU core clock to max. This impacts the speed of the SPI used for
+# LED driving and the MJPEG encoder.
+core_freq=500
+core_freq_min=500
+
+# Configure the camera
+# Note: We don't use the flash output but it is useful for debugging.
+dtoverlay=ar0234,cam1,4lane,link-frequency=360000000,sync-sink,flash
+# dtoverlay=ov9281,cam1
+
+[cm5]
 
 # MCU Serial interface on /dev/ttyAMA2
 dtoverlay=uart2-pi5
+
+# Camera EN and frame trigger. Keep low to avoid accidental triggers.
+gpio=34,22=op,dl
+
+# High-Z for the regular CAM_GPIO1 pin
+gpio=35=ip,pn
+
+# Configure the camera
+# Note: We don't use the flash output but it is useful for debugging.
+dtoverlay=ar0234,cam0,4lane,link-frequency=360000000,sync-sink,flash
+# dtoverlay=ov9281,cam0
+
+[all]
 
 # WS2812 LED serial on /dev/spidev0.0 
 dtoverlay=spi0-0cs,no_miso
@@ -12,18 +43,8 @@ gpio=26=op,dh
 # High-Z for MCU SWD pins
 gpio=17,27=ip,pn
 
-# High-Z for the regular CAM_GPIO1 pin
-gpio=35=ip,pn
-
-# Camera EN and frame trigger. Keep low to avoid accidental triggers.
-gpio=34,22=op,dl
-
 # Strobe dimming output
 # TODO: Simplify this and just leave as a low signal initially (software can setup PWM later)
 dtoverlay=pwm,pin=12,func=4
 
-# Configure the camera
-# Note: We don't use the flash output but it is useful for debugging.
 camera_auto_detect=0
-dtoverlay=ar0234,cam0,4lane,link-frequency=360000000,sync-sink,flash
-# dtoverlay=ov9281,cam0

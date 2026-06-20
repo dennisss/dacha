@@ -12,7 +12,9 @@
 // tests::check_table for the correspondence of each index to specific symbols.
 
 use std::convert::TryFrom;
+
 use common::bits::BitVector;
+use compression::huffman::HuffmanTree;
 
 use crate::format::jpeg::TableClass;
 use crate::format::jpeg::types::BitVector16;
@@ -388,7 +390,7 @@ pub fn get_default_table(table_class: TableClass, table_index: usize) -> Vec<(u8
         (TableClass::DC, 0) => DEFAULT_LUMINANCE_DC_CODE_LENS,
         (TableClass::AC, 0) => DEFAULT_LUMINANCE_AC_CODE_LENS,
         (TableClass::DC, 1) => DEFAULT_CHROMINANCE_DC_CODE_LENS,
-        (TableClass::AC, 1) => DEFAULT_CHROMINANCE_AC_CODE_LENS,        
+        (TableClass::AC, 1) => DEFAULT_CHROMINANCE_AC_CODE_LENS,
         _ => panic!()
     };
 
@@ -438,6 +440,18 @@ pub fn get_default_table(table_class: TableClass, table_index: usize) -> Vec<(u8
     }
 
     out
+}
+
+
+pub fn get_default_tree(table_class: TableClass, table_index: usize) -> HuffmanTree {
+    let table = get_default_table(table_class, table_index);
+
+    let mut tree = HuffmanTree::new();
+    for (symbol, code) in table {
+        tree.insert(symbol as usize, code).unwrap();
+    }
+
+    tree
 }
 
 

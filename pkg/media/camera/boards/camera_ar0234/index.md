@@ -76,6 +76,9 @@ This is a board for attaching an AR0234 camera sensor to a Raspberry Pi 22-pin c
 - Power Requirements:
     - 2.8V : 60mA typical, 115mA peak
         - This is analog power should needs to be high PSSR (>65dB over wide frequency range)
+        - `NCP163ASN280T1G`
+            - Best option
+            - https://www.digikey.com/en/products/detail/onsemi/NCP163ASN280T1G/10064750
         - `LP5907MFX-2.8`
             - Enable Pin: Low (default pulldown) turns off the regulator.
             - 1uF input and output caps.

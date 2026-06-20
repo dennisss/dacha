@@ -82,7 +82,7 @@ impl HuffmanTree {
         Ok(tree)
     }
 
-    pub fn insert(&mut self, symbol: usize, code: BitVector) -> Result<()> {
+    pub fn insert<S: BitVectorStorage>(&mut self, symbol: usize, code: BitVector<S>) -> Result<()> {
         assert!(code.len() > 0);
 
         let mut current_node = self.root.get_or_insert(HuffmanNode::Inner(None, None));

@@ -13,7 +13,9 @@ mod types;
 
 use std::f32::consts::PI;
 use std::io::{Cursor, Read};
+use std::collections::HashMap;
 
+use common::hash::FastHasherBuilder;
 use common::bits::{BitOrder, BitReader, BitVector};
 use common::ceil_div;
 use common::errors::*;
@@ -26,6 +28,7 @@ use parsing::binary::{be_u16, be_u8};
 use parsing::take_exact;
 use segments::*;
 
+use crate::format::jpeg::default_tables::get_default_tree;
 use crate::format::jpeg::coefficient::*;
 use crate::format::jpeg::color::*;
 use crate::format::jpeg::markers::*;
@@ -123,9 +126,37 @@ fn parse_restart_marker(byte: u8) -> Option<u8> {
 // range.
 
 impl JPEG {
+    pub fn parse(data: &[u8]) -> Result<JPEG> {
+        let decoder = JPEGDecoder::new();
+        decoder.parse(data)
+    }
+
+}
+
+pub struct JPEGDecoder {
+    default_trees: HashMap<(TableClass, usize), HuffmanTree, FastHasherBuilder>,
+}
+
+impl JPEGDecoder {
+
+    pub fn new() -> Self {
+
+        let mut default_trees = HashMap::default();
+
+        for table_class in [TableClass::DC, TableClass::AC] {
+            for table_index in 0..1 {
+                default_trees.insert((table_class, table_index), get_default_tree(table_class, table_index));
+            }
+        }
+
+        Self {
+            default_trees,
+        }
+    }
+
     // TODO: It is still possible for this to crash if we perform multiplies that
     // overflow. Should just ignore these cases and warn.
-    pub fn parse(data: &[u8]) -> Result<JPEG> {
+    pub fn parse(&self, data: &[u8]) -> Result<JPEG> {
         let mut next = data;
 
         // TODO: Verify B.2.4.4 "The SOI marker disables the restart interval"
@@ -209,8 +240,8 @@ impl JPEG {
                         return Err(err_msg("Only 8-bit precision is currently supported"));
                     }
 
-                    if seg.components.len() != 3 {
-                        return Err(err_msg("Only JPEGs with 3 components are supported"));
+                    if seg.components.len() != 3 && seg.components.len() != 1 {
+                        return Err(err_msg("Only JPEGs with 1 or 3 components are supported"));
                     }
 
                     pixels.resize(
@@ -435,7 +466,7 @@ impl JPEG {
                         }
 
                         let mcu_end_i = (mcu_start_i + mcu_interval).min(num_mcus);
-                        Self::read_mcus(
+                        self.read_mcus(
                             &mut cursor,
                             mcu_start_i,
                             mcu_end_i,
@@ -483,12 +514,17 @@ impl JPEG {
         // coefficients and bits of each coefficients across all scans (without
         // duplicates)
 
-        let frame_seg = frame_segment.unwrap();
+        let frame_seg = frame_segment
+            .ok_or_else(|| err_msg("No Start of frame segment found in JPEG."))?;
 
-        jpeg_ycbcr_to_rgb(&mut pixels);
+        let mut colorspace = Colorspace::Grayscale;
+        if frame_seg.components.len() == 3 {
+            jpeg_ycbcr_to_rgb(&mut pixels);
+            colorspace = Colorspace::RGB;
+        }
 
         let mut arr = Array::<u8> {
-            shape: vec![frame_seg.y as usize, frame_seg.x as usize, 3],
+            shape: vec![frame_seg.y as usize, frame_seg.x as usize, frame_seg.components.len()],
             data: pixels,
         };
 
@@ -496,7 +532,7 @@ impl JPEG {
             // app0,
             image: Image {
                 array: arr,
-                colorspace: Colorspace::RGB,
+                colorspace,
             },
             unknown_segments,
             trailer_data: next.to_vec(),
@@ -506,6 +542,7 @@ impl JPEG {
     /// Reads and decodes an uninterrupted range of MCUs (not containing
     /// restarts).
     fn read_mcus(
+        &self,
         cursor: &mut Cursor<&[u8]>,
         mcu_start_i: usize,
         mcu_end_i: usize,
@@ -586,7 +623,7 @@ impl JPEG {
 
                     let buffer = &mut frame_component_data.raw_coeffs[block];
 
-                    Self::read_block(
+                    self.read_block(
                         block,
                         buffer,
                         &mut reader,
@@ -633,6 +670,7 @@ impl JPEG {
 
     // eobrun is the number of blocks filled with nothing but zero coefficients.
     fn read_block(
+        &self,
         block: usize,
         buffer: &mut [i16; BLOCK_SIZE],
         reader: &mut BitReader,
@@ -654,9 +692,14 @@ impl JPEG {
             if seg.approximation_last_bit == 0 {
                 // First pass
 
-                let dc_tree = dc_huffman_trees[component.dc_table_selector as usize]
-                    .as_ref()
-                    .ok_or_else(|| err_msg("Referenced undefined DC table"))?;
+                let dc_tree = match dc_huffman_trees[component.dc_table_selector as usize].as_ref() {
+                    Some(v) => v,
+                    None => {
+                        self.default_trees.get(
+                            &(TableClass::DC, component.component_index.min(1))
+                        ).unwrap()
+                    }
+                };
 
                 let s = dc_tree.read_code(reader)?;
 
@@ -687,9 +730,14 @@ impl JPEG {
 
         // Read AC coefficients.
         if seg.selection_end >= 1 && *eobrun == 0 {
-            let ac_tree = ac_huffman_trees[component.ac_table_selector as usize]
-                .as_ref()
-                .ok_or_else(|| err_msg("Referenced undefined AC table"))?;
+            let ac_tree = match ac_huffman_trees[component.ac_table_selector as usize].as_ref() {
+                Some(v) => v,
+                None => {
+                    self.default_trees.get(
+                        &(TableClass::AC, component.component_index.min(1))
+                    ).unwrap()
+                }
+            };
 
             while coeff_i <= seg.selection_end as usize {
                 let sym = ac_tree.read_code(reader)?;

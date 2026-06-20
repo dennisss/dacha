@@ -176,8 +176,9 @@ impl<'a> ServerHandshakeExecutor<'a> {
         // TODO: Verify that this is supported by client and server.
         let cipher_suite = {
             let mut selected = None;
-            for suite in &client_hello.cipher_suites {
-                if !self.options.supported_cipher_suites.contains(suite) {
+
+            for suite in &self.options.supported_cipher_suites {
+                if !client_hello.cipher_suites.contains(suite) {
                     continue;
                 }
 
