@@ -49,7 +49,7 @@ pub struct TextView {
 
     cursor_visible: bool,
 
-    /// Last time an event occured which changed the cursor position.
+    /// Last time an event occurred which changed the cursor position.
     last_change: Instant,
     
     dirty: bool,

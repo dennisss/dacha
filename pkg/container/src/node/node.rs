@@ -127,7 +127,7 @@ struct NodeShared {
     /// TODO: Ensure monotonic timestamps even between node restarts.
     last_event_timestamp: AsyncMutex<u64>,
 
-    /// Channel used to communicate that a state change has occured in a worker.
+    /// Channel used to communicate that a state change has occurred in a worker.
     /// This will trigger a potential update to the WorkerStateMetadata.
     ///
     /// This channel is bounded to 1 message.
@@ -171,7 +171,7 @@ struct NodeStateInner {
     blob_fetchers: HashMap<String, ChildTask>,
 }
 
-/// Event that occured which may change the state of the node.
+/// Event that occurred which may change the state of the node.
 /// Processed by the main task/event loop keeping the node up to date.
 enum NodeEvent {
     /// Triggered by the internal container runtime whenever the container
@@ -1854,7 +1854,7 @@ impl NodeInner {
     }
 
     /*
-    TODO: Need some definitive sense of whether or not the subprocess for a container worker is running or not regardless of whether errors have occured.
+    TODO: Need some definitive sense of whether or not the subprocess for a container worker is running or not regardless of whether errors have occurred.
 
     */
 

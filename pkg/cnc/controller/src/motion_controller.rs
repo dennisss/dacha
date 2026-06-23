@@ -199,7 +199,7 @@ pub enum MotionControllerMode {
     /// external exits via stop_motors().
     Enabled,
     
-    /// An unexpected event has occured.
+    /// An unexpected event has occurred.
     /// Like Disabled but requires explicit exit from Alarm mode.
     Alarm,
 }

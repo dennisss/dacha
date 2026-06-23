@@ -5,7 +5,7 @@ pub fn bubble_sort_by<T, F: FnMut(&T, &T) -> Ordering>(items: &mut [T], mut f: F
         return;
     }
 
-    // Largest index at which a swap occured in the last index.
+    // Largest index at which a swap occurred in the last index.
     // All items after this index are sorted.
     let mut n = items.len() - 1;
 

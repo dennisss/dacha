@@ -421,7 +421,7 @@ impl MocapManager {
     }
 
     /// Global (per-manager) thread that is responsible for publishing finalized groups of blobs for a
-    /// frame from all cameras once all data is received or a timeout has occured.
+    /// frame from all cameras once all data is received or a timeout has occurred.
     async fn frame_merger_thread(shared: Arc<Shared>) -> Result<()> {
 
         let timeout = Duration::from_secs_f32(shared.config.frame_aggregation_timeout());

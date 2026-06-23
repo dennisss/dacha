@@ -38,7 +38,7 @@ impl TimedEvent {
         })
     }
 
-    /// NOTE: Must be called at least one 16Mhz clock cycle after the event occured.
+    /// NOTE: Must be called at least one 16Mhz clock cycle after the event occurred.
     pub fn last_time(&self) -> u32 {
         self.timer_channel.compare_value()
     }

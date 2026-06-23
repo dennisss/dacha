@@ -60,7 +60,7 @@ pub struct ResponseBuilder {
     headers: Headers,
     body: Option<Box<dyn Body>>,
 
-    // First error that occured in the building process
+    // First error that occurred in the building process
     error: Option<Error>,
 }
 

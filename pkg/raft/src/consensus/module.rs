@@ -998,7 +998,7 @@ impl ConsensusModule {
     ///   - Periodically triggers more heartbeats to go out.
     ///
     /// TODO: We need some monitoring of wether or not a tick was completely
-    /// meaninless (no changes occured because of it implying that it could have
+    /// meaninless (no changes occurred because of it implying that it could have
     /// been executed later)
     /// Input (meta, config, state) -> (meta, state)   * config does not get
     /// changed May produce messages and new log entries

@@ -17,7 +17,7 @@ static SHUTDOWN_STATE_INIT: Once = Once::new();
 
 struct ShutdownState {
     /// Sending half of the channel used to notify tasks when a shutdown has
-    /// occured. We don't actually send any data through the sender.
+    /// occurred. We don't actually send any data through the sender.
     /// Instead, when the
     sender: Option<channel::Sender<()>>,
 

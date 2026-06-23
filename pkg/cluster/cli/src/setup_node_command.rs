@@ -680,7 +680,7 @@ async fn setup_remote_node_server(
         }
 
     } else {
-        // We allow skipping during bootstrapping to allow for continuing if a failure occured later on.
+        // We allow skipping during bootstrapping to allow for continuing if a failure occurred later on.
         // if bootstrap {
         //     return Err(err_msg("Bootstrapping but the node already has data set up."));
         // }

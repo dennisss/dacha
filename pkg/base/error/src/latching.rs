@@ -32,7 +32,7 @@ impl LatchingError {
             }
             LatchingError::PreviousErrors => {
                 *self = LatchingError::PreviousErrors;
-                Err(err_msg("Previous errors occured so in a terminal state."))
+                Err(err_msg("Previous errors occurred so in a terminal state."))
             }
         }
     }

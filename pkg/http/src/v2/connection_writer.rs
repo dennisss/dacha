@@ -565,7 +565,7 @@ impl ConnectionWriter {
 
                     let proto_error = ProtocolErrorV2 {
                         code: ErrorCode::INTERNAL_ERROR,
-                        message: "Internal error occured while sending data",
+                        message: "Internal error occurred while sending data",
                         local: true,
                     };
 

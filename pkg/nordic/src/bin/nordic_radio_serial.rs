@@ -85,7 +85,7 @@ async fn forwarding_thread_fn(serial: UARTE, mut rtc: RTC) {
         /// The entire serial receive buffer is full and needs to be emptied.
         SerialReceiveBufferFull,
 
-        /// A long time has occured since the last event was received.
+        /// A long time has occurred since the last event was received.
         /// This is used to cancel serial reads if the receive buffer was only
         /// partially filled.
         Timeout,

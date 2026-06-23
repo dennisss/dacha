@@ -247,7 +247,7 @@ mod tests {
         let (mut server_stream, buf2) = reader2.join().await;
 
         // Verify nothing happened to the buf1 memory as we cancelled the operation
-        // before any reads occured.
+        // before any reads occurred.
         assert_eq!(&buf1[..], b"\0\0\0\0");
         assert_eq!(&buf2[..], b"1234");
         assert_eq!(&buf3[..], b"\0\0\0\0");
