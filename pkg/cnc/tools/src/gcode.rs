@@ -2,6 +2,7 @@ use common::errors::*;
 use cnc_controller_proto::cnc::Command;
 use math::matrix::{VectorXd, MatrixXd};
 use cnc_controller::proto_utils::*;
+use math_proto_util::VectorProtoExt;
 
 use crate::leveling::*;
 

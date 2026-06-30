@@ -10,6 +10,8 @@ use cnc_controller_proto::cnc::*;
 use cnc::quadratic_stepper_motion::*;
 use cnc::linear_motion::LinearMotion;
 use cnc_controller::proto_utils::*;
+use math_proto_util::*;
+use math_proto::math::*;
 use math::matrix::{VectorXd, MatrixXd};
 use math::vecxd;
 
@@ -68,7 +70,7 @@ impl MotionLog {
                 start_time = entry.motion_start().time();
                 start_motor_position.clear();
                 start_motor_position.extend_from_slice(entry.motion_start().motor_position());
-                start_position = VectorXd::from_proto(entry.motion_start().position());
+                start_position = VectorXd::from_proto(entry.motion_start().position())?;
 
                 current_motor_position = start_motor_position.clone();
                 last_directions.resize(current_motor_position.len(), StepperMotorMotion_Direction::UNCHANGED);
@@ -91,7 +93,7 @@ impl MotionLog {
                 end_time = entry.motion_end().time();
                 end_motor_position.clear();
                 end_motor_position.extend_from_slice(entry.motion_end().motor_position());
-                end_position = VectorXd::from_proto(entry.motion_end().position());
+                end_position = VectorXd::from_proto(entry.motion_end().position())?;
 
                 // Verifying that if we trace through all individual stepper motions, we get to the
                 // same position as reported by the controller.
@@ -161,7 +163,7 @@ impl MotionLog {
                 for proto in entry.linear_motions().motions() {
                     linear_motions.push(LinearMotionEntry {
                         start_time: proto.time(),
-                        motion: LinearMotion::from_proto(proto.motion()),
+                        motion: LinearMotion::from_proto(proto.motion())?,
                     });
                 }
             }

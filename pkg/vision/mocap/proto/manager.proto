@@ -45,22 +45,9 @@ message MocapPerCameraConfig {
 
     fixed64 camera_id = 2;
 
-    CameraIntrinsicsModelProto intrinsics = 3;
+    vision.CameraIntrinsicsModelProto intrinsics = 3;
 
-    CameraExtrinsicsProto extrinsics = 4;
-}
-
-
-message CameraIntrinsicsModelProto {
-    repeated float focal_length = 1;
-    repeated float center = 2;
-    float k1 = 3;
-    float k2 = 4;
-}
-
-message CameraExtrinsicsProto {
-    repeated float rotation = 1;
-    repeated float translation = 2;
+    vision.CameraExtrinsicsProto extrinsics = 4;
 }
 
 message MocapManagerStatusRequest {
@@ -105,7 +92,7 @@ message MocapManagerCameraStatus {
 
     double last_sync_age = 6;
 
-    CameraExtrinsicsProto extrinsics = 7;
+    vision.CameraExtrinsicsProto extrinsics = 7;
 
     // TODO: Metrics and health. Last heartbeat age 
 }
@@ -166,9 +153,9 @@ message MocapTrackingState {
 message MocapTrackedCamera {
     fixed64 id = 1;
 
-    repeated float translation = 2;
+    repeated double translation = 2;
 
-    repeated float rotation = 3;
+    repeated double rotation = 3;
 }
 
 

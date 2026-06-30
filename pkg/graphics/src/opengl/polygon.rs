@@ -44,7 +44,7 @@ impl Polygon {
     ) -> Self {
         let mut vertices = vec![];
 
-        let z = 1.;
+        let z = 0.0;
 
         vertices.push(Vector3f::from_slice(&[top_left.x(), top_left.y(), z]));
         vertices.push(Vector3f::from_slice(&[

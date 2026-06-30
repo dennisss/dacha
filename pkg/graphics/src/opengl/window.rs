@@ -96,6 +96,12 @@ impl Window {
 
     pub fn begin_draw(&mut self) {
         self.window.make_current();
+
+        unsafe {
+            let color = &self.background_color;
+            gl::ClearColor(color.x(), color.y(), color.z(), color.w());
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+        }
     }
 
     pub fn end_draw(&mut self) {
@@ -103,13 +109,7 @@ impl Window {
     }
 
     pub fn draw(&mut self) {
-        self.window.make_current();
-
-        unsafe {
-            let color = &self.background_color;
-            gl::ClearColor(color.x(), color.y(), color.z(), color.w());
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-        }
+        self.begin_draw();
 
         let base = Transform::from(self.camera.view.clone());
         self.scene.draw(&self.camera, &base);
@@ -120,7 +120,7 @@ impl Window {
         - In canvas rendering, typically we would use clear_rect() to do full or partial screen re-draws.
         */
 
-        self.window.swap_buffers();
+        self.end_draw();
     }
 }
 

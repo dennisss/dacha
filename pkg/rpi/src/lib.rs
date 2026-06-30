@@ -13,6 +13,7 @@ pub mod pcm;
 pub mod pwm;
 pub mod temp;
 pub mod ws2812;
+pub mod model;
 
 mod registers {
     #![allow(dead_code, non_snake_case)]

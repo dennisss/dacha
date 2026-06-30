@@ -4,6 +4,7 @@ package mocap;
 
 import "pkg/vision/mocap/proto/processor.proto";
 import "pkg/media/camera/proto/property.proto";
+import "pkg/math/proto/matrix.proto";
 
 service MocapCamera {
     rpc Status (StatusRequest) returns (MocapCameraStatus);
@@ -125,10 +126,10 @@ message MocapCameraSensor {
 }
 
 message AccelerometerStatus {
-    VectorProto value = 1;
+    VectorProtoOld value = 1;
 }
 
-message VectorProto {
+message VectorProtoOld {
     float x = 1;
     float y = 2;
     float z = 3;

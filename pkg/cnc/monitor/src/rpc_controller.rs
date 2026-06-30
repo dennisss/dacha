@@ -16,7 +16,8 @@ use cluster_client::ClusterMetaClient;
 use cnc_controller_proto::cnc::*;
 use math::vecxd;
 use math::matrix::VectorXd;
-use cnc_controller::proto_utils::VectorProtoExt;
+use math_proto_util::*;
+use math_proto::math::*;
 
 use crate::timestamped_value::TimestampedValue;
 use crate::connection_controller::*;
@@ -158,7 +159,7 @@ impl RpcConnectionController {
 
         let res = self.shared.stub.GetLastPosition(&request_context, &request).await.result?;
 
-        Ok(VectorXd::from_proto(res.position()))
+        Ok(VectorXd::from_proto(res.position())?)
     }
 
     async fn move_to(&self, pos: &VectorXd, feed_rate: f64) -> Result<()> {

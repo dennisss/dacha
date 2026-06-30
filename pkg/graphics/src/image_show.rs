@@ -6,7 +6,6 @@ use image::Image;
 use math::matrix::{Vector2f, Vector2i, Vector3f};
 
 use crate::opengl::app::Application;
-use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::*;
 use crate::opengl::texture::Texture;
 use crate::transform::orthogonal_projection;

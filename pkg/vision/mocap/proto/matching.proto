@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package mocap;
 
+import "pkg/math/proto/matrix.proto";
+
 message BlobMatchingConfig {
 
     // Number of 2d observations of a single 3d point for it to accepted.
@@ -9,7 +11,7 @@ message BlobMatchingConfig {
     // MUST be at least 2.
     uint32 min_num_matches = 1;
 
-    float max_reprojection_error = 2;
+    double max_reprojection_error = 2;
 
     // If we previously detected a 3d point, this is the minimum number of 2d
     // observations around the expected location of that 3d point for it to be
@@ -19,16 +21,43 @@ message BlobMatchingConfig {
     uint32 min_num_rematches = 3;
 
     // Minimum distance between two distinct markers.
-    float min_marker_distance = 4;
+    double min_marker_distance = 4;
+
+    // Maximum amount of time (in seconds) we will store entries for points which
+    // haven't been observed.
+    //
+    // - While a point is a 'ghost', it will continue moving based on its predicted
+    //   velocity under the hope that we later re-discover it.
+    // - This does not apply to points that are part of things like rigid bodies
+    //   where we can continue predicting a point if there are enough other
+    //   points in the rigid body visible.
+    double ghosting_limit_secs = 5;
+
+    double predictor_alpha = 6;
+
+    double predictor_beta = 7;
+
+    // The maximum distance that a point can jump between two frames beyond what it
+    // expected based on the currently estimated velocity of the point.
+    double max_point_jump = 8;
+
+    // TODO: Have a better name for this.
+    // 1.0 disables this check.
+    double min_old_point_matching_ratio = 9;
 }
 
 message TrackedPointProto {
+    // Unique id for this point.
+    // This can be used to correlative if a single point has moved over time.
     fixed64 id = 1;
 
+    // List of camera ids that can see this point in the current frame.
+    // (this will be empty if the point is a 'ghost')
     repeated fixed64 camera_ids = 2;
 
-    float radius = 3;
+    double radius = 3;
 
     // Always in [x,y,z] format.
-    repeated float position = 4;
+    // This is the position after the filter is applied.
+    math.VectorProto position = 4;
 }

@@ -1,8 +1,8 @@
-use math::matrix::{VectorXf, MatrixXf, Vector3f, Matrix3f, Vector2f, vec2f, vec3f};
+use math::matrix::{VectorXd, MatrixXd, Vector3d, Matrix3d, Vector2d, vec2d, vec3d};
 use math::matrix::axis_angle::*;
 
 /// 
-const MIN_IMPROVEMENT_PERCENTAGE: f32 = 0.001;  // 0.1%
+const MIN_IMPROVEMENT_PERCENTAGE: f64 = 0.001;  // 0.1%
 
 const MAX_ITERATIONS: usize = 10_000;
 
@@ -10,12 +10,12 @@ const MAX_ITERATIONS: usize = 10_000;
 pub trait ResidualBlockFunction {
     fn len(&self) -> usize;
 
-    fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]);
+    fn calculate(&self, params: &[f64], out: &mut [f64], gradient: &mut [f64]);
 }
 
 
 pub trait ParameterBlockOperator {
-    fn update(&self, step: &[f32], params: &mut [f32]);
+    fn update(&self, step: &[f64], params: &mut [f64]);
 }
 
 
@@ -23,7 +23,7 @@ pub trait ParameterBlockOperator {
 pub struct LinearParameterBlock {}
 
 impl ParameterBlockOperator for LinearParameterBlock {
-    fn update(&self, step: &[f32], params: &mut [f32]) {
+    fn update(&self, step: &[f64], params: &mut [f64]) {
         for i in 0..step.len() {
             params[i] += step[i];
         }
@@ -35,9 +35,9 @@ impl ParameterBlockOperator for LinearParameterBlock {
 pub struct AxisAngleParameterBlock {}
 
 impl ParameterBlockOperator for AxisAngleParameterBlock {
-    fn update(&self, step: &[f32], params: &mut [f32]) {
-        let increment_axis_angle = vec3f(step[0], step[1], step[2]);
-        let cur_axis_angle = vec3f(params[0], params[1], params[2]);
+    fn update(&self, step: &[f64], params: &mut [f64]) {
+        let increment_axis_angle = vec3d(step[0], step[1], step[2]);
+        let cur_axis_angle = vec3d(params[0], params[1], params[2]);
 
         let new_axis_angle = to_axis_angle(&(
             from_axis_angle(&increment_axis_angle) * from_axis_angle(&cur_axis_angle)));
@@ -53,8 +53,8 @@ impl ParameterBlockOperator for AxisAngleParameterBlock {
 #[derive(Clone)]
 pub struct NonLinearProblemSolution<'a, 'b> {
     solver: &'a NonLinearSolver<'b>,
-    pub params: Vec<f32>,
-    pub error_sum: f32    
+    pub params: Vec<f64>,
+    pub error_sum: f64    
 }
 
 impl<'a, 'b> std::fmt::Debug for NonLinearProblemSolution<'a, 'b> {
@@ -68,7 +68,7 @@ impl<'a, 'b> std::fmt::Debug for NonLinearProblemSolution<'a, 'b> {
 
 impl<'a, 'b> NonLinearProblemSolution<'a, 'b> {
 
-    pub fn param_block(&self, idx: usize) -> &[f32] {
+    pub fn param_block(&self, idx: usize) -> &[f64] {
         let spec = &self.solver.param_blocks[idx];
         &self.params[spec.offset..(spec.offset + spec.len)]
     }
@@ -79,7 +79,7 @@ impl<'a, 'b> NonLinearProblemSolution<'a, 'b> {
 /// Levenberg-Marquardt non-linear least squares solver
 pub struct NonLinearSolver<'a> {
     /// Initial values of all the parameters.
-    initial_params: Vec<f32>,
+    initial_params: Vec<f64>,
 
     param_blocks: Vec<ParameterBlockSpec<'a>>,
 
@@ -88,7 +88,7 @@ pub struct NonLinearSolver<'a> {
     residual_blocks: Vec<ResidualBlockSpec<'a>>,
 
     /// Once the error goes below this threshold, we will just stop.
-    min_error: f32,
+    min_error: f64,
 
     gradient_descent: bool,
 }
@@ -97,6 +97,7 @@ struct ParameterBlockSpec<'a> {
     offset: usize,
     len: usize,
     op: Box<dyn ParameterBlockOperator + 'a>,
+    frozen: bool,
 }
 
 struct ResidualBlockSpec<'a> {
@@ -104,6 +105,13 @@ struct ResidualBlockSpec<'a> {
     len: usize,
     param_blocks: Vec<usize>,
     f: Box<dyn ResidualBlockFunction + 'a>
+}
+
+struct ParamsState {
+    params: VectorXd,
+    error: VectorXd,
+    error_sum: f64,
+    jacobian: MatrixXd,
 }
 
 impl<'a> NonLinearSolver<'a> {
@@ -120,7 +128,7 @@ impl<'a> NonLinearSolver<'a> {
 
     pub fn add_parameter_block<P: ParameterBlockOperator + 'a>(
         &mut self,
-        initial_params: &[f32], op: P
+        initial_params: &[f64], op: P
     ) -> usize {
         let offset = self.initial_params.len();
         self.initial_params.extend_from_slice(initial_params);
@@ -129,10 +137,15 @@ impl<'a> NonLinearSolver<'a> {
         self.param_blocks.push(ParameterBlockSpec {
             offset,
             len: initial_params.len(),
-            op: Box::new(op)
+            op: Box::new(op),
+            frozen: false,
         });
 
         i
+    }
+
+    pub fn freeze_parameter_block(&mut self, i: usize) {
+        self.param_blocks[i].frozen = true;
     }
 
     pub fn add_residual_block<R: ResidualBlockFunction + 'a>(
@@ -152,7 +165,7 @@ impl<'a> NonLinearSolver<'a> {
         });
     }
 
-    pub fn set_min_error(&mut self, value: f32) {
+    pub fn set_min_error(&mut self, value: f64) {
         self.min_error = value;
     }
 
@@ -163,20 +176,20 @@ impl<'a> NonLinearSolver<'a> {
     #[inline(never)]
     pub fn solve<'b>(&'b self) -> NonLinearProblemSolution<'b, 'a> {
         // Current value of each parameter in the model that we are estimating.
-        let mut params = VectorXf::from_slice_with_shape(self.initial_params.len(), 1, &self.initial_params);
+        let mut params = VectorXd::from_slice_with_shape(self.initial_params.len(), 1, &self.initial_params);
         
         // Last parameter set and it's overall error sum.
-        let mut last_params: Option<(VectorXf, f32)> = None;
+        let mut last_params: Option<(VectorXd, f64)> = None;
 
         // Each element is the error for a single point with the current parameters.
-        let mut error = VectorXf::zero_with_shape(self.num_residuals, 1);
+        let mut error = VectorXd::zero_with_shape(self.num_residuals, 1);
 
         let mut error_sum = 0.0;
 
         // Each row is the gradients of each parameter for a single point.
-        let mut jacobian = MatrixXf::zero_with_shape(self.num_residuals, self.initial_params.len());
+        let mut jacobian = MatrixXd::zero_with_shape(self.num_residuals, self.initial_params.len());
 
-        let mut dampening: f32 = 0.01;
+        let mut dampening: f64 = 0.01;
 
         let mut dampening_is_clamped = false;
         let mut last_made_progress = true; 
@@ -248,8 +261,8 @@ impl<'a> NonLinearSolver<'a> {
                 }
 }
 
-                for e in errors_slice {
-                    error_sum += e.abs();
+                for e in errors_slice.iter().cloned() {
+                    error_sum += e * e;
                 }
 
             }

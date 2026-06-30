@@ -14,7 +14,8 @@ use cnc_controller::motion_controller::MotionController;
 use cnc_controller::config::ControllerConfigRegistry;
 use cnc_controller::proto_utils::*;
 use file::LocalPathBuf;
-
+use math_proto_util::*;
+use math_proto::math::*;
 
 use crate::leveling::*;
 use crate::gcode::*;
@@ -141,7 +142,7 @@ impl ExecuteCommand {
                 let mut proto = MatrixProto::default();
                 let data = file::read_to_string(&path).await?;
                 protobuf::text::parse_text_proto(&data, &mut proto)?;
-                converter.set_skew(Some(MatrixXd::from_proto(&proto)));
+                converter.set_skew(Some(MatrixXd::from_proto(&proto)?));
             }
 
             let mut cmds = vec![];

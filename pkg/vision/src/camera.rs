@@ -1,17 +1,18 @@
-use math::matrix::{Vector2f, Vector3f, vec2f, Matrix3f};
+use math::matrix::{Vector2d, Vector3d, vec2d, Matrix3d};
 use math::matrix::cwise_binary_ops::{CwiseMulAssign, CwiseDivAssign};
+use vision_proto::vision::CameraIntrinsicsModelProto;
 
 use crate::solver::ParameterBlockOperator;
 
 #[derive(Clone, Debug)]
 pub struct CameraIntrinsicsModel {
-    pub focal_length: Vector2f,
+    pub focal_length: Vector2d,
 
-    pub center: Vector2f,
+    pub center: Vector2d,
 
-    pub k1: f32,
+    pub k1: f64,
 
-    pub k2: f32,
+    pub k2: f64,
 }
 
 impl CameraIntrinsicsModel {
@@ -19,14 +20,14 @@ impl CameraIntrinsicsModel {
     pub fn from_nominal_params(
         frame_width: usize,
         frame_height: usize,
-        focal_length: f32,
-        pixel_size: f32
+        focal_length: f64,
+        pixel_size: f64
     ) -> Self {
-        let center = vec2f((frame_width as f32) / 2.0, (frame_height as f32) / 2.0);
+        let center = vec2d((frame_width as f64) / 2.0, (frame_height as f64) / 2.0);
         let focal_length = focal_length / pixel_size;
 
         Self {
-            focal_length: vec2f(focal_length, focal_length),
+            focal_length: vec2d(focal_length, focal_length),
             center,
             k1: 0.,
             k2: 0.,
@@ -34,8 +35,8 @@ impl CameraIntrinsicsModel {
     }
 
     /// Gets the matrix for the focal lengths and camera center
-    pub fn mat3(&self) -> Matrix3f {
-        let mut out = Matrix3f::default();
+    pub fn mat3(&self) -> Matrix3d {
+        let mut out = Matrix3d::default();
         out[(0, 0)] = self.focal_length[0];
         out[(1, 1)] = self.focal_length[1];
         out[(2, 0)] = self.center[0];
@@ -46,9 +47,9 @@ impl CameraIntrinsicsModel {
 
     /// Projects a 3d point (which is already translated so that camera is at 0,0,0)
     /// into a 2d point on the camera's image.
-    pub fn project_point(&self, point: &Vector3f) -> Vector2f {
-        let z_inv = 1.0 / point[2];
-        let mut point_2d = vec2f(point[0] * z_inv, point[1] * z_inv);
+    pub fn project_point(&self, point: &Vector3d) -> Vector2d {
+        let z_inv = 1.0 / point[2].max(0.001);
+        let mut point_2d = vec2d(point[0] * z_inv, point[1] * z_inv);
 
         point_2d *= self.calculate_distortion(&point_2d);
 
@@ -58,13 +59,13 @@ impl CameraIntrinsicsModel {
         point_2d
     }
 
-    fn calculate_distortion(&self, point: &Vector2f) -> f32 {
+    fn calculate_distortion(&self, point: &Vector2d) -> f64 {
         let r2 = point.norm_squared();
         let r4 = r2*r2;
         1.0 + self.k1 * r2 + self.k2 * r4
     }
 
-    pub fn unproject_point(&self, point: &Vector2f) -> Vector2f {
+    pub fn unproject_point(&self, point: &Vector2d) -> Vector2d {
         let mut point = point.clone();
         point -= &self.center;
         point.cwise_div_assign(&self.focal_length);
@@ -72,7 +73,7 @@ impl CameraIntrinsicsModel {
         point
     }
 
-    fn undistort(&self, point: &Vector2f) -> Vector2f {
+    fn undistort(&self, point: &Vector2d) -> Vector2d {
         let mut pt = point.clone();
 
         // TODO: Provide better convergence guarantees.
@@ -83,18 +84,18 @@ impl CameraIntrinsicsModel {
         pt
     }
 
-    pub fn parse(values: &[f32]) -> Self {
+    pub fn parse(values: &[f64]) -> Self {
         assert_eq!(values.len(), 6);
 
         Self {
-            focal_length: vec2f(values[0], values[1]),
-            center: vec2f(values[2], values[3]),
+            focal_length: vec2d(values[0], values[1]),
+            center: vec2d(values[2], values[3]),
             k1: values[4],
             k2: values[5],
         }
     }
 
-    pub fn serialize(&self) -> Vec<f32> {
+    pub fn serialize(&self) -> Vec<f64> {
         let mut out = vec![];
         out.extend_from_slice(self.focal_length.as_ref());
         out.extend_from_slice(self.center.as_ref());
@@ -103,47 +104,25 @@ impl CameraIntrinsicsModel {
         out
     }
 
+    pub fn from_proto(proto: &CameraIntrinsicsModelProto) -> Self {
+        // TODO: Bounds checks.
+
+        Self {
+            focal_length: Vector2d::from_slice(proto.focal_length()),
+            center: Vector2d::from_slice(proto.center()),
+            k1: proto.k1(),
+            k2: proto.k2()
+        }
+    }
+
+
 }
 
-pub fn millis(v: f32) -> f32 {
+pub fn millis(v: f64) -> f64 {
     v / 1_000.0
 }
 
-pub fn micros(v: f32) -> f32 {
+pub fn micros(v: f64) -> f64 {
     v / 1_000_000.0
 }
 
-pub struct CameraIntrinsicsParameterBlock {
-    min: Vec<f32>,
-    max: Vec<f32>
-}
-
-impl CameraIntrinsicsParameterBlock {
-    // TODO: Make the threshold configurable
-    pub fn new(initial_guess: CameraIntrinsicsModel) -> Self {
-        let max_error = CameraIntrinsicsModel {
-            focal_length: initial_guess.focal_length.clone() * 0.25,
-            center: initial_guess.center.clone() * 0.25,
-            k1: 0.5,
-            k2: 0.5
-        }.serialize();
-
-        let mut max = initial_guess.serialize();
-        let mut min = max.clone();
-
-        for i in 0..max_error.len() {
-            max[i] += max_error[i];
-            min[i] -= max_error[i];
-        }
-
-        Self { min, max }
-    }
-}
-
-impl ParameterBlockOperator for CameraIntrinsicsParameterBlock {
-    fn update(&self, step: &[f32], params: &mut [f32]) {
-        for i in 0..step.len() {
-            params[i] = (params[i] + step[i]).max(self.min[i]).min(self.max[i]);
-        }
-    }
-}

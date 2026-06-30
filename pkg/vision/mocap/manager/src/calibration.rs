@@ -155,7 +155,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
                     points_3d.push(p.reference_point.clone());
 
                     let blob = &cam.results().blobs()[p.blob_index];
-                    points_2d.push(vec2f(blob.x(), blob.y()));
+                    points_2d.push(vec2d(blob.x() as f64, blob.y() as f64));
                 }
 
                 cameras_data.insert(cam.camera_id(), FrameCameraData {
@@ -187,11 +187,11 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
     }
 
     fn select_frame_subset(&self, frames: &mut Vec<FrameData>) -> Result<Vec<FrameData>> {
-        const CROSS_CAMERA_WEIGHT: f32 = 0.1;
+        const CROSS_CAMERA_WEIGHT: f64 = 0.1;
 
-        const SINGLE_CAMERA_WEIGHT: f32 = 10.0;
+        const SINGLE_CAMERA_WEIGHT: f64 = 10.0;
 
-        const PAIR_WEIGHT: f32 = 20.0;
+        const PAIR_WEIGHT: f64 = 20.0;
 
         // Target number of frames to select in total.
         const TARGET_SUBSET_SIZE: usize = 80;
@@ -223,11 +223,11 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
                     
                     let mut score = 0.0;
                 
-                    score += CROSS_CAMERA_WEIGHT * (frame.cameras.len() as f32);
+                    score += CROSS_CAMERA_WEIGHT * (frame.cameras.len() as f64);
 
                     for cam_id in frame.cameras.keys() {
                         let c = camera_counts.get(cam_id).cloned().unwrap_or(0);
-                        score += SINGLE_CAMERA_WEIGHT * ((SINGLE_CAMERA_TARGET_OBSERVATIONS as f32) - (c as f32)).max(0.0);
+                        score += SINGLE_CAMERA_WEIGHT * ((SINGLE_CAMERA_TARGET_OBSERVATIONS as f64) - (c as f64)).max(0.0);
                     }
 
                     for cam_id1 in frame.cameras.keys() {
@@ -237,7 +237,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
                             }
 
                             let c = camera_coincidences.get(&(*cam_id1, *cam_id2)).cloned().unwrap_or(0);
-                            score += PAIR_WEIGHT * ((PAIR_TARGET_COINCIDENCES as f32) - (c as f32)).max(0.0);
+                            score += PAIR_WEIGHT * ((PAIR_TARGET_COINCIDENCES as f64) - (c as f64)).max(0.0);
                         }
                     }
 
@@ -474,7 +474,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
         &self,
         camera_extrinsics: &mut HashMap<u64, CameraExtrinsics, FastHasherBuilder>
     ) -> Result<()> {
-        let mut up_vector = Vector3f::zero();
+        let mut up_vector = Vector3d::zero();
         let mut num_cams = 0;
 
         for cam in self.initial_system_state.cameras() {
@@ -490,17 +490,17 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
 
             let proto = cam.camera_status().accelerometer().value();
 
-            let v: Vector3f = r.transpose() * vec3f(proto.x(), proto.y(), proto.z()).normalized();
+            let v: Vector3d = r.transpose() * vec3d(proto.x() as f64, proto.y() as f64, proto.z() as f64).normalized();
             up_vector += v;
             num_cams += 1;
         }
 
-        up_vector /= (num_cams as f32);
+        up_vector /= (num_cams as f64);
         up_vector.normalize();
 
         
         let r_align = {
-            let z = vec3f(0., 0., 1.);
+            let z = vec3d(0., 0., 1.);
             let mut axis = up_vector.cross(&z).normalized();
             let angle = up_vector.dot(&z).acos();
             axis *= angle;
@@ -509,10 +509,10 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
 
         let t_align = {
 
-            let mut cam_center_pos = vec3f(0., 0., 0.);
+            let mut cam_center_pos = vec3d(0., 0., 0.);
             let mut num_cams = 0;
-            let mut z_max = -1000000.0f32;
-            let mut z_min = 1000000.0f32;
+            let mut z_max = -1000000.0f64;
+            let mut z_min = 1000000.0f64;
 
             for extrinsics in camera_extrinsics.values() {
                 let pos = &r_align * extrinsics.position();
@@ -522,11 +522,11 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
                 num_cams += 1;
             }
 
-            cam_center_pos /= (num_cams as f32);
+            cam_center_pos /= (num_cams as f64);
 
-            let t_z = 2.0 - z_max;
+            let t_z = 2.1 - z_max;
 
-            vec3f(
+            vec3d(
                 -cam_center_pos.x(),
                 -cam_center_pos.y(),
                 t_z
@@ -534,7 +534,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
         };
 
         let align_mat = {
-            let mut out = Matrix4f::zero();
+            let mut out = Matrix4d::zero();
             out.block_mut(0, 0).copy_from(&r_align.transpose());
             out.block_mut(0, 3).copy_from(&(
                 r_align.transpose() * t_align * -1.0   
@@ -559,8 +559,8 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
 
 }
 
-fn extrinsics_from_mat4x4(mat: &Matrix4f) -> (Vector3f, Vector3f) {
-    let rot: Matrix3f = mat.block(0, 0).to_owned();
+fn extrinsics_from_mat4x4(mat: &Matrix4d) -> (Vector3d, Vector3d) {
+    let rot: Matrix3d = mat.block(0, 0).to_owned();
 
     let translation = mat.block(0, 3).to_owned();
 
@@ -581,7 +581,7 @@ fn pattern_positions_distinct(a: &BlobPatternMatch, b: &BlobPatternMatch) -> boo
         &(a_r.inverse() * b_r)
     );
 
-    let angle = dr.norm().abs() * 180.0 / std::f32::consts::PI;
+    let angle = dr.norm().abs() * 180.0 / std::f64::consts::PI;
 
     if angle > 20.0 {
         return true;
@@ -599,8 +599,8 @@ struct FrameData {
 #[derive(Debug)]
 struct FrameCameraData {
     pattern: BlobPatternMatch,
-    points_2d: Vec<Vector2f>,
-    points_3d: Vec<Vector3f>,
+    points_2d: Vec<Vector2d>,
+    points_3d: Vec<Vector3d>,
 }
 
 

@@ -1,5 +1,5 @@
 use mocap_proto::mocap::*;
-use math::matrix::{Vector3f, vec2f, vec3f, Matrix3f};
+use math::matrix::{Vector3d, vec2d, vec3d, Matrix3d};
 use math::geometry::line::Line2;
 use vision::*;
 use math::matrix::axis_angle::to_axis_angle;
@@ -10,14 +10,14 @@ use math::matrix::axis_angle::to_axis_angle;
 #[derive(Clone, Debug)]
 pub struct BlobPatternMatch {
     pub points: Vec<BlobPatternMatchPoint>,
-    pub total_reprojection_error: f32,
-    pub translation: Vector3f,
-    pub rotation: Vector3f,
+    pub error: f64,
+    pub translation: Vector3d,
+    pub rotation: Vector3d,
 }
 
 #[derive(Clone, Debug)]
 pub struct BlobPatternMatchPoint {
-    pub reference_point: Vector3f,
+    pub reference_point: Vector3d,
     pub blob_index: usize,
 }
 
@@ -46,11 +46,11 @@ impl<'a> BlobPatternFinder<'a> {
     }
 
 
-    fn distance(&self, i: usize, j: usize) -> f32 {
+    fn distance(&self, i: usize, j: usize) -> f64 {
         let a = &self.results.blobs()[i];
         let b = &self.results.blobs()[j];
 
-        (squared(a.x() - b.x()) + squared(a.y() - b.y())).sqrt()
+        (squared((a.x() - b.x()) as f64) + squared((a.y() - b.y()) as f64)).sqrt()
     }
 
     /// Attempts to 
@@ -68,8 +68,8 @@ impl<'a> BlobPatternFinder<'a> {
                     }
                 }
 
-                let max_radius = blob_i.radius().max(blob_j.radius());
-                let min_radius = blob_i.radius().min(blob_j.radius());
+                let max_radius = blob_i.radius().max(blob_j.radius()) as f64;
+                let min_radius = blob_i.radius().min(blob_j.radius()) as f64;
 
                 let radius_ratio = max_radius / min_radius;
 
@@ -78,8 +78,8 @@ impl<'a> BlobPatternFinder<'a> {
                 }
 
                 // TODO: Also use this for the distance calculaiton.
-                let center_i = vec2f(blob_i.x(), blob_i.y());
-                let center_j = vec2f(blob_j.x(), blob_j.y());
+                let center_i = vec2d(blob_i.x() as f64, blob_i.y() as f64);
+                let center_j = vec2d(blob_j.x() as f64, blob_j.y() as f64);
 
                 let line = Line2::from_points(&center_i, &center_j);
 
@@ -87,10 +87,10 @@ impl<'a> BlobPatternFinder<'a> {
                 for k in (j + 1)..self.results.blobs().len() {
 
                     let blob_k = &self.results.blobs()[k];
-                    let center_k = vec2f(blob_k.x(), blob_k.y());
+                    let center_k = vec2d(blob_k.x() as f64, blob_k.y() as f64);
 
-                    let new_max_radius = max_radius.max(blob_k.radius());
-                    let new_min_radius = min_radius.min(blob_k.radius());
+                    let new_max_radius = max_radius.max(blob_k.radius() as f64);
+                    let new_min_radius = min_radius.min(blob_k.radius() as f64);
                     let new_radius_ratio = new_max_radius / new_min_radius;
 
                     if new_radius_ratio > self.config.max_radius_ratio() {
@@ -146,11 +146,11 @@ impl<'a> BlobPatternFinder<'a> {
                         }
 
                         let blob_l = &self.results.blobs()[l];
-                        let center_l = vec2f(blob_l.x(), blob_l.y());
+                        let center_l = vec2d(blob_l.x() as f64, blob_l.y() as f64);
 
 
-                        let new_max_radius2 = new_max_radius.max(blob_l.radius());
-                        let new_min_radius2 = new_min_radius.min(blob_l.radius());
+                        let new_max_radius2 = new_max_radius.max(blob_l.radius() as f64);
+                        let new_min_radius2 = new_min_radius.min(blob_l.radius() as f64);
                         let new_radius_ratio2 = new_max_radius2 / new_min_radius2;
 
                         if new_radius_ratio2 > self.config.max_radius_ratio() {
@@ -194,14 +194,14 @@ impl<'a> BlobPatternFinder<'a> {
         let mut points_2d = vec![];
         for idx in blob_idxs {
             let blob = &self.results.blobs()[*idx];
-            points_2d.push(vec2f(blob.x(), blob.y()));
+            points_2d.push(vec2d(blob.x() as f64, blob.y() as f64));
         }
 
         let points_3d = vec![
-            vec3f(-0.25, 0., 0.),
-            vec3f(0.,  0., 0.),
-            vec3f(0.125, 0., 0.),
-            vec3f(0., -0.2, 0.),
+            vec3d(-0.25, 0., 0.),
+            vec3d(0.,  0., 0.),
+            vec3d(0.125, 0., 0.),
+            vec3d(0., -0.2, 0.),
         ];
 
         // Guess the rotation of the wand assuming the camera on top of the wand and
@@ -210,21 +210,21 @@ impl<'a> BlobPatternFinder<'a> {
 
             let x_axis = {
                 let v = (&points_2d[2] - &points_2d[0]).normalized();
-                vec3f(v.x(), v.y(), 0.0)
+                vec3d(v.x(), v.y(), 0.0)
             };
 
             let y_axis = {
                 let line = Line2::from_points(&points_2d[0], &points_2d[2]);
                 let mut v = (line.perp() * line.distance_to_point(&points_2d[3])).normalized();
                 v *= -1.0;
-                vec3f(v.x(), v.y(), 0.0)
+                vec3d(v.x(), v.y(), 0.0)
             };
 
             let mut z_axis = x_axis.cross(&y_axis).normalized();
 
             let y_axis_aligned = z_axis.cross(&x_axis).normalized();
 
-            let mut r = Matrix3f::zero();
+            let mut r = Matrix3d::zero();
             r.col_mut(0).copy_from(&x_axis);
             r.col_mut(1).copy_from(&y_axis);
             r.col_mut(2).copy_from(&z_axis);
@@ -232,25 +232,30 @@ impl<'a> BlobPatternFinder<'a> {
             r
         };
 
-        let initial_rotation = to_axis_angle(&initial_rotation_mat); //  vec3f(0., 0., 0.);
-        let initial_translation = vec3f(0., 0., 1.);
+        let initial_rotation = to_axis_angle(&initial_rotation_mat); //  vec3d(0., 0., 0.);
+        let initial_translation = vec3d(0., 0., 1.);
 
         // NOTE: We want to get the best possible pose and not just a good enough to verify that
         // the wand is present since we use the pose data for extrinsics calibration later.
-        let mut solver = PnPSolver::new();
+        let mut solver = PnPSolver::new(&self.intrinsics, &points_2d, &points_3d);
         // solver.set_min_error(self.config.max_reprojection_error());
 
-        let solution = solver.solve(&points_2d, &points_3d, &self.intrinsics, &initial_rotation, &initial_translation);
+        solver.set_initial_extrinsics(&CameraExtrinsics {
+            rotation: initial_rotation.clone(),
+            translation: initial_translation.clone()
+        });
+
+        let solution = solver.solve();
 
         // println!("Solution: {:#?}", solution);
 
-        if solution.total_reprojection_error.is_nan() ||
-           solution.total_reprojection_error > self.config.max_reprojection_error() {
+        if solution.error.is_nan() ||
+           solution.error > self.config.max_reprojection_error() {
             return None;
         }
 
         Some(BlobPatternMatch {
-            total_reprojection_error: solution.total_reprojection_error,
+            error: solution.error,
             translation: solution.translation,
             rotation: solution.rotation,
             points: points_3d.into_iter().zip(blob_idxs.iter().cloned()).map(|(reference_point, blob_index)| {
@@ -265,7 +270,7 @@ impl<'a> BlobPatternFinder<'a> {
 }
 
 
-fn normalize_ratio(mut v: f32) -> f32 {
+fn normalize_ratio(mut v: f64) -> f64 {
     if v < 1.0 {
         v = 1.0 / v;
     }
@@ -273,7 +278,7 @@ fn normalize_ratio(mut v: f32) -> f32 {
     v
 }
 
-fn squared(v: f32) -> f32 {
+fn squared(v: f64) -> f64 {
     v * v
 }
 
@@ -301,17 +306,17 @@ mod tests {
 
 
         let points_2d = vec![
-            vec2f(504.4785, 658.56165),
-            vec2f(556.65356, 496.08597),
-            vec2f(582.66376, 414.84045),
-            vec2f(688.6572, 537.59406),
+            vec2d(504.4785, 658.56165),
+            vec2d(556.65356, 496.08597),
+            vec2d(582.66376, 414.84045),
+            vec2d(688.6572, 537.59406),
         ];
 
         let points_3d = vec![
-            vec3f(-0.25, 0., 0.),
-            vec3f(0.,  0., 0.),
-            vec3f(0.125, 0., 0.),
-            vec3f(0., -0.2, 0.),
+            vec3d(-0.25, 0., 0.),
+            vec3d(0.,  0., 0.),
+            vec3d(0.125, 0., 0.),
+            vec3d(0., -0.2, 0.),
         ];
 
         let intrinsics = CameraIntrinsicsModel::from_nominal_params(
@@ -321,8 +326,8 @@ mod tests {
             micros(3.),
         );
 
-        let initial_rotation = vec3f(0., 0., 0.);
-        let initial_translation = vec3f(0., 0., 2.);
+        let initial_rotation = vec3d(0., 0., 0.);
+        let initial_translation = vec3d(0., 0., 2.);
 
         // TODO: Initialize a smart rotation
         // TODO: Try with both positive and negative z (though I can guess the side based on where the bottom arm is)

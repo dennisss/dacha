@@ -20,11 +20,13 @@ use protobuf::{Message, StaticMessage};
 use math::vecxd;
 use cnc::quadratic_stepper_motion::*;
 use cnc::linear_motion::LinearMotion;
-use cnc_controller::proto_utils::*;
+use math_proto_util::*;
+use math_proto::math::*;
 use math::matrix::{VectorXd, MatrixXd};
 use cnc_controller::stats::*;
 use crypto::random::RngExt;
 use cnc_controller::ma732::MA732;
+use math_proto_util::VectorProtoExt;
 
 use crate::remote::*;
 use crate::regression::*;

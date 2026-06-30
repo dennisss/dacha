@@ -2345,6 +2345,21 @@ files: [
         sha256_sum: "7cb182dce48f8335ad5573338ae0ee9b8f288856d536c101658355c4bccb778d"
     },
     {
+        path: "pkg/vision/mocap/boards/led/r4_wide/plot.zip"
+        size: 138112
+        sha256_sum: "ac9571a02682cc8022a4d2d1bf62ab97bf297931fc2ceaefcd1f19084f472c5b"
+    },
+    {
+        path: "pkg/vision/mocap/boards/led/r5/plot.zip"
+        size: 212602
+        sha256_sum: "b2dae45306dda54238efba3442ff64eba5dc9c62434cb6ccb99a7c776978ed23"
+    },
+    {
+        path: "pkg/vision/mocap/boards/led/r5_wide/plot.zip"
+        size: 197274
+        sha256_sum: "bb1abdc41d4e0681fcd72b3b32d4c92b9966f6825e7c269cae2fa133feb109bb"
+    },
+    {
         path: "pkg/vision/mocap/boards/legacy/pi_mocap/board-r1/plot/board-latest-B_Cu.gbl"
         size: 5574
         sha256_sum: "985d0ea95772d8e09d653df38b1bb0f20bf2ba062046256b06f2c51fd6bf413a"
@@ -3008,6 +3023,11 @@ files: [
         path: "third_party/snapmagic/SFH_4715AS_A01/SFH_4715AS_A01.step"
         size: 465665
         sha256_sum: "1ed77e083a9f0bd2be1659529a48e6699fd716c7f392f851a4a9da44453e7fa4"
+    },
+    {
+        path: "third_party/snapmagic/SFH_4770S_A01/SFH_4770S_A01.step"
+        size: 136770
+        sha256_sum: "460fc8dc568d63e5ed10e3d0931e749b0707690209a5fc6d2a0c065d37680311"
     },
     {
         path: "third_party/snapmagic/TPS22922YZPR/TPS22922YZPR.step"

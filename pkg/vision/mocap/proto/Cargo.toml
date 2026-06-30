@@ -13,7 +13,8 @@ macros = { path = "../../../macros" }
 rpc = { path = "../../../rpc" }
 media_camera_proto = { path = "../../../media/camera/proto" }
 ptp_proto = { path = "../../../net/ptp/proto" }
-
+math_proto = { path = "../../../math/proto" }
+vision_proto = { path = "../../../vision/proto" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../../protobuf/compiler" }

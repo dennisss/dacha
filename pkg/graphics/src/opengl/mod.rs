@@ -12,6 +12,7 @@ mod shader_attributes;
 pub mod texture;
 mod util;
 pub mod window;
+pub mod read_buffer;
 
 use common::errors::*;
 use image::Color;

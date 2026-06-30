@@ -13,13 +13,13 @@ use file::LocalPathBuf;
 use executor::channel;
 use executor::lock_async;
 use executor::channel::oneshot;
+use math_proto_util::VectorProtoExt;
 
 use crate::devices::*;
 use crate::config::*;
 use crate::motion_controller::*;
 use crate::heater_controller::*;
 use crate::endstop_controller::*;
-use crate::proto_utils::VectorProtoExt;
 use crate::data_logger::*;
 use crate::logging::*;
 
@@ -137,7 +137,7 @@ impl MachineController {
                 let v = {
                     if cmd.has_position() {
                         // TODO: Make sure this has checks on number of axes
-                        VectorXd::from_proto(cmd.position())
+                        VectorXd::from_proto(cmd.position())?
                     } else {
                         let mut points = vec![cmd.x(), cmd.y(), cmd.z(), cmd.e()];
                         points.truncate(self.motion_controller.num_axes());
@@ -186,7 +186,7 @@ impl MachineController {
                 self.motion_controller.wait_until_idle().await?;
 
                 let cmd = cmd.set_position();
-                let v = VectorXd::from_proto(cmd.position());
+                let v = VectorXd::from_proto(cmd.position())?;
 
                 self.motion_controller.set_position(v).await?;
 

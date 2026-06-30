@@ -77,7 +77,7 @@ pub struct BlobMatcher {
 
     camera_id_to_index: HashMap<u64, usize, FastHasherBuilder>,
 
-    essential_mats: TupleVec<Matrix3f>,
+    essential_mats: TupleVec<Matrix3d>,
 
     last_point_id: u64,
 
@@ -100,7 +100,7 @@ pub struct BlobMatcher {
 pub struct TrackedPoint {
     pub id: u64,
     
-    pub position: Vector3f,
+    pub position: Vector3d,
 
     /// List of camera ids that observed this point in the most recent frame.
     ///
@@ -124,9 +124,9 @@ impl TrackedPoint {
         // TODO: Perform real radius estimation and account for it in triangulation.
         proto.set_radius(0.02);
 
-        for v in self.position.as_ref() {
-            proto.add_position(*v);
-        }
+        // TODO: Maybe output both raw position and smoothed one.
+        // let p = &self.position;
+        proto.set_position(self.predictor.x().to_proto());
 
         for id in &self.camera_ids {
             proto.add_camera_ids(*id);
@@ -492,7 +492,7 @@ impl BlobMatcher {
         cam1_idx: usize,
         pt1_idx: usize,
         cam2_idx: usize,
-        matches: &mut Vec<(f32, usize)>
+        matches: &mut Vec<(f64, usize)>
     ) {
         matches.clear();
 
@@ -531,16 +531,16 @@ impl BlobMatcher {
     /// of the point. 
     ///
     /// This will return the top-1 point nearest the query point.
-    fn find_point_match(&self, pt: &Vector3f, cam_idx: usize) -> Option<usize> {
+    fn find_point_match(&self, pt: &Vector3d, cam_idx: usize) -> Option<usize> {
 
         let params = &self.camera_params[cam_idx];
 
         // Project into current camera view.
         let pt = rotate_by_axis_angle(pt, &params.extrinsics.rotation) + &params.extrinsics.translation;
-        let pt2 = params.intrinsics.project_point(&pt); // vec2f(pt[0] / pt[2], pt[1] / pt[2]);
+        let pt2 = params.intrinsics.project_point(&pt);
 
         let mut best_idx = None;
-        let mut best_error: f32 = 0.0;
+        let mut best_error: f64 = 0.0;
 
         let cam_pts = &self.current_2d_points[cam_idx];
         for cam_pt_idx in 0..cam_pts.len() {
@@ -565,7 +565,7 @@ impl BlobMatcher {
     }
 
     // TODO: Will probably need to check that the point isn't behind any cameras.
-    fn triangulate_track(&self, track: &[(usize, usize)]) -> (Vector3f, f32) {
+    fn triangulate_track(&self, track: &[(usize, usize)]) -> (Vector3d, f64) {
         let rough_pt = {
             let mut solver = DLTSolver::new(track.len());
             for (camera_idx, point_idx) in track.iter().cloned() {
@@ -581,7 +581,7 @@ impl BlobMatcher {
         self.triangulate_track_with_guess(track, &rough_pt)
     }
 
-    fn triangulate_track_with_guess(&self, track: &[(usize, usize)], rough_pt: &Vector3f) -> (Vector3f, f32) {
+    fn triangulate_track_with_guess(&self, track: &[(usize, usize)], rough_pt: &Vector3d) -> (Vector3d, f64) {
         // TODO: Need outlier protection.
         let mut solver = TriangulationNonLinearSolver::new(&rough_pt);
 
@@ -626,11 +626,11 @@ impl BlobMatcher {
     }
 }
 
-fn to_3d(v: &Vector2f) -> Vector3f {
-    vec3f(v[0], v[1], 1.)
+fn to_3d(v: &Vector2d) -> Vector3d {
+    vec3d(v[0], v[1], 1.)
 }
 
-fn squared(v: f32) -> f32 {
+fn squared(v: f64) -> f64 {
     v * v
 }
 

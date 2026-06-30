@@ -94,7 +94,7 @@ impl HardwareModel {
         match self {
             Self::Pi4 => "pi4",
             Self::Pi5 => "pi5",
-Self::Cm4 => "cm4",
+            Self::Cm4 => "cm4",
             Self::Cm5Regular | Self::Cm5Lite => "cm5",
         }
     }
@@ -103,7 +103,7 @@ Self::Cm4 => "cm4",
         match self {
             Self::Pi4 => "bcm2711-rpi-4-b.dtb",
             Self::Pi5 => "bcm2712-d-rpi-5-b.dtb",
-Self::Cm4 => "bcm2711-rpi-cm4.dtb",
+            Self::Cm4 => "bcm2711-rpi-cm4.dtb",
             Self::Cm5Regular => "bcm2712-rpi-cm5-cm5io.dtb",
             Self::Cm5Lite => "bcm2712-rpi-cm5l-cm5io.dtb",
         }

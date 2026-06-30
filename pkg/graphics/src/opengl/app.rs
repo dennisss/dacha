@@ -40,12 +40,13 @@ impl Application {
         size: Vector2i,
         visible: bool,
         resizable: bool,
+        depth: bool,
     ) -> Window {
         self.glfw_inst
             .window_hint(glfw::WindowHint::Visible(visible));
         self.glfw_inst
             .window_hint(glfw::WindowHint::Resizable(resizable));
-
+            
         // TODO: http://www.glfw.org/docs/latest/context_guide.html is very useful with documenting how to do off screen windows and windows that share context with other windows
         let (mut window, events) = self
             .glfw_inst
@@ -68,10 +69,11 @@ impl Application {
         unsafe {
             gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-
-            // gl::Enable(gl::DEPTH_TEST);
-            // gl::DepthFunc(gl::LEQUAL);
-
+            
+            if depth {
+                gl::Enable(gl::DEPTH_TEST);
+            }
+            
             // gl::Enable(gl::MULTISAMPLE);
         }
 

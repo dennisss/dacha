@@ -15,11 +15,12 @@ media_camera_proto = { path = "../../../media/camera/proto", default-features = 
 protobuf_builtins = { path = "../../../../third_party/protobuf_builtins", default-features = false }
 peripherals_proto = { path = "../../../peripherals/proto", default-features = false }
 cnc_motion_proto = { path = "../../../cnc/motion/proto", default-features = false }
+math_proto = { path = "../../../math/proto", default-features = false }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../../protobuf/compiler" }
 
 [features]
 default = ["std"]
-std = ["alloc", "common/std", "protobuf/std", "rpc", "media_camera_proto/std", "protobuf_builtins/std", "peripherals_proto/std", "cnc_motion_proto/std"]
-alloc = ["common/alloc", "protobuf/alloc", "media_camera_proto/alloc", "protobuf_builtins/alloc", "peripherals_proto/alloc", "cnc_motion_proto/alloc"]
+std = ["alloc", "common/std", "protobuf/std", "rpc", "media_camera_proto/std", "protobuf_builtins/std", "peripherals_proto/std", "cnc_motion_proto/std", "math_proto/std"]
+alloc = ["common/alloc", "protobuf/alloc", "media_camera_proto/alloc", "protobuf_builtins/alloc", "peripherals_proto/alloc", "cnc_motion_proto/alloc", "math_proto/alloc"]

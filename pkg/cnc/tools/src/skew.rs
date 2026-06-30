@@ -12,12 +12,12 @@ use executor_multitask::RootResource;
 use cluster_client::ClusterMetaClient;
 use cnc_controller_proto::cnc::*;
 use cnc_controller::config::ControllerConfigRegistry;
-use cnc_controller::proto_utils::VectorProtoExt;
+use math_proto_util::*;
+use math_proto::math::*;
 use file::LocalPathBuf;
 use media_camera::camera_manager::CameraManager;
 use math_compute::io::CSVDataReader;
 use file::project_path;
-use cnc_controller::proto_utils::MatrixProtoExt;
 use cnc_controller::stats::MinMaxStats;
 use cnc::grid::*;
 

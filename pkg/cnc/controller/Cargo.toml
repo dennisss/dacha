@@ -29,6 +29,7 @@ cnc_controller_proto = { path = "./proto" }
 electronics = { path = "../../peripherals/electronics" }
 cluster_client = { path = "../../cluster/client" }
 cluster_proto = { path = "../../cluster/proto" }
+math_proto_util = { path = "../../math/proto/util" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
 color = { path = "../../image/color" }

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package vision;
+
+message CameraIntrinsicsModelProto {
+    repeated double focal_length = 1;
+    repeated double center = 2;
+    double k1 = 3;
+    double k2 = 4;
+}
+
+message CameraExtrinsicsProto {
+    repeated double rotation = 3;
+    repeated double translation = 4;
+
+    reserved 1, 2;
+}

@@ -59,7 +59,7 @@ async fn run() -> Result<()> {
     let mut image = QOIDecoder::new().decode(&image_data)?;
 
     let mut app = graphics::opengl::app::Application::new();
-    let mut window = app.create_window("Compute", Vector2i::from_slice(&[10, 10]), false, false);
+    let mut window = app.create_window("Compute", Vector2i::from_slice(&[10, 10]), false, false, false);
 
     let shader_src =
         file::read_to_string(project_path!("pkg/graphics/shaders/canny.compute.glsl")).await?;

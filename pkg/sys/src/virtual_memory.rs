@@ -49,6 +49,10 @@ impl VirtualMemoryMap {
         let mut areas = vec![];
 
         for line in data.lines() {
+            if line.contains("(deleted)") {
+                continue;
+            }
+
             let m = LINE
                 .exec(line)
                 .ok_or_else(|| format_err!("Invalid line: \"{}\"", line))?;
@@ -105,6 +109,13 @@ mod tests {
 
         assert!(has_heap);
     }
+
+    /*
+    TODO: test with lines like:
+
+    7090151b6000-7090151b8000 rw-s 00000000 00:01 42160                      /memfd:/.glXXXXXX (deleted)
+    708fe15bb000-708fe1800000 rw-s 00000000 00:01 7168                       /memfd:/.nvidia_drv.XXXXXX (deleted)
+    */
 
     const TEST_MAP: &'static str = "56129f495000-5612a012c000 r-xp 00000000 00:1b 28912644                   /home/dennis/workspace/dacha/target/debug/metastore
 5612a012c000-5612a01a9000 r--p 00c96000 00:1b 28912644                   /home/dennis/workspace/dacha/target/debug/metastore

@@ -24,6 +24,8 @@ members = [
 	"pkg/compression/meatpack",
 	"pkg/compression/test",
 	"pkg/math",
+	"pkg/math/proto",
+	"pkg/math/proto/util",
 	"pkg/math/compute",
 	"pkg/protobuf/core",
 	"pkg/protobuf/dynamic",
@@ -190,6 +192,7 @@ members = [
 	"pkg/media/camera/service",
 	"pkg/media/screen",
 	"pkg/vision",
+	"pkg/vision/proto",
 	# "pkg/app/study",
 	"pkg/api/google/discovery",
 	"pkg/api/google/discovery/generated",
@@ -220,6 +223,7 @@ members = [
 	"pkg/vision/mocap/camera",
 	"pkg/vision/mocap/manager",
 	"pkg/vision/mocap/tools",
+	"pkg/vision/mocap/simulation",
 ]
 
 [profile.dev]

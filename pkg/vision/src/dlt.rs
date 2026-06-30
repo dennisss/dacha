@@ -1,24 +1,24 @@
-use math::matrix::{MatrixX4f, Vector2f, Vector3f, vec3f};
+use math::matrix::{MatrixX4d, Vector2d, Vector3d, vec3d};
 use math::matrix::svd::SVD;
 use typenum::{U1, U3, U4};
 
 use crate::extrinsics::*;
 
-/// Triangulates >= 2 
+/// Triangulates >= 2 points.
 pub struct DLTSolver {
-    mat: MatrixX4f,
+    mat: MatrixX4d,
     i: usize,
 }
 
 impl DLTSolver {
     pub fn new(num_views: usize) -> Self {
         Self {
-            mat: MatrixX4f::zero_with_shape(num_views * 2, 4),
+            mat: MatrixX4d::zero_with_shape(num_views * 2, 4),
             i: 0,
         }
     }
 
-    pub fn add_normalized_view(&mut self, extrinsics: &CameraExtrinsics, point: &Vector2f) {
+    pub fn add_normalized_view(&mut self, extrinsics: &CameraExtrinsics, point: &Vector2d) {
         let p = extrinsics.to_mat4x4();
 
         self.mat.row_mut(2*self.i).copy_from(
@@ -32,7 +32,7 @@ impl DLTSolver {
     }
 
     #[inline(never)]
-    pub fn solve(&self) -> Vector3f {
+    pub fn solve(&self) -> Vector3d {
         assert_eq!(2 * self.i, self.mat.rows());
 
         // Fast 2 view case.
@@ -55,7 +55,7 @@ impl DLTSolver {
         
         let w = p[3];
 
-        vec3f(
+        vec3d(
             p[0] / w,
             p[1] / w,
             p[2] / w

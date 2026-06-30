@@ -25,6 +25,7 @@ bundle(
     ],
     configs = [
         # "//pkg/builder/config:x64",
-        "//pkg/builder/config:rpi64_pi5"
+        # "//pkg/builder/config:rpi64_pi5"
+        "//pkg/builder/config:rpi64"
     ]
 )

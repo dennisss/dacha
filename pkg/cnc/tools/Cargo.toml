@@ -17,6 +17,8 @@ usb = { path = "../../usb" }
 math = { path = "../../math" }
 media_camera = { path = "../../media/camera" }
 math_compute = { path = "../../math/compute" }
+math_proto_util = { path = "../../math/proto/util" }
+math_proto = { path = "../../math/proto" }
 crypto = { path = "../../crypto" }
 protobuf = { path = "../../protobuf" }
 executor_multitask = { path = "../../executor/multitask" }

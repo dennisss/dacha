@@ -13,6 +13,8 @@ use cnc_controller::proto_utils::*;
 use executor::sync::AsyncMutex;
 use executor_multitask::TaskResource;
 use executor::lock;
+use math_proto_util::*;
+use math_proto::math::*;
 
 
 pub struct RemoteMachineController {
@@ -77,7 +79,7 @@ impl RemoteMachineController {
         
         let mut out = None;
         if res.has_hit_position() {
-            out = Some(VectorXd::from_proto(res.hit_position()));
+            out = Some(VectorXd::from_proto(res.hit_position())?);
         }
 
         Ok(out)
@@ -109,7 +111,7 @@ impl RemoteMachineController {
 
         let res = self.stub.GetLastPosition(&request_context, &request).await.result?;
 
-        Ok(VectorXd::from_proto(res.position()))
+        Ok(VectorXd::from_proto(res.position())?)
     }
 
     pub async fn read_log(

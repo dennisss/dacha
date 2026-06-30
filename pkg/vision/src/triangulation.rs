@@ -1,9 +1,9 @@
 
-use math::matrix::{MatrixStatic, VectorXf, MatrixXf, Vector3f, Matrix3f, Vector2f, vec2f, vec3f};
+use math::matrix::{MatrixStatic, VectorXf, MatrixXf, Vector3d, Matrix3d, Vector2d, vec2d, vec3d};
 use math::matrix::axis_angle::*;
 use typenum::{U2, U3};
 
-type Matrix2x3f = MatrixStatic<f32, U2, U3>;
+type Matrix2x3d = MatrixStatic<f64, U2, U3>;
 
 use crate::camera::*;
 use crate::solver::*;
@@ -16,7 +16,7 @@ pub struct TriangulationNonLinearSolver<'a> {
 }
 
 impl<'a> TriangulationNonLinearSolver<'a> {
-    pub fn new(initial_point: &Vector3f) -> Self {
+    pub fn new(initial_point: &Vector3d) -> Self {
         let mut solver = NonLinearSolver::new();
 
         let param = solver.add_parameter_block(&[
@@ -33,7 +33,7 @@ impl<'a> TriangulationNonLinearSolver<'a> {
         &mut self,
         intrinsics: &'a CameraIntrinsicsModel,
         extrinsics: &'a CameraExtrinsics,
-        point: &'a Vector2f,
+        point: &'a Vector2d,
     ) {
         self.solver.add_residual_block(&[self.param], ReprojectionResidual {
             intrinsics,
@@ -43,11 +43,11 @@ impl<'a> TriangulationNonLinearSolver<'a> {
         });
     }
 
-    pub fn solve(&self) -> (Vector3f, f32) {
+    pub fn solve(&self) -> (Vector3d, f64) {
         let solution = self.solver.solve();
 
         (
-            vec3f(solution.params[0], solution.params[1], solution.params[2]),
+            vec3d(solution.params[0], solution.params[1], solution.params[2]),
             solution.error_sum,
         )
     }
@@ -56,9 +56,9 @@ impl<'a> TriangulationNonLinearSolver<'a> {
 
 struct ReprojectionResidual<'a> {
     intrinsics: &'a CameraIntrinsicsModel,
-    rotation: Matrix3f,
-    translation: Vector3f,
-    point: &'a Vector2f,
+    rotation: Matrix3d,
+    translation: Vector3d,
+    point: &'a Vector2d,
 }
 
 impl<'a> ReprojectionResidual<'a> {
@@ -70,9 +70,9 @@ impl<'a> ReprojectionResidual<'a> {
     - Project to a 2d point using the camera intrinsics.
     - Calculate the gradients of that.
     */
-    fn calc_error(&self, params: &[f32]) -> (Vector2f, Matrix2x3f) {
+    fn calc_error(&self, params: &[f64]) -> (Vector2d, Matrix2x3d) {
         // Point in world space.
-        let pt_w = vec3f(params[0], params[1], params[2]);
+        let pt_w = vec3d(params[0], params[1], params[2]);
 
         // Point in camera space
         let mut pt_c = &self.rotation * pt_w;
@@ -100,13 +100,13 @@ impl<'a> ReprojectionResidual<'a> {
         let fx = self.intrinsics.focal_length[0];
         let fy = self.intrinsics.focal_length[1];
         
-        let mut projected = vec2f(x * d, y * d);
+        let mut projected = vec2d(x * d, y * d);
         projected[0] = projected[0] * fx + self.intrinsics.center[0];
         projected[1] = projected[1] * fy + self.intrinsics.center[1];
 
         let residual = self.point - projected;
 
-        // 4. Analytical Jacobian Calculation
+        // Analytical Jacobian Calculation
         // D = 2 * d(d)/d(r^2) = 2 * (k1 + 2 * k2 * r2)
         let d_factor = 2.0 * (k1 + 2.0 * k2 * r2);
         
@@ -120,7 +120,7 @@ impl<'a> ReprojectionResidual<'a> {
         let fx_z_inv = fx * z_inv;
         let fy_z_inv = fy * z_inv;
 
-        let j_cam = Matrix2x3f::from_slice(&[
+        let j_cam = Matrix2x3d::from_slice(&[
             fx_z_inv * d_plus_dfactor_x2, 
             fx_z_inv * dfactor_xy,        
             fx_z_inv * (-x * k),
@@ -141,7 +141,7 @@ impl<'a> ResidualBlockFunction for ReprojectionResidual<'a> {
         2
     }
 
-    fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]) {
+    fn calculate(&self, params: &[f64], out: &mut [f64], gradient: &mut [f64]) {
         let (res, grad) = self.calc_error(params);
         out.copy_from_slice(res.as_ref());
         gradient.copy_from_slice(grad.as_ref());

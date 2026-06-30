@@ -32,6 +32,7 @@ use peripherals_service::device::PeripheralsDevice;
 use scpi::*;
 use image::Image;
 use mocap_camera::FrameProcessor;
+use vision::*;
 
 
 /*
@@ -821,7 +822,7 @@ impl CalibrateExtrinsicsCommand {
         for cam in config.per_camera_mut() {
             let camera_id = entity_id_from_string(cam.camera_id_str()).unwrap();
             let extrinsics = extrinsics.get(&camera_id).unwrap();
-            cam.set_extrinsics(extrinsics_to_proto(&extrinsics));
+            cam.set_extrinsics(extrinsics.to_proto());
         }
 
         println!("{:?}", config);
@@ -857,8 +858,8 @@ impl DumpMatchesCommand {
             let camera_id = entity_id_from_string(per_cam.camera_id_str()).unwrap();
             params.push(CameraParameters {
                 id: camera_id,
-                intrinsics: intrinsics_from_proto(per_cam.intrinsics()),
-                extrinsics: extrinsics_from_proto(per_cam.extrinsics()),
+                intrinsics: CameraIntrinsicsModel::from_proto(per_cam.intrinsics()),
+                extrinsics: CameraExtrinsics::from_proto(per_cam.extrinsics()),
             });
         }
         

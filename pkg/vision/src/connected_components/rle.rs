@@ -51,7 +51,10 @@ pub struct RLEConnectedComponentsProcessor {
 
 #[derive(Clone)]
 struct PixelRun {
-    x_offset: u16,
+    /// x index of the first pixel in this run.
+    x_first: u16,
+    
+    /// x index of the last pixel in this run
     x_last: u16,
 
     // Note that this is not directly an index into 'components' but a reference to a
@@ -189,14 +192,14 @@ impl RLEConnectedComponentsProcessor {
         self.current_run_component.finish_pixel_row();
         
         let mut run = PixelRun {
-            x_offset: self.current_run_component.min_x,
+            x_first: self.current_run_component.min_x,
             x_last: self.current_run_component.max_x,
             component_id: 0
         };
 
         // This is the complete inclusive range of x values that are considered to be overlapping with
         // the current run based on 8-way connectivity.
-        let min_connected_x = (run.x_offset as isize) - 1;
+        let min_connected_x = (run.x_first as isize) - 1;
         let max_connected_x = (run.x_last as isize) + 1;
 
         let mut have_component = false;
@@ -211,7 +214,7 @@ impl RLEConnectedComponentsProcessor {
             //
             // NOTE: This check should only get triggered for the starting iterations of the outer
             // loop. After that, the runs should all be matching until we hit the stop condition.
-            // let last_line_last_x = (last_line_run.x_offset + last_line_run.length) as i16 - 1;
+            // let last_line_last_x = (last_line_run.x_first + last_line_run.length) as i16 - 1;
             if (last_line_run.x_last as isize) < min_connected_x {
                 // Run is completely before this line.
                 self.last_line_run_i += 1;
@@ -220,7 +223,7 @@ impl RLEConnectedComponentsProcessor {
             }
 
             // Stop if last_line_run is completely beyond our current run.
-            if (last_line_run.x_offset as isize) > max_connected_x {
+            if (last_line_run.x_first as isize) > max_connected_x {
                 // Last run line is completely beyond the current run. 
                 break;
             }

@@ -26,7 +26,7 @@ This is a board for attaching an AR0234 camera sensor to a Raspberry Pi 22-pin c
 
 - Microcontroller
     - 12mm tape
-    - https://www.digikey.com/en/products/detail/microchip-technology/ATTINY402-SSNR/9554946
+    - https://www.digikey.com/en/products/detail/microchip-technology/ATTINY402-SSN/9947535
 
 - 0.1uF 16V 0402 Capacitor
     - https://www.digikey.com/en/products/detail/murata-electronics/GRM155R71C104KA88J/2610892

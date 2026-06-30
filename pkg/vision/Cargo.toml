@@ -11,3 +11,4 @@ macros = { path = "../macros" }
 image = { path = "../image" }
 math = { path = "../math" }
 typenum = "1.10.0"
+vision_proto = { path = "./proto" }

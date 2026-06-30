@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package cnc;
+package math;
 
 message VectorProto {
     repeated double values = 1;

@@ -66,6 +66,7 @@ impl RasterCanvas {
             ]),
             true,
             window_options.resizable,
+            false,
         );
 
         let mut events = vec![];

@@ -5,7 +5,7 @@ extern crate core;
 
 #[macro_use]
 extern crate common;
-extern crate gl;
+pub extern crate gl;
 pub extern crate glfw;
 extern crate image;
 extern crate math;
@@ -28,3 +28,5 @@ pub mod raster;
 pub mod transform;
 pub mod transforms;
 pub mod ui;
+pub mod sphere;
+pub mod cube;

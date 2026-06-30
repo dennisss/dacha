@@ -10,6 +10,7 @@ use cnc_controller_proto::cnc::*;
 use peripherals_proto::peripherals::StepperMotorMotion_Direction;
 use cnc::quadratic_stepper_motion::QuadraticStepperMotion;
 use terminal::TerminalTableBuilder;
+use math_proto_util::VectorProtoExt;
 
 use crate::devices::*;
 use crate::config::*;
@@ -18,7 +19,6 @@ use crate::endstop_controller::*;
 use crate::machine_controller::MachineController;
 use crate::stepper_motion_generator::StepperMotionGenerator;
 use crate::time::DeviceTime;
-use crate::proto_utils::VectorProtoExt;
 use crate::motion_controller::{PLANNER_STEP_SIZE, STEP_GENERATION_STEP};
 
 
@@ -70,7 +70,7 @@ impl MotionControllerSimulator {
                 let options = MoveOptions::from_proto(m.options());
 
                 let id = self.planner.move_to_with_options(
-                    VectorXd::from_proto(m.position()) - &self.position_offset,
+                    VectorXd::from_proto(m.position())? - &self.position_offset,
                     &options
                 )?;
 
@@ -92,7 +92,7 @@ impl MotionControllerSimulator {
                 let num_axes = 4;
 
                 let p = c.set_position();
-                self.position_offset = VectorXd::from_proto(p.position());
+                self.position_offset = VectorXd::from_proto(p.position())?;
 
                 self.motor_positions.clear();
                 self.motor_positions.resize(4, 0);

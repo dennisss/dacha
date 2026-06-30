@@ -23,6 +23,7 @@ use executor::sync::AsyncVariable;
 use executor::channel::oneshot;
 use cnc::constrained_vector::constrained_vector;
 use cnc::quadratic_stepper_motion::QuadraticStepperMotion;
+use math_proto_util::VectorProtoExt;
 
 use crate::motion_utils::{from_motor_space, from_motor_space_f64};
 use crate::devices::DevicesController;
@@ -30,7 +31,7 @@ use crate::tmc2209::TMC2209Device;
 use crate::stepper_motion_generator::*;
 use crate::time::DeviceTime;
 use crate::time::DevicesTimeVector;
-use crate::proto_utils::{VectorProtoExt, LinearMotionProtoExt};
+use crate::proto_utils::LinearMotionProtoExt;
 use crate::logging::*;
 
 /*

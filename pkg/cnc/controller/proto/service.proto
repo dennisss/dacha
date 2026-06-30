@@ -5,7 +5,7 @@ package cnc;
 import "pkg/peripherals/proto/service.proto";
 import "pkg/cnc/motion/proto/config.proto";
 import "pkg/cnc/controller/proto/log.proto";
-import "pkg/cnc/controller/proto/matrix.proto";
+import "pkg/math/proto/matrix.proto";
 
 
 service Controller {
@@ -27,7 +27,7 @@ message GetStateRequest {
 }
 
 message GetStateResponse {
-    VectorProto position = 1;
+    math.VectorProto position = 1;
 
     float heater_temp = 2;
 
@@ -44,9 +44,9 @@ message ExecuteRequest {
 
 message ExecuteResponse {
 
-    VectorProto last_position = 1;
+    math.VectorProto last_position = 1;
 
-    VectorProto hit_position = 2;
+    math.VectorProto hit_position = 2;
 
     uint64 request_id = 3;
 }
@@ -89,7 +89,7 @@ message MoveToCommand {
     double e = 4;
 
     // Alternative way to specify the next position
-    VectorProto position = 8;
+    math.VectorProto position = 8;
 
     bool towards_endstop = 7;
 
@@ -115,7 +115,7 @@ message SetTemperatureCommand {
 }
 
 message SetPosition {
-    VectorProto position = 1;
+    math.VectorProto position = 1;
 }
 
 message ConfigureCommand {
@@ -127,14 +127,14 @@ message GetLastPositionRequest {
 }
 
 message GetLastPositionResponse {
-    VectorProto position = 1;
+    math.VectorProto position = 1;
 }
 
 message SkewData {
     message Point {
         uint32 fixed_group = 1;
 
-        VectorProto machine_position = 2;
+        math.VectorProto machine_position = 2;
 
         uint32 image_index = 3;
 

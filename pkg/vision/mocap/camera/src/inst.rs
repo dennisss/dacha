@@ -122,7 +122,7 @@ impl MocapCamera {
 
         let mut pio_forwarder = None;
         if pi_model == Model::CM5 {
-pio_forwarder = Some(PIO::create_pin_forwarder(16, 22)?);
+            pio_forwarder = Some(PIO::create_pin_forwarder(16, 22)?);
         }
         
         let mut rgb_leds = WS2812SPIController::create("/dev/spidev0.0")?;

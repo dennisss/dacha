@@ -34,6 +34,7 @@ protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
 mocap_proto = { path = "../proto" }
 mocap_camera = { path = "../camera" }
 mocap_manager = { path = "../manager" }
+mocap_simulation = { path = "../simulation" }
 vision = { path = "../../" }
 sstable = { path = "../../../sstable" }
 rpi = { path = "../../../rpi" }

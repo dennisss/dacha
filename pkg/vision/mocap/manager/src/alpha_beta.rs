@@ -1,25 +1,25 @@
-use math::matrix::Vector3f;
+use math::matrix::Vector3d;
 
 
 // TODO: Ideally we should ensure that the 'dt' passed to this never changes.
 pub struct AlphaBetaEstimator3D {
-    x: Vector3f,
-    v: Vector3f,
-    alpha: f32,
-    beta: f32,
+    x: Vector3d,
+    v: Vector3d,
+    alpha: f64,
+    beta: f64,
 }
 
 impl AlphaBetaEstimator3D {
-    pub fn new(initial_position: &Vector3f, alpha: f32, beta: f32) -> Self {
+    pub fn new(initial_position: &Vector3d, alpha: f64, beta: f64) -> Self {
         Self {
             x: initial_position.clone(),
-            v: Vector3f::zero(),
+            v: Vector3d::zero(),
             alpha,
             beta
         }
     }
 
-    pub fn x(&self) -> &Vector3f {
+    pub fn x(&self) -> &Vector3d {
         &self.x
     }
 
@@ -27,12 +27,12 @@ impl AlphaBetaEstimator3D {
     /// (assuming the estimator was previously at time 't')
     ///
     /// Returns the predicted position.
-    pub fn predict(&mut self, dt: f32) -> Vector3f {
+    pub fn predict(&mut self, dt: f64) -> Vector3d {
         self.x += self.v.clone() * dt;
         self.x.clone()
     }
 
-    pub fn update(&mut self, dt: f32, observed_position: &Vector3f) {
+    pub fn update(&mut self, dt: f64, observed_position: &Vector3d) {
         let r = observed_position - &self.x;
 
         self.x += r.clone() * self.alpha;

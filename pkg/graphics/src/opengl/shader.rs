@@ -4,10 +4,10 @@ use std::ffi::CStr;
 
 use common::errors::*;
 use common::failure::ResultExt;
-use common::hash::SumHasherBuilder;
+use common::hash::*;
 use file::read_to_string;
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
-use math::matrix::Matrix4f;
+use math::matrix::{Vector2f, Matrix4f};
 
 use crate::lighting::{LightSource, Material, MAX_LIGHTS};
 use crate::opengl::util::*;
@@ -141,6 +141,7 @@ pub struct Shader {
 
     pub attrs: HashMap<ShaderAttributeId, GLuint, SumHasherBuilder>,
     pub uniforms: HashMap<ShaderUniformId, GLuint, SumHasherBuilder>,
+    pub unknown_uniforms: HashMap<String, GLuint, FastHasherBuilder>
 }
 
 impl Shader {
@@ -208,6 +209,7 @@ impl Shader {
 
             let mut attrs = HashMap::with_hasher(SumHasherBuilder::default());
             let mut uniforms = HashMap::with_hasher(SumHasherBuilder::default());
+            let mut unknown_uniforms = HashMap::default();
 
             let mut num_attrs = 0;
             gl::GetProgramiv(program, gl::ACTIVE_ATTRIBUTES, &mut num_attrs);
@@ -268,13 +270,17 @@ impl Shader {
 
                 let name = core::str::from_utf8(&name_buf[0..(name_length as usize)])?;
 
-                let id = ShaderUniformId::from_value(name)
-                    .map_err(|_| format_err!("Unknown shader uniform named: {}", name))?;
-
                 let location =
                     gl_get_location(program, &name_buf[0..(name_length as usize + 1)]).unwrap();
 
-                uniforms.insert(id, location);
+                match ShaderUniformId::from_value(name) {
+                    Ok(id) => {
+                        uniforms.insert(id, location);
+                    }
+                    Err(_) => {
+                        unknown_uniforms.insert(name.to_string(), location);
+                    }
+                }
             }
 
             Ok(Self {
@@ -282,11 +288,56 @@ impl Shader {
                 program,
                 attrs,
                 uniforms,
+                unknown_uniforms
             })
         }
     }
 
+    pub fn set_uniform_int(&self, name: &str, v: i32) -> Result<&Self> {
+        let location = *self.unknown_uniforms.get(name)
+            .ok_or_else(|| format_err!("Undefined uniform '{}'", name))? as GLint;
+
+        // TODO: Also set current window.
+        unsafe {
+            gl::UseProgram(self.program);
+            gl::Uniform1i(location, v);
+        }
+
+        Ok(self)
+    }
+
+    pub fn set_uniform_float(&self, name: &str, v: f32) -> Result<&Self> {
+        let location = *self.unknown_uniforms.get(name)
+            .ok_or_else(|| format_err!("Undefined uniform '{}'", name))? as GLint;
+
+        // TODO: Also set current window.
+        unsafe {
+            gl::UseProgram(self.program);
+            gl::Uniform1f(location, v);
+        }
+
+        Ok(self)
+    }
+
+    pub fn set_uniform_vec2f(&self, name: &str, v: &Vector2f) -> Result<&Self> {
+        let location = *self.unknown_uniforms.get(name)
+            .ok_or_else(|| format_err!("Undefined uniform '{}'", name))? as GLint;
+
+        // TODO: Also set current window.
+        unsafe {
+            gl::UseProgram(self.program);
+            gl::Uniform2f(location as GLint, v[0], v[1]);
+        }
+
+        Ok(self)
+    }
+
     pub fn set_lights(&self, lights: &[LightSource]) {
+        // TODO: Also set current window.
+        unsafe {
+            gl::UseProgram(self.program);
+        }
+
         if lights.len() > MAX_LIGHTS {
             panic!("Too many lights!");
         }
@@ -325,6 +376,11 @@ impl Shader {
     }
 
     pub fn set_material(&self, material: &Material) {
+        // TODO: Also set current window.
+        unsafe {
+            gl::UseProgram(self.program);
+        }
+
         let a_attr = gl_get_location(self.program, b"material.ambient\0").unwrap();
         let d_attr = gl_get_location(self.program, b"material.diffuse\0").unwrap();
         let s_attr = gl_get_location(self.program, b"material.specular\0").unwrap();

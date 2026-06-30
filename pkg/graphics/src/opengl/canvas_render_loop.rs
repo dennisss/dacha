@@ -56,6 +56,7 @@ impl OpenGLCanvas {
             ]),
             true,
             window_options.resizable,
+            false,
         );
 
         let mut events = vec![];
@@ -128,15 +129,6 @@ impl OpenGLCanvas {
 
             frame_buffer
                 .draw_context(|| {
-                    unsafe {
-                        gl::Viewport(
-                            0,
-                            0,
-                            (current_width * 2) as i32,
-                            (current_height * 2) as i32,
-                        )
-                    };
-
                     handler.render(&mut canvas, &mut window, &events)
                 })
                 .unwrap();

@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 import "pkg/peripherals/proto/request.proto";
-import "pkg/cnc/controller/proto/matrix.proto";
+import "pkg/math/proto/matrix.proto";
 
 package cnc;
 
@@ -20,7 +20,7 @@ message LogEntry {
 message LogMotionControllerStateTransition {
     uint64 time = 1;
 
-    VectorProto position = 2;
+    math.VectorProto position = 2;
 
     repeated sint32 motor_position = 3;
 }
@@ -49,9 +49,9 @@ message LogLinearMotion {
 }
 
 message LinearMotionProto {
-    VectorProto start_position = 2;
-    VectorProto start_velocity = 3;
-    VectorProto acceleration = 4;
+    math.VectorProto start_position = 2;
+    math.VectorProto start_velocity = 3;
+    math.VectorProto acceleration = 4;
     double duration = 5;
 }
 

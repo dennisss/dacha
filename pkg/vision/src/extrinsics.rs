@@ -1,37 +1,56 @@
-use math::matrix::{Vector3f, Matrix3f, Matrix4f};
+use math::matrix::{Vector3d, Matrix3d, Matrix4d};
 use math::matrix::axis_angle::*;
+use vision_proto::vision::CameraExtrinsicsProto;
 
 #[derive(Clone)]
 pub struct CameraExtrinsics {
-    pub rotation: Vector3f,
-    pub translation: Vector3f,
+    pub rotation: Vector3d,
+    pub translation: Vector3d,
 }
 
 impl CameraExtrinsics {
 
-    pub fn to_mat4x4(&self) -> Matrix4f {
-        let mut out = Matrix4f::zero();
+    pub fn to_mat4x4(&self) -> Matrix4d {
+        let mut out = Matrix4d::zero();
         out.block_mut(0, 0).copy_from(&from_axis_angle(&self.rotation));
         out.block_mut(0, 3).copy_from(&self.translation);
         out[(3, 3)] = 1.0;
         out
     }
 
-    pub fn position(&self) -> Vector3f {
+    pub fn position(&self) -> Vector3d {
         (from_axis_angle(&self.rotation).inverse() * -1.0) * &self.translation
     }
 
+    pub fn transform(&self, pt: &Vector3d) -> Vector3d {
+        rotate_by_axis_angle(pt, &self.rotation) + &self.translation
+    }
+
+    pub fn to_proto(&self) -> CameraExtrinsicsProto {
+        let mut proto = CameraExtrinsicsProto::default();
+        proto.rotation_mut().extend_from_slice(self.rotation.as_ref());
+        proto.translation_mut().extend_from_slice(self.translation.as_ref());
+        proto
+    }
+
+    pub fn from_proto(proto: &CameraExtrinsicsProto) -> Self {
+        // TODO: Bounds checks.
+        Self {
+            rotation: Vector3d::from_slice(proto.rotation()),
+            translation: Vector3d::from_slice(proto.translation()),
+        }
+    }
 }
 
-fn cross_mat(v: &Vector3f) -> Matrix3f {
-    Matrix3f::from_slice(&[
+fn cross_mat(v: &Vector3d) -> Matrix3d {
+    Matrix3d::from_slice(&[
         0.0, -v[2], v[1],
         v[2], 0.0, -v[0],
         -v[1], v[0], 0.0
     ])
 }
 
-pub fn essential_matrix(cam1: &CameraExtrinsics, cam2: &CameraExtrinsics) -> Matrix3f {
+pub fn essential_matrix(cam1: &CameraExtrinsics, cam2: &CameraExtrinsics) -> Matrix3d {
     /*
     Essential matrix is defined as:
         cross_mat(translation_rel) * rotation_rel

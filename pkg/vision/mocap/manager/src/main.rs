@@ -22,7 +22,7 @@ use mocap_manager::*;
 
 /*
 
-cargo run --bin mocap_manager -- --port=8000
+cargo run --bin mocap_manager --release -- --port=8000
 
 cargo run --bin builder -- build //pkg/vision/mocap/manager:app
 
