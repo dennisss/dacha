@@ -34,7 +34,7 @@ pub enum FanControllerPacketType {
     Response = 0,
 
     /// Might be sent any time before the last Response packet in response to a
-    /// request in order to indicate that an error occured during the request.
+    /// request in order to indicate that an error occurred during the request.
     ///
     /// The payload is an optional error message of the same type as a LogOutput
     /// message.

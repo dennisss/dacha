@@ -164,7 +164,7 @@ impl Status {
 
         if self.status_type == StatusType::ErrorOccured {
             return Err(err_msg(
-                "An error occured but it wasn't recorded in the status",
+                "An error occurred but it wasn't recorded in the status",
             ));
         }
 

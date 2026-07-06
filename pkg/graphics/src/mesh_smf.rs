@@ -79,7 +79,7 @@ Mesh *Mesh::read_smf(const char *filename, Shader *shader){
         }
 
         if(!success){
-            cerr << "An error occured in parsing the smf file" << endl;
+            cerr << "An error occurred in parsing the smf file" << endl;
             return NULL;
         }
 

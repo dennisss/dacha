@@ -184,7 +184,7 @@ impl StepperMotorController {
     /// the next tick will attempt to clear it.
     pub fn clear_motions(&mut self, current_time: u32) {
         // Attempt to abort the enqueued step if it is far enough away in time
-        // (and hasn't occured yet) that we think we can safely stop it.
+        // (and hasn't occurred yet) that we think we can safely stop it.
         if self.have_enqueued_step {
             let next_time = self.step_timer_channel.compare_value();
             let delta_time = time_remaining_u32(next_time, current_time);

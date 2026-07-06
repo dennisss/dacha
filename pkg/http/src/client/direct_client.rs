@@ -87,7 +87,7 @@ pub struct DirectClientOptions {
     pub http1_max_requests_per_connection: usize,
 
     /// Backoff parameters for limiting the speed of retrying connecting to the
-    /// remote server after a failure has occured.
+    /// remote server after a failure has occurred.
     pub connection_backoff: ExponentialBackoffOptions,
 
     /// Max amount of time to step on establishing the connection (per connect
@@ -144,7 +144,7 @@ pub struct DirectClientOptions {
     pub remote_shutdown_is_failure: bool,
 
     /// If true, then while a request's completion (or the start time of the
-    /// client) occured within idle_timeout, we will ensure that at least one
+    /// client) occurred within idle_timeout, we will ensure that at least one
     /// connection is connected to the backend.
     ///
     /// If false, we will only begin connections if a request is actively
@@ -222,7 +222,7 @@ struct ReceivedEvents {
     connection_events: HashMap<usize, ConnectionEvents, FastHasherBuilder>,
 
     /// Set of connections which have recently finished turning up.
-    /// The entry may be None if a failure occured while connectinf.
+    /// The entry may be None if a failure occurred while connectinf.
     connection_opened: Vec<(usize, Option<ConnectionEntry>)>,
 
     /// TODO: Implement the setting of this.
@@ -711,7 +711,7 @@ impl DirectClientRunner {
         }
 
         // NOTE: This must run after the connection_events to clean up any connection
-        // events that occured before the connection was fully established.
+        // events that occurred before the connection was fully established.
         for (connection_id, entry) in events.connection_opened.drain(0..) {
             if let None = self.connecting_tasks.remove(&connection_id) {
                 // Connection closed before being completely added to the pool.

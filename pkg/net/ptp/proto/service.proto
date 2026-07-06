@@ -11,7 +11,7 @@ service TimeSync {
     rpc Configure (ConfigureRequest) returns (ConfigureResponse);
 
     // Called by the leader node on every follower node after a full PTPv2 sync round trip
-    // has occured to inform the follower of the timings so that it can sync its local clock
+    // has occurred to inform the follower of the timings so that it can sync its local clock
     // with the leader.
     rpc Sync (TimeSyncPoint) returns (SyncResponse);
 }

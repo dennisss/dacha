@@ -58,7 +58,7 @@ pub(crate) struct ContextState {
     background_thread_handle: std::sync::Mutex<Option<thread::JoinHandle<()>>>,
 
     /// File descriptor for the eventfd() used to notify the background thread
-    /// when a change to the open devices has occured.
+    /// when a change to the open devices has occurred.
     background_thread_eventfd: sys::c_int,
 
     /// The sending end of the set of all channels which are waiting for the

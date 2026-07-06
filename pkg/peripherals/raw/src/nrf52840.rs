@@ -39619,9 +39619,9 @@ pub mod twi0 {
         }
 
         enum_def_with_unknown!(#[allow(non_camel_case_types)] OVERRUN_READ_FIELD u32 =>
-                        // Read: no overrun occured
+                        // Read: no overrun occurred
                         NotPresent = 0,
-        // Read: overrun occured
+        // Read: overrun occurred
                         Present = 1
 
                     );

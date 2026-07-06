@@ -145,7 +145,7 @@ pub struct RecordReader {
 /// file.
 #[error]
 pub enum RecordReadError {
-    /// We are at the end of the file. No partial reads or failures occured.
+    /// We are at the end of the file. No partial reads or failures occurred.
     ///
     /// Future reads will repeatedly return this result until more data is
     /// written to the file.

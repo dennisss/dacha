@@ -48,7 +48,7 @@ message StoreWriteBatchResponse {
     // REQUIRED
     uint64 num_written = 1;
 
-    // If present than this error occured while writing further chunks beyond those counted in num_written
+    // If present than this error occurred while writing further chunks beyond those counted in num_written
     // OPTIONAL
     StoreError error = 2;
 }

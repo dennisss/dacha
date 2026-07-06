@@ -255,7 +255,7 @@ impl Readable for OutgoingChunkedBody {
         match self.state {
             OutgoingChunkState::Error => {
                 return Err(err_msg(
-                    "An error previously occured while encodidng the body",
+                    "An error previously occurred while encodidng the body",
                 ));
             }
             OutgoingChunkState::Done => {

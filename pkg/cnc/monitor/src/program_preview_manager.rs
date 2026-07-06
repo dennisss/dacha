@@ -179,7 +179,7 @@ impl ProgramPreviewManager {
             proto.set_revision(p.revision());
             proto
                 .state_mut()
-                .set_error("Unknown failure occured during processing.");
+                .set_error("Unknown failure occurred during processing.");
             shared.db.insert::<ProgramPreviewTable>(&proto).await?;
             return Ok(ProgramPreviewReference { proto });
         }
