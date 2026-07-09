@@ -1,8 +1,11 @@
+use std::time::Instant;
+
 use math::matrix::{VectorXd, MatrixXd, Vector3d, Matrix3d, Vector2d, vec2d, vec3d};
 use math::matrix::axis_angle::*;
+use math::matrix::cwise_binary_ops::CwiseMulAssign;
 
 /// 
-const MIN_IMPROVEMENT_PERCENTAGE: f64 = 0.001;  // 0.1%
+const MIN_IMPROVEMENT_PERCENTAGE: f64 = 0.00001;  // 0.1%
 
 const MAX_ITERATIONS: usize = 10_000;
 
@@ -177,30 +180,18 @@ impl<'a> NonLinearSolver<'a> {
     pub fn solve<'b>(&'b self) -> NonLinearProblemSolution<'b, 'a> {
         // Current value of each parameter in the model that we are estimating.
         let mut params = VectorXd::from_slice_with_shape(self.initial_params.len(), 1, &self.initial_params);
-        
-        // Last parameter set and it's overall error sum.
-        let mut last_params: Option<(VectorXd, f64)> = None;
-
-        // Each element is the error for a single point with the current parameters.
-        let mut error = VectorXd::zero_with_shape(self.num_residuals, 1);
-
-        let mut error_sum = 0.0;
-
-        // Each row is the gradients of each parameter for a single point.
-        let mut jacobian = MatrixXd::zero_with_shape(self.num_residuals, self.initial_params.len());
 
         let mut dampening: f64 = 0.01;
 
         let mut dampening_is_clamped = false;
         let mut last_made_progress = true; 
 
-        // Temporary variables used when computing residual blocks.
-        let mut current_params = vec![];
-                let mut current_gradients = vec![];
 
         if params.len() > 20 {
             println!("JACOBIAN SIZE: {} x {}", self.num_residuals, self.initial_params.len());
         }
+
+        let mut state = self.evaluate_params(params);
 
         // Normally this will terminate by:
         // - First there will likely be many rounds of last_made_progress=true
@@ -211,30 +202,98 @@ impl<'a> NonLinearSolver<'a> {
         while iters < MAX_ITERATIONS && (last_made_progress || !dampening_is_clamped) {
             iters += 1;
             
-            error_sum = 0.0;
+            if state.params.len() > 20 {
+                println!("- {}: Error: {}", iters, state.error_sum);
+            }
 
-            // Calculating the current values for 'error' and 'jacobian' based on
-            // the current 'params'.
-            for residual_block in &self.residual_blocks {
+            if state.error_sum <= self.min_error {
+                break;
+            }
 
-                let errors_slice = &mut error.as_mut()[residual_block.offset..(residual_block.offset + residual_block.len)];
+            let step = self.calculate_step(&state, dampening);
 
-                if residual_block.param_blocks.len() == 1 {
-                    let param_block_idx = residual_block.param_blocks[0];
-                    let params_spec = &self.param_blocks[param_block_idx];
-                    let params_slice = &params.as_ref()[
-                        params_spec.offset..(params_spec.offset + params_spec.len)
-                    ];
+            let mut next_params = state.params.clone();
+            self.apply_step(&step, &mut next_params);
 
-                    let gradients_offset = residual_block.offset * self.initial_params.len();
-                    let gradients_size = residual_block.len * params_spec.len;
+            let next_state = self.evaluate_params(next_params);
 
-                    let gradients_slice = &mut jacobian.as_mut()[gradients_offset..(gradients_offset + gradients_size)];
+            if state.params.len() > 20 {
+                println!("=> {}", next_state.error_sum);
+            }
 
-                    residual_block.f.calculate(params_slice, errors_slice, gradients_slice);
+            if (
+                next_state.error_sum.is_nan() ||
+                next_state.error_sum.is_infinite() ||
+                ((next_state.error_sum - state.error_sum) / state.error_sum) > -MIN_IMPROVEMENT_PERCENTAGE
+            ) {
+                dampening *= 10.0;
+                last_made_progress = false;
+                dampening_is_clamped = false;
 
-                } else {
-                    // Scatter / gather multiple parameters.
+                {
+                    let clamped_dampening = dampening.min(10_000_000.0).max(0.0000001);
+                    dampening_is_clamped = clamped_dampening != dampening;
+                    dampening = clamped_dampening;
+                }
+
+                continue;
+            }
+
+            dampening /= 2.0;
+            last_made_progress = true;
+
+            {
+                let clamped_dampening = dampening.min(10_000_000.0).max(0.0000001);
+                dampening_is_clamped = clamped_dampening != dampening;
+                dampening = clamped_dampening;
+            }
+
+            state = next_state;
+        }
+
+        NonLinearProblemSolution {
+            solver: self,
+            params: state.params.as_ref().to_vec(),
+            error_sum: state.error_sum
+        }    
+    }
+
+    // TODO: If there are many residuals, then this is heavily parallelizable.
+    fn evaluate_params(&self, params: VectorXd) -> ParamsState {
+        // Each element is the error for a single point with the current parameters.
+        let mut error = VectorXd::zero_with_shape(self.num_residuals, 1);
+
+        let mut error_sum = 0.0;
+
+        // Each row is the gradients of each parameter for a single point.
+        let mut jacobian = MatrixXd::zero_with_shape(self.num_residuals, self.initial_params.len());
+
+        // Temporary variables used when computing residual blocks.
+        let mut current_params = vec![];
+        let mut current_gradients = vec![];
+
+        // Calculating the current values for 'error' and 'jacobian' based on
+        // the current 'params'.
+        for residual_block in &self.residual_blocks {
+
+            let errors_slice = &mut error.as_mut()[residual_block.offset..(residual_block.offset + residual_block.len)];
+
+            if residual_block.param_blocks.len() == 1 {
+                let param_block_idx = residual_block.param_blocks[0];
+                let params_spec = &self.param_blocks[param_block_idx];
+                let params_slice = &params.as_ref()[
+                    params_spec.offset..(params_spec.offset + params_spec.len)
+                ];
+
+                let gradients_offset = residual_block.offset * self.initial_params.len();
+                let gradients_size = residual_block.len * params_spec.len;
+
+                let gradients_slice = &mut jacobian.as_mut()[gradients_offset..(gradients_offset + gradients_size)];
+
+                residual_block.f.calculate(params_slice, errors_slice, gradients_slice);
+
+            } else {
+                // Scatter / gather multiple parameters.
 
                 current_params.clear();
                 for param_block_idx in &residual_block.param_blocks {
@@ -244,7 +303,7 @@ impl<'a> NonLinearSolver<'a> {
                     ]);
                 }
 
-                                current_gradients.resize(residual_block.len * current_params.len(), 0.0);
+                current_gradients.resize(residual_block.len * current_params.len(), 0.0);
 
                 residual_block.f.calculate(&current_params, errors_slice, &mut current_gradients);
 
@@ -259,106 +318,137 @@ impl<'a> NonLinearSolver<'a> {
                         }
                     }
                 }
-}
-
-                for e in errors_slice.iter().cloned() {
-                    error_sum += e * e;
-                }
-
             }
 
-            if params.len() > 20 {
-                println!("- Error: {}", error_sum);
+            for e in errors_slice.iter().cloned() {
+                error_sum += e * e;
+            }
+        }
 
-                // println!("{:?}", params);
+        ParamsState {
+            params,
+            error,
+            error_sum,
+            jacobian,
+        }
+    }
+
+    fn calculate_step(&self, state: &ParamsState, dampening: f64) -> VectorXd {
+        let mut num_unfrozen = 0;
+        for param_spec in &self.param_blocks {
+            if param_spec.frozen {
+                continue;
             }
 
-            if error_sum <= self.min_error {
-                break;
-            }
-
-            if let Some((last_params, last_error_sum)) = last_params.take() {            
-                if error_sum.is_nan() || ((error_sum - last_error_sum) / last_error_sum) >= -MIN_IMPROVEMENT_PERCENTAGE {
-                    // TODO: If we end up running this, then we will end up recalculating jacobians on the next iteration 
-                    params = last_params;
-                    error_sum = last_error_sum;
-                    dampening *= 10.0;
-
-                    last_made_progress = false;
-                    dampening_is_clamped = false;
+            num_unfrozen += param_spec.len;
+        }
+        
+        // Extract all non-frozen parameter columns from the jacobian matrix.
+        let mut jacobian_thin = MatrixXd::zero_with_shape(self.num_residuals, num_unfrozen);
+        {
+            let mut input_i = 0;
+            let mut output_i = 0;
+            for param_spec in &self.param_blocks {
+                if param_spec.frozen {
+                    input_i += param_spec.len;
                     continue;
                 }
 
-                dampening /= 2.0;
-                last_made_progress = true;
-            }
-
-            last_params = Some((params.clone(), error_sum));
-
-            {
-                let clamped_dampening = dampening.min(10_000_000.0).max(0.0000001);
-                dampening_is_clamped = clamped_dampening != dampening;
-                dampening = clamped_dampening;
-            }
-
-
-            let step = {
-                if self.gradient_descent {
-                    let mut step = VectorXf::zero_with_shape(self.initial_params.len(), 1);
-
-                    for i in 0..jacobian.rows() {
-                        for j in 0..jacobian.cols() {
-                            step[j] += jacobian[(i, j)];
-                        }
-                    }
-
-                    step * dampening
-
-                    // step * dampening * (1.0 / (jacobian.rows() as f32))
-
-                } else {
-                    let jacobian_square = jacobian.as_transpose() * &jacobian;
-
-                    let dampening_mat = diag(&jacobian_square) * dampening;
-
-                    let a = jacobian_square + dampening_mat;
-
-                    let a_inv = a.inverse();
-
-                    // NOTE: Multiplication ordering here is optimized for performance.
-                    a_inv * (jacobian.as_transpose() * &error)
+                for _ in 0..param_spec.len {
+                    jacobian_thin.col_mut(output_i).copy_from(&state.jacobian.col(input_i));
+                    input_i += 1;
+                    output_i += 1;
                 }
-            };
+            }
+        }
 
+        let step_thin = {
+            if self.gradient_descent || dampening >= 1000.0 {
+                // At high dampening, the step can be approximated as gradient descent:
+                // 'step = (1/dampening) J^transpose * error'
+
+                let mut dampening_mat = square_diag(&jacobian_thin);
+
+                // Apply dampening coefficient and 'invert' the matrix.
+                for i in 0..dampening_mat.len() {
+                    dampening_mat[i] = 1.0 / (dampening_mat[i] * dampening);
+                }
+
+                dampening_mat.cwise_mul_assign((jacobian_thin.as_transpose() * &state.error));
+
+                dampening_mat
+
+            } else {
+
+                let jacobian_square = jacobian_thin.as_transpose() * &jacobian_thin;
+
+                let dampening_mat = diag(&jacobian_square) * dampening;
+
+                let mut a = jacobian_square + dampening_mat;
+
+                let a_inv = match a.inverse() {
+                    Some(v) => v,
+                    None => return VectorXd::zero_with_shape(self.initial_params.len(), 1)
+                };
+
+                // NOTE: Multiplication ordering here is optimized for performance.
+                a_inv * (jacobian_thin.as_transpose() * &state.error)
+            }
+        };
+
+        // Expand step to include zeros for all frozen parameters.
+        let mut step = VectorXd::zero_with_shape(self.initial_params.len(), 1);
+        {
+            let mut input_i = 0;
+            let mut output_i = 0;
             for param_spec in &self.param_blocks {
-                param_spec.op.update(
-                    &step.as_ref()[param_spec.offset..(param_spec.offset + param_spec.len)],
-                    &mut params.as_mut()[param_spec.offset..(param_spec.offset + param_spec.len)],
-                );
-            }
+                if param_spec.frozen {
+                    output_i += param_spec.len;
+                    continue;
+                }
 
-            // if self.gradient_descent {
-            //     println!("NexT: {:?}", params);
-            // }
-        }
-
-        if let Some((last_params, last_error_sum)) = last_params.take() {
-            if last_error_sum < error_sum {
-                params = last_params;
-                error_sum = last_error_sum;
+                for _ in 0..param_spec.len {
+                    step[output_i] = step_thin[input_i];
+                    input_i += 1;
+                    output_i += 1;
+                }
             }
         }
 
-        NonLinearProblemSolution {
-            solver: self,
-            params: params.as_ref().to_vec(),
-            error_sum
-        }    
+        step
     }
+
+    fn apply_step(&self, step: &VectorXd, params: &mut VectorXd) {
+        for param_spec in &self.param_blocks {
+            if param_spec.frozen {
+                continue;
+            }
+
+            param_spec.op.update(
+                &step.as_ref()[param_spec.offset..(param_spec.offset + param_spec.len)],
+                &mut params.as_mut()[param_spec.offset..(param_spec.offset + param_spec.len)],
+            );
+        }
+    }
+
 }
 
-fn diag(mat: &MatrixXf) -> MatrixXf {
-    let mut out = MatrixXf::zero_with_shape(mat.rows(), mat.cols());
+/// Efficiently calculates the diagonal entries of '(mat^T) mat'
+fn square_diag(mat: &MatrixXd) -> VectorXd {
+    let mut out = VectorXd::zero_with_shape(mat.cols(), 1);
+
+    for i in 0..mat.cols() {
+        for j in 0..mat.rows() {
+            let v = mat[(j, i)];
+            out[i] += v * v;
+        }
+    }
+
+    out
+}
+
+fn diag(mat: &MatrixXd) -> MatrixXd {
+    let mut out = MatrixXd::zero_with_shape(mat.rows(), mat.cols());
     for i in 0..mat.rows() {
         out[(i, i)] = mat[(i, i)]
     }
@@ -374,10 +464,10 @@ mod tests {
     struct QuadraticResidual {
         // These are hidden from the solver and we expect the solver to be able to find them
         // just based on the data.
-        a: f32,
-        b: f32,
+        a: f64,
+        b: f64,
 
-        x: f32,
+        x: f64,
     }
 
     /*
@@ -392,7 +482,7 @@ mod tests {
             1
         }
 
-        fn calculate(&self, params: &[f32], out: &mut [f32], gradient: &mut [f32]) {
+        fn calculate(&self, params: &[f64], out: &mut [f64], gradient: &mut [f64]) {
             let expected_y = self.a * self.x + self.b;
 
             let y = params[0] * self.x + params[1];

@@ -53,13 +53,19 @@ pub struct MocapCameraFrameRendererOptions {
     pub z_far: f32,
 }
 
+#[derive(Clone, PartialEq, Default)]
 pub struct MocapCameraRendererScene {
     pub spheres: Vec<Sphere>,
-    pub checkerboard: bool,
+
+    /// If not None, we will draw a checkerboard pattern
+    /// using this model-view matrix (in camera coordinate space
+    /// not world coordinate space).
+    pub checkerboard: Option<Matrix4f>,
+
     pub cube: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Sphere {
     pub center: Vector3f,
     pub radius: f32,
@@ -142,11 +148,6 @@ impl MocapFrameRenderer {
 
 
         let mut checkerboard = Self::create_checkerboard(window.context(), sphere_shader.clone());
-
-        let mut t = Matrix4f::identity();
-        t[(1, 3)] = -0.3;
-        t[(2, 3)] = 0.8;
-        checkerboard.set_transform(t);
 
         // Finding a buffer size that is big enough for all the cameras.
         let mut projected_size = vec2f(0.0, 0.0);
@@ -331,8 +332,9 @@ impl MocapFrameRenderer {
                 self.sphere.draw(&camera.projected_camera, &base_model_view.apply(&m));
             } 
             
-            if scene.checkerboard {
-                self.checkerboard.draw(&camera.projected_camera, &base_model_view);
+            if let Some(t) = &scene.checkerboard {
+                let model_view = Transform::from(t.clone());
+                self.checkerboard.draw(&camera.projected_camera, &model_view);
             }
             
             if scene.cube {

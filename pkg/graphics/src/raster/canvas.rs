@@ -133,7 +133,7 @@ impl RasterCanvasPath {
         };
 
         self.data.insert(CachedPathData {
-            transform_inv: transform.inverse(),
+            transform_inv: transform.inverse().unwrap(),
             vertices,
             path_starts,
         })

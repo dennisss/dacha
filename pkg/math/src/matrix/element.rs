@@ -18,13 +18,13 @@ pub trait ErrorEpsilon: AbsoluteValue + PartialOrd + Copy {
 
 impl ErrorEpsilon for f64 {
     fn error_epsilon() -> Self {
-        1e-12
+        1e-10
     }
 }
 
 impl ErrorEpsilon for f32 {
     fn error_epsilon() -> Self {
-        1e-11
+        1e-9
     }
 }
 

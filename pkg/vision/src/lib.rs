@@ -11,6 +11,7 @@ pub mod connected_components;
 mod bundle;
 mod checkerboard;
 mod homography;
+mod calibration;
 
 pub use camera::*;
 pub use pnp::*;
@@ -20,3 +21,4 @@ pub use dlt::*;
 pub use bundle::*;
 pub use checkerboard::*;
 pub use homography::*;
+pub use calibration::*;

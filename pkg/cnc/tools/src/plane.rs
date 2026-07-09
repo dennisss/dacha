@@ -56,7 +56,7 @@ impl Plane {
             return None;
         }
 
-        let params = mat.inverse() * col;
+        let params = mat.inverse().unwrap() * col;
 
         Some(Self {
             a: params[0],

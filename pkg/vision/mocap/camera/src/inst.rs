@@ -24,10 +24,10 @@ use media_camera::v4l2::controls::*;
 use media_camera::v4l2::capture_buffer::*;
 use ptp::SignedDuration;
 use rpi::model::Model;
+use mocap_camera_core::*;
 
 use crate::sensors::*;
 use crate::pps_divider_client::*;
-use crate::frame_processor::*;
 use crate::accelerometer::*;
 use crate::timestamp::*;
 use crate::strobe::*;

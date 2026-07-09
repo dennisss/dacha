@@ -2,49 +2,17 @@ import React from "react";
 import { Router } from "pkg/web/lib/router";
 import { PageContext } from "pkg/web/lib/page";
 import { Title } from "pkg/web/lib/title";
-import { Navbar } from "./navbar";
+import { Navbar, NAVBAR_HEIGHT } from "./navbar";
 import { compare_values, deep_copy } from "pkg/web/lib/utils";
 import { Button } from "pkg/web/lib/button";
 import { Card, CardBody } from "pkg/cnc/monitor/js/card";
 import { Blob2dViewer } from "../../camera/js/blob_viewer";
-import { round_digits } from "pkg/web/lib/formatting";
+import { round_digits, round_nested_digits } from "pkg/web/lib/formatting";
 import { MocapCameraControls } from "../../camera/js/controls";
 import { camera_orientation } from "../../camera/js/orientation";
-
-
-/**
- * Converts a stringified u64 decimal integer to a base32 string.
- * @param {string} idStr - The stringified integer (e.g., "1234567890123456")
- * @returns {string | null}
- */
-export function entity_id_to_string(idStr) {
-    let num = BigInt(idStr);
-    const ENCODE_MAP = "0123456789abcdefghjkmnpqrstvwxyz";
-    let out = "";
-
-    // Extract the first 4 bits (0b1111)
-    let firstCode = Number(num & 15n);
-    num >>= 4n;
-
-    if (firstCode < 10) {
-        firstCode |= (1 << 4);
-    }
-
-    out += ENCODE_MAP[firstCode];
-
-    // Extract the remaining 60 bits in twelve 5-bit chunks (13 chars total)
-    for (let i = 0; i < 12; i++) {
-        const code = Number(num & 31n); // 0b11111
-        num >>= 5n;
-        out += ENCODE_MAP[code];
-    }
-
-    if (!/^[a-zA-Z]/.test(out)) {
-        return null;
-    }
-
-    return out;
-}
+import { entity_id_to_string } from "./utils";
+import { PropertiesTable } from "pkg/cnc/monitor/js/properties_table";
+import { DARK_MODE } from "./dark";
 
 export interface CamerasPageProps {
     context: PageContext,
@@ -188,6 +156,8 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
         let active = camera.active || false;
 
+        // TODO: Ideally these all updated less frequently and maybe only contained P99 numbers.
+        // We also want to make sure this detects one off flakiness rather than reporting the currnet state.
         let latency = (
             <span style={{ color: 'red' }}>-</span>
         );
@@ -201,6 +171,19 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
             });
         }
 
+        let angle = '';
+        if (camera.camera_status) {
+            let o = camera_orientation(camera.camera_status);
+            angle = <span>{o.horizon_angle}&deg;</span>;
+        }
+
+        let config = {};
+        (this.state.status.config.per_camera || []).map((c) => {
+            if (c.camera_id == camera.id) {
+                config = c;
+            }
+        })
+
         return (
             <tr key={camera.id} className={active ? 'table-active' : ''} style={{ cursor: "pointer" }}
 
@@ -213,6 +196,9 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                 }}
             >
                 <td>
+                    <input checked type="checkbox" onChange={() => { }} />
+                </td>
+                <td>
                     <a href={"https://" + entity_id_to_string(camera.id) + ".mocap_camera.worker.home.cluster.internal"}>
                         {entity_id_to_string(camera.id)}
                     </a>
@@ -220,7 +206,9 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                 <td>{color_format(ptp_error, ptp_age)}</td>
                 <td>{color_format(pps_error, pps_age)}</td>
                 <td>{latency}</td>
-                <td></td>
+                <td>{angle}</td>
+                <td><span className="material-symbols-fill">{config.intrinsics ? 'check' : 'error'}</span></td>
+                <td><span className="material-symbols-fill">{config.extrinsics ? 'check' : 'error'}</span></td>
             </tr>
         )
     }
@@ -246,7 +234,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
         try {
             let res = await this.props.context.channel.call('mocap.MocapManager', 'Execute', {
-                configure_cameras: data
+                configure_cameras: { config: data },
             });
             if (!res.status.ok()) {
                 throw res.status.toString();
@@ -278,8 +266,10 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
             frame_text += ' | ' + frame_cams + ' / ' + total_nums + ' cameras'
         }
 
+        let border_color = DARK_MODE.get() ? '#444' : '#ccc';
+
         return (
-            <div className="col col-md-8">
+            <div>
                 <div style={{ fontFamily: "Noto Sans Mono", marginBottom: 10, fontSize: 12 }}>
                     {frame_text}
                 </div>
@@ -332,22 +322,11 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                 }}
                             >
                                 <div style={{
-                                    border: ('1px solid ' + (active ? '#08f' : '#ccc')),
+                                    border: ('1px solid ' + (active ? '#08f' : border_color)),
                                     borderRadius: 5,
                                     overflow: 'hidden',
                                     boxShadow: (active ? '0px 0px 10px #08f' : '')
                                 }}>
-                                    <div style={{
-                                        padding: '5px 10px',
-                                        backgroundColor: (active ? '#08f' : '#444'),
-                                        color: '#fff'
-                                    }}>
-                                        {entity_id_to_string(camera.id)}
-
-                                        <span style={{ float: 'right', fontSize: '0.9em' }}>
-                                            {angle}&deg;
-                                        </span>
-                                    </div>
                                     <div style={{ fontSize: 0 }}>
                                         <Blob2dViewer status={group} results={blobs} upsideDown={upside_down} />
                                     </div>
@@ -391,40 +370,242 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         );
     }
 
+    _render_intrinsics_card() {
+        let status = this.state.status;
+
+        let active_camera = null;
+        (status.cameras || []).map((c) => {
+            if (c.active) {
+                active_camera = c;
+            }
+        })
+
+        if (!active_camera) {
+            return;
+        }
+
+        let config = {};
+        (status.config.per_camera || []).map((c) => {
+            if (c.camera_id == active_camera.id) {
+                config = c;
+            }
+        })
+
+        return (
+            <Card header="Intrinsics" style={{ marginBottom: 10 }}>
+                <div>
+                    {config.intrinsics ? (
+                        this._render_object_table(config.intrinsics)
+                    ) : (
+                        <CardBody>Not calibrated yet</CardBody>
+                    )}
+                </div>
+                <CardBody>
+                    <Button preset="outline-primary" onClick={(done) => {
+                        this._execute({
+                            start_checkerboard_calibration: { camera_id: active_camera.id }
+                        }, done)
+                    }}>
+                        Start Checkerboard Calibration
+                    </Button>
+
+                </CardBody>
+            </Card>
+        )
+    }
+
+    _render_extrinsics_card() {
+        let status = this.state.status;
+
+        let active_camera = null;
+        (status.cameras || []).map((c) => {
+            if (c.active) {
+                active_camera = c;
+            }
+        })
+
+        if (!active_camera) {
+            return;
+        }
+
+        let config = {};
+        (status.config.per_camera || []).map((c) => {
+            if (c.camera_id == active_camera.id) {
+                config = c;
+            }
+        })
+
+        return (
+            <Card header="Extrinsics" style={{ marginBottom: 10 }}>
+                <div>
+                    {config.extrinsics ? (
+                        this._render_object_table(config.extrinsics)
+                    ) : (
+                        <CardBody>Not calibrated yet</CardBody>
+                    )}
+                </div>
+            </Card>
+        )
+
+    }
+
+    _render_object_table(obj) {
+        return (
+            <div style={{ padding: '0 8px' }}>
+                <table className="table" style={{ margin: 0 }}>
+                    <tbody>
+                        {Object.keys(obj).map((key) => {
+                            return (
+                                <tr key={key}>
+                                    <td>{key}</td>
+                                    <td>{JSON.stringify(round_nested_digits(obj[key], 2))}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        );
+    }
+
+    _render_wanding_card() {
+
+        function make_button(text, disabled, on_click) {
+            return (
+                <div style={{ width: '25%', padding: '0 5px', display: 'inline-block' }}>
+                    <Button preset='outline-primary' disabled={disabled} style={{ width: '100%', opacity: (disabled ? 0.5 : 1) }} onClick={on_click}>{text}</Button>
+                </div>
+            )
+        }
+
+        let status = this.state.status;
+
+        let is_calibrating = false;
+
+        let stats = null;
+        let results = null;
+        let have_results = false;
+        let have_valid_results = false;
+
+        if (status.mode && status.mode.wanding_calibration) {
+            is_calibrating = true;
+
+            let mode = status.mode.wanding_calibration;
+            if (mode.stats) {
+                let props = [];
+                (Object.keys(mode.stats) || []).map((key) => {
+                    props.push({
+                        name: key,
+                        value: JSON.stringify(round_nested_digits(mode.stats[key], 2))
+                    })
+                });
+
+                stats = (
+                    <div style={{ marginTop: 10, marginBottom: -10 }}>
+                        <PropertiesTable properties={props} />
+                    </div>
+                );
+            }
+
+            if (mode.result) {
+                have_results = true;
+
+                have_valid_results = mode.result.failed ? false : true;
+
+                let props = [];
+                (Object.keys(mode.result) || []).map((key) => {
+                    props.push({
+                        name: key,
+                        value: JSON.stringify(round_nested_digits(mode.result[key], 2))
+                    })
+                });
+
+                results = (
+                    <div style={{ marginTop: 40, marginBottom: -10 }}>
+                        <div style={{ fontWeight: 'bold' }}>Results:</div>
+                        <PropertiesTable properties={props} />
+                    </div>
+                );
+            }
+        }
+
+        return (
+            <Card header="Wanding Calibration" style={{ marginBottom: 10 }}>
+                <CardBody>
+                    <div style={{ margin: '0 -5px' }}>
+                        {make_button('Start', is_calibrating, (done) => {
+                            this._execute({ start_wanding_calibration: {} }, done)
+                        })}
+                        {make_button('Process', !is_calibrating || have_results, (done) => {
+                            this._execute({ process_wanding_calibration: {} }, done)
+                        })}
+                        {make_button('Apply', !have_valid_results, (done) => {
+                            this._execute({ apply_wanding_calibration: {} }, done)
+                        })}
+                        {make_button('Cancel', !is_calibrating, (done) => {
+                            this._execute({ cancel_wanding_calibration: {} }, done)
+                        })}
+                    </div>
+                    {stats}
+                    {results}
+                </CardBody>
+            </Card>
+        );
+    }
+
     render() {
         let status = this.state.status;
         if (!status) {
             return <div>Loading...</div>;
         };
 
-        let is_calibrating = status.calibration ? true : false;
+        // TODO: Do this at a higher level across all pages.
+        if (status.mode && status.mode.checkerboard_calibration) {
+            setTimeout(() => {
+                Router.global().goto('/ui/checkerboard');
+            });
+            return <div></div>;
+        }
+
+        let status_header = (
+            <div>
+                <span>Status</span>
+
+                <span style={{ float: 'right' }}>({(status.cameras || []).length} cameras)</span>
+            </div>
+        );
 
         return (
             <div>
                 <Title value="Mocap | Cameras" />
                 <Navbar />
 
-                <div className="container-fluid" style={{ paddingTop: 20, paddingBottom: 20 }}>
-                    <div className="row">
+                <div style={{ position: 'fixed', top: NAVBAR_HEIGHT, bottom: 0, right: 0, left: 0 }}>
 
+                    <div style={{ width: '66.6667%', top: 0, bottom: 0, left: 0, position: 'absolute', overflow: 'scroll' }} className="noscrollbar">
+                        <div style={{ padding: '20px 12px' }}>
+                            {this._render_blob_views()}
+                        </div>
+                    </div>
 
-                        {this._render_blob_views()}
-
-                        <div className="col col-md-4">
-
-                            <Card header="Status" style={{ marginBottom: 10 }}>
+                    <div style={{ width: '33.3333%', top: 0, bottom: 0, right: 0, position: 'absolute', overflow: 'scroll' }} className="noscrollbar">
+                        <div style={{ padding: '20px 12px' }}>
+                            <Card header={status_header} style={{ marginBottom: 10 }}>
                                 <div style={{ padding: '0 8px' }}>
                                     <table className="table table-hover" style={{ verticalAlign: "baseline", fontFamily: "Noto Sans Mono" }}>
                                         <thead>
                                             <tr>
+                                                <th></th>
                                                 <th>Id</th>
-                                                <th>PTP Error</th>
-                                                <th>PPS Error</th>
+                                                <th>PTP</th>
+                                                <th>PPS</th>
                                                 <th>Latency</th>
-                                                <th>Power</th>
+                                                <th>Angle</th>
+                                                <th>Int</th>
+                                                <th>Ext</th>
                                             </tr>
                                         </thead>
-                                        <tbody>
+                                        <tbody style={{ fontSize: '0.9em' }}>
                                             {(status.cameras || []).map((camera) => {
                                                 return this._render_camera_status_row(camera);
                                             })}
@@ -434,29 +615,11 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
                             </Card>
 
+                            {this._render_intrinsics_card()}
 
-                            <Card header="Calibration" style={{ marginBottom: 10 }}>
-                                <CardBody>
-                                    <div className="btn-group me-2" role="group">
+                            {this._render_extrinsics_card()}
 
-                                        <GroupButton
-                                            active={is_calibrating}
-                                            onClick={(done) => this._execute({ start_calibration: true }, done)}
-                                        >
-                                            Start
-                                        </GroupButton>
-                                        <GroupButton
-                                            active={!is_calibrating}
-                                            onClick={(done) => this._execute({ stop_calibration: true }, done)}
-                                        >
-                                            Stop
-                                        </GroupButton>
-
-
-                                    </div>
-                                </CardBody>
-                            </Card>
-
+                            {this._render_wanding_card()}
 
                             <Card header="Controls" style={{ marginBottom: 10 }}>
                                 <CardBody>
@@ -464,9 +627,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                 </CardBody>
                             </Card>
                         </div>
-
                     </div>
-
                 </div>
 
             </div>
@@ -474,11 +635,3 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
     }
 };
 
-
-class GroupButton extends React.Component {
-    render() {
-        return (
-            <Button disabled={this.props.disabled} preset={this.props.active ? "outline-dark" : "outline-secondary"} active={this.props.active} onClick={this.props.onClick}>{this.props.children}</Button>
-        )
-    }
-}

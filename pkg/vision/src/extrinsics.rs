@@ -18,8 +18,15 @@ impl CameraExtrinsics {
         out
     }
 
+    pub fn from_mat4x4(mat: &Matrix4d) -> Self {
+        Self {
+            rotation: to_axis_angle(&mat.block(0, 0).to_owned()),
+            translation: mat.block(0, 3).to_owned()
+        }
+    }
+
     pub fn position(&self) -> Vector3d {
-        (from_axis_angle(&self.rotation).inverse() * -1.0) * &self.translation
+        (from_axis_angle(&self.rotation).inverse().unwrap() * -1.0) * &self.translation
     }
 
     pub fn transform(&self, pt: &Vector3d) -> Vector3d {

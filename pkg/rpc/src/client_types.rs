@@ -196,7 +196,7 @@ impl<T: protobuf::Message> ClientStreamingRequest<T> {
 }
 
 #[async_trait]
-pub trait ClientStreamingResponseInterface: 'static + Send {
+pub trait ClientStreamingResponseInterface: 'static + Send + Sync {
     async fn recv_bytes(&mut self) -> Option<Bytes>;
 
     async fn finish(&mut self) -> Result<()>;

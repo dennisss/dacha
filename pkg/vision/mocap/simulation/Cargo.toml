@@ -8,8 +8,8 @@ common = { path = "../../../common" }
 base_args = { path = "../../../base/args" }
 sys = { path = "../../../sys" }
 file = { path = "../../../file" }
+crypto = { path = "../../../crypto" }
 cluster_client = { path = "../../../cluster/client" }
-cluster_proto = { path = "../../../cluster/proto" }
 executor = { path = "../../../executor" }
 executor_multitask = { path = "../../../executor/multitask" }
 parsing = { path = "../../../parsing" }
@@ -17,11 +17,9 @@ macros = { path = "../../../macros" }
 image = { path = "../../../image" }
 math = { path = "../../../math" }
 protobuf = { path = "../../../protobuf" }
-perf = { path = "../../../perf" }
 protobuf_json = { path = "../../../protobuf/json" }
-web = { path = "../../../web" }
 rpc = { path = "../../../rpc" }
 mocap_proto = { path = "../proto" }
-mocap_camera = { path = "../camera" }
+mocap_camera_core = { path = "../camera/core" }
 vision = { path = "../../" }
 graphics = { path = "../../../graphics" }

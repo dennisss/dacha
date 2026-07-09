@@ -73,8 +73,8 @@ where
             };
 
             if max_radius < (1e-14).into() {
-                #[cfg(feature = "std")]
-                println!("Eigenvalues converged early after: {} iterations", i + 1);
+                // #[cfg(feature = "std")]
+                // println!("Eigenvalues converged early after: {} iterations", i + 1);
                 break;
             }
         }

@@ -44,6 +44,20 @@ message BlobMatchingConfig {
     // TODO: Have a better name for this.
     // 1.0 disables this check.
     double min_old_point_matching_ratio = 9;
+
+    // If true, immediately filters out any blobs near the predicted
+    // position of an old point (from the previous frame) and uses
+    // them to reconstruct a point.
+    //
+    // When false, we still prioritize matching using old point 
+    // predictions but we will still look for points across more
+    // combinations of cameras to find a better track.
+    //
+    // Enabling this will significantly speed up (>10x) the matching
+    // time for most frames but may result in errors if your system
+    // calibration is bad or objects are moving very quickly relative
+    // to your frame rate.
+    bool fast_rematch_old_points = 10;
 }
 
 message TrackedPointProto {

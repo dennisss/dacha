@@ -7,6 +7,7 @@ pub struct AlphaBetaEstimator3D {
     v: Vector3d,
     alpha: f64,
     beta: f64,
+    last_dt: Option<f64>,
 }
 
 impl AlphaBetaEstimator3D {
@@ -15,7 +16,8 @@ impl AlphaBetaEstimator3D {
             x: initial_position.clone(),
             v: Vector3d::zero(),
             alpha,
-            beta
+            beta,
+            last_dt: None,
         }
     }
 
@@ -28,12 +30,14 @@ impl AlphaBetaEstimator3D {
     ///
     /// Returns the predicted position.
     pub fn predict(&mut self, dt: f64) -> Vector3d {
+        self.last_dt = Some(dt);
         self.x += self.v.clone() * dt;
         self.x.clone()
     }
 
-    pub fn update(&mut self, dt: f64, observed_position: &Vector3d) {
+    pub fn update(&mut self, observed_position: &Vector3d) {
         let r = observed_position - &self.x;
+        let dt = self.last_dt.take().unwrap();
 
         self.x += r.clone() * self.alpha;
         self.v += r * (self.beta / dt);

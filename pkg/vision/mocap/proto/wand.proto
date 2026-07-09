@@ -20,4 +20,8 @@ message WandPatternFinderConfig {
     double max_projection_stretch = 6;
 
     double max_reprojection_error = 7;
+
+    // How high the points (sphere centers) are above the ground if the wand
+    // is laying flat.
+    double height = 8;
 }

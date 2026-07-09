@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
-use executor::sync::AsyncVariable;
+use executor::sync::{AsyncVariable, AsyncRwLock};
 use executor::lock;
 use executor::child_task::ChildTask;
 use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup, BroadcastChannel};
@@ -19,15 +19,27 @@ use ptp_proto::ptp::{TimeSyncRole, TimeSyncConfig};
 use ptp_proto::ptp::TimeSyncStub;
 use ptp_proto::ptp::TimeSyncIntoService;
 use cluster_client::service::create_rpc_channel;
-use sstable::record_log::*;
-use file::project_path;
+use file::{project_path, LocalPathBuf};
 use protobuf::Message;
 use vision::{CameraIntrinsicsModel, CameraExtrinsics};
+use mocap_simulation::*;
+use math::matrix::Vector2d;
+use protobuf::StaticMessage;
 
+use crate::checkerboard::*;
 use crate::matching::*;
 use crate::proto_utils::*;
+use crate::mjpeg::*;
+use crate::config::*;
+use crate::wanding::*;
+use crate::rigid_body::*;
+use crate::origin::*;
+
+const CONFIG_PATCH_FILE: &'static str = "config.pb";
 
 // TODO: Need camera list sorting everywhere (mainly in status output protos)
+
+// TODO: Auto-exposure for things like checkerboard calibration.
 
 pub struct MocapManager {
     resources: ServiceResourceGroup,
@@ -38,19 +50,19 @@ impl_resource_passthrough!(MocapManager, resources);
 
 struct Shared {
     meta_client: Arc<ClusterMetaClient>,
-    config: MocapManagerConfig,
+    data_dir: LocalPathBuf,
+    config_path: LocalPathBuf,
+    config: AsyncRwLock<ManagerConfigContainer>,
     state: AsyncVariable<State>,
     camera_config_state: AsyncVariable<CameraConfigState>,
     merged_blobs: BroadcastChannel<Arc<ReadBlobsResponse>>,
     tracked_points: BroadcastChannel<Arc<ReadTrackedPointsResponse>>,
+    simulator: Option<MocapSimulator>
 }
 
 #[derive(Default)]
 struct State {
     cameras: HashMap<u64, CameraEntry, FastHasherBuilder>,
-
-    camera_intrinsics: HashMap<u64, CameraIntrinsicsModel, FastHasherBuilder>,
-    camera_extrinsics: HashMap<u64, CameraExtrinsics, FastHasherBuilder>,
 
     /// Sorted by 'timestamp' (first_received time will also end up being sorted)
     frames: VecDeque<FrameEntry>,
@@ -58,13 +70,14 @@ struct State {
     /// Largest frame timestamp value received so far.
     frame_timestamp_waterline: u64,
 
-    calibration: Option<CalibrationState>,
+    mode: Mode
 }
 
 struct CameraConfigState {
     camera_config: MocapCameraConfigureRequest,
     camera_config_epoch: u64,
     active_camera_id: Option<u64>,
+    single_camera_override: Option<(u64, MocapCameraConfigureRequest)>
 }
 
 struct CameraEntry {
@@ -102,57 +115,81 @@ struct FrameEntry {
     results: HashMap<u64, ReadBlobsResponse, FastHasherBuilder>
 }
 
-struct CalibrationState {
-    stopping: bool,
-    task: ChildTask,
+enum Mode {
+    Running,
+    CheckerboardCalibration(CheckerboardCalibrationMode),
+    WandingCalibration(WandingCalibrationMode),
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Mode::Running
+    }
 }
 
 impl MocapManager {
 
     pub async fn create(
         config: MocapManagerConfig,
+        data_dir: LocalPathBuf,
         meta_client: Arc<ClusterMetaClient>
     ) -> Result<Self> {
 
+        file::create_dir_all(&data_dir).await?;
+
+        let mut config = ManagerConfigContainer::create(&config)?;
+        
+        let config_path = data_dir.join(CONFIG_PATCH_FILE);
+        if file::exists(&config_path).await? {
+            let data = file::read(&config_path).await?;
+            let diff = MocapManagerConfig::parse(&data)?;
+            config.merge_from(&diff)?;
+        }
+
         let resources = ServiceResourceGroup::new("MocapManager");
+
+        let mut simulator = None;
+
+        if config.make_dummy_cameras() {
+            assert!(config.camera_service().is_empty());
+
+            // TODO: Add to resources.
+            simulator = Some(MocapSimulator::create(&config).await?);
+        }
+
+        let camera_config = config.initial_camera_config().clone();
 
         let shared = Arc::new(Shared {
             meta_client,
-            config: config.clone(),
+            config: AsyncRwLock::new(config),
+            data_dir,
+            config_path,
             state: AsyncVariable::default(),
             camera_config_state: AsyncVariable::new(CameraConfigState {
-                camera_config: config.initial_camera_config().clone(),
+                camera_config,
                 camera_config_epoch: 1,
                 active_camera_id: None,
+                single_camera_override: None,
             }),
             merged_blobs: BroadcastChannel::default(),
             tracked_points: BroadcastChannel::default(),
+            simulator,
         });
 
         resources.spawn_interruptable("resolver", Self::service_resolver_thread(shared.clone())).await;
         resources.spawn_interruptable("merger", Self::frame_merger_thread(shared.clone())).await;
 
-        if shared.config.make_dummy_cameras() {
-            assert!(shared.config.camera_service().is_empty());
-        }
+        let config = shared.config.read().await?;
 
         for per_cam in config.per_camera() {
-            let camera_id = entity_id_from_string(per_cam.camera_id_str()).unwrap();
+            let camera_id = per_cam.camera_id();
 
-            lock!(state <= shared.state.lock().await?, {
-                if per_cam.has_intrinsics() {
-                    state.camera_intrinsics.insert(camera_id, intrinsics_from_proto(per_cam.intrinsics()));
-                }
-
-                if per_cam.has_extrinsics() {
-                    state.camera_extrinsics.insert(camera_id, extrinsics_from_proto(per_cam.extrinsics()));
-                }
-            });
-
-            if shared.config.make_dummy_cameras() {
+            if config.make_dummy_cameras() {
                 let camera_stub = Arc::new(MocapCameraStub::new(
                     Arc::new(rpc::LocalChannel::new(
-                        Arc::new(mocap_camera::DummyMocapCamera::create(2).await?).into_service()
+                        shared.simulator.as_ref().unwrap().create_camera_service(camera_id)?
+                        // Arc::new(mocap_camera::DummyMocapCamera::create(2).await?)
+                        // .into_service()
                     ))
                 ));
 
@@ -186,6 +223,8 @@ impl MocapManager {
         // NOTE: Should be done after the extrinsics/intrinscs are setup.
         resources.spawn_interruptable("matcher", Self::matching_task(shared.clone())).await;
 
+        drop(config);
+
         Ok(Self {
             resources,
             shared
@@ -199,8 +238,14 @@ impl MocapManager {
     async fn status_inner(shared: &Shared) -> Result<MocapManagerStatus> {
         let mut proto = MocapManagerStatus::default();
 
+        // TODO: Make sure we are consistent about the ordering of locking these.
+        let config = shared.config.read().await?;
         let state = shared.state.lock().await?.read_exclusive();
         let camera_config_state = shared.camera_config_state.lock().await?.read_exclusive();
+
+        // TODO: If the config contains more cameras than are currently in use, consider
+        // pruning them.
+        proto.set_config(config.value().clone());
 
         let now = Instant::now();
 
@@ -222,10 +267,6 @@ impl MocapManager {
                     proto.set_last_sync_age((now - s.check_time).as_secs_f64());
                 }
 
-                if let Some(extrinsics) = &state.camera_extrinsics.get(camera_id) {
-                    proto.set_extrinsics(extrinsics_to_proto(extrinsics));
-                }
-
                 proto.set_active(camera_config_state.active_camera_id == Some(*camera_id));
             }
 
@@ -245,56 +286,374 @@ impl MocapManager {
             }
         }
 
+        if let Some((id, config)) = &camera_config_state.single_camera_override {
+            let proto = proto.single_camera_override_mut();
+            proto.set_camera_id(*id);
+            proto.set_config(config.clone());
+        }
+ 
         proto.cameras_mut().sort_by_key(|c| c.id());
 
-        if state.calibration.is_some() {
-            proto.calibration_mut();
+        match &state.mode {
+            Mode::Running => {
+                proto.mode_mut().set_running(true);
+            }
+            Mode::CheckerboardCalibration(mode) => {
+                proto.mode_mut().set_checkerboard_calibration(mode.to_proto());
+            }
+            Mode::WandingCalibration(mode) => {
+                proto.mode_mut().set_wanding_calibration(mode.to_proto());
+            }
         }
 
         Ok(proto)
     }
 
     pub async fn execute(&self, req: &ExecuteRequest) -> Result<ExecuteResponse> {
-        lock!(state <= self.shared.state.lock().await?, {
-            if req.start_calibration() {
-                if state.calibration.is_some() {
-                    return Err(err_msg("Calibration already started"));
-                }
 
-                state.calibration = Some(CalibrationState {
-                    stopping: false,
-                    task: ChildTask::spawn(Self::calibration_task(self.shared.clone()))
+        match req.command_case() {
+            ExecuteRequestCommandCase::ConfigureCameras(config) => {
+
+                lock!(camera_config_state <= self.shared.camera_config_state.lock().await?, {
+                    if config.camera_id() != 0 {
+                        camera_config_state.single_camera_override = Some((config.camera_id(), req.configure_cameras().config().clone()));
+                    } else {
+                        camera_config_state.camera_config = req.configure_cameras().config().clone();
+                        camera_config_state.single_camera_override = None;
+                    }
+
+                    camera_config_state.camera_config_epoch += 1;
+                    camera_config_state.notify_all();
+                });
+            }
+            
+            ExecuteRequestCommandCase::SelectCamera(camera_id) => {
+                lock!(camera_config_state <= self.shared.camera_config_state.lock().await?, {
+                    camera_config_state.active_camera_id = Some(*camera_id);
+                    camera_config_state.camera_config_epoch += 1;
+                    camera_config_state.notify_all();
                 });
             }
 
-            if req.stop_calibration() {
-                if let Some(c) = &mut state.calibration {
-                    println!("Stopping calibration!");
-                    c.stopping = true;
+            ExecuteRequestCommandCase::ConfigureSimulation(c) => {
+                if let Some(sim) = &self.shared.simulator {
+                    sim.configure_animation(c)?;
+                } else {
+                    return Err(err_msg("Simulation not currently active"));
                 }
             }
 
+            ExecuteRequestCommandCase::StartCheckerboardCalibration(cmd) => {
 
-            Result::<_, Error>::Ok(())
-        })?;
+                let config = self.shared.config.read().await?;
 
-        if req.has_configure_cameras() {
-            lock!(camera_config_state <= self.shared.camera_config_state.lock().await?, {
-                camera_config_state.camera_config = req.configure_cameras().clone();
-                camera_config_state.camera_config_epoch += 1;
-                camera_config_state.notify_all();
-            });
-        }
+                lock!(state <= self.shared.state.lock().await?, {
 
-        if req.has_select_camera() {
-            lock!(camera_config_state <= self.shared.camera_config_state.lock().await?, {
-                camera_config_state.active_camera_id = Some(req.select_camera());
-                camera_config_state.camera_config_epoch += 1;
-                camera_config_state.notify_all();
-            });
+                    match &state.mode {
+                        Mode::Running => {}
+                        _ => {
+                            return Err(err_msg("Must be idle to start wanding"));
+                        }
+                    }
+
+                    let camera_id = cmd.camera_id();
+
+                    if !state.cameras.contains_key(&camera_id) {
+                        return Err(err_msg("Unknown camera id"));
+                    }
+
+                    state.mode = Mode::CheckerboardCalibration(CheckerboardCalibrationMode::create(
+                        config.checkerboard(),
+                        camera_id,
+                        &self.shared.data_dir
+                    ));
+
+                    Result::<_, Error>::Ok(())
+                })?;
+            }
+
+            ExecuteRequestCommandCase::CaptureCheckerboardFrame(_) => {
+                let res = lock!(state <= self.shared.state.lock().await?, {
+
+                    let mode = match &state.mode {
+                        Mode::CheckerboardCalibration(v) => v,
+                        _ => {
+                            return Err(err_msg("Must be idle to start wanding"));
+                        }
+                    };
+
+                    let camera = state.cameras.get(&mode.camera_id())
+                        .ok_or_else(|| err_msg("Camera missing"))?;
+
+                    let camera_stub = camera.camera_stub.clone();
+
+                    Ok(mode.capture_frame(camera_stub))
+                })?;
+
+                res.await?;
+            }
+
+            ExecuteRequestCommandCase::CancelCheckerboardCalibration(_) => {
+                lock!(state <= self.shared.state.lock().await?, {
+                    if let Mode::CheckerboardCalibration(_) = &state.mode {
+                        state.mode = Mode::Running;
+                    }
+                });
+            }
+
+            ExecuteRequestCommandCase::ProcessCheckerboardCalibration(_) => {
+                let res = lock!(state <= self.shared.state.lock().await?, {
+                    let mode = match &state.mode {
+                        Mode::CheckerboardCalibration(v) => v,
+                        _ => {
+                            return Err(err_msg("Must be idle to start wanding"));
+                        }
+                    };
+
+                    Ok(mode.process_data())
+                })?;
+
+                res.await?;
+
+            }
+
+            ExecuteRequestCommandCase::ApplyCheckerboardCalibration(_) => {
+                // TODO: Apply a global config writter lock.
+                // TODO: this can't be interrupted.
+
+                let (camera_id, result) = lock!(state <= self.shared.state.lock().await?, {
+                    let mode = match &state.mode {
+                        Mode::CheckerboardCalibration(v) => v,
+                        _ => {
+                            return Err(err_msg("Must be idle to start wanding"));
+                        }
+                    };
+
+                    Ok((mode.camera_id(), mode.result()))
+                })?;
+
+                let result = match result {
+                    Some(v) => v,
+                    None => return Err(err_msg("Not processed yet"))
+                };
+
+                // TODO: Move this into the mode code.
+                let mut patch = MocapManagerConfig::default();
+                let cam = patch.new_per_camera();
+                cam.set_camera_id(camera_id);
+                cam.set_intrinsics(result.intrinsics.to_proto());
+
+                self.apply_config_patch(&patch).await?;
+
+                // Exit calibration mode.
+                lock!(state <= self.shared.state.lock().await?, {
+                    if let Mode::CheckerboardCalibration(_) = &state.mode {
+                        state.mode = Mode::Running;
+                    }
+                });
+            }
+
+            ExecuteRequestCommandCase::StartWandingCalibration(_) => {
+
+                let initial_status = self.status().await?;
+                let subscriber = self.shared.merged_blobs.subscribe(1024);
+
+                let config = self.shared.config.read().await?;
+
+                lock!(state <= self.shared.state.lock().await?, {
+
+                    match &state.mode {
+                        Mode::Running => {}
+                        _ => {
+                            return Err(err_msg("Must be idle to start wanding"));
+                        }
+                    }
+
+                    let mode = WandingCalibrationMode::create(
+                        config.value().clone(),
+                        config.camera_intrinsics().clone(),
+                        &self.shared.data_dir,
+                        initial_status,
+                        subscriber
+                    )?;
+
+                    state.mode = Mode::WandingCalibration(mode);
+
+                    Result::<_, Error>::Ok(())
+                })?;
+            }
+
+            ExecuteRequestCommandCase::CancelWandingCalibration(_) => {
+                lock!(state <= self.shared.state.lock().await?, {
+                    match &mut state.mode {
+                        Mode::WandingCalibration(_) => {
+                            state.mode = Mode::Running;
+                        }
+                        _ => {}
+                    }
+
+                    Result::<_, Error>::Ok(())
+                })?;
+            }
+
+            ExecuteRequestCommandCase::ProcessWandingCalibration(_) => {
+                let waiter = lock!(state <= self.shared.state.lock().await?, {
+                    match &state.mode {
+                        Mode::WandingCalibration(mode) => {
+                            Some(mode.finish())
+                        }
+                        _ => None
+                    }
+                });
+
+                if let Some(fut) = waiter {
+                    fut.await;
+                }
+            }
+
+            ExecuteRequestCommandCase::ApplyWandingCalibration(_) => {
+                // TODO: Apply a global config writter lock.
+                // TODO: this can't be interrupted.
+
+                let patch = lock!(state <= self.shared.state.lock().await?, {
+                    let mode = match &state.mode {
+                        Mode::WandingCalibration(v) => v,
+                        _ => {
+                            return Err(err_msg("Must be idle to start wanding"));
+                        }
+                    };
+
+                    Ok(mode.result())
+                })?;
+
+                let patch = match patch {
+                    Some(v) => v,
+                    None => return Err(err_msg("Not processed yet"))
+                };
+
+                self.apply_config_patch(&patch).await?;
+
+                // Exit calibration mode.
+                lock!(state <= self.shared.state.lock().await?, {
+                    if let Mode::WandingCalibration(_) = &state.mode {
+                        state.mode = Mode::Running;
+                    }
+                });
+            }
+
+            ExecuteRequestCommandCase::ConfigureRigidBody(cmd) => {
+                // TODO: We can assume that an empty entry (with just an id) can be deleted.
+                // we should also generally verify we don't match empty bodies.
+                
+                let mut patch = {
+                    let config = self.shared.config.read().await?;
+
+                    let mut out = MocapManagerConfig::default();
+                    *out.rigid_body_tracker_mut().bodies_mut() = config.rigid_body_tracker().bodies().to_vec();
+
+                    out
+                };
+
+                let mut body = None;
+                for b in patch.rigid_body_tracker_mut().bodies_mut() {
+                    if b.id() == cmd.id() {
+                        body = Some(b);
+                        break;
+                    }
+                }
+
+                let body = match body {
+                    Some(v) => v,
+                    None => patch.rigid_body_tracker_mut().new_bodies()
+                };
+
+                body.merge_from(cmd);
+
+                self.apply_config_patch(&patch).await?;
+            }
+
+            ExecuteRequestCommandCase::DeleteRigidBody(id) => {
+                let mut patch = {
+                    let config = self.shared.config.read().await?;
+
+                    let mut out = MocapManagerConfig::default();
+                    *out.rigid_body_tracker_mut().bodies_mut() = config.rigid_body_tracker().bodies().to_vec();
+
+                    out
+                };
+
+                let mut found = false;
+                for i in 0..patch.rigid_body_tracker().bodies().len() {
+                    if patch.rigid_body_tracker().bodies()[i].id() == *id {
+                        patch.rigid_body_tracker_mut().bodies_mut().remove(i);
+                        found = true;
+                        break;
+                    }
+                }
+
+                if !found {
+                    return Err(rpc::Status::not_found("No such rigid body").into());
+                }
+
+                self.apply_config_patch(&patch).await?;
+            }
+
+            ExecuteRequestCommandCase::SetOrigin(cmd) => {
+                let mut sub = self.shared.tracked_points.subscribe(1);
+                let res = sub.recv().await?;
+
+                let mut points = vec![];
+                for p in res.points() {
+                    points.push(TrackedPoint::from_proto(p)?);
+                }
+
+                let patch = {
+                    let config = self.shared.config.read().await?;
+                    set_origin_with_wand(&config, &points)?
+                };
+
+                self.apply_config_patch(&patch).await?;
+            }
+
+            ExecuteRequestCommandCase::NOT_SET => {
+                return Err(err_msg("Unknown command"));
+            }
         }
 
         Ok(ExecuteResponse::default())
+    }
+
+    async fn apply_config_patch(&self, patch: &MocapManagerConfig) -> Result<()> {
+
+        let diff = lock!(config <= self.shared.config.write().await?, {
+            config.merge_from(patch)?;
+            Result::<_, Error>::Ok(config.diff().clone())
+        })?;
+
+        let data = diff.serialize()?;
+
+        file::write(&self.shared.config_path, data).await?;
+
+        Ok(())
+    }
+
+    pub async fn live_stream(&self, camera_id: u64) -> http::Response {
+
+        let stub = lock!(state <= self.shared.state.lock().await.unwrap(), {
+            let camera = match state.cameras.get(&camera_id) {
+                Some(v) => v,
+                None => return None
+            };
+
+            Some(camera.camera_stub.clone())
+        });
+
+        let stub = match stub {
+            Some(v) => v,
+            None => return http_util::not_found()
+        };
+
+        create_camera_live_stream(stub).await
     }
 
     /// Global (per-manager) thread that monitors the set of workers in the camera
@@ -302,13 +661,17 @@ impl MocapManager {
     /// - Maintain the State::cameras set (add new cameras / remove dead ones).
     /// - Maintain a PTP leader.
     async fn service_resolver_thread(shared: Arc<Shared>) -> Result<()> {
-        if shared.config.camera_service().is_empty() {
+        let config = shared.config.read().await?;
+
+        if config.camera_service().is_empty() {
             return Ok(());
         }
 
         let resolver = cluster_client::ServiceResolver::create(
-            shared.config.camera_service(), shared.meta_client.clone()
+            config.camera_service(), shared.meta_client.clone()
         )?;
+
+        drop(config);
 
         loop {
             let endpoints = resolver.resolve().await?;
@@ -424,7 +787,11 @@ impl MocapManager {
     /// frame from all cameras once all data is received or a timeout has occured.
     async fn frame_merger_thread(shared: Arc<Shared>) -> Result<()> {
 
-        let timeout = Duration::from_secs_f32(shared.config.frame_aggregation_timeout());
+        let config = shared.config.read().await?;
+
+        let timeout = Duration::from_secs_f32(config.frame_aggregation_timeout());
+
+        drop(config);
 
         loop {
             let mut state = shared.state.lock().await?.enter();
@@ -490,7 +857,7 @@ impl MocapManager {
 
             eprintln!("Camera {} Thread Terminated: {:?}", entity_id_to_string(camera_id).unwrap(), res);
 
-            // TODO: Use exponential backoff.
+            // TODO: Use exponential backoff (though ideally retry sooner if we get a sign of life like a heartbeat).
             executor::sleep(Duration::from_secs(1)).await;
         }
     }
@@ -552,17 +919,15 @@ impl MocapManager {
             });
 
             let next_config = lock!(config_state <= shared.camera_config_state.lock().await?, {
-
                 if config_state.camera_config_epoch == last_configured_epoch {
                     return None;
                 }
-
-                let config = Self::get_camera_config(camera_id, &config_state);
-                Some((config, config_state.camera_config_epoch))
+                let (config, is_per_camera) = Self::get_camera_config(camera_id, &config_state);
+                Some((config, is_per_camera, config_state.camera_config_epoch))
             });
 
             
-            if let Some((config, epoch)) = next_config {
+            if let Some((config, is_per_camera, epoch)) = next_config {
                 camera_stub.Configure(&request_context, &config).await.result?;
                 last_configured_epoch = epoch;
 
@@ -574,7 +939,13 @@ impl MocapManager {
                 // Pull any merge conflicts that were adjusted by the camera into our local copy of the config.
                 // (the hope is that all cameras behave the same way)
                 lock!(config_state <= shared.camera_config_state.lock().await?, {
-                    config_state.camera_config = status.config().clone();
+                    if last_configured_epoch == config_state.camera_config_epoch {
+                        if is_per_camera {
+                            config_state.single_camera_override = Some((camera_id, status.config().clone()));
+                        } else {
+                            config_state.camera_config = status.config().clone();
+                        }
+                    }
                 });
             }
 
@@ -621,7 +992,7 @@ impl MocapManager {
             let entry = state.cameras.get(&camera_id)
                 .ok_or_else(|| err_msg("Missing camera"))?;
 
-            let mut ptp_config = TimeSyncNode::default_config()?;
+            let mut ptp_config = TimeSyncNode::default_config();
 
             if !entry.ptp_leader {
                 ptp_config.set_role(TimeSyncRole::FOLLOWER);
@@ -644,8 +1015,15 @@ impl MocapManager {
         })
     }
 
-    fn get_camera_config(camera_id: u64, config_state: &CameraConfigState) -> MocapCameraConfigureRequest {
-        let mut config = config_state.camera_config.clone();
+    fn get_camera_config(camera_id: u64, config_state: &CameraConfigState) -> (MocapCameraConfigureRequest, bool) {
+        let (mut config, per_camera) = {
+            if config_state.single_camera_override.is_some() && config_state.single_camera_override.as_ref().unwrap().0 == camera_id {
+                (config_state.single_camera_override.as_ref().unwrap().1.clone(), true)
+            } else {
+                (config_state.camera_config.clone(), false)
+            }
+        };
+
         for v in config.rgb_led_colors_mut() {
             if config_state.active_camera_id == Some(camera_id) {
                 *v = 100; // blue at (100 / 255) intensity
@@ -656,7 +1034,7 @@ impl MocapManager {
             }
         }
 
-        config
+        (config, per_camera)
     }
 
     /// Per-camera thread which handles continously calling ReadBlobs.
@@ -745,85 +1123,59 @@ impl MocapManager {
         Err(err_msg("ReadBlobs terminated from the camera"))
     }
 
-    async fn calibration_task(shared: Arc<Shared>) {
-
-        if let Err(e) = Self::calibration_task_inner(&shared).await {
-            eprintln!("Calibration failed: {}", e);
-        }
-
-        lock!(state <= shared.state.lock().await.unwrap(), {
-            state.calibration = None;
-        });
-    }
-
-    async fn calibration_task_inner(shared: &Shared) -> Result<()> {
-
-        let mut writer = RecordWriter::create_new(project_path!("data/mocap/calibration.log")).await?;
-
-        {
-            let mut entry = MocapLogEntry::default();
-            entry.set_system_state(Self::status_inner(shared).await?);
-            writer.append(&entry.serialize()?).await?;
-        }
-
-        let mut subscriber = shared.merged_blobs.subscribe(1024);
-
-        loop {
-            // TODO: Allow this to interrupt the recv()
-            let stopping = lock!(state <= shared.state.lock().await?, {
-                if let Some(c) = &state.calibration {
-                    c.stopping
-                } else {
-                    true
-                }
-            });
-
-            if stopping {
-                break;
-            }
-
-            let res = subscriber.recv().await?;
-
-            let mut entry = MocapLogEntry::default();
-            entry.set_blobs(res.as_ref().clone());
-            writer.append(&entry.serialize()?).await?;
-        }
-
-        writer.flush().await?;
-        drop(writer);
-
-        println!("Done writing calibration data!");
-
-        Ok(())
-    }
-
+    // TODO: This probably deserves its own OS thread.
     async fn matching_task(shared: Arc<Shared>) -> Result<()> {
+        let config = shared.config.read().await?;
+        let mut matcher = BlobMatcher::new(config.matching());
+        drop(config);
 
-        let mut params = vec![];
+        let mut rigid_body_tracker = RigidBodyTracker::default();
 
-        lock!(state <= shared.state.lock().await?, {
-            for (cam_id, extrinsics) in &state.camera_extrinsics {
-                let intrinsics = match state.camera_intrinsics.get(cam_id) {
-                    Some(v) => v,
-                    None => continue
-                };
-
-                params.push(CameraParameters {
-                    id: *cam_id,
-                    extrinsics: extrinsics.clone(),
-                    intrinsics: intrinsics.clone()
-                });
-            }
-        });
-
-        let mut matcher = BlobMatcher::new(shared.config.matching(), &params);
+        let mut last_config_revision = 0;
 
         let mut subscriber = shared.merged_blobs.subscribe(8);
 
         loop {
             let blobs_res = subscriber.recv().await?;
 
-            let points = matcher.run(&blobs_res);
+            // Update camera parameters if changed.
+            {
+                let config = shared.config.read().await?;
+
+                if config.revision() != last_config_revision {
+                    let mut params = vec![];
+                    
+                    // TODO: Limit to only currently discovered cameras?
+                    for (cam_id, extrinsics) in config.camera_extrinsics() {
+                        let intrinsics = match config.camera_intrinsics().get(cam_id) {
+                            Some(v) => v,
+                            None => continue
+                        };
+
+                        params.push(CameraParameters {
+                            id: *cam_id,
+                            extrinsics: extrinsics.clone(),
+                            intrinsics: intrinsics.clone()
+                        });
+                    }
+
+                    matcher.set_camera_parameters(&params);
+
+                    rigid_body_tracker.set_config(config.rigid_body_tracker().clone())?;
+                }
+
+                last_config_revision = config.revision();
+                drop(config);
+            }
+
+            let mut points = matcher.run(&blobs_res);
+
+            rigid_body_tracker.run(&points);
+            rigid_body_tracker.backpropagate_predicted_points(&mut matcher);
+            points = matcher.points();
+
+            // TODO: When doing skeleton tracking, exclude any points found for rigid bodies.
+
 
             let mut res = ReadTrackedPointsResponse::default();
             res.set_frame_timestamp(blobs_res.frame_timestamp());
@@ -831,10 +1183,17 @@ impl MocapManager {
                 res.add_points(pt.to_proto());
             }
 
+            let rigid_bodies = rigid_body_tracker.bodies();
+            for body in rigid_bodies {
+                if body.transform.is_none() {
+                    continue;
+                }
+
+                res.add_rigid_bodies(body.to_proto());
+            }
+
             shared.tracked_points.send(Arc::new(res));
         }
-
-
 
         Ok(())
     }

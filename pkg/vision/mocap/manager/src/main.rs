@@ -13,8 +13,11 @@ use rpc_util::NamedPortArg;
 use cluster_client::{ClusterServer, ClusterMetaClient};
 use mocap_proto::mocap::*;
 use cluster_client::service::create_rpc_channel;
-use file::project_path;
+use file::{project_path, LocalPathBuf};
 use mocap_manager::*;
+use http::static_file_handler::*;
+use http_util::bad_request;
+use cluster_client::id::entity_id_from_string;
 
 // TODO: Automatically turn off the strobe on the cameras if there is no client for a while
 
@@ -45,6 +48,16 @@ const SERVICE_ACL_PROTO: &'static str = r#"
             principals: ["authenticated"]
         },
         {
+            path: "/data"
+            is_directory: true
+            principals: ["authenticated"]
+        },
+        {
+            path: "/camera"
+            is_directory: true
+            principals: ["authenticated"]
+        },
+        {
             path: "/rpc/mocap.MocapManager"
             is_directory: true
             principals: ["authenticated"]
@@ -53,9 +66,41 @@ const SERVICE_ACL_PROTO: &'static str = r#"
 "#;
 
 
+pub struct CameraHttpHandler {
+    inst: Arc<MocapManager>,
+}
+
+#[async_trait]
+impl http::ServerHandler for CameraHttpHandler {
+    async fn handle_request<'a>(
+        &self,
+        req: http::Request,
+        ctx: http::ServerRequestContext<'a>,
+    ) -> http::Response {
+        let mut query = match http_util::parse_query(&req) {
+            Ok(v) => v,
+            Err(e) => return bad_request()
+        };
+
+        let camera_id_str = match query.remove("id") {
+            Some(v) => v,
+            None => return bad_request()
+        };
+
+        let camera_id = match entity_id_from_string(&camera_id_str) {
+            Some(v) => v,
+            None => return bad_request()
+        };
+
+        self.inst.live_stream(camera_id).await
+    }
+}
+
+
 #[derive(Args)]
 struct Args {
-    port: NamedPortArg
+    port: NamedPortArg,
+    data_dir: LocalPathBuf,
 }
 
 #[executor_main]
@@ -87,13 +132,25 @@ async fn main() -> Result<()> {
     server.add_request_handler("/", false, web_handler.clone())?;
     server.add_request_handler("/ui", true, web_handler.clone())?;
 
+    let data_handler = StaticFileHandler::new_with_options(
+        &args.data_dir,
+        StaticFileHandlerOptions {
+            trust_file_extension: true,
+            mount_path: "/data".to_string(),
+        },
+    );
+    server.add_request_handler("/data", true, data_handler)?;
+
 
     let manager = Arc::new(MocapManager::create(
         config,
+        args.data_dir,
         meta_client.clone()
     ).await?);
     service.register_dependency(manager.clone()).await;
     server.add_service(manager.clone().into_service())?;
+
+    server.add_request_handler("/camera", true, CameraHttpHandler { inst: manager.clone() })?;
 
     service.register_dependency(server.start()?).await;
 

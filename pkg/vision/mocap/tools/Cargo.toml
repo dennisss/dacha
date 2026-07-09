@@ -32,7 +32,7 @@ web = { path = "../../../web" }
 rpc_util = { path = "../../../rpc/util" }
 protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
 mocap_proto = { path = "../proto" }
-mocap_camera = { path = "../camera" }
+mocap_camera_core = { path = "../camera/core" }
 mocap_manager = { path = "../manager" }
 mocap_simulation = { path = "../simulation" }
 vision = { path = "../../" }

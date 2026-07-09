@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package mocap;
+
+message SimulationAnimationConfig {
+    bool playing = 1;
+
+    uint64 current_frame = 2;
+
+    oneof scene {
+        bool marker_around_cube = 3;
+
+        bool checkerboard = 4;
+
+        bool wanding_calibration = 5;
+
+        bool spinning_wand = 6;
+    }
+}

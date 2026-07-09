@@ -1,5 +1,5 @@
 use common::errors::*;
-use math::matrix::{VectorXd, Vector3d, MatrixXd};
+use math::matrix::{VectorXd, Vector2d, Vector3d, MatrixXd};
 use math::vecxd;
 use math_proto::math::*;
 
@@ -22,6 +22,26 @@ impl VectorProtoExt for VectorXd {
         out
     }
 }
+
+
+impl VectorProtoExt for Vector2d {
+    fn from_proto(p: &VectorProto) -> Result<Self> {
+        if p.values().len() != 2 {
+            return Err(err_msg("Unexpected number of entries for Vector2d"));
+        }
+
+        Ok(Vector2d::from_slice_with_shape(p.values().len(), 1, p.values()))
+    }
+
+    fn to_proto(&self) -> VectorProto {
+        let mut out = VectorProto::default();
+        for i in 0..self.len() {
+            out.add_values(self[i]);
+        }
+        out
+    }
+}
+
 
 impl VectorProtoExt for Vector3d {
     fn from_proto(p: &VectorProto) -> Result<Self> {

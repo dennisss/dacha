@@ -7,13 +7,30 @@ import "pkg/net/ptp/proto/service.proto";
 import "pkg/media/camera/proto/property.proto";
 import "pkg/vision/mocap/proto/matching.proto";
 import "pkg/vision/mocap/proto/wand.proto";
+import "pkg/vision/mocap/proto/rigid_body.proto";
+import "pkg/vision/proto/params.proto";
+import "pkg/vision/mocap/proto/checkerboard.proto";
+import "pkg/vision/mocap/proto/wanding.proto";
+import "pkg/vision/mocap/proto/simulation.proto";
 
 service MocapManager {
+    // Gets the general state of the system.
+    //
+    // This changes at a low frequency and contains camera/system health
+    // data and the current system configuration.
     rpc Status (MocapManagerStatusRequest) returns (MocapManagerStatus);
 
-    // This reads a syncronized set of blobs from all cameras.
+    // This reads the stream of syncronized sets of blobs from all cameras.
+    //
+    // So each 'ReadBlobsResponse' proto will be all the results from one timestamp
+    // across all syncronized cameras.
     rpc ReadBlobs (ReadBlobsRequest) returns (stream ReadBlobsResponse);
 
+    // This reads the stream of 3d points reconstructed from the 2d blobs.
+    // This will also include derived 3d data like rigid body state.
+    //
+    // Note that for a given timestamp, this data will be available shortly after
+    // the raw blobs data returned by 'ReadBlobs'.
     rpc ReadTrackedPoints (ReadTrackedPointsRequest) returns (stream ReadTrackedPointsResponse);
 
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
@@ -37,6 +54,14 @@ message MocapManagerConfig {
     BlobMatchingConfig matching = 6;
 
     WandPatternFinderConfig wand = 7;
+
+    CheckerboardCalibrationConfig checkerboard = 8;
+
+    WandingCalibrationConfig wanding = 9;
+
+    RigidBodyTrackerConfig rigid_body_tracker = 10; 
+
+    uint64 revision = 11;
 }
 
 
@@ -55,15 +80,46 @@ message MocapManagerStatusRequest {
 }
 
 message MocapManagerStatus {
+    MocapManagerConfig config = 5;
+
+    // List of all cameras that the manager has observed and can connect to.
     repeated MocapManagerCameraStatus cameras = 1;
 
+    // Groups of one or more cameras.
+    // 
+    // Each camera belongs to exactly one group and every camera in a group
+    // shares the same camera control configuration (e.g. same exposure
+    // setting).
     repeated MocapCameraGroup groups = 2;
-
-    // If present, then we will currnetly
-    MocapCalibrationStatus calibration = 3;
 
     // TODO: Eventually support differnt configs for different camera subsets.
     
+    // Overall 'mode' of the system that determines how everything is operating.
+    ManagerModeProto mode = 4;
+
+    SingleCameraConfigOverride single_camera_override = 6;
+
+    reserved 3;
+}
+
+message ManagerModeProto {
+    oneof mode {
+        bool off = 1;
+
+        bool running = 2;
+
+        // In this mode, a single camera is active and being calibrated using a checkerboard.
+        //
+        // For making this easier, the controls for all other cameras are locked and
+        // changes to camera controls just effect the one camera being calibrated. 
+        CheckerboardCalibrationState checkerboard_calibration = 3;
+
+        WandingCalibrationState wanding_calibration = 4;
+
+        // recording
+
+        // playback
+    }
 }
 
 message MocapCameraGroup {
@@ -74,6 +130,12 @@ message MocapCameraGroup {
     MocapCameraSensor sensor = 2;
 
     media.camera.Property camera_controls = 3;
+}
+
+message SingleCameraConfigOverride {
+    fixed64 camera_id = 1;
+
+    MocapCameraConfigureRequest config = 2;
 }
 
 message MocapManagerCameraStatus {
@@ -92,12 +154,14 @@ message MocapManagerCameraStatus {
 
     double last_sync_age = 6;
 
-    vision.CameraExtrinsicsProto extrinsics = 7;
-
     // TODO: Metrics and health. Last heartbeat age 
+
+    reserved 7, 8;
 }
 
 message ReadTrackedPointsRequest {
+    // Max number of responses to return per second.
+    // (leave unset for uncapped speed)
     uint32 max_rate = 1;
 }
 
@@ -105,6 +169,8 @@ message ReadTrackedPointsResponse {
     uint64 frame_timestamp = 1;
 
     repeated TrackedPointProto points = 2;
+
+    repeated RigidBodyProto rigid_bodies = 3;
 }
 
 
@@ -113,34 +179,69 @@ message MocapManagerCameraMetrics {
 
 }
 
-message MocapCalibrationStatus {
-
-
-}
-
 message ExecuteRequest {
     oneof command {
-        MocapCameraConfigureRequest configure_cameras = 1;
+        ConfigureCamerasCommand configure_cameras = 1;
 
-        // 
-        bool start_calibration = 2;
+        // Makes a specific camera the active camera.
+        // - The value of this field is the camera id
+        // - This mainly makes it light up a different color.
+        // - Selecting a camera deselects all other cameras.
+        // - Id 0 will deselect all cameras.
+        fixed64 select_camera = 2;
 
-        bool stop_calibration = 3;
+        StartCheckerboardCalibrationCommand start_checkerboard_calibration = 3;
 
-        fixed64 select_camera = 4;
+        CancelCheckerboardCalibrationCommand cancel_checkerboard_calibration = 4;
+
+        ProcessCheckerboardCalibrationCommand process_checkerboard_calibration = 5;
+
+        ApplyCheckerboardCalibrationCommand apply_checkerboard_calibration = 6;
+
+        bool capture_checkerboard_frame = 7;
+
+        StartWandingCalibrationCommand start_wanding_calibration = 8;
+
+        CancelWandingCalibrationCommand cancel_wanding_calibration = 9;
+
+        ProcessWandingCalibrationCommand process_wanding_calibration = 10;
+
+        ApplyWandingCalibrationCommand apply_wanding_calibration = 11;
+
+        // Create a new rigid body or update and existing one with the given id.
+        RigidBodyDefinition configure_rigid_body = 12;
+
+        uint64 delete_rigid_body = 13;
+
+        SimulationAnimationConfig configure_simulation = 14;
+
+        SetOriginCommand set_origin = 15;
     }
 }
-
 
 message ExecuteResponse {
 
 }
 
+message ConfigureCamerasCommand {
+    fixed64 camera_id = 1;
 
+    fixed64 group_id = 2;
+
+    MocapCameraConfigureRequest config = 3;
+}
+
+message SetOriginCommand {
+
+}
+
+
+// TODO: Get rid of this.
 message MocapTrackingLog {
     repeated MocapTrackingState entries = 1;
 }
 
+// TODO: Get rid of this.
 message MocapTrackingState {
     // TODO: This doesn't really change so better to move somewhere else?
     repeated MocapTrackedCamera cameras = 1;
@@ -150,6 +251,7 @@ message MocapTrackingState {
     repeated MocapTrackedLink links = 3;
 }
 
+// TODO: Get rid of this.
 message MocapTrackedCamera {
     fixed64 id = 1;
 
@@ -159,7 +261,7 @@ message MocapTrackedCamera {
 }
 
 
-
+// TODO: Get rid of this.
 message MocapTrackedLink {
     fixed64 point1_id = 1;
     fixed64 point2_id = 2;

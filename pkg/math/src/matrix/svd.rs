@@ -60,6 +60,10 @@ where
             .copy_from(&eig_left.values.block_with_shape(0, 0, n, n));
 
         for i in 0..n {
+            if s[(i, i)] < T::zero() {
+                s[(i, i)] = T::zero();
+            }
+
             s[(i, i)] = s[(i, i)].sqrt();
         }
 
@@ -69,6 +73,11 @@ where
         // eig_right.
         let mut thin_right = &at * &eig_left.vectors;
         for i in 0..n {
+            if s[(i, i)].approx_zero() {
+                s[(i, i)] = T::zero();
+                continue;
+            }
+
             thin_right.col_mut(i).cwise_div_assign(s[(i, i)]);
 
             if (thin_right.col(i) - eig_right.vectors.col(i)).norm()

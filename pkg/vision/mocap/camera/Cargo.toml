@@ -36,6 +36,6 @@ protobuf_builtins = { path = "../../../../third_party/protobuf_builtins" }
 v4l2 = { path = "../../../media/v4l2" }
 mocap_proto = { path = "../proto" }
 electronics = { path = "../../../peripherals/electronics" }
-scpi = { path = "../../../peripherals/scpi" }
 vision = { path = "../../" }
 flasher_swd = { path = "../../../peripherals/flasher/swd" }
+mocap_camera_core = { path = "./core" }

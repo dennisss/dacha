@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package mocap;
+
+import "pkg/math/proto/matrix.proto";
+
+message RigidBodyTrackerConfig {
+    RigidBodyConfig body_config = 1;
+
+    // All the rigid bodies that we will search for in the point cloud.
+    repeated RigidBodyDefinition bodies = 10;
+}
+
+message RigidBodyConfig {
+    // This is the minimum number of points required to initially match a
+    // rigid body.
+    //
+    // 'initially' means that the rigid body either doesn't have a position
+    // in the previous frame or has moved substantially since the last frame
+    // so point-wise tracking has broken.
+    //
+    // Must be at least 3.
+    uint32 min_initial_match_points = 1;
+
+    // Minimum number of points with the same id that need to still be present
+    // to continue matching a rigid body that was matched in the previous frame. 
+    //
+    // Must be at least 3.
+    uint32 min_rematch_points = 2;
+
+    // Shortest length of edge that will be used for matching.
+    // (does not impact the edge lengths allowed in rigid bodies)
+    //  
+    // Increasing this should reduce noise as matching to very short edges
+    // has a lot of rotational uncertainty but will increase the size of the
+    // smallest standalone rigid body chunk that we can match.
+    double min_matching_edge_length = 3;
+
+    // Longest length of edge that will be used for matching.
+    // (does not impact the edge lengths allowed in rigid bodies)
+    //
+    // Decreasing this speeds up matching but requires that all rigid
+    // bodies have many point triangles with edge lengths shorter than
+    // this. 
+    double max_matching_edge_length = 4;
+
+    // Maximum L2 distance between the best fitting fit of each point
+    // in a rigid body to the original points defined in the RigidBodyDefinition.
+    //
+    // Increasing this will improve match rate by allowing more noise in the
+    // measurements to pass through and will allow the rigid body to slightly
+    // deform over time but will make false matches more likely if the point
+    // cloud is very dense. 
+    double max_error = 5;
+}
+
+message RigidBodyDefinition {
+    // User defined non-zero unique id for this rigid body.
+    //
+    // One id corresponds to a single instance (so if you have the same point
+    // pattern across multiple objects, they all need unique ids / definitions).
+    uint64 id = 1;
+    
+    // [x,y,z] points in the rigid body pattern.
+    // These are all relative to the position of the rigid body at [0,0,0] 
+    repeated math.VectorProto points = 2;
+
+    // TODO: Eventually support per-body configs.
+    // RigidBodyConfig config = 3;
+}
+
+message RigidBodyProto {
+    // Id of the rigid body which corresponds to one of the
+    // RigidBodyDefinition protos in the config.
+    uint64 id = 1;
+    
+    // If true, we were able to estimate the pose in the current frame.
+    // - This means that all the other fields in this message will have
+    //   reasonable values.
+    // - Note that it is possible that 0 to all points are currently
+    //   occluded if the markers were recently visible and are temporarily
+    //   unavailable (and we are predicting the position).
+    bool found = 2;
+
+    // Translation of the rigid body (x,y,z vector).
+    //
+    // This is calculated such that:
+    // 'found_point = rotation * RigidBodyDefinition::points[i] + translation'
+    math.VectorProto translation = 3;
+
+    // Rotation of the rigid body (3d axis-angle vector).
+    math.VectorProto rotation = 4;
+
+    // If found, this will be the same length as RigidBodyDefinition::points
+    // with each entry being the id of the TrackedPoint that we found
+    // corresponding to 'points[i]'.
+    //
+    // Technically id 0 is used if the point is unknown though with the current
+    // implementation, if the rigid body was found, all ids will always be
+    // present (occluded points are filled in with ghost points that aren't
+    // observed by any cameras).
+    repeated uint64 point_ids = 5;
+}

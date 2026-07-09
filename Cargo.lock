@@ -3193,6 +3193,7 @@ dependencies = [
  "math",
  "media_camera",
  "media_camera_proto",
+ "mocap_camera_core",
  "mocap_proto",
  "parsing",
  "peripherals",
@@ -3205,11 +3206,20 @@ dependencies = [
  "rpc",
  "rpc_util",
  "rpi",
- "scpi",
  "sys",
  "v4l2",
  "vision",
  "web",
+]
+
+[[package]]
+name = "mocap_camera_core"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "mocap_proto",
+ "protobuf",
+ "vision",
 ]
 
 [[package]]
@@ -3229,23 +3239,17 @@ dependencies = [
  "macros",
  "math",
  "math_proto_util",
- "mocap_camera",
  "mocap_proto",
  "mocap_simulation",
  "parsing",
  "perf",
- "peripherals",
- "peripherals_devices",
- "peripherals_service",
  "protobuf",
- "protobuf_builtins",
  "protobuf_json",
  "ptp",
  "ptp_proto",
  "rpc",
  "rpc_util",
  "sstable",
- "sys",
  "vision",
  "web",
 ]
@@ -3271,8 +3275,8 @@ version = "0.1.0"
 dependencies = [
  "base_args",
  "cluster_client",
- "cluster_proto",
  "common",
+ "crypto",
  "executor",
  "executor_multitask",
  "file",
@@ -3280,16 +3284,14 @@ dependencies = [
  "image",
  "macros",
  "math",
- "mocap_camera",
+ "mocap_camera_core",
  "mocap_proto",
  "parsing",
- "perf",
  "protobuf",
  "protobuf_json",
  "rpc",
  "sys",
  "vision",
- "web",
 ]
 
 [[package]]
@@ -3308,7 +3310,7 @@ dependencies = [
  "image",
  "macros",
  "math",
- "mocap_camera",
+ "mocap_camera_core",
  "mocap_manager",
  "mocap_proto",
  "mocap_simulation",

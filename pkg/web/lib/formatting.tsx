@@ -4,6 +4,27 @@ export function round_digits(num: number, digits: number): number {
     return Math.round(num * scale) / scale;
 }
 
+export function round_nested_digits(data, digits) {
+    if (typeof data === 'number') {
+        return round_digits(data, digits);
+    }
+
+    if (data === null || typeof data !== 'object') {
+        return data;
+    }
+
+    if (Array.isArray(data)) {
+        return data.map((item) => round_nested_digits(item, digits));
+    }
+
+    return Object.fromEntries(
+        Object.entries(data).map(([key, value]) => [
+            key,
+            round_nested_digits(value, digits)
+        ])
+    );
+}
+
 export function format_bytes_size(value: number): string {
     const MULTIPLIER = 1024;
     const UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];

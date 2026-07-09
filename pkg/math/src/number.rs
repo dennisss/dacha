@@ -147,6 +147,8 @@ pub trait Float: From<i8> + From<i16> + From<f32> + CastTo + Round +
     core::ops::Sub<Output = Self>
 {
     fn sqrt(self) -> Self;
+
+    fn is_nan(self) -> bool;
 }
 
 macro_rules! impl_float_type {
@@ -154,6 +156,10 @@ macro_rules! impl_float_type {
         impl Float for $name {
             fn sqrt(self) -> Self {
                 <$name>::sqrt(self)
+            }
+
+            fn is_nan(self) -> bool {
+                <$name>::is_nan(self)
             }
         }
 

@@ -4,6 +4,10 @@ import { Router } from "./router";
 export interface NavbarProps {
     title: string,
     links?: NavbarLinkOptions[]
+    togglerClick?: any;
+    togglerActive?: boolean;
+    fullWidth?: boolean;
+    dark?: boolean;
 }
 
 export interface NavbarLinkOptions {
@@ -34,22 +38,31 @@ export class NavbarBase extends React.Component<NavbarProps> {
         }));
 
         return (
-            <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
-                <div className="container">
-                    <a className="navbar-brand" href="/" onClick={(e) => {
-                        e.preventDefault();
-                        Router.global().goto('/');
-                    }}>
+            <nav className={"navbar navbar-expand-lg navbar-dark" + (this.props.dark ? '' : ' bg-dark')} style={{ backgroundColor: (this.props.dark ? '#000' : null) }}>
+                <div className={this.props.fullWidth ? "container-fluid" : "container"}>
+                    <a className="navbar-brand" href="/"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            Router.global().goto('/');
+                        }}
+                        style={{ paddingLeft: (this.props.fullWidth ? 10 : null) }}
+                    >
                         {this.props.title}
                     </a>
-                    <button className="navbar-toggler" type="button">
-                        <span className="navbar-toggler-icon"></span>
-                    </button>
                     <div className="collapse navbar-collapse" id="navbarNav">
                         <ul className="navbar-nav">
                             {links}
                         </ul>
                     </div>
+                    {this.props.togglerClick ? (
+                        // NOTE: We don't use this for the standard purpose and we are abusing it as an additional UI control.
+                        <button className="navbar-toggler" type="button"
+                            onClick={this.props.togglerClick}
+                            style={{ display: "block", backgroundColor: (this.props.togglerActive ? '#000' : null) }}
+                        >
+                            <span className="navbar-toggler-icon"></span>
+                        </button>
+                    ) : null}
                 </div>
             </nav>
         );

@@ -10,11 +10,7 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use common::hash::FastHasherBuilder;
 use executor::bundle::TaskResultBundle;
-use executor::FileHandle;
 use file::LocalPathBuf;
-use macros::executor_main;
-use peripherals::serial::{SerialPort, SerialOptions};
-use mocap_camera::frame_processor::*;
 use math::array::Array;
 use image::Colorspace;
 use file::{project_path, LocalPath};
@@ -23,68 +19,157 @@ use sstable::record_log::RecordReader;
 use protobuf::{StaticMessage, Message};
 use protobuf_json::MessageJsonSerialize;
 use math::matrix::axis_angle::*;
-use math::matrix::{vec2f, vec3f, Vector2f, Matrix3f, Vector3f, Matrix4f};
+use math::matrix::{vec2d, vec3d, Vector2d, Matrix3d, Vector3d, Matrix4d};
 use vision::{CameraIntrinsicsModel, CameraExtrinsics, BundleAdjustmentSolver};
 use cluster_client::id::{entity_id_from_string, entity_id_to_string};
 
 use crate::wand::*;
 use crate::matching::CameraParameters;
 use crate::proto_utils::*;
+use crate::config::*;
 
 
 /*
 TODO: Eventually do full spatial dedupping instead of just looking at the previous matched frame.
+
+TODO: Need to support calibration using a subset of cameras if we need to disable some (or just all that have data).
+
 */
 
 
-const CAMERAS_HEIGHT: f32 = 2.0;  // meters
+pub struct WandingCalibrationSolver {
+    config: MocapManagerConfig,
+    camera_intrinsics: HashMap<u64, CameraIntrinsicsModel, FastHasherBuilder>,
+    
+    stats: WandingCalibrationStats,
 
+    /// Data after deduplication.
+    frames: Vec<FrameData>,
 
-pub struct MocapCameraExtrinsicsCalibrator<'a> {
-    config: &'a MocapManagerConfig,
-    cameras_intrinsics: HashMap<u64, CameraIntrinsicsModel, FastHasherBuilder>,
-    initial_system_state: &'a MocapManagerStatus,
-    num_cameras: usize,
+    // TODO: Only need to preserve the extrinsic parameters in this.
+    last_match_per_camera: HashMap<u64, BlobPatternMatch, FastHasherBuilder>,
+
+    initial_system_state: Option<MocapManagerStatus>,
 }
 
-impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
+#[derive(Clone)]
+pub struct WandingCalibrationSolution {
+    pub error: f64,
+    pub params: Vec<CameraParameters>
+}
 
-    pub fn calibrate(
-        config: &'a MocapManagerConfig,
-        entries: &'a [MocapLogEntry]
-    ) -> Result<HashMap<u64, CameraExtrinsics, FastHasherBuilder>> {
 
-        let mut cameras_intrinsics = HashMap::<u64, CameraIntrinsicsModel, FastHasherBuilder>::default();
+impl WandingCalibrationSolver {
 
-        for per_cam in config.per_camera() {
-            let camera_id = entity_id_from_string(per_cam.camera_id_str()).unwrap();
-            cameras_intrinsics.insert(camera_id, intrinsics_from_proto(per_cam.intrinsics()));
+    /// Initializes a calibrator with configs and initial intrinsics pulled from the given config.
+    pub fn new(
+        config: MocapManagerConfig,
+        camera_intrinsics: HashMap<u64, CameraIntrinsicsModel, FastHasherBuilder>,
+    ) -> Self {
+        Self {
+            config,
+            camera_intrinsics,
+            frames: vec![],
+            last_match_per_camera: Default::default(),
+            initial_system_state: None,
+            stats: WandingCalibrationStats::default(),
+        }
+    }
+
+    pub fn set_initial_status(&mut self, status: MocapManagerStatus) {
+        self.initial_system_state = Some(status);
+    }
+
+    pub fn stats(&self) -> WandingCalibrationStats {
+        self.stats.clone()
+    }
+
+    /// TODO: If doing this offline, the wand finding is parallelizable across
+    /// all the frames.
+    pub fn add_frame(&mut self, entry: &MocapLogEntry) -> Result<()> {
+        *self.stats.raw_num_frames_mut() += 1;
+
+        // At least two cameras need to be involved for correlating relative
+        // positions between cameras.
+        if entry.blobs().cameras().len() < 2 {
+            return Ok(());
         }
 
+        let mut cameras_data = HashMap::default();
 
-        let initial_system_state = {
-            let first_entry = &entries[0];
-            if !first_entry.has_system_state() {
-                return Err(err_msg("Expected first entry to have system_state"));
+        let mut found_wand = false;
+
+        for cam in entry.blobs().cameras() {
+            let intrinsics = self.camera_intrinsics.get(&cam.camera_id())
+                .ok_or_else(|| format_err!(
+                    "Missing intrinsics for camera: {}",
+                    entity_id_to_string(cam.camera_id()).unwrap()
+                ))?;
+
+            let m = match BlobPatternFinder::find_t_wand(self.config.wand(), intrinsics, cam.results()) {
+                Some(v) => v,
+                None => continue
+            };
+
+            if m.error > self.config.wanding().max_wand_frame_error() {
+                continue;
             }
 
-            first_entry.system_state()
-        };
+            if !found_wand {
+                found_wand = true;
+                *self.stats.num_valid_frames_mut() += 1;
+            }
 
-        let num_cameras = initial_system_state.cameras().len();
+            // TODO: If there are multiple frames nearby, pick the one with the lowest reprojection error.
+            if let Some(last_match) = self.last_match_per_camera.get(&cam.camera_id()) {
+                if !pattern_positions_distinct(&m, last_match) {
+                    return Ok(());
+                }
+            }
 
-        let inst = Self {
-            config,
-            cameras_intrinsics,
-            num_cameras,
-            initial_system_state,
-        };
+            let mut points_2d = vec![];
+            let mut points_3d = vec![];
+            for p in &m.points {
+                points_3d.push(p.reference_point.clone());
 
-        let mut data = inst.find_wands(entries)?;
+                let blob = &cam.results().blobs()[p.blob_index];
+                points_2d.push(vec2d(blob.x() as f64, blob.y() as f64));
+            }
 
-        let mut data = inst.select_frame_subset(&mut data)?;
+            cameras_data.insert(cam.camera_id(), FrameCameraData {
+                points_2d,
+                points_3d,
+                pattern: m
+            });
+        }
 
-        println!("Num cams: {}", num_cameras);
+        if cameras_data.len() < 2 {
+            return Ok(());
+        }
+
+        // Update last position per camera for future dedupping.
+        for (cam_id, data) in &cameras_data {
+            self.last_match_per_camera.insert(*cam_id, data.pattern.clone());
+        }
+
+        self.frames.push(FrameData {
+            cameras: cameras_data
+        });
+
+        *self.stats.num_deduped_frames_mut() += 1;
+
+        Ok(())
+    }
+
+    pub fn solve(&mut self) -> Result<WandingCalibrationSolution> {
+
+        let mut data = vec![];
+        core::mem::swap(&mut data, &mut self.frames);
+
+        println!("Subsetting wands...");
+        let mut data = self.select_frame_subset(&mut data)?;
+
+        // println!("Num cams: {}", num_cameras);
 
         println!("Remaining entries: {}", data.len());
 
@@ -92,98 +177,15 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
             return Err(err_msg("No data with good enough matches"));
         }
 
+
         // Initialize rough camera extrinsics guesses.
-        let mut camera_initial_extrinsics = inst.extract_initial_intrinsics(&mut data)?;
+        let mut camera_initial_extrinsics = self.extract_initial_extrinsics(&mut data)?;
 
-        let mut camera_extrinsics = inst.optimize_extrinsics(&data, &camera_initial_extrinsics)?;
+        let mut solution = self.optimize(&data, &camera_initial_extrinsics)?;
 
-        inst.align_extrinsics(&mut camera_extrinsics)?;
+        self.align_extrinsics(&mut solution.params)?;
 
-        Ok(camera_extrinsics)
-    }
-
-    // 
-    fn find_wands(&self, entries: &[MocapLogEntry]) -> Result<Vec<FrameData>> {
-        // TODO: Only need to preserve the extrinsic parameters in this.
-        let mut last_match_per_camera = HashMap::<u64, BlobPatternMatch, FastHasherBuilder>::default();
-
-        let mut data: Vec<FrameData> = vec![];
-
-        for (i, entry) in entries.iter().enumerate() {
-            if i % 1000 == 0 {
-                println!("- {} / {}", i, entries.len());
-            }
-
-            // At least two cameras need to be involved for correlating relative
-            // positions between cameras.
-            if entry.blobs().cameras().len() < 2 {
-                continue;
-            }
-
-            let mut cameras_data = HashMap::default();
-
-            let mut deduped = false;
-
-            for cam in entry.blobs().cameras() {
-                let intrinsics = self.cameras_intrinsics.get(&cam.camera_id())
-                    .ok_or_else(|| format_err!(
-                        "Missing intrinsics for camera: {}",
-                        entity_id_to_string(cam.camera_id()).unwrap()
-                    ))?;
-
-                let m = match BlobPatternFinder::find_t_wand(self.config.wand(), intrinsics, cam.results()) {
-                    Some(v) => v,
-                    None => continue
-                };
-
-                if m.total_reprojection_error > 2.0 {
-                    continue;
-                }
-
-
-                // TODO: If there are multiple frames nearby, pick the one with the lowest reprojection error.
-                if let Some(last_match) = last_match_per_camera.get(&cam.camera_id()) {
-                    if !pattern_positions_distinct(&m, last_match) {
-                        deduped = true;
-                        break;
-                    }
-                }
-
-                let mut points_2d = vec![];
-                let mut points_3d = vec![];
-                for p in &m.points {
-                    points_3d.push(p.reference_point.clone());
-
-                    let blob = &cam.results().blobs()[p.blob_index];
-                    points_2d.push(vec2d(blob.x() as f64, blob.y() as f64));
-                }
-
-                cameras_data.insert(cam.camera_id(), FrameCameraData {
-                    points_2d,
-                    points_3d,
-                    pattern: m
-                });
-            }
-
-            if deduped {
-                continue;
-            }
-
-            if cameras_data.len() < 2 {
-                continue;
-            }
-
-            // Update last position per camera for future debupping.
-            for (cam_id, data) in &cameras_data {
-                last_match_per_camera.insert(*cam_id, data.pattern.clone());
-            }
-
-            data.push(FrameData {
-                cameras: cameras_data
-            });
-        }
-
-        Ok(data)
+        Ok(solution)
     }
 
     fn select_frame_subset(&self, frames: &mut Vec<FrameData>) -> Result<Vec<FrameData>> {
@@ -209,6 +211,8 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
         let mut camera_counts = HashMap::<u64, usize, FastHasherBuilder>::default();
 
         let mut camera_coincidences = HashMap::<(u64, u64), usize, FastHasherBuilder>::default();
+
+        // TODO: Need some randomization for similarly weighted pairs.
 
         while frames.len() > 0 && out.len() < TARGET_SUBSET_SIZE {
 
@@ -274,7 +278,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
         Ok(out)
     }
 
-    fn extract_initial_intrinsics(
+    fn extract_initial_extrinsics(
         &self, data: &mut Vec<FrameData>
     ) -> Result<HashMap<u64, CameraExtrinsics, FastHasherBuilder>> {
         let mut camera_initial_extrinsics = HashMap::<u64, CameraExtrinsics, FastHasherBuilder>::default();
@@ -343,7 +347,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
                     }.to_mat4x4();
 
                     // TODO: Cache the inverse.
-                    let rel_mat = cam_local_mat * known_cam_local_mat.inverse();
+                    let rel_mat = cam_local_mat * known_cam_local_mat.inverse().unwrap();
 
                     let global_mat = rel_mat * &known_cam_global_mat;
 
@@ -359,14 +363,19 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
 
         println!("Num initial extrinsics: {}", camera_initial_extrinsics.len());
 
-        for cam in self.initial_system_state.cameras() {
+        let initial_system_state = self.initial_system_state.as_ref()
+            .ok_or_else(|| err_msg("Missing initial system status"))?;
+
+        for cam in initial_system_state.cameras() {
             if !camera_initial_extrinsics.contains_key(&cam.id()) {
                 eprintln!("Missing camera: {} ({:?})", cam.id(), entity_id_to_string(cam.id()));
             }
         }
 
+        let num_cameras = initial_system_state.cameras().len();
+
         // TODO: Also verify no unknown cameras are present in the data but not in the initial set.
-        if camera_initial_extrinsics.len() != self.num_cameras {
+        if camera_initial_extrinsics.len() != num_cameras {
             return Err(err_msg("Not all cameras are linked by some frame chain."));
         }
 
@@ -374,11 +383,11 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
     }
 
 
-    fn optimize_extrinsics(
+    fn optimize(
         &self,
         data: &[FrameData],
         camera_initial_extrinsics: &HashMap<u64, CameraExtrinsics, FastHasherBuilder>,
-    ) -> Result<HashMap<u64, CameraExtrinsics, FastHasherBuilder>> {
+    ) -> Result<WandingCalibrationSolution> {
         // TODO: Use something like a Huber/Cauchy loss to reduce sensitivity to outliers if we
         // messed up want detection.
         let mut solver = BundleAdjustmentSolver::new();
@@ -390,7 +399,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
             let fixed = camera_id_to_index.is_empty();
 
             let idx = solver.add_camera(
-                self.cameras_intrinsics.get(id).unwrap(),
+                self.camera_intrinsics.get(id).unwrap(),
                 &extrinsics.rotation,
                 &extrinsics.translation,
                 fixed,
@@ -422,7 +431,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
 
                 // println!("BBB: {:?}", estimated_transform);
                 
-                let object_transform = initial_camera_transform.inverse() * estimated_transform;
+                let object_transform = initial_camera_transform.inverse().unwrap() * estimated_transform;
 
                 // println!("OBJ TRANSFORM: {:?}", object_transform);
 
@@ -458,30 +467,43 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
 
         println!("Solved!");
 
-
-        let mut camera_extrinsics = HashMap::<u64, CameraExtrinsics, FastHasherBuilder>::default();
+        let mut out = WandingCalibrationSolution {
+            error: solution.error(),
+            params: vec![]
+        };
 
         for (cam_id, cam_idx) in camera_id_to_index {
-            let extrinsics = solution.camera_extrinsics(cam_idx);
-            camera_extrinsics.insert(cam_id, extrinsics);
+            out.params.push(CameraParameters {
+                id: cam_id,
+                intrinsics: solution.camera_intrinsics(cam_idx),
+                extrinsics: solution.camera_extrinsics(cam_idx)
+            });
         }
 
-        Ok(camera_extrinsics)
+        // TODO: Ideally compute RMS over all data and not just the selected subset.
+        println!("RMS Error: {}", out.error);
+
+        Ok(out)
     }
 
     // MAkes 
     fn align_extrinsics(
         &self,
-        camera_extrinsics: &mut HashMap<u64, CameraExtrinsics, FastHasherBuilder>
+        camera_params: &mut [CameraParameters]
     ) -> Result<()> {
         let mut up_vector = Vector3d::zero();
         let mut num_cams = 0;
 
-        for cam in self.initial_system_state.cameras() {
+        let initial_system_state = self.initial_system_state.as_ref()
+            .ok_or_else(|| err_msg("Missing initial system status"))?;
+
+        for cam in initial_system_state.cameras() {
             let cam_id = cam.id();
 
-            let extrinsics = camera_extrinsics.get(&cam_id)
-                .ok_or_else(|| err_msg("Camera not declared in system_state"))?;
+            let extrinsics = &camera_params.iter().find(|p| p.id == cam_id)
+                .ok_or_else(|| err_msg("Camera not declared in system_state"))?
+                .extrinsics;
+
             let r = from_axis_angle(&extrinsics.rotation);
 
             if !cam.camera_status().accelerometer().has_value() {
@@ -514,8 +536,8 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
             let mut z_max = -1000000.0f64;
             let mut z_min = 1000000.0f64;
 
-            for extrinsics in camera_extrinsics.values() {
-                let pos = &r_align * extrinsics.position();
+            for p in camera_params.iter() {
+                let pos = &r_align * p.extrinsics.position();
                 z_max = z_max.max(pos.z());
                 z_min = z_min.min(pos.z());
                 cam_center_pos += pos;
@@ -524,7 +546,7 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
 
             cam_center_pos /= (num_cams as f64);
 
-            let t_z = 2.1 - z_max;
+            let t_z = self.config.wanding().camera_height_guess() - z_max;
 
             vec3d(
                 -cam_center_pos.x(),
@@ -543,14 +565,72 @@ impl<'a> MocapCameraExtrinsicsCalibrator<'a> {
             out
         };
 
-        for extrinsics in camera_extrinsics.values_mut() {
+        for p in camera_params.iter_mut() {
 
             let (r, t) = extrinsics_from_mat4x4(&(
-                extrinsics.to_mat4x4() * &align_mat
+                p.extrinsics.to_mat4x4() * &align_mat
             ));
 
-            extrinsics.rotation = r;
-            extrinsics.translation = t;
+            p.extrinsics.rotation = r;
+            p.extrinsics.translation = t;
+        }
+
+        // TODO: Only do this if we have an accelerometer lock.
+
+        // Correcting the yaw (rotation around Z) such that the cameras align
+        // with orthogonal directions.
+        if camera_params.len() > 1 {
+            // Order the cameras based on their angle from the center.
+            let mut camera_order = vec![];
+            for p in camera_params.iter() {
+                let pos = p.extrinsics.position();
+                camera_order.push((pos.y().atan2(pos.x()), p.id));
+            }
+
+            // TODO: Make more resilient to cameras that are stacked vertically.
+            camera_order.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let mut dir_sum = vec2d(0., 0.);
+
+            for i in 0..camera_order.len() {
+                let j = (i + 1) % camera_order.len();
+                
+                let i_id = camera_order[i].1;
+                let j_id = camera_order[j].1;
+
+                let p_i = camera_params.iter().find(|p| p.id == i_id).unwrap();
+                let p_j = camera_params.iter().find(|p| p.id == j_id).unwrap();
+
+                let dir = p_i.extrinsics.position() - p_j.extrinsics.position();
+                let angle = dir.y().atan2(dir.x());
+
+                dir_sum[0] += (4. * angle).cos();
+                dir_sum[1] += (4. * angle).sin();
+            }
+
+            let yaw = dir_sum[1].atan2(dir_sum[0]) / 4.0;
+
+            {
+                let align_mat = {
+                    let mut out = Matrix4d::identity();
+                    // TODO: Use a helper for this.
+                    out[(0, 0)] = (-yaw).cos();
+                    out[(0, 1)] = -(-yaw).sin();
+                    out[(1, 0)] = (-yaw).sin();
+                    out[(1, 1)] = (-yaw).cos();
+                    out
+                };
+
+                for p in camera_params.iter_mut() {
+
+                    let (r, t) = extrinsics_from_mat4x4(&(
+                        p.extrinsics.to_mat4x4() * &align_mat
+                    ));
+
+                    p.extrinsics.rotation = r;
+                    p.extrinsics.translation = t;
+                }
+            }
         }
 
         Ok(())
@@ -578,7 +658,7 @@ fn pattern_positions_distinct(a: &BlobPatternMatch, b: &BlobPatternMatch) -> boo
     let b_r = from_axis_angle(&b.rotation);
 
     let dr = to_axis_angle(
-        &(a_r.inverse() * b_r)
+        &(a_r.inverse().unwrap() * b_r)
     );
 
     let angle = dr.norm().abs() * 180.0 / std::f64::consts::PI;

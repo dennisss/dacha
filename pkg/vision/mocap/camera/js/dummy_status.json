@@ -22,103 +22,12 @@
     "camera_controls": {
         "children": [
             {
-                "id": "9961473",
-                "spec": {
-                    "type": "GROUP",
-                    "name": "User Controls"
-                },
-                "children": [
-                    {
-                        "id": "9963796",
-                        "spec": {
-                            "type": "BOOL",
-                            "name": "Horizontal Flip"
-                        }
-                    },
-                    {
-                        "id": "9963797",
-                        "spec": {
-                            "type": "BOOL",
-                            "name": "Vertical Flip"
-                        }
-                    }
-                ]
-            },
-            {
-                "id": "10092545",
-                "spec": {
-                    "type": "GROUP",
-                    "name": "Camera Controls"
-                },
-                "children": [
-                    {
-                        "id": "10094882",
-                        "spec": {
-                            "type": "ENUM",
-                            "name": "Camera Orientation",
-                            "values": [
-                                {
-                                    "value_name": "Front",
-                                    "int32_value": 0
-                                },
-                                {
-                                    "value_name": "Back",
-                                    "int32_value": 1
-                                },
-                                {
-                                    "value_name": "External",
-                                    "int32_value": 2
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "id": "10094883",
-                        "spec": {
-                            "type": "INT32",
-                            "name": "Camera Sensor Rotation",
-                            "min_value": {
-                                "int32_value": 180
-                            },
-                            "max_value": {
-                                "int32_value": 180
-                            },
-                            "default_value": {
-                                "int32_value": 180
-                            },
-                            "step": {
-                                "int32_value": 1
-                            }
-                        }
-                    }
-                ]
-            },
-            {
                 "id": "10354689",
                 "spec": {
                     "type": "GROUP",
                     "name": "Image Source Controls"
                 },
                 "children": [
-                    {
-                        "id": "10356994",
-                        "spec": {
-                            "type": "INT32",
-                            "name": "Horizontal Blanking",
-                            "min_value": {
-                                "int32_value": -1308
-                            },
-                            "max_value": {
-                                "int32_value": -1308
-                            },
-                            "default_value": {
-                                "int32_value": -1308
-                            },
-                            "step": {
-                                "int32_value": 1
-                            }
-                        }
-                    },
                     {
                         "id": "10356995",
                         "spec": {
@@ -224,25 +133,6 @@
                 },
                 "children": [
                     {
-                        "id": "10422529",
-                        "spec": {
-                            "type": "ENUM",
-                            "name": "Link Frequency",
-                            "values": [
-                                {
-                                    "value_name": "360000000",
-                                    "int32_value": 0
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "id": "10422530",
-                        "spec": {
-                            "name": "Pixel Rate"
-                        }
-                    },
-                    {
                         "id": "10422531",
                         "spec": {
                             "type": "ENUM",
@@ -299,7 +189,7 @@
         ]
     },
     "config": {
-        "frame_rate": 24,
+        "frame_rate": 0,
         "exposure_micros": 250,
         "pixel_threshold": 1,
         "strobe_power": 0.2,
@@ -319,36 +209,6 @@
         ],
         "camera_controls": {
             "states": [
-                {
-                    "id": "9963796",
-                    "current_value": {
-                        "int32_value": 0
-                    }
-                },
-                {
-                    "id": "9963797",
-                    "current_value": {
-                        "int32_value": 0
-                    }
-                },
-                {
-                    "id": "10094882",
-                    "current_value": {
-                        "int32_value": 2
-                    }
-                },
-                {
-                    "id": "10094883",
-                    "current_value": {
-                        "int32_value": 180
-                    }
-                },
-                {
-                    "id": "10356994",
-                    "current_value": {
-                        "int32_value": 0
-                    }
-                },
                 {
                     "id": "10356995",
                     "current_value": {
@@ -377,12 +237,6 @@
                     "id": "10356999",
                     "current_value": {
                         "int32_value": 1023
-                    }
-                },
-                {
-                    "id": "10422529",
-                    "current_value": {
-                        "int32_value": 0
                     }
                 },
                 {

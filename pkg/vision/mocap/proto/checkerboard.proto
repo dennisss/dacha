@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package mocap;
+
+import "pkg/math/proto/matrix.proto";
+import "pkg/vision/proto/params.proto";
+
+message CheckerboardCalibrationConfig {
+    // Width of the corners grid in the checkerboard
+    // (intersection points of 2 black boxes)
+    uint32 grid_width = 1;
+
+    // Height of the corners grid.
+    uint32 grid_height = 2;
+
+    // Size of a square edge in meters.
+    double square_size = 3;
+}
+
+message CheckerboardCalibrationState {
+    fixed64 camera_id = 1;
+
+    uint64 run_id = 2;
+
+    // All the data that has been collected so far.
+    repeated CheckerboardFrame frames = 3;
+
+    CheckerboardCalibrationResult result = 4;
+}
+
+message CheckerboardFrame {
+    string image_path = 1;
+    repeated math.VectorProto points_2d = 2;
+}
+
+
+message CheckerboardCalibrationResult {
+    double error = 1;
+
+    vision.CameraIntrinsicsModelProto intrinsics = 2;
+}
+
+message StartCheckerboardCalibrationCommand {
+    fixed64 camera_id = 1;
+}
+
+message CancelCheckerboardCalibrationCommand {
+
+}
+
+message ProcessCheckerboardCalibrationCommand {
+
+}
+
+message ApplyCheckerboardCalibrationCommand {
+
+}

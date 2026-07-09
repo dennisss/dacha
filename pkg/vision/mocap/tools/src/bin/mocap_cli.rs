@@ -31,7 +31,7 @@ use protobuf::Message;
 use peripherals_service::device::PeripheralsDevice;
 use scpi::*;
 use image::Image;
-use mocap_camera::FrameProcessor;
+use mocap_camera_core::FrameProcessor;
 use vision::*;
 
 
@@ -869,7 +869,8 @@ impl DumpMatchesCommand {
 
         // println!("{:#?}", &entries[1]);
 
-        let mut matcher = BlobMatcher::new(config.matching(), &params);
+        let mut matcher = BlobMatcher::new(config.matching());
+        matcher.set_camera_parameters(&params);
 
         let num_cameras = params.len();
 

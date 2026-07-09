@@ -173,7 +173,7 @@ impl OpenGLCanvasPath {
         };
 
         self.data.insert(CachedPathData {
-            transform_inv: transform.inverse(),
+            transform_inv: transform.inverse().unwrap(),
             mesh: Self::recompute_mesh(&vertices, &path_starts, fill_rule, canvas),
         })
     }

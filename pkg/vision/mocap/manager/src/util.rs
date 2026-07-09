@@ -1,4 +1,5 @@
 /// Stores data indexed by (i, j) where i < j in a flat vec.
+#[derive(Default)]
 pub struct TupleVec<T> {
     num: usize,
     data: Vec<T>

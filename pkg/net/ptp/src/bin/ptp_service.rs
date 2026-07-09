@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
 
     let args = common::args::parse_args::<Args>()?;
 
-    let mut ptp_config = ptp::TimeSyncNode::default_config()?;
+    let mut ptp_config = ptp::TimeSyncNode::default_config();
 
     match args.mode {
         Mode::Leader => {

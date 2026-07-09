@@ -104,6 +104,15 @@ impl CameraIntrinsicsModel {
         out
     }
 
+    pub fn to_proto(&self) -> CameraIntrinsicsModelProto {
+        let mut out = CameraIntrinsicsModelProto::default();
+        out.focal_length_mut().extend_from_slice(self.focal_length.as_ref());
+        out.center_mut().extend_from_slice(self.center.as_ref());
+        out.set_k1(self.k1);
+        out.set_k2(self.k2);
+        out
+    }
+
     pub fn from_proto(proto: &CameraIntrinsicsModelProto) -> Self {
         // TODO: Bounds checks.
 

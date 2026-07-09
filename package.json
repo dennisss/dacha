@@ -12,26 +12,26 @@
 		"url": "https://github.com/dennisss"
 	},
 	"devDependencies": {
+		"@pixiv/three-vrm": "3.5.3",
 		"@types/mkdirp": "1.0.2",
 		"@types/node": "16.7.11",
 		"@types/react": "17.0.2",
 		"@types/react-dom": "17.0.2",
 		"@types/tmp": "^0.0.33",
-		"bootstrap": "5.1.0",
+		"bootstrap": "^5.3.8",
 		"css-loader": "^7.1.2",
 		"mini-css-extract-plugin": "^2.9.0",
 		"neon-cli": "^0.2.0",
 		"react": "17.0.2",
 		"react-dom": "17.0.2",
 		"style-loader": "^4.0.0",
+		"three": "0.184.0",
 		"tmp": "^0.0.33",
 		"ts-loader": "9.2.5",
 		"ts-node": "10.2.1",
 		"typescript": "4.4.2",
 		"webpack": "5.102.1",
-		"webpack-cli": "^6.0.1",
-		"three": "0.184.0",
-		"@pixiv/three-vrm": "3.5.3"
+		"webpack-cli": "^6.0.1"
 	},
 	"dependencies": {
 		"canvas": "^3.2.0",

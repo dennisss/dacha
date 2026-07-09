@@ -192,7 +192,7 @@ pub fn fill_triangle(
         1.0,
     ]);
 
-    let bary_inv = bary_mat.inverse();
+    let bary_inv = bary_mat.inverse().unwrap();
 
     let is_topleft_edge = |v1: &Vector2f, v2: &Vector2f| {
         let mut is = v2.y() > v1.y() || (v2.y() == v1.y() && v2.x() > v1.x());

@@ -75,6 +75,6 @@ impl FourierRegression {
 
 
 pub fn pinv(x: &MatrixXd) -> MatrixXd {
-    (x.transpose() * x).inverse() * x.transpose()
+    (x.transpose() * x).inverse().unwrap() * x.transpose()
     // x.transpose() * (x * x.transpose()).inverse()
 }

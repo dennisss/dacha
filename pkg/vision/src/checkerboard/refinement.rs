@@ -89,7 +89,7 @@ impl SubpixelCornerRefiner {
 
         // Weighted least squares.
         let poly_mat_inv = {
-            (poly_mat.transpose() * &weights * &poly_mat).inverse() * poly_mat.transpose() * weights
+            (poly_mat.transpose() * &weights * &poly_mat).inverse().unwrap() * poly_mat.transpose() * weights
             // pinv(&poly_mat)
         };
 
@@ -130,7 +130,7 @@ impl SubpixelCornerRefiner {
                 return None;
             }
 
-            let a_inv = a.inverse();
+            let a_inv = a.inverse().unwrap();
 
             let delta = a_inv * b;
 

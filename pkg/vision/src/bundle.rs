@@ -10,7 +10,10 @@ use crate::extrinsics::*;
 pub struct BundleAdjustmentSolver {
     solver: NonLinearSolver<'static>,
     cameras: Vec<Camera>,
-    objects: Vec<Object>
+    objects: Vec<Object>,
+
+    // These are just used for computing RMS error at the end.
+    object_points: Vec<ObjectPoint>
 }
 
 struct Camera {
@@ -24,6 +27,13 @@ struct Object {
     t_param: usize,
 }
 
+struct ObjectPoint {
+    camera_idx: usize,
+    object_idx: usize,
+    point_3d: Vector3d,
+    point_2d: Vector2d,
+}
+
 impl BundleAdjustmentSolver {
 
     pub fn new() -> Self {
@@ -32,7 +42,8 @@ impl BundleAdjustmentSolver {
         Self {
             solver,
             cameras: vec![],
-            objects: vec![]
+            objects: vec![],
+            object_points: vec![]
         }
     }
 
@@ -50,7 +61,6 @@ impl BundleAdjustmentSolver {
             &intrinsics.serialize(),
             LinearParameterBlock::default()
         );
-        // self.solver.freeze_parameter_block(i_param);
 
         let r_param = self.solver.add_parameter_block(&[
             initial_rotation[0], initial_rotation[1], initial_rotation[2],
@@ -72,6 +82,10 @@ impl BundleAdjustmentSolver {
         });
 
         idx
+    }
+
+    pub fn freeze_camera_intrinsics(&mut self, camera_idx: usize) {
+        self.solver.freeze_parameter_block(self.cameras[camera_idx].i_param);
     }
 
     pub fn add_object(
@@ -116,6 +130,13 @@ impl BundleAdjustmentSolver {
                 point_3d: point_3d.clone(),
             }
         );
+
+        self.object_points.push(ObjectPoint {
+            camera_idx,
+            object_idx,
+            point_3d: point_3d.clone(),
+            point_2d: point_2d.clone(),
+        });
     }
 
 
@@ -158,6 +179,30 @@ impl<'a> BundleAdjustmentSolution<'a> {
             translation: Vector3d::from_slice(self.solution.param_block(obj.t_param)),
         }
     }
+
+    /// Calculates the final RMS reprojection error.
+    pub fn error(&self) -> f64 {
+        let mut sum = 0.0;
+        let mut n = 0;
+
+        for pt in &self.solver.object_points {
+            let cam_int = self.camera_intrinsics(pt.camera_idx);
+            let cam_ext = self.camera_extrinsics(pt.camera_idx);
+            let obj_ext = self.object_extrinsics(pt.object_idx);
+
+            let expected = cam_int.project_point(
+                &cam_ext.transform(&obj_ext.transform(&pt.point_3d))
+            );
+            let actual = pt.point_2d.clone();
+
+            sum += (expected - actual).norm_squared();
+            n += 1;
+        }
+
+        let rms = (sum / (n as f64)).sqrt();
+        rms
+    }
+
 }
 
 

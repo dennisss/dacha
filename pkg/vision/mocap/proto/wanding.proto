@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package mocap;
+
+import "pkg/math/proto/matrix.proto";
+
+message WandingCalibrationConfig {
+    // Based on the initial camera intrinsics, this is the maximum error in pixels
+    // that we will allow individual detections of the wand in a single camera's
+    // frame.
+    //
+    // Under the assumption that we have a reasonable set of initial intrinsics
+    // for a camera, this is used to help filter out noisy points / partially
+    // occluded wands.
+    double max_wand_frame_error = 1;
+
+    double camera_height_guess = 2;
+}
+
+message WandingCalibrationState {
+    // If present, wanding has started and we are recording data.
+    // This field summarizes the current data collection progress.
+    WandingCalibrationStats stats = 1;
+
+    WandingCalibrationResult result = 2;
+}
+
+message WandingCalibrationStats {
+    // Total number of unique frame timestamps we have logged.
+    uint64 raw_num_frames = 1;
+
+    // Total number of unique frame timestamps we have with
+    // a wand detected in at least one camera.
+    uint64 num_valid_frames = 2;
+
+    // Total number of unique frame timestamps which can be
+    // used for optimization (after deduplicating valid frames
+    // with very similar positions).
+    uint64 num_deduped_frames = 3;
+}
+
+message WandingCalibrationResult {
+    // RMS reprojection error from the wanding optimizer.
+    double error = 1;
+
+    bool failed = 2;
+}
+
+message StartWandingCalibrationCommand {
+
+}
+
+message CancelWandingCalibrationCommand {
+
+}
+
+message ProcessWandingCalibrationCommand {
+
+}
+
+message ApplyWandingCalibrationCommand {
+
+}

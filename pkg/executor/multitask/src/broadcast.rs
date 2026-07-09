@@ -91,6 +91,10 @@ impl<T> BroadcastChannelSubscriber<T> {
     pub async fn recv(&mut self) -> Result<T> {
         Ok(self.receiver.recv().await?)
     }
+
+    pub async fn wait(&mut self) {
+        self.receiver.wait().await
+    }
 }
 
 impl<T> Drop for BroadcastChannelSubscriber<T> {

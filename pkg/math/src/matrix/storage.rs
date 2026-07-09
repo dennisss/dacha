@@ -320,7 +320,7 @@ impl<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Targe
     type Output = T;
     fn index(&self, idx: usize) -> &T {
         let i = idx / self.cols().value();
-        let j = idx % self.rows().value();
+        let j = idx % self.cols().value();
         &self[(i, j)]
     }
 }
@@ -336,7 +336,7 @@ impl<
 {
     fn index_mut(&mut self, idx: usize) -> &mut T {
         let i = idx / self.cols().value();
-        let j = idx % self.rows().value();
+        let j = idx % self.cols().value();
         &mut self[(i, j)]
     }
 }

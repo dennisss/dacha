@@ -535,28 +535,28 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
 
         match cmd.network_config_type.unwrap_or(NetworkConfigType::Networkd) {
             NetworkConfigType::Ifupdown => {
-        let interfaces_file = root_dir.path().join("etc/network/interfaces");
+                let interfaces_file = root_dir.path().join("etc/network/interfaces");
 
-        if !file::exists(&interfaces_file).await? {
-            return Err(err_msg("/etc/network/interfaces doesn't exist in the image. Most likely it was built without the 'ifupdown' package."));
-        }
+                if !file::exists(&interfaces_file).await? {
+                    return Err(err_msg("/etc/network/interfaces doesn't exist in the image. Most likely it was built without the 'ifupdown' package."));
+                }
 
-        file::append(
-            interfaces_file,
-            format!(
-                "
-                allow-hotplug eth0
-                iface eth0 inet static
-                address {ip_addr}
-                netmask {netmask}
-                gateway {gateway}
-                ",
-                ip_addr = ip_addr.to_string(),
-                netmask = netmask.to_string(),
-                gateway = gateway.to_string()
-            ),
-        )
-        .await?;
+                file::append(
+                    interfaces_file,
+                    format!(
+                        "
+                        allow-hotplug eth0
+                        iface eth0 inet static
+                        address {ip_addr}
+                        netmask {netmask}
+                        gateway {gateway}
+                        ",
+                        ip_addr = ip_addr.to_string(),
+                        netmask = netmask.to_string(),
+                        gateway = gateway.to_string()
+                    ),
+                )
+                .await?;
             }
             NetworkConfigType::Networkd => {
                 // Note that this is the same path as used for the default DHCP config in our custom image so

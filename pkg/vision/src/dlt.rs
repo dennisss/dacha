@@ -32,7 +32,7 @@ impl DLTSolver {
     }
 
     #[inline(never)]
-    pub fn solve(&self) -> Vector3d {
+    pub fn solve(&self) -> Option<Vector3d> {
         assert_eq!(2 * self.i, self.mat.rows());
 
         // Fast 2 view case.
@@ -40,11 +40,15 @@ impl DLTSolver {
             let m = self.mat.block::<U4, U3>(0, 0).to_owned();
             let b = self.mat.block::<U4, U1>(0, 3);
 
-            let x = (m.transpose() * &m).inverse();
+            let x = match (m.transpose() * &m).inverse() {
+                Some(v) => v,
+                None => return None
+            };
+
             let x = x * m.transpose();
 
             let x = x * b;
-            return x * -1.0;
+            return Some(x * -1.0);
         }
 
 
@@ -54,12 +58,15 @@ impl DLTSolver {
         let p = svd.v.col(svd.v.cols() - 1);
         
         let w = p[3];
+        if w.abs() < 1e-6 {
+            return None;
+        }
 
-        vec3d(
+        Some(vec3d(
             p[0] / w,
             p[1] / w,
             p[2] / w
-        )
+        ))
     }
 }
 

@@ -644,6 +644,16 @@ impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
     pub fn is_normalized(&self) -> bool {
         (T::one() - self.norm_squared()).approx_zero()
     }
+
+    pub fn is_nan(&self) -> bool {
+        for i in 0..self.len() {
+            if self[i].is_nan() {
+                return true
+            }
+        }
+
+        false
+    }
 }
 
 impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
@@ -726,13 +736,17 @@ impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: Storage
 
     // TODO: Must optionally return if it doesn't have an inverse
     #[inline(never)]
-    pub fn inverse(&self) -> MatrixNew<T, R, C>
+    pub fn inverse(&self) -> Option<MatrixNew<T, R, C>>
     where
         C: MulDims<U2>,
         MatrixNewStorage: NewStorage<T, R, C>,
         MatrixNewStorage: NewStorage<T, R, ProdDims<C, U2>>,
     {
         assert_eq!(self.rows(), self.cols());
+
+        if self.rows() == 3 && self.cols() == 3 {
+            return self.inverse_3x3();
+        }
 
         // Form matrix [ self, Identity ].
         let mut m =
@@ -745,14 +759,55 @@ impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: Storage
                 self.cols(),
             ));
 
-        m.gaussian_elimination();
+        if m.gaussian_elimination().approx_zero() {
+            return None;
+        }
 
         // Return right half of the matrix.
         // TODO: Support inverting in-place by copying back from the temp matrix
         // above.
         let mut inv = MatrixBase::new_with_shape(self.rows(), self.cols());
         inv.copy_from(&m.block_with_shape(0, self.cols(), self.rows(), self.cols()));
-        inv
+        
+        // TODO: Check determinan.
+        Some(inv)
+    }
+
+    fn inverse_3x3(&self) -> Option<MatrixNew<T, R, C>>
+    where
+        C: MulDims<U2>,
+        MatrixNewStorage: NewStorage<T, R, C>,
+        MatrixNewStorage: NewStorage<T, R, ProdDims<C, U2>>,
+    {
+        let m00 = self[(0, 0)]; let m01 = self[(0, 1)]; let m02 = self[(0, 2)];
+        let m10 = self[(1, 0)]; let m11 = self[(1, 1)]; let m12 = self[(1, 2)];
+        let m20 = self[(2, 0)]; let m21 = self[(2, 1)]; let m22 = self[(2, 2)];
+
+        let c00 = m11 * m22 - m12 * m21;
+        let c01 = m12 * m20 - m10 * m22; 
+        let c02 = m10 * m21 - m11 * m20;
+
+        let det = m00 * c00 + m01 * c01 + m02 * c02;
+        if det.approx_zero() {
+            return None;
+        }
+
+        let inv_det = T::one() / det;
+        let mut inv = MatrixBase::zero_with_shape(self.rows(), self.cols());
+
+        inv[(0, 0)] = c00 * inv_det;
+        inv[(0, 1)] = (m02 * m21 - m01 * m22) * inv_det;
+        inv[(0, 2)] = (m01 * m12 - m02 * m11) * inv_det;
+
+        inv[(1, 0)] = c01 * inv_det;
+        inv[(1, 1)] = (m00 * m22 - m02 * m20) * inv_det;
+        inv[(1, 2)] = (m02 * m10 - m00 * m12) * inv_det;
+
+        inv[(2, 0)] = c02 * inv_det;
+        inv[(2, 1)] = (m01 * m20 - m00 * m21) * inv_det;
+        inv[(2, 2)] = (m00 * m11 - m01 * m10) * inv_det;
+
+        Some(inv)
     }
 
     pub fn determinant(&self) -> T
@@ -765,8 +820,21 @@ impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: Storage
             return self.data[0].clone();
         } else if self.rows() == 2 {
             return self[(0, 0)] * self[(1, 1)] - self[(0, 1)] * self[(1, 0)];
+        } else if self.rows() == 3 {
+            let m0 = self[0];
+            let m1 = self[1];
+            let m2 = self[2];
+            let m3 = self[3];
+            let m4 = self[4];
+            let m5 = self[5];
+            let m6 = self[6];
+            let m7 = self[7];
+            let m8 = self[8];
+
+            m0 * (m4 * m8 - m5 * m7) 
+            - m1 * (m3 * m8 - m5 * m6) 
+            + m2 * (m3 * m7 - m4 * m6)
         }
-        // TODO: Add special 3x3 case
         else if self.is_triangular() {
             // The determinant of an upper or lower triangular matrix is the
             // product of the diagonal entries.
@@ -774,8 +842,7 @@ impl<T: ScalarElementType + ErrorEpsilon, R: Dimension, C: Dimension, D: Storage
         } else {
             // Reduce matrix to upper triangular.
             let mut m = self.to_owned();
-            m.gaussian_elimination();
-            m.diagonal_product()
+            m.gaussian_elimination_with_options(false)
         }
     }
 }
@@ -888,9 +955,21 @@ impl<
     //       /* Increase pivot row and column */
     //       h := h+1
     //       k := k+1
-    pub fn gaussian_elimination(&mut self) {
+    pub fn gaussian_elimination(&mut self) -> T {
+        self.gaussian_elimination_with_options(true)
+    }
+
+    /// 
+    /// This will return the determinant of the left aligned square of the matrix if
+    /// the matrix isn't square.
+    ///
+    /// See https://en.wikipedia.org/wiki/Gaussian_elimination#Computing_determinants
+    /// for the rules around calculating the determinant. Note that the final matrix
+    /// will have ones on the diagonal so its determinant is 1.
+    pub fn gaussian_elimination_with_options(&mut self, reduced: bool) -> T {
         let mut h = 0; // Current pivot row.
         let mut k = 0; // Current pivot column.
+        let mut det = T::one();
 
         while h < self.rows() && k < self.cols() {
             // Find row index with highest value in the current column.
@@ -898,19 +977,31 @@ impl<
 
             if self[(i_max, k)].approx_zero() {
                 // This column has no pivot.
-                k += 1
+                k += 1;
+
+                if k < self.rows() {
+                    det = T::zero();
+                }
             } else {
-                self.swap_rows(h, i_max);
+                if h != i_max {
+                    self.swap_rows(h, i_max);
+                    det = -det;
+                }
+
+                let pivot = self[(h, k)];
+                det *= pivot;
 
                 // Normalize the pivot row.
-                let s = T::one() / self[(h, k)];
+                let s = T::one() / pivot;
                 for j in h..self.cols() {
                     self[(h, j)] *= s;
                 }
 
-                // Use (h+1)..self.rows() if you don't need the upper right to be
-                // reduced
-                for i in 0..self.rows() {
+                // If reduced is true, zero out the whole column (RREF). 
+                // If false, only zero out below the pivot to make it upper triangular (REF).
+                let start_row = if reduced { 0 } else { h + 1 };
+
+                for i in start_row..self.rows() {
                     if i == h {
                         continue;
                     }
@@ -926,6 +1017,8 @@ impl<
                 k += 1;
             }
         }
+    
+        det
     }
 }
 
@@ -943,7 +1036,7 @@ mod tests {
     fn inverse() {
         let m = Matrix3d::from_slice(&[0.0, 0.2, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.1]);
 
-        let mi = m.inverse();
+        let mi = m.inverse().unwrap();
 
         println!("{:?}", mi);
 

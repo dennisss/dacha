@@ -25,5 +25,5 @@ pub use self::helpers::*;
 
 #[cfg(feature = "alloc")]
 pub fn pinv(x: &MatrixXd) -> MatrixXd {
-    x.transpose() * (x * x.transpose()).inverse()
+    x.transpose() * (x * x.transpose()).inverse().unwrap()
 }

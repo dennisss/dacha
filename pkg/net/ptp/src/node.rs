@@ -53,6 +53,14 @@ const DEFAULT_CONFIG_PROTO: &'static str = r#"
 
 "#;
 
+lazy_static! {
+    pub static ref DEFAULT_CONFIG: TimeSyncConfig = {
+        let mut ptp_config = TimeSyncConfig::default();
+        protobuf::text::parse_text_proto(DEFAULT_CONFIG_PROTO, &mut ptp_config).unwrap();
+        ptp_config
+    };
+}
+
 
 pub struct TimeSyncNode {
     resources: ServiceResourceGroup,
@@ -132,10 +140,8 @@ struct LeaderPeer {
 }
 
 impl TimeSyncNode {
-    pub fn default_config() -> Result<TimeSyncConfig> {
-        let mut ptp_config = TimeSyncConfig::default();
-        protobuf::text::parse_text_proto(DEFAULT_CONFIG_PROTO, &mut ptp_config)?;
-        Ok(ptp_config)
+    pub fn default_config() -> TimeSyncConfig {
+        DEFAULT_CONFIG.clone()
     }
 
     pub async fn create(

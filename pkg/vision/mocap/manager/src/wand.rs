@@ -172,7 +172,7 @@ impl<'a> BlobPatternFinder<'a> {
                         let mut full_points_list = points_idxs.clone();
                         full_points_list.push(l);
 
-                        if let Some(m) = self.verify_t_wand_pnp(&full_points_list) {
+                        if let Some(m) = self.verify_t_wand_pnp(full_points_list) {
                             return Some(m);
                         }
                     }
@@ -184,8 +184,35 @@ impl<'a> BlobPatternFinder<'a> {
         None
     }
 
+    fn verify_t_wand_pnp(&self, mut blob_idxs: Vec<usize>) -> Option<BlobPatternMatch> {
+
+        let mut matches = vec![];
+
+        if let Some(m) = self.verify_t_wand_pnp_once(&blob_idxs) {
+            matches.push(m);
+        }
+
+        blob_idxs.swap(0, 2);
+        if let Some(m) = self.verify_t_wand_pnp_once(&blob_idxs) {
+            matches.push(m);
+        }
+
+        matches.sort_by(|a, b| {
+            a.error.partial_cmp(&b.error).unwrap()
+        });
+
+        if matches.len() == 0 {
+            return None;
+        }
+
+        Some(matches[0].clone())
+
+
+        
+    }
+
     // TODO: Test that this works with upside down wands.
-    fn verify_t_wand_pnp(&self, blob_idxs: &[usize]) -> Option<BlobPatternMatch> {
+    fn verify_t_wand_pnp_once(&self, blob_idxs: &[usize]) -> Option<BlobPatternMatch> {
         // TODO: Try with the arm sides flipped if the reprojection error is too high.
 
         // TODO: We can probably use the dot radius to determine if Z offsets are correct.
@@ -197,11 +224,17 @@ impl<'a> BlobPatternFinder<'a> {
             points_2d.push(vec2d(blob.x() as f64, blob.y() as f64));
         }
 
+        let mut points_2d_norm = vec![];
+        for pt in points_2d.iter() {
+            points_2d_norm.push(self.intrinsics.unproject_point(&pt));            
+        }
+
+        let c = &self.config;
         let points_3d = vec![
-            vec3d(-0.25, 0., 0.),
+            vec3d(-c.left_arm_length(), 0., 0.),
             vec3d(0.,  0., 0.),
-            vec3d(0.125, 0., 0.),
-            vec3d(0., -0.2, 0.),
+            vec3d(c.right_arm_length(), 0., 0.),
+            vec3d(0., -c.bottom_length(), 0.),
         ];
 
         // Guess the rotation of the wand assuming the camera on top of the wand and
@@ -209,13 +242,13 @@ impl<'a> BlobPatternFinder<'a> {
         let initial_rotation_mat = {
 
             let x_axis = {
-                let v = (&points_2d[2] - &points_2d[0]).normalized();
+                let v = (&points_2d_norm[2] - &points_2d_norm[0]).normalized();
                 vec3d(v.x(), v.y(), 0.0)
             };
 
             let y_axis = {
-                let line = Line2::from_points(&points_2d[0], &points_2d[2]);
-                let mut v = (line.perp() * line.distance_to_point(&points_2d[3])).normalized();
+                let line = Line2::from_points(&points_2d_norm[0], &points_2d_norm[2]);
+                let mut v = (line.perp() * line.distance_to_point(&points_2d_norm[3])).normalized();
                 v *= -1.0;
                 vec3d(v.x(), v.y(), 0.0)
             };
@@ -240,6 +273,7 @@ impl<'a> BlobPatternFinder<'a> {
         let mut solver = PnPSolver::new(&self.intrinsics, &points_2d, &points_3d);
         // solver.set_min_error(self.config.max_reprojection_error());
 
+        // NOTE: Homography based estimation doesn't work well if 3 of the 4 points are colinear
         solver.set_initial_extrinsics(&CameraExtrinsics {
             rotation: initial_rotation.clone(),
             translation: initial_translation.clone()
@@ -329,6 +363,8 @@ mod tests {
         let initial_rotation = vec3d(0., 0., 0.);
         let initial_translation = vec3d(0., 0., 2.);
 
+        // TODO:
+        /*
         // TODO: Initialize a smart rotation
         // TODO: Try with both positive and negative z (though I can guess the side based on where the bottom arm is)
         let solver = PnPSolver::new();
@@ -336,5 +372,6 @@ mod tests {
 
         println!("{:?}", solution);
 
+        */
     }
 }

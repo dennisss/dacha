@@ -12,8 +12,8 @@ use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceReso
 use mocap_proto::mocap::*;
 use media_camera::v4l2::capture_buffer::CaptureDMABuffer;
 use ptp::MonotonicClockTimeSyncer;
+use mocap_camera_core::*;
 
-use crate::frame_processor::*;
 use crate::inst::CameraSensorData;
 use crate::timestamp::*;
 

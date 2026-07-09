@@ -221,6 +221,7 @@ members = [
 	"pkg/things/inventory",
 	"pkg/things/inventory/proto",
 	"pkg/vision/mocap/camera",
+	"pkg/vision/mocap/camera/core",
 	"pkg/vision/mocap/manager",
 	"pkg/vision/mocap/tools",
 	"pkg/vision/mocap/simulation",
