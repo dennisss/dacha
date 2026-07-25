@@ -1,9 +1,9 @@
 use mocap_proto::mocap::*;
-use math::matrix::{Vector3d, vec2d, vec3d, Matrix3d};
+use math::matrix::{Vector3d, Vector2d, vec2d, vec3d, Matrix3d};
 use math::geometry::line::Line2;
 use vision::*;
 use math::matrix::axis_angle::to_axis_angle;
-
+use math::matrix::cwise_binary_ops::CwiseMulAssign;
 
 /// Match found between a set of 2d blobs in a frame and a pre-defined
 /// 3d-pattern of multiple points that were projected to form the blobs.
@@ -26,6 +26,7 @@ pub struct BlobPatternFinder<'a> {
     config: &'a WandPatternFinderConfig,
     intrinsics: &'a CameraIntrinsicsModel,
     results: &'a BlobResults,
+    undistorted_points: Vec<Vector2d>,
 }
 
 
@@ -41,35 +42,51 @@ impl<'a> BlobPatternFinder<'a> {
         intrinsics: &'a CameraIntrinsicsModel,
         results: &'a BlobResults
     ) -> Option<BlobPatternMatch> {
-        let finder = Self { config, intrinsics, results };
+        let mut undistorted_points = vec![];
+
+        for i in 0..results.blobs().len() {
+            let blob_i = &results.blobs()[i];
+            let pt = vec2d(blob_i.x() as f64, blob_i.y() as f64);
+
+            let mut norm = intrinsics.unproject_point(&pt);
+            norm.cwise_mul_assign(&intrinsics.focal_length);
+            norm += &intrinsics.center;
+            undistorted_points.push(norm);
+        }
+
+        let finder = Self { config, intrinsics, results, undistorted_points };
         finder.find_t_wand_inner()
     }
 
 
     fn distance(&self, i: usize, j: usize) -> f64 {
+        (&self.undistorted_points[i] - &self.undistorted_points[j]).norm()
+        
+        /*
         let a = &self.results.blobs()[i];
         let b = &self.results.blobs()[j];
 
         (squared((a.x() - b.x()) as f64) + squared((a.y() - b.y()) as f64)).sqrt()
+        */
     }
 
-    /// Attempts to 
+    /// Attempts to find a T-wand pattern in 2d and then calls into verify_t_wand_pnp for
+    /// verification.
     fn find_t_wand_inner(&self) -> Option<BlobPatternMatch> {
+
+        // TODO: Distance thresholds should probably factor in blob radius.
 
         for i in 0..self.results.blobs().len() {
             for j in (i + 1)..self.results.blobs().len() {
                 let blob_i = &self.results.blobs()[i];
                 let blob_j = &self.results.blobs()[j];
 
-                {
-                    let dist = self.distance(i, j);
-                    if dist > self.config.max_blob_center_pixel_distance() {
-                        continue;
-                    }
+                if !self.blob_distance_ok(self.distance(i, j)) {
+                    continue;
                 }
 
-                let max_radius = blob_i.radius().max(blob_j.radius()) as f64;
-                let min_radius = blob_i.radius().min(blob_j.radius()) as f64;
+                let max_radius = blob_i.radius_a().max(blob_j.radius_a()) as f64;
+                let min_radius = blob_i.radius_a().min(blob_j.radius_a()) as f64;
 
                 let radius_ratio = max_radius / min_radius;
 
@@ -77,35 +94,33 @@ impl<'a> BlobPatternFinder<'a> {
                     continue;
                 }
 
-                // TODO: Also use this for the distance calculaiton.
-                let center_i = vec2d(blob_i.x() as f64, blob_i.y() as f64);
-                let center_j = vec2d(blob_j.x() as f64, blob_j.y() as f64);
+                let center_i = &self.undistorted_points[i];
+                let center_j = &self.undistorted_points[j];
 
-                let line = Line2::from_points(&center_i, &center_j);
+                let line = Line2::from_points(center_i, center_j);
 
                 // TODO: Check if the 'j + 1' usage here is correct.
                 for k in (j + 1)..self.results.blobs().len() {
 
                     let blob_k = &self.results.blobs()[k];
-                    let center_k = vec2d(blob_k.x() as f64, blob_k.y() as f64);
+                    let center_k = &self.undistorted_points[k];
 
-                    let new_max_radius = max_radius.max(blob_k.radius() as f64);
-                    let new_min_radius = min_radius.min(blob_k.radius() as f64);
+                    let new_max_radius = max_radius.max(blob_k.radius_a() as f64);
+                    let new_min_radius = min_radius.min(blob_k.radius_a() as f64);
                     let new_radius_ratio = new_max_radius / new_min_radius;
 
                     if new_radius_ratio > self.config.max_radius_ratio() {
                         continue;
                     }
 
-                    if self.distance(i, k) > self.config.max_blob_center_pixel_distance() ||
-                        self.distance(j, k) > self.config.max_blob_center_pixel_distance() {
+                    if !self.blob_distance_ok(self.distance(i, k)) ||
+                       !self.blob_distance_ok(self.distance(j, k)) {
                         continue;
                     }
 
                     let line_distance = line.distance_to_point(&center_k).abs();
 
-                    // TODO: Improve this threshold
-                    if line_distance > max_radius * 0.5 {
+                    if line_distance > self.config.collinear_pixel_threshold() {
                         continue;
                     }
 
@@ -139,32 +154,40 @@ impl<'a> BlobPatternFinder<'a> {
                     let arms_distance = self.distance(points_idxs[0], points_idxs[2]);
                     let expected_bottom_distance = arms_distance * (self.config.bottom_length() / (self.config.left_arm_length() + self.config.right_arm_length()));
 
-
                     for l in 0..self.results.blobs().len() {
                         if l == i || l == j || l == k {
                             continue;
                         }
 
                         let blob_l = &self.results.blobs()[l];
-                        let center_l = vec2d(blob_l.x() as f64, blob_l.y() as f64);
+                        let center_l = &self.undistorted_points[l]; // vec2d(blob_l.x() as f64, blob_l.y() as f64);
 
 
-                        let new_max_radius2 = new_max_radius.max(blob_l.radius() as f64);
-                        let new_min_radius2 = new_min_radius.min(blob_l.radius() as f64);
+                        let new_max_radius2 = new_max_radius.max(blob_l.radius_a() as f64);
+                        let new_min_radius2 = new_min_radius.min(blob_l.radius_a() as f64);
                         let new_radius_ratio2 = new_max_radius2 / new_min_radius2;
 
                         if new_radius_ratio2 > self.config.max_radius_ratio() {
                             continue;
                         }
 
+                        // Make sure the bottom arm marker isn't close to being collinear with
+                        // the other points
                         let bottom_line_distance = line.distance_to_point(&center_l);
-                        if normalize_ratio(bottom_line_distance / expected_bottom_distance) > self.config.max_projection_stretch() {
+                        if bottom_line_distance < self.config.min_bottom_line_pixel_distance() {
                             continue;
                         }
 
-                        if self.distance(i, l) > self.config.max_blob_center_pixel_distance() ||
-                            self.distance(j, l) > self.config.max_blob_center_pixel_distance() ||
-                            self.distance(k, l) > self.config.max_blob_center_pixel_distance() {
+                        // Checking distance from the middle point in the 3-point line to the
+                        // bottom arm marker.
+                        let bottom_arm_distance = self.distance(points_idxs[1], l);
+                        if normalize_ratio(bottom_arm_distance / expected_bottom_distance) > self.config.max_projection_stretch() {
+                            continue;
+                        }
+
+                        if !self.blob_distance_ok(self.distance(i, l)) ||
+                           !self.blob_distance_ok(self.distance(j, l)) ||
+                           !self.blob_distance_ok(self.distance(k, l)) {
                             continue;
                         }
 
@@ -184,6 +207,12 @@ impl<'a> BlobPatternFinder<'a> {
         None
     }
 
+    fn blob_distance_ok(&self, v: f64) -> bool {
+        v >= self.config.min_blob_center_pixel_distance() && v <= self.config.max_blob_center_pixel_distance()
+    }
+
+    /// Tests the given blob set against the wand pattern using PNP error.
+    /// This will test go standard and upside down.
     fn verify_t_wand_pnp(&self, mut blob_idxs: Vec<usize>) -> Option<BlobPatternMatch> {
 
         let mut matches = vec![];
@@ -206,12 +235,8 @@ impl<'a> BlobPatternFinder<'a> {
         }
 
         Some(matches[0].clone())
-
-
-        
     }
 
-    // TODO: Test that this works with upside down wands.
     fn verify_t_wand_pnp_once(&self, blob_idxs: &[usize]) -> Option<BlobPatternMatch> {
         // TODO: Try with the arm sides flipped if the reprojection error is too high.
 

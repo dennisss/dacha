@@ -66,7 +66,7 @@ pub struct RigidBodyTracker {
 }
 
 struct RigidBodyData {
-    id: u64,
+    id: u32,
 
     /// Points of the rigid body with zero rotation/translation.  
     points: Vec<Vector3d>,
@@ -110,7 +110,7 @@ struct RigidBodyCandidate {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RigidBody {
-    pub id: u64,
+    pub id: u32,
     pub point_ids: Vec<Option<u64>>,
     pub transform: Option<(Matrix3d, Vector3d)>,
 }

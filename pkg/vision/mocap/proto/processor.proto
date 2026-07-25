@@ -25,9 +25,20 @@ message BlobResults {
 message Blob {
     float x = 1;
     float y = 2;
-    float radius = 3;
+    float radius_a = 3;
+    float radius_b = 4;
+    float angle = 5;
 }
 
+// Settings for how to filter out uninteresting blobs that are unlikely to
+// be circular markers.
+//
+// These checks run on each camera and some of these checks may be redundant since
+// the cheaper ones are calculated earlier before we run all the checks.
+//
+// NOTE: These run on the raw image and are not aware of the intrinsics of the lens.
+// The manager may run additional filters once the coarse set of blobs is pulled
+// from all cameras.
 message BlobFilterConfig {
     // Minimum number of pixels in a blob for it to be accepted.
     uint32 min_area = 1;
@@ -41,11 +52,24 @@ message BlobFilterConfig {
 
     // Number >=1 representing the maximum pixel aspect ratio allowed.
     // This is just calculated based on the axis aligned bounding box width/height.
-    float max_aspect_ratio = 4;
+    float max_bbox_aspect_ratio = 4;
+
+    // TODO: Check how much of the bbox is filled (to block squares the ideal ratio should be around 'pi/4')
 
     // Maximum error percentage (e.g. 0.1 is 10%) of the area of the blob compared to
-    // a perfect ellipsis fitting inside the same bounding box.
-    float circular_area_error = 5;
+    // a perfect ellipsis with the same estimated radius.
+    float elliptical_area_error = 5;
+
+    // Maximum ratio between the longest radius of the blob ellipse and the shorter radius. 
+    float max_radius_ratio = 6;
+
+    // Maximum distance between the estimated centroid of the blob and the
+    // center point of the bounding box.
+    //
+    // The threshold is the maximum value of the following:
+    // '.abs' is an absolute limit in pixel units.
+    // '.rel' is a percentage relative to the smaller radius of the ellipsis.
+    RelativeAbsoluteThreshold max_centroid_bbox_skew = 7;
 
     // TODO: Configure processing deadline.
 
@@ -54,4 +78,9 @@ message BlobFilterConfig {
     // TODO: Image mask (If a scene has other known light sources in frame, don't count them)
 
     // TODO: Top-k for limiting how many blobs can be returned.
+}
+
+message RelativeAbsoluteThreshold {
+    float rel = 1;
+    float abs = 2;
 }

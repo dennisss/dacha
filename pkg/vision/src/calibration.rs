@@ -64,6 +64,7 @@ impl CameraInstrinsicsSolver {
         */
 
         let mut bundle = BundleAdjustmentSolver::new();
+        bundle.enable_logging();
 
         let cam_i = bundle.add_camera(
             &self.initial_intrinsics,

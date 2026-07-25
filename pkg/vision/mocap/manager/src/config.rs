@@ -77,6 +77,27 @@ impl ManagerConfigContainer {
         self.revision
     }
 
+    pub fn camera_enabled(&self, camera_id: u64) -> bool {
+        let config = match self.merged.per_camera().iter().find(|c| c.camera_id() == camera_id) {
+            Some(v) => v,
+            None => return false
+        };
+
+        config.enabled()
+    }
+
+    pub fn num_enabled_cameras(&self) -> usize {
+        let mut n = 0;
+
+        for c in self.merged.per_camera() {
+            if c.enabled() {
+                n += 1;
+            }
+        }
+
+        n
+    }
+
     pub fn camera_intrinsics(&self) -> &HashMap<u64, CameraIntrinsicsModel, FastHasherBuilder> {
         &self.camera_intrinsics
     }
@@ -137,6 +158,9 @@ impl ManagerConfigContainer {
         }
         if diff.has_extrinsics() {
             base.set_extrinsics(diff.extrinsics().clone());
+        }
+        if diff.has_enabled() {
+            base.set_enabled(diff.enabled());
         }
     }
 }

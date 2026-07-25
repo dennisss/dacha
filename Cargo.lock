@@ -3217,6 +3217,8 @@ name = "mocap_camera_core"
 version = "0.1.0"
 dependencies = [
  "common",
+ "image",
+ "math",
  "mocap_proto",
  "protobuf",
  "vision",
@@ -3310,6 +3312,7 @@ dependencies = [
  "image",
  "macros",
  "math",
+ "math_proto_util",
  "mocap_camera_core",
  "mocap_manager",
  "mocap_proto",
@@ -5026,6 +5029,7 @@ name = "vision"
 version = "0.1.0"
 dependencies = [
  "common",
+ "crypto",
  "executor",
  "file",
  "image",

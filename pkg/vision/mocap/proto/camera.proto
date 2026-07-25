@@ -38,6 +38,35 @@ message MocapCameraConfigureRequest {
     repeated uint32 rgb_led_colors = 6;
 
     media.camera.PropertiesState camera_controls = 7;
+
+    MJPEGEncoderConfig mjpeg = 8;
+
+    // TODO: Move this to the manager config since it only applies to groups of cameras
+    // and is not read by the individual camera nodes.
+    bool leds_on = 9;
+}
+
+message MJPEGEncoderConfig {
+    // From 1 to 100
+    //
+    // Note that 90% quality has been observed to produce stripping artifacts for things like checkerboard
+    // patterns.
+    // - 100% compresses to is 0.2x the original size
+    // - 90% compressed to 0.1x the original size
+    uint32 quality = 1;
+
+    // Maximum number JPEGs to encode per second.
+    //
+    // TODO: Instead check all users that are requesting frames and
+    // use the same among those.
+    uint32 max_fps = 2;
+
+    // Supported values are [1, 2] right now to output 1x or 2x downsizing
+    // of the image before encoding.
+    uint32 downsampling = 3;
+
+    // If true, use the thresholded image after 
+    bool thresholded = 4;
 }
 
 message ConfigureResponse {

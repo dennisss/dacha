@@ -7,9 +7,9 @@ import { Card, CardBody } from "pkg/cnc/monitor/js/card";
 import { Button } from "pkg/web/lib/button";
 import { center_points } from "./utils";
 import { round_nested_digits } from "pkg/web/lib/formatting";
-import { Setting } from "./settings";
+import { Setting } from "pkg/web/lib/settings";
 import { PropertiesTable } from "pkg/cnc/monitor/js/properties_table";
-import { DARK_MODE } from "./dark";
+import { DARK_MODE } from "pkg/web/lib/dark";
 
 // TODO: Continously fetch the manager status across all pages.
 
@@ -277,9 +277,13 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
     }
 
     _render_menu() {
+        // TODO: Not enough if the points are already in another rigid body.
         let have_enough_points = this.state.selected_ids.length >= 4;
 
         let border_color = DARK_MODE.get() ? '#444' : '#ccc';
+
+        // TODO: If some points are selected, display info about them.
+        // (selected points table and distance if just two)
 
         return (
             <div style={{ width: '30%', top: 0, bottom: 0, right: 0, position: 'absolute', overflow: 'scroll', borderLeft: `1px solid ${border_color}` }} className="noscrollbar">

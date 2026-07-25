@@ -6,5 +6,7 @@ edition = "2024"
 [dependencies]
 common = { path = "../../../../common" }
 vision = { path = "../../../" }
+math = { path = "../../../../math" }
+image = { path = "../../../../image" }
 mocap_proto = { path = "../../proto" }
 protobuf = { path = "../../../../protobuf" }

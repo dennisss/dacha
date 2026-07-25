@@ -1,6 +1,6 @@
 import React from "react";
 import { NavbarBase, NavbarLinkOptions } from "pkg/web/lib/navbar";
-import { DARK_MODE } from "./dark";
+import { DARK_MODE } from "pkg/web/lib/dark";
 
 export const NAVBAR_HEIGHT = 56;
 

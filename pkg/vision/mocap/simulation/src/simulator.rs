@@ -15,8 +15,7 @@ use executor::sync::{SyncMutex, AsyncMutex};
 use executor::{lock, lock_async};
 use protobuf_json::*;
 use math::matrix::{vec3d, vec3f, Matrix4f, Vector3f, Vector3d};
-use mocap_camera_core::FrameProcessor;
-use image::format::jpeg::encoder::JPEGEncoder;
+use mocap_camera_core::*;
 use image::Image;
 use math::matrix::axis_angle::from_axis_angle;
 use crypto::random::*;
@@ -51,7 +50,7 @@ impl MocapSimulator {
     // TODO :Have this take as input a config container.
     pub async fn create(manager_config: &MocapManagerConfig) -> Result<Self> {
         let mut renderer_options = MocapFrameRendererOptions {
-            supersampling: 4, // 8^2 = 64 samples per pixel.
+            supersampling: 8, // 8^2 = 64 samples per pixel.
             cameras: vec![],
         };
 
@@ -136,7 +135,7 @@ impl MocapSimulator {
         shared: Arc<Shared>,
         renderer_options: MocapFrameRendererOptions,
     ) -> Result<()> {
-        let mut renderer = MocapFrameRenderer::create(renderer_options)?;
+        let mut renderer = MocapFrameRenderer::create(renderer_options.clone())?;
 
         // TODO: Don't hardcode the size.
         let mut frame_processor = FrameProcessor::new(1920, 1200);
@@ -146,11 +145,7 @@ impl MocapSimulator {
             renderer,
             frame_processor,
             last_rendered: None,
-            jpeg_encoder: {
-                let mut encoder = JPEGEncoder::new(100);
-                encoder.use_default_tables();
-                encoder
-            }
+            jpeg_encoder: MJPEGEncoder::new()
         };
 
         // executor::sleep(Duration::from_millis(10)).await?;
@@ -187,6 +182,7 @@ impl MocapSimulator {
                     CameraSettings {
                         blob_threshold: status.config().pixel_threshold() as u8,
                         blob_filter: status.config().blob_filter().clone(),
+                        mjpeg_config: status.config().mjpeg().clone(),
                         running: status.config().frame_rate() != 0
                     }
                 })?);
@@ -318,8 +314,8 @@ impl MocapSimulator {
             rng.seed_u32((config.current_frame() / num_dup_frames) as u32);
 
             let translation = vec3d(
-                rng.between::<f64>(-1.0, 1.0),
-                rng.between::<f64>(-1.0, 1.0),
+                rng.between::<f64>(-2.0, 2.0),
+                rng.between::<f64>(-2.0, 2.0),
                 rng.between::<f64>(0.0, 1.0),
             );
 
@@ -424,7 +420,7 @@ struct RendererThread {
     renderer: MocapFrameRenderer,
     frame_processor: FrameProcessor,
     last_rendered: Option<RenderedResult>,
-    jpeg_encoder: JPEGEncoder,
+    jpeg_encoder: MJPEGEncoder,
 }
 
 #[derive(PartialEq, Clone)]
@@ -437,6 +433,7 @@ struct RenderRequest {
 struct CameraSettings {
     blob_filter: BlobFilterConfig,
     blob_threshold: u8,
+    mjpeg_config: MJPEGEncoderConfig,
     running: bool,
 }
 
@@ -498,11 +495,13 @@ impl RendererThread {
         if let Some((_, existing)) = res.encoded_frames.iter().find(|(id, _)| *id == camera_id) {
             return Ok(Some(existing.clone()));
         }
-        
+
         let (_, image) = match res.frames.iter().find(|(id, _)| *id == camera_id) {
             Some(v) => v,
             None => return Ok(None)
         };
+
+        let settings = res.request.camera_settings.get(&camera_id).unwrap();
 
         let image_ref = image::ImageRef {
             width: image.width(),
@@ -511,8 +510,7 @@ impl RendererThread {
             data: &image.array.data
         };
 
-        let mut data = vec![];
-        self.jpeg_encoder.encode_raw(&image_ref, &mut data)?;
+        let data = self.jpeg_encoder.encode(image_ref, settings.blob_threshold, &settings.mjpeg_config)?;
 
         let data: Bytes = data.into();
         res.encoded_frames.push((camera_id, data.clone()));

@@ -135,11 +135,21 @@ impl MocapCamera {
 
         let v4l2_controls = cam.camera_subdev.list_controls().await?;
 
+        let reserved_controls = vec![
+            v4l2::V4L2_CID_VBLANK,
+            v4l2::V4L2_CID_EXPOSURE,
+            v4l2::V4L2_CID_HFLIP,
+            v4l2::V4L2_CID_VFLIP,
+            v4l2::V4L2_CID_DIGITAL_GAIN,
+            v4l2::V4L2_CID_TEST_PATTERN,
+            v4l2::V4L2_CID_TEST_PATTERN_RED,
+            v4l2::V4L2_CID_TEST_PATTERN_GREENR,
+            v4l2::V4L2_CID_TEST_PATTERN_BLUE,
+            v4l2::V4L2_CID_TEST_PATTERN_GREENB,
+        ];
+
         let user_controls = v4l2_controls.iter().cloned().filter(|control| {
-            control.id() != v4l2::V4L2_CID_VBLANK &&
-            control.id() != v4l2::V4L2_CID_EXPOSURE &&
-            control.id() != v4l2::V4L2_CID_HFLIP &&
-            control.id() != v4l2::V4L2_CID_VFLIP &&
+            !reserved_controls.contains(&control.id()) &&
             !control.flags().contains(v4l2::ControlFlags::READ_ONLY)
         }).collect::<Vec<_>>();
 
@@ -155,6 +165,7 @@ impl MocapCamera {
         initial_config.set_pixel_threshold(255u32);
 
         initial_config.set_blob_filter(FrameProcessor::default_blob_filter_config()?);
+        initial_config.set_mjpeg(MJPEGEncoder::default_config()?);
         controls_to_proto(
             &user_controls, &cam.camera_subdev, "",
             &mut user_controls_prop, initial_config.camera_controls_mut()

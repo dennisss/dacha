@@ -52,6 +52,7 @@ pub type Matrix<T, R, C> = MatrixBase<T, R, C, MatrixDynamicStorage<T, R, C>>;
 pub type Matrix2<T> = MatrixStatic<T, U2, U2>;
 pub type Matrix2i = MatrixStatic<isize, U2, U2>;
 pub type Matrix2f = MatrixStatic<f32, U2, U2>;
+pub type Matrix2d = MatrixStatic<f64, U2, U2>;
 pub type Matrix3f = MatrixStatic<f32, U3, U3>;
 pub type Matrix3d = MatrixStatic<f64, U3, U3>;
 pub type Matrix4f = MatrixStatic<f32, U4, U4>;

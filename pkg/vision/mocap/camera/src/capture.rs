@@ -545,15 +545,7 @@ impl MocapCameraCaptureProcessor {
         shared: Arc<Shared>,
         receiver: channel::Receiver<DequeuedBuffer>
     ) -> Result<()> {
-
-        use image::format::jpeg::encoder::JPEGEncoder;
-
-        // Note that 90% quality has been observed to produce stripping artifacts for things like checkerboard
-        // patterns.
-        // - 100% compresses to is 0.2x the original size
-        // - 90% compressed to 0.1x the original size
-        let mut encoder = JPEGEncoder::new(100);
-        encoder.use_default_tables();
+        let mut encoder = MJPEGEncoder::new();
 
         let mut last_mjpeg_frame = Instant::now();
 
@@ -573,7 +565,11 @@ impl MocapCameraCaptureProcessor {
 
                 let now = Instant::now();
 
-                if now - last_mjpeg_frame > Duration::from_secs_f32(1.0 / 5.0) {
+                let config: Arc<MocapCameraConfigureRequest> = lock!(config <= shared.config.lock().await?, {
+                    config.clone()
+                });
+
+                if now - last_mjpeg_frame >= Duration::from_secs_f32(1.0 / (config.mjpeg().max_fps() as f32)) {
                     last_mjpeg_frame = now;
 
                     let s = Instant::now();
@@ -585,10 +581,7 @@ impl MocapCameraCaptureProcessor {
                         data: raw_data,
                     };
 
-                    let mut data = vec![];
-                    data.reserve_exact(raw_data.len() / 8);
-
-                    encoder.encode_raw(&image, &mut data)?;
+                    let data = encoder.encode(image, config.pixel_threshold() as u8, config.mjpeg())?;
                     let e = Instant::now();
 
                     let compression_ratio = (data.len() as f32) / (raw_data.len() as f32);

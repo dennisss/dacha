@@ -4,8 +4,7 @@ use math::matrix::{VectorXd, MatrixXd, Vector3d, Matrix3d, Vector2d, vec2d, vec3
 use math::matrix::axis_angle::*;
 use math::matrix::cwise_binary_ops::CwiseMulAssign;
 
-/// 
-const MIN_IMPROVEMENT_PERCENTAGE: f64 = 0.00001;  // 0.1%
+const MIN_IMPROVEMENT_PERCENTAGE: f64 = 0.0001;  // 0.01%
 
 const MAX_ITERATIONS: usize = 10_000;
 
@@ -94,6 +93,10 @@ pub struct NonLinearSolver<'a> {
     min_error: f64,
 
     gradient_descent: bool,
+
+    logging_enabled: bool,
+
+    max_iters: usize,
 }
 
 struct ParameterBlockSpec<'a> {
@@ -115,6 +118,7 @@ struct ParamsState {
     error: VectorXd,
     error_sum: f64,
     jacobian: MatrixXd,
+    cache: Option<(MatrixXd, VectorXd)>
 }
 
 impl<'a> NonLinearSolver<'a> {
@@ -126,6 +130,8 @@ impl<'a> NonLinearSolver<'a> {
             residual_blocks: vec![],
             min_error: 0.000001,
             gradient_descent: false,
+            logging_enabled: false,
+            max_iters: MAX_ITERATIONS
         }
     }
 
@@ -176,6 +182,14 @@ impl<'a> NonLinearSolver<'a> {
         self.gradient_descent = true;
     }
 
+    pub fn enable_logging(&mut self) {
+        self.logging_enabled = true;
+    }
+
+    pub fn set_max_iterations(&mut self, n: usize) {
+        self.max_iters = n;
+    }
+
     #[inline(never)]
     pub fn solve<'b>(&'b self) -> NonLinearProblemSolution<'b, 'a> {
         // Current value of each parameter in the model that we are estimating.
@@ -187,11 +201,13 @@ impl<'a> NonLinearSolver<'a> {
         let mut last_made_progress = true; 
 
 
-        if params.len() > 20 {
+        if self.logging_enabled {
             println!("JACOBIAN SIZE: {} x {}", self.num_residuals, self.initial_params.len());
         }
 
         let mut state = self.evaluate_params(params);
+
+        let mut step = VectorXd::zero_with_shape(self.initial_params.len(), 1);
 
         // Normally this will terminate by:
         // - First there will likely be many rounds of last_made_progress=true
@@ -199,10 +215,10 @@ impl<'a> NonLinearSolver<'a> {
         //   the clamping of the dampening to a max value will signal that we hit the
         //   min and can't find a way to make more progress. 
         let mut iters = 0;
-        while iters < MAX_ITERATIONS && (last_made_progress || !dampening_is_clamped) {
+        while iters < self.max_iters && (last_made_progress || !dampening_is_clamped) {
             iters += 1;
             
-            if state.params.len() > 20 {
+            if self.logging_enabled {
                 println!("- {}: Error: {}", iters, state.error_sum);
             }
 
@@ -210,16 +226,18 @@ impl<'a> NonLinearSolver<'a> {
                 break;
             }
 
-            let step = self.calculate_step(&state, dampening);
+            let s = Instant::now();
+            self.calculate_step(&mut state, dampening, &mut step);
+            let e = Instant::now();
+            if self.logging_enabled {
+                println!("=> calculate_step: {:?}", e - s);
+            }
 
             let mut next_params = state.params.clone();
             self.apply_step(&step, &mut next_params);
 
+            // TODO: I don't need this to compute gradients if the error ends up being bad.
             let next_state = self.evaluate_params(next_params);
-
-            if state.params.len() > 20 {
-                println!("=> {}", next_state.error_sum);
-            }
 
             if (
                 next_state.error_sum.is_nan() ||
@@ -260,6 +278,8 @@ impl<'a> NonLinearSolver<'a> {
 
     // TODO: If there are many residuals, then this is heavily parallelizable.
     fn evaluate_params(&self, params: VectorXd) -> ParamsState {
+        let s = Instant::now();
+
         // Each element is the error for a single point with the current parameters.
         let mut error = VectorXd::zero_with_shape(self.num_residuals, 1);
 
@@ -325,15 +345,22 @@ impl<'a> NonLinearSolver<'a> {
             }
         }
 
+        let e = Instant::now();
+        if self.logging_enabled {
+            println!("=> evaluate_params: {:?}", e - s);
+        }
+
         ParamsState {
             params,
             error,
             error_sum,
             jacobian,
+            cache: None,
         }
     }
 
-    fn calculate_step(&self, state: &ParamsState, dampening: f64) -> VectorXd {
+    // NOTE: The state is just mutable here to support caching intermediate products.
+    fn calculate_step(&self, state: &mut ParamsState, dampening: f64, step: &mut VectorXd) {
         let mut num_unfrozen = 0;
         for param_spec in &self.param_blocks {
             if param_spec.frozen {
@@ -379,25 +406,40 @@ impl<'a> NonLinearSolver<'a> {
                 dampening_mat
 
             } else {
+                // For small matrices (threshold not well tuned), direct inversion is doing to be faster.
 
-                let jacobian_square = jacobian_thin.as_transpose() * &jacobian_thin;
+                // TODO: Don't need to clone 'b'
+                let (mut a, b) = {
+                    if let Some(v) = &state.cache {
+                        v.clone()
+                    } else {
+                        let a = jacobian_thin.as_transpose() * &jacobian_thin;
+                        let b = jacobian_thin.as_transpose() * &state.error;
 
-                let dampening_mat = diag(&jacobian_square) * dampening;
+                        state.cache = Some((a.clone(), b.clone()));
 
-                let mut a = jacobian_square + dampening_mat;
+                        (a, b)
+                    }
+                };
+
+                // Basically same as the following but faster:
+                // let dampening_mat = diag(&jacobian_square) * dampening;
+                // a += dampening_mat;
+                let d = 1.0 + dampening;
+                for i in 0..a.rows() {
+                    a[(i, i)] *= d;
+                }
 
                 let a_inv = match a.inverse() {
                     Some(v) => v,
-                    None => return VectorXd::zero_with_shape(self.initial_params.len(), 1)
+                    None => return
                 };
 
-                // NOTE: Multiplication ordering here is optimized for performance.
-                a_inv * (jacobian_thin.as_transpose() * &state.error)
+                a_inv * b
             }
         };
 
         // Expand step to include zeros for all frozen parameters.
-        let mut step = VectorXd::zero_with_shape(self.initial_params.len(), 1);
         {
             let mut input_i = 0;
             let mut output_i = 0;
@@ -414,8 +456,6 @@ impl<'a> NonLinearSolver<'a> {
                 }
             }
         }
-
-        step
     }
 
     fn apply_step(&self, step: &VectorXd, params: &mut VectorXd) {

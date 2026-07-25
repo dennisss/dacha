@@ -17,6 +17,13 @@ message WandPatternFinderConfig {
 
     double bottom_length = 5;
 
+    // Maximum ratio between pixel distances and physical distances
+    // (and also the inverse).
+    //
+    // Larger values will allow more tilt of the wand away from
+    // the camera. Smaller values basically acts as an early rejection
+    // of extreme angles which tend to not produce very precise
+    // pose measurements.
     double max_projection_stretch = 6;
 
     double max_reprojection_error = 7;
@@ -24,4 +31,15 @@ message WandPatternFinderConfig {
     // How high the points (sphere centers) are above the ground if the wand
     // is laying flat.
     double height = 8;
+
+    // Minimum distance in pixels between all points in the wand.
+    double min_blob_center_pixel_distance = 10;
+
+    // Maximum distance all the collinear points of the wand must be
+    // from a perfect line.
+    double collinear_pixel_threshold = 11;
+
+    // Minimum distance of the bottom arm point from the line formed by
+    // the other three points.
+    double min_bottom_line_pixel_distance = 12; 
 }

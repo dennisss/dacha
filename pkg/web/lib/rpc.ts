@@ -237,7 +237,10 @@ export class Channel {
                 if (buffer.length == 0) {
                     buffer = value;
                 } else {
-                    buffer = new Uint8Array([...buffer, ...value]);
+                    const next_buffer = new Uint8Array(buffer.length + value.length);
+                    next_buffer.set(buffer, 0);
+                    next_buffer.set(value, buffer.length);
+                    buffer = next_buffer;
                 }
 
                 // Decode as many messages as we can.

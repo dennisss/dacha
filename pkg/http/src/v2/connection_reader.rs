@@ -800,7 +800,7 @@ impl ConnectionReader {
 
         // Update the local connection level window. This occurs even if the frame
         // fails later down to ensure that it stays in sync with the remote endpoint.
-        connection_state.local_connection_window += frame_header.length as WindowSize;
+        connection_state.local_connection_window -= frame_header.length as WindowSize;
 
         let stream = match self.find_received_stream(frame_header.stream_id, connection_state)? {
             StreamEntry::Open(s) => s,

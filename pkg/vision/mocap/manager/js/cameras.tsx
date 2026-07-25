@@ -6,13 +6,13 @@ import { Navbar, NAVBAR_HEIGHT } from "./navbar";
 import { compare_values, deep_copy } from "pkg/web/lib/utils";
 import { Button } from "pkg/web/lib/button";
 import { Card, CardBody } from "pkg/cnc/monitor/js/card";
-import { Blob2dViewer } from "../../camera/js/blob_viewer";
 import { round_digits, round_nested_digits } from "pkg/web/lib/formatting";
 import { MocapCameraControls } from "../../camera/js/controls";
 import { camera_orientation } from "../../camera/js/orientation";
 import { entity_id_to_string } from "./utils";
 import { PropertiesTable } from "pkg/cnc/monitor/js/properties_table";
-import { DARK_MODE } from "./dark";
+import { DARK_MODE } from "pkg/web/lib/dark";
+import { FrameViewer } from "./frame_viewer";
 
 export interface CamerasPageProps {
     context: PageContext,
@@ -28,7 +28,12 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
     state = {
         status: null,
         blobs: null,
-        pending_config: null
+        pending_config: null,
+
+        show_blobs: true,
+        show_grayscale: false,
+        show_fullscreen: false,
+        show_crosshair: false,
     }
 
     constructor(props: CamerasPageProps) {
@@ -64,6 +69,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
         // TODO: Retry everything with exponential backoff.
 
+        // TODO: If we disable all cameras, this should ideally emit some empty frames to update the UI appropriately.
         let res = this.props.context.channel.call_streaming('mocap.MocapManager', 'ReadBlobs', {
             max_rate: 10
         });
@@ -196,7 +202,19 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                 }}
             >
                 <td>
-                    <input checked type="checkbox" onChange={() => { }} />
+                    <input checked={config.enabled ? true : false} type="checkbox"
+                        onChange={() => {
+                            this._execute({
+                                set_camera_enabled: {
+                                    camera_id: camera.id,
+                                    enabled: !config.enabled
+                                }
+                            }, () => { });
+                        }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                        }}
+                    />
                 </td>
                 <td>
                     <a href={"https://" + entity_id_to_string(camera.id) + ".mocap_camera.worker.home.cluster.internal"}>
@@ -268,10 +286,59 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
         let border_color = DARK_MODE.get() ? '#444' : '#ccc';
 
+        let render_checkbox = (text, state_key, enabled) => {
+
+            return (
+                <div style={{ display: 'inline-block', padding: '5px 10px', cursor: (enabled ? 'pointer' : null) }} onClick={(e) => {
+                    let s = {};
+                    s[state_key] = !this.state[state_key];
+                    this.setState(s);
+                }}
+                    onMouseDown={(e) => {
+                        // Prevent text selection.
+                        e.preventDefault();
+                    }}
+                >
+                    <input type="checkbox" disabled={!enabled} onChange={() => { }} checked={this.state[state_key]} style={{ verticalAlign: -2 }} /> {text}
+                </div>
+
+            );
+        }
+
+        let active_camera = null;
+        (status.cameras || []).map((c) => {
+            if (c.active) {
+                active_camera = c;
+            }
+        });
+
+
+        let num_enabled = 0;
+        (status.cameras || []).map((camera) => {
+            let config = {};
+            (status.config.per_camera || []).map((c) => {
+                if (c.camera_id == camera.id) {
+                    config = c;
+                }
+            });
+
+            if (config.enabled) {
+                num_enabled += 1;
+            }
+        });
+
+
         return (
             <div>
                 <div style={{ fontFamily: "Noto Sans Mono", marginBottom: 10, fontSize: 12 }}>
                     {frame_text}
+
+                    <div style={{ float: 'right' }}>
+                        {render_checkbox('Blobs', 'show_blobs', true)}
+                        {render_checkbox('Grayscale', 'show_grayscale', true)}
+                        {render_checkbox('Fullscreen', 'show_fullscreen', true)}
+                        {render_checkbox('Aim', 'show_crosshair', true)}
+                    </div>
                 </div>
 
                 <div style={{ marginBottom: 10, marginLeft: -5, marginRight: -5 }}>
@@ -279,6 +346,18 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                         if (!status.groups) {
                             return null;
                         }
+
+                        let config = {};
+                        (status.config.per_camera || []).map((c) => {
+                            if (c.camera_id == camera.id) {
+                                config = c;
+                            }
+                        });
+
+                        if (!config.enabled) {
+                            return null;
+                        }
+
 
                         let active = camera.active || false;
 
@@ -296,20 +375,41 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
                         let upside_down = false;
                         let angle = 0;
+
+                        let flip_x = false;
+                        let flip_y = false;
+
                         if (camera.camera_status) {
                             let o = camera_orientation(camera.camera_status);
                             upside_down = o.upside_down;
                             angle = o.horizon_angle;
+
+                            if (o.upside_down) {
+                                flip_y = true;
+                            } else {
+                                flip_x = true;
+                            }
+                        }
+
+                        let points = [];
+                        if (blobs && this.state.show_blobs) {
+                            points = blobs.results.blobs || [];
                         }
 
 
+                        let url = null;
+                        if (this.state.show_grayscale) {
+                            url = "/camera?id=" + entity_id_to_string(camera.id);
+                        }
+
+                        // TODO: Integrate the loading opacity change into the FrameViewer since that has a separate one for image loading.
                         return (
                             <div key={camera.id}
                                 style={{
                                     opacity: (blobs !== null ? 1 : 0.5),
                                     cursor: 'pointer',
-                                    width: '25%',
-                                    display: 'inline-block',
+                                    width: (active && this.state.show_fullscreen ? '100%' : (num_enabled < 5 ? '50%' : '33.333%')),
+                                    display: (!active && active_camera && this.state.show_fullscreen ? 'none' : 'inline-block'),
                                     padding: 5,
                                     fontFamily: "Noto Sans Mono"
                                 }}
@@ -327,9 +427,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                     overflow: 'hidden',
                                     boxShadow: (active ? '0px 0px 10px #08f' : '')
                                 }}>
-                                    <div style={{ fontSize: 0 }}>
-                                        <Blob2dViewer status={group} results={blobs} upsideDown={upside_down} />
-                                    </div>
+                                    <FrameViewer url={url} points={points} flipX={flip_x} flipY={flip_y} is_live_stream={true} controls_enabled={active} show_crosshair={this.state.show_crosshair} />
                                 </div>
                             </div>
                         );
@@ -341,6 +439,104 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         );
 
 
+    }
+
+    _render_blob_summary_card() {
+
+        let num_blobs = 0;
+        let radius_sum = 0;
+
+        if (this.state.blobs) {
+            (this.state.blobs.cameras || []).map((c) => {
+                (c.results.blobs || []).map((b) => {
+                    num_blobs += 1;
+                    radius_sum += (b.radius_a + b.radius_b) / 2.0;
+                })
+            });
+
+            radius_sum /= num_blobs;
+        }
+
+
+        return (
+            <Card header="Blobs Summary" style={{ marginBottom: 10 }}>
+                <div>
+                    {this._render_object_table({
+                        '# Blobs': num_blobs,
+                        'Average Radius': radius_sum
+                    })}
+                </div>
+            </Card>
+        );
+    }
+
+    _render_blob_list() {
+        let status = this.state.status;
+
+        let active_camera = null;
+        (status.cameras || []).map((c) => {
+            if (c.active) {
+                active_camera = c;
+            }
+        })
+
+        if (!active_camera) {
+            return this._render_blob_summary_card();
+        }
+
+        let rows = [];
+        if (this.state.blobs) {
+            let blobs = null;
+
+            (this.state.blobs.cameras || []).map((c) => {
+                if (c.camera_id == active_camera.id) {
+                    blobs = c;
+                }
+            });
+
+            if (blobs) {
+                rows = (blobs.results.blobs || []).map((b, i) => {
+                    return (
+                        <tr key={i}>
+                            <td>{round_digits(b.x, 2)}</td>
+                            <td>{round_digits(b.y, 2)}</td>
+                            <td>{round_digits(b.radius_a, 2)}</td>
+                            <td>{round_digits(b.radius_b, 2)}</td>
+                        </tr>
+                    );
+                })
+            }
+        }
+
+        let header = (
+            <div>
+                Active Camera Blobs
+                <span style={{ float: 'right' }}>({rows.length} total)</span>
+            </div>
+        );
+
+        return (
+            <Card header={header} style={{ marginBottom: 10 }}>
+                <div style={{ padding: '0 8px' }}>
+                    <table className="table table-hover" style={{ verticalAlign: "baseline", fontFamily: "Noto Sans Mono" }}>
+                        <thead>
+                            <tr>
+                                <th style={{ width: '25%' }}>X</th>
+                                <th style={{ width: '25%' }}>Y</th>
+                                <th style={{ width: '25%' }}>Radius A</th>
+                                <th style={{ width: '25%' }}>Radius B</th>
+                            </tr>
+                        </thead>
+                        <tbody style={{ fontSize: '0.9em' }}>
+                            {rows}
+                        </tbody>
+                    </table>
+                </div>
+
+            </Card>
+
+
+        );
     }
 
     _render_controls() {
@@ -457,7 +653,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                         {Object.keys(obj).map((key) => {
                             return (
                                 <tr key={key}>
-                                    <td>{key}</td>
+                                    <td style={{ width: 1, whiteSpace: 'nowrap' }}>{key}</td>
                                     <td>{JSON.stringify(round_nested_digits(obj[key], 2))}</td>
                                 </tr>
                             );
@@ -575,6 +771,23 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
             </div>
         );
 
+
+        let all_enabled = true;
+        (status.cameras || []).map((camera) => {
+
+            let config = {};
+            (status.config.per_camera || []).map((c) => {
+                if (c.camera_id == camera.id) {
+                    config = c;
+                }
+            })
+
+            if (!config.enabled) {
+                all_enabled = false;
+            }
+        });
+
+
         return (
             <div>
                 <Title value="Mocap | Cameras" />
@@ -595,7 +808,17 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                     <table className="table table-hover" style={{ verticalAlign: "baseline", fontFamily: "Noto Sans Mono" }}>
                                         <thead>
                                             <tr>
-                                                <th></th>
+                                                <th>
+                                                    <input type="checkbox" checked={all_enabled} onChange={() => {
+                                                        // TODO: Have a fast timeout and error notice if this fails.
+                                                        this._execute({
+                                                            set_camera_enabled: {
+                                                                all_cameras: true,
+                                                                enabled: !all_enabled
+                                                            }
+                                                        }, () => { });
+                                                    }} />
+                                                </th>
                                                 <th>Id</th>
                                                 <th>PTP</th>
                                                 <th>PPS</th>
@@ -621,11 +844,15 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
                             {this._render_wanding_card()}
 
-                            <Card header="Controls" style={{ marginBottom: 10 }}>
+                            {/* TODO: Allow reading/writing just one camera's settings temporarily. */}
+                            <Card header="Controls (all cameras)" style={{ marginBottom: 10 }}>
                                 <CardBody>
                                     {this._render_controls()}
                                 </CardBody>
                             </Card>
+
+                            {/* NOTE: This should be last since it is fairable length and may shift the other stuff. */}
+                            {this._render_blob_list()}
                         </div>
                     </div>
                 </div>

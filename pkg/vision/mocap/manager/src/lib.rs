@@ -18,7 +18,7 @@ mod wanding;
 mod rigid_body;
 mod rigid_transform;
 mod origin;
-
+pub mod skeleton;
 
 pub use inst::*;
 pub use wand::*;

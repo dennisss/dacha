@@ -351,11 +351,10 @@ impl WandingCalibrationSolver {
 
                     let global_mat = rel_mat * &known_cam_global_mat;
 
-                    let (r, t) = extrinsics_from_mat4x4(&global_mat);
-                    camera_initial_extrinsics.insert(*cam_id, CameraExtrinsics {
-                        rotation: r,
-                        translation: t
-                    });
+                    camera_initial_extrinsics.insert(
+                        *cam_id,
+                        CameraExtrinsics::from_mat4x4(&global_mat)
+                    );
                     changed = true;
                 }
             }
@@ -463,6 +462,8 @@ impl WandingCalibrationSolver {
 
         println!("Solving...");
 
+        solver.enable_logging();
+
         let solution = solver.solve();
 
         println!("Solved!");
@@ -566,13 +567,9 @@ impl WandingCalibrationSolver {
         };
 
         for p in camera_params.iter_mut() {
-
-            let (r, t) = extrinsics_from_mat4x4(&(
+            p.extrinsics = CameraExtrinsics::from_mat4x4(&(
                 p.extrinsics.to_mat4x4() * &align_mat
             ));
-
-            p.extrinsics.rotation = r;
-            p.extrinsics.translation = t;
         }
 
         // TODO: Only do this if we have an accelerometer lock.
@@ -622,13 +619,9 @@ impl WandingCalibrationSolver {
                 };
 
                 for p in camera_params.iter_mut() {
-
-                    let (r, t) = extrinsics_from_mat4x4(&(
+                    p.extrinsics = CameraExtrinsics::from_mat4x4(&(
                         p.extrinsics.to_mat4x4() * &align_mat
                     ));
-
-                    p.extrinsics.rotation = r;
-                    p.extrinsics.translation = t;
                 }
             }
         }
@@ -636,17 +629,7 @@ impl WandingCalibrationSolver {
         Ok(())
     }
 
-
 }
-
-fn extrinsics_from_mat4x4(mat: &Matrix4d) -> (Vector3d, Vector3d) {
-    let rot: Matrix3d = mat.block(0, 0).to_owned();
-
-    let translation = mat.block(0, 3).to_owned();
-
-    (to_axis_angle(&rot), translation)
-}
-
 
 fn pattern_positions_distinct(a: &BlobPatternMatch, b: &BlobPatternMatch) -> bool {
     let dt = (&a.translation - &b.translation).norm();

@@ -19,6 +19,7 @@ parsing = { path = "../../../parsing" }
 macros = { path = "../../../macros" }
 image = { path = "../../../image" }
 math = { path = "../../../math" }
+math_proto_util = { path = "../../../math/proto/util" }
 protobuf = { path = "../../../protobuf" }
 perf = { path = "../../../perf" }
 protobuf_json = { path = "../../../protobuf/json" }

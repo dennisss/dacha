@@ -69,7 +69,7 @@ export class Blob2dViewer extends React.Component<{ status: any, results: any, u
             ctx.fillStyle = '#fff';
             ctx.beginPath();
             // TODO: Verify 0.5, 0.5 is the center of a pixel.
-            ctx.arc(x * scale, y * scale, blob.radius * scale, 0, 2 * Math.PI);
+            ctx.arc(x * scale, y * scale, blob.radius_a * scale, 0, 2 * Math.PI);
             ctx.fill();
         });
     }

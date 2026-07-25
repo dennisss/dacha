@@ -30,7 +30,7 @@ pub fn set_origin_with_wand(
     ];
 
     let body = tracker_config.new_bodies();
-    body.set_id(1u64);
+    body.set_id(1u32);
 
     for pt in pts {
         body.add_points(pt.to_proto());

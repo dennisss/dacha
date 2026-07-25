@@ -1,6 +1,7 @@
 use common::errors::*;
 use mocap_proto::mocap::*;
 use vision::connected_components::*;
+use math::matrix::vec2f;
 
 type ConnectedComponentsProcessor = RLEConnectedComponentsProcessor;
 
@@ -24,8 +25,13 @@ impl FrameProcessor {
             min_area: 6
             max_area: 6000
             reject_edge: true
-            max_aspect_ratio: 1.5
-            circular_area_error: 0.25
+            max_bbox_aspect_ratio: 1.5
+            elliptical_area_error: 0.25
+            max_radius_ratio: 1.5
+            max_centroid_bbox_skew {
+                abs: 2.5
+                rel: 0.05
+            }
         "#, &mut blob_filter)?;
         Ok(blob_filter)
     }
@@ -101,27 +107,50 @@ impl FrameProcessor {
                 aspect_ratio = 1.0 / aspect_ratio;
             }
 
-            if aspect_ratio > blob_filter.max_aspect_ratio() {
+            if aspect_ratio > blob_filter.max_bbox_aspect_ratio() {
                 // println!("Reject aspect ratio: {}", aspect_ratio);
                 out.reject_component(&component);
                 continue;
             }
 
-            let radius_x = (bbox_width as f32) / 2.0;
-            let radius_y = (bbox_height as f32) / 2.0;
+            let stats = component.calculate_stats();
 
-            let expected_area = std::f32::consts::PI * radius_x * radius_y;
+            if stats.radius_a / stats.radius_b > blob_filter.max_radius_ratio() {
+                out.reject_component(&component);
+                continue;
+            }
+
+            let expected_area = std::f32::consts::PI * stats.radius_a * stats.radius_b;
             let area_error = (expected_area - (component.area as f32)) / expected_area;
-            if area_error.abs() > blob_filter.circular_area_error() {
+            if area_error.abs() > blob_filter.elliptical_area_error() {
                 // println!("Reject circular area");
                 out.reject_component(&component);
                 continue;
             }
 
+            let mass_centroid = vec2f(stats.centroid_x, stats.centroid_y);
+            let bbox_centroid = vec2f(
+                (component.min_x as f32) + ((bbox_width as f32) / 2.0),
+                (component.min_y as f32) + ((bbox_height as f32) / 2.0),
+            );
+
+            let max_centroid_error = (
+                blob_filter.max_centroid_bbox_skew().abs().max(
+                    blob_filter.max_centroid_bbox_skew().rel() * (stats.radius_a.max(stats.radius_b) as f32)
+                )
+            );
+
+            if (mass_centroid - bbox_centroid).norm_squared() > (max_centroid_error * max_centroid_error) {
+                out.reject_component(&component);
+                continue;
+            }
+
             let mut blob = Blob::default();
-            blob.set_x(((component.moment_x as f32) / (component.mass as f32)) + 0.5);
-            blob.set_y(((component.moment_y as f32) / (component.mass as f32)) + 0.5);
-            blob.set_radius((radius_x + radius_y) / 2.0);
+            blob.set_x(stats.centroid_x);
+            blob.set_y(stats.centroid_y);
+            blob.set_radius_a(stats.radius_a);
+            blob.set_radius_b(stats.radius_b);
+            blob.set_angle(stats.angle);
             out.add_blob(blob);
         }
 

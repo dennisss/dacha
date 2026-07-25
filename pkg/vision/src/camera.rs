@@ -48,7 +48,7 @@ impl CameraIntrinsicsModel {
     /// Projects a 3d point (which is already translated so that camera is at 0,0,0)
     /// into a 2d point on the camera's image.
     pub fn project_point(&self, point: &Vector3d) -> Vector2d {
-        let z_inv = 1.0 / point[2].max(0.001);
+        let z_inv = 1.0 / point[2];
         let mut point_2d = vec2d(point[0] * z_inv, point[1] * z_inv);
 
         point_2d *= self.calculate_distortion(&point_2d);

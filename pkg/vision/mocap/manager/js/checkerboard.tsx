@@ -6,7 +6,6 @@ import { Navbar } from "./navbar";
 import { compare_values, deep_copy } from "pkg/web/lib/utils";
 import { Button } from "pkg/web/lib/button";
 import { Card, CardBody } from "pkg/cnc/monitor/js/card";
-import { Blob2dViewer } from "../../camera/js/blob_viewer";
 import { round_digits, round_nested_digits } from "pkg/web/lib/formatting";
 import { MocapCameraControls } from "../../camera/js/controls";
 import { camera_orientation } from "../../camera/js/orientation";
@@ -283,6 +282,9 @@ export class CheckerboardPage extends React.Component<CheckerboardPageProps, Che
                 return {
                     x: pt.values[0],
                     y: pt.values[1],
+                    radius_a: 10,
+                    radius_b: 10,
+                    angle: 0,
                 };
             });
         }

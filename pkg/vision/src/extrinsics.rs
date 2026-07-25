@@ -2,7 +2,7 @@ use math::matrix::{Vector3d, Matrix3d, Matrix4d};
 use math::matrix::axis_angle::*;
 use vision_proto::vision::CameraExtrinsicsProto;
 
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct CameraExtrinsics {
     pub rotation: Vector3d,
     pub translation: Vector3d,

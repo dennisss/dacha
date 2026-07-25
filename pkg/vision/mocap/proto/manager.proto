@@ -27,7 +27,10 @@ service MocapManager {
     rpc ReadBlobs (ReadBlobsRequest) returns (stream ReadBlobsResponse);
 
     // This reads the stream of 3d points reconstructed from the 2d blobs.
-    // This will also include derived 3d data like rigid body state.
+    //
+    // This will also include derived 3d data like rigid body state. These are
+    // intentionally coupled with the 3d point data since the body trackers are
+    // allowed to back propagate updates to the 3d data. 
     //
     // Note that for a given timestamp, this data will be available shortly after
     // the raw blobs data returned by 'ReadBlobs'.
@@ -73,6 +76,8 @@ message MocapPerCameraConfig {
     vision.CameraIntrinsicsModelProto intrinsics = 3;
 
     vision.CameraExtrinsicsProto extrinsics = 4;
+
+    optional bool enabled = 5;
 }
 
 message MocapManagerStatusRequest {
@@ -211,12 +216,23 @@ message ExecuteRequest {
         // Create a new rigid body or update and existing one with the given id.
         RigidBodyDefinition configure_rigid_body = 12;
 
-        uint64 delete_rigid_body = 13;
+        uint32 delete_rigid_body = 13;
 
         SimulationAnimationConfig configure_simulation = 14;
 
         SetOriginCommand set_origin = 15;
+
+        SetCameraEnable set_camera_enabled = 16;
     }
+}
+
+message SetCameraEnable {
+    fixed64 camera_id = 1;
+
+    // If true, this applies to all cameras and not just one.
+    bool all_cameras = 2;
+
+    bool enabled = 3;
 }
 
 message ExecuteResponse {

@@ -47,6 +47,10 @@ impl BundleAdjustmentSolver {
         }
     }
 
+    pub fn enable_logging(&mut self) {
+        self.solver.enable_logging();
+    }
+
     pub fn add_camera(
         &mut self,
         intrinsics: &CameraIntrinsicsModel,

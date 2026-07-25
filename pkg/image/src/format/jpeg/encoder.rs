@@ -45,6 +45,8 @@ pub struct JPEGEncoder {
 
     /// If set, use these tables and don't serialize them in the JPEG.
     preset_tables: Option<CodeTables>,
+
+    quality: usize,
 }
 
 
@@ -178,7 +180,9 @@ impl<'a> ImageBlockView<'a> {
 }
 
 impl JPEGEncoder {
-    pub fn new(quality: usize) -> Self {
+    pub fn new(mut quality: usize) -> Self {
+        quality = quality.min(100).max(0);
+        
         let (lumin_quant_table, chroma_quant_table) = create_quantization_tables(quality);
 
         let lumin_quant_table_scaling = Self::quant_table_to_scales(&lumin_quant_table);
@@ -190,7 +194,25 @@ impl JPEGEncoder {
             lumin_quant_table_scaling,
             chroma_quant_table_scaling,
             preset_tables: None,
+            quality
         }
+    }
+
+    pub fn set_quality(&mut self, mut quality: usize) {
+        quality = quality.min(100).max(0);
+
+        if quality == self.quality {
+            return;
+        }
+
+        let (lumin_quant_table, chroma_quant_table) = create_quantization_tables(quality);
+
+        self.lumin_quant_table_scaling = Self::quant_table_to_scales(&lumin_quant_table);
+        self.chroma_quant_table_scaling = Self::quant_table_to_scales(&chroma_quant_table);
+
+        self.lumin_quant_table = lumin_quant_table;
+        self.chroma_quant_table = chroma_quant_table;
+        self.quality = quality;
     }
 
     fn quant_table_to_scales(table: &QuantizationTable) -> [f32; BLOCK_SIZE] {

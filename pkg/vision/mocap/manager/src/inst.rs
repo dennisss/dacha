@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::{Instant, Duration};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
@@ -316,9 +316,9 @@ impl MocapManager {
 
                 lock!(camera_config_state <= self.shared.camera_config_state.lock().await?, {
                     if config.camera_id() != 0 {
-                        camera_config_state.single_camera_override = Some((config.camera_id(), req.configure_cameras().config().clone()));
+                        camera_config_state.single_camera_override = Some((config.camera_id(), config.config().clone()));
                     } else {
-                        camera_config_state.camera_config = req.configure_cameras().config().clone();
+                        camera_config_state.camera_config = config.config().clone();
                         camera_config_state.single_camera_override = None;
                     }
 
@@ -614,7 +614,27 @@ impl MocapManager {
 
                 self.apply_config_patch(&patch).await?;
             }
+            ExecuteRequestCommandCase::SetCameraEnabled(cmd) => {
 
+                let mut patch = MocapManagerConfig::default();
+
+                if cmd.all_cameras() {
+                    lock!(state <= self.shared.state.lock().await?, {
+                        for id in state.cameras.keys() {
+                            let c = patch.new_per_camera();
+                            c.set_camera_id(*id);
+                            c.set_enabled(cmd.enabled());
+                        }
+                    });
+                } else {
+                    let c = patch.new_per_camera();
+                    c.set_camera_id(cmd.camera_id());
+                    c.set_enabled(cmd.enabled());
+                }
+
+                self.apply_config_patch(&patch).await?;
+
+            }
             ExecuteRequestCommandCase::NOT_SET => {
                 return Err(err_msg("Unknown command"));
             }
@@ -698,6 +718,16 @@ impl MocapManager {
                 current_cameras.insert(camera_id, host_name);
             }
 
+            let mut enabled_cameras = HashSet::<u64, FastHasherBuilder>::default();
+            {
+                let config = shared.config.read().await?;
+                for c in config.per_camera() {
+                    if c.enabled() {
+                        enabled_cameras.insert(c.camera_id());
+                    }
+                }
+            }
+
             // Make sure all cameras have connections setup.
 
             // TODO: Make sure that leader selection is deterministic assuming all cameras are present.
@@ -706,11 +736,19 @@ impl MocapManager {
             let mut new_cameras = vec![];
             lock!(state <= shared.state.lock().await?, {
 
+                let mut first_existing_enabled = None;
+
                 // Remove old cameras.
                 // (the assumption is that they are dead so will give up their ptp leadership if needed)
                 state.cameras.retain(|old_camera_id, old_entry| {
                     if !current_cameras.contains_key(old_camera_id) {
                         return false;
+                    }
+
+                    if old_entry.ptp_leader && !enabled_cameras.contains(&old_camera_id) {
+                        old_entry.ptp_leader = false;
+                    } else if enabled_cameras.contains(old_camera_id) {
+                        first_existing_enabled = Some(*old_camera_id);
                     }
 
                     have_ptp_leader |= old_entry.ptp_leader;
@@ -725,9 +763,11 @@ impl MocapManager {
 
                 // If there is no leader, always prioritize electing an existing camera
                 // which likely has the most disciplined clock.
-                if !have_ptp_leader && !state.cameras.is_empty() {
-                    state.cameras.values_mut().next().unwrap().ptp_leader = true;
-                    have_ptp_leader = true;
+                if !have_ptp_leader {
+                    if let Some(id) = first_existing_enabled {
+                        state.cameras.get_mut(&id).unwrap().ptp_leader = true;
+                        have_ptp_leader = true;
+                    }
                 }
             });
 
@@ -745,8 +785,8 @@ impl MocapManager {
                 let ptp_stub = Arc::new(TimeSyncStub::new(channel.clone()));
                 let camera_stub = Arc::new(MocapCameraStub::new(channel.clone()));
 
-                let ptp_leader = !have_ptp_leader;
-                have_ptp_leader = true;
+                let ptp_leader = !have_ptp_leader && enabled_cameras.contains(&camera_id);
+                have_ptp_leader |= ptp_leader;
 
                 new_camera_entries.push((camera_id, CameraEntry {
                     worker_address: endpoint,
@@ -794,6 +834,10 @@ impl MocapManager {
         drop(config);
 
         loop {
+            // TODO: For this to be valid, we should maintain some tombstone entries
+            // whenever we are missing a camera that is enabled (and indicate that in the UI).
+            let num_enabled = shared.config.read().await?.num_enabled_cameras();
+
             let mut state = shared.state.lock().await?.enter();
             if state.frames.is_empty() {
                 state.wait().await;
@@ -804,8 +848,10 @@ impl MocapManager {
 
             let time_elapsed = now - state.frames[0].first_received;
 
+            // NOTE: If a camera was just disabled, this '>= num_enabled' check might be stale for one
+            // frame but thats usually not a big deal.
             let complete = (
-                state.frames[0].results.len() == state.cameras.len() ||
+                state.frames[0].results.len() >= num_enabled ||
                 time_elapsed >= timeout
             );
 
@@ -988,6 +1034,8 @@ impl MocapManager {
 
 
     async fn get_ptp_config(shared: &Shared, camera_id: u64) -> Result<TimeSyncConfig> {
+        let config = shared.config.read().await?;
+
         lock!(state <= shared.state.lock().await?, {
             let entry = state.cameras.get(&camera_id)
                 .ok_or_else(|| err_msg("Missing camera"))?;
@@ -1003,6 +1051,10 @@ impl MocapManager {
                 
             for (follower_camera_id, entry) in &state.cameras {
                 if *follower_camera_id == camera_id {
+                    continue;
+                }
+
+                if !config.camera_enabled(*follower_camera_id) {
                     continue;
                 }
 
@@ -1024,8 +1076,12 @@ impl MocapManager {
             }
         };
 
+        let leds_on = config.leds_on();
+
         for v in config.rgb_led_colors_mut() {
-            if config_state.active_camera_id == Some(camera_id) {
+            if !leds_on {
+                *v = 0;
+            } else if config_state.active_camera_id == Some(camera_id) {
                 *v = 100; // blue at (100 / 255) intensity
             } else {
                 // Weak green
@@ -1059,6 +1115,19 @@ impl MocapManager {
                 continue;
             }
 
+
+            let num_enabled;
+            let enabled;
+            {
+                let config = shared.config.read().await?;
+                num_enabled = config.num_enabled_cameras();
+                enabled = config.camera_enabled(camera_id);
+            }
+
+            if !enabled {
+                continue;
+            }
+
             lock!(state <= shared.state.lock().await?, {
 
                 // TODO: There are risks that a camera that is just starting to act poorly sends up very far in the 
@@ -1084,7 +1153,7 @@ impl MocapManager {
                         frame.results.insert(camera_id, res);
 
                         // TODO: Base this on the number of 'healthy' cameras.
-                        if i == 0 && frame.results.len() == state.cameras.len() {
+                        if i == 0 && frame.results.len() == num_enabled {
                             state.notify_all();
                         }
                         return;

@@ -59,7 +59,7 @@ message RigidBodyDefinition {
     //
     // One id corresponds to a single instance (so if you have the same point
     // pattern across multiple objects, they all need unique ids / definitions).
-    uint64 id = 1;
+    uint32 id = 1;
     
     // [x,y,z] points in the rigid body pattern.
     // These are all relative to the position of the rigid body at [0,0,0] 
@@ -72,7 +72,7 @@ message RigidBodyDefinition {
 message RigidBodyProto {
     // Id of the rigid body which corresponds to one of the
     // RigidBodyDefinition protos in the config.
-    uint64 id = 1;
+    uint32 id = 1;
     
     // If true, we were able to estimate the pose in the current frame.
     // - This means that all the other fields in this message will have

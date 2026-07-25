@@ -12,6 +12,7 @@ mod bundle;
 mod checkerboard;
 mod homography;
 mod calibration;
+mod eight_point;
 
 pub use camera::*;
 pub use pnp::*;
@@ -22,3 +23,4 @@ pub use bundle::*;
 pub use checkerboard::*;
 pub use homography::*;
 pub use calibration::*;
+pub use eight_point::*;

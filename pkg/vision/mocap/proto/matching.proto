@@ -11,6 +11,12 @@ message BlobMatchingConfig {
     // MUST be at least 2.
     uint32 min_num_matches = 1;
 
+    // Target maximum RMS 2D reprojection error for points.
+    //
+    // NOTE: Currently this setting is a bit weird. It is mainly used
+    // for determining the search radius for point matches. This needs
+    // to be large enough to factor in jumps in position across frames
+    // but usually error will end up being much lower than this.
     double max_reprojection_error = 2;
 
     // If we previously detected a 3d point, this is the minimum number of 2d

@@ -130,6 +130,7 @@ pub fn find_camera_homography(
     points_2d: &[Vector2d],
 ) -> Matrix3d {
 
+    // TODO: Make this configurable.
     let mut subsampling = 1;
     while points_3d.len() / subsampling > 32 {
         subsampling *= 2;
