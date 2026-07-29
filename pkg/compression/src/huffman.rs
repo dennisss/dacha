@@ -302,7 +302,7 @@ impl HuffmanTree {
             return Err(err_msg("Failed"));
         }
 
-        // The length of each symbol will be the number of times it occured in the
+        // The length of each symbol will be the number of times it occurred in the
         // lowest packages.
         let mut lens = count_map
             .into_iter()

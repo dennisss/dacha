@@ -62,7 +62,7 @@ pub struct RequestBuilder {
     body: Option<Box<dyn Body>>,
     accepts_trailers: bool,
 
-    // First error that occured in the building process
+    // First error that occurred in the building process
     error: Option<Error>,
 }
 

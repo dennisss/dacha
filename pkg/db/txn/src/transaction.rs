@@ -298,7 +298,7 @@ impl TransactionManager {
             let snapshot = state_machine.snapshot().await;
             if !Self::verify_reads(&transaction, &snapshot, read_index.index()).await? {
                 return Err(
-                    rpc::Status::aborted("Changes have occured since the read index").into(),
+                    rpc::Status::aborted("Changes have occurred since the read index").into(),
                 );
             }
         }

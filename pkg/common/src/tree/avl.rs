@@ -14,7 +14,7 @@ use crate::tree::comparator::*;
 ///   2] balance factor.
 /// - Insert/remove are implemented as recursive functions which attempt to
 ///   repair each node on the way back up the call stack. We should skip
-///   balancing a node if no height changes occured in its children.
+///   balancing a node if no height changes occurred in its children.
 #[derive(Clone, Debug)]
 pub struct AVLTree<T, A = EmptyAttribute, C = OrdComparator> {
     root: Option<Box<AVLNode<T, A>>>,
@@ -317,7 +317,7 @@ impl<T, A: TreeAttribute, C: Comparator<T, T>> AVLTree<T, A, C> {
         }
     }
 
-    /// Returns whether or not a height change has occured.
+    /// Returns whether or not a height change has occurred.
     fn repair_subtree(node: &mut Box<AVLNode<T, A>>) {
         let balance_factor = node.balance_factor();
 

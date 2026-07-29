@@ -80,7 +80,7 @@ impl ConfigurationStateMachine {
     }
 
     /// Given the new end of the log, this will undo any config to the
-    /// configuration that occured after that point
+    /// configuration that occurred after that point
     pub fn revert(&mut self, index: LogIndex) {
         if let Some(ref pending) = self.pending.clone() {
             if pending.last_change <= index {

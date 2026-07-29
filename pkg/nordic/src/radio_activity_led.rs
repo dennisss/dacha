@@ -15,7 +15,7 @@ static RX_EVENT: Channel<()> = Channel::new();
 /// - LEDs are active-low
 /// - The blink rate of the LEDs is constant and the number of blinks does not
 ///   indicate the number of packets sent/received. Instead the duration of the
-///   blinking indicates that some activity has occured recently.
+///   blinking indicates that some activity has occurred recently.
 /// - This can only be configured once in the entire program as we only define
 ///   one thread internally.
 pub fn setup_radio_activity_leds(

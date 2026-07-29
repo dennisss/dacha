@@ -22,7 +22,7 @@ service KeyValueStore {
     //   request needs to be retried possibly at a higher read index.
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 
-    // Monitors a key prefix for changes returning all changes that occured since the server
+    // Monitors a key prefix for changes returning all changes that occurred since the server
     // received this request.
     //
     // NOTE: A client should wait for the initial response head metadata to know that the server

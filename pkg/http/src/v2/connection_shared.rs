@@ -29,7 +29,7 @@ pub(super) struct ConnectionShared {
     /// NOTE: This will only be used in HTTP servers.
     pub server_options: Option<ServerConnectionOptions>,
 
-    /// Used to notify the connection of events that have occured.
+    /// Used to notify the connection of events that have occurred.
     /// The writer thread listens to these events performs actions such as
     /// sending more data, starting requests, etc. in response to each
     /// event.

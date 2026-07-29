@@ -36,7 +36,7 @@ pub struct RadioSocket {
     /// should be sent.
     ///
     /// This is also re-used to wake up the radio thread when a network config
-    /// change has occured.
+    /// change has occurred.
     transmit_pending: Channel<()>,
 
     receive_pending: Channel<()>,
@@ -165,7 +165,7 @@ impl RadioSocket {
 
         state_guard.exit();
 
-        // Notify the RadioController that a change has occured in case it is waiting
+        // Notify the RadioController that a change has occurred in case it is waiting
         // for one.
         self.transmit_pending.try_send(());
 

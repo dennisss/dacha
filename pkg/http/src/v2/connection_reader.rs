@@ -172,7 +172,7 @@ impl ConnectionReader {
                     .send(ConnectionEvent::Closing {
                         send_goaway: Some(ProtocolErrorV2 {
                             code: ErrorCode::INTERNAL_ERROR,
-                            message: "Unknown internal error occured",
+                            message: "Unknown internal error occurred",
                             local: true,
                         }),
                         close_with: Some(Err(e)),

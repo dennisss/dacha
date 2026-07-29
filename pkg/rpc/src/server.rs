@@ -625,10 +625,10 @@ impl ResponseBody {
                         if s.local() {
                             s.clone()
                         } else {
-                            Status::internal("Internal error occured")
+                            Status::internal("Internal error occurred")
                         }
                     },
-                    None => Status::internal("Internal error occured"),
+                    None => Status::internal("Internal error occurred"),
                 };
 
                 status.append_to_headers(headers)?;

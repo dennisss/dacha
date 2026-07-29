@@ -346,7 +346,7 @@ async fn embedded_db_compaction_test() -> Result<()> {
 
     db.snapshot().await.verify_all().await?;
 
-    // Because both snapshot1 and snapshot2 are active, compactions occured but no
+    // Because both snapshot1 and snapshot2 are active, compactions occurred but no
     // old files were removed (just the ephemeral memtable file).
     assert!(sets_equal(
         &db.dir_contents().await?,

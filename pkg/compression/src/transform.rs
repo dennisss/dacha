@@ -14,7 +14,7 @@ use common::errors::*;
 pub trait Transform {
     /// Applies the operation on one chunk of input/output buffers.
     ///
-    /// Unless an error occured, the transform is expected to make as much
+    /// Unless an error occurred, the transform is expected to make as much
     /// progress as possible and MUST make at least some progress. This means
     /// that:
     /// - When this returns, the input buffer and/or the output buffer will be

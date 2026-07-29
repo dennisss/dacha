@@ -24,7 +24,7 @@ message WorkerEvent {
     // The worker just started running using the given container_id
     message Started {}
 
-    // While attempting to start the worker, a failure occured.
+    // While attempting to start the worker, a failure occurred.
     message StartFailure {
         google.rpc.Status status = 1;
     }
