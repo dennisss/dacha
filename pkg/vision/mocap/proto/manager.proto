@@ -12,6 +12,7 @@ import "pkg/vision/proto/params.proto";
 import "pkg/vision/mocap/proto/checkerboard.proto";
 import "pkg/vision/mocap/proto/wanding.proto";
 import "pkg/vision/mocap/proto/simulation.proto";
+import "pkg/vision/mocap/proto/skeleton.proto";
 
 service MocapManager {
     // Gets the general state of the system.
@@ -36,6 +37,9 @@ service MocapManager {
     // the raw blobs data returned by 'ReadBlobs'.
     rpc ReadTrackedPoints (ReadTrackedPointsRequest) returns (stream ReadTrackedPointsResponse);
 
+    // Runs some command that mutates the state of the system.
+    //
+    // e.g. change camera controls, start wanding, define rigid bodies, etc.
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 }
 
@@ -64,9 +68,20 @@ message MocapManagerConfig {
 
     RigidBodyTrackerConfig rigid_body_tracker = 10; 
 
+    SkeletonTrackerConfig skeleton_tracker = 12;
+
+    SphereProjectionFilter sphere_projection_filter = 13;
+
     uint64 revision = 11;
 }
 
+message SphereProjectionFilter {
+    double min_angle_check_radius_ratio = 1;
+    
+    double max_angle_error_degrees = 2;
+
+    double max_normalized_radius_ratio = 3;
+}
 
 message MocapPerCameraConfig {
     string camera_id_str = 1;
@@ -121,7 +136,7 @@ message ManagerModeProto {
 
         WandingCalibrationState wanding_calibration = 4;
 
-        // recording
+        RecordingState recording = 5;
 
         // playback
     }
@@ -176,6 +191,8 @@ message ReadTrackedPointsResponse {
     repeated TrackedPointProto points = 2;
 
     repeated RigidBodyProto rigid_bodies = 3;
+
+    repeated SkeletonStateProto skeletons = 4;
 }
 
 
@@ -223,6 +240,16 @@ message ExecuteRequest {
         SetOriginCommand set_origin = 15;
 
         SetCameraEnable set_camera_enabled = 16;
+
+        StartRecordingCommand start_recording = 17;
+
+        StopRecordingCommand stop_recording = 18;
+
+        CreateSkeletonCommand create_skeleton = 19;
+
+        DeleteSkeletonCommand delete_skeleton = 20;
+
+        SetSkeletonSearchingCommand set_skeleton_searching = 21;
     }
 }
 
@@ -251,20 +278,43 @@ message SetOriginCommand {
 
 }
 
+message StartRecordingCommand {
+    bool record_2d = 1;
+
+    bool record_3d = 2;
+}
+
+message StopRecordingCommand {
+
+}
+
+message RecordingState {
+    double elapsed_seconds = 1;
+
+    bool error = 2;
+}
+
 
 // TODO: Get rid of this.
 message MocapTrackingLog {
-    repeated MocapTrackingState entries = 1;
+    // TODO: This doesn't really change so better to move somewhere else?
+    repeated MocapTrackedCamera cameras = 1;
+
+    repeated MocapTrackingState entries = 2;
+
+    repeated SkeletonProto skeletons = 3;
 }
 
 // TODO: Get rid of this.
 message MocapTrackingState {
-    // TODO: This doesn't really change so better to move somewhere else?
-    repeated MocapTrackedCamera cameras = 1;
 
     repeated TrackedPointProto points = 2;
 
     repeated MocapTrackedLink links = 3;
+
+    repeated SkeletonCalculatedPositions skeletons = 4;
+
+    reserved 1;
 }
 
 // TODO: Get rid of this.

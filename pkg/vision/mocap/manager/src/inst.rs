@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use common::errors::*;
 use common::hash::FastHasherBuilder;
-use executor::sync::{AsyncVariable, AsyncRwLock};
+use executor::sync::{AsyncVariable, AsyncRwLock, AsyncMutex};
 use executor::lock;
 use executor::child_task::ChildTask;
 use executor_multitask::{impl_resource_passthrough, ServiceResource, ServiceResourceGroup, BroadcastChannel};
@@ -34,6 +34,8 @@ use crate::config::*;
 use crate::wanding::*;
 use crate::rigid_body::*;
 use crate::origin::*;
+use crate::recording::*;
+use crate::skeleton::{SkeletonTracker, standard_skeleton};
 
 const CONFIG_PATCH_FILE: &'static str = "config.pb";
 
@@ -57,7 +59,8 @@ struct Shared {
     camera_config_state: AsyncVariable<CameraConfigState>,
     merged_blobs: BroadcastChannel<Arc<ReadBlobsResponse>>,
     tracked_points: BroadcastChannel<Arc<ReadTrackedPointsResponse>>,
-    simulator: Option<MocapSimulator>
+    simulator: Option<MocapSimulator>,
+    skeleton_search_requests: AsyncMutex<HashMap<u32, bool, FastHasherBuilder>>,
 }
 
 #[derive(Default)]
@@ -119,6 +122,7 @@ enum Mode {
     Running,
     CheckerboardCalibration(CheckerboardCalibrationMode),
     WandingCalibration(WandingCalibrationMode),
+    Recording(RecordingMode),
 }
 
 impl Default for Mode {
@@ -174,6 +178,7 @@ impl MocapManager {
             merged_blobs: BroadcastChannel::default(),
             tracked_points: BroadcastChannel::default(),
             simulator,
+            skeleton_search_requests: Default::default(),
         });
 
         resources.spawn_interruptable("resolver", Self::service_resolver_thread(shared.clone())).await;
@@ -303,6 +308,9 @@ impl MocapManager {
             }
             Mode::WandingCalibration(mode) => {
                 proto.mode_mut().set_wanding_calibration(mode.to_proto());
+            }
+            Mode::Recording(mode) => {
+                proto.mode_mut().set_recording(mode.to_proto());
             }
         }
 
@@ -635,6 +643,97 @@ impl MocapManager {
                 self.apply_config_patch(&patch).await?;
 
             }
+            ExecuteRequestCommandCase::StartRecording(cmd) => {
+                let initial_status = self.status().await?;
+                let blobs_subscriber = self.shared.merged_blobs.subscribe(1024);
+                let points_subscriber = self.shared.tracked_points.subscribe(1024);
+
+                lock!(state <= self.shared.state.lock().await?, {
+
+                    match &state.mode {
+                        Mode::Running => {}
+                        _ => {
+                            return Err(err_msg("Must be idle to start recording"));
+                        }
+                    }
+
+                    let mode = RecordingMode::create(
+                        &self.shared.data_dir,
+                        initial_status,
+                        blobs_subscriber,
+                        points_subscriber
+                    )?;
+
+                    state.mode = Mode::Recording(mode);
+
+                    Result::<_, Error>::Ok(())
+                })?;
+
+            }
+            ExecuteRequestCommandCase::StopRecording(cmd) => {
+
+                let f = lock!(state <= self.shared.state.lock().await?, {
+                    match &state.mode {
+                        Mode::Recording(m) => Ok(m.finish()),
+                        _ => {
+                            Err(err_msg("Must be recording to stop recording"))
+                        }
+                    }
+                })?;
+
+                f.await;
+
+                lock!(state <= self.shared.state.lock().await?, {
+                    state.mode = Mode::Running;
+                });
+            }
+
+            ExecuteRequestCommandCase::CreateSkeleton(cmd) => {
+
+                let mut patch = {
+                    let mut p = MocapManagerConfig::default();
+                    let config = self.shared.config.read().await?;
+                    p.skeleton_tracker_mut().skeletons_mut().extend(config.skeleton_tracker().skeletons().iter().cloned());
+                    p
+                };
+
+                let mut next_id = 1;
+
+                for s in patch.skeleton_tracker().skeletons() {
+                    next_id = next_id.max(s.id() + 1);
+                }
+
+                let mut skel = standard_skeleton();
+                skel.id = next_id;
+                patch.skeleton_tracker_mut().add_skeletons(skel.to_proto());
+
+                self.apply_config_patch(&patch).await?;
+            }
+
+            ExecuteRequestCommandCase::DeleteSkeleton(cmd) => {
+                let mut patch = {
+                    let mut p = MocapManagerConfig::default();
+                    let config = self.shared.config.read().await?;
+                    p.skeleton_tracker_mut().skeletons_mut().extend(config.skeleton_tracker().skeletons().iter().cloned());
+                    p
+                };
+
+                for i in 0..patch.skeleton_tracker().skeletons().len() {
+                    let s = &patch.skeleton_tracker().skeletons()[i];
+                    if s.id() == cmd.id() {
+                        patch.skeleton_tracker_mut().skeletons_mut().remove(i);
+                        break;
+                    }
+                }
+
+                self.apply_config_patch(&patch).await?;
+            }
+
+            ExecuteRequestCommandCase::SetSkeletonSearching(cmd) => {                
+                lock!(reqs <= self.shared.skeleton_search_requests.lock().await?, {
+                    reqs.insert(cmd.id(), cmd.searching());
+                });
+            }
             ExecuteRequestCommandCase::NOT_SET => {
                 return Err(err_msg("Unknown command"));
             }
@@ -652,6 +751,7 @@ impl MocapManager {
 
         let data = diff.serialize()?;
 
+        // TODO: Need atomic file operations here.
         file::write(&self.shared.config_path, data).await?;
 
         Ok(())
@@ -933,7 +1033,7 @@ impl MocapManager {
 
             let intended_ptp_config = Self::get_ptp_config(&shared, camera_id).await?;
             if *ptp_status.config() != intended_ptp_config {
-                eprintln!("Configuring PTP for camera...");
+                // eprintln!("Configuring PTP for camera...");
 
                 if intended_ptp_config.role() == TimeSyncRole::LEADER {
                     // Ideally the leader is configured slightly after the followers to ensure the followers don't
@@ -1200,6 +1300,8 @@ impl MocapManager {
 
         let mut rigid_body_tracker = RigidBodyTracker::default();
 
+        let mut skeleton_tracker = SkeletonTracker::default();
+
         let mut last_config_revision = 0;
 
         let mut subscriber = shared.merged_blobs.subscribe(8);
@@ -1231,19 +1333,30 @@ impl MocapManager {
                     matcher.set_camera_parameters(&params);
 
                     rigid_body_tracker.set_config(config.rigid_body_tracker().clone())?;
+
+                    skeleton_tracker.set_config(config.skeleton_tracker().clone())?;
                 }
 
                 last_config_revision = config.revision();
                 drop(config);
             }
 
+            lock!(reqs <= shared.skeleton_search_requests.lock().await?, {
+                for (id, searching) in reqs.drain() {
+                    skeleton_tracker.set_skeleton_searching(id, searching);
+                }
+            });
+
             let mut points = matcher.run(&blobs_res);
 
             rigid_body_tracker.run(&points);
+            // TODO: Expose back propagation directly through the API.
             rigid_body_tracker.backpropagate_predicted_points(&mut matcher);
             points = matcher.points();
 
             // TODO: When doing skeleton tracking, exclude any points found for rigid bodies.
+
+            skeleton_tracker.run(&points);
 
 
             let mut res = ReadTrackedPointsResponse::default();
@@ -1259,6 +1372,10 @@ impl MocapManager {
                 }
 
                 res.add_rigid_bodies(body.to_proto());
+            }
+
+            for skel in skeleton_tracker.to_state_protos() {
+                res.add_skeletons(skel);
             }
 
             shared.tracked_points.send(Arc::new(res));

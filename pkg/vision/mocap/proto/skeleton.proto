@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package mocap;
+
+import "pkg/math/proto/matrix.proto";
+
+message SkeletonTrackerConfig {
+    // Set of all skeletons that we are trying to track.
+    // (one per tracked human)
+    repeated SkeletonProto skeletons = 1;
+
+    SkeletonSearchConfig search = 2;
+}
+
+message SkeletonSearchConfig {
+    // Maximum distance from each real point to the nearest point in the skeleton
+    // model to allow matching the T-pose skeleton points.
+    double max_model_point_distance = 1;
+
+    // Minimum number of seconds for which the point cloud around the skeleton must
+    // be standing still (at most max_standstill_distance movement between frames)
+    // for us to finalize a match.
+    //
+    // This is to ensure that people have enough time to fully raise their arms before
+    // a match is performed.
+    double min_standstill_time_secs = 2;
+
+    // Maximum motion (in meters) between consecutive frames for a point to be considered
+    // to be standing still. 
+    double max_standstill_distance = 3;
+
+    uint32 max_skeleton_scan_fps = 4;
+}
+
+message SkeletonProto {
+    uint32 id = 1;
+
+    repeated BoneProto bones = 2;
+
+    repeated BoneMarkerProto markers = 3;
+}
+
+message BoneProto {
+    string name = 1;
+
+    optional uint32 parent = 2;
+
+    math.VectorProto end_position = 3;
+}
+
+message BoneMarkerProto {
+    string name = 1;
+
+    uint32 bone_index = 2;
+    
+    math.VectorProto position = 3;
+}
+
+enum SkeletonMode {
+    UNKNOWN = 0;
+    
+    // Default state for a skeleton. We don't know where the skeleton currently is
+    // and we are not actively doing any matching for it.
+    LOST = 1;
+
+    // The skeleton state is currently reset to the T-pose at the origin and we are
+    // waiting for a set of points to overlap with it so that we can lock on to the
+    // initial state of the skeleton.
+    SEARCHING = 2;
+
+    // We have a set of labeled markers corresponding to the skeleton and we are
+    // actively following them.
+    //
+    // NOTE: When a skeleton first transitions to 'LIVE', the definition in the
+    // 'SkeletonProto' may change to adjust marker and limb positions to the
+    // point cloud data.
+    LIVE = 3;
+}
+
+
+message SkeletonStateProto {
+    uint32 id = 1;
+
+    SkeletonMode mode = 2;
+
+    // There will be a '0' for missing ids.
+    repeated uint64 marker_ids = 3;    
+
+    SkeletonJointsStateProto joints = 4;
+
+    // NOTE: This is redundant with 'joints' and provided for
+    // convenience to avoid needing to re-implement the forward
+    // kinematics code.
+    SkeletonCalculatedPositions calculated_positions = 5;
+}
+
+message SkeletonJointsStateProto {
+    // Overall translation applied to all points in the SkeletonProto.
+    //
+    // NOTE: All points are first rotated then translated.
+    math.VectorProto translation = 1;
+
+    // Overall rotation applied to all points in the SkeletonProto.
+    // 
+    // (3 value axis-angle)
+    math.VectorProto rotation = 2;
+
+    // Rotations of each individual bone in the skeleton.
+    repeated math.VectorProto bone_rotations = 3;
+}
+
+message SkeletonCalculatedPositions {
+    repeated math.VectorProto start = 1;
+    repeated math.VectorProto end = 2;
+}
+
+
+message CreateSkeletonCommand {
+
+}
+
+message DeleteSkeletonCommand {
+    uint32 id = 1;
+}
+
+message SetSkeletonSearchingCommand {
+    uint32 id = 1;
+    bool searching = 2;
+}
+

@@ -166,8 +166,8 @@ impl WandingCalibrationSolver {
         let mut data = vec![];
         core::mem::swap(&mut data, &mut self.frames);
 
-        println!("Subsetting wands...");
-        let mut data = self.select_frame_subset(&mut data)?;
+        // println!("Subsetting wands...");
+        // let mut data = self.select_frame_subset(&mut data)?;
 
         // println!("Num cams: {}", num_cameras);
 

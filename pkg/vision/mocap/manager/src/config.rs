@@ -131,6 +131,14 @@ impl ManagerConfigContainer {
             self.diff.rigid_body_tracker_mut().merge_from(other.rigid_body_tracker());
         }
 
+        if other.has_skeleton_tracker() {
+            self.merged.skeleton_tracker_mut().clear_skeletons();
+            self.diff.skeleton_tracker_mut().clear_skeletons();
+
+            self.merged.skeleton_tracker_mut().merge_from(other.skeleton_tracker());
+            self.diff.skeleton_tracker_mut().merge_from(other.skeleton_tracker());
+        }
+
         // TODO: Regular proto merge for the rest of the stuff.
 
         self.extract_camera_params();

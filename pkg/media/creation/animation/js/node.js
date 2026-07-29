@@ -1,6 +1,6 @@
 const { createCanvas, loadImage, registerFont } = require('canvas')
 const { encode_frames } = require('./video_encoder');
-const { configure } = require('./timelines/mocap/animation');
+const { configure } = require('./timelines/mocap_part2/animation');
 
 
 

@@ -36,6 +36,8 @@ TODOs for improving speed/robustness
 - Need some concept of empty space (normally rigid bodies shouldn't have any additional points in the point cloud in/near their convex hull)
 
 - We should be able to match a rigid body using just a single camera frame if enough of the points are visible in it.
+
+- When rematching a rigid body, we end to verify we have 3 non-colinear points (otherwise the rotation can just spin.) 
 */
 
 /// Tracks zero or more rigid bodies in a 3d point cloud across

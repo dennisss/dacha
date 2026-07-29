@@ -92,6 +92,14 @@ impl<T> BroadcastChannelSubscriber<T> {
         Ok(self.receiver.recv().await?)
     }
 
+    pub fn try_recv(&mut self) -> Option<Result<T>> {
+        if let Some(v) = self.receiver.try_recv() {
+            Some(v.map_err(|e| e.into()))
+        } else {
+            None
+        }
+    }
+
     pub async fn wait(&mut self) {
         self.receiver.wait().await
     }

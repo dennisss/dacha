@@ -19,6 +19,7 @@ mod rigid_body;
 mod rigid_transform;
 mod origin;
 pub mod skeleton;
+mod recording;
 
 pub use inst::*;
 pub use wand::*;

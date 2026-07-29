@@ -1779,8 +1779,11 @@ impl NodeInner {
         Ok(())
     }
 
+    // TODO: Need a way to immediately retry  a RestartBackoff entry (or at least report how long is left before retry)
+
     /// ALL ERRORS ARE FATAL
     async fn transition_worker_to_stopping(&self, worker: &mut Worker) -> Result<()> {
+        // TODO: This sometimes crashes.
         let container_id = worker.container_id.as_ref().unwrap();
 
         /*
@@ -1833,6 +1836,7 @@ impl NodeInner {
 
     /// ALL ERRORS ARE FATAL
     async fn transition_worker_to_force_stopping(&self, worker: &mut Worker) -> Result<()> {
+        // TODO: Given the other line crashes, this might also crash sometimes.
         let container_id = worker.container_id.as_ref().unwrap();
 
         let mut event = WorkerEvent::default();

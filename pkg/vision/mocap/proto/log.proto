@@ -7,8 +7,14 @@ import "pkg/vision/mocap/proto/camera.proto";
 
 message MocapLogEntry {
     // Included in the first log entry to record the set of cameras involved.
+    //
+    // TODO: For some stuff like skeletons and rigid bodies, it is important
+    // to log this more frequently since changes to those at runtime will cause
+    // the config to change (which contains the rigid body and skeleton definitions)
     MocapManagerStatus system_state = 1;
 
     // Included in all the but the first entry to record one frame of calibration data.
     ReadBlobsResponse blobs = 2;
+
+    ReadTrackedPointsResponse points = 3;
 }

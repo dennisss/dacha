@@ -1,5 +1,3 @@
-use math::matrix::Matrix2d;
-
 // TODO: Verify nothing in here can overflow in u64 or in f64 int limits..
 // We may need to limit max blob size before calculating stats and/or
 // compute sums using relative coordinates. 

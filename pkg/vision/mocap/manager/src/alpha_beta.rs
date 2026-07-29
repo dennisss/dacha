@@ -7,16 +7,18 @@ pub struct AlphaBetaEstimator3D {
     v: Vector3d,
     alpha: f64,
     beta: f64,
+    max_speed: f64,
     last_dt: Option<f64>,
 }
 
 impl AlphaBetaEstimator3D {
-    pub fn new(initial_position: &Vector3d, alpha: f64, beta: f64) -> Self {
+    pub fn new(initial_position: &Vector3d, alpha: f64, beta: f64, max_speed: f64) -> Self {
         Self {
             x: initial_position.clone(),
             v: Vector3d::zero(),
             alpha,
             beta,
+            max_speed,
             last_dt: None,
         }
     }
@@ -41,5 +43,10 @@ impl AlphaBetaEstimator3D {
 
         self.x += r.clone() * self.alpha;
         self.v += r * (self.beta / dt);
+
+        let speed = self.v.norm().abs();
+        if speed.abs() > self.max_speed {
+            self.v *= self.max_speed / speed;
+        }
     }
 }

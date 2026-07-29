@@ -172,7 +172,17 @@ impl ConnectionShared {
         // error. NOTE: If this is true, then reader_closed should also be true.
         if stream_state.error.is_none() && !stream.is_normally_closed(&stream_state) {
             stream_state.error = Some(ProtocolErrorV2 {
-                code: ErrorCode::CANCEL,
+                /*
+                As a server we might get into this situation if we finished sending a response
+                before the client finished writing the response.
+
+                In this, NO_ERROR is allowed by the HTTP2 spec
+                
+                TODO: though ideally we instead don't send anything and we only send back a RST_STREAM with
+                STREAM_CLOSED separately if we actually keep getting data packets from the client after the
+                closure of the stream is finalized.
+                */  
+                code: if self.is_server { ErrorCode::NO_ERROR } else { ErrorCode::CANCEL },
                 message: "Stream no longer needed.",
                 local: true,
             });

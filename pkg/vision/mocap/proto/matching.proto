@@ -64,6 +64,9 @@ message BlobMatchingConfig {
     // calibration is bad or objects are moving very quickly relative
     // to your frame rate.
     bool fast_rematch_old_points = 10;
+
+    // In m/s
+    double max_marker_speed = 11;
 }
 
 message TrackedPointProto {
