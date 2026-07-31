@@ -238,6 +238,7 @@ impl WandingCalibrationMode {
 
         println!("Done writing calibration data!");
 
+        // TODO: Make this interruptable.
         let solution = calibrator.solve()?;
 
         shared.state.apply(|state| {

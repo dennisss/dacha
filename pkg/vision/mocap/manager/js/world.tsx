@@ -47,7 +47,21 @@ const CONTROLS = [
         name: 'Show Rigid Body Axes',
         setting: new Setting('world.show_rigid_body_axis', false),
         viewer_fn: (viewer: MocapWorldViewer, value: boolean) => viewer.setRigidBodyAxesVisible(value)
-    }
+    },
+    {
+        name: 'Show Skeletons',
+        setting: new Setting('world.show_skeletons', true),
+        viewer_fn: (viewer: MocapWorldViewer, value: boolean) => viewer.setSkeletonVisible(value)
+    },
+    {
+        name: 'Show Skeletons Markers',
+        setting: new Setting('world.show_skeletons_markers', false),
+        viewer_fn: (viewer: MocapWorldViewer, value: boolean) => viewer.setSkeletonMarkersVisible(value)
+    },
+
+    /*
+    TODO: Allow hiding ghost points.
+    */
 ];
 
 export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
@@ -130,7 +144,7 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
         // TODO: Retry everything with exponential backoff.
 
         let res = this.props.context.channel.call_streaming('mocap.MocapManager', 'ReadTrackedPoints', {
-            max_rate: 10
+            max_rate: 30
         });
         // TODO: Check the response status.
 
@@ -202,10 +216,33 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
             })
         });
 
+        let skeletons_data = [];
+
+        (this.state.status.config.skeleton_tracker.skeletons || []).map((config) => {
+            let state = null;
+            (this.state.points.skeletons || []).map((s) => {
+                if (s.id == config.id) {
+                    state = s;
+                }
+            })
+
+            if (!state) {
+                return;
+            }
+
+            skeletons_data.push({
+                id: config.id,
+                bone_names: config.bones.map((b) => b.name),
+                joints: state.joints,
+                ...state.calculated_positions
+            });
+        });
+
         let data = {
             cameras: cameras_data,
             points,
-            rigid_bodies: rigid_data
+            rigid_bodies: rigid_data,
+            skeletons: skeletons_data
         };
 
         this._viewer.update(data);
@@ -298,6 +335,17 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
                         </CardBody>
                     </Card>
 
+                    <Card header="Skeletons" style={{ marginBottom: 10 }}>
+                        {this._render_skeleton_list()}
+                        <CardBody>
+                            <Button onClick={(done) => {
+                                this._execute({ create_skeleton: {} }, done)
+                            }} preset="outline-primary">
+                                Create Skeleton
+                            </Button>
+                        </CardBody>
+                    </Card>
+
                     <Card header="Calibration" style={{ marginBottom: 10 }}>
                         <CardBody>
                             <Button onClick={(done) => this._execute({ set_origin: {} }, done)} preset="outline-primary">
@@ -361,6 +409,62 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
                                     </td>
                                 </tr>
                             )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        );
+
+    }
+
+    _render_skeleton_list() {
+        if (!this.state.status || !this.state.points) {
+            return <div></div>;
+        }
+
+        let res = this.state.points;
+
+        // TODO: Iterate over the list in the config since that be more consistently available (even if frame rate is 0)
+
+        // TODO: Have a column for # of markers matched (out of total in skeleton)
+
+        return (
+            <div style={{ padding: '0 8px' }}>
+                <table className="table table-hover" style={{ verticalAlign: "baseline", fontFamily: "Noto Sans Mono", marginBottom: 0 }}>
+                    <thead>
+                        <tr>
+                            <th style={{ width: 1 }}>Id</th>
+                            <th>Mode</th>
+                            <th style={{ width: 1 }}></th>
+                            <th style={{ width: 1 }}></th>
+                        </tr>
+                    </thead>
+                    <tbody style={{ fontSize: '0.9em' }}>
+                        {(res.skeletons || []).map((skel) => {
+                            let searching = skel.mode == 'SEARCHING';
+
+                            return (
+                                <tr key={skel.id}>
+                                    <td style={{ width: 1 }}>{skel.id}</td>
+                                    <td>{skel.mode}</td>
+                                    <td style={{ width: 1 }}>
+                                        <Button preset={DARK_MODE.get() ? 'outline-light' : "outline-dark"} active={searching}
+                                            onClick={(done) => {
+                                                this._execute({ set_skeleton_searching: { id: skel.id, searching: !searching } }, done)
+                                            }} style={{ lineHeight: 1 }}
+                                        >
+                                            <span className="material-symbols-outlined">search</span>
+                                        </Button>
+                                    </td>
+                                    <td style={{ width: 1 }}>
+                                        <Button preset={DARK_MODE.get() ? 'outline-light' : "outline-dark"} onClick={(done) => {
+                                            this._execute({ delete_skeleton: { id: skel.id } }, done)
+                                        }} style={{ lineHeight: 1 }}>
+                                            <span className="material-symbols-outlined">delete</span>
+                                        </Button>
+                                    </td>
+                                </tr>
+                            );
                         })}
                     </tbody>
                 </table>

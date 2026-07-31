@@ -71,6 +71,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
         // TODO: If we disable all cameras, this should ideally emit some empty frames to update the UI appropriately.
         let res = this.props.context.channel.call_streaming('mocap.MocapManager', 'ReadBlobs', {
+            // TODO: Maybe constantly increase or make configurable so that the UI looks smoother when debugging.
             max_rate: 10
         });
         // TODO: Check the response status.
@@ -749,6 +750,58 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
         );
     }
 
+    _render_recording_card() {
+        function make_button(text, disabled, on_click) {
+            return (
+                <div style={{ width: '25%', padding: '0 5px', display: 'inline-block' }}>
+                    <Button preset='outline-primary' disabled={disabled} style={{ width: '100%', opacity: (disabled ? 0.5 : 1) }} onClick={on_click}>{text}</Button>
+                </div>
+            )
+        }
+
+        let status = this.state.status;
+
+        let is_recording = false;
+
+        let stats = null;
+
+        if (status.mode && status.mode.recording) {
+            is_recording = true;
+
+            let mode = status.mode.recording;
+
+            let props = [];
+            (Object.keys(mode) || []).map((key) => {
+                props.push({
+                    name: key,
+                    value: JSON.stringify(round_nested_digits(mode[key], 2))
+                })
+            });
+
+            stats = (
+                <div style={{ marginTop: 10, marginBottom: -10 }}>
+                    <PropertiesTable properties={props} />
+                </div>
+            );
+        }
+
+        return (
+            <Card header="Data Recording" style={{ marginBottom: 10 }}>
+                <CardBody>
+                    <div style={{ margin: '0 -5px' }}>
+                        {make_button('Start', is_recording, (done) => {
+                            this._execute({ start_recording: {} }, done)
+                        })}
+                        {make_button('Stop', !is_recording, (done) => {
+                            this._execute({ stop_recording: {} }, done)
+                        })}
+                    </div>
+                    {stats}
+                </CardBody>
+            </Card>
+        );
+    }
+
     render() {
         let status = this.state.status;
         if (!status) {
@@ -844,6 +897,8 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
                             {this._render_wanding_card()}
 
+                            {this._render_recording_card()}
+
                             {/* TODO: Allow reading/writing just one camera's settings temporarily. */}
                             <Card header="Controls (all cameras)" style={{ marginBottom: 10 }}>
                                 <CardBody>
@@ -851,8 +906,8 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                 </CardBody>
                             </Card>
 
-                            {/* NOTE: This should be last since it is fairable length and may shift the other stuff. */}
-                            {this._render_blob_list()}
+                            {/* NOTE: This should be last since it is fairable length and may shift the other stuff (though even if it is last, it can still cause the scroll height to change which can push the page so is rather annoying). */}
+                            {/* this._render_blob_list() */}
                         </div>
                     </div>
                 </div>

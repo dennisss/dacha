@@ -21,6 +21,9 @@ pub struct Skeleton {
     pub bones: Vec<Bone>,
 
     pub markers: Vec<BoneMarker>,
+
+    /// TODO: Serialize me.
+    pub default_translation: Vector3d,
 }
 
 impl Skeleton {
@@ -161,7 +164,7 @@ pub struct SkeletonJointsState {
 impl SkeletonJointsState {
     pub fn zero(skeleton: &Skeleton) -> Self {
         Self {
-            translation: Vector3d::zero(),
+            translation: skeleton.default_translation.clone(),
             rotation: Vector3d::zero(),
             bone_rotations: vec![ Vector3d::zero(); skeleton.bones.len() ]
         }

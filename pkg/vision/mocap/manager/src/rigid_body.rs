@@ -38,6 +38,10 @@ TODOs for improving speed/robustness
 - We should be able to match a rigid body using just a single camera frame if enough of the points are visible in it.
 
 - When rematching a rigid body, we end to verify we have 3 non-colinear points (otherwise the rotation can just spin.) 
+
+- Need some rigid body position hysterisis (a rigid body should not be allowed to "jump" across the room without enough time ellapsing of it not being tracked)
+
+- Need to ensure that we support markers separating from a rigid body if tracking degrades or the object breaks.
 */
 
 /// Tracks zero or more rigid bodies in a 3d point cloud across
@@ -379,6 +383,7 @@ impl RigidBodyTracker {
 
         candidate.matched = Some(find_rigid_transform(&candidate.input_points, &candidate.output_points, &[]));
 
+        // TODO: This needs to support replacing ghost ids.
         let found_more = self.predicted_remaining_points(
             &self.bodies[body_i], &points_index, candidate
         );

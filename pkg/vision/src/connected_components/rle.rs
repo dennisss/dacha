@@ -235,6 +235,10 @@ impl RLEConnectedComponentsProcessor {
             if !have_component {
                 // Copy the component from the last line's run since we don't have a real
                 // component for the current run yet.
+                //
+                // TODO: This line can be optimized quite a bit:
+                // - We should never need to update y_min and we can just always update y_max.
+                // - We can run the computation in finish_pixel_row() at the same time as doing this add.
                 self.components[last_component_i].add(&self.current_run_component);
                 run.component_id = last_component_i as u32;
                 have_component = true;

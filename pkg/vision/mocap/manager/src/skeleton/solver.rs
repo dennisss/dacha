@@ -13,8 +13,8 @@ pub fn solve_skeleton_joints_state(
     markers: &[(usize, Vector3d)]
 ) -> SkeletonJointsState {
     let mut solver = NonLinearSolver::new();
-    solver.set_max_iterations(20);
-    solver.set_min_error(0.0005 * ((markers.len() * 3) as f64));
+    solver.set_max_iterations(100);
+    // solver.set_min_error(0.0001 * ((markers.len() * 3) as f64));
     // solver.enable_logging();
 
     let param = solver.add_parameter_block(

@@ -18,6 +18,7 @@ use math::matrix::{Vector2f, vec2f, vec3f, MatrixXf, Vector3f, vec2d, Vector2d};
 
 use crate::checkerboard::refinement::*;
 use crate::checkerboard::utils::*;
+use crate::checkerboard::drawing::*;
 
 const LOCAL_THRESHOLDING_RADIUS: isize = 4;
 
@@ -49,10 +50,15 @@ pub struct CheckerboardDetectionResult {
     pub points: Option<Vec<Vector2d>>,
 }
 
+#[derive(Default)]
+pub struct CheckerboardDetectionOptions {
+    pub grid_width: usize,
+    pub grid_height: usize,
+    pub output_debug_images: bool
+}
+
 pub async fn detect_checkboard(
-    img: &Image<u8>,
-    grid_width: usize,
-    grid_height: usize
+    img: &Image<u8>, options: &CheckerboardDetectionOptions
 ) -> CheckerboardDetectionResult {
 
     let mut res = CheckerboardDetectionResult::default();
@@ -66,10 +72,12 @@ pub async fn detect_checkboard(
         scharr_filter(&arr)
     });
 
-    // res.debug_images.push(Image {
-    //     array: gradients.cast(),
-    //     colorspace: Colorspace::Grayscale
-    // });
+    if options.output_debug_images {
+        res.debug_images.push(Image {
+            array: gradients.cast(),
+            colorspace: Colorspace::Grayscale
+        });
+    }
 
     let thresholded = time_work("LocalThresholding", || {
         apply_local_thresholding(&gradients)
@@ -77,10 +85,12 @@ pub async fn detect_checkboard(
 
     let dilated = time_work("Dilation", || apply_condional_dilation(&thresholded));
 
-    // res.debug_images.push(Image {
-    //     array: dilated.cast(),
-    //     colorspace: Colorspace::Grayscale
-    // });
+    if options.output_debug_images {
+        res.debug_images.push(Image {
+            array: dilated.cast(),
+            colorspace: Colorspace::Grayscale
+        });
+    }
 
     let background_distances = time_work("DistanceTransform", || calculate_distance_transform(&dilated));
 
@@ -94,11 +104,12 @@ pub async fn detect_checkboard(
     });
 
 
-
-    // res.debug_images.push(Image {
-    //     array: centerline.cast(),
-    //     colorspace: Colorspace::Grayscale
-    // });
+    if options.output_debug_images {
+        res.debug_images.push(Image {
+            array: centerline.cast(),
+            colorspace: Colorspace::Grayscale
+        });
+    }
 
     let saddle_points = time_work("FindSaddle", || find_saddle_points(&centerline));
 
@@ -113,7 +124,7 @@ pub async fn detect_checkboard(
 
     let mut found_geometry = None;
     for component in saddle_components {
-        if component.clusters.len() != grid_height * grid_width {
+        if component.clusters.len() != options.grid_height * options.grid_width {
             continue;
         }
 
@@ -124,11 +135,11 @@ pub async fn detect_checkboard(
             None => continue
         };
 
-        if geometry.width != grid_width {
+        if geometry.width != options.grid_width {
             geometry = geometry.transpose();
         }
 
-        if geometry.width != grid_width || geometry.height != grid_height {
+        if geometry.width != options.grid_width || geometry.height != options.grid_height {
             continue;
         }
 
@@ -147,7 +158,7 @@ pub async fn detect_checkboard(
     {
         let pt_0 = saddle_clusters[geometry.clusters[0]].average_point();
         let pt_x = saddle_clusters[geometry.clusters[1]].average_point();
-        let pt_y = saddle_clusters[geometry.clusters[grid_width]].average_point();
+        let pt_y = saddle_clusters[geometry.clusters[options.grid_width]].average_point();
 
         let x_vec = pt_x - &pt_0;
         let y_vec = pt_y - &pt_0; 
@@ -171,15 +182,17 @@ pub async fn detect_checkboard(
     }
 
 
-    // let mut debug_img = gray_to_color(img);
-    // {
+    // TODO: Also make this conditionally generated.
+    let mut debug_img = gray_to_color(img);
 
-    //     for cluster_idx in geometry.clusters.iter().cloned() {
-    //         let pt = saddle_clusters[cluster_idx].average_point();
-    //         draw_color_circle(&pt, &Color::rgb(0xff, 0, 0), &mut debug_img);
-    //     }
-    //     res.debug_images.push(debug_img.clone());
-    // }
+    if options.output_debug_images {
+
+        for cluster_idx in geometry.clusters.iter().cloned() {
+            let pt = saddle_clusters[cluster_idx].average_point();
+            draw_color_circle(&pt, &Color::rgb(0xff, 0, 0), &mut debug_img);
+        }
+        res.debug_images.push(debug_img.clone());
+    }
 
     let mut refined_points = vec![]; 
 
@@ -205,12 +218,12 @@ pub async fn detect_checkboard(
     });
 
 
-    // {
-    //     for pt in refined_points.iter().cloned() {
-    //         draw_color_circle(&pt, &Color::rgb(0, 0xff, 0), &mut debug_img);
-    //     }
-    //     res.debug_images.push(debug_img.clone());
-    // }
+    if options.output_debug_images {
+        for pt in refined_points.iter().cloned() {
+            draw_color_circle(&pt, &Color::rgb(0, 0xff, 0), &mut debug_img);
+        }
+        res.debug_images.push(debug_img.clone());
+    }
 
     if refined_points.len() == geometry.clusters.len() {
         res.points = Some(refined_points.into_iter().map(|p| p.cast() + vec2d(0.5, 0.5)).collect());
@@ -218,25 +231,6 @@ pub async fn detect_checkboard(
 
     res
 }
-
-fn gray_to_color(img: &Image<u8>) -> Image<u8> {
-    let mut data = vec![];
-    data.reserve_exact(img.height() * img.width() * 3);
-    for v in img.array.data.iter().cloned() {
-        for i in 0..3 {
-            data.push(v);
-        }
-    }
-
-    Image {
-        array: Array {
-            shape: vec![img.height(), img.width(), 3],
-            data,
-        },
-        colorspace: Colorspace::RGB,
-    }
-}
-
 
 fn scharr_filter(image: &Array<f32>) -> Array<f32> {
     let filter_x = Array::<f32>::from_slice(&[
@@ -815,27 +809,6 @@ fn merge_saddle_points(mut raw_points: Vec<(usize, usize)>, radius: f32) -> Vec<
 
     out
 }
-
-fn draw_color_circle(center_pt: &Vector2f, color: &Color, image: &mut Image<u8>) {
-
-    image.set(center_pt.y().round() as usize, center_pt.x().round() as usize, color);
-
-    let radius = 3.0;
-    let radius_squared = radius * radius;
-
-    
-    /*
-    for y in 0..image.height() {
-        for x in 0..image.width() {
-            let pt = vec2f(x as f32, y as f32);
-            if (pt - center_pt).norm_squared() <= radius_squared {
-                image.set(y, x, &Color::rgb(0xff, 0, 0));
-            }
-        }
-    }
-    */
-}
-
 
 
 fn find_adjacent_clusters(input: &Array<f32>, saddle_clusters: &[SaddlePointCluster]) -> Vec<(usize, usize)> {

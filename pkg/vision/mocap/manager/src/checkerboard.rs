@@ -174,7 +174,11 @@ impl CheckerboardCalibrationMode {
 
         let img = Image::<u8>::parse_from(res.mjpeg())?;
 
-        let points_2d = detect_checkboard(&img, grid_width, grid_height).await.points;
+        let mut options = CheckerboardDetectionOptions::default();
+        options.grid_width = grid_width;
+        options.grid_height = grid_height;
+
+        let points_2d = detect_checkboard(&img, &options).await.points;
 
         file::create_dir_all(&shared.output_dir).await?;
 

@@ -173,7 +173,7 @@ impl<'a> BlobPatternFinder<'a> {
 
                         // Make sure the bottom arm marker isn't close to being collinear with
                         // the other points
-                        let bottom_line_distance = line.distance_to_point(&center_l);
+                        let bottom_line_distance = line.distance_to_point(&center_l).abs();
                         if bottom_line_distance < self.config.min_bottom_line_pixel_distance() {
                             continue;
                         }

@@ -394,7 +394,7 @@ impl BlobMatcher {
             id,
             position: pt.clone(),
             camera_ids: vec![],
-            predictor: AlphaBetaEstimator3D::new(&pt, self.config.predictor_alpha(), self.config.predictor_beta()),
+            predictor: AlphaBetaEstimator3D::new(&pt, self.config.predictor_alpha(), self.config.predictor_beta(), self.config.max_marker_speed()),
             // TODO: Pass in the current frame time more directly or rename this variable?
             last_observed_time: self.last_predicted_time,
         });
@@ -409,7 +409,10 @@ impl BlobMatcher {
     /// This has no effect if the point already had a direct camera observation
     /// in the latest frame.
     pub fn add_position_observation(&mut self, id: u64, predicted_pt: Vector3d) {
-        let point_idx = self.last_id_to_index.get(&id).unwrap();
+        let point_idx = match self.last_id_to_index.get(&id) {
+            Some(v) => v,
+            None => return
+        };
         let point = &mut self.last_3d_points[*point_idx];
         if !point.camera_ids.is_empty() {
             return;
@@ -605,7 +608,7 @@ impl BlobMatcher {
             let new_point = self.current_3d_points.swap_remove(nearest_idx);
 
             let old_point = &mut self.current_3d_points[i];
-            let old_matched = !new_point.camera_ids.is_empty();
+            let old_matched = !old_point.camera_ids.is_empty();
 
             // TODO: Maybe re-triangulate if the old point also had some camera_ids.
 
@@ -810,7 +813,7 @@ impl BlobMatcher {
             id: 0,
             position: pt.clone(),
             camera_ids,
-            predictor: AlphaBetaEstimator3D::new(&pt, self.config.predictor_alpha(), self.config.predictor_beta()),
+            predictor: AlphaBetaEstimator3D::new(&pt, self.config.predictor_alpha(), self.config.predictor_beta(), self.config.max_marker_speed()),
             // TODO: Pass in the current frame time more directly or rename this variable?
             last_observed_time: self.last_predicted_time,
         });
