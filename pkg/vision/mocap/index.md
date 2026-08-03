@@ -511,12 +511,13 @@ WARNING: It's very important to carefully choose good capacitors and inductors f
         - Should be shielded.
         - Ideally want at least a 6A+ saturation current. 8A+ is ideal. Ripple may be 1-2 amps in the inductor and we
           don't want to get close to the limit for best acoustic performance.
-    - 22uF : [Wurth 74439369220](https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/c/25588540)
+    - **Recommended** 22uH : [Wurth 74439369220](https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/c/25588540)
         - Best efficiency. Modest speed: ~8us LED rise time.
         - Used on the official TI eval board.
         - Use with a >= 400kHz driver frequency.
+            - **Recommended**: 800kHz which ends up being a little bit acoustically quieter due to less ripple.
         - Size: 1090
-    - 15uF : [Wurth 74439358150](https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/74439358150/16370231):
+    - 15uH : [Wurth 74439358150](https://www.digikey.com/en/products/detail/w%C3%BCrth-elektronik/74439358150/16370231):
         - (only supported on LED board revision >= 4)
         - Good efficiency. Faster ~5us LED rise time. A bit cheaper.
         - Use with a >= 600kHz driver frequency.
@@ -534,10 +535,12 @@ WARNING: It's very important to carefully choose good capacitors and inductors f
 - 1nF caps for filters:
     - https://www.digikey.com/en/products/detail/murata-electronics/GRM1885C1H102JA01D/586943
 - Input/Output 2.2uF Capacitor
-    - KRM31KR72A225KH01K
+    - [KRM31KR72A225KH01K](https://www.digikey.com/en/products/detail/murata-electronics/KRM31KR72A225KH01K/4421933)
 - 0.01uF input filter
     - https://www.digikey.com/en/products/detail/murata-electronics/GCM1885C2A103JE02J/27381955
 - R_Fset
+    - **Recommended**: 28kOhm for 800kHz
+        - Higher than default frequency to minimize ripple which keeps the setup a bit more acoustically quite.
     - 59kOhm for 400kHz
     - [39kOhm](https://www.digikey.com/en/products/detail/yageo/RC0603FR-0739KL/727195) for ~600KHz
 
@@ -699,6 +702,8 @@ Recommended Stackup (`<= R3` board revisions):
 
 Basically any stackup with FR4, 4 layer, ENIG plating will work. All the high current traces are really wide and the expectation is that a heatsink will be mounted to deal with the thermals.
 
+Starting at R6+, use 'capped' vias when ordering the PCBs.
+
 **Stencils**
 
 Per-board recommend getting 2 140x140mm stencils (one for each side of the PCB).
@@ -769,12 +774,68 @@ All 3d printed parts should be made of black ASA and scaled to be dimensionally 
 
 - Attaching the camera to the 3d printed camera mount
     - 4 x M2 x 4mm
-    - 4 x M2 3mm height, 3.5mm diameter heatset inserts
+    - 4 x M2 3mm height, 3.5mm diameter heatset inserts (3.2mm narrow side diameter)
 - PCB Sandwich Screws
     - 4 x M2.5 32mm (30mm barely works too)
 - Exterior Case
     - 4 x M2 20mm
-    - 4 x M2 3mm height, 3.5mm diameter heatset inserts
+    - 4 x M2 3mm height, 3.5mm diameter heatset inserts (3.2mm narrow side diameter)
+
+#### Calibration Wand
+
+Where possible, prefer to use matte black parts to minimize calibration noise. This mainly doesn't matter for the markers and the hidden fasteners (T-nuts and threaded rods).
+
+Parts to buy:
+
+- 4 x M4 19mm spherical markers
+- 2 x Aluminum exutrions
+    - Recommend getting 400mm extrusions
+    - Misumi part number: HFSB5-2020
+    - These must be purchased from a well known brand to ensure dimensional accuracy.
+    - Minimum lengths are:
+        - 387mm for the 'head' side with 3 markers
+        - 216mm for the 'handle' side with 1 marker
+- 2 x Right Angle Aluminum Extrusion Brackets (+ screws/nuts)
+    - Misumi Part Number: HBLFSNB5-SEU (comes with screws for the brackets)
+- 8 x M4 2020 T-Nut
+    - Misumi Part Number: HNTT5-4
+- 4 x M4 6mm button head screws
+    - These will attach the flat plastic guide to the exstrusion
+- 4 x M4 40mm threaded rod
+
+3D Printing
+
+- 4 x `wand-standoff-40mm-rod.stl`
+    - Example Prusa XL settings in `wand-standoff-40mm-rod.3mf`
+    - Print out of ASA
+    - Scale to be dimensionally accurate (usually 100.5%)
+    - Random seam positioning
+- 1 x `wand.stl`
+    - Example Prusa XL settings in `wand.3mf`
+    - Print out of PLA
+    - Scale to be dimensionally accurate (usually 100.5%)
+    - Drill out the holes with a 4mm drill bit if screws don't barely fit.
+
+#### Body Suit 
+
+- Band material
+    - 3/4" wide Velstretch (~3.6 meters per person)
+    - Regular adhesive backed hook velcro (just need to a small amount cut to size to make the velstretch into a wearable 'bracelet').
+- 16 x `marker-base.stl` out of ASA
+- 16 x 14mm spherical markers
+- 16 x M4 10mm button head screws
+
+#### Calibration Checkerboard
+
+Code is available in [./scripts/generate_checkerboard.py](./scripts/generate_checkerboard.py) to generate a checkerboard PDF that can be printed out in 3mm thick ACM. The settings will need to be modified to match the printing shop you are using.
+
+Alternatively get it made by a specialist vendor like [foamcoreprint.com](https://foamcoreprint.com)
+
+- Outer board size: 16.5" by 24"
+- 40mm square size
+- 9 x 13 inner corners (10 x 14 squares)
+- Get the best 'matte' finish available.
+- Get slightly rounded corners if available
 
 #### Software
 
@@ -783,7 +844,7 @@ This section explains how to setup the software for an individual camera. This b
 - Raspberry Pi Provisioning Code
     - [//pkg/rpi/doc/compute_module.md](/pkg/rpi/doc/compute_module.md)
     - [//pkg/rpi/index.md](/pkg/rpi/index.md)
-    - We will be using a custom Raspberry Pi image that backs in most of the relevant customizations (sensor drivers, custom kernel, etc.)
+    - We will be using a custom Raspberry Pi image that packs in most of the relevant customizations (sensor drivers, custom kernel, etc.)
 - Clustering Library
     - [//pkg/cluster/index.md](//pkg/cluster/index.md) : For network coordination of cameras, TLS, software management.
 - Mocap Camera Code
