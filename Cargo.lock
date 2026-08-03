@@ -765,7 +765,6 @@ dependencies = [
  "regexp_macros",
  "rpc",
  "rpc_util",
- "sys",
 ]
 
 [[package]]
@@ -835,7 +834,6 @@ dependencies = [
  "regexp_macros",
  "rpc",
  "rpc_util",
- "sys",
  "web",
 ]
 
@@ -1801,7 +1799,6 @@ dependencies = [
  "executor",
  "failure",
  "macros",
- "sys",
 ]
 
 [[package]]
@@ -1812,7 +1809,6 @@ dependencies = [
  "common",
  "executor",
  "macros",
- "sys",
 ]
 
 [[package]]
@@ -3292,7 +3288,6 @@ dependencies = [
  "protobuf",
  "protobuf_json",
  "rpc",
- "sys",
  "vision",
 ]
 
@@ -3334,7 +3329,6 @@ dependencies = [
  "rpi",
  "scpi",
  "sstable",
- "sys",
  "vision",
  "web",
 ]

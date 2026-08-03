@@ -47,6 +47,14 @@ impl BundleAdjustmentSolver {
         }
     }
 
+    pub fn set_max_iterations(&mut self, n: usize) {
+        self.solver.set_max_iterations(n);
+    }
+
+    pub fn set_use_gradient_descent(&mut self) {
+        self.solver.set_use_gradient_descent();
+    }
+
     pub fn enable_logging(&mut self) {
         self.solver.enable_logging();
     }

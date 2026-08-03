@@ -1,0 +1,1 @@
+Big files are not uploaded to GitHub. See https://www.printables.com/model/1745863-optical-ir-motion-capture-camera/files

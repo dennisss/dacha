@@ -743,8 +743,11 @@ impl MocapManager {
     }
 
     async fn apply_config_patch(&self, patch: &MocapManagerConfig) -> Result<()> {
+        Self::apply_config_patch_inner(&self.shared, patch).await
+    }
 
-        let diff = lock!(config <= self.shared.config.write().await?, {
+    async fn apply_config_patch_inner(shared: &Shared, patch: &MocapManagerConfig) -> Result<()> {
+        let diff = lock!(config <= shared.config.write().await?, {
             config.merge_from(patch)?;
             Result::<_, Error>::Ok(config.diff().clone())
         })?;
@@ -752,7 +755,7 @@ impl MocapManager {
         let data = diff.serialize()?;
 
         // TODO: Need atomic file operations here.
-        file::write(&self.shared.config_path, data).await?;
+        file::write(&shared.config_path, data).await?;
 
         Ok(())
     }

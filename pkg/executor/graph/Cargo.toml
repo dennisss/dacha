@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 base_error = { path = "../../base/error" }
 common = { path = "../../common" }
-sys = { path = "../../sys" }
 macros = { path = "../../macros" }
 executor = { path = ".." }
 failure = "0.1.8"

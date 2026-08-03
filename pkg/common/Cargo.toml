@@ -17,7 +17,6 @@ generic-array = "0.13.2"
 async-std = { version = "1.9.0", features = ["attributes"], optional = true }
 chrono = { version = "0.4.19", optional = true }
 arrayref = "0.3.5"
-nix = { version = "0.21.0", optional = true }
 base_error = { path = "../base/error", default-features = false }
 base_args = { path = "../base/args", optional = true }
 base_util = { path = "../base/util", default-features = false }
@@ -26,4 +25,7 @@ macros = { path = "../macros" }
 [features]
 default = ["std"]
 alloc = ["base_error/alloc", "base_util/alloc"]
-std = ["alloc", "base_error/std", "libc", "base64", "async-trait", "failure", "futures", "futures-util", "bytes", "lazy_static", "async-std", "chrono", "nix", "base_args", "base_util/std"]
+std = ["alloc", "base_error/std", "libc", "base64", "async-trait", "failure", "futures", "futures-util", "bytes", "lazy_static", "async-std", "chrono", "base_args", "base_util/std"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.21.0" }
