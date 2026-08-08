@@ -70,19 +70,19 @@ pub async fn run_copy_command(cmd: CopyCommand) -> Result<()> {
         } else if meta.is_symlink() {
             let mut link_path = crate::readlink(&from_path)?;
 
-            if let Some(rel_path) = link_path.strip_prefix("/") {
+            if let Ok(rel_path) = link_path.strip_prefix("/") {
                 if let Some(root) = &cmd.symlink_root {
                     link_path = root.join(rel_path);
                 }
             }
 
             // TODO: This will only work well if all paths are normalized.
-            if let Some(rel_path) = link_path.strip_prefix(&cmd.from) {
+            if let Ok(rel_path) = link_path.strip_prefix(&cmd.from) {
                 link_path = cmd.to.join(rel_path);
             }
 
             if cmd.symlink_root.is_some() && !to_path.join(&link_path).starts_with(&cmd.to) {
-                return Err(format_err!("Symlink outside of root: {}", from_path.as_str()));
+                return Err(format_err!("Symlink outside of root: {}", from_path.display()));
             }
 
             crate::symlink(link_path, to_path).await?;

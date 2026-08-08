@@ -10,6 +10,7 @@ members = [
 	"pkg/net",
 	"pkg/net/router",
 	"pkg/net/ptp",
+	"pkg/net/ptp/core",
 	"pkg/reflection",
 	"pkg/asn",
 	"pkg/asn/compiler",
@@ -226,6 +227,10 @@ members = [
 	"pkg/vision/mocap/tools",
 	"pkg/vision/mocap/simulation",
 ]
+
+[workspace.dependencies]
+mio = { version = "1.2.2", default-features = false, features = ["os-poll", "net"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }
 
 [profile.dev]
 #opt-level = 3

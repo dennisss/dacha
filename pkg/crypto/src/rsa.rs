@@ -10,9 +10,7 @@ use math::big::{BigInt, Modulo};
 use math::big::{BigUint, SecureMontgomeryModulo};
 use math::big::{HeapAllocator, SecureBigUint, StorageType};
 use math::integer::Integer;
-use pkix::{
-    PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88, NIST_SHA2, PKCS_1,
-};
+use pkix::{PKIX1Explicit88, NIST_SHA2, PKCS_1};
 
 use crate::hasher::{GetHasherFactory, Hasher, HasherFactory};
 use crate::sha1::*;

@@ -1,17 +1,22 @@
 // TODO: Move this to the net crate.
 
+use alloc::vec::Vec;
 use std::ffi::CString;
 use std::fs::File;
+#[cfg(target_os = "linux")]
 use std::os::unix::prelude::{AsRawFd, FromRawFd};
 use std::ptr::{null, null_mut};
 
 use common::errors::*;
+
+#[cfg(target_os = "linux")]
 use common::libc;
+#[cfg(target_os = "linux")]
 use common::libc::getaddrinfo;
-use net::ip::IPAddress;
+#[cfg(target_os = "linux")]
 use sys::Errno;
 
-use crate::uri::*;
+use crate::ip::IPAddress;
 
 #[derive(Debug, PartialEq)]
 pub enum SocketType {
@@ -60,8 +65,9 @@ pub struct AddrInfo {
 ///     XXXX::/64 proto kernel metric 100 pref medium
 ///
 ///     ^ No default route
+#[cfg(target_os = "linux")]
 pub fn check_ip_routable(ip: &IPAddress) -> Result<bool, Errno> {
-    let sockaddr: sys::SocketAddr = net::ip::SocketAddr::new(ip.clone(), 1000).into();
+    let sockaddr: sys::SocketAddr = crate::ip::SocketAddr::new(ip.clone(), 1000).into();
 
     let file = unsafe {
         sys::socket(
@@ -81,6 +87,7 @@ pub fn check_ip_routable(ip: &IPAddress) -> Result<bool, Errno> {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub fn lookup_hostname(name: &str) -> Result<Vec<AddrInfo>> {
     let cname = CString::new(name).unwrap();
 
@@ -169,6 +176,26 @@ pub fn lookup_hostname(name: &str) -> Result<Vec<AddrInfo>> {
     unsafe {
         libc::freeaddrinfo(addrs);
     };
+
+    Ok(out)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn lookup_hostname(name: &str) -> Result<Vec<AddrInfo>> {
+    use std::net::ToSocketAddrs;
+
+    let mut out = vec![];
+
+    for addr in name.to_socket_addrs()? {
+        let address = addr.ip().into();
+
+        out.push(AddrInfo {
+            // TODO
+            family: AddressFamily::INET,
+            socket_type: SocketType::Stream,
+            address
+        });
+    }
 
     Ok(out)
 }

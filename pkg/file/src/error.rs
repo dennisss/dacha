@@ -2,7 +2,8 @@ use std::string::String;
 
 use alloc::string::ToString;
 use common::{errors::*, io::IoError};
-use executor::FromErrno;
+use executor::error::*;
+#[cfg(target_os = "linux")]
 use sys::Errno;
 
 /// Errors that occur during file operations.
@@ -49,6 +50,7 @@ impl FileError {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl FromErrno for FileError {
     fn from_errno(errno: Errno, message: &str) -> Option<Error> {
         if let Some(err) = IoError::from_errno(errno, message) {
@@ -67,5 +69,26 @@ impl FromErrno for FileError {
         };
 
         Some(FileError::new(kind, message).into())
+    }
+}
+
+impl FromStdError for FileError {
+    fn from_std_error(error: std::io::Error, message: &str) -> Result<Error, std::io::Error> {
+        let error = match IoError::from_std_error(error, message) {
+            Ok(v) => return Ok(v),
+            Err(e) => e
+        };
+
+        let kind = match error.kind() {
+            std::io::ErrorKind::NotFound => FileErrorKind::NotFound,
+            std::io::ErrorKind::AlreadyExists => FileErrorKind::AlreadyExists,
+            std::io::ErrorKind::NotADirectory => FileErrorKind::NotADirectory,
+            std::io::ErrorKind::QuotaExceeded => FileErrorKind::OutOfQuota,
+            std::io::ErrorKind::StorageFull => FileErrorKind::OutOfDiskSpace,
+            std::io::ErrorKind::InvalidFilename => FileErrorKind::InvalidPath,
+            _ => return Err(error)
+        };
+
+        Ok(Self::new(kind, message).into())
     }
 }

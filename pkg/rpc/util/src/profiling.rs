@@ -20,11 +20,17 @@ impl AddProfilingEndpoints for rpc::Http2Server {
 pub struct ProfilezRequestHandler {}
 
 impl ProfilezRequestHandler {
+    #[cfg(target_os = "linux")]
     async fn handle_impl(&self) -> Result<Bytes> {
         let profile = perf::profile_self(Duration::from_secs(10)).await?;
         let data = profile.serialize()?.into();
 
         Ok(data)
+    }
+    
+    #[cfg(not(target_os = "linux"))]
+    async fn handle_impl(&self) -> Result<Bytes> {
+        Err(err_msg("Profiling not supported on this OS"))
     }
 }
 

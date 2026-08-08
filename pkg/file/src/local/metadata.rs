@@ -1,5 +1,6 @@
 use core::time::Duration;
 use std::time::SystemTime;
+use common::errors::*;
 
 use crate::FileType;
 use crate::local::device_num::DeviceNumber;
@@ -22,13 +23,13 @@ impl Metadata {
         self.inner.st_gid
     }
 
-    pub fn modified(&self) -> SystemTime {
+    pub fn modified(&self) -> Result<SystemTime> {
         let t = &self.inner;
         assert!(t.st_mtime >= 0 && t.st_mtime_nsec >= 0);
 
-        SystemTime::UNIX_EPOCH
+        Ok(SystemTime::UNIX_EPOCH
             + Duration::from_secs(t.st_mtime as u64)
-            + Duration::from_nanos(t.st_mtime_nsec as u64)
+            + Duration::from_nanos(t.st_mtime_nsec as u64))
     }
 
     pub fn permissions(&self) -> Permissions {

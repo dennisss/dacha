@@ -14,13 +14,9 @@ use sys::{
 
 use crate::linux::executor::FileDescriptor;
 use crate::linux::io_uring::ExecutorOperation;
-use crate::RemapErrno;
+use crate::error::RemapErrno;
+use crate::linux::SyncRange;
 
-#[derive(Clone, Copy, Debug)]
-pub struct SyncRange {
-    pub start: u64,
-    pub end: u64,
-}
 
 /*
 TODO: Need to define which operations on here are ok with cancellation

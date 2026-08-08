@@ -4,7 +4,6 @@ use std::fmt::Display;
 use common::errors::*;
 use net::ip::SocketAddr;
 
-use crate::dns::*;
 use crate::uri::{Authority, Host};
 
 /// Function which is called whenever the resolver has a change in the set of
@@ -110,11 +109,11 @@ impl Resolver for SystemDNSResolver {
         match &self.host {
             Host::Name(n) => {
                 // TODO: This should become async.
-                let addrs = lookup_hostname(n.as_ref())?;
+                let addrs = net::lookup_hostname(n.as_ref())?;
 
                 // TODO: Prefer ipv6 over ipv4 if there are multiple?
                 for a in addrs {
-                    if a.socket_type == SocketType::Stream {
+                    if a.socket_type == net::SocketType::Stream {
                         endpoints.push(ResolvedEndpoint {
                             name: String::new(),
                             address: SocketAddr::new(a.address.clone(), self.port),

@@ -115,6 +115,7 @@ pub async fn run(options: ClusterMetastoreOptions) -> Result<Arc<dyn ServiceReso
                     dir: options.dir,
                     bootstrap_group: options.bootstrap,
                     bootstrap_node_id: Some(options.id),
+                    service_ip: net::local_ip().await?,
                     service_port: options.port,
                     route_labels: vec![route_label],
                     log: SegmentedLogOptions::default(),

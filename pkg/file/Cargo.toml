@@ -7,6 +7,9 @@ edition = "2024"
 automata = { path = "../automata" }
 base_util = { path = "../base/util" }
 common = { path = "../common" }
-sys = { path = "../sys" }
 executor = { path = "../executor" }
 macros = { path = "../macros" }
+failure = "0.1.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sys = { path = "../sys" }

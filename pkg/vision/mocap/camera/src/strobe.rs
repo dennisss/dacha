@@ -94,8 +94,6 @@ impl StrobeSimulationModel {
             return v;
         }
 
-        println!("AAA");
-
         let limit = self.find_power_limit(settings.frequency, settings.pulse_width, safety_margin);
         v.min(limit)
     }

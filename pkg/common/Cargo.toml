@@ -27,5 +27,5 @@ default = ["std"]
 alloc = ["base_error/alloc", "base_util/alloc"]
 std = ["alloc", "base_error/std", "libc", "base64", "async-trait", "failure", "futures", "futures-util", "bytes", "lazy_static", "async-std", "chrono", "base_args", "base_util/std"]
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.21.0" }

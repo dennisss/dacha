@@ -6,7 +6,7 @@ use std::ffi::CString;
 
 use common::errors::*;
 use sys::OpenFileDescriptor;
-use executor::RemapErrno;
+use executor::error::*;
 
 pub const STDIN: RawFd = 0;
 pub const STDOUT: RawFd = 1;

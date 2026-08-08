@@ -9,6 +9,7 @@ use std::sync::Once;
 use crate::cancellation::CancellationToken;
 use crate::channel;
 use crate::future::race;
+#[cfg(target_family = "unix")]
 use crate::signals::*;
 use crate::spawn;
 
@@ -42,7 +43,15 @@ fn get_shutdown_state() -> &'static std::sync::Mutex<ShutdownState> {
                 completion_waiters: vec![],
             }));
 
+            #[cfg(target_family = "unix")]
             spawn(signal_waiter());
+
+            #[cfg(target_family = "windows")]
+            unsafe {
+                use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+
+                SetConsoleCtrlHandler(Some(windows_ctrl_handler), 1);
+            }
         });
 
         SHUTDOWN_STATE.as_ref().unwrap()
@@ -51,6 +60,7 @@ fn get_shutdown_state() -> &'static std::sync::Mutex<ShutdownState> {
 
 /// Background task used to block until a unix shutdown signal is received and
 /// then notify all subscribers.
+#[cfg(target_family = "unix")]
 async fn signal_waiter() {
     let mut sigint_handler = register_signal_handler(Signal::SIGINT).unwrap();
     let mut sigterm_handler = register_signal_handler(Signal::SIGTERM).unwrap();
@@ -58,6 +68,15 @@ async fn signal_waiter() {
     race(sigint_handler.recv(), sigterm_handler.recv()).await;
 
     trigger_shutdown();
+}
+
+#[cfg(target_family = "windows")]
+unsafe extern "system" fn windows_ctrl_handler(ctrl_type: u32) -> i32 {
+    if ctrl_type == 0 {
+        trigger_shutdown();
+        return 1;
+    }
+    0
 }
 
 #[async_trait]
@@ -140,3 +159,5 @@ pub async fn wait_for_shutdowns() {
 
     let _ = receiver.recv().await;
 }
+
+

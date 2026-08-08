@@ -78,7 +78,9 @@ impl AssignmentSolver {
     // Does the solving
     //
     // @param w the weights associated with assignment. This can be of any size N x
-    // M @param c the output assignments of each row index. -1 if the row could
+    // M
+    // 
+    // @param c the output assignments of each row index. -1 if the row could
     // not be assigned @return the total cost of the found assignment
     pub fn solve(&mut self, w: &MatrixXd, c: &mut Vec<Option<usize>>) -> f64 {
         // Padding with zeros to be a square matrix with the same optimal assignments

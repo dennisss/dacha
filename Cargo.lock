@@ -1786,8 +1786,10 @@ dependencies = [
  "common",
  "failure",
  "macros",
+ "mio",
  "peripherals_raw",
  "sys",
+ "windows-sys",
 ]
 
 [[package]]
@@ -1850,6 +1852,7 @@ dependencies = [
  "base_util",
  "common",
  "executor",
+ "failure",
  "macros",
  "sys",
 ]
@@ -2437,7 +2440,6 @@ dependencies = [
  "parsing_compiler",
  "reflection",
  "regexp_macros",
- "sys",
 ]
 
 [[package]]
@@ -2754,9 +2756,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.138"
+version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db6d7e329c562c5dfab7a46a2afabc8b987ab9a4834c9d1ca04dc54c1546cef8"
+checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "libcamera"
@@ -3168,6 +3170,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mio"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30d65c71f1ce40ab09135ce117d742b9f8a19ff91a41a8b57ed50bc2de59c427"
+dependencies = [
+ "libc",
+ "wasi 0.11.1+wasi-snapshot-preview1",
+ "windows-sys",
+]
+
+[[package]]
 name = "mocap_camera"
 version = "0.1.0"
 dependencies = [
@@ -3240,10 +3253,9 @@ dependencies = [
  "mocap_proto",
  "mocap_simulation",
  "parsing",
- "perf",
  "protobuf",
  "protobuf_json",
- "ptp",
+ "ptp_core",
  "ptp_proto",
  "rpc",
  "rpc_util",
@@ -3356,6 +3368,7 @@ dependencies = [
  "executor_multitask",
  "libc",
  "macros",
+ "mio",
  "parsing",
  "parsing_compiler",
  "regexp_macros",
@@ -4165,10 +4178,29 @@ dependencies = [
  "parsing",
  "parsing_compiler",
  "protobuf",
+ "ptp_core",
  "ptp_proto",
  "rpc",
  "rpc_util",
  "sys",
+]
+
+[[package]]
+name = "ptp_core"
+version = "0.1.0"
+dependencies = [
+ "base_radix",
+ "base_util",
+ "common",
+ "executor",
+ "http",
+ "macros",
+ "net",
+ "parsing",
+ "protobuf",
+ "ptp_proto",
+ "rpc",
+ "rpc_util",
 ]
 
 [[package]]
@@ -4863,7 +4895,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6db9e6914ab8b1ae1c260a4ae7a49b6c5611b40328a735b21862567685e73255"
 dependencies = [
  "libc",
- "wasi",
+ "wasi 0.10.0+wasi-snapshot-preview1",
  "winapi",
 ]
 
@@ -5062,6 +5094,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
+name = "wasi"
+version = "0.11.1+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5206,6 +5244,21 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "windows-link"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+
+[[package]]
+name = "windows-sys"
+version = "0.61.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
+dependencies = [
+ "windows-link",
+]
 
 [[package]]
 name = "x11"

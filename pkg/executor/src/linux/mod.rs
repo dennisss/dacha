@@ -2,11 +2,19 @@
 
 // mod polling;
 
+#[cfg(target_os = "linux")]
 mod epoll;
-mod error;
+
+pub mod error;
+
 mod executor;
+
+#[cfg(target_os = "linux")]
 mod file;
+
+#[cfg(target_os = "linux")]
 mod io_uring;
+
 mod join_handle;
 mod options;
 mod task;
@@ -17,16 +25,34 @@ mod waker;
 mod yielding;
 
 pub use self::executor::TaskId;
+
+#[cfg(target_os = "linux")]
 pub use epoll::ExecutorPollingContext;
-pub use error::*;
-pub use file::{FileHandle, SyncRange};
+
+#[cfg(target_os = "linux")]
+pub use file::FileHandle;
+
+#[cfg(target_os = "linux")]
 pub use io_uring::ExecutorOperation;
+
+#[cfg(not(target_os = "linux"))]
+mod mio;
+#[cfg(not(target_os = "linux"))]
+pub use mio::{ExecutorMioSource, ExecutorMioWaiter};
+
 pub use join_handle::*;
 pub use options::*;
 pub use task::Task;
 pub use timeout::*;
 pub use utils::*;
 pub use yielding::yield_now;
+
+#[derive(Clone, Copy, Debug)]
+pub struct SyncRange {
+    pub start: u64,
+    pub end: u64,
+}
+
 
 pub mod interrupts {
 

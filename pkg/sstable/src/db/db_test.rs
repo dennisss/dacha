@@ -606,7 +606,7 @@ async fn embedded_db_compaction_waterline_test() -> Result<()> {
     })
     .await?;
 
-    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), Some(0));
+    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), 0);
 
     let mut value = vec![0u8; 256];
 
@@ -677,10 +677,10 @@ async fn embedded_db_compaction_waterline_test() -> Result<()> {
     db.db.update_compaction_waterline(8)?;
     // Immediately after updating it wont be changed yet since it must be flushed to
     // disk
-    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), Some(0));
+    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), 0);
 
     db.db.wait_for_compaction().await?;
-    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), Some(8));
+    assert_eq!(db.snapshot().await.snapshot.compaction_waterline(), 8);
 
     assert_eq!(
         list_keys_with_seq(&db).await?,

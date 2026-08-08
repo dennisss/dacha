@@ -24,15 +24,23 @@ mod endian;
 pub mod error;
 pub mod ip;
 mod ip_syntax;
+#[cfg(target_os = "linux")]
 pub mod netlink;
 pub mod tcp;
 pub mod udp;
+#[cfg(target_os = "linux")]
 mod utils;
+#[cfg(target_os = "linux")]
 pub mod udev;
+mod lookup;
 
 pub use ip_syntax::parse_port;
+#[cfg(target_os = "linux")]
 pub use netlink::local_ip;
+#[cfg(target_os = "linux")]
 pub use utils::enable_hardware_timestamp_filters;
+
+pub use lookup::*;
 
 #[cfg(test)]
 mod tests {

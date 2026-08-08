@@ -82,7 +82,7 @@ pub struct GlobFileFilter {
 
 impl GlobFileFilter {
     pub fn create(pattern: &LocalPath) -> Result<Self> {
-        let only_select_directories = pattern.as_str().ends_with("/");
+        let only_select_directories = pattern.to_str().unwrap().ends_with("/");
 
         let mut pattern = pattern.to_owned();
         if !pattern.is_absolute() {
@@ -107,7 +107,7 @@ impl GlobFileFilter {
             let mut nodes = vec![];
             nodes.push(RegExpNode::Start);
 
-            let mut remaining = pattern.as_str();
+            let mut remaining = pattern.to_str().unwrap();
             while !remaining.is_empty() {
                 if let Some(rest) = remaining.strip_prefix("**/") {
                     // '**/' => '(.*/)?'
@@ -173,11 +173,13 @@ impl GlobFileFilter {
 
 impl FileFilter for GlobFileFilter {
     fn filter_file(&self, path: &LocalPath, is_dir: bool) -> FileFilterDecision {
-        let emit = self.pattern.test(path.as_str()) && (!self.only_select_directories || is_dir);
+        let path = path.to_str().unwrap();
+
+        let emit = self.pattern.test(path) && (!self.only_select_directories || is_dir);
 
         let traverse = {
             if is_dir {
-                let inner_path = format!("{}/", path.as_str());
+                let inner_path = format!("{}/", path);
                 self.pattern.test_prefix(inner_path) 
             } else {
                 false

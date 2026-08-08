@@ -25,7 +25,6 @@ failure = "0.1.8"
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
-sys = { path = "../../sys" }
 cluster_proto = { path = "../proto" }
 builder_proto = { path = "../../builder/proto" }
 regexp_macros = { path = "../../automata/regexp_macros" }

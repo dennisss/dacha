@@ -13,7 +13,6 @@ crypto = { path = "../crypto" }
 automata = { path = "../automata" }
 regexp_macros = { path = "../automata/regexp_macros" }
 failure = "0.1.8"
-sys = { path = "../sys" }
 executor = { path = "../executor" }
 executor_multitask = { path = "../executor/multitask" }
 file = { path = "../file" }

@@ -14,7 +14,6 @@ use executor::bundle::TaskResultBundle;
 use cluster_client::service::address::{ServiceAddress, ServiceEntity, ServiceName};
 use cluster_client::id::{entity_id_to_string, entity_id_from_string};
 use http::Resolver;
-use ptp::TimeSyncNode;
 use ptp_proto::ptp::{TimeSyncRole, TimeSyncConfig};
 use ptp_proto::ptp::TimeSyncStub;
 use ptp_proto::ptp::TimeSyncIntoService;
@@ -200,7 +199,7 @@ impl MocapManager {
 
                 let ptp_stub = Arc::new(TimeSyncStub::new(
                     Arc::new(rpc::LocalChannel::new(
-                        Arc::new(ptp::DummyTimeSyncNode::create()).into_service()
+                        Arc::new(ptp_core::DummyTimeSyncNode::create()).into_service()
                     ))
                 ));
 
@@ -1143,7 +1142,7 @@ impl MocapManager {
             let entry = state.cameras.get(&camera_id)
                 .ok_or_else(|| err_msg("Missing camera"))?;
 
-            let mut ptp_config = TimeSyncNode::default_config();
+            let mut ptp_config = ptp_core::default_config();
 
             if !entry.ptp_leader {
                 ptp_config.set_role(TimeSyncRole::FOLLOWER);

@@ -28,6 +28,7 @@ pub async fn read_to_string<P: AsRef<LocalPath>>(path: P) -> Result<String> {
     Ok(String::from_utf8(out)?)
 }
 
+#[cfg(target_os = "linux")]
 pub fn current_dir() -> Result<LocalPathBuf> {
     let mut buffer = vec![0u8; 1024];
     let n = unsafe {
@@ -43,8 +44,15 @@ pub fn current_dir() -> Result<LocalPathBuf> {
     Ok(LocalPathBuf::from(String::from_utf8(buffer)?))
 }
 
+#[cfg(not(target_os = "linux"))]
+pub fn current_dir() -> Result<LocalPathBuf> {
+    std::env::current_dir()
+        .remap_std_error::<FileError, _>(|| "".into())
+}
+
 /// NOTE: THis results the link as-is which may be a relative path to the
 /// containing directory.
+#[cfg(target_os = "linux")]
 pub fn readlink<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
     let mut buffer = [0u8; 4096];
 
@@ -57,6 +65,7 @@ pub fn readlink<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
     Ok(LocalPathBuf::from(s))
 }
 
+#[cfg(target_os = "linux")]
 pub async fn realpath<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
     use crate::LocalPathSegment;
 
@@ -214,6 +223,7 @@ pub async fn create_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 pub async fn set_permissions(path: &LocalPath, perms: Permissions) -> Result<()> {
     let path = CString::new(path.as_str())?;
     unsafe {
@@ -251,6 +261,7 @@ pub async fn append<P: AsRef<LocalPath>, V: AsRef<[u8]>>(path: P, value: V) -> R
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 pub async fn remove_dir<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     let path = path.as_ref();
     let path = CString::new(path.as_str())?;
@@ -261,6 +272,13 @@ pub async fn remove_dir<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "linux"))]
+pub async fn remove_dir<P: AsRef<LocalPath>>(path: P) -> Result<()> {
+    std::fs::remove_dir(path)
+        .remap_std_error::<FileError, _>(|| "".into())
+}
+
+#[cfg(target_os = "linux")]
 pub async fn remove_file<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     let path = path.as_ref();
     let path = CString::new(path.as_str())?;
@@ -271,7 +289,15 @@ pub async fn remove_file<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "linux"))]
+pub async fn remove_file<P: AsRef<LocalPath>>(path: P) -> Result<()> {
+    std::fs::remove_file(path)
+        .remap_std_error::<FileError, _>(|| "".into())
+}
+
+
 /// NOTE: Only relevant for local files (not all blob based ones).
+#[cfg(target_os = "linux")]
 pub fn chown<P: AsRef<LocalPath>>(path: P, uid: sys::Uid, gid: sys::Gid) -> Result<()> {
     let path = path.as_ref();
     let path = CString::new(path.as_str())?;
@@ -338,6 +364,7 @@ pub async fn remove_dir_all_with_options(path: &LocalPath, only_remove_dirs: boo
 }
 
 /// Moves the file currently located at 'from' to 'to'
+#[cfg(target_os = "linux")]
 pub async fn rename<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) -> Result<()> {
     let cfrom = CString::new(from.as_ref().as_str())?;
     let cto = CString::new(to.as_ref().as_str())?;
@@ -351,6 +378,12 @@ pub async fn rename<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) 
     })?;
 
     Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub async fn rename<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) -> Result<()> {
+    std::fs::rename(from, to)
+        .remap_std_error::<FileError, _>(|| "".into())
 }
 
 /// Copy a file/directory is located at 'from' to 'to' possibly recursively.

@@ -3,7 +3,8 @@ use alloc::string::String;
 
 use common::errors::*;
 use common::io::{Readable, SharedWriteable, Writeable};
-use executor::{ExecutorOperation, FileHandle, RemapErrno};
+use executor::{ExecutorOperation, FileHandle};
+use executor::error::RemapErrno;
 use sys::OpenFileDescriptor;
 
 use crate::error::NetworkError;
@@ -71,7 +72,7 @@ impl TcpListener {
             peer: sockaddr
                 .to_addr()
                 .ok_or_else(|| err_msg("Got no valid peer address"))?
-                .into(),
+                .try_into()?,
         })
     }
 
@@ -81,7 +82,7 @@ impl TcpListener {
                 .ok_or_else(|| err_msg("local_addr has unsupported address type"))?
         };
 
-        Ok(SocketAddr::from(addr))
+        SocketAddr::try_from(addr)
     }
 }
 
@@ -101,11 +102,11 @@ impl Drop for TcpStream {
 
 impl TcpStream {
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
-        let addr = Into::<sys::SocketAddr>::into(addr);
+        let sys_addr = Into::<sys::SocketAddr>::into(addr.clone());
 
         let fd = unsafe {
             sys::socket(
-                addr.family(),
+                sys_addr.family(),
                 sys::SocketType::SOCK_STREAM,
                 sys::SocketFlags::SOCK_CLOEXEC,
                 sys::SocketProtocol::TCP,
@@ -114,7 +115,7 @@ impl TcpStream {
 
         let op = ExecutorOperation::submit(sys::IoUringOp::Connect {
             fd: *fd,
-            sockaddr: &addr,
+            sockaddr: &sys_addr,
         })
         .await?;
 

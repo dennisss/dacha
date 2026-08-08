@@ -119,10 +119,14 @@ mod tests {
     }
 
     async fn wait_once() {
+        let mut cs = crate::CriticalSection::new();
+
         let mut waker =
-            crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread());
+            crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread(&mut cs));
 
         let waker = unsafe { WAKER_LIST.insert(waker.into_pin()) };
+
+        drop(cs);
 
         waker.await;
     }

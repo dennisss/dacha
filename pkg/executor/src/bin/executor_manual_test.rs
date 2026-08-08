@@ -1,6 +1,5 @@
 extern crate common;
 extern crate executor;
-extern crate sys;
 
 use std::time::Duration;
 

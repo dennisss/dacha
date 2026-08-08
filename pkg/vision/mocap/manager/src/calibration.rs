@@ -1,6 +1,5 @@
 
 use std::io::Read;
-use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use std::{fs::File, time::Duration};
 use std::time::Instant;

@@ -10,13 +10,15 @@ macros = { path = "../macros" }
 protobuf = { path = "../protobuf" }
 compression = { path = "../compression" }
 crypto = { path = "../crypto" }
-sys = { path = "../sys" }
 skylark = { path = "./skylark" }
 protobuf_builtins = { path = "../../third_party/protobuf_builtins" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 base_radix = { path = "../base/radix" }
 builder_proto = { path = "./proto" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sys = { path = "../sys" }
 
 [features]
 default = ["std"]

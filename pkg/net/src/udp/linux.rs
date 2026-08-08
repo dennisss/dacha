@@ -2,7 +2,7 @@ use alloc::string::{String, ToString};
 
 use common::errors::*;
 use executor::ExecutorOperation;
-use executor::RemapErrno;
+use executor::error::RemapErrno;
 use sys::{
     IoSlice, IoSliceMut, IoUringOp, MessageHeader, MessageHeaderMut, MessageHeaderSocketAddrBuffer,
     OpenFileDescriptor, ControlMessage, ControlMessageBuffer
@@ -12,46 +12,8 @@ use crate::error::NetworkError;
 use crate::ip::IPAddress;
 use crate::ip::SocketAddr;
 use crate::utils::*;
+use crate::udp::options::*;
 
-#[derive(Default)]
-pub struct UdpBindOptions {
-    reuse_addr: bool,
-    reuse_port: bool,
-    broadcast: bool,
-    bind_to_device: Option<String>,
-    enable_hardware_timestamping: bool,
-}
-
-impl UdpBindOptions {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn reuse_addr(&mut self, value: bool) -> &mut Self {
-        self.reuse_addr = value;
-        self
-    }
-
-    pub fn reuse_port(&mut self, value: bool) -> &mut Self {
-        self.reuse_port = value;
-        self
-    }
-
-    pub fn broadcast(&mut self, value: bool) -> &mut Self {
-        self.broadcast = value;
-        self
-    }
-
-    pub fn bind_to_device(&mut self, value: &str) -> &mut Self {
-        self.bind_to_device = Some(value.to_string());
-        self
-    }
-
-    pub fn enable_hardware_timestamping(&mut self) -> &mut Self {
-        self.enable_hardware_timestamping = true;
-        self
-    }
-}
 
 pub struct UdpSocket {
     inner: MessageSocket,
@@ -78,7 +40,7 @@ impl UdpSocket {
             }
 
             if options.reuse_port {
-                set_reuse_addr(&fd, options.reuse_port)?;
+                set_reuse_port(&fd, options.reuse_port)?;
             }
 
             if options.broadcast {
@@ -115,9 +77,9 @@ impl UdpSocket {
         self.inner.recv(output).await
     }
 
-    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, sys::SocketAddr)> {
+    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let (n, addr) = self.inner.recv_from(output).await?;
-        Ok((n, addr.into()))
+        Ok((n, addr.try_into()?))
     }
 
     pub async fn recv_msg(
@@ -165,11 +127,6 @@ impl UdpSocket {
         }
 
         Ok(())
-    }
-
-    // TODO: Why do we have this on a UDP socket?
-    pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
-        unsafe { set_tcp_nodelay(&self.inner.fd, on) }
     }
 
     pub unsafe fn raw(&self) -> &OpenFileDescriptor {

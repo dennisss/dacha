@@ -13,23 +13,33 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
+#[macro_use]
+extern crate failure;
+
+#[cfg(target_os = "linux")]
 pub mod allocate_soft;
+#[cfg(target_os = "linux")]
 mod copy;
 pub mod dir_lock;
 mod error;
+#[cfg(target_os = "linux")]
 mod glob;
 mod local;
 mod project_path;
+#[cfg(target_os = "linux")]
 mod stdio;
 pub mod sync;
 pub mod temp;
 mod utils;
 
+#[cfg(target_os = "linux")]
 pub use copy::*;
 pub use error::*;
+#[cfg(target_os = "linux")]
 pub use glob::*;
 pub use local::*;
 pub use project_path::*;
+#[cfg(target_os = "linux")]
 pub use stdio::*;
 pub use utils::*;
 
@@ -77,7 +87,7 @@ mod tests {
         let dir = project_path!("testdata/file/deep_dir");
 
         recursively_list_dir(&dir, &mut |p| {
-            paths.push(p.strip_prefix(&dir).unwrap().to_owned());
+            paths.push(p.strip_prefix(&dir).unwrap().to_str().unwrap().to_owned());
         })?;
 
         paths.sort();
@@ -204,6 +214,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
     #[testcase]
     async fn link_creation_test() -> Result<()> {
         let temp_dir = TempDir::create()?;
@@ -265,6 +276,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
     #[testcase]
     async fn remove_dir_all() -> Result<()> {
         let temp_dir = TempDir::create()?;

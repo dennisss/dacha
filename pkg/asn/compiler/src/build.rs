@@ -60,7 +60,7 @@ pub fn build_in_directory(input_dir: &LocalPath, output_dir: &LocalPath) -> Resu
         let input_path = path.to_owned();
 
         let relative_path = path.strip_prefix(&input_dir).unwrap().to_owned();
-        println!("cargo:rerun-if-changed={}", relative_path.as_str());
+        println!("cargo:rerun-if-changed={}", relative_path.display());
 
         // TODO: Only perform '-' to '_' on the base name
         let mut output_path = output_dir.join(relative_path.as_str().replace("-", "_"));

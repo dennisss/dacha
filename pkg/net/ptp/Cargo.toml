@@ -7,7 +7,6 @@ edition = "2024"
 common = { path = "../../common" }
 base_util = { path = "../../base/util" }
 parsing = { path = "../../parsing" }
-sys = { path = "../../sys" }
 net = { path = "../../net" }
 file = { path = "../../file" }
 executor = { path = "../../executor" }
@@ -15,6 +14,7 @@ executor_multitask = { path = "../../executor/multitask" }
 macros = { path = "../../macros" }
 base_radix = { path = "../../base/radix" }
 ptp_proto = { path = "./proto" }
+ptp_core = { path = "./core" }
 crypto = { path = "../../crypto" }
 http = { path = "../../http" }
 cluster_client = { path = "../../cluster/client" }
@@ -22,6 +22,9 @@ cluster_proto = { path = "../../cluster/proto" }
 rpc = { path = "../../rpc" }
 rpc_util = { path = "../../rpc/util" }
 protobuf = { path = "../../protobuf" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sys = { path = "../../sys" }
 
 [build-dependencies]
 parsing_compiler = { path = "../../parsing/compiler" }

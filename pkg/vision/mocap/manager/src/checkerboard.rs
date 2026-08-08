@@ -102,7 +102,9 @@ impl CheckerboardCalibrationMode {
 
             for frame in &state.frames {
                 let proto = proto.new_frames();
-                proto.set_image_path(format!("/data/{}", frame.image_path.strip_prefix(&self.shared.data_dir).unwrap().as_str()));
+                proto.set_image_path(format!("/data/{}",
+                    frame.image_path.strip_prefix(&self.shared.data_dir).unwrap().to_str().unwrap())
+                );
                 if let Some(pts) = &frame.points_2d {
                     for pt in pts {
                         proto.add_points_2d(pt.to_proto());

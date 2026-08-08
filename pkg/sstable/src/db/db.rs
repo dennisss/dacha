@@ -232,7 +232,7 @@ impl EmbeddedDB {
             .map_err(|e| {
                 format_err!(
                     "Failed to open the lockfile: {} ; Error: {}",
-                    dir.lock().as_str(),
+                    dir.lock().display(),
                     e
                 )
             })?;

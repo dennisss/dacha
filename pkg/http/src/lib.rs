@@ -5,16 +5,12 @@ extern crate core;
 
 #[macro_use]
 extern crate common;
-extern crate parsing;
 #[macro_use]
 extern crate failure;
 #[macro_use]
 extern crate regexp_macros;
 #[macro_use]
 extern crate macros;
-extern crate crypto;
-extern crate net;
-extern crate sys;
 
 mod alpn;
 mod body;
@@ -24,7 +20,6 @@ mod client;
 mod common_syntax;
 mod connection_event_listener;
 pub mod cors;
-mod dns;
 pub mod encoding;
 mod encoding_syntax;
 pub mod header;

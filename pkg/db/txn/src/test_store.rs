@@ -74,6 +74,7 @@ impl TestMetastoreCluster {
                         dir: dir.clone(),
                         bootstrap_group: bootstrap,
                         bootstrap_node_id: None,
+                        service_ip: net::ip::IPAddress::V4([127, 0, 0, 1]),
                         service_port: port,
                         route_labels: self.shared.route_labels.clone(),
                         log: SegmentedLogOptions {
@@ -180,7 +181,7 @@ impl TestMetastore {
         let mut out = vec![];
 
         file::recursively_list_dir(&self.dir, &mut |path| {
-            out.push(path.strip_prefix(&self.dir).unwrap().to_string());
+            out.push(path.strip_prefix(&self.dir).unwrap().to_str().unwrap().to_string());
         })?;
 
         out.sort();

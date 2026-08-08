@@ -72,7 +72,7 @@ impl Backup {
                 let mut file = file::LocalFile::open(&local_path)?;
 
                 archive
-                    .append_regular_file(output_path.as_str(), table.entry.file_size, &mut file)
+                    .append_regular_file(output_path.to_str().unwrap(), table.entry.file_size, &mut file)
                     .await?;
             }
         }
@@ -86,13 +86,13 @@ impl Backup {
 
         archive
             .append_regular_file(
-                manifest_path.as_str(),
+                manifest_path.to_str().unwrap(),
                 self.manifest_data.len() as u64,
                 &mut Cursor::new(&self.manifest_data),
             )
             .await?;
 
-        let current_file_data = format!("{}\n", manifest_path.as_str());
+        let current_file_data = format!("{}\n", manifest_path.to_str().unwrap());
 
         archive
             .append_regular_file(
@@ -116,7 +116,7 @@ impl Backup {
 
             // Only works as 0 bytes is a valid log.
             archive
-                .append_regular_file(log_path.as_str(), 0, &mut Cursor::new(&[]))
+                .append_regular_file(log_path.to_str().unwrap(), 0, &mut Cursor::new(&[]))
                 .await?;
         }
 

@@ -91,7 +91,7 @@ impl PackageTree {
 
                 "#,
                 file_id = file_id.to_ascii_lowercase(),
-                file = file.as_str()
+                file = file.display()
             ));
         }
     }
@@ -142,7 +142,7 @@ async fn build_custom_impl(
     // TODO: Parallelize this?
     for input_path in input_paths {
         let mut relative_path = input_path.strip_prefix(&input_dir).unwrap().to_owned();
-        println!("cargo:rerun-if-changed={}", relative_path.as_str());
+        println!("cargo:rerun-if-changed={}", relative_path.display());
 
         let file = descriptor_pool.add_file(&input_path).await?;
 
@@ -158,7 +158,7 @@ async fn build_custom_impl(
 
         if options.should_format {
             // TODO: This doesn't work with 'cross'
-            let res = Command::new("rustfmt").arg(output_path.as_str()).output()?;
+            let res = Command::new("rustfmt").arg(output_path).output()?;
             if !res.status.success() {
                 std::io::stdout().write_all(&res.stdout).unwrap();
                 std::io::stderr().write_all(&res.stderr).unwrap();

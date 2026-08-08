@@ -220,7 +220,7 @@ impl Compiler {
                 let mut current_dir = import_file.local_path().unwrap().parent();
                 while let Some(dir) = current_dir.take() {
                     let toml_path = dir.join("Cargo.toml");
-                    if !std::path::Path::new(toml_path.as_str()).try_exists()? {
+                    if !std::path::Path::new(&toml_path).try_exists()? {
                         // TODO: Don't search outside of the source directory.
                         current_dir = dir.parent();
                         continue;

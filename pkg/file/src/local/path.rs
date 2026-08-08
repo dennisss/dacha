@@ -171,6 +171,10 @@ impl LocalPath {
         &self.inner
     }
 
+    pub fn to_str(&self) -> Option<&str> {
+        Some(&self.inner)
+    }
+
     pub fn is_absolute(&self) -> bool {
         self.inner.starts_with(SEGMENT_DELIMITER)
     }
@@ -230,14 +234,14 @@ impl LocalPath {
     }
 
     fn starts_with_impl(&self, other: &LocalPath) -> bool {
-        self.strip_prefix(other).is_some()
+        self.strip_prefix(other).is_ok()
     }
 
-    pub fn strip_prefix<P: AsRef<LocalPath>>(&self, other: P) -> Option<&LocalPath> {
+    pub fn strip_prefix<P: AsRef<LocalPath>>(&self, other: P) -> Result<&LocalPath, StripPrefixError> {
         self.strip_prefix_impl(other.as_ref())
     }
 
-    fn strip_prefix_impl(&self, other: &LocalPath) -> Option<&LocalPath> {
+    fn strip_prefix_impl(&self, other: &LocalPath) -> Result<&LocalPath, StripPrefixError> {
         let mut cur_segments = LocalPathSegmentIterator::new(self.as_str());
         let mut other_segments = other.segments();
 
@@ -245,17 +249,17 @@ impl LocalPath {
         for expected_segment in other_segments {
             let (segment, end_position) = match cur_segments.next() {
                 Some(v) => v,
-                None => return None,
+                None => return Err(StripPrefixError),
             };
 
             if segment != expected_segment {
-                return None;
+                return Err(StripPrefixError);
             }
 
             final_end_position = end_position;
         }
 
-        Some(LocalPath::new(self.as_str().split_at(final_end_position).1))
+        Ok(LocalPath::new(self.as_str().split_at(final_end_position).1))
     }
 
     /*

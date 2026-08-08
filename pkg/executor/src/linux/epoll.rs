@@ -31,7 +31,7 @@ struct State {
     running: bool,
 
     /// Set of which file descriptors need to be polled.
-    polled_descriptors: HashMap<FileDescriptor, DescriptorState>,
+    polled_descriptors: HashMap<FileDescriptor, DescriptorState, FastHasherBuilder>,
 }
 
 struct DescriptorState {
@@ -62,7 +62,7 @@ impl ExecutorEpoll {
             polled_eventfd,
             state: Mutex::new(State {
                 running: true,
-                polled_descriptors: HashMap::new(),
+                polled_descriptors: HashMap::default(),
             }),
         })
     }

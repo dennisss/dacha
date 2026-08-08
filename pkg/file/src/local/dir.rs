@@ -3,12 +3,21 @@ use core::ffi::CStr;
 use alloc::{ffi::CString, string::String, vec::Vec};
 
 use common::errors::*;
-use executor::RemapErrno;
-use sys::OpenFileDescriptor;
+use executor::error::*;
 
 use crate::{FileError, LocalFile, LocalPath};
 
+#[cfg(target_os = "linux")]
 pub type FileType = sys::FileType;
+
+#[cfg(not(target_os = "linux"))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FileType {
+    RegularFile,
+    Directory,
+    SymbolicLink,
+    Unknown
+}
 
 /*
 We'd ideally like to be able to propagate a file system implementation that forces strict syncronization of all data in some directory.
@@ -50,7 +59,9 @@ impl LocalDirectory {
 
 #[derive(Debug, Clone)]
 pub struct LocalDirEntry {
+    #[cfg(target_os = "linux")]
     inode: u64,
+
     name: String,
     typ: FileType,
 }
@@ -69,6 +80,7 @@ impl LocalDirEntry {
 /// This will return an error if the path is not a directory.
 ///
 /// TODO: Test this with an empty
+#[cfg(target_os = "linux")]
 pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
     // TODO: Check if the file is actually a directory?
 
@@ -105,6 +117,37 @@ pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
                 typ: dirent.typ,
             });
         }
+    }
+
+    Ok(out)
+}
+
+#[cfg(target_os = "windows")]
+pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
+    let mut out = vec![];
+    
+    let iter = std::fs::read_dir(path)
+        .remap_std_error::<FileError, _>(|| "".into())?;
+
+    for entry in iter {
+        let entry = entry.remap_std_error::<FileError, _>(|| "".into())?;
+
+        let file_type = entry.file_type().remap_std_error::<FileError, _>(|| "".into())?;
+
+        out.push(LocalDirEntry {
+            name: entry.file_name().to_str().unwrap().into(),
+            typ: {
+                if file_type.is_file() {
+                    FileType::RegularFile
+                } else if file_type.is_dir() {
+                    FileType::Directory
+                } else if file_type.is_symlink() {
+                    FileType::SymbolicLink
+                } else {
+                    FileType::Unknown
+                }
+            }
+        });
     }
 
     Ok(out)

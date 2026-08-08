@@ -60,7 +60,7 @@ impl DirLock {
                 .write(true)
                 .create(true),
         )
-        .map_err(|_| format_err!("Failed to open the lockfile: {}", lockfile_path.as_str()))?;
+        .map_err(|_| format_err!("Failed to open the lockfile: {}", lockfile_path.display()))?;
 
         // Acquire the exclusive lock
 

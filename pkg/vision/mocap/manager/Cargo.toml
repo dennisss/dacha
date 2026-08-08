@@ -17,10 +17,9 @@ image = { path = "../../../image" }
 math = { path = "../../../math" }
 math_proto_util = { path = "../../../math/proto/util" }
 protobuf = { path = "../../../protobuf" }
-perf = { path = "../../../perf" }
 protobuf_json = { path = "../../../protobuf/json" }
 rpc = { path = "../../../rpc" }
-ptp = { path = "../../../net/ptp" }
+ptp_core = { path = "../../../net/ptp/core" }
 ptp_proto = { path = "../../../net/ptp/proto" }
 http = { path = "../../../http" }
 http_util = { path = "../../../http/util" }

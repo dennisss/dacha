@@ -10,12 +10,17 @@ parsing = { path = "../parsing" }
 regexp_macros = { path = "../automata/regexp_macros" }
 automata = { path = "../automata" }
 crypto = { path = "../crypto" }
-sys = { path = "../sys" }
 executor = { path = "../executor" }
 executor_multitask = { path = "../executor/multitask" }
 macros = { path = "../macros" }
 base_radix = { path = "../base/radix" }
 libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sys = { path = "../sys" }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+mio = { workspace = true }
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing/compiler" }

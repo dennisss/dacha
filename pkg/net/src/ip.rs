@@ -83,11 +83,9 @@ impl Debug for IPAddress {
     }
 }
 
-impl std::convert::TryFrom<IPAddress> for std::net::IpAddr {
-    type Error = Error;
-
-    fn try_from(ip: IPAddress) -> Result<Self> {
-        Ok(match ip {
+impl std::convert::From<IPAddress> for std::net::IpAddr {
+    fn from(ip: IPAddress) -> Self {
+        match ip {
             IPAddress::V4(v) => {
                 std::net::IpAddr::V4(std::net::Ipv4Addr::new(v[0], v[1], v[2], v[3]))
             }
@@ -95,7 +93,7 @@ impl std::convert::TryFrom<IPAddress> for std::net::IpAddr {
             // IPAddress::VFuture(_) => {
             //     return Err(err_msg("Future ip address not supported"));
             // }
-        })
+        }
     }
 }
 
@@ -161,6 +159,19 @@ impl std::str::FromStr for SocketAddr {
     }
 }
 
+impl std::convert::From<SocketAddr> for std::net::SocketAddr {
+    fn from(addr: SocketAddr) -> Self {
+        std::net::SocketAddr::new(addr.ip.into(), addr.port)
+    }
+}
+
+impl From<std::net::SocketAddr> for SocketAddr {
+    fn from(addr: std::net::SocketAddr) -> Self {
+        Self::new(addr.ip().into(), addr.port())
+    }
+}
+
+#[cfg(target_os = "linux")]
 impl Into<sys::SocketAddr> for SocketAddr {
     fn into(self) -> sys::SocketAddr {
         match self.ip {
@@ -171,24 +182,27 @@ impl Into<sys::SocketAddr> for SocketAddr {
     }
 }
 
-impl From<sys::SocketAddr> for SocketAddr {
-    fn from(addr: sys::SocketAddr) -> Self {
+#[cfg(target_os = "linux")]
+impl TryFrom<sys::SocketAddr> for SocketAddr {
+    type Error = Error;
+
+    fn try_from(addr: sys::SocketAddr) -> Result<Self> {
         if let Some((addr, port)) = addr.as_ipv4() {
-            return Self {
+            return Ok(Self {
                 ip: IPAddress::V4(addr),
                 port: port.from_network_order(),
-            };
+            });
         }
 
         if let Some((addr, port)) = addr.as_ipv6() {
-            return Self {
+            return Ok(Self {
                 ip: IPAddress::V6(addr),
                 port: port.from_network_order(),
-            };
+            });
         }
 
-        // TODO: Return an error instead
-        todo!()
+        // TODO: Prioritize improving this since sys::SocketAddr has many inner forms that we can't convert (e.g. netlink)
+        Err(err_msg("Unable to convert sys addr to ip format"))
     }
 }
 

@@ -2,6 +2,7 @@
 
 use std::string::ToString;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::PermissionsExt;
 
 use common::errors::*;
@@ -24,21 +25,30 @@ pub struct TempDir {
 
 impl TempDir {
     pub fn create() -> Result<Self> {
+        // Normally '/tmp'
+        let sys_dir = std::env::temp_dir();
+        let project_dir = sys_dir.join("dacha");
+
+        if !std::fs::exists(&project_dir)? {
+            std::fs::create_dir(&project_dir)?;
+
+            // TODO: Make permissions scoped to one user for better security?
+            #[cfg(target_os = "linux")]
+            {
+                // If the temp directory is created for the first time by 'root', we need to make sure that regular users can still use it.
+                let mut perms = std::fs::metadata(&project_dir)?.permissions();
+                perms.set_mode(0o777);
+                std::fs::set_permissions(&project_dir, perms)?;
+            }
+        }
+
         loop {
             let time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let path = LocalPath::new("/tmp/dacha").join(time.to_string());
 
-            if !std::fs::exists("/tmp/dacha")? {
-                std::fs::create_dir("/tmp/dacha")?;
-
-                // If the temp directory is created for the first time by 'root', we need to make sure that regular users can still use it.
-                let mut perms = std::fs::metadata("/tmp/dacha")?.permissions();
-                perms.set_mode(0o777);
-                std::fs::set_permissions("/tmp/dacha", perms)?;
-            }
+            let path = LocalPath::new(project_dir.to_str().unwrap()).join(time.to_string());
 
             if let Err(e) = std::fs::create_dir(&path) {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
@@ -77,7 +87,7 @@ mod tests {
         let tmpdir = TempDir::create()?;
         let tmpdir2 = TempDir::create()?;
 
-        assert!(tmpdir.path().as_str().starts_with("/tmp/"));
+        // assert!(tmpdir.path().as_str().starts_with("/tmp/"));
 
         // Verify we get distinct directories.
         assert!(tmpdir.path() != tmpdir2.path());

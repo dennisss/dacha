@@ -11,10 +11,13 @@ use std::time::Duration;
 
 use base_error::*;
 use common::hash::FastHasherBuilder;
-use sys::{IoCompletionUring, IoSubmissionUring, IoUring, IoUringOp, IoUringResult};
 
+#[cfg(target_os = "linux")]
 use crate::linux::epoll::*;
+#[cfg(target_os = "linux")]
 use crate::linux::io_uring::*;
+#[cfg(not(target_os = "linux"))]
+use crate::linux::mio::*;
 use crate::linux::options::{ExecutorOptions, ExecutorRunMode};
 use crate::linux::task::{Task, TaskEntry, TaskState};
 use crate::linux::timeout::ExecutorTimeouts;
@@ -25,6 +28,7 @@ use super::thread_local::{CurrentExecutorContext, CurrentTaskContext};
 pub type TaskId = u64;
 
 // TODO: Move to sys:: ?
+#[cfg(target_os = "linux")]
 pub(super) type FileDescriptor = sys::c_int;
 
 pub struct Executor {
@@ -32,8 +36,12 @@ pub struct Executor {
 
     shared: Arc<ExecutorShared>,
 
+    #[cfg(target_os = "linux")]
     io_uring_thread: JoinHandle<()>,
+    #[cfg(target_os = "linux")]
     epoll_thread: JoinHandle<()>,
+    #[cfg(not(target_os = "linux"))]
+    mio_thread: JoinHandle<()>,
 
     thread_pool: Vec<JoinHandle<()>>,
 }
@@ -53,9 +61,14 @@ pub(super) struct ExecutorShared {
 
     /// State used to implement async operations on top of the linux io_uring
     /// framework.
+    #[cfg(target_os = "linux")]
     pub(super) io_uring: ExecutorIoUring,
 
+    #[cfg(target_os = "linux")]
     pub(super) epoll: ExecutorEpoll,
+
+    #[cfg(not(target_os = "linux"))]
+    pub(super) mio: ExecutorMio,
 
     pub(super) timeouts: ExecutorTimeouts,
 
@@ -75,8 +88,12 @@ impl Executor {
             tasks: Mutex::new(HashMap::with_hasher(FastHasherBuilder::default())),
             next_task_id: Mutex::new(1),
 
+            #[cfg(target_os = "linux")]
             io_uring: ExecutorIoUring::create()?,
+            #[cfg(target_os = "linux")]
             epoll: ExecutorEpoll::create()?,
+            #[cfg(not(target_os = "linux"))]
+            mio: ExecutorMio::create()?,
             timeouts: ExecutorTimeouts::new(),
 
             pending_queue: Mutex::new(VecDeque::new()),
@@ -87,20 +104,34 @@ impl Executor {
 
         // NOTE: The poller must be on a separate thread incase the main thread is
         // running a future that needs to park itself for I/O operation cancellation.
+        #[cfg(target_os = "linux")]
         let io_uring_thread = {
             let shared = shared.clone();
             Self::spawn_thread("exec::io_uring", move || Self::io_uring_thread_fn(shared))?
         };
 
+        #[cfg(target_os = "linux")]
         let epoll_thread = {
             let shared = shared.clone();
             Self::spawn_thread("exec::epoll", move || Self::epoll_thread_fn(shared))?
         };
 
+        #[cfg(not(target_os = "linux"))]
+        let mio_thread = {
+            let shared = shared.clone();
+            Self::spawn_thread("exec::mio", move || Self::mio_thread_fn(shared))?
+        };
+
+        #[cfg(target_os = "linux")]
+        let max_parallelism = sys::num_cpus()?;
+        
+        #[cfg(not(target_os = "linux"))]
+        let max_parallelism = std::thread::available_parallelism()?.get();
+
         // TODO: Have a dynamically scaling thread pool.
         let num_threads = match options.thread_pool_size.clone() {
             Some(v) => v,
-            None => sys::num_cpus()?.min(8),
+            None => max_parallelism.min(8),
         };
 
         for i in 0..num_threads {
@@ -115,8 +146,12 @@ impl Executor {
             options,
             shared,
             thread_pool,
+            #[cfg(target_os = "linux")]
             io_uring_thread,
+            #[cfg(target_os = "linux")]
             epoll_thread,
+            #[cfg(not(target_os = "linux"))]
+            mio_thread,
         })
     }
 
@@ -191,8 +226,12 @@ impl Executor {
         Self::stop_accepting_root_tasks(&shared);
 
         if self.options.run_mode == ExecutorRunMode::StopAllOperations {
+            #[cfg(target_os = "linux")]
             shared.io_uring.shutdown();
+            #[cfg(target_os = "linux")]
             shared.epoll.shutdown();
+            #[cfg(not(target_os = "linux"))]
+            shared.mio.shutdown();
 
             // All I/O operations should return a cancelled error on the next Poll because
             // we shut down the io_uring.
@@ -209,13 +248,20 @@ impl Executor {
                 thread.join().unwrap();
             }
 
+            // TODO: Shut down everything?
+            #[cfg(target_os = "linux")]
             shared.io_uring.shutdown();
 
             // NOTE: Even though all workers have been stopped, we may still have some
             // pending cancellation operations.
+            #[cfg(target_os = "linux")]
             self.io_uring_thread.join().unwrap();
 
+            #[cfg(target_os = "linux")]
             self.epoll_thread.join().unwrap();
+
+            #[cfg(not(target_os = "linux"))]
+            self.mio_thread.join().unwrap();
         }
 
         Ok(output)
@@ -249,10 +295,12 @@ impl Executor {
 
     /// Runs until all tasks spawned in the executor have finished running.
     /// This is a blocking call and also runs the main polling logic.
+    #[cfg(target_os = "linux")]
     fn io_uring_thread_fn(shared: Arc<ExecutorShared>) {
         Self::io_uring_thread_inner(shared).unwrap();
     }
 
+    #[cfg(target_os = "linux")]
     fn io_uring_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
         let mut tasks_to_wake = HashSet::with_hasher(FastHasherBuilder::default());
 
@@ -263,9 +311,10 @@ impl Executor {
             let tasks = shared.tasks.lock().unwrap();
 
             for task_id in tasks_to_wake.drain() {
-                let task_entry = tasks
-                    .get(&task_id)
-                    .ok_or_else(|| err_msg("Task disappeared"))?;
+                let task_entry = match tasks.get(&task_id) {
+                    Some(v) => v,
+                    None => continue
+                };
 
                 Self::wake_task_entry(task_entry.as_ref(), false);
             }
@@ -274,10 +323,12 @@ impl Executor {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
     fn epoll_thread_fn(shared: Arc<ExecutorShared>) {
         Self::epoll_thread_inner(shared).unwrap();
     }
 
+    #[cfg(target_os = "linux")]
     fn epoll_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
         let mut tasks_to_wake = HashSet::with_hasher(FastHasherBuilder::default());
 
@@ -288,9 +339,38 @@ impl Executor {
             let tasks = shared.tasks.lock().unwrap();
 
             for task_id in tasks_to_wake.drain() {
-                let task_entry = tasks
-                    .get(&task_id)
-                    .ok_or_else(|| err_msg("Task disappeared"))?;
+                let task_entry = match tasks.get(&task_id) {
+                    Some(v) => v,
+                    None => continue
+                };
+
+                Self::wake_task_entry(task_entry.as_ref(), false);
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn mio_thread_fn(shared: Arc<ExecutorShared>) {
+        Self::mio_thread_inner(shared).unwrap();
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn mio_thread_inner(shared: Arc<ExecutorShared>) -> Result<()> {
+        let mut tasks_to_wake = HashSet::with_hasher(FastHasherBuilder::default());
+
+        while !shared.mio.finished() {
+            tasks_to_wake.clear();
+            shared.mio.poll_events(&mut tasks_to_wake)?;
+
+            let tasks = shared.tasks.lock().unwrap();
+
+            for task_id in tasks_to_wake.drain() {
+                let task_entry = match tasks.get(&task_id) {
+                    Some(v) => v,
+                    None => continue
+                };
 
                 Self::wake_task_entry(task_entry.as_ref(), false);
             }

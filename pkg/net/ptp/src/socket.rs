@@ -219,7 +219,7 @@ impl TimestampedUdpSocket {
         data[0..n].copy_from_slice(&buf[PACKET_TEMPLATE.len()..num_bytes]);
 
         // TODO: Normalize sys::SockAddr into net::ip one in the recv_msg call.
-        Ok((n, timestamp, addr.into()))
+        Ok((n, timestamp, addr.try_into()?))
     }
 
     fn get_tx_id(&self, msgs: &[ControlMessage]) -> Result<u32> {

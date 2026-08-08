@@ -838,7 +838,6 @@ impl SerialController {
 
         loop {
             let (n, addr) = socket.recv_from(&mut buf[..]).await?;
-            let addr = SocketAddr::from(addr);
             let data = &buf[0..n];
 
             let config = shared.config.read().await?;

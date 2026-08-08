@@ -64,7 +64,7 @@ struct ExecutorIoUringSubmissions {
     /// TODO: we need to ensure that this is always properly cleaned up.
     ///
     /// TODO: This needs to be a priority queue?
-    blocked_tasks: HashSet<TaskId>,
+    blocked_tasks: HashSet<TaskId, FastHasherBuilder>,
 }
 
 /// Entry containing the current status of an ongoing operation.
@@ -100,9 +100,9 @@ impl ExecutorIoUring {
                 * (1. - CANCELATION_BUFFER_FRACTION))
                 as usize,
             submission_ring,
-            operations: HashMap::with_hasher(FastHasherBuilder::default()),
+            operations: Default::default(),
             next_operation_id: 1,
-            blocked_tasks: HashSet::new(),
+            blocked_tasks: Default::default(),
         });
 
         Ok(Self {

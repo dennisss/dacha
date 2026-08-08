@@ -24,7 +24,6 @@ protobuf_builtins = { path = "../../../third_party/protobuf_builtins" }
 executor = { path = "../../executor" }
 executor_multitask = { path = "../../executor/multitask" }
 file = { path = "../../file" }
-sys = { path = "../../sys" }
 cluster_proto = { path = "../../cluster/proto" }
 
 [features]

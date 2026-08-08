@@ -67,6 +67,8 @@ pub struct TransactionalDBOptions {
 
     pub bootstrap_node_id: Option<u64>,
 
+    pub service_ip: net::ip::IPAddress,
+
     /// Server port of the RPC service exposed to users of the store.
     /// This will also be used for internal communication between servers.
     pub service_port: u16,
@@ -474,7 +476,7 @@ impl TransactionalDB {
 
         let local_address = http::uri::Authority {
             user: None,
-            host: http::uri::Host::IP(net::local_ip().await?),
+            host: http::uri::Host::IP(options.service_ip),
             port: Some(options.service_port),
         }
         .to_string()?;
@@ -552,6 +554,7 @@ impl TransactionalDB {
             log: SegmentedLogOptions::default(),
             bootstrap_group: true,
             bootstrap_node_id: Some(1),
+            service_ip: net::ip::IPAddress::V4([127, 0, 0, 1]),
             service_port: 0, // Unused. 0 will disable discovery.
             route_labels: vec![],
             hostname_resolver: Arc::new(raft_client::DefaultHostnameResolver::default()),

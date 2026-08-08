@@ -1,0 +1,18 @@
+[package]
+name = "ptp_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../../../common" }
+base_util = { path = "../../../base/util" }
+parsing = { path = "../../../parsing" }
+net = { path = "../../../net" }
+executor = { path = "../../../executor" }
+macros = { path = "../../../macros" }
+base_radix = { path = "../../../base/radix" }
+ptp_proto = { path = "../proto" }
+http = { path = "../../../http" }
+rpc = { path = "../../../rpc" }
+rpc_util = { path = "../../../rpc/util" }
+protobuf = { path = "../../../protobuf" }
