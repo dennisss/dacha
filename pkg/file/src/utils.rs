@@ -5,13 +5,17 @@ use alloc::{ffi::CString, string::String, vec::Vec};
 
 use common::io::Readable;
 use common::{errors::*, io::Writeable};
-use executor::RemapErrno;
+use executor::error::*;
+#[cfg(target_os = "linux")]
 use sys::Errno;
 
 use crate::{
     read_dir, FileError, FileErrorKind, FileType, LocalFile, LocalFileOpenOptions, LocalPath,
-    LocalPathBuf, Metadata, Permissions,
+    LocalPathBuf,
 };
+
+#[cfg(target_os = "linux")]
+use crate::{Metadata, Permissions};
 
 pub async fn read<P: AsRef<LocalPath>>(path: P) -> Result<Vec<u8>> {
     let mut out = vec![];
@@ -126,10 +130,17 @@ pub fn recursively_list_dir(dir: &LocalPath, callback: &mut dyn FnMut(&LocalPath
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 pub async fn metadata(path: &LocalPath) -> Result<Metadata> {
     metadata_sync(path)
 }
 
+#[cfg(not(target_os = "linux"))]
+pub async fn metadata(path: &LocalPath) -> Result<std::fs::Metadata> {
+    std::fs::metadata(path).remap_std_error::<FileError, _>(|| "".into())
+}
+
+#[cfg(target_os = "linux")]
 pub fn metadata_sync<P: AsRef<LocalPath>>(path: P) -> Result<Metadata> {
     let path = path.as_ref();
     let cpath = CString::new(path.as_str())?;
@@ -139,6 +150,7 @@ pub fn metadata_sync<P: AsRef<LocalPath>>(path: P) -> Result<Metadata> {
     Ok(Metadata { inner: stat })
 }
 
+#[cfg(target_os = "linux")]
 pub async fn symlink_metadata(path: &LocalPath) -> Result<Metadata> {
     let cpath = CString::new(path.as_str())?;
     let mut stat = sys::bindings::stat::default();
@@ -147,7 +159,14 @@ pub async fn symlink_metadata(path: &LocalPath) -> Result<Metadata> {
     Ok(Metadata { inner: stat })
 }
 
+#[cfg(not(target_os = "linux"))]
+pub async fn symlink_metadata(path: &LocalPath) -> Result<std::fs::Metadata> {
+    std::fs::symlink_metadata(path)
+        .remap_std_error::<FileError, _>(|| "".into())
+}
+
 /// Creates a symlink at 'new' which points to 'old'.
+#[cfg(target_os = "linux")]
 pub async fn symlink<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(old: P, new: P2) -> Result<()> {
     let old = CString::new(old.as_ref().as_str())?;
     let new = CString::new(new.as_ref().as_str())?;
@@ -176,6 +195,7 @@ pub async fn exists<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
     exists_sync(path)
 }
 
+#[cfg(target_os = "linux")]
 pub fn exists_sync<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
     // TODO: Use symlink_metadata?
     match metadata_sync(path.as_ref()) {
@@ -190,6 +210,14 @@ pub fn exists_sync<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+pub fn exists_sync<P: AsRef<LocalPath>>(path: P) -> Result<bool> {
+    std::fs::exists(path)
+        .remap_std_error::<FileError, _>(|| "".into())
+}
+
+
+#[cfg(target_os = "linux")]
 pub async fn create_dir(path: &LocalPath) -> Result<()> {
     let cpath = CString::new(path.as_str())?;
     unsafe {
@@ -197,6 +225,12 @@ pub async fn create_dir(path: &LocalPath) -> Result<()> {
             .remap_errno::<FileError, _>(|| format!("mkdir(\"{}\") failed", path.as_str()))?
     }
     Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub async fn create_dir(path: &LocalPath) -> Result<()> {
+    std::fs::create_dir(path)
+        .remap_std_error::<FileError, _>(|| "".into())
 }
 
 pub async fn create_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {

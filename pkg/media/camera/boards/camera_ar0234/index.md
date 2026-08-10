@@ -5,6 +5,13 @@ This is a board for attaching an AR0234 camera sensor to a Raspberry Pi 22-pin c
 - PCB Stackup: 6-layer; `JLC06161H-3313`
 - Need to use via-in-pad processing (capped/plated over vias)
 
+Power consumption (based on datasheet):
+
+- Chip Power Consumption: <420mW
+- Board Power Input
+    - Typical: 0.23A on 3.3V rail
+    - Peak: 0.378A on 3.3V rail (~0.25A on 5V)
+
 ## BOM
 
 - Sensor
@@ -19,7 +26,7 @@ This is a board for attaching an AR0234 camera sensor to a Raspberry Pi 22-pin c
 - 1.8V Regulator
     - https://www.digikey.com/en/products/detail/texas-instruments/TLV74318PDBVR/7593922
 - 2.8V Regulator
-    - https://www.digikey.com/en/products/detail/texas-instruments/LP5907MFX-2-8-NOPB/3906436
+    - https://www.digikey.com/en/products/detail/onsemi/NCP163ASN280T1G/10064750
 
 - Level Shifting Transistor
     - https://www.digikey.com/en/products/detail/onsemi/BSS138/244210

@@ -96,11 +96,11 @@ struct StatusState {
 }
 
 struct ConfigureState {
-    strobe_dimming: PWMChannel,
+    strobe_dimming: Option<PWMChannel>,
 
     last_pps_config: PPSDividerConfigRequest,
 
-    rgb_leds: WS2812SPIController,
+    rgb_leds: Option<WS2812SPIController>,
 
     /// Use this for configuring controls.
     camera_subdev: v4l2::SubDevice,
@@ -112,22 +112,31 @@ struct State {
 
 impl MocapCamera {
 
-    pub async fn create(pi_model: Model, ptp_device: Arc<ptp::PTPDevice>) -> Result<Self> {
+    pub async fn create(
+        config: Arc<CameraHardwareConfigContainer>,
+        ptp_device: Arc<ptp::PTPDevice>
+    ) -> Result<Self> {
         // Note that will reset the MCU immediately so it will be back in sync with the default
         // config on the host side.
-        let pps_divider_client = PPSDividerClient::create(pi_model.clone()).await?;
+        let pps_divider_client = PPSDividerClient::create(config.clone()).await?;
 
-        let mut strobe_dimming = PWMChannel::open(0, 0).await?;
-        strobe_dimming.write(STROBE_DIMMING_FREQUENCY, 0.0).await?;
+        let mut strobe_dimming = None;
+        if config.local_strobe_dimming() {
+            strobe_dimming = Some(PWMChannel::open(0, 0).await?);
+            strobe_dimming.as_mut().unwrap().write(STROBE_DIMMING_FREQUENCY, 0.0).await?;
+        }
 
         let mut pio_forwarder = None;
-        if pi_model == Model::CM5 {
+        if config.enable_pio_trigger_forwarder() {
             pio_forwarder = Some(PIO::create_pin_forwarder(16, 22)?);
         }
         
-        let mut rgb_leds = WS2812SPIController::create("/dev/spidev0.0")?;
+        let mut rgb_leds = None;
+        if config.local_rgb_control() {
+            rgb_leds = Some(WS2812SPIController::create("/dev/spidev0.0")?);
+        }
 
-        let mut i2c_bus = I2CHostController::open("/dev/i2c-1")?;
+        let mut i2c_bus = I2CHostController::open(&config.accelerometer_i2c_device())?;
         let accelerometer = LIS2DW12::create(i2c_bus.device(0x19)).await?;
 
         // TODO: Have all key controls like exposure and analog/digital gains exported to a config file that we can re-initialize everything on boot.

@@ -6,7 +6,7 @@ use common::errors::*;
 use executor_multitask::{impl_resource_passthrough, TaskResource};
 
 use crate::ip::{IPAddress, SocketAddr};
-use crate::udp::UdpSocket;
+use crate::udp::{UdpSocket, UdpBindOptions};
 use crate::dns::message::{Question, Message};
 use crate::dns::message_builder::ReplyBuilder;
 use crate::dns::constants::*;
@@ -36,6 +36,7 @@ impl_resource_passthrough!(Server, task_resource);
 struct Shared {
     socket: UdpSocket,
     handler: Arc<dyn ServerHandler>,
+    multicast: bool,
 }
 
 impl Server {
@@ -45,6 +46,32 @@ impl Server {
         let shared = Arc::new(Shared {
             socket,
             handler,
+            multicast: false,
+        });
+
+        let task_resource = TaskResource::spawn_interruptable(
+            "dns::Server::run()",
+            Self::run(shared),
+        );
+
+        Ok(Self { task_resource })
+    }
+
+    pub async fn create_multicast_insecure(handler: Arc<dyn ServerHandler>) -> Result<Self> {
+        const IFACE_ADDR: IPAddress = IPAddress::V4([0, 0, 0, 0]);
+
+        let mut socket = UdpSocket::bind_with_options(
+            SocketAddr::new(IFACE_ADDR, MULTICAST_PORT),
+            &UdpBindOptions::new().reuse_addr(true).reuse_port(true),
+        )
+        .await?;
+
+        socket.join_multicast_v4(MULTICAST_ADDR, IFACE_ADDR)?;
+
+        let shared = Arc::new(Shared {
+            socket,
+            handler,
+            multicast: true,
         });
 
         let task_resource = TaskResource::spawn_interruptable(
@@ -97,13 +124,17 @@ impl Server {
 
         // General validation
         if msg.is_reply() || msg.response_code() != ResponseCode::NoError {
-            // Response with an error.
-            eprintln!("Bad request from {:?}", peer_addr);
             
-            let mut reply = ReplyBuilder::new(msg.id());
-            reply.set_response_code(ResponseCode::FormatError);
+            if !shared.multicast {
+                // Response with an error.
+                eprintln!("Bad request from {:?}", peer_addr);
 
-            let _ = shared.socket.send_to(&reply.build(), &peer_addr).await;
+                let mut reply = ReplyBuilder::new(msg.id());
+                reply.set_response_code(ResponseCode::FormatError);
+
+                let _ = shared.socket.send_to(&reply.build(), &peer_addr).await;
+            }
+
             return;
         }
 
@@ -116,9 +147,11 @@ impl Server {
             _ => {
                 eprintln!("Failed: {:?}", res);
 
-                let mut reply = ReplyBuilder::new(msg.id());
-                reply.set_response_code(ResponseCode::ServerFailure);
-                let _ = shared.socket.send_to(&reply.build(), &peer_addr).await;
+                if !shared.multicast {
+                    let mut reply = ReplyBuilder::new(msg.id());
+                    reply.set_response_code(ResponseCode::ServerFailure);
+                    let _ = shared.socket.send_to(&reply.build(), &peer_addr).await;
+                }
             }
         }
     }
@@ -144,7 +177,9 @@ impl Server {
             }
         } 
 
-        shared.socket.send_to(&reply.build(), &peer_addr).await?;
+        if !shared.multicast || !reply.is_empty() {
+            shared.socket.send_to(&reply.build(), &peer_addr).await?;
+        }
 
         Ok(())
     }

@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    systemctl stop {SERVICE_NAME}.service || true
+    systemctl disable {SERVICE_NAME}.service || true
+fi
+
+exit 0

@@ -60,6 +60,28 @@ void Timer_Init(void)
     
     // Enable Timer
     TIM2->CR1 |= TIM_CR1_CEN;
+
+    // --- TIM1 Init (10kHz PWM on PA8) ---
+    // F_timer = 64 MHz, F_pwm = 10 kHz -> ARR = 6400 - 1 = 6399
+    TIM1->PSC = 0;
+    TIM1->ARR = 6399;
+    
+    // Configure CH1 for PWM Mode 1 (110)
+    TIM1->CCMR1 &= ~TIM_CCMR1_CC1S;
+    TIM1->CCMR1 &= ~TIM_CCMR1_OC1M;
+    TIM1->CCMR1 |= (6U << 4); // PWM Mode 1
+    TIM1->CCMR1 |= TIM_CCMR1_OC1PE;
+    
+    // Enable Output CC1E
+    TIM1->CCER |= TIM_CCER_CC1E;
+    
+    // Main Output Enable (MOE) required for Advanced Timers like TIM1
+    TIM1->BDTR |= TIM_BDTR_MOE;
+    
+    TIM1->CCR1 = 0; // Initial duty cycle 0
+    
+    // Enable Timer
+    TIM1->CR1 |= TIM_CR1_CEN;
 }
 
 void TIM2_IRQHandler(void)

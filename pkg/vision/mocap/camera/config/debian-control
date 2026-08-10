@@ -1,0 +1,7 @@
+Package: {PACKAGE_NAME}
+Version: 0.0.0
+Section: base
+Priority: optional
+Architecture: arm64
+Maintainer: Dennis
+Description: Mocap camera component

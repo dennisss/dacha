@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../../../common" }
+builder = { path = "../../../builder" }
 base_args = { path = "../../../base/args" }
 file = { path = "../../../file" }
 cluster_client = { path = "../../../cluster/client" }

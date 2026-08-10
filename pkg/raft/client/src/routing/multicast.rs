@@ -1,5 +1,3 @@
-use std::os::unix::io::AsRawFd;
-use std::os::unix::prelude::FromRawFd;
 use std::time::{Duration, SystemTime};
 
 use base_error::*;

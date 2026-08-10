@@ -14,6 +14,7 @@ use executor::{lock, lock_async};
 use ptp::SignedDuration;
 use flasher_swd::*;
 use rpi::model::Model;
+use mocap_camera_core::CameraHardwareConfigContainer;
 
 use crate::pps_divider_protocol::*;
 
@@ -61,28 +62,24 @@ struct State {
 
 impl PPSDividerClient {
 
-    pub async fn create(pi_model: Model) -> Result<Self> {
+    pub async fn create(config: Arc<CameraHardwareConfigContainer>) -> Result<Self> {
         let gpio = GPIOChip::default_chip()?;
 
         // Perform an initial reset of the MCU.
-        let mut reset_pin = gpio.pin(26)?;
+        let mut reset_pin = gpio.pin(config.mcu_reset_pin())?;
         reset_pin.configure(GPIOLineFlags::OUTPUT)?;
         reset_pin.write(false)?;
         executor::sleep(Duration::from_millis(1)).await?;
         reset_pin.write(true)?;
 
-        let clk_pin = gpio.pin(27)?;
-        let io_pin = gpio.pin(17)?;
+        let clk_pin = gpio.pin(config.mcu_swd_clk_pin())?;
+        let io_pin = gpio.pin(config.mcu_swd_io_pin())?;
         let programmer = SWDProgrammer::create(clk_pin, io_pin)?;
 
         // NOTE: This is intentionally fairly slow since the MCU gets interrupted on every single byte
         // so we don't want to disrupt the timing critical pulse work or get serial overruns if we
         // are currently running the pulse logic.
-        let mut serial = SerialPort::open(match pi_model {
-            Model::CM4 => "/dev/ttyAMA3",
-            Model::CM5 => "/dev/ttyAMA2",
-            _ => panic!()
-        }, 115_200)?;
+        let mut serial = SerialPort::open(&config.mcu_serial_device(), 115_200)?;
 
         let (reader, writer) = serial.split();
 

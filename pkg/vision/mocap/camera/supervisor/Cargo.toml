@@ -1,0 +1,16 @@
+[package]
+name = "mocap_camera_supervisor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base_radix = { path = "../../../../base/radix" }
+cluster_client = { path = "../../../../cluster/client" }
+common = { path = "../../../../common" }
+net = { path = "../../../../net" }
+macros = { path = "../../../../macros" }
+executor = { path = "../../../../executor" }
+executor_multitask = { path = "../../../../executor/multitask" }
+mocap_proto = { path = "../../proto" }
+protobuf = { path = "../../../../protobuf" }
+file = { path = "../../../../file" }

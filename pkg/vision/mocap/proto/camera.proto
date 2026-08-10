@@ -6,6 +6,27 @@ import "pkg/vision/mocap/proto/processor.proto";
 import "pkg/media/camera/proto/property.proto";
 import "pkg/math/proto/matrix.proto";
 
+// Configuration about the specific hardware present in a given camera unit.
+// (think PCB revision, which camera driver to use, etc.)
+//
+// Note that this config is stored statically on the SDCard/eMMC and is used
+// to configure the boot config files so this will contain some information
+// that may be detectable at runtime but we don't rely on that.
+message CameraHardwareConfig {
+    uint32 compute_board_revision = 1;
+
+    ComputeModuleModel compute_module = 2;
+}
+
+enum ComputeModuleModel {
+    UNKNOWN = 0;
+    PI_CM4 = 1;
+    PI_CM4_LITE = 2;
+    PI_CM5 = 3;
+    PI_CM5_LITE = 4;
+}
+
+
 service MocapCamera {
     rpc Status (StatusRequest) returns (MocapCameraStatus);
 

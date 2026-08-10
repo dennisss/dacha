@@ -66,7 +66,39 @@ impl NetlinkSocket {
 
     // TODO: Verify that the response sequence matches the request sequence.
 
+    pub async fn recv_message(&self) -> Result<(nlmsghdr, Vec<u8>)> {
+        let mut buf = [0u8; 8192];
+        let n = self.inner.recv(&mut buf).await?;
+
+        let ((message_header, mut message_payload), rest) =
+            parse_cstruct_with_payload::<nlmsghdr>(&buf[0..n])?;
+        if !rest.is_empty() {
+            return Err(err_msg("Extra data after message"));
+        }
+
+        Ok((message_header.clone(), message_payload.to_vec()))
+    }
+
+    pub async fn recv_ack(&self) -> Result<()> {
+        let (hdr, payload) = self.recv_message().await?;
+
+        if hdr.nlmsg_type != libc::NLMSG_ERROR as u16 {
+            return Err(err_msg("Expected to receive error message"))
+        }
+
+        let (e, _) = parse_cstruct::<nlmsgerr>(&payload)?;
+
+        // TODO: Also correlate the e.msg sequence with the original request we sent.
+
+        if e.error != 0 {
+            return Err(format_err!("Non zero error: {}", e.error));
+        }
+
+        Ok(())
+    }
+
     /// Receives messages which use the 'nlmsghdr' format.
+    /// (this is for multipart messages requested with NLM_F_DUMP)
     pub fn recv_messages(&self) -> NetlinkMessageReceiver {
         NetlinkMessageReceiver {
             socket: self,
@@ -145,6 +177,7 @@ pub struct Interface {
     pub link_address: Vec<u8>,
     pub link_broadcast_address: Vec<u8>,
     pub addrs: Vec<InterfaceAddr>,
+    pub virt: bool,
 }
 
 enum_def!(OperationalState u8 =>
@@ -174,6 +207,102 @@ pub struct InterfaceAddr {
 pub enum InterfaceAddrFamily {
     INET,
     INET6,
+}
+
+pub async fn add_interface_address(
+    interface_index: usize,
+) -> Result<()> {
+    let sock = NetlinkSocket::create()?;
+
+    let mut req = vec![];
+    serialize_cstruct(
+        &nlmsghdr {
+            nlmsg_len: 0,
+            nlmsg_type: libc::RTM_NEWADDR,
+            nlmsg_flags: (libc::NLM_F_REQUEST | libc::NLM_F_ACK) as u16,
+            nlmsg_seq: 1,
+            nlmsg_pid: 0,
+        },
+        &mut req,
+    );
+    serialize_cstruct(
+        &ifaddrmsg {
+            ifa_family: libc::AF_INET as u8,
+            ifa_prefixlen: 16, // 255.255.0.0,
+            ifa_flags: libc::IFA_F_PERMANENT as u8, // Not dynamic in DHCP
+            ifa_scope: libc::RT_SCOPE_UNIVERSE,
+            ifa_index: interface_index as u32,
+        },
+        &mut req,
+    );
+
+    serialize_cstruct_with_payload(
+        rtattr {
+            rta_len: 0, // Filled in later
+            rta_type: libc::IFA_ADDRESS
+        },
+        &[
+            10,
+            4,
+            0,
+            1
+        ],
+        &mut req
+    );
+
+    serialize_cstruct_with_payload(
+        rtattr {
+            rta_len: 0, // Filled in later
+            rta_type: libc::IFA_LOCAL
+        },
+        &[
+            10,
+            4,
+            0,
+            1
+        ],
+        &mut req
+    );
+
+    sock.send_to_kernel(&mut req).await?;
+
+    sock.recv_ack().await?;
+
+    Ok(())
+}
+
+pub async fn up_interface(
+    interface_index: usize
+) -> Result<()> {
+    let sock = NetlinkSocket::create()?;
+
+    let mut req = vec![];
+    serialize_cstruct(
+        &nlmsghdr {
+            nlmsg_len: 0,
+            nlmsg_type: libc::RTM_SETLINK,
+            nlmsg_flags: (libc::NLM_F_REQUEST | libc::NLM_F_ACK) as u16,
+            nlmsg_seq: 1,
+            nlmsg_pid: 0,
+        },
+        &mut req,
+    );
+    serialize_cstruct(
+        &ifinfomsg {
+            ifi_family: 0, // Unused
+            ifi_type: 0, // Unused
+            ifi_index: interface_index as i32,
+            ifi_flags: libc::IFF_UP as u32,
+            ifi_change: libc::IFF_UP as u32,
+        },
+        &mut req,
+    );
+
+    sock.send_to_kernel(&mut req).await?;
+
+    sock.recv_ack().await?;
+
+    Ok(())
 }
 
 pub async fn read_interfaces() -> Result<Vec<Interface>> {
@@ -241,18 +370,24 @@ pub async fn read_interfaces() -> Result<Vec<Interface>> {
             if attr.rta_type == libc::IFLA_IFNAME {
                 iface.name = read_null_terminated_string(value)?;
             }
-            if attr.rta_type == libc::IFLA_ADDRESS {
+            else if attr.rta_type == libc::IFLA_ADDRESS {
                 iface.link_address = value.to_vec();
             }
-            if attr.rta_type == libc::IFLA_BROADCAST {
+            else if attr.rta_type == libc::IFLA_BROADCAST {
                 iface.link_broadcast_address = value.to_vec();
             }
-            if attr.rta_type == libc::IFLA_OPERSTATE {
+            else if attr.rta_type == libc::IFLA_OPERSTATE {
                 if value.len() != 1 {
                     return Err(err_msg("Invalid operstate value length"));
                 }
 
                 iface.operational_state = OperationalState::from_value(value[0])?;
+            }
+            else if attr.rta_type == libc::IFLA_LINKINFO {
+                iface.virt = true;
+            }
+            else {
+
             }
         }
     }
@@ -279,7 +414,6 @@ pub async fn read_interfaces() -> Result<Vec<Interface>> {
         // println!("{:?}", message_header);
 
         let info: &ifaddrmsg = parse_next!(message_payload, parse_cstruct);
-        // println!("{:?}", info);
 
         let mut addr = InterfaceAddr {
             family: match info.ifa_family as i32 {
@@ -555,6 +689,12 @@ fn parse_cstruct_with_payload<T: StructLength>(input: &[u8]) -> Result<((&T, &[u
     Ok(((value, payload), rest2))
 }
 
+fn serialize_cstruct_with_payload<T: StructLength>(mut value: T, payload: &[u8], out: &mut Vec<u8>) {
+    value.set_struct_length(std::mem::size_of::<T>() + payload.len());
+    serialize_cstruct(&value, out);
+    out.extend_from_slice(payload);
+}
+
 fn parse_payload(input: &[u8], length: usize) -> Result<(&[u8], &[u8])> {
     let length_aligned = length + common::block_size_remainder(4, length as u64) as usize;
     if input.len() < length_aligned {
@@ -591,12 +731,22 @@ fn serialize_cstruct<T>(value: &T, out: &mut Vec<u8>) {
 
 trait StructLength {
     fn struct_length(&self) -> usize;
+
+    fn set_struct_length(&mut self, len: usize);
 }
+
 
 // TODO: Move these to third_party
 
 #[repr(C)]
 #[derive(Default, Debug)]
+struct nlmsgerr {
+    error: sys::c_int,
+    msg: nlmsghdr,
+}
+
+#[repr(C)]
+#[derive(Default, Debug, Clone)]
 struct nlmsghdr {
     nlmsg_len: u32,   /* Length of message including header */
     nlmsg_type: u16,  /* Type of message content */
@@ -608,6 +758,10 @@ struct nlmsghdr {
 impl StructLength for nlmsghdr {
     fn struct_length(&self) -> usize {
         self.nlmsg_len as usize
+    }
+
+    fn set_struct_length(&mut self, len: usize) {
+        self.nlmsg_len = len as u32; 
     }
 }
 
@@ -637,6 +791,10 @@ impl StructLength for rtattr {
     fn struct_length(&self) -> usize {
         self.rta_len as usize
     }
+
+    fn set_struct_length(&mut self, len: usize) {
+        self.rta_len = len as sys::c_ushort; 
+    }    
 }
 
 #[repr(C)]

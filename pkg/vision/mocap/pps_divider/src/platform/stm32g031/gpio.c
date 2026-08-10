@@ -20,6 +20,13 @@ void GPIO_Init(void)
     GPIOA->AFR[1] &= ~((0xF << ((9 - 8) * 4)) | (0xF << ((10 - 8) * 4)));
     GPIOA->AFR[1] |=  ((1U << ((9 - 8) * 4)) | (1U << ((10 - 8) * 4)));
 
+    // --- TIM1 Pins ---
+    // PA8 -> TIM1_CH1 (PWM Output)
+    GPIOA->MODER &= ~(GPIO_MODER_MODE8);
+    GPIOA->MODER |=  (GPIO_MODER_MODE8_1); // AF Mode
+    GPIOA->AFR[1] &= ~(0xF << ((8 - 8) * 4));
+    GPIOA->AFR[1] |=  (2U << ((8 - 8) * 4)); // AF2 (TIM1_CH1)
+
     // --- TIM2 Pins ---
     // PB3  -> TIM2_CH2 (PPS Input)
     // PC6  -> TIM2_CH3 (Strobe Output)

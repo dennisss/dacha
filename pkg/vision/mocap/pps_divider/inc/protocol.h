@@ -20,6 +20,7 @@ typedef struct __attribute__((packed)) {
     int32_t  frame_offset_ticks;
     int32_t  strobe_offset_ticks; 
     uint32_t strobe_width_ticks;
+    uint16_t strobe_dimming;
 } ConfigData_t;
 
 typedef struct __attribute__((packed)) {

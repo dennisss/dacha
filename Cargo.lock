@@ -3234,6 +3234,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mocap_camera_supervisor"
+version = "0.1.0"
+dependencies = [
+ "base_radix",
+ "cluster_client",
+ "common",
+ "executor",
+ "executor_multitask",
+ "file",
+ "macros",
+ "mocap_proto",
+ "net",
+ "protobuf",
+]
+
+[[package]]
 name = "mocap_manager"
 version = "0.1.0"
 dependencies = [

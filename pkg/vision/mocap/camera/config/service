@@ -1,0 +1,14 @@
+[Unit]
+Description=Mocap service.
+
+[Service]
+Type=simple
+User=root
+ExecStart={COMMAND}
+Restart=on-failure
+RestartSec=5
+WorkingDirectory={WORKING_DIR}
+TimeoutStopSec=5
+
+[Install]
+WantedBy=basic.target

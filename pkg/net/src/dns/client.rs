@@ -24,9 +24,6 @@ use crate::dns::constants::*;
 // part of the packet is lost?
 
 
-const MULTICAST_ADDR: IPAddress = IPAddress::V4([224, 0, 0, 251]);
-const MULTICAST_PORT: u16 = 5353;
-
 /// In unicast mode, this is the amount of time we spend waiting for a single
 /// request attempt to produce a reply. If we exceed this deadline, the client
 /// will return an error to the caller.

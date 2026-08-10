@@ -27,6 +27,7 @@ rpc = { path = "../../../rpc" }
 rpi = { path = "../../../rpi" }
 pio_rp1 = { path = "../../../rpi/pio_rp1" }
 ptp = { path = "../../../net/ptp" }
+ptp_core = { path = "../../../net/ptp/core" }
 ptp_proto = { path = "../../../net/ptp/proto" }
 http = { path = "../../../http" }
 http_util = { path = "../../../http/util" }

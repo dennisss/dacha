@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+base_util = { path = "../../../../base/util" }
 common = { path = "../../../../common" }
 vision = { path = "../../../" }
 math = { path = "../../../../math" }

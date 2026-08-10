@@ -58,4 +58,35 @@ gzip -n -c -9 build/bcm2711/arch/arm64/boot/Image > build/out/boot/firmware/kern
 cp build/bcm2712/arch/arm64/boot/dts/broadcom/*.dtb build/out/boot/firmware/
 cp build/bcm2712/arch/arm64/boot/dts/overlays/*.dtb* build/out/boot/firmware/overlays/
 
-tar -czvf build/out.tar.gz -C build/out .
+# tar -czvf build/out.tar.gz -C build/out .
+
+## Generating Debian Package (non-standard combined package)
+
+mkdir -p build/out/DEBIAN
+
+cat <<EOF > build/out/DEBIAN/control
+Package: linux-kernel-dacha-rpi-arm64
+Version: 0.0.0
+Section: kernel
+Priority: optional
+Architecture: arm64
+Maintainer: Dennis
+Description: Customized kernel for Raspberry Pis.
+EOF
+
+cat <<'EOF' > build/out/DEBIAN/postinst
+#!/bin/sh
+set -e
+
+# Run depmod for all installed kernel module directories
+for kver in /lib/modules/*; do
+    if [ -d "$kver" ]; then
+        version=$(basename "$kver")
+        depmod -a "$version"
+    fi
+done
+EOF
+
+chmod 755 build/out/DEBIAN/postinst
+
+dpkg-deb --root-owner-group --build build/out build/linux-kernel-dacha-rpi-arm64.deb

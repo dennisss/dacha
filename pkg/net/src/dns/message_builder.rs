@@ -165,6 +165,10 @@ impl ReplyBuilder {
         }, data);
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.message_builder.header.num_answers == 0
+    }
+
     pub fn build(self) -> Vec<u8> {
         self.message_builder.build()
     }

@@ -28,4 +28,35 @@ cp build/bcm2712/ar0234.dtbo build/out/boot/firmware/overlays/
 cp build/bcm2711/ar0234.ko build/out/lib/modules/${KERNEL_VERSION_2711}/updates/
 cp build/bcm2712/ar0234.ko build/out/lib/modules/${KERNEL_VERSION_2712}/updates/
 
-tar -czvf build/out.tar.gz -C build/out .
+# tar -czvf build/out.tar.gz -C build/out .
+
+## Making Debian package
+
+mkdir build/out/DEBIAN
+
+cat <<EOF > build/out/DEBIAN/control
+Package: ar0234-driver-rpi-arm64
+Version: 0.0.0
+Section: kernel
+Priority: optional
+Architecture: arm64
+Maintainer: Dennis
+Description: Raspberry Pi AR0234 driver kernel module.
+EOF
+
+cat <<'EOF' > build/out/DEBIAN/postinst
+#!/bin/sh
+set -e
+
+# Run depmod for all installed kernel module directories
+for kver in /lib/modules/*; do
+    if [ -d "$kver" ]; then
+        version=$(basename "$kver")
+        depmod -a "$version"
+    fi
+done
+EOF
+
+chmod 755 build/out/DEBIAN/postinst
+
+dpkg-deb --root-owner-group --build build/out build/ar0234-driver-rpi-arm64.deb

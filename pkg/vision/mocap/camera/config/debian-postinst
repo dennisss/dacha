@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+if [ "$1" = "configure" ]; then
+    systemctl daemon-reload
+    systemctl enable {SERVICE_NAME}.service
+    systemctl restart {SERVICE_NAME}.service
+fi
+
+exit 0

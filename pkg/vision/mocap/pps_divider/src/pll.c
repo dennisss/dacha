@@ -5,6 +5,8 @@
 #include "drivers.h"
 #include "system.h" // For SYSCLK_FREQ (96MHz or 64MHz)
 
+// TODO: Support different PPS rates.
+
 // Constants
 #define TICKS_PER_SEC SYSCLK_FREQ
 
@@ -144,6 +146,11 @@ void PLL_Configure(ConfigData_t *config)
 
     // Copy config
     pll_config = *config;
+    
+#ifdef STM32G031xx
+    // Update TIM1 CH1 PWM duty cycle (0-65535 maps to 0-6400)
+    TIM1->CCR1 = ((uint32_t)pll_config.strobe_dimming * 6400) / 65535;
+#endif
     
     // Reset PLL logic to Pulse 0 state (Re-lock input) if requested
     if (config->unlock) {
@@ -323,6 +330,8 @@ void Update_Output_Pulse(volatile OutputPulseState* state, int channel_index, bo
     }
 }
 
+// TODO: Issue is that if we miss a pulse, we will entirely stick a cycle of frame outputs.
+
 // Called from TIM2_IRQHandler when PPS captured
 void PPS_Input_Callback(uint32_t capture_val)
 {
@@ -342,6 +351,7 @@ void PPS_Input_Callback(uint32_t capture_val)
 
     } else if (g_pll.next_pulse_index == 1) {
         // Pulse #1: First period
+        // TODO: Reject widths that are outo f expected range.
         g_pll.pps_width = capture_val - g_pll.last_pulse_time;
         g_pll.pll_error = 0;
         g_pll.last_pulse_time = capture_val;
@@ -352,6 +362,7 @@ void PPS_Input_Callback(uint32_t capture_val)
         int32_t error = (int32_t)(capture_val - expected);
         g_pll.pll_error = error;
 
+        // Max error is 1 millisecond.
         int32_t max_error = (int32_t)(TICKS_PER_SEC / 1000);
         if (error > max_error) {
             error = max_error;

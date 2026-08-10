@@ -20,8 +20,8 @@ impl UdpSocket {
     }
 
     pub async fn bind_with_options(addr: SocketAddr, options: &UdpBindOptions) -> Result<Self> {
-        let s = mio::net::UdpSocket::bind(addr.into())
-            .remap_std_error::<NetworkError, _>(|| "UDPSocket::bind failed".into())?;
+        let s = mio::net::UdpSocket::bind(addr.clone().into())
+            .remap_std_error::<NetworkError, _>(move || format!("UDPSocket::bind to {:?} failed", addr))?;
         if options.broadcast {
             s.set_broadcast(true)?    
         }
