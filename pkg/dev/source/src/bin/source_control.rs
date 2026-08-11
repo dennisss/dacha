@@ -264,8 +264,8 @@ async fn run_add_command(cmd: AddCommand) -> Result<()> {
 
     while let Some(path) = glob.next().await? {
         let rel_path = match path.strip_prefix(&base_dir) {
-            Some(v) => v,
-            None => continue,
+            Ok(v) => v,
+            Err(_) => continue,
         };
 
         // Filter to only files that need to use the external file system.
@@ -475,8 +475,8 @@ impl LicenseCheckCommand {
             let mut glob = file::FileIterator::new(&base_dir, Box::new(git::GitFileFilter::create().await?));
             while let Some(path) = glob.next().await? {
                 let rel_path = match path.strip_prefix(&base_dir) {
-                    Some(v) => v,
-                    None => continue,
+                    Ok(v) => v,
+                    Err(_) => continue,
                 };
 
                 all_files.push(rel_path.to_owned());

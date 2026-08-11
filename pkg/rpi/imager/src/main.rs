@@ -59,6 +59,9 @@ struct WriteCommand {
     config_txt_patch_file: Option<LocalPathBuf>,
 
     #[arg(default = false)]
+    generate_machine_id: bool,
+
+    #[arg(default = false)]
     no_confirm: bool,
 }
 
@@ -411,13 +414,40 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         */
     }
 
+    let root_part_fstype_str = {
+        let output = std::process::Command::new("lsblk")
+            .args(["-no", "FSTYPE", &format!("{}2", &disk_path.as_str())])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format_err!("lsblk failed: {}", stderr.trim()));
+        }
+
+        std::str::from_utf8(&output.stdout)?.trim().to_string()
+    };
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum FSType {
+        EXT4,
+        BTRFS
+    }
+
+    let root_part_fstype = match root_part_fstype_str.as_str() {
+        "ext4" => FSType::EXT4,
+        "btrfs" => FSType::BTRFS,
+        _ => {
+            return Err(format_err!("Unsupported root fs type: {}", root_part_fstype_str))
+        }
+    };
+
     // BTRFS likes keeping track of all the partitions it has ever mounted so it will
     // get annoyed if mounting an old version of a filesystem it has previously modified. 
     //
     // NOTE: We don't randomize the MBR/GPT UUID since that is referenced in the fstab and
     // cmdline.txt files.
     println!("Randomize BTRFS UUID...");
-    {
+    if root_part_fstype == FSType::BTRFS {
         let dev_name = format!("{}2", &disk_path.as_str());
 
         let status = std::process::Command::new("btrfstune")
@@ -459,7 +489,7 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         sys::mount(
             Some(&dev_name),
             dir_name,
-            Some("btrfs"),
+            Some(&root_part_fstype_str),
             MountFlags::empty(),
             None,
         )?;
@@ -467,13 +497,26 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
 
     // Example command: sudo btrfs filesystem resize max /media/dennis/rootfs
     println!("Expanding root filesystem...");
-    {
-        let status = std::process::Command::new("btrfs")
-            .args(&["filesystem", "resize", "max", root_dir.path().as_str()])
-            .status()?;
+    match root_part_fstype {
+        FSType::BTRFS => {
+            let status = std::process::Command::new("btrfs")
+                .args(&["filesystem", "resize", "max", root_dir.path().as_str()])
+                .status()?;
 
-        if !status.success() {
-            return Err(err_msg("Failed to resize root file system"));
+            if !status.success() {
+                return Err(err_msg("Failed to resize root file system"));
+            }
+        }
+        FSType::EXT4 => {
+            let dev_name = format!("{}2", &disk_path.as_str());
+
+            let status = std::process::Command::new("resize2fs")
+                .args(&[dev_name])
+                .status()?;
+
+            if !status.success() {
+                return Err(err_msg("Failed to resize root file system"));
+            }
         }
     }
 
@@ -484,10 +527,6 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         )?
     };
 
-    if let Some(model) = &cmd.hardware_model {
-        config_txt.filter_to_hardware(model);
-    }
-
     if let Some(path) = cmd.config_txt_patch_file {
         let patch = ConfigTxtFile::parse(
             &file::read_to_string(path).await?
@@ -496,10 +535,22 @@ async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         config_txt.lines.extend(patch.lines);
     } 
 
+    if let Some(model) = &cmd.hardware_model {
+        config_txt.filter_to_hardware(model);
+    }
+
     println!("Writing /etc/image-id...");
     {
         let id = format!("name:{}\nsha256:{}\n", cmd.image.file_name().unwrap(), base_radix::hex_encode(&hasher.finish()));
         file::write(root_dir.path().join("etc/image-id"), id).await?;
+    }
+
+    if cmd.generate_machine_id {
+        println!("Writing /etc/machine-id...");
+
+        let mut id = [0u8; 16];
+        crypto::random::secure_random_bytes(&mut id).await?;
+        file::write(root_dir.path().join("etc/machine-id"), format!("{}\n", base_radix::hex_encode(&id))).await?;
     }
 
     if let Some(path) = &cmd.ssh_public_key {

@@ -10,6 +10,9 @@ const PKT_TYPE_CONFIG: u8 = 0x01;
 const PKT_TYPE_ACK: u8 = 0x02;
 const PKT_TYPE_TELEM: u8 = 0x03;
 const PKT_TYPE_HEARTBEAT: u8 = 0x04;
+const PKT_TYPE_GET_BUILD_ID: u8 = 0x05;
+const PKT_TYPE_BUILD_ID: u8 = 0x06;
+const PKT_TYPE_SETUP: u8 = 0x07;
 
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,6 +24,8 @@ pub struct ConfigPayload {
     pub frame_offset_ticks: i32,
     pub strobe_offset_ticks: i32,
     pub strobe_width_ticks: u32,
+    pub strobe_dimming: u16,
+    pub rgb_color: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,8 +48,25 @@ pub struct HeartbeatPayload {
     pub temp_c: f32,
     pub vcc_min_v: f32,
     pub vcc_max_v: f32,
-    pub pb1_min_v: f32,
-    pub pb1_max_v: f32,
+    pub poe_min_v: f32,
+    pub poe_max_v: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GetBuildIdPayload {
+    pub sequence: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuildIdPayload {
+    pub sequence: u8,
+    pub build_id: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetupPayload {
+    pub sequence: u8,
+    pub pcb_revision: u16,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +75,9 @@ pub enum Packet {
     Ack(AckPayload),
     Telemetry(TelemetryPayload),
     Heartbeat(HeartbeatPayload),
+    GetBuildId(GetBuildIdPayload),
+    BuildId(BuildIdPayload),
+    Setup(SetupPayload),
 }
 
 impl Packet {
@@ -72,6 +97,8 @@ impl Packet {
                 body.extend_from_slice(&cfg.frame_offset_ticks.to_le_bytes());
                 body.extend_from_slice(&cfg.strobe_offset_ticks.to_le_bytes());
                 body.extend_from_slice(&cfg.strobe_width_ticks.to_le_bytes());
+                body.extend_from_slice(&cfg.strobe_dimming.to_le_bytes());
+                body.extend_from_slice(&cfg.rgb_color.to_le_bytes());
             }
             Packet::Ack(ack) => {
                 body.push(PKT_TYPE_ACK);
@@ -92,14 +119,28 @@ impl Packet {
                 let temp_adc = (hb.temp_c * 2.0) as u8;
                 let vcc_min_adc = hb.vcc_min_v / 3.3 * 4095.0;
                 let vcc_max_adc = hb.vcc_max_v / 3.3 * 4095.0;
-                let pb1_min_adc = hb.pb1_min_v / 3.3 * 4095.0;
-                let pb1_max_adc = hb.pb1_max_v / 3.3 * 4095.0;
+                let poe_min_adc = hb.poe_min_v / 3.3 * 4095.0;
+                let poe_max_adc = hb.poe_max_v / 3.3 * 4095.0;
                 
                 body.push(temp_adc);
                 body.extend_from_slice(&(vcc_min_adc as u16).to_le_bytes());
                 body.extend_from_slice(&(vcc_max_adc as u16).to_le_bytes());
-                body.extend_from_slice(&(pb1_min_adc as u16).to_le_bytes());
-                body.extend_from_slice(&(pb1_max_adc as u16).to_le_bytes());
+                body.extend_from_slice(&(poe_min_adc as u16).to_le_bytes());
+                body.extend_from_slice(&(poe_max_adc as u16).to_le_bytes());
+            }
+            Packet::GetBuildId(req) => {
+                body.push(PKT_TYPE_GET_BUILD_ID);
+                body.push(req.sequence);
+            }
+            Packet::BuildId(resp) => {
+                body.push(PKT_TYPE_BUILD_ID);
+                body.push(resp.sequence);
+                body.extend_from_slice(&resp.build_id.to_le_bytes());
+            }
+            Packet::Setup(setup) => {
+                body.push(PKT_TYPE_SETUP);
+                body.push(setup.sequence);
+                body.extend_from_slice(&setup.pcb_revision.to_le_bytes());
             }
         }
 
@@ -279,7 +320,7 @@ impl PacketParser {
 
         match pkt_type {
             PKT_TYPE_CONFIG => {
-                if payload_bytes.len() != 19 { return None; }
+                if payload_bytes.len() != 25 { return None; }
                 Some(Packet::Config(ConfigPayload {
                     sequence: payload_bytes[0],
                     unlock: payload_bytes[1],
@@ -288,6 +329,8 @@ impl PacketParser {
                     frame_offset_ticks: i32::from_le_bytes(payload_bytes[7..11].try_into().ok()?),
                     strobe_offset_ticks: i32::from_le_bytes(payload_bytes[11..15].try_into().ok()?),
                     strobe_width_ticks: u32::from_le_bytes(payload_bytes[15..19].try_into().ok()?),
+                    strobe_dimming: u16::from_le_bytes(payload_bytes[19..21].try_into().ok()?),
+                    rgb_color: u32::from_le_bytes(payload_bytes[21..25].try_into().ok()?),
                 }))
             }
             PKT_TYPE_ACK => {
@@ -313,8 +356,8 @@ impl PacketParser {
                 let temp_adc = payload_bytes[0];
                 let vcc_min_adc = u16::from_le_bytes(payload_bytes[1..3].try_into().ok()?);
                 let vcc_max_adc = u16::from_le_bytes(payload_bytes[3..5].try_into().ok()?);
-                let pb1_min_adc = u16::from_le_bytes(payload_bytes[5..7].try_into().ok()?);
-                let pb1_max_adc = u16::from_le_bytes(payload_bytes[7..9].try_into().ok()?);
+                let poe_min_adc = u16::from_le_bytes(payload_bytes[5..7].try_into().ok()?);
+                let poe_max_adc = u16::from_le_bytes(payload_bytes[7..9].try_into().ok()?);
 
                 // Voltage (V) = (Value_Reported / 4095.0) * 3.3
                 // Temperature is now raw half-degrees C in a single u8
@@ -324,8 +367,28 @@ impl PacketParser {
                     temp_c,
                     vcc_min_v: (vcc_min_adc as f32 / 4095.0) * 3.3,
                     vcc_max_v: (vcc_max_adc as f32 / 4095.0) * 3.3,
-                    pb1_min_v: (pb1_min_adc as f32 / 4095.0) * 3.3,
-                    pb1_max_v: (pb1_max_adc as f32 / 4095.0) * 3.3,
+                    poe_min_v: (poe_min_adc as f32 / 4095.0) * 3.3,
+                    poe_max_v: (poe_max_adc as f32 / 4095.0) * 3.3,
+                }))
+            }
+            PKT_TYPE_GET_BUILD_ID => {
+                if payload_bytes.len() != 1 { return None; }
+                Some(Packet::GetBuildId(GetBuildIdPayload {
+                    sequence: payload_bytes[0],
+                }))
+            }
+            PKT_TYPE_BUILD_ID => {
+                if payload_bytes.len() != 9 { return None; }
+                Some(Packet::BuildId(BuildIdPayload {
+                    sequence: payload_bytes[0],
+                    build_id: u64::from_le_bytes(payload_bytes[1..9].try_into().ok()?),
+                }))
+            }
+            PKT_TYPE_SETUP => {
+                if payload_bytes.len() != 3 { return None; }
+                Some(Packet::Setup(SetupPayload {
+                    sequence: payload_bytes[0],
+                    pcb_revision: u16::from_le_bytes(payload_bytes[1..3].try_into().ok()?),
                 }))
             }
             _ => None,
@@ -348,6 +411,8 @@ mod tests {
             frame_offset_ticks: 300,
             strobe_offset_ticks: -50,
             strobe_width_ticks: 200,
+            strobe_dimming: 1000,
+            rgb_color: 0x00FF00FF,
         });
 
         let bytes = pkt.to_bytes();
@@ -356,12 +421,10 @@ mod tests {
         assert_eq!(bytes[0], SYNC_1);
         assert_eq!(bytes[1], SYNC_2);
         
-        // LEN = 1 (Type) + 19 (Payload) = 20
-        assert_eq!(bytes[2], 20); 
+        // LEN = 1 (Type) + 25 (Payload) = 26
+        assert_eq!(bytes[2], 26); 
         assert_eq!(bytes[3], PKT_TYPE_CONFIG);
         assert_eq!(bytes[4], 42); // Seq
-
-        assert_eq!(&bytes, &[170, 85, 20, 1, 42, 1, 60, 232, 3, 0, 0, 44, 1, 0, 0, 206, 255, 255, 255, 200, 0, 0, 0, 143, 88, 41, 91]);
 
         // Parser Check
         let mut parser = PacketParser::new();

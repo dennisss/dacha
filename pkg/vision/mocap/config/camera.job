@@ -16,7 +16,6 @@ worker {
     cwd: "/volumes/bundle"
     args: [
         "/volumes/bundle/built/pkg/vision/mocap/camera/mocap_camera",
-        "--ptp_iface=eth0",
         "--rpc_port=rpc",
         "--ptp_port=ptp"
     ]

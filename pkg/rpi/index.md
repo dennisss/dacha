@@ -47,7 +47,7 @@ git fetch upstream
 git rebase upstream/arm64
 ```
 
-### Building
+### [Building](#building)
 
 TLDR: Skip if you already downloaded the aforementioned precompiled `.img.gz` file
 
@@ -66,16 +66,19 @@ Or you can build them yourself using the following instruction pages:
 - [//pkg/rpi/doc/custom_kernel.md](/pkg/rpi/doc/custom_kernel.md)
 - [//pkg/rpi/doc/ar0234_driver.md](/pkg/rpi/doc/ar0234_driver.md)
 
-Then run the following commands to build a new Raspberry Pi SD Card image. These steps require that you have Docker installed:
+The image build process uses Docker and we use a custom network proxy to make it easier to reproduce images.
+
+Run th following commands on your machine once to setup a custom docker network:
 
 ```bash
-PI_GEN_DIR=$PWD/third_party/pi-gen
-cd $PI_GEN_DIR
-docker build --no-cache -t pi-gen-base:latest ./docker-base
-./build-docker.sh
+docker network create --internal pi-gen-apt-proxy
+BRIDGE_IFACE="br-$(docker network inspect pi-gen-apt-proxy --format '{{.Id}}' | cut -c 1-12)"
+sudo iptables -I INPUT -i $BRIDGE_IFACE -p tcp --dport 3142 -j ACCEPT
+sudo iptables -A INPUT -i $BRIDGE_IFACE -j DROP
 ```
 
-Alternatively the following expanded set of commands can be used to fully store the dependencies of the image for backup:
+Then run the following commands to build a new Raspberry Pi SD Card image:
+
 
 ```bash
 PI_GEN_DIR=$PWD/third_party/pi-gen
@@ -83,12 +86,10 @@ IMG_DATE="$(date +%Y-%m-%d)"
 
 mkdir -p "${PI_GEN_DIR}/deploy"
 
-cargo build --bin http_proxy --release
-
 # Start an HTTP cache (will record all the apt packages used).
 # NOTE: The cache is only used for the pi image and not the base debian image.
 cargo run --bin http_proxy --release -- \
-	--port=9000 --cache_dir="${PI_GEN_DIR}/deploy/${IMG_DATE}-cache/" &
+	--port=3142 --cache_dir="${PI_GEN_DIR}/deploy/${IMG_DATE}-cache/" &
 
 cd $PI_GEN_DIR
 
@@ -96,46 +97,9 @@ cd $PI_GEN_DIR
 docker build --no-cache -t pi-gen-base:latest ./docker-base
 docker save pi-gen-base:latest | gzip > ${PI_GEN_DIR}/deploy/${IMG_DATE}-pi-gen-base.tar.gz
 
-# Setup ip table rules so that the next docker build can only access the apt proxy.
-# Note that ip table rules don't persist across system restarts.
-
-# Print initial rules
-sudo iptables -L DOCKER-USER --line-numbers
-
-# Expected output of the above command:
-#   Chain DOCKER-USER (1 references)
-#   num  target     prot opt source               destination         
-#   1    RETURN     all  --  anywhere             anywhere   
-
-# Delete the existing rule
-sudo iptables -D DOCKER-USER 1
-
-# Create new rules.
-# NOTE: This assumes that 172.17.0.1 is the docker0 ip (see 'ip addr').
-# This is also hard coded in the 'pi-gen/config' file. We don't use
-# 'host.docker.internal' since it isn't available in the chroot).
-sudo iptables -I DOCKER-USER -i docker0 -d 172.17.0.1 -p tcp --dport 9000 -j ACCEPT
-sudo iptables -A DOCKER-USER -i docker0 -j DROP
-
-# Verify the rules are set up
-sudo iptables -L DOCKER-USER --line-numbers
-
-# Expected output of the above command:
-#   Chain DOCKER-USER (1 references)
-#   num  target     prot opt source               destination         
-#   1    ACCEPT     tcp  --  anywhere             my-host-name            tcp dpt:9000
-#   2    DROP       all  --  anywhere             anywhere
-
 # Build the pi image.
 # TODO: Pipe the IMG_DATE variable into this script to avoid regenerating the data.
-./build-docker.sh
-
-# Cleanup
-sudo iptables -D DOCKER-USER 1
-sudo iptables -D DOCKER-USER 1
-sudo iptables -A DOCKER-USER -i docker0 -j RETURN
-
-cd ../../
+./build-docker.sh -c configs/base
 ```
 
 At this point you should have an `.img.gz` file in the `third_party/pi-gen/deploy` folder that you can use in the `Flashing` section.

@@ -38,6 +38,8 @@ pub struct PPSDividerConfigRequest {
     pub frame_offset: Option<SignedDuration>,
     pub strobe_width: Option<Duration>,
     pub strobe_offset: Option<SignedDuration>,
+    pub strobe_power: f32,
+    pub rgb_color: u32,
 }
 
 struct Shared {

@@ -1980,6 +1980,11 @@ files: [
         sha256_sum: "dea779e9cdcf085a5ced3d5b681ba137a3fb5db9e4ec68576b9db45a913205d6"
     },
     {
+        path: "pkg/media/camera/boards/camera_ar0234/r2/plot.zip"
+        size: 94844
+        sha256_sum: "9bad132fd10660f3184592a2e27c33a83548176ac2912fcb4a37eb8bd9feccd7"
+    },
+    {
         path: "pkg/media/camera/boards/camera_ffc/latest/plot.zip"
         size: 3523
         sha256_sum: "b8e65d42be942bd0f2cbfd6f380c8f9321452fa855245f79f8fa278f281b1a10"

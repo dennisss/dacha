@@ -1,7 +1,21 @@
+# NOTE: This file supports all current compute board PCB revisions at once and
+# switching is done in the camera software between appropriate GPIOs per revision.
+# So far we have never re-used a GPIO pin for two incompatible purposes between
+# board revisions so that makes this easy.
+
 [cm4]
 
 # MCU serial interface on /dev/ttyAMA3
+# (only for board rev < 6)
 dtoverlay=uart3,txd3_pin=4,rxd3_pin=5
+
+# MCU seiral interface on /dev/ttyAMA0
+# (only for board rev >= 6)
+# 
+# NOTE: Because we disable wireless, this always uses a stable clock frequency
+# and is not affected by core_freq or initial_turbo settings. 
+enable_uart=1
+dtoverlay=disable-bt
 
 # Camera EN keep low initially to avoid early triggering.
 gpio=105=op,dl
@@ -19,7 +33,13 @@ dtoverlay=ar0234,cam1,4lane,link-frequency=360000000,sync-sink,flash
 [cm5]
 
 # MCU Serial interface on /dev/ttyAMA2
+# (only for board rev < 6)
 dtoverlay=uart2-pi5
+
+# MCU seiral interface on /dev/ttyAMA0
+# (only for board rev >= 6)
+enable_uart=1
+dtoverlay=uart0-pi5
 
 # Camera EN and frame trigger. Keep low to avoid accidental triggers.
 gpio=34,22=op,dl
@@ -35,6 +55,7 @@ dtoverlay=ar0234,cam0,4lane,link-frequency=360000000,sync-sink,flash
 [all]
 
 # WS2812 LED serial on /dev/spidev0.0 
+# (only for board rev < 8)
 dtoverlay=spi0-0cs,no_miso
 
 # Drive MCU NRST high (turn on the MCU) 
@@ -43,7 +64,13 @@ gpio=26=op,dh
 # High-Z for MCU SWD pins
 gpio=17,27=ip,pn
 
+# GPIO directly wired to ETH_SYNC_OUT
+# (not used on Pi platforms)
+# (only for board rev >= 6)
+gpio=19=ip,pn
+
 # Strobe dimming output
+# (only for board rev < 6)
 # TODO: Simplify this and just leave as a low signal initially (software can setup PWM later)
 dtoverlay=pwm,pin=12,func=4
 

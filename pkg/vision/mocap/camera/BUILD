@@ -19,13 +19,20 @@ webpack(
 bundle(
     name = "mocap_camera_bundle",
     deps = [
-        ":mocap_camera",
-        ":app",
-        "//pkg/web:web_data"
+        ":mocap_camera_deps",
     ],
     configs = [
         # "//pkg/builder/config:x64",
         # "//pkg/builder/config:rpi64_pi5"
         "//pkg/builder/config:rpi64"
+    ]
+)
+
+group(
+    name = "mocap_camera_deps",
+    deps = [
+        ":mocap_camera",
+        ":app",
+        "//pkg/web:web_data"
     ]
 )

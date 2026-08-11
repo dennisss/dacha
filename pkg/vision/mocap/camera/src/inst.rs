@@ -253,12 +253,17 @@ impl MocapCamera {
             });
 
             if config.strobe_power() != old_config.strobe_power() {
-                // TODO: Have a timeout on this.
-                configure_state.strobe_dimming.write(STROBE_DIMMING_FREQUENCY, config.strobe_power()).await?;
+                if let Some(strobe_dimming) = &mut configure_state.strobe_dimming {
+                    // TODO: Have a timeout on this.
+                    strobe_dimming.write(STROBE_DIMMING_FREQUENCY, config.strobe_power()).await?;
+                }
             }
 
+            // TODO: If using local SPI, re-run this every few seconds since it is flaky
             if config.rgb_led_colors() != old_config.rgb_led_colors() {
-                configure_state.rgb_leds.write(config.rgb_led_colors())?;
+                if let Some(rgb_leds) = &mut configure_state.rgb_leds {
+                    rgb_leds.write(config.rgb_led_colors())?;
+                }
             }
 
             // 
@@ -328,6 +333,9 @@ impl MocapCamera {
 
                 strobe_width,
                 strobe_offset: None,
+                strobe_power: config.strobe_power(),
+
+                rgb_color: config.rgb_led_colors()[0]
             };
             if pps_config != configure_state.last_pps_config {
                 shared.pps_divider_client.configure(&pps_config).await?;
@@ -425,8 +433,8 @@ impl MocapCamera {
                 )
             }
 
-            p.set_poe_voltage_min(get_poe_voltage(pkt.pb1_min_v));
-            p.set_poe_voltage_max(get_poe_voltage(pkt.pb1_max_v));
+            p.set_poe_voltage_min(get_poe_voltage(pkt.poe_min_v));
+            p.set_poe_voltage_max(get_poe_voltage(pkt.poe_max_v));
         }
 
         if let Some((pkt, time)) = self.shared.pps_divider_client.last_telemetry().await? {

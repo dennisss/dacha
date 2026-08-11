@@ -2,6 +2,7 @@
 #include "drivers.h"
 #include "crc.h"
 #include <string.h>
+#include <stdbool.h>
 
 #define MAX_PAYLOAD_LEN 64
 
@@ -29,6 +30,9 @@ static uint8_t current_seq = 0;
 extern volatile uint32_t ms_ticks;
 
 extern void PLL_Configure(ConfigData_t *config); // Forward declaration
+extern volatile const uint64_t g_build_id;
+extern volatile uint16_t g_pcb_revision;
+extern volatile bool g_setup_received;
 
 
 
@@ -112,6 +116,26 @@ void Protocol_ProcessByte(uint8_t byte)
                         if (msg_len > 1) seq = msg_data[0];
                         Protocol_SendAck(seq, 1); // Status 1: Format Error
                     }
+                } else if (msg_type == PKT_TYPE_SETUP) {
+                    if ((msg_len - 1) == sizeof(SetupData_t)) {
+                        SetupData_t *setup = (SetupData_t*)msg_data;
+                        g_pcb_revision = setup->pcb_revision;
+                        g_setup_received = true;
+                        Protocol_SendAck(setup->sequence, 0);
+                    } else {
+                        uint8_t seq = 0;
+                        if (msg_len > 1) seq = msg_data[0];
+                        Protocol_SendAck(seq, 1); // Status 1: Format Error
+                    }
+                } else if (msg_type == PKT_TYPE_GET_BUILD_ID) {
+                    if ((msg_len - 1) == sizeof(GetBuildIdData_t)) {
+                        GetBuildIdData_t *req = (GetBuildIdData_t*)msg_data;
+                        Protocol_SendBuildId(req->sequence, g_build_id);
+                    } else {
+                        uint8_t seq = 0;
+                        if (msg_len > 1) seq = msg_data[0];
+                        Protocol_SendAck(seq, 1); // Status 1: Format Error
+                    }
                 }
             } else {
                 // Checksum fail
@@ -191,4 +215,12 @@ void Protocol_SendAck(uint8_t sequence, uint8_t status)
     ack.sequence = sequence;
     ack.status = status;
     SendPacket(PKT_TYPE_ACK, (uint8_t*)&ack, sizeof(AckData_t));
+}
+
+void Protocol_SendBuildId(uint8_t sequence, uint64_t build_id)
+{
+    BuildIdData_t data;
+    data.sequence = sequence;
+    data.build_id = build_id;
+    SendPacket(PKT_TYPE_BUILD_ID, (uint8_t*)&data, sizeof(BuildIdData_t));
 }

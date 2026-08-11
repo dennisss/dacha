@@ -6,15 +6,17 @@ extern crate macros;
 use std::time::Duration;
 use std::sync::Arc;
 
+use file::LocalPathBuf;
 use common::args::list::CommaSeparated;
 use common::errors::*;
 use executor_multitask::RootResource;
 use rpc_util::NamedPortArg;
 use ptp_proto::ptp::*;
 use cluster_client::{ClusterServer, ClusterMetaClient};
-use mocap_proto::mocap::MocapCameraIntoService;
+use mocap_proto::mocap::{MocapCameraIntoService, CameraHardwareConfig};
 use mocap_camera::MocapCamera;
-
+use mocap_camera_core::CameraHardwareConfigContainer;
+use protobuf::StaticMessage;
 
 /*
 
@@ -88,7 +90,7 @@ struct Args {
 
     ptp_port: NamedPortArg,
 
-    ptp_iface: String,
+    hardware_config: LocalPathBuf,
 
     #[arg(default = false)]
     dummy: bool,
@@ -123,17 +125,14 @@ async fn main() -> Result<()> {
         let cam = Arc::new(mocap_camera::DummyMocapCamera::create(1).await?);
         server.add_service(cam.clone().into_service())?;
 
-        let time_sync = Arc::new(ptp::DummyTimeSyncNode::create());
+        let time_sync = Arc::new(ptp_core::DummyTimeSyncNode::create());
         server.add_service(time_sync.clone().into_service())?;
 
     } else {
-
-        let pi_model = rpi::model::Model::get().await?; 
-
-        match pi_model {
-            rpi::model::Model::CM4 => {},
-            rpi::model::Model::CM5 => {},
-            _ => return Err(format_err!("Unsupported pi model: {:?}", pi_model)) 
+        let hardware_config: Arc<CameraHardwareConfigContainer> = {
+            let data = file::read(&args.hardware_config).await?;
+            let proto = CameraHardwareConfig::parse(&data)?;
+            Arc::new(CameraHardwareConfigContainer::new(proto))
         };
 
         // TODO: Need to ensure that the device matches the interface.
@@ -143,7 +142,7 @@ async fn main() -> Result<()> {
 
         let ptp_socket = ptp::TimestampedUdpSocket::create(
             format!("0.0.0.0:{}", args.ptp_port.value()).parse()?,
-            &args.ptp_iface
+            &hardware_config.ptp_interface()
         ).await?;
 
         let time_sync = Arc::new(ptp::TimeSyncNode::create(client.clone(), ptp_device.clone(), ptp_socket).await);
@@ -151,7 +150,7 @@ async fn main() -> Result<()> {
         service.register_dependency(time_sync.clone()).await;
         server.add_service(time_sync.clone().into_service())?;
 
-        let cam = Arc::new(MocapCamera::create(pi_model.clone(), ptp_device.clone()).await?);
+        let cam = Arc::new(MocapCamera::create(hardware_config.clone(), ptp_device.clone()).await?);
         service.register_dependency(cam.clone()).await;
         server.add_service(cam.clone().into_service())?;
         

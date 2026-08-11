@@ -1,0 +1,1 @@
+This folder contains all the core mocap camera algorithms / config code. This folder is meant to be platform independent and not link to any bulky driver code since it is shared across a few applications.

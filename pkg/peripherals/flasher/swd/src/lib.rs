@@ -356,28 +356,35 @@ impl SWDProgrammer {
         let dhcsr_addr = 0xE000EDF0;
         let dbgkey = 0xA05F0000;
         
-        // Clear C_HALT and C_DEBUGEN to fully detach the debugger
+        // 1. Clear C_HALT and C_DEBUGEN first. 
+        // We MUST use `?` here to ensure it doesn't silently fail. If C_HALT is 
+        // left as 1, the core will re-halt immediately after reset, and the only 
+        // way to recover is a full power cycle!
         self.write_mem32(dhcsr_addr, dbgkey)?;
-
-        let aircr_addr = 0xE000ED0C;
         
-        // VECTKEY (0x05FA) in the upper 16 bits to unlock the register
-        // SYSRESETREQ (bit 2) set to 1 to request a system-level reset
+        let aircr_addr = 0xE000ED0C;
         let reset_cmd = 0x05FA0004;
         
+        // 2. Issue SYSRESETREQ to software reset the system.
         self.write_mem32(aircr_addr, reset_cmd)?;
         
-        // Flush the AP write by reading the DP
+        // Flush the AP write (ignore errors as the chip might reset mid-transfer)
         let _ = self.transfer(false, true, 0x0C, 0);
 
-        // Power down DP
+        // 3. Power down the Debug Port (DP)
+        // If the debug power domain remains active, the MCU's internal state 
+        // (clocks, watchdogs, low-power modes) does not match a fresh boot.
+        // This survives an NRST toggle, which is why a power cycle was required!
         let _ = self.transfer(false, false, 0x04, 0x00000000);
 
-        // Give the chip a moment to process the reset
-        for _ in 0..100 {
-            let _ = self.write_bit(false);
-        }
-        
+        // 4. IMMEDIATELY DRIVE SWCLK (PA14) LOW!
+        // Prevents STM32G0 from sampling BOOT0=1 (which is multiplexed on SWCLK).
+        let _ = self.clk_pin.write(false);
+        let _ = self.io_pin.write(false);
+
+        // Hold it low while the chip goes through its reset phase
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
         Ok(())
     }
 

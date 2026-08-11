@@ -59,7 +59,16 @@ void GPIO_Init(void)
     GPIOB->AFR[0] &= ~(0xF << (3 * 4));
     GPIOB->AFR[0] |=  (2U << (3 * 4));
 
-    // 4. Configure PB1 (Analog Input for ADC)
+    // 4. Configure Analog Inputs (ADC)
     // PB1 Mode -> 11 (Analog)
     GPIOB->MODER |= (GPIO_MODER_MODE1_0 | GPIO_MODER_MODE1_1);
+    // PA6 Mode -> 11 (Analog)
+    GPIOA->MODER |= (GPIO_MODER_MODE6_0 | GPIO_MODER_MODE6_1);
+
+    // 5. Configure WS2812 SPI (PA7)
+    // PA7 Mode -> 10 (AF)
+    GPIOA->MODER &= ~(GPIO_MODER_MODE7);
+    GPIOA->MODER |=  (GPIO_MODER_MODE7_1);
+    // PA7 AFR[0] -> AF0 (SPI1_MOSI) - already 0 after reset, but let's clear it
+    GPIOA->AFR[0] &= ~(0xF << (7 * 4));
 }

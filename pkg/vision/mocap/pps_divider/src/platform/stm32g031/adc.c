@@ -72,11 +72,19 @@ uint16_t ADC_Read(uint32_t channel) {
     return ADC1->DR;
 }
 
+extern volatile uint16_t g_pcb_revision;
+
 void ADC_Process(void) {
     // 1. Measure Signals
     uint16_t adc_vref = ADC_Read(13); // VREFINT (CH13 on G031?) 
     uint16_t adc_temp = ADC_Read(12); // Temp (CH12?)
-    uint16_t adc_pb1  = ADC_Read(9);  // PB1 (CH9)
+    
+    uint16_t adc_pb1 = 0;
+    if (g_pcb_revision >= 8) {
+        adc_pb1 = ADC_Read(6);  // PA6 (CH6)
+    } else {
+        adc_pb1 = ADC_Read(9);  // PB1 (CH9)
+    }
     
     // 2. Calculate VCC (in mV)
     // VREFINT_CAL / ADC_VREF = VREFINT_V / VCC

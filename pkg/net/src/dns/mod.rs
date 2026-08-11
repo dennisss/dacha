@@ -19,5 +19,5 @@ pub use server::*;
 pub use message::*;
 pub use message_builder::*;
 pub use name::*;
-pub use proto::{Class, OpCode, RecordType, ResponseCode};
+pub use proto::{Class, OpCode, RecordType, ResponseCode, SRVDataHeader};
 pub use constants::*;

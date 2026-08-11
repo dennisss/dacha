@@ -3211,6 +3211,7 @@ dependencies = [
  "protobuf_builtins",
  "protobuf_json",
  "ptp",
+ "ptp_core",
  "ptp_proto",
  "rpc",
  "rpc_util",
@@ -3225,6 +3226,7 @@ dependencies = [
 name = "mocap_camera_core"
 version = "0.1.0"
 dependencies = [
+ "base_util",
  "common",
  "image",
  "math",
@@ -3324,6 +3326,7 @@ name = "mocap_tools"
 version = "0.1.0"
 dependencies = [
  "base_args",
+ "builder",
  "cluster_client",
  "cluster_proto",
  "common",
