@@ -9,7 +9,7 @@
 # (only for board rev < 6)
 dtoverlay=uart3,txd3_pin=4,rxd3_pin=5
 
-# MCU seiral interface on /dev/ttyAMA0
+# MCU serial interface on /dev/ttyAMA0
 # (only for board rev >= 6)
 # 
 # NOTE: Because we disable wireless, this always uses a stable clock frequency
@@ -36,7 +36,7 @@ dtoverlay=ar0234,cam1,4lane,link-frequency=360000000,sync-sink,flash
 # (only for board rev < 6)
 dtoverlay=uart2-pi5
 
-# MCU seiral interface on /dev/ttyAMA0
+# MCU serial interface on /dev/ttyAMA0
 # (only for board rev >= 6)
 enable_uart=1
 dtoverlay=uart0-pi5

@@ -12,7 +12,7 @@ use compression::transform::Transform;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use file::temp::TempDir;
-use file::{LocalFileOpenOptions, LocalPath, LocalPathBuf};
+use file::{LocalFileOpenOptions, LocalPath, LocalPathBuf, project_path};
 use storage::devices::*;
 use storage::partition::mbr;
 use sys::{MountFlags, UmountFlags};
@@ -25,28 +25,33 @@ const BUFFER_SIZE: usize = 4096 * 16; // 64 KiB
 
 #[derive(Args)]
 pub struct WriteCommand {
-    image: LocalPathBuf,
-    disk: String,
-    ssh_public_key: Option<LocalPathBuf>,
-    wpa_ssid: Option<String>,
-    wpa_password: Option<String>,
+    pub image: LocalPathBuf,
+    pub disk: String,
+    pub ssh_public_key: Option<LocalPathBuf>,
+    pub wpa_ssid: Option<String>,
+    pub wpa_password: Option<String>,
 
     // When these are set, a static ip will be assigned to the ethernet port.
-    ip_address: Option<net::ip::IPAddress>,
-    netmask: Option<net::ip::IPAddress>,
-    gateway: Option<net::ip::IPAddress>,
-    network_config_type: Option<NetworkConfigType>,
+    pub ip_address: Option<net::ip::IPAddress>,
+    pub netmask: Option<net::ip::IPAddress>,
+    pub gateway: Option<net::ip::IPAddress>,
+    pub network_config_type: Option<NetworkConfigType>,
 
-    hardware_model: Option<HardwareModel>,
+    pub hardware_model: Option<HardwareModel>,
 
     /// Extra lines to append to the end of the config.txt file.
-    config_txt_patch_file: Option<LocalPathBuf>,
+    pub config_txt_patch_file: Option<LocalPathBuf>,
 
     #[arg(default = false)]
-    generate_machine_id: bool,
+    pub generate_first_boot: bool,
 
     #[arg(default = false)]
-    no_confirm: bool,
+    pub no_confirm: bool,
+}
+
+#[derive(Default)]
+pub struct WriteExtraArgs {
+    pub extra_files: Vec<(LocalPathBuf, Vec<u8>)>,
 }
 
 #[derive(Args)]
@@ -121,6 +126,10 @@ async fn find_usb_mass_storage_gadget() -> Result<LocalPathBuf> {
 }
 
 pub async fn run_write_command(cmd: WriteCommand) -> Result<()> {
+    run_write_command_ext(cmd, WriteExtraArgs::default()).await
+}
+
+pub async fn run_write_command_ext(cmd: WriteCommand, ext: WriteExtraArgs) -> Result<()> {
 
     let mut disk_path: LocalPathBuf = cmd.disk.as_str().into();
 
@@ -302,18 +311,31 @@ pub async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         */
     }
 
+    println!("Reading fs type...");
     let root_part_fstype_str = {
-        let output = std::process::Command::new("lsblk")
-            .args(["-no", "FSTYPE", &format!("{}2", &disk_path.as_str())])
-            .output()?;
+        let mut t = String::new();
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format_err!("lsblk failed: {}", stderr.trim()));
+        for _ in 0..20 {
+
+            let output = std::process::Command::new("lsblk")
+                .args(["-no", "FSTYPE", &format!("{}2", &disk_path.as_str())])
+                .output()?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("lsblk attempt failed: {}", stderr.trim());
+                // Takes some time for the kernel and udev to sync everything.
+                executor::sleep(Duration::from_secs(1)).await?;
+                continue;
+            }
+
+            t = std::str::from_utf8(&output.stdout)?.trim().to_string();
+            break;
         }
 
-        std::str::from_utf8(&output.stdout)?.trim().to_string()
+        t
     };
+    println!("=> fs type: {}", root_part_fstype_str);
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum FSType {
@@ -334,8 +356,9 @@ pub async fn run_write_command(cmd: WriteCommand) -> Result<()> {
     //
     // NOTE: We don't randomize the MBR/GPT UUID since that is referenced in the fstab and
     // cmdline.txt files.
-    println!("Randomize BTRFS UUID...");
     if root_part_fstype == FSType::BTRFS {
+        println!("Randomize BTRFS UUID...");
+
         let dev_name = format!("{}2", &disk_path.as_str());
 
         let status = std::process::Command::new("btrfstune")
@@ -397,9 +420,11 @@ pub async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         }
         FSType::EXT4 => {
             let dev_name = format!("{}2", &disk_path.as_str());
+            let dir_name = root_dir.path().as_str();
 
-            let status = std::process::Command::new("resize2fs")
-                .args(&[dev_name])
+            // resize2fs is at an older version of many OSes so may fail due to unsupported features.
+            let status = std::process::Command::new("/lib/systemd/systemd-growfs" /* "resize2fs" */)
+                .args(&[dir_name /* dev_name */])
                 .status()?;
 
             if !status.success() {
@@ -433,12 +458,29 @@ pub async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         file::write(root_dir.path().join("etc/image-id"), id).await?;
     }
 
-    if cmd.generate_machine_id {
+    if cmd.generate_first_boot {
         println!("Writing /etc/machine-id...");
 
         let mut id = [0u8; 16];
         crypto::random::secure_random_bytes(&mut id).await?;
         file::write(root_dir.path().join("etc/machine-id"), format!("{}\n", base_radix::hex_encode(&id))).await?;
+
+        create_or_update_symlink(
+            "/etc/machine-id",
+            root_dir.path().join("var/lib/dbus/machine-id")
+        ).await?;
+
+        println!("Generating SSH host keys...");
+
+        {
+            let status = std::process::Command::new("/bin/bash")
+                .args(&[project_path!("pkg/rpi/imager/gen_ssh_keys.sh").as_str(), root_dir.path().as_str()])
+                .status()?;
+
+            if !status.success() {
+                return Err(err_msg("Failed to generate SSH key"));
+            }
+        }
     }
 
     if let Some(path) = &cmd.ssh_public_key {
@@ -557,6 +599,21 @@ pub async fn run_write_command(cmd: WriteCommand) -> Result<()> {
         ).await?;
     }
 
+    for (final_path, data) in ext.extra_files {
+        println!("Writing {}...", final_path.display());
+
+        let write_path = {
+            if let Ok(p) = final_path.strip_prefix("/boot/firmware") {
+                boot_dir.path().join(p)
+
+            } else {
+                root_dir.path().join(final_path.strip_prefix("/").unwrap())
+            }
+        };
+
+        file::write(write_path, data).await?;
+    }
+
     println!("Unmount boot filesystem...");
     sys::umount(boot_dir.path().as_str(), UmountFlags::empty())?;
 
@@ -578,4 +635,26 @@ fn netmask_num_bits(ip: &net::ip::IPAddress) -> Result<usize> {
     let n = v.leading_ones() as usize;
 
     Ok(n)
+}
+
+// TODO: Dedup this.
+pub async fn create_or_update_symlink<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(
+    original: P,
+    link_path: P2,
+) -> Result<()> {
+    let original = original.as_ref();
+    let link_path = link_path.as_ref();
+
+    if let Some(parent) = link_path.parent() {
+        file::create_dir_all(parent).await?;
+    }
+
+    // TODO: Check this.
+    if let Ok(_) = file::symlink_metadata(&link_path).await {
+        file::remove_file(&link_path).await?;
+    }
+
+    file::symlink(original, link_path).await?;
+
+    Ok(())
 }

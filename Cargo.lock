@@ -3249,6 +3249,7 @@ dependencies = [
  "mocap_proto",
  "net",
  "protobuf",
+ "rpc",
 ]
 
 [[package]]
@@ -3270,6 +3271,7 @@ dependencies = [
  "math_proto_util",
  "mocap_proto",
  "mocap_simulation",
+ "net",
  "parsing",
  "protobuf",
  "protobuf_json",
@@ -3358,6 +3360,7 @@ dependencies = [
  "rpc",
  "rpc_util",
  "rpi",
+ "rpi_imager",
  "scpi",
  "sstable",
  "vision",

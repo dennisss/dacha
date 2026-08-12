@@ -26,7 +26,6 @@ enum ComputeModuleModel {
     PI_CM5_LITE = 4;
 }
 
-
 service MocapCamera {
     rpc Status (StatusRequest) returns (MocapCameraStatus);
 

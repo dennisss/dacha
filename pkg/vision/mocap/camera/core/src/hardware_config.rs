@@ -8,7 +8,7 @@ pub struct CameraHardwareConfigContainer {
 impl_deref!(CameraHardwareConfigContainer::config as CameraHardwareConfig);
 
 impl CameraHardwareConfigContainer {
-    pub fn new(config: CameraHardwareConfig) -> Result<Self> {        
+    pub fn new(config: CameraHardwareConfig) -> Self {        
         Self {
             config
         }

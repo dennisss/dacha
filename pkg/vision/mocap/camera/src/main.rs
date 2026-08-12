@@ -94,6 +94,15 @@ struct Args {
 
     #[arg(default = false)]
     dummy: bool,
+
+    // Mainly here to make sure something is explicitly picked.
+    mode: Mode,
+}
+
+#[derive(Args)]
+enum Mode {
+    #[arg(name = "RPC_INSECURE")]
+    RpcInsecure
 }
 
 #[executor_main]
@@ -103,6 +112,7 @@ async fn main() -> Result<()> {
 
     let service = RootResource::new();
 
+    /*
     let client = ClusterMetaClient::create_from_environment().await?;
     service.register_dependency(client.clone()).await;
 
@@ -117,6 +127,9 @@ async fn main() -> Result<()> {
         vars: None,
     }).await?;
     server.add_request_handler("/", false, web_handler)?;
+    */
+
+    let mut server = rpc::Http2Server::new(Some(args.rpc_port.value()));
 
     println!("RPC Port: {}", args.rpc_port.value());
     println!("PTP Port: {}", args.ptp_port.value());
@@ -129,6 +142,8 @@ async fn main() -> Result<()> {
         server.add_service(time_sync.clone().into_service())?;
 
     } else {
+        // TODO: Validate that the CPU we are running on matches the 'compute_module' entry
+        // listed in here.
         let hardware_config: Arc<CameraHardwareConfigContainer> = {
             let data = file::read(&args.hardware_config).await?;
             let proto = CameraHardwareConfig::parse(&data)?;
@@ -137,6 +152,7 @@ async fn main() -> Result<()> {
 
         // TODO: Need to ensure that the device matches the interface.
         let mut ptp_device = Arc::new(ptp::PTPDevice::open_default()?);
+        // TODO: Should be conditional on whether it is expected to be available.
         ptp_device.configure_pps_output()
             .map_err(|e| format_err!("While enabling PPS output: {}", e))?;
 
@@ -145,7 +161,8 @@ async fn main() -> Result<()> {
             &hardware_config.ptp_interface()
         ).await?;
 
-        let time_sync = Arc::new(ptp::TimeSyncNode::create(client.clone(), ptp_device.clone(), ptp_socket).await);
+        // TODO: Implement an offset if we are using CM5 / Pi 5
+        let time_sync = Arc::new(ptp::TimeSyncNode::create(/* client.clone(), */ ptp_device.clone(), ptp_socket).await);
 
         service.register_dependency(time_sync.clone()).await;
         server.add_service(time_sync.clone().into_service())?;
@@ -154,11 +171,13 @@ async fn main() -> Result<()> {
         service.register_dependency(cam.clone()).await;
         server.add_service(cam.clone().into_service())?;
         
-        server.add_request_handler("/camera", true, CameraHttpHandler { inst: cam.clone() })?;
+        // server.add_request_handler("/camera", true, CameraHttpHandler { inst: cam.clone() })?;
     }
 
 
-    service.register_dependency(server.start()?).await;
+    // service.register_dependency(server.start()?).await;
+    service.register_dependency(server.start()).await;
+
 
 
     println!("Running...");

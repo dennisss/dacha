@@ -39,5 +39,6 @@ mocap_simulation = { path = "../simulation" }
 vision = { path = "../../" }
 sstable = { path = "../../../sstable" }
 rpi = { path = "../../../rpi" }
+rpi_imager = { path = "../../../rpi/imager" }
 scpi = { path = "../../../peripherals/scpi" }
 pio_rp1 = { path = "../../../rpi/pio_rp1" }

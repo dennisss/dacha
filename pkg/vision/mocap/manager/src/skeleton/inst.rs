@@ -46,6 +46,18 @@ impl Skeleton {
         self.markers.iter().find(|m| m.name == name).unwrap().index
     }
 
+    pub fn bone_start_position(&self, index: usize) -> Vector3d {
+        if let Some(parent) = self.bones[index].parent {
+            self.bones[index].end_position.clone()
+        } else {
+            Vector3d::zero()
+        }
+    }
+
+    pub fn bone_end_position(&self, index: usize) -> Vector3d {
+        self.bones[index].end_position.clone()
+    }
+
     pub fn to_proto(&self) -> SkeletonProto {
         let mut proto = SkeletonProto::default();
         proto.set_id(self.id);

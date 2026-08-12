@@ -27,11 +27,7 @@ On the software side, we will use [link-local addresses](https://en.wikipedia.or
 
 Each camera has a network hostname of the form `mocap-camera-[unique-id]` (unique id derived from `/etc/machine-id`).
 
-The cameras are running Linux using `systemd-networkd` for managing the ethernet interface. The cameras are configured to:
-
-- Try to get a DHCP IPv4 address
-    - We only do a few attempts of this initially so that there isn't continous DHCP requests over the network.
-- Fallback to get a link local IPv4 address (this will be the normal case)
+The cameras are running Linux using `systemd-networkd` for managing the ethernet interface. The cameras are configured to just request an IPv4 + IPv6 link local address.
 
 Furthermore, they will respond to mDNS (DNS-SD) requests for the `_mocap._tcp.local.` service (this is handled by our camera supervisor program).
 
@@ -42,17 +38,19 @@ The networkd part is configured with the following config in `/etc/systemd/netwo
 Name=eth0
 
 [Network]
-DHCP=ipv4
-LinkLocalAddressing=fallback
-MulticastDNS=yes
+DHCP=no
+LinkLocalAddressing=yes
 
-[DHCPv4]
-MaxAttempts=2
+[Route]
+Destination=224.0.0.0/4
+Scope=link
 ```
 
 ## Host Configuration
 
 The host computer could be running on any OS but we generally expect the OS to configure the ethernet interface with a link-local IPv4 address. Then the host software will find the cameras via mDNS by periodicially checking for new cameras every few seconds.
+
+We generally assume that there is exactly one network interface configured with a link-local IPv4 address on the machine. The software will try to explicitly request all packets go in/out of that interface to avoid issues with the OS not routing packets how we want by default.
 
 Note that for mDNS, we only query for 'PTR' records and check which IP addresses sent the records. So we don't bother recursively looking up the 'SRV' and 'A' records under the assumption that each camera has its own mDNS server.
 

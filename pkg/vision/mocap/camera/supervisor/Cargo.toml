@@ -14,3 +14,4 @@ executor_multitask = { path = "../../../../executor/multitask" }
 mocap_proto = { path = "../../proto" }
 protobuf = { path = "../../../../protobuf" }
 file = { path = "../../../../file" }
+rpc = { path = "../../../../rpc" }

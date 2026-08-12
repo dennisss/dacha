@@ -64,9 +64,11 @@ impl Server {
             SocketAddr::new(IFACE_ADDR, MULTICAST_PORT),
             &UdpBindOptions::new().reuse_addr(true).reuse_port(true),
         )
-        .await?;
+        .await
+        .map_err(|e| format_err!("Failed to bind UDP socket: {}", e))?;
 
-        socket.join_multicast_v4(MULTICAST_ADDR, IFACE_ADDR)?;
+        socket.join_multicast_v4(MULTICAST_ADDR, IFACE_ADDR)
+            .map_err(|e| format_err!("Failed to join_multicast_v4: {}", e))?;
 
         let shared = Arc::new(Shared {
             socket,

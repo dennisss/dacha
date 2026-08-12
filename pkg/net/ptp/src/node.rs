@@ -30,7 +30,7 @@ pub struct TimeSyncNode {
 impl_resource_passthrough!(TimeSyncNode, resources);
 
 struct Shared {
-    meta_client: Arc<ClusterMetaClient>,
+    // meta_client: Arc<ClusterMetaClient>,
     ptp_device: Arc<PTPDevice>,
     ptp_socket: TimestampedUdpSocket,
     state: AsyncVariable<State>,
@@ -96,7 +96,8 @@ struct LeaderPeer {
     proto: TimeSyncPeerAddr,
     configured: bool,
     rpc: Arc<TimeSyncStub>,
-    ptp: ServiceResolver
+    ptp_addr: net::ip::SocketAddr,
+    // ptp: ServiceResolver
 }
 
 impl TimeSyncNode {
@@ -105,13 +106,13 @@ impl TimeSyncNode {
     }
 
     pub async fn create(
-        meta_client: Arc<ClusterMetaClient>,
+        // meta_client: Arc<ClusterMetaClient>,
         ptp_device: Arc<PTPDevice>,
         ptp_socket: TimestampedUdpSocket
     ) -> Self {
 
         let shared = Arc::new(Shared {
-            meta_client,
+            // meta_client,
             ptp_device,
             ptp_socket,
             state: AsyncVariable::default()
@@ -267,7 +268,10 @@ impl TimeSyncNode {
                         _ => panic!()
                     };
 
-                    Self::run_leader_cycle(&shared, &config, state).await?;
+                    if let Err(e) = Self::run_leader_cycle(&shared, &config, state).await {
+                        eprintln!("TimeSyncNode::run_leader_cycle failed: {}", e);
+                        executor::sleep(Duration::from_millis(1000)).await?;
+                    }
                 }
                 _ => {
                     background_state = BackgroundState::None;
@@ -404,22 +408,33 @@ impl TimeSyncNode {
                 continue;
             }
 
+            /*
             let channel = cluster_client::service::create_rpc_channel(
                 &follower.rpc_addr(),
                 shared.meta_client.clone()
             ).await?;
+            */
+
+            let channel = {
+                Arc::new(
+                    rpc::Http2Channel::create(format!("http://{}", follower.rpc_addr()).as_str())
+                        .await?,
+                )
+            };
 
             let rpc = Arc::new(TimeSyncStub::new(channel));
 
+            /*
             let ptp = cluster_client::ServiceResolver::create(
                 follower.ptp_addr(), shared.meta_client.clone()
             )?;
+            */
 
             leader_state.followers.insert(follower_key, LeaderPeer {
                 proto: follower.as_ref().clone(),
                 configured: false,
                 rpc,
-                ptp
+                ptp_addr: follower.ptp_addr().parse()?
             });
         }
 
@@ -461,6 +476,7 @@ impl TimeSyncNode {
             println!("Configured!");
         }
 
+        /*
         let ptp_endpoints = follower.ptp.resolve().await?;
         if ptp_endpoints.is_empty() {
             return Err(err_msg("No PTP addresses resolved"));
@@ -471,6 +487,8 @@ impl TimeSyncNode {
         }
 
         let ptp_addr = &ptp_endpoints[0].address;
+        */
+        let ptp_addr = &follower.ptp_addr;
 
         // println!("Sending to: {:?}", ptp_addr);
 

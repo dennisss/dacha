@@ -62,7 +62,7 @@ async fn build_package(config: &PackageConfig) -> Result<()> {
         file::set_permissions(&pkg_path, perms).await?;
     }
 
-    file::write(pkg_dir.join("WORKSPACE"), "").await?;
+    file::write(pkg_dir.join(&config.install_path).join("WORKSPACE"), "").await?;
 
     // (input_path, output_path, mode)
     let templated_files: &[(LocalPathBuf, LocalPathBuf, u32)] = &[
@@ -145,7 +145,7 @@ async fn main() -> Result<()> {
             PackageConfig {
                 build_target: "//pkg/vision/mocap/camera:mocap_camera_deps".into(),
                 service_name: "mocap-camera".into(),
-                bin_name: "built/pkg/vision/mocap/camera/mocap_camera".into(),
+                bin_name: "built/pkg/vision/mocap/camera/mocap_camera --rpc_port=82 --ptp_port=319 --hardware_config=/boot/firmware/camera_hardware.pb --mode=RPC_INSECURE".into(),
                 install_path: "opt/mocap/camera/bundle".into()
             }
         }

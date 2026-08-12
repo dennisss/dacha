@@ -197,15 +197,15 @@ void Protocol_SendTelemetry(uint32_t pps_width, int32_t pll_error, uint32_t outp
     SendPacket(PKT_TYPE_TELEM, (uint8_t*)&telem, sizeof(TelemetryData_t));
 }
 
-void Protocol_SendHeartbeat(uint8_t temp, uint16_t vcc_min, uint16_t vcc_max, uint16_t pb1_min, uint16_t pb1_max)
+void Protocol_SendHeartbeat(uint8_t temp, uint16_t vcc_min, uint16_t vcc_max, uint16_t poe_min, uint16_t poe_max)
 {
     HeartbeatPayload_t hb;
     hb.temp_c_half_deg = temp;
     hb.vcc_min_adc  = vcc_min;
     hb.vcc_max_adc  = vcc_max;
-    hb.pb1_min_adc  = pb1_min;
-    hb.pb1_max_adc  = pb1_max;
-    
+    hb.poe_min_adc  = poe_min;
+    hb.poe_max_adc  = poe_max;
+
     SendPacket(PKT_TYPE_HEARTBEAT, (uint8_t*)&hb, sizeof(HeartbeatPayload_t));
 }
 
