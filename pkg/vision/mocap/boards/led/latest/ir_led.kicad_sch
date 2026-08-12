@@ -2302,7 +2302,7 @@
 		)
 		(uuid "bd561aea-ff35-4df8-b748-1df1107f3430")
 	)
-	(text "FSET configured for 400kHz switching frequency."
+	(text "FSET configured for 800kHz switching frequency."
 		(exclude_from_sim no)
 		(at 78.994 54.356 0)
 		(effects
@@ -4530,7 +4530,7 @@
 				)
 			)
 		)
-		(property "Value" "59k (1%); R_fset"
+		(property "Value" "28k (1%); R_fset"
 			(at 126.238 51.816 0)
 			(effects
 				(font
@@ -7066,7 +7066,7 @@
 				)
 			)
 		)
-		(property "Value" "TPS922054DMTR"
+		(property "Value" "TPS922055DMTR"
 			(at 78.74 20.32 0)
 			(effects
 				(font

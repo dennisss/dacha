@@ -138,11 +138,16 @@ impl SWDProgrammer {
         self.transfer(false, false, 0x04, pwr_req)?;
         
         // Wait for power-up to complete
+        let mut powered_up = false;
         for _ in 0..1000 {
             let stat = self.transfer(false, true, 0x04, 0)?;
             if (stat & 0xA0000000) == 0xA0000000 {
+                powered_up = true;
                 break;
             }
+        }
+        if !powered_up {
+            return Err(err_msg("Debug power-up timed out: CSYSPWRUPACK/CDBGPWRUPACK not set"));
         }
         
         // Select AP Bank 0 (Write to DP SELECT register 0x08)

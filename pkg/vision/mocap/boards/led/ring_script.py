@@ -241,6 +241,74 @@ if __name__ == "__main__":
     #     start_orientation = 360 / 12,
     #     start_angle = 90 - (360 / 12)
     # )
+
+    
+    def place_new_led_ring():
+        refs = ["D15", "D16", "D17", "D18", "D19", "D20", "D21", "D22", "D23", "D24", "D25", "D27"]
+        count = len(refs)
+        center_x_mm = 124.0
+        center_y_mm = 136.0
+        radius_mm = 11
+        
+        # For the 2nd LED (index 1) to be at bottom (pos_angle = 90) and rotation = 90:
+        start_angle = 120
+        start_orientation = 60
+        angle_sign = -1
+        angle_step = 360.0 / count
+        
+        offset_y_local = -0.405 
+        
+        print(f"Loading board for new LED ring...")
+        board = pcbnew.LoadBoard(BOARD_PATH)
+        assert board
+
+        print(f"Placing {count} new LEDs in a ring with radius {radius_mm}mm...")
+
+        for i, ref in enumerate(refs):
+            footprint = board.FindFootprintByReference(ref)
+            if footprint is None:
+                print(f"Warning: {ref} not found.")
+                continue
+
+            # Position of the LED center
+            pos_angle_deg = start_angle + (angle_sign * i * angle_step)
+            pos_angle_rad = math.radians(pos_angle_deg)
+            
+            led_x = center_x_mm + (radius_mm * math.cos(pos_angle_rad))
+            led_y = center_y_mm + (radius_mm * math.sin(pos_angle_rad))
+            
+            # Orientation of the package
+            orient_angle_deg = start_orientation - (angle_sign * i * angle_step)
+            orient_angle_deg = orient_angle_deg % 360
+            
+            # KiCad rotation is clockwise. Mathematical angle is -orient_angle_deg.
+            theta_math_rad = math.radians(-orient_angle_deg)
+            
+            # Rotated offset of the LED center from the package center
+            dx = -offset_y_local * math.sin(theta_math_rad)
+            dy = offset_y_local * math.cos(theta_math_rad)
+            
+            # The package is placed such that its offset LED center hits the target
+            new_x = led_x - dx
+            new_y = led_y - dy
+            
+            new_pos = pcbnew.VECTOR2I(pcbnew.FromMM(new_x), pcbnew.FromMM(new_y))
+            footprint.SetPosition(new_pos)
+            
+            footprint.SetOrientation(pcbnew.EDA_ANGLE(orient_angle_deg, pcbnew.DEGREES_T))
+
+            ref_text = footprint.Reference()
+            val_text = footprint.Value()
+            ref_text.SetVisible(False)
+            val_text.SetVisible(False)
+
+            print(f"Updated {ref} to x={new_x:.3f}, y={new_y:.3f}, rot={orient_angle_deg}")
+
+        board.Save(BOARD_PATH)
+        print(f"Done placing new LED ring!")
+
+    # place_new_led_ring()
+
     replicate_layout()
 
     # remove_silkscreen()

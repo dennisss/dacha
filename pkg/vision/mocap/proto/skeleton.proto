@@ -33,6 +33,7 @@ message SkeletonSearchConfig {
 }
 
 message SkeletonProto {
+    // Unique id for the skeleton (one per human).
     uint32 id = 1;
 
     repeated BoneProto bones = 2;
@@ -41,6 +42,8 @@ message SkeletonProto {
 }
 
 message BoneProto {
+    // Human readable name of this bone.
+    // These will be stable over time for a given skeleton marker set standard.
     string name = 1;
 
     optional uint32 parent = 2;
@@ -79,11 +82,12 @@ enum SkeletonMode {
 
 
 message SkeletonStateProto {
+    // Id of the skeleton this state is associated with.
     uint32 id = 1;
 
     SkeletonMode mode = 2;
 
-    // There will be a '0' for missing ids.
+    // There will be a '0' (or out of bounds) for missing ids.
     repeated uint64 marker_ids = 3;    
 
     SkeletonJointsStateProto joints = 4;
@@ -112,6 +116,7 @@ message SkeletonJointsStateProto {
 message SkeletonCalculatedPositions {
     repeated math.VectorProto start = 1;
     repeated math.VectorProto end = 2;
+    repeated math.VectorProto markers = 3;
 }
 
 
