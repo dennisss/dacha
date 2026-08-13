@@ -38,6 +38,10 @@ async fn main() -> Result<()> {
 
                 for i in 0..info.lines {
                     println!("- Line: {}: {:?}", i, chip.line_info(i)?);
+
+                    // EBUSY for 'USED' pins.
+                    // let p = chip.pin(i)?;
+                    // println!("  => level: {:?}", p.read()?);
                 }
             }
         }

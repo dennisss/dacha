@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use alloc::string::String;
 use std::time::{Duration, Instant};
 
 use common::errors::*;
@@ -94,6 +95,7 @@ impl Client {
         name: &'a Name<'a>,
         typ: RecordType,
         class: Class,
+        allow_empty: bool,
     ) -> Result<ClientResponse> {
         let id = self.last_id.wrapping_add(1);
         self.last_id = id;
@@ -117,10 +119,10 @@ impl Client {
                 .unwrap_or(Duration::from_secs(0));
 
             match executor::timeout(remaining_time, self.wait_for_reply(id)).await {
-                Ok(Ok(reply)) => {
+                Ok(Ok((reply, addr))) => {
                     // TODO: Add some indication for which codes are retryable.
                     match reply.get().response_code() {
-                        ResponseCode::NoError => messages.push(reply),
+                        ResponseCode::NoError => messages.push((reply, addr)),
                         e => failures.push(e),
                     }
 
@@ -135,7 +137,7 @@ impl Client {
                 Err(_) => {
                     // Timeout.
 
-                    if messages.len() > 0 {
+                    if messages.len() > 0 || allow_empty {
                         break;
                     }
 
@@ -144,7 +146,8 @@ impl Client {
             }
         }
 
-        if messages.len() == 0 && failures.len() > 0 {
+        let allow_errors = self.multicast && allow_empty;
+        if messages.len() == 0 && failures.len() > 0 && !allow_errors {
             return Err(format_err!(
                 "Failure getting DNS records: {:?}",
                 failures[0]
@@ -160,11 +163,13 @@ impl Client {
     /// need to make sure that we filter replies to only those matching our
     /// question (as multiple questions from other clients may be going on at
     /// the same time).
-    async fn wait_for_reply(&mut self, id: u16) -> Result<MessageCell> {
+    async fn wait_for_reply(&mut self, id: u16) -> Result<(MessageCell, SocketAddr)> {
         loop {
             let mut response = vec![0u8; MAX_PACKET_SIZE];
 
-            let n = self.socket.recv(&mut response).await?;
+            let (n, addr) = self.socket.recv_from(&mut response).await?;
+
+            // TODO: Don't error out on malformed responses?
             let reply = MessageCell::new(response, |response| {
                 Message::parse_complete(&response[0..n])
             })?;
@@ -174,8 +179,30 @@ impl Client {
                 continue;
             }
 
-            return Ok(reply);
+            return Ok((reply, addr));
         }
+    }
+
+    pub async fn resolve_ptr_many(&mut self, name: &str) -> Result<Vec<(IPAddress, String)>> {
+        let parsed_name: Name = name.try_into()?;
+
+        let response = self
+            .perform_query(&parsed_name, RecordType::PTR, Class::IN, true)
+            .await?;
+
+        let mut out = vec![];
+
+        for (record, addr) in response.find(&parsed_name, RecordType::PTR) {
+
+            let ptr = match record.data()? {
+                ResourceRecordData::Pointer(n) => n,
+                _ => continue
+            };
+
+            out.push((addr.ip().clone(), ptr.to_string()));
+        }
+
+        Ok(out)
     }
 
     /// Finds the address of a single service target using DNS-SD
@@ -189,13 +216,14 @@ impl Client {
         let parsed_name: Name = name.try_into()?;
 
         let response = self
-            .perform_query(&parsed_name, RecordType::PTR, Class::IN)
+            .perform_query(&parsed_name, RecordType::PTR, Class::IN, false)
             .await?;
 
         let ptr_record = response
             .find(&parsed_name, RecordType::PTR)
             .get(0)
             .cloned()
+            .map(|(v, _)| v)
             .ok_or_else(|| err_msg("Failed to find a PTR record"))?;
         let ptr = match ptr_record.data()? {
             ResourceRecordData::Pointer(n) => n,
@@ -204,10 +232,13 @@ impl Client {
             }
         };
 
+        // TODO: It is not guaranteed that we will get the SRV/A records in the same request so may need to send followups.
+
         let srv_record = response
             .find(&ptr, RecordType::SRV)
             .get(0)
             .cloned()
+            .map(|(v, _)| v)
             .ok_or_else(|| err_msg("Failed to find a SRV record"))?;
         let srv = match srv_record.data()? {
             ResourceRecordData::Service(data) => data,
@@ -220,6 +251,7 @@ impl Client {
             .find(&srv.target, RecordType::A)
             .get(0)
             .cloned()
+            .map(|(v, _)| v)
             .ok_or_else(|| err_msg("Failed to find A record"))?;
         let addr = match a_record.data()? {
             ResourceRecordData::Address(ip) => ip,
@@ -234,12 +266,12 @@ impl Client {
     pub async fn resolve_addr(&mut self, name: &str) -> Result<IPAddress> {
         let name: Name = name.try_into()?;
 
-        let response = self.perform_query(&name, RecordType::A, Class::IN).await?;
+        let response = self.perform_query(&name, RecordType::A, Class::IN, false).await?;
 
         // TODO: Also verify that the message is marked as a reply and has the right op
         // code etc.
         for reply in response.messages {
-            for record in reply.get().records() {
+            for record in reply.0.get().records() {
                 if record.name() != &name {
                     continue;
                 }
@@ -259,18 +291,18 @@ impl Client {
 
 #[derive(Debug)]
 struct ClientResponse {
-    messages: Vec<MessageCell>,
+    messages: Vec<(MessageCell, SocketAddr)>,
     failures: Vec<ResponseCode>,
 }
 
 impl ClientResponse {
-    fn find<'a>(&'a self, name: &Name, typ: RecordType) -> Vec<&'a ResourceRecord> {
+    fn find<'a>(&'a self, name: &Name, typ: RecordType) -> Vec<(&'a ResourceRecord, &'a SocketAddr)> {
         let mut items = vec![];
 
-        for message in &self.messages {
+        for (message, addr) in &self.messages {
             for record in message.get().records() {
                 if record.typ() == typ {
-                    items.push(record);
+                    items.push((record, addr));
                 }
             }
         }

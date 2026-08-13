@@ -52,7 +52,7 @@ where
         // println!("INPUT MATRIX: {:?}", a);
 
         // TODO: Check for error bound convergence.
-        for i in 0..30 {
+        for i in 0..50 {
             let qr = QR::householder(&a_i);
 
             a_i = qr.r * &qr.q;
@@ -72,7 +72,7 @@ where
                 max
             };
 
-            if max_radius < (1e-14).into() {
+            if max_radius < (1e-11).into() {
                 // #[cfg(feature = "std")]
                 // println!("Eigenvalues converged early after: {} iterations", i + 1);
                 break;

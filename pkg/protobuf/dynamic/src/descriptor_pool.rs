@@ -167,13 +167,13 @@ impl DescriptorPool {
     pub async fn add_file<P: AsRef<file::LocalPath>>(&self, path: P) -> Result<FileDescriptor> {
         let mut write = self.begin_write().await;
 
-        let mut root_path = path.as_ref().normalized();
+        let mut root_path = path.as_ref().normalize_lexically()?;
 
         let mut pending_paths: Vec<LocalPathBuf> = vec![];
         let mut visited_paths = HashSet::new();
 
         pending_paths.push(root_path.clone());
-        visited_paths.insert(root_path.as_str().to_string());
+        visited_paths.insert(root_path.clone());
 
         let mut proto_nodes = HashMap::new();
 
@@ -196,7 +196,7 @@ impl DescriptorPool {
                 let relative_path = LocalPath::new(dep.as_str());
 
                 // TODO: Verify that this works.
-                if relative_path != &relative_path.normalized() {
+                if relative_path != &relative_path.normalize_lexically()? {
                     // We don't allow import paths of the form "../file.proto".
                     return Err(err_msg("Non-relative important path"));
                 }
@@ -209,7 +209,7 @@ impl DescriptorPool {
 
                 let mut full_path = None;
                 for base_path in &self.shared.options.paths {
-                    let p: LocalPathBuf = base_path.join(&relative_path).normalized();
+                    let p: LocalPathBuf = base_path.join(&relative_path).normalize_lexically()?;
                     if !file::exists(&p).await? {
                         continue;
                     }
@@ -226,7 +226,7 @@ impl DescriptorPool {
                 *dep = self.resolve_file_name(&full_path)?;
 
                 // TODO: Also detect cycles.
-                if !visited_paths.insert(full_path.as_str().to_string()) {
+                if !visited_paths.insert(full_path.clone()) {
                     continue;
                 }
 
@@ -353,7 +353,7 @@ impl DescriptorPool {
     fn resolve_file_name(&self, path: &LocalPath) -> Result<String> {
         let mut relative_path = None;
         for base_path in &self.shared.options.paths {
-            if let Some(p) = path.strip_prefix(base_path) {
+            if let Ok(p) = path.strip_prefix(base_path) {
                 relative_path = Some(p);
                 break;
             }
@@ -362,7 +362,7 @@ impl DescriptorPool {
         let relative_path = relative_path
             .ok_or_else(|| format_err!("Path is not in the protobuf paths: {:?}", path))?;
 
-        Ok(relative_path.to_string())
+        return Ok(relative_path.to_str().unwrap().to_string());
     }
 
     /// Adds a single binary serialized FileDescriptorProto representing a

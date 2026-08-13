@@ -27,7 +27,7 @@ core_freq_min=500
 
 # Configure the camera
 # Note: We don't use the flash output but it is useful for debugging.
-dtoverlay=ar0234,cam1,4lane,link-frequency=360000000,sync-sink,flash
+dtoverlay=ar0234,always-on,cam1,4lane,link-frequency=360000000,sync-sink,flash
 # dtoverlay=ov9281,cam1
 
 [cm5]
@@ -49,7 +49,7 @@ gpio=35=ip,pn
 
 # Configure the camera
 # Note: We don't use the flash output but it is useful for debugging.
-dtoverlay=ar0234,cam0,4lane,link-frequency=360000000,sync-sink,flash
+dtoverlay=ar0234,always-on,cam0,4lane,link-frequency=360000000,sync-sink,flash
 # dtoverlay=ov9281,cam0
 
 [all]

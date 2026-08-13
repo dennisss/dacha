@@ -92,7 +92,7 @@ pub(crate) struct CameraSensorData {
 
 struct StatusState {
     cpu_temp: CPUTemperatureReader,
-    accelerometer: LIS2DW12,
+    accelerometer: Option<LIS2DW12>,
 }
 
 struct ConfigureState {
@@ -137,7 +137,7 @@ impl MocapCamera {
         }
 
         let mut i2c_bus = I2CHostController::open(&config.accelerometer_i2c_device())?;
-        let accelerometer = LIS2DW12::create(i2c_bus.device(0x19)).await?;
+        let accelerometer = Some(LIS2DW12::create(i2c_bus.device(0x19)).await?);
 
         // TODO: Have all key controls like exposure and analog/digital gains exported to a config file that we can re-initialize everything on boot.
         let mut cam = RP1DirectCamera::open().await?;
@@ -456,14 +456,16 @@ impl MocapCamera {
 
                 proto.set_cpu_temperature(state.cpu_temp.read().await? as f32);
                 
-                // TODO: Cache this.
-                let accel = state.accelerometer.read_acceleration().await?;
-                
-                let v = proto.accelerometer_mut().value_mut();
-                // TODO: Customize whether or not this needs to be flipped based on the camera model.
-                v.set_x(accel.x);
-                v.set_y(accel.y);
-                v.set_z(accel.z);
+                if let Some(accelerometer) = &mut state.accelerometer {
+                    // TODO: Cache this.
+                    let accel = accelerometer.read_acceleration().await?;
+                    
+                    let v = proto.accelerometer_mut().value_mut();
+                    // TODO: Customize whether or not this needs to be flipped based on the camera model.
+                    v.set_x(accel.x);
+                    v.set_y(accel.y);
+                    v.set_z(accel.z);
+                }
 
                 Result::<_, Error>::Ok(proto)
             })

@@ -1,5 +1,7 @@
 #![no_std]
 
+#![feature(normalize_lexically)]
+
 #[macro_use]
 extern crate std;
 

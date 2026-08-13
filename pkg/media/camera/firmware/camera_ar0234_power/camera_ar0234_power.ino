@@ -21,15 +21,20 @@
 
 bool is_powered_on = false;
 
-// Helper to check if a pin stays at a target state continuously for a duration
+// Helper to check if a pin stays mostly at a target state for a duration (noise-tolerant)
 bool read_debounced(uint8_t pin, uint8_t target_state, uint32_t duration_us) {
-    uint32_t start = micros();
-    while ((micros() - start) < duration_us) {
-        if (digitalRead(pin) != target_state) {
-            return false;
+    uint8_t matches = 0;
+    uint32_t delay_step = duration_us / 20;
+    
+    for (int i = 0; i < 20; i++) {
+        if (digitalRead(pin) == target_state) {
+            matches++;
         }
+        delayMicroseconds(delay_step);
     }
-    return true;
+    
+    // Require at least 80% of samples to match the target state to tolerate brief glitches
+    return matches >= 16;
 }
 
 void power_on_sequence() {

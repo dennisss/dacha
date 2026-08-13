@@ -1,3 +1,5 @@
+#![feature(normalize_lexically)]
+
 extern crate common;
 #[macro_use]
 extern crate parsing;

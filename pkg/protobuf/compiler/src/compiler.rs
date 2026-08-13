@@ -243,7 +243,7 @@ impl Compiler {
 
             // TODO: "/hello/" != "/hello"
             // assert_eq!(rust_package_dir, current_package_dir);
-            if rust_package_dir.normalized() == current_package_dir.normalized() {
+            if rust_package_dir.normalize_lexically()? == current_package_dir.normalize_lexically()? {
                 rust_package_name = "crate".to_string();
             }
 

@@ -79,7 +79,7 @@ impl BlockDevice {
                 let p = device_dir.join("device");
                 if file::exists(&p).await? {
                     let mut p = file::realpath(&p).await?;;
-                    Some(p.normalized())
+                    Some(p.normalize_lexically()?)
                 } else {
                     None
                 }

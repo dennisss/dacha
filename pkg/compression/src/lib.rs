@@ -1,4 +1,4 @@
-#![feature(box_patterns, int_log, is_symlink)]
+#![feature(box_patterns, int_log, is_symlink, normalize_lexically)]
 
 extern crate alloc;
 extern crate core;
