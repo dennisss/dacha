@@ -1,0 +1,29 @@
+[package]
+name = "webview"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+base_error = { path = "../../base/error" }
+common = { path = "../../common" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.33"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Threading",
+    "Win32_UI_Controls",
+    "Win32_System_Ole",
+    "Win32_UI_Shell",
+    "Win32_Graphics_Dwm",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = ["NSString", "NSURL", "NSURLRequest", "NSURLResponse", "NSData", "NSError", "NSDictionary"] }
+objc2-app-kit = { version = "0.2", features = ["NSApplication", "NSWindow", "NSView", "NSResponder", "NSOpenPanel", "NSSavePanel", "NSGraphics", "NSRunningApplication", "NSPanel", "NSAppearance"] }
+objc2-web-kit = { version = "0.2", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKNavigationDelegate", "WKNavigation", "WKURLSchemeHandler", "WKURLSchemeTask", "WKUserContentController", "WKUserScript", "WKScriptMessageHandler", "WKScriptMessage", "block2", "objc2-app-kit"] }

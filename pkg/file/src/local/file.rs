@@ -55,7 +55,7 @@ impl LocalFile {
             } else {
                 crate::current_dir()?.join(path)
             }
-            .normalized()
+            .normalize_lexically()?
         };
 
         let mut flags = sys::O_RDONLY | sys::O_CLOEXEC | sys::O_NOCTTY;

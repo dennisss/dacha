@@ -131,6 +131,7 @@ members = [
 	"pkg/peripherals/service",
 	"pkg/peripherals/scpi",
 	"pkg/web",
+	"pkg/web/view",
 	# "pkg/api/hue",
 	"pkg/peripherals/devices/standing_desk",
 	"pkg/cnc",

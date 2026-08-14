@@ -1,4 +1,4 @@
-#![feature(generic_arg_infer, let_chains)]
+#![feature(generic_arg_infer, let_chains, normalize_lexically)]
 #![no_std]
 
 #[macro_use]

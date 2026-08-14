@@ -279,7 +279,7 @@ impl MachineOperator for SSHClient {
         // and actually not existing. So we ls each parent directory until we
         // can't any more to dodge these issues.
 
-        let remote_path = remote_path.normalized();
+        let remote_path = remote_path.normalize_lexically()?;
         if !remote_path.is_absolute() {
             return Err(err_msg("Only absolute paths are supported"));
         }

@@ -98,7 +98,7 @@ pub async fn realpath<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
 
                 if meta.is_symlink() {
                     let link = readlink(&file_path)?;
-                    resolved_path = resolved_path.join(link).normalized();
+                    resolved_path = resolved_path.join(link).normalize_lexically()?;
                 } else {
                     resolved_path = file_path;
                 }
@@ -238,7 +238,7 @@ pub async fn create_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
 
     // We need to normalize this to ensure that every parent path is actually the
     // parent directory of the current one.
-    let normalized_path = path.as_ref().normalized();
+    let normalized_path = path.as_ref().normalize_lexically()?;
 
     let mut cur = Some(normalized_path.as_path());
     while let Some(p) = cur {

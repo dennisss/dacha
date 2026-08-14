@@ -40,7 +40,7 @@ pub async fn run_unlock(cmd: UnlockCommand) -> Result<()> {
         }
 
         let local_key_path = LocalPathBuf::from_trusted_string(dataset.local_key_path())?;
-        let remote_key_path = LocalPath::new(dataset.remote_key_path()).normalized();
+        let remote_key_path = LocalPath::new(dataset.remote_key_path()).normalize_lexically()?;
         
         // TODO: Need more uniform global checking that always using absolute paths for almost all operations.
         if !remote_key_path.is_absolute() {
