@@ -29,3 +29,15 @@ rustflags=[
     "-Cforce-frame-pointers=yes",
     "-Awarnings"
 ]
+
+[target.x86_64-pc-windows-msvc]
+# Windows is a huge pain and always missing every dll you actually need so statically link stuff
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-apple-darwin]
+linker = "arm64-apple-darwin25-clang"
+ar = "arm64-apple-darwin25-ar"
+
+[target.x86_64-apple-darwin]
+linker = "x86_64-apple-darwin25-clang"
+ar = "x86_64-apple-darwin25-ar"

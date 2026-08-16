@@ -30,7 +30,10 @@ impl_deref!(Mesh::object as Object);
 impl Mesh {
     pub async fn read(path: &str, shader: Rc<Shader>) -> Result<Self> {
         let path = LocalPath::new(path);
+        #[cfg(target_os = "linux")]
         let ext = path.extension().unwrap_or("").to_ascii_lowercase();
+        #[cfg(not(target_os = "linux"))]
+        let ext = path.extension().map(|s| s.to_str().unwrap()).unwrap_or("").to_ascii_lowercase();
 
         match ext {
             //			"stl" => {

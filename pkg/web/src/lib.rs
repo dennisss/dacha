@@ -91,6 +91,10 @@ impl WebPageHandler {
 
         Ok(Self { page: new_page.into() })
     }
+
+    pub fn get(&self) -> Bytes {
+        self.page.clone()
+    }
 }
 
 #[async_trait]

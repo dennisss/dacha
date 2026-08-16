@@ -294,7 +294,6 @@ message RecordingState {
     bool error = 2;
 }
 
-
 // TODO: Get rid of this.
 message MocapTrackingLog {
     // TODO: This doesn't really change so better to move somewhere else?
@@ -303,6 +302,8 @@ message MocapTrackingLog {
     repeated MocapTrackingState entries = 2;
 
     repeated SkeletonProto skeletons = 3;
+
+    RigidBodyTrackerConfig rigid_body_tracker = 4; 
 }
 
 // TODO: Get rid of this.
@@ -312,7 +313,9 @@ message MocapTrackingState {
 
     repeated MocapTrackedLink links = 3;
 
-    repeated SkeletonCalculatedPositions skeletons = 4;
+    repeated SkeletonStateProto skeletons = 4;
+
+    repeated RigidBodyProto rigid_bodies = 5;
 
     reserved 1;
 }

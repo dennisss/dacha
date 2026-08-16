@@ -179,6 +179,7 @@ impl Executor {
                     dirty: false,
                     cancelled: false,
                     parked_thread: None,
+                    yielding: false,
                 }),
                 executor_shared: shared.clone(),
             });
@@ -441,6 +442,7 @@ impl Executor {
                 dirty: false,
                 cancelled: false,
                 parked_thread: None,
+                yielding: false,
             }),
             executor_shared: shared.clone(),
         });
@@ -552,6 +554,15 @@ impl Executor {
                         // pool of schedulable tasks.
                         state.scheduled = false;
                         state.future = Some(future);
+                    
+                        if state.yielding {
+                            state.yielding = false;
+                            state.scheduled = true;
+
+                            shared.pending_queue.lock().unwrap().push_back(task_id);
+                            shared.pending_queue_condvar.notify_one();
+                        }
+                        
                         break;
                     }
                 }

@@ -45,7 +45,7 @@ pub extern crate lazy_static;
 #[cfg(feature = "std")]
 pub extern crate chrono;
 pub extern crate generic_array;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub extern crate nix;
 pub extern crate typenum;
 

@@ -203,7 +203,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                 }}
             >
                 <td>
-                    <input checked={config.enabled ? true : false} type="checkbox"
+                    <input className="form-check-input" checked={config.enabled ? true : false} type="checkbox"
                         onChange={() => {
                             this._execute({
                                 set_camera_enabled: {
@@ -300,7 +300,7 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                         e.preventDefault();
                     }}
                 >
-                    <input type="checkbox" disabled={!enabled} onChange={() => { }} checked={this.state[state_key]} style={{ verticalAlign: -2 }} /> {text}
+                    <input className="form-check-input" type="checkbox" disabled={!enabled} onChange={() => { }} checked={this.state[state_key]} style={{ verticalAlign: -2 }} /> {text}
                 </div>
 
             );
@@ -646,6 +646,16 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
     }
 
+    _render_networking_card() {
+        let status = this.state.status;
+
+        return (
+            <Card header="Networking" style={{ marginBottom: 10 }}>
+                {this._render_object_table(status.networking)}
+            </Card>
+        );
+    }
+
     _render_object_table(obj) {
         return (
             <div style={{ padding: '0 8px' }}>
@@ -856,13 +866,15 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
 
                     <div style={{ width: '33.3333%', top: 0, bottom: 0, right: 0, position: 'absolute', overflow: 'scroll' }} className="noscrollbar">
                         <div style={{ padding: '20px 12px' }}>
+                            {this._render_networking_card()}
+
                             <Card header={status_header} style={{ marginBottom: 10 }}>
                                 <div style={{ padding: '0 8px' }}>
-                                    <table className="table table-hover" style={{ verticalAlign: "baseline", fontFamily: "Noto Sans Mono" }}>
+                                    <table className="table table-hover" style={{ marginBottom: 0, verticalAlign: "baseline", fontFamily: "Noto Sans Mono" }}>
                                         <thead>
                                             <tr>
                                                 <th>
-                                                    <input type="checkbox" checked={all_enabled} onChange={() => {
+                                                    <input className="form-check-input" type="checkbox" checked={all_enabled} onChange={() => {
                                                         // TODO: Have a fast timeout and error notice if this fails.
                                                         this._execute({
                                                             set_camera_enabled: {
@@ -885,6 +897,14 @@ export class CamerasPage extends React.Component<CamerasPageProps, CamerasPageSt
                                             {(status.cameras || []).map((camera) => {
                                                 return this._render_camera_status_row(camera);
                                             })}
+
+                                            {((status.cameras || []).length == 0) ? (
+                                                <tr>
+                                                    <td colSpan={8} style={{ padding: 20, textAlign: 'center' }}>
+                                                        No cameras found. Check your connections.
+                                                    </td>
+                                                </tr>
+                                            ) : null}
                                         </tbody>
                                     </table>
                                 </div>

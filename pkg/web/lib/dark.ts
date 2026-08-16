@@ -3,7 +3,7 @@ import { Setting } from "./settings";
 class DarkMode {
 
     constructor() {
-        this._setting = new Setting('dark_mode', false);
+        this._setting = new Setting('dark_mode', true);
         this._update();
     }
 

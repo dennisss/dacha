@@ -106,7 +106,6 @@ pub struct WebViewProxy {
 enum GuiTask {
     EvalJs(String),
     SendResponse { request_id: String, status_code: u16, mime_type: String, body: Vec<u8> },
-    AbortRequest { request_id: String },
     OpenFileDialog {
         title: String,
         sender: std::sync::mpsc::Sender<Result<Option<String>>>,
@@ -162,19 +161,6 @@ extern "C" fn idle_task_cb(data: *mut c_void) -> c_int {
                     webkit_uri_scheme_request_finish(request, stream, len as i64, mime_cstr.as_ptr());
                 }
             }
-            GuiTask::AbortRequest { request_id } => {
-                let req_ptr = {
-                    let mut requests = inner.requests.lock().unwrap();
-                    requests.remove(&request_id)
-                };
-                if let Some(req_val) = req_ptr {
-                    let request = req_val as *mut c_void;
-                    let stream = g_memory_input_stream_new();
-                    let mime_cstr = CString::new("text/plain").unwrap();
-                    // Finish with empty stream to simulate abort/empty
-                    webkit_uri_scheme_request_finish(request, stream, 0, mime_cstr.as_ptr());
-                }
-            }
             GuiTask::OpenFileDialog { title, sender } => {
                 let _ = sender.send(inner.run_open_file_dialog(&title));
             }
@@ -213,13 +199,6 @@ impl WebViewProxy {
             status_code,
             mime_type: mime_type.to_string(),
             body: body.to_vec(),
-        };
-        self.post_gui_task(task)
-    }
-
-    pub fn abort_request(&self, request_id: &str) -> Result<()> {
-        let task = GuiTask::AbortRequest {
-            request_id: request_id.to_string(),
         };
         self.post_gui_task(task)
     }
@@ -384,7 +363,21 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             0,
         );
 
-        let web_view = webkit_web_view_new();
+        let web_view = if let Some(ref data_dir) = builder.user_data_dir {
+            let data_dir_c = CString::new(data_dir.as_str()).unwrap();
+            let base_data_dir = CString::new("base-data-directory").unwrap();
+            let base_cache_dir = CString::new("base-cache-directory").unwrap();
+            let manager = (get_vtable().webkit_website_data_manager_new)(
+                base_data_dir.as_ptr(), data_dir_c.as_ptr(),
+                base_cache_dir.as_ptr(), data_dir_c.as_ptr(),
+                ptr::null_mut::<c_void>()
+            );
+            let context = webkit_web_context_new_with_website_data_manager(manager);
+            webkit_web_view_new_with_context(context)
+        } else {
+            webkit_web_view_new()
+        };
+        
         if web_view.is_null() {
             return Err(err_msg("Failed to create WebKitWebView instance."));
         }
@@ -460,6 +453,7 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
 
         gtk_container_add(window, web_view);
         gtk_widget_show_all(window);
+        gtk_window_resize(window, builder.width as c_int, builder.height as c_int);
 
         if is_devtools && auto_open_devtools {
             webkit_web_inspector_show(webkit_web_view_get_inspector(web_view));

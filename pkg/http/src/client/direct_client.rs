@@ -15,7 +15,7 @@ use executor::sync::{AsyncMutex, SyncMutex};
 use executor::sync::AsyncVariable;
 use executor::{channel, lock, lock_async};
 use net::backoff::*;
-use net::tcp::TcpStream;
+use net::tcp::{TcpStream, TcpConnectOptions};
 use parsing::ascii::AsciiString;
 
 use crate::alpn::*;
@@ -152,6 +152,8 @@ pub struct DirectClientOptions {
     pub eagerly_connect: bool,
 
     pub heartbeat: ClientHeartbeatOptions,
+
+    pub route: Option<net::route::NetworkInterfaceRoute>,
 }
 
 #[derive(Clone)]
@@ -1090,10 +1092,18 @@ impl DirectClientRunner {
         shared: &Arc<Shared>,
         connection_id: usize,
     ) -> Result<ConnectionEntry> {
+        let mut stream_opts = net::tcp::TcpConnectOptions::default();
+        if let Some(route) = shared.options.route.clone() {
+            stream_opts.route(route);
+        }
+
         // Ways in which this can fail:
         // - io::ErrorKind::ConnectionRefused: Reached the server but it's not serving
         //   on the given port.
-        let mut raw_stream = TcpStream::connect(shared.endpoint.address.clone()).await?;
+        let mut raw_stream = TcpStream::connect_with_options(
+            shared.endpoint.address.clone(),
+            &stream_opts
+        ).await?;
         raw_stream.set_nodelay(true)?;
 
         let (mut reader, mut writer) = raw_stream.split();

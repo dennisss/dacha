@@ -46,11 +46,6 @@ impl WebViewHandle {
         self.proxy.send_response(request_id, status_code, mime_type, body)
     }
 
-    /// Abort an asynchronous `webview://` request intercepted by `on_request`.
-    pub fn abort_request(&self, request_id: &str) -> Result<()> {
-        self.proxy.abort_request(request_id)
-    }
-
     /// Open a native system file selection modal dialog to pick an existing file.
     /// Returns `Ok(Some(path))` if a file was selected, or `Ok(None)` if cancelled by the user.
     pub fn open_file_dialog(&self, title: &str) -> Result<Option<String>> {
@@ -120,7 +115,7 @@ impl WebViewBuilder {
 
     /// Register a callback to intercept asynchronous `webview://` fetches and navigation requests.
     /// The handler receives `(WebViewHandle, request_id, path)`. 
-    /// You must call `handle.send_response(request_id, ...)` or `handle.abort_request(request_id)` later.
+    /// You must call `handle.send_response(request_id, ...)` later.
     pub fn on_request<F>(mut self, handler: F) -> Self
     where
         F: Fn(WebViewHandle, String, String) + Send + Sync + 'static,
@@ -183,4 +178,9 @@ impl WebViewBuilder {
         }
         platform::run(self)
     }
+}
+
+/// Show a native system error dialog. This is safe to call before the webview is initialized.
+pub fn show_error_dialog(title: &str, message: &str) {
+    platform::show_error_dialog(title, message);
 }

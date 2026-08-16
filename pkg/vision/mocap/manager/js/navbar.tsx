@@ -9,7 +9,7 @@ export class Navbar extends React.Component<{ extraLink?: NavbarLinkOptions, tog
         let links: NavbarLinkOptions[] = [
             { name: "Cameras", to: "/ui/cameras" },
             { name: "World", to: "/ui/world" },
-
+            { name: "Settings", to: "/ui/settings" },
         ];
 
         let extra_link = this.props.extraLink;

@@ -30,6 +30,16 @@ Some notes on normalization:
 
 */
 
+#[derive(Fail, Debug)]
+pub struct StripPrefixError;
+
+impl core::fmt::Display for StripPrefixError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+
 // TODO: Implement custom eq?
 #[derive(Clone, PartialOrd, Ord, PartialEq, Eq, Default, Hash)]
 pub struct LocalPathBuf {
@@ -96,7 +106,7 @@ impl LocalPathBuf {
             path = crate::current_dir()?.join(path);
         }
 
-        Ok(path.normalized())
+        Ok(path.normalize_lexically()?)
     }
 }
 

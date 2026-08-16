@@ -320,8 +320,13 @@ impl FileCredentialsManager {
     /// Perform an atomic operation to replace the contents of the file at
     /// 'path' with those in 'data'.
     async fn atomic_write(path: &LocalPath, data: &[u8]) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        let original_file_name = path.file_name().unwrap();
+        #[cfg(not(target_os = "linux"))]
+        let original_file_name = path.file_name().unwrap().to_str().unwrap();
+        
         let mut tmp_path = path.to_owned();
-        tmp_path.set_file_name(&format!("{}.tmp", path.file_name().unwrap()));
+        tmp_path.set_file_name(&format!("{}.tmp", original_file_name));
         file::write(&tmp_path, data).await?;
 
         // https://man7.org/linux/man-pages/man2/rename.2.html

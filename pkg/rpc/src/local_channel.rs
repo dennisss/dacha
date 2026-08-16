@@ -18,21 +18,44 @@ use crate::Http2Channel;
 /// RPCs to an in-process service.
 pub struct LocalChannel {
     handler: Arc<Http2RequestHandler>,
+    media_type: RPCMediaType
 }
 
 impl LocalChannel {
     pub fn new(service: Arc<dyn Service>) -> Self {
         Self {
             handler: Arc::new(Http2RequestHandler::new_single_service(service, false)),
+            media_type: RPCMediaType {
+                protocol: RPCMediaProtocol::Default,
+                serialization: RPCMediaSerialization::Proto,
+            }
         }
     }
 
+    pub fn new_json(service: Arc<dyn Service>) -> Self {
+        Self {
+            handler: Arc::new(Http2RequestHandler::new_single_service(service, false)),
+            media_type: RPCMediaType {
+                protocol: RPCMediaProtocol::Default,
+                serialization: RPCMediaSerialization::JSON,
+            }
+        }
+    }
+
+
     pub fn from_handler(handler: Arc<Http2RequestHandler>) -> Self {
-        Self { handler }
+        Self {
+            handler,
+            media_type: RPCMediaType {
+                protocol: RPCMediaProtocol::Default,
+                serialization: RPCMediaSerialization::Proto,
+            }
+        }
     }
 
     async fn request_handler(
         handler: Arc<Http2RequestHandler>,
+        media_type: RPCMediaType,
         service_name: String,
         method_name: String,
         request_context: ClientRequestContext,
@@ -53,10 +76,7 @@ impl LocalChannel {
         ));
         let server_request = ServerStreamRequest::new(
             server_request_body,
-            RPCMediaType {
-                protocol: RPCMediaProtocol::Default,
-                serialization: RPCMediaSerialization::Proto,
-            },
+            media_type.clone(),
             handler.codec_options.clone(),
             server_request_context,
         );
@@ -66,10 +86,7 @@ impl LocalChannel {
                 &service_name,
                 &method_name,
                 server_request,
-                RPCMediaType {
-                    protocol: RPCMediaProtocol::Default,
-                    serialization: RPCMediaSerialization::Proto,
-                },
+                media_type,
             )
             .await
     }
@@ -88,6 +105,7 @@ impl Channel for LocalChannel {
         let client_req = ClientStreamingRequest::new(req_sender);
 
         let handler = self.handler.clone();
+        let media_type = self.media_type.clone();
         let request_context = request_context.clone();
         let service_name = service_name.to_string();
         let method_name = method_name.to_string();
@@ -97,6 +115,7 @@ impl Channel for LocalChannel {
 
             let result = Self::request_handler(
                 handler,
+                media_type.clone(),
                 service_name,
                 method_name,
                 request_context.clone(),
@@ -105,7 +124,7 @@ impl Channel for LocalChannel {
             )
             .await;
 
-            Http2Channel::process_existing_response(Ok(result), sender, &request_context).await
+            Http2Channel::process_existing_response(Ok(result), sender, &request_context, &media_type).await
         });
 
         (client_req, client_res)

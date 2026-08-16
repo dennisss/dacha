@@ -4,6 +4,7 @@ extern crate common;
 extern crate macros;
 
 mod inst;
+mod networking;
 mod checkerboard;
 pub mod calibration;
 pub mod matching;

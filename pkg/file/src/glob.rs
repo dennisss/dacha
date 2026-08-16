@@ -89,7 +89,7 @@ impl GlobFileFilter {
             pattern = crate::current_dir()?.join(pattern);
         }
 
-        pattern = pattern.normalized();
+        pattern = pattern.normalize_lexically()?;
 
         let regexp = Self::compile_glob(&pattern)?;
 

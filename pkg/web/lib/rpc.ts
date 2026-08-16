@@ -1,4 +1,5 @@
 import { encode_utf8, decode_utf8, encode_be_u32, decode_be_u32, decode_header_block } from "pkg/web/lib/encoding";
+import { ChannelWebView } from "./rpc/webview";
 
 const STATUS_CODES = {
     0: 'OK',
@@ -161,19 +162,43 @@ export class Channel {
     call_streaming(service_name: String, method_name: String, request: any, options: RequestOptions = {}): StreamingResponse {
         let state = new StreamingResponseState();
 
-        this._call_streaming_impl(service_name, method_name, request, state, options).catch((e) => {
-            state.status = new Status(-1, 'Failed to get response: ' + e);
-
-            if (state.recv_waiter) {
-                (state.recv_waiter)();
-                state.recv_waiter = null;
+        if (window.location.protocol == 'webview:') {
+            // TODO: Dedup this.
+            let abort_signals = this._abort_signals.slice();
+            if (options.abort_signal) {
+                abort_signals.push(options.abort_signal);
             }
-        });
+
+            try {
+                ChannelWebView.global().call_streaming(
+                    service_name, method_name, request, state,
+                    AbortSignal.any(abort_signals)
+                );
+            } catch (e) {
+                state.status = new Status(-1, 'Failed to get response: ' + e);
+            }
+
+        } else {
+            this._call_streaming_impl(service_name, method_name, request, state, options).catch((e) => {
+                state.status = new Status(-1, 'Failed to get response: ' + e);
+
+                if (state.recv_waiter) {
+                    (state.recv_waiter)();
+                    state.recv_waiter = null;
+                }
+            });
+        }
 
         return new StreamingResponse(state);
     }
 
-    async _call_streaming_impl(service_name: String, method_name: String, request: any, state: any, options: RequestOptions) {
+    async _call_streaming_impl(
+        service_name: String,
+        method_name: String,
+        request: any,
+        state: StreamingResponseState,
+        options: RequestOptions
+    ) {
         let request_data = encode_utf8(JSON.stringify(request));
 
         let request_buf = new Uint8Array(1 + 4 + request_data.length);

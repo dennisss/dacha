@@ -10,7 +10,7 @@ const GRPC_MEDIA_PROTO_SUFFIX: &'static str = "proto";
 
 const GRPC_MEDIA_JSON_SUFFIX: &'static str = "json";
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct RPCMediaType {
     pub protocol: RPCMediaProtocol,
     pub serialization: RPCMediaSerialization,

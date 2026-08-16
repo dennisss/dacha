@@ -72,7 +72,6 @@ enum GuiTask {
     EvalJs(String),
     SendBinary { stream_id: String, data: Vec<u8> },
     SendResponse { request_id: String, status_code: u16, mime_type: String, body: Vec<u8> },
-    AbortRequest { request_id: String },
     OpenFileDialog {
         title: String,
         sender: std::sync::mpsc::Sender<Result<Option<String>>>,
@@ -138,14 +137,14 @@ impl WindowsProxyInner {
     fn run_open_file_dialog(&self, title: &str) -> Result<Option<String>> {
         unsafe {
             let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
-                .map_err(|e| format!("Failed to create FileOpenDialog: {}", e))?;
+                .map_err(|e| format_err!("Failed to create FileOpenDialog: {}", e))?;
             let title_h = HSTRING::from(title);
             let _ = dialog.SetTitle(&title_h);
             let hwnd_ptr = self.hwnd.load(Ordering::SeqCst);
             if dialog.Show(HWND(hwnd_ptr as *mut _)).is_ok() {
                 if let Ok(item) = dialog.GetResult() {
                     if let Ok(pwstr) = item.GetDisplayName(SIGDN_FILESYSPATH) {
-                        let path_str = pwstr.to_string().map_err(|e| e.to_string())?;
+                        let path_str = pwstr.to_string().map_err(|e| format_err!("{}", e))?;
                         return Ok(Some(path_str));
                     }
                 }
@@ -157,7 +156,7 @@ impl WindowsProxyInner {
     fn run_save_file_dialog(&self, title: &str, default_name: Option<&str>) -> Result<Option<String>> {
         unsafe {
             let dialog: IFileSaveDialog = CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER)
-                .map_err(|e| format!("Failed to create FileSaveDialog: {}", e))?;
+                .map_err(|e| format_err!("Failed to create FileSaveDialog: {}", e))?;
             let title_h = HSTRING::from(title);
             let _ = dialog.SetTitle(&title_h);
             if let Some(name) = default_name {
@@ -168,7 +167,7 @@ impl WindowsProxyInner {
             if dialog.Show(HWND(hwnd_ptr as *mut _)).is_ok() {
                 if let Ok(item) = dialog.GetResult() {
                     if let Ok(pwstr) = item.GetDisplayName(SIGDN_FILESYSPATH) {
-                        let path_str = pwstr.to_string().map_err(|e| e.to_string())?;
+                        let path_str = pwstr.to_string().map_err(|e| format_err!("{}", e))?;
                         return Ok(Some(path_str));
                     }
                 }
@@ -213,35 +212,6 @@ impl WindowsProxyInner {
             }
         }
     }
-
-    fn handle_abort_request(&self, request_id: &str) {
-        let req_opt = {
-            let mut reqs = self.requests.lock().unwrap();
-            reqs.remove(request_id)
-        };
-        if let Some((args_ptr, deferral_ptr)) = req_opt {
-            if let (Some(args), Some(deferral)) = (args_ptr.0, deferral_ptr.0) {
-                let env_lock = self.env12.lock().unwrap();
-                if let Some(env12) = &env_lock.0 {
-                    unsafe {
-                        if let Some(stream) = SHCreateMemStream(Some(&[])) {
-                            if let Ok(response) = env12.CreateWebResourceResponse(
-                                &stream,
-                                500,
-                                &HSTRING::from("Aborted"),
-                                &HSTRING::from("")
-                            ) {
-                                let _ = args.SetResponse(&response);
-                            }
-                        }
-                    }
-                }
-                unsafe {
-                    let _ = deferral.Complete();
-                }
-            }
-        }
-    }
 }
 
 impl WebViewProxy {
@@ -266,12 +236,6 @@ impl WebViewProxy {
             status_code,
             mime_type: mime_type.to_string(),
             body: body.to_vec(),
-        })
-    }
-
-    pub fn abort_request(&self, request_id: &str) -> Result<()> {
-        self.post_gui_task(GuiTask::AbortRequest {
-            request_id: request_id.to_string(),
         })
     }
 
@@ -368,9 +332,6 @@ extern "system" fn window_proc(
                         }
                         GuiTask::SendResponse { request_id, status_code, mime_type, body } => {
                             inner.handle_send_response(&request_id, status_code, &mime_type, &body);
-                        }
-                        GuiTask::AbortRequest { request_id } => {
-                            inner.handle_abort_request(&request_id);
                         }
                         GuiTask::OpenFileDialog { title, sender } => {
                             let _ = sender.send(inner.run_open_file_dialog(&title));
@@ -554,7 +515,7 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-        let instance = GetModuleHandleW(None)?;;
+        let instance = GetModuleHandleW(None)?;
         let class_name = to_wstring("MinimalWebViewClass");
         let title_w = to_wstring(&builder.title);
 
@@ -598,7 +559,7 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             web_view: Mutex::new(ComPtr::default()),
             env12: Mutex::new(ComPtr::default()),
             shared_buffer: Mutex::new(ComPtr::default()),
-            requests: Mutex::new(HashMap::new()),
+            requests: Default::default(),
             request_counter: std::sync::atomic::AtomicUsize::new(0),
         });
         let proxy = WebViewProxy { inner: inner.clone() };

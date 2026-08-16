@@ -113,4 +113,9 @@ pub(super) struct TaskState {
     /// (this is mainly a necessary requirement to guarantee that .join() always
     /// returns a result unless the join handle is dropped).
     pub cancelled: bool,
+
+    /// If true, then the task has requested that it shouldn't be immediately
+    /// re-polled but be polled later once all other currently pending tasks
+    /// have been handled.
+    pub yielding: bool,
 }

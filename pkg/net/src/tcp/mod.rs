@@ -1,3 +1,5 @@
+mod options;
+pub use options::*;
 
 #[cfg(target_os = "linux")]
 mod linux;

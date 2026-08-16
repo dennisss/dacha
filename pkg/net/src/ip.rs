@@ -138,6 +138,35 @@ impl SocketAddr {
 
         Ok(Self { ip, port })
     }
+
+    #[cfg(target_os = "linux")]
+    pub fn to_sys(&self) -> sys::SocketAddr {
+        self.clone().into()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub fn to_libc(&self) -> libc::sockaddr {
+        unsafe { 
+            let mut out: libc::sockaddr = std::mem::zeroed();
+
+            match &self.ip {
+                IPAddress::V4(v) => {
+                    let addr = core::mem::transmute::<&mut libc::sockaddr, &mut libc::sockaddr_in>(&mut out);
+                    #[cfg(target_os = "macos")]
+                    {
+                        addr.sin_len = std::mem::size_of::<libc::sockaddr_in>() as u8;
+                    }
+                    addr.sin_family = libc::AF_INET as libc::sa_family_t;
+                    addr.sin_addr.s_addr = u32::from_ne_bytes(*v);
+                    addr.sin_port = self.port.to_be();
+                }
+                _ => todo!()
+
+            }
+
+            out
+        }
+    }
 }
 
 impl Debug for SocketAddr {

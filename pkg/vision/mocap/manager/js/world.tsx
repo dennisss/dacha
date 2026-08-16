@@ -293,7 +293,7 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
             return {
                 name: c.name,
                 value: (
-                    <input type="checkbox" checked={c.setting.get()} onChange={(e) => {
+                    <input className="form-check-input" type="checkbox" checked={c.setting.get()} onChange={(e) => {
                         let v = e.target.checked;
                         c.setting.set(v);
                         this._update_viewer_controls();
@@ -496,7 +496,7 @@ export class WorldPage extends React.Component<WorldPageProps, WorldPageState> {
                     <div style={{ width: (menu_open ? '70%' : '100%'), top: 0, bottom: 0, left: 0, position: 'absolute', overflow: 'scroll' }} className="noscrollbar">
 
                         <div ref={this._canvas_container} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}></div>
-                        <div ref={this._selection_box} className="selection-box"></div>
+                        <div ref={this._selection_box} className="selection-box hidden"></div>
                     </div>
 
                     {menu_open ? this._render_menu() : null}

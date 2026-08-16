@@ -167,6 +167,10 @@ impl Http2Channel {
             ),
             request_context,
             request_buffer: buffer,
+            media_type: RPCMediaType {
+                protocol: RPCMediaProtocol::Default,
+                serialization: RPCMediaSerialization::Proto,
+            }
         };
 
         // TODO: Need to implement custom logic for retrying service RPC errors (some
@@ -184,6 +188,7 @@ impl Http2Channel {
         response: Result<http::Response>,
         attempt_alive: spsc::Sender<()>,
         request_context: &ClientRequestContext,
+        media_type: &RPCMediaType, 
     ) -> Box<dyn ClientStreamingResponseInterface> {
         let mut output = Http2ClientStreamingResponse::default();
 
@@ -198,6 +203,7 @@ impl Http2Channel {
         if let Err(e) = Http2RequestSender::process_single_response(
             response,
             request_context,
+            media_type,
             false,
             &mut output,
         )
@@ -263,6 +269,8 @@ struct Http2RequestSender {
     path: String,
     request_context: ClientRequestContext,
     request_buffer: Arc<MessageRequestBuffer>,
+
+    media_type: RPCMediaType,
 }
 
 struct Retrier<'a> {
@@ -418,11 +426,7 @@ impl Http2RequestSender {
             // TODO: No gurantee that we were given proto data.
             .header(
                 CONTENT_TYPE,
-                RPCMediaType {
-                    protocol: RPCMediaProtocol::Default,
-                    serialization: RPCMediaSerialization::Proto,
-                }
-                .to_string(),
+                self.media_type.to_string(),
             )
             .header(GRPC_ENCODING, "identity")
             .header(GRPC_ACCEPT_ENCODING, "identity")
@@ -457,12 +461,13 @@ impl Http2RequestSender {
             .request(request, http_request_context, http_response_context)
             .await?;
 
-        Self::process_single_response(response, &self.request_context, might_retry, output).await
+        Self::process_single_response(response, &self.request_context, &self.media_type, might_retry, output).await
     }
 
     async fn process_single_response(
         mut response: http::Response,
         request_context: &ClientRequestContext,
+        media_type: &RPCMediaType,
         might_retry: bool,
         output: &mut Http2ClientStreamingResponse,
     ) -> Result<()> {
@@ -476,9 +481,7 @@ impl Http2RequestSender {
 
         let response_type = RPCMediaType::parse(&response.head.headers)
             .ok_or_else(|| err_msg("Response received without valid content type"))?;
-        if response_type.protocol != RPCMediaProtocol::Default
-            || response_type.serialization != RPCMediaSerialization::Proto
-        {
+        if response_type != *media_type {
             return Err(err_msg("Received unsupported media type"));
         }
 

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package mocap;
+
+service CameraSupervisor {
+    rpc Status (CameraSupervisorStatusRequest) returns (CameraSupervisorStatusResponse);
+
+    // - One response will be sent per request.
+    // - At most one 'Update' RPC can be active on the server at a time.
+    rpc Update (stream UpdateRequest) returns (stream UpdateResponse);
+}
+
+message CameraSupervisorStatusRequest {
+
+}
+
+message CameraSupervisorStatusResponse {
+    // Stuff like which version is currently installed
+}
+
+message UpdateRequest {
+    oneof command {
+        StartUpdateCommand start_update = 1;
+
+        bytes payload_chunk = 2;
+
+        bool commit_deb = 3;
+    }
+}
+
+message StartUpdateCommand {
+
+}
+
+message UpdateResponse {
+    bool commited = 1;
+
+    float commit_progress = 2;
+}

@@ -25,6 +25,7 @@ pub struct GtkWebkitVtable {
     pub gtk_window_new: extern "C" fn(c_int) -> *mut c_void,
     pub gtk_window_set_title: extern "C" fn(*mut c_void, *const c_char),
     pub gtk_window_set_default_size: extern "C" fn(*mut c_void, c_int, c_int),
+    pub gtk_window_resize: extern "C" fn(*mut c_void, c_int, c_int),
     pub gtk_window_maximize: extern "C" fn(*mut c_void),
     pub gtk_container_add: extern "C" fn(*mut c_void, *mut c_void),
     pub gtk_widget_show_all: extern "C" fn(*mut c_void),
@@ -38,6 +39,9 @@ pub struct GtkWebkitVtable {
     pub g_object_ref: extern "C" fn(*mut c_void) -> *mut c_void,
     pub g_memory_input_stream_new: extern "C" fn() -> *mut c_void,
     pub g_memory_input_stream_add_data: extern "C" fn(*mut c_void, *mut c_void, isize, Option<extern "C" fn(*mut c_void)>),
+    pub webkit_website_data_manager_new: unsafe extern "C" fn(*const c_char, ...) -> *mut c_void,
+    pub webkit_web_context_new_with_website_data_manager: extern "C" fn(*mut c_void) -> *mut c_void,
+    pub webkit_web_view_new_with_context: extern "C" fn(*mut c_void) -> *mut c_void,
     pub webkit_web_view_new: extern "C" fn() -> *mut c_void,
     pub webkit_web_view_load_html: extern "C" fn(*mut c_void, *const c_char, *const c_char),
     pub webkit_web_view_get_user_content_manager: extern "C" fn(*mut c_void) -> *mut c_void,
@@ -48,6 +52,8 @@ pub struct GtkWebkitVtable {
     pub webkit_settings_set_disable_web_security: extern "C" fn(*mut c_void, c_int),
     pub webkit_settings_set_allow_file_access_from_file_urls: extern "C" fn(*mut c_void, c_int),
     pub webkit_settings_set_allow_universal_access_from_file_urls: extern "C" fn(*mut c_void, c_int),
+    pub webkit_settings_set_enable_webgl: extern "C" fn(*mut c_void, c_int),
+    pub webkit_settings_set_hardware_acceleration_policy: extern "C" fn(*mut c_void, c_int),
     pub webkit_settings_set_enable_developer_extras: extern "C" fn(*mut c_void, c_int),
     pub webkit_web_view_get_inspector: extern "C" fn(*mut c_void) -> *mut c_void,
     pub webkit_web_inspector_show: extern "C" fn(*mut c_void),
@@ -120,6 +126,7 @@ impl GtkWebkitVtable {
             gtk_window_new: load_sym!(b"gtk_window_new\0"),
             gtk_window_set_title: load_sym!(b"gtk_window_set_title\0"),
             gtk_window_set_default_size: load_sym!(b"gtk_window_set_default_size\0"),
+            gtk_window_resize: load_sym!(b"gtk_window_resize\0"),
             gtk_window_maximize: load_sym!(b"gtk_window_maximize\0"),
             gtk_container_add: load_sym!(b"gtk_container_add\0"),
             gtk_widget_show_all: load_sym!(b"gtk_widget_show_all\0"),
@@ -133,6 +140,9 @@ impl GtkWebkitVtable {
             g_object_ref: load_sym!(b"g_object_ref\0"),
             g_memory_input_stream_new: load_sym!(b"g_memory_input_stream_new\0"),
             g_memory_input_stream_add_data: load_sym!(b"g_memory_input_stream_add_data\0"),
+            webkit_website_data_manager_new: load_sym!(b"webkit_website_data_manager_new\0"),
+            webkit_web_context_new_with_website_data_manager: load_sym!(b"webkit_web_context_new_with_website_data_manager\0"),
+            webkit_web_view_new_with_context: load_sym!(b"webkit_web_view_new_with_context\0"),
             webkit_web_view_new: load_sym!(b"webkit_web_view_new\0"),
             webkit_web_view_load_html: load_sym!(b"webkit_web_view_load_html\0"),
             webkit_web_view_get_user_content_manager: load_sym!(b"webkit_web_view_get_user_content_manager\0"),
@@ -143,6 +153,8 @@ impl GtkWebkitVtable {
             webkit_settings_set_disable_web_security: load_sym!(b"webkit_settings_set_disable_web_security\0"),
             webkit_settings_set_allow_file_access_from_file_urls: load_sym!(b"webkit_settings_set_allow_file_access_from_file_urls\0"),
             webkit_settings_set_allow_universal_access_from_file_urls: load_sym!(b"webkit_settings_set_allow_universal_access_from_file_urls\0"),
+            webkit_settings_set_enable_webgl: load_sym!(b"webkit_settings_set_enable_webgl\0"),
+            webkit_settings_set_hardware_acceleration_policy: load_sym!(b"webkit_settings_set_hardware_acceleration_policy\0"),
             webkit_settings_set_enable_developer_extras: load_sym!(b"webkit_settings_set_enable_developer_extras\0"),
             webkit_web_view_get_inspector: load_sym!(b"webkit_web_view_get_inspector\0"),
             webkit_web_inspector_show: load_sym!(b"webkit_web_inspector_show\0"),
@@ -190,6 +202,8 @@ pub unsafe fn gtk_window_set_title(window: *mut c_void, title: *const c_char) { 
 #[inline(always)]
 pub unsafe fn gtk_window_set_default_size(window: *mut c_void, width: c_int, height: c_int) { (get_vtable().gtk_window_set_default_size)(window, width, height) }
 #[inline(always)]
+pub unsafe fn gtk_window_resize(window: *mut c_void, width: c_int, height: c_int) { (get_vtable().gtk_window_resize)(window, width, height) }
+#[inline(always)]
 pub unsafe fn gtk_window_maximize(window: *mut c_void) { (get_vtable().gtk_window_maximize)(window) }
 #[inline(always)]
 pub unsafe fn gtk_container_add(container: *mut c_void, widget: *mut c_void) { (get_vtable().gtk_container_add)(container, widget) }
@@ -214,6 +228,11 @@ pub unsafe fn g_object_ref(object: *mut c_void) -> *mut c_void { (get_vtable().g
 pub unsafe fn g_memory_input_stream_new() -> *mut c_void { (get_vtable().g_memory_input_stream_new)() }
 #[inline(always)]
 pub unsafe fn g_memory_input_stream_add_data(stream: *mut c_void, data: *mut c_void, len: isize, destroy: Option<extern "C" fn(*mut c_void)>) { (get_vtable().g_memory_input_stream_add_data)(stream, data, len, destroy) }
+// webkit_website_data_manager_new is varargs, invoked directly from vtable
+#[inline(always)]
+pub unsafe fn webkit_web_context_new_with_website_data_manager(manager: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_context_new_with_website_data_manager)(manager) }
+#[inline(always)]
+pub unsafe fn webkit_web_view_new_with_context(context: *mut c_void) -> *mut c_void { (get_vtable().webkit_web_view_new_with_context)(context) }
 #[inline(always)]
 pub unsafe fn webkit_web_view_new() -> *mut c_void { (get_vtable().webkit_web_view_new)() }
 #[inline(always)]
@@ -234,6 +253,10 @@ pub unsafe fn webkit_settings_set_disable_web_security(settings: *mut c_void, di
 pub unsafe fn webkit_settings_set_allow_file_access_from_file_urls(settings: *mut c_void, allowed: c_int) { (get_vtable().webkit_settings_set_allow_file_access_from_file_urls)(settings, allowed) }
 #[inline(always)]
 pub unsafe fn webkit_settings_set_allow_universal_access_from_file_urls(settings: *mut c_void, allowed: c_int) { (get_vtable().webkit_settings_set_allow_universal_access_from_file_urls)(settings, allowed) }
+#[inline(always)]
+pub unsafe fn webkit_settings_set_enable_webgl(settings: *mut c_void, enabled: c_int) { (get_vtable().webkit_settings_set_enable_webgl)(settings, enabled) }
+#[inline(always)]
+pub unsafe fn webkit_settings_set_hardware_acceleration_policy(settings: *mut c_void, policy: c_int) { (get_vtable().webkit_settings_set_hardware_acceleration_policy)(settings, policy) }
 #[inline(always)]
 pub unsafe fn webkit_settings_set_enable_developer_extras(settings: *mut c_void, enabled: c_int) { (get_vtable().webkit_settings_set_enable_developer_extras)(settings, enabled) }
 #[inline(always)]

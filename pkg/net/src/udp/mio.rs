@@ -8,6 +8,7 @@ use crate::error::NetworkError;
 use crate::ip::IPAddress;
 use crate::ip::SocketAddr;
 use crate::udp::options::*;
+use crate::socket::SocketType;
 
 
 pub struct UdpSocket {
@@ -20,8 +21,11 @@ impl UdpSocket {
     }
 
     pub async fn bind_with_options(addr: SocketAddr, options: &UdpBindOptions) -> Result<Self> {
-        let s = mio::net::UdpSocket::bind(addr.clone().into())
-            .remap_std_error::<NetworkError, _>(move || format!("UDPSocket::bind to {:?} failed", addr))?;
+        let s = mio::net::UdpSocket::from_std(
+            Self::bind_impl(addr.clone(), options)
+                .remap_std_error::<NetworkError, _>(move || format!("UDPSocket::bind to {:?} failed", addr))?
+        );
+        
         if options.broadcast {
             s.set_broadcast(true)?    
         }
@@ -32,6 +36,38 @@ impl UdpSocket {
             inner
         })
     }
+
+    #[cfg(target_os = "macos")]
+    fn bind_impl(
+        addr: SocketAddr, options: &UdpBindOptions
+    ) -> std::io::Result<std::net::UdpSocket> {
+        use std::os::fd::FromRawFd;
+
+        unsafe {
+            let mut options = options.inner.clone();
+            options.typ = Some(SocketType::UDP);
+            options.bind_addr = Some(addr);
+            let fd = options.build()?;
+            Ok(std::net::UdpSocket::from_raw_fd(fd))
+        }
+    }
+
+
+    #[cfg(target_os = "windows")]
+    pub fn bind_impl(
+        addr: SocketAddr, options: &UdpBindOptions
+    ) -> std::io::Result<std::net::UdpSocket> {
+        use std::os::windows::io::FromRawSocket;
+
+        unsafe {
+            let mut options = options.inner.clone();
+            options.typ = Some(SocketType::UDP);
+            options.bind_addr = Some(addr);
+            let s = options.build()?;
+            Ok(std::net::UdpSocket::from_raw_socket(s as _))
+        }
+    }
+
 
     pub async fn send_to(&self, data: &[u8], addr: &SocketAddr) -> Result<usize> {
         self.inner.retry_blocking(|sock| {

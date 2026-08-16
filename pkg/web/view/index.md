@@ -35,20 +35,3 @@ cargo install cargo-xwin
 rustup target add x86_64-pc-windows-msvc
 cargo xwin build --target x86_64-pc-windows-msvc --release --bin some_webview_app
 ```
-
-## Notes
-
-
-ssh dennis@10.1.0.142
-
-rsync -avz --exclude 'target' --exclude '.git' . dennis@10.1.0.142:~/workspace/webview
-
-
-cargo build --target x86_64-pc-windows-gnu
-
-ssh Dennis@10.1.0.144
-
-scp target/x86_64-pc-windows-msvc/release/examples/secure_ipc_stream.exe Dennis@10.1.0.144:C:\\Users\\Dennis\\
-
-psexec.exe -i 1 -d .\basic_html.exe
-

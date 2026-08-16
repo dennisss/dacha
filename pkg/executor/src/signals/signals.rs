@@ -16,6 +16,12 @@ use crate::channel;
 static mut SIGNALS_STATE: Option<Mutex<SignalsState>> = None;
 static SIGNALS_STATE_INIT: Once = Once::new();
 
+#[cfg(target_os = "macos")]
+mod sys {
+    pub type c_int = common::libc::c_int;
+}
+
+
 /// Process-wide state of how the different signals are configured.
 struct SignalsState {
     senders: HashMap<sys::c_int, channel::Sender<()>>,

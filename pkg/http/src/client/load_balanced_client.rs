@@ -116,6 +116,7 @@ impl Default for LoadBalancedClientOptions {
                     ping_interval: Duration::from_secs(20 * 60),
                     ping_timeout: Duration::from_secs(10),
                 },
+                route: None
             },
             resolver_backoff: ExponentialBackoffOptions {
                 base_duration: Duration::from_millis(100),

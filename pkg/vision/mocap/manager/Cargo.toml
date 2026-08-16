@@ -8,6 +8,7 @@ common = { path = "../../../common" }
 base_args = { path = "../../../base/args" }
 file = { path = "../../../file" }
 net = { path = "../../../net" }
+net_iface = { path = "../../../net/iface" }
 cluster_client = { path = "../../../cluster/client" }
 cluster_proto = { path = "../../../cluster/proto" }
 executor = { path = "../../../executor" }

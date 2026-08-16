@@ -47,14 +47,14 @@ impl UdpSocket {
                 set_broadcast(&fd, options.broadcast)?;
             }
 
-            if let Some(name) = &options.bind_to_device {
+            if let Some(name) = &options.inner.bind_to_device {
                 set_bind_to_device(&fd, name.as_str())?;
             }
 
             if options.enable_hardware_timestamping {
                 // NOTE: It is not a strict requirement to bind to a device but it is good
                 // practice to ensure that our timestamps are well defined.
-                let dev_name = options.bind_to_device.as_ref()
+                let dev_name = options.inner.bind_to_device.as_ref()
                     .ok_or_else(|| err_msg("Must bind to a device for hardware timestamping"))?;
 
                 enable_hardware_timestamping(&fd, dev_name.as_str())?;

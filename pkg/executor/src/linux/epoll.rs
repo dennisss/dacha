@@ -47,6 +47,7 @@ struct DescriptorState {
 
 impl ExecutorEpoll {
     pub fn create() -> Result<Self> {
+        // TODO: Should I switch to 'EFD_CLOEXEC', etc.?
         let polled_eventfd =
             OpenFileDescriptor::new(unsafe { sys::eventfd2(0, sys::O_CLOEXEC | sys::O_NONBLOCK) }?);
 

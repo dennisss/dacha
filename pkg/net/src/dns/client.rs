@@ -11,8 +11,9 @@ use crate::dns::message_cell::MessageCell;
 use crate::dns::name::Name;
 use crate::dns::proto::*;
 use crate::ip::{IPAddress, SocketAddr};
-use crate::udp::UdpSocket;
+use crate::udp::*;
 use crate::dns::constants::*;
+use crate::route::*;
 
 // TODO: Implement in-memory caching, retrying of queries, and timeouts.
 // ^ If we didn't get a response within 200ms, retry with a new id.
@@ -59,6 +60,23 @@ impl Client {
         )
         .await
     }
+
+    pub async fn create_multicast_insecure_with_route(route: NetworkInterfaceRoute) -> Result<Self> {
+        let mut opts = UdpBindOptions::default();
+        opts.route(route.clone());
+
+        let bind_addr = SocketAddr::new(route.addr.clone(), 0);
+
+        let socket = UdpSocket::bind_with_options(bind_addr, &opts).await?;
+        Ok(Self {
+            socket,
+            last_id: 0,
+            target: SocketAddr::new(MULTICAST_ADDR, MULTICAST_PORT),
+            multicast: true,
+            return_on_first_response: false,
+        })
+    }
+
 
     pub async fn create_insecure() -> Result<Self> {
         // Bind on a random port and connect to Google Public DNS.

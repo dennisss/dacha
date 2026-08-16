@@ -6,22 +6,23 @@ use std::collections::HashMap;
 use base_error::*;
 use common::hash::FastHasherBuilder;
 
-use objc2::{ClassType, msg_send_id, msg_send, declare_class, DeclaredClass};
+use objc2::{ClassType, msg_send_id, msg_send, define_class, DefinedClass, MainThreadOnly};
 use objc2::rc::Retained;
 use objc2::runtime::{ProtocolObject, NSObject, NSObjectProtocol};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSWindow,
     NSWindowStyleMask, NSOpenPanel, NSSavePanel,
     NSAppearance, NSAppearanceNameDarkAqua, NSAppearanceCustomization,
+    NSAlert, NSAlertStyle,
 };
 use objc2_foundation::{
     NSPoint, NSRect, NSSize, NSString, NSURL, MainThreadMarker,
-    NSData, NSHTTPURLResponse, NSNumber
+    NSData, NSHTTPURLResponse, NSNumber, NSUUID
 };
 use objc2_web_kit::{
     WKWebView, WKWebViewConfiguration, WKURLSchemeHandler, WKURLSchemeTask,
     WKScriptMessageHandler, WKUserContentController, WKScriptMessage,
-    WKUserScript, WKUserScriptInjectionTime
+    WKUserScript, WKUserScriptInjectionTime, WKWebsiteDataStore
 };
 
 use crate::{WebViewBuilder, WebViewHandle, RequestHandler};
@@ -95,19 +96,6 @@ impl WebViewProxy {
         Ok(())
     }
 
-    pub fn abort_request(&self, request_id: &str) -> Result<()> {
-        let task = {
-            let mut map = self.inner.requests.lock().unwrap();
-            map.remove(request_id)
-        };
-        if let Some(_task) = task {
-            // Note: in a real implementation we might call task.0.didFailWithError(...) 
-            // if we needed to propagate specific cancellation errors. 
-            // Dropping the task without calling didFinish also results in a network error on macOS.
-        }
-        Ok(())
-    }
-
     pub fn open_file_dialog(&self, title: &str) -> Result<Option<String>> {
         unsafe {
             let mtm = MainThreadMarker::new_unchecked();
@@ -154,23 +142,17 @@ pub struct CustomSchemeHandlerIvars {
     pub inner: Arc<MacosProxyInner>,
 }
 
-declare_class!(
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[name = "CustomSchemeHandler"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = CustomSchemeHandlerIvars]
     pub struct CustomSchemeHandler;
-
-    unsafe impl ClassType for CustomSchemeHandler {
-        type Super = NSObject;
-        type Mutability = objc2::mutability::InteriorMutable;
-        const NAME: &'static str = "CustomSchemeHandler";
-    }
-
-    impl DeclaredClass for CustomSchemeHandler {
-        type Ivars = CustomSchemeHandlerIvars;
-    }
 
     unsafe impl NSObjectProtocol for CustomSchemeHandler {}
 
     unsafe impl WKURLSchemeHandler for CustomSchemeHandler {
-        #[method(webView:startURLSchemeTask:)]
+        #[unsafe(method(webView:startURLSchemeTask:))]
         unsafe fn webView_startURLSchemeTask(&self, _web_view: &WKWebView, task: &ProtocolObject<dyn WKURLSchemeTask>) {
             let inner = &self.ivars().inner;
             let req_id = inner.request_counter.fetch_add(1, Ordering::SeqCst).to_string();
@@ -190,7 +172,7 @@ declare_class!(
             }
         }
 
-        #[method(webView:stopURLSchemeTask:)]
+        #[unsafe(method(webView:stopURLSchemeTask:))]
         unsafe fn webView_stopURLSchemeTask(&self, _web_view: &WKWebView, task: &ProtocolObject<dyn WKURLSchemeTask>) {
             let inner = &self.ivars().inner;
             let mut map = inner.requests.lock().unwrap();
@@ -209,8 +191,8 @@ declare_class!(
 );
 
 impl CustomSchemeHandler {
-    pub fn new(inner: Arc<MacosProxyInner>) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(CustomSchemeHandlerIvars { inner });
+    pub fn new(mtm: MainThreadMarker, inner: Arc<MacosProxyInner>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(CustomSchemeHandlerIvars { inner });
         unsafe { msg_send_id![super(this), init] }
     }
 }
@@ -219,23 +201,17 @@ pub struct ScriptMessageHandlerIvars {
     pub inner: Arc<MacosProxyInner>,
 }
 
-declare_class!(
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[name = "ScriptMessageHandler"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = ScriptMessageHandlerIvars]
     pub struct ScriptMessageHandler;
-
-    unsafe impl ClassType for ScriptMessageHandler {
-        type Super = NSObject;
-        type Mutability = objc2::mutability::InteriorMutable;
-        const NAME: &'static str = "ScriptMessageHandler";
-    }
-
-    impl DeclaredClass for ScriptMessageHandler {
-        type Ivars = ScriptMessageHandlerIvars;
-    }
 
     unsafe impl NSObjectProtocol for ScriptMessageHandler {}
 
     unsafe impl WKScriptMessageHandler for ScriptMessageHandler {
-        #[method(userContentController:didReceiveScriptMessage:)]
+        #[unsafe(method(userContentController:didReceiveScriptMessage:))]
         unsafe fn userContentController_didReceiveScriptMessage(&self, _controller: &WKUserContentController, message: &WKScriptMessage) {
             let body = message.body();
             let is_string: bool = objc2::msg_send![&body, isKindOfClass: NSString::class()];
@@ -258,8 +234,8 @@ declare_class!(
 );
 
 impl ScriptMessageHandler {
-    pub fn new(inner: Arc<MacosProxyInner>) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(ScriptMessageHandlerIvars { inner });
+    pub fn new(mtm: MainThreadMarker, inner: Arc<MacosProxyInner>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(ScriptMessageHandlerIvars { inner });
         unsafe { msg_send_id![super(this), init] }
     }
 }
@@ -301,7 +277,7 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             window_alloc,
             frame,
             style_mask,
-            NSBackingStoreType::NSBackingStoreBuffered,
+            NSBackingStoreType::Buffered,
             false,
         );
 
@@ -326,7 +302,7 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
             let _: () = msg_send![&prefs, setValue: &*val, forKey: &*key];
         }
         
-        let scheme_handler = CustomSchemeHandler::new(inner.clone());
+        let scheme_handler = CustomSchemeHandler::new(mtm, inner.clone());
         let scheme_handler_proto: &ProtocolObject<dyn WKURLSchemeHandler> = ProtocolObject::from_ref(&*scheme_handler);
         let scheme_name = NSString::from_str(crate::CUSTOM_SCHEME);
         config.setURLSchemeHandler_forURLScheme(
@@ -336,16 +312,17 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
         
         let user_content_controller = config.userContentController();
         
-        let msg_handler = ScriptMessageHandler::new(inner.clone());
+        let msg_handler = ScriptMessageHandler::new(mtm, inner.clone());
         let msg_handler_proto: &ProtocolObject<dyn WKScriptMessageHandler> = ProtocolObject::from_ref(&*msg_handler);
-        let name_ns = NSString::from_str(crate::CUSTOM_SCHEME);
+        let name_ns = NSString::from_str("ipc");
         user_content_controller.addScriptMessageHandler_name(msg_handler_proto, &name_ns);
         
 
         if !_enable_context_menu && !_devtools {
             let ctx_script = NSString::from_str("window.addEventListener('contextmenu', (e) => { e.preventDefault(); });");
+            let user_script_alloc: objc2::rc::Allocated<WKUserScript> = msg_send_id![WKUserScript::class(), alloc];
             let ctx_user_script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
-                WKUserScript::alloc(),
+                user_script_alloc,
                 &ctx_script,
                 WKUserScriptInjectionTime(0),
                 true
@@ -392,4 +369,17 @@ pub fn run(mut builder: WebViewBuilder) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn show_error_dialog(title: &str, message: &str) {
+    unsafe {
+        let mtm = MainThreadMarker::new_unchecked();
+        let _app: Retained<NSApplication> = NSApplication::sharedApplication(mtm);
+        let alert_alloc: objc2::rc::Allocated<NSAlert> = msg_send_id![NSAlert::class(), alloc];
+        let alert: Retained<NSAlert> = msg_send_id![alert_alloc, init];
+        alert.setMessageText(&NSString::from_str(title));
+        alert.setInformativeText(&NSString::from_str(message));
+        alert.setAlertStyle(NSAlertStyle::Critical);
+        alert.runModal();
+    }
 }

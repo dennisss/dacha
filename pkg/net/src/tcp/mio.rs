@@ -9,6 +9,8 @@ use executor::error::*;
 
 use crate::error::NetworkError;
 use crate::ip::SocketAddr;
+use crate::tcp::options::*;
+use crate::socket::*;
 
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -80,9 +82,18 @@ impl Drop for TcpStream {
 }
 
 impl TcpStream {
+
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
-        let inner = Arc::new(ExecutorMioSource::create(mio::net::TcpStream::connect(addr.clone().into())
-            .remap_std_error::<NetworkError, _>(|| "TCPStream::bind failed".into())?)?);
+        Self::connect_with_options(addr, &TcpConnectOptions::default()).await
+    }
+
+    pub async fn connect_with_options(addr: SocketAddr, options: &TcpConnectOptions) -> Result<Self> {
+        let inner = Arc::new(ExecutorMioSource::create(
+            mio::net::TcpStream::from_std(
+                Self::connect_impl(addr.clone(), options)
+                    .remap_std_error::<NetworkError, _>(|| "TCPStream::connect failed".into())?
+            )
+        )?);
 
         Ok(Self {
             inner,
@@ -90,6 +101,37 @@ impl TcpStream {
             mode: ShutdownHow::ReadWrite
         })
     }
+
+    #[cfg(target_os = "macos")]
+    fn connect_impl(
+        addr: SocketAddr, options: &TcpConnectOptions
+    ) -> std::io::Result<std::net::TcpStream> {
+        use std::os::fd::FromRawFd;
+
+        unsafe {
+            let mut options = options.inner.clone();
+            options.typ = Some(SocketType::TCP);
+            options.connect_addr = Some(addr);
+            let fd = options.build()?;
+            Ok(std::net::TcpStream::from_raw_fd(fd))
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn connect_impl(
+        addr: SocketAddr, options: &TcpConnectOptions
+    ) -> std::io::Result<std::net::TcpStream> {
+        use std::os::windows::io::FromRawSocket;
+
+        unsafe {
+            let mut options = options.inner.clone();
+            options.typ = Some(SocketType::TCP);
+            options.connect_addr = Some(addr);
+            let s = options.build()?;
+            Ok(std::net::TcpStream::from_raw_socket(s as _))
+        }
+    }
+
 
     pub fn peer_addr(&self) -> &SocketAddr {
         &self.peer

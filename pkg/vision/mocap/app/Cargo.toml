@@ -1,0 +1,30 @@
+[package]
+name = "mocap_app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../../../common" }
+base_args = { path = "../../../base/args" }
+file = { path = "../../../file" }
+executor = { path = "../../../executor" }
+executor_multitask = { path = "../../../executor/multitask" }
+parsing = { path = "../../../parsing" }
+macros = { path = "../../../macros" }
+protobuf = { path = "../../../protobuf" }
+protobuf_json = { path = "../../../protobuf/json" }
+rpc = { path = "../../../rpc" }
+net = { path = "../../../net" }
+http = { path = "../../../http" }
+http_util = { path = "../../../http/util" }
+web = { path = "../../../web" }
+webview = { path = "../../../web/view" }
+json = { path = "../../../format/json" }
+reflection = { path = "../../../reflection" }
+rpc_util = { path = "../../../rpc/util" }
+mocap_proto = { path = "../proto" }
+mocap_manager = { path = "../manager" }
+
+[build-dependencies]
+common = { path = "../../../common" }
+file = { path = "../../../file" }

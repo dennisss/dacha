@@ -5,6 +5,7 @@ import { PageContext, PagedApp } from "pkg/web/lib/page";
 import { CamerasPage } from "./cameras";
 import { WorldPage } from "./world";
 import { CheckerboardPage } from "./checkerboard";
+import { SettingsPage } from "./settings";
 
 // TODO: Currently there are a lot of per-page timers/periodic RPCs which need to get cancelled when the page changes.
 
@@ -20,6 +21,12 @@ const ROUTES = [
         path: '/ui/world',
         render: (path: string, params: PathParams, context: PageContext) => {
             return <WorldPage context={context} />;
+        }
+    },
+    {
+        path: '/ui/settings',
+        render: (path: string, params: PathParams, context: PageContext) => {
+            return <SettingsPage context={context} />;
         }
     },
     {

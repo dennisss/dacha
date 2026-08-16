@@ -9,7 +9,8 @@ use sys::OpenFileDescriptor;
 
 use crate::error::NetworkError;
 use crate::ip::SocketAddr;
-use crate::utils::{set_reuse_port, set_tcp_nodelay};
+use crate::utils::{set_reuse_port, set_tcp_nodelay, set_bind_to_device};
+use crate::tcp::options::*;
 
 const TCP_CONNECTION_BACKLOG_SIZE: usize = 1024;
 
@@ -102,6 +103,10 @@ impl Drop for TcpStream {
 
 impl TcpStream {
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
+        Self::connect_with_options(addr, &TcpConnectOptions::default()).await
+    }
+
+    pub async fn connect_with_options(addr: SocketAddr, options: &TcpConnectOptions) -> Result<Self> {
         let sys_addr = Into::<sys::SocketAddr>::into(addr.clone());
 
         let fd = unsafe {
@@ -112,6 +117,14 @@ impl TcpStream {
                 sys::SocketProtocol::TCP,
             )?
         };
+
+        if let Some(bind_addr) = &options.inner.bind_addr {
+            unsafe { sys::bind(&fd, &bind_addr.to_sys())? };
+        }
+
+        if let Some(name) = &options.inner.bind_to_device {
+            unsafe { set_bind_to_device(&fd, name.as_str())? };
+        }
 
         let op = ExecutorOperation::submit(sys::IoUringOp::Connect {
             fd: *fd,

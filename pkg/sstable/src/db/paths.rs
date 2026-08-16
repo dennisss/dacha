@@ -156,7 +156,12 @@ impl FilePaths {
 
     pub async fn set_current_manifest(&self, num: u64) -> Result<()> {
         let new_absolute_path = self.manifest(num);
+        #[cfg(target_os = "linux")]
         let mut new_path = format!("{}\n", new_absolute_path.file_name().unwrap());
+
+        #[cfg(not(target_os = "linux"))]
+        let mut new_path = format!("{}\n", new_absolute_path.file_name().unwrap().to_str().unwrap());
+
 
         // NOTE: We intentionally do not truncate on open.
         let mut current_file = LocalFile::open_with_options(

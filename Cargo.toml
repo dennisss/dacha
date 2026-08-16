@@ -8,6 +8,7 @@ members = [
 	"pkg/macros",
 	"pkg/common",
 	"pkg/net",
+	"pkg/net/iface",
 	"pkg/net/router",
 	"pkg/net/ptp",
 	"pkg/net/ptp/core",

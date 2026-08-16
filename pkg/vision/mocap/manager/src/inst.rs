@@ -35,6 +35,7 @@ use crate::rigid_body::*;
 use crate::origin::*;
 use crate::recording::*;
 use crate::skeleton::{SkeletonTracker, standard_skeleton};
+use crate::networking::*;
 
 const CONFIG_PATCH_FILE: &'static str = "config.pb";
 
@@ -44,13 +45,18 @@ const CONFIG_PATCH_FILE: &'static str = "config.pb";
 
 pub struct MocapManager {
     resources: ServiceResourceGroup,
-    shared: Arc<Shared>
+    inner: MocapManagerInner,
 }
 
 impl_resource_passthrough!(MocapManager, resources);
+impl_deref!(MocapManager::inner as MocapManagerInner);
+
+pub struct MocapManagerInner {
+    shared: Arc<Shared>
+}
 
 struct Shared {
-    meta_client: Arc<ClusterMetaClient>,
+    // meta_client: Arc<ClusterMetaClient>,
     data_dir: LocalPathBuf,
     config_path: LocalPathBuf,
     config: AsyncRwLock<ManagerConfigContainer>,
@@ -72,18 +78,25 @@ struct State {
     /// Largest frame timestamp value received so far.
     frame_timestamp_waterline: u64,
 
-    mode: Mode
+    mode: Mode,
+
+    networking_status: NetworkingStatus
 }
 
 struct CameraConfigState {
     camera_config: MocapCameraConfigureRequest,
+    // TODO: this is insuficient for handling restart conditions.
     camera_config_epoch: u64,
     active_camera_id: Option<u64>,
     single_camera_override: Option<(u64, MocapCameraConfigureRequest)>
 }
 
 struct CameraEntry {
-    worker_address: String,
+    // Exactly what was given by the resolver to detect if we need to reconnect.
+    endpoint: String,
+
+    ptp_addr: String,
+    rpc_addr: String,
 
     camera_stub: Arc<MocapCameraStub>,
 
@@ -135,7 +148,7 @@ impl MocapManager {
     pub async fn create(
         config: MocapManagerConfig,
         data_dir: LocalPathBuf,
-        meta_client: Arc<ClusterMetaClient>
+        // meta_client: Arc<ClusterMetaClient>
     ) -> Result<Self> {
 
         file::create_dir_all(&data_dir).await?;
@@ -163,7 +176,7 @@ impl MocapManager {
         let camera_config = config.initial_camera_config().clone();
 
         let shared = Arc::new(Shared {
-            meta_client,
+            // meta_client,
             config: AsyncRwLock::new(config),
             data_dir,
             config_path,
@@ -180,8 +193,12 @@ impl MocapManager {
             skeleton_search_requests: Default::default(),
         });
 
-        resources.spawn_interruptable("resolver", Self::service_resolver_thread(shared.clone())).await;
-        resources.spawn_interruptable("merger", Self::frame_merger_thread(shared.clone())).await;
+        lock!(state <= shared.state.lock().await?, {
+            state.networking_status.set_error("Initializing...");
+        });
+
+        resources.spawn_interruptable("resolver", MocapManagerInner::service_resolver_thread(shared.clone())).await;
+        resources.spawn_interruptable("merger", MocapManagerInner::frame_merger_thread(shared.clone())).await;
 
         let config = shared.config.read().await?;
 
@@ -204,7 +221,7 @@ impl MocapManager {
                 ));
 
                 lock!(state <= shared.state.lock().await?, {
-                    let task = ChildTask::spawn(Self::camera_thread(
+                    let task = ChildTask::spawn(MocapManagerInner::camera_thread(
                         shared.clone(),
                         camera_id,
                         ptp_stub.clone(),
@@ -212,7 +229,9 @@ impl MocapManager {
                     ));
 
                     state.cameras.insert(camera_id, CameraEntry {
-                        worker_address: String::new(),
+                        endpoint: String::new(),
+                        ptp_addr: String::new(),
+                        rpc_addr: String::new(),
                         camera_stub,
                         ptp_stub,
                         ptp_leader: false,
@@ -225,14 +244,23 @@ impl MocapManager {
         }
 
         // NOTE: Should be done after the extrinsics/intrinscs are setup.
-        resources.spawn_interruptable("matcher", Self::matching_task(shared.clone())).await;
+        resources.spawn_interruptable("matcher", MocapManagerInner::matching_task(shared.clone())).await;
 
         drop(config);
 
         Ok(Self {
             resources,
-            shared
+            inner: MocapManagerInner {
+                shared
+            }
         })
+    }
+}
+
+impl MocapManagerInner {
+
+    pub fn to_service(&self) -> Arc<dyn rpc::Service> {
+        Self { shared: self.shared.clone() }.into_service()
     }
 
     pub async fn status(&self) -> Result<MocapManagerStatus> {
@@ -250,6 +278,8 @@ impl MocapManager {
         // TODO: If the config contains more cameras than are currently in use, consider
         // pruning them.
         proto.set_config(config.value().clone());
+
+        proto.set_networking(state.networking_status.clone());
 
         let now = Instant::now();
 
@@ -783,42 +813,28 @@ impl MocapManager {
     /// - Maintain the State::cameras set (add new cameras / remove dead ones).
     /// - Maintain a PTP leader.
     async fn service_resolver_thread(shared: Arc<Shared>) -> Result<()> {
-        let config = shared.config.read().await?;
+        loop {
+            if let Err(e) = Self::service_resolver_thread_inner(shared.clone()).await {
+                eprintln!("[Resolver Error] {}", e);
 
-        if config.camera_service().is_empty() {
-            return Ok(());
+                lock!(state <= shared.state.lock().await?, {
+                    let mut s = NetworkingStatus::default();
+                    s.set_error(e.to_string());
+                    state.networking_status = s;
+                });
+            }
+
+            executor::sleep(Duration::from_secs(1)).await?;
         }
+    }
 
-        let resolver = cluster_client::ServiceResolver::create(
-            config.camera_service(), shared.meta_client.clone()
-        )?;
+    async fn service_resolver_thread_inner(shared: Arc<Shared>) -> Result<()> {
 
-        drop(config);
+        let mut resolver = CameraResolver::create().await?;
 
         loop {
-            let endpoints = resolver.resolve().await?;
-            if endpoints.is_empty() {
-                // TODO: Instead rely on the resolver notifications
-                executor::sleep(Duration::from_secs(1)).await?;
-                continue;
-            }
-
-            let mut current_cameras = HashMap::new();
-            for endpoint in endpoints {
-
-                let host_name = match &endpoint.authority.host {
-                    http::uri::Host::Name(v) => v.to_string(),
-                    _ => return Err(err_msg("Unexpected host name format"))
-                };
-
-                let camera_id = match ServiceName::parse(&host_name)?.entity() {
-                    ServiceEntity::Worker { worker_id, .. } => entity_id_from_string(&worker_id)
-                        .ok_or_else(|| err_msg("Failed to parse worker_id format"))?,
-                    _ => return Err(err_msg("Expected all service endpoints to be workers"))
-                };
-
-                current_cameras.insert(camera_id, host_name);
-            }
+            // TODO: Explicitly rate limit the resolving rate.
+            let current_cameras = resolver.resolve().await?;
 
             let mut enabled_cameras = HashSet::<u64, FastHasherBuilder>::default();
             {
@@ -838,38 +854,25 @@ impl MocapManager {
             let mut new_cameras = vec![];
             lock!(state <= shared.state.lock().await?, {
 
-                let mut first_existing_enabled = None;
-
                 // Remove old cameras.
-                // (the assumption is that they are dead so will give up their ptp leadership if needed)
-                state.cameras.retain(|old_camera_id, old_entry| {
-                    if !current_cameras.contains_key(old_camera_id) {
-                        return false;
-                    }
+                if resolver.disconnect_missing_cameras() {
+                    state.cameras.retain(|old_camera_id, old_entry| {
+                        if !current_cameras.contains_key(old_camera_id) {
+                            return false;
+                        }
 
-                    if old_entry.ptp_leader && !enabled_cameras.contains(&old_camera_id) {
-                        old_entry.ptp_leader = false;
-                    } else if enabled_cameras.contains(old_camera_id) {
-                        first_existing_enabled = Some(*old_camera_id);
-                    }
-
-                    have_ptp_leader |= old_entry.ptp_leader;
-                    true
-                });
-
-                for (camera_id, camera_endpoint) in current_cameras {
-                    if !state.cameras.contains_key(&camera_id) {
-                        new_cameras.push((camera_id, camera_endpoint));
-                    }
+                        true
+                    });
                 }
 
-                // If there is no leader, always prioritize electing an existing camera
-                // which likely has the most disciplined clock.
-                if !have_ptp_leader {
-                    if let Some(id) = first_existing_enabled {
-                        state.cameras.get_mut(&id).unwrap().ptp_leader = true;
-                        have_ptp_leader = true;
+                for (camera_id, camera_endpoint) in current_cameras {
+                    if let Some(old_entry) = state.cameras.get(&camera_id) {
+                        if old_entry.endpoint == camera_endpoint {
+                            continue;
+                        }
                     }
+
+                    new_cameras.push((camera_id, camera_endpoint));
                 }
             });
 
@@ -877,24 +880,15 @@ impl MocapManager {
             let mut new_camera_entries = vec![];
             for (camera_id, endpoint) in new_cameras {
 
-                // TODO: Ideally we'd just re-use the entire resolved endpoint data.
-                // TODO: This also needs to factor in any custom port names.
-                let channel = create_rpc_channel(
-                    &endpoint,
-                    shared.meta_client.clone()
-                ).await?;
-
-                let ptp_stub = Arc::new(TimeSyncStub::new(channel.clone()));
-                let camera_stub = Arc::new(MocapCameraStub::new(channel.clone()));
-
-                let ptp_leader = !have_ptp_leader && enabled_cameras.contains(&camera_id);
-                have_ptp_leader |= ptp_leader;
+                let conn = resolver.connect(&endpoint).await?;
 
                 new_camera_entries.push((camera_id, CameraEntry {
-                    worker_address: endpoint,
-                    ptp_stub,
-                    camera_stub,
-                    ptp_leader,
+                    endpoint,
+                    rpc_addr: conn.rpc_addr,
+                    ptp_addr: conn.ptp_addr,
+                    ptp_stub: conn.ptp_stub,
+                    camera_stub: conn.camera_stub,
+                    ptp_leader: false,
                     status: None,
                     camera_config_epoch: 0,
 
@@ -904,24 +898,51 @@ impl MocapManager {
                 }));
             }
 
-            if !new_camera_entries.is_empty() {
-                lock!(state <= shared.state.lock().await?, {
-                    for (camera_id, mut entry) in new_camera_entries {
+            lock!(state <= shared.state.lock().await?, {
+                for (camera_id, mut entry) in new_camera_entries {
 
-                        entry.task = Some(ChildTask::spawn(Self::camera_thread(
-                            shared.clone(),
-                            camera_id,
-                            entry.ptp_stub.clone(),
-                            entry.camera_stub.clone()
-                        )));
+                    entry.task = Some(ChildTask::spawn(Self::camera_thread(
+                        shared.clone(),
+                        camera_id,
+                        entry.ptp_stub.clone(),
+                        entry.camera_stub.clone()
+                    )));
 
-                        state.cameras.insert(camera_id, entry);
+                    state.cameras.insert(camera_id, entry);
+                }
+
+                let mut have_ptp_leader = false;
+                let mut first_enabled = None;
+                for (id, entry) in &mut state.cameras {
+                    let is_enabled = enabled_cameras.contains(id);
+                    entry.ptp_leader &= is_enabled;
+                    have_ptp_leader |= entry.ptp_leader;
+
+                    if is_enabled {
+                        first_enabled = Some(*id);
                     }
-                });
-            }
+                }
+
+                if !have_ptp_leader {
+                    if let Some(id) = first_enabled {
+                        state.cameras.get_mut(&id).unwrap().ptp_leader = true;
+                    }
+                }
+
+
+                let mut s = NetworkingStatus::default();
+                s.set_iface_name(resolver.iface_name());
+                s.set_healthy(true);
+
+                state.networking_status = s;
+
+            });
+
+
+            // TODO: Mark as good in the state.
 
             // TODO: Instead rely on the resolver notifications
-            executor::sleep(Duration::from_secs(1)).await?;
+            // executor::sleep(Duration::from_secs(1)).await?;
         }
     }
 
@@ -1161,8 +1182,8 @@ impl MocapManager {
                 }
 
                 let proto = ptp_config.leader_mut().new_followers();
-                proto.set_rpc_addr(format!("_rpc.{}", entry.worker_address));
-                proto.set_ptp_addr(format!("_ptp.{}", entry.worker_address));
+                proto.set_rpc_addr(entry.rpc_addr.clone());
+                proto.set_ptp_addr(entry.ptp_addr.clone());
             }
 
             Ok(ptp_config)
@@ -1388,7 +1409,7 @@ impl MocapManager {
 }
 
 #[async_trait]
-impl MocapManagerService for MocapManager {
+impl MocapManagerService for MocapManagerInner {
 
     async fn Status(
         &self,

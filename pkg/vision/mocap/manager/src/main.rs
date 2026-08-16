@@ -145,14 +145,16 @@ async fn main() -> Result<()> {
     let manager = Arc::new(MocapManager::create(
         config,
         args.data_dir,
-        meta_client.clone()
+        // meta_client.clone()
     ).await?);
     service.register_dependency(manager.clone()).await;
-    server.add_service(manager.clone().into_service())?;
+    server.add_service(manager.to_service())?;
 
     server.add_request_handler("/camera", true, CameraHttpHandler { inst: manager.clone() })?;
 
     service.register_dependency(server.start()?).await;
+
+    println!("Server running on port {}...", args.port.value());
 
     service.wait().await
 }

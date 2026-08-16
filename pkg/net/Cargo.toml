@@ -22,5 +22,8 @@ sys = { path = "../sys" }
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 mio = { workspace = true }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true }  
+
 [build-dependencies]
 parsing_compiler = { path = "../parsing/compiler" }

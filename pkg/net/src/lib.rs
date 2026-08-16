@@ -18,6 +18,7 @@ extern crate regexp_macros;
 #[macro_use]
 extern crate macros;
 
+pub mod route;
 pub mod backoff;
 pub mod dns;
 mod endian;

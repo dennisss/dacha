@@ -72,7 +72,7 @@ impl GitIgnore {
                 line = format!("**/{}", line);
             }
 
-            let path = base_dir.join(line).normalized();
+            let path = base_dir.join(line).normalize_lexically()?;
 
             let pattern = GlobFileFilter::compile_glob(&path)?;
 
